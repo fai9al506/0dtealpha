@@ -15,12 +15,13 @@ SECRET  = os.getenv("TS_CLIENT_SECRET", "")
 RTOKEN  = os.getenv("TS_REFRESH_TOKEN", "")
 DB_URL  = os.getenv("DATABASE_URL", "")  # Railway Postgres
 
-# --- force SQLAlchemy to use psycopg (v3) driver instead of psycopg2 ---
+# Force SQLAlchemy to use psycopg (v3) driver
 if DB_URL.startswith("postgresql://"):
     DB_URL = DB_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
-PULL_EVERY = 15  # seconds
-SAVE_EVERY_MIN = 5
+# Cadence (can be overridden in Railway Variables)
+PULL_EVERY     = int(os.getenv("PULL_EVERY", "15"))     # seconds (live refresh)
+SAVE_EVERY_MIN = int(os.getenv("SAVE_EVERY_MIN", "5"))  # minutes (history cadence)
 
 app = FastAPI()
 NY = pytz.timezone("US/Eastern")
@@ -82,6 +83,10 @@ def api_get(path, params=None, stream=False, timeout=10):
 def now_et():
     return datetime.now(NY)
 
+def fmt_et(dt: datetime) -> str:
+    # Clean human string for UI only
+    return dt.strftime("%Y-%m-%d %H:%M %Z")
+
 def market_open_now() -> bool:
     t = now_et()
     if t.weekday() >= 5:
@@ -106,7 +111,8 @@ def get_0dte_exp() -> str:
             d = str(e.get("Date") or e.get("Expiration") or "")[:10]
             if d == ymd:
                 return d
-    except: pass
+    except:
+        pass
     return ymd
 
 def snapshot_chain(exp_ymd: str, spot: float) -> list[dict]:
@@ -184,7 +190,11 @@ def run_market_job():
     global latest_df, last_run_status
     try:
         if not market_open_now():
-            last_run_status = {"ts": now_et().isoformat(), "ok": True, "msg": "outside market hours"}
+            last_run_status = {
+                "ts": fmt_et(now_et()),
+                "ok": True,
+                "msg": "outside market hours"
+            }
             return
         spot = get_spx_last()
         exp  = get_0dte_exp()
@@ -192,12 +202,20 @@ def run_market_job():
         if spot and not df.empty:
             df = df.iloc[(df["Strike"]-spot).abs().sort_values().index[:40]].sort_values("Strike").reset_index(drop=True)
         latest_df = df
-        last_run_status = {"ts": now_et().isoformat(), "ok": True, "msg": f"exp={exp} spot={round(spot,2)} rows={len(df)}"}
+        last_run_status = {
+            "ts": fmt_et(now_et()),
+            "ok": True,
+            "msg": f"exp={exp} spot={round(spot,2)} rows={len(df)}"
+        }
     except Exception as e:
-        last_run_status = {"ts": now_et().isoformat(), "ok": False, "msg": f"error: {e}"}
+        last_run_status = {
+            "ts": fmt_et(now_et()),
+            "ok": False,
+            "msg": f"error: {e}"
+        }
 
 def save_history_job():
-    """Every 5 minutes: persist latest_df to Postgres for later analysis/tests."""
+    """Every N minutes: persist latest_df to Postgres for later analysis/tests."""
     global _last_saved_at
     if not engine:
         return
@@ -216,7 +234,8 @@ def save_history_job():
             parts = dict(s.split("=") for s in msg.split() if "=" in s)
             spot = float(parts.get("spot",""))
             exp  = parts.get("exp")
-        except: pass
+        except:
+            pass
         with engine.begin() as conn:
             conn.execute(
                 text("INSERT INTO chain_snapshots (ts, exp, spot, columns, rows) VALUES (:ts, :exp, :spot, :columns, :rows)"),
@@ -247,7 +266,6 @@ def api_health():
 
 @app.get("/")
 def home():
-    # Landing page with status + buttons
     open_now = market_open_now()
     status_text = "Market OPEN" if open_now else "Market CLOSED"
     status_color = "#10b981" if open_now else "#ef4444"
@@ -308,7 +326,7 @@ def home():
           <a class="btn" href="/table">
             <div>
               <div style="font-weight:600;">Live Table</div>
-              <small>Auto-refresh every 15s</small>
+              <small>Auto-refresh every {PULL_EVERY}s</small>
             </div>
           </a>
 
@@ -322,7 +340,7 @@ def home():
           <a class="btn" href="/api/history">
             <div>
               <div style="font-weight:600;">History (JSON)</div>
-              <small>Saved every 5 minutes</small>
+              <small>Saved every {SAVE_EVERY_MIN} minutes</small>
             </div>
           </a>
 

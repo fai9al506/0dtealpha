@@ -5,6 +5,14 @@ import os, time, json, requests, pandas as pd, pytz, base64
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
 
+# ====== NEW: charts backend & helpers ======
+import matplotlib
+matplotlib.use("Agg")  # server-safe, no GUI
+import matplotlib.pyplot as plt
+import numpy as np
+from fastapi.responses import FileResponse, HTMLResponse
+from threading import Lock
+
 # ====== CONFIG ======
 USE_LIVE = True
 BASE = "https://api.tradestation.com/v3" if USE_LIVE else "https://sim-api.tradestation.com/v3"
@@ -34,6 +42,11 @@ NY = pytz.timezone("US/Eastern")
 latest_df: pd.DataFrame | None = None
 last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
+
+# NEW: lock + chart paths
+_df_lock = Lock()
+VOL_CHART_PATH = "/mnt/data/volume_chart.png"
+OI_CHART_PATH  = "/mnt/data/oi_chart.png"
 
 # ====== DB ======
 engine = create_engine(DB_URL, pool_pre_ping=True) if DB_URL else None
@@ -181,7 +194,6 @@ def _consume_chain_stream(r, max_seconds: float) -> list[dict]:
                 obj = json.loads(line)
             except Exception:
                 continue
-            # StreamStatus EndSnapshot usually means we've got the snapshot header/footer
             if isinstance(obj, dict) and obj.get("StreamStatus") == "EndSnapshot":
                 break
             if isinstance(obj, dict):
@@ -320,6 +332,39 @@ def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
     idx = (df["Strike"] - spot).abs().sort_values().index[:n]
     return df.loc[sorted(idx)].reset_index(drop=True)
 
+# ====== NEW: chart maker ======
+def make_charts(df: pd.DataFrame):
+    """Save Volume and OI charts to disk using canonical columns."""
+    if df is None or df.empty:  # nothing to draw
+        return
+
+    # Ensure sorted by Strike
+    sdf = df.sort_values("Strike")
+    strikes = sdf["Strike"].astype(float).values
+    call_vol = pd.to_numeric(sdf["C_Volume"], errors="coerce").fillna(0).astype(float).values
+    put_vol  = pd.to_numeric(sdf["P_Volume"],  errors="coerce").fillna(0).astype(float).values
+    call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0).astype(float).values
+    put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0).astype(float).values
+
+    x = np.arange(len(strikes))
+    width = 0.4
+
+    # Volume Chart
+    plt.figure(figsize=(10, 5))
+    plt.bar(x - width/2, call_vol, width, label='Call Volume', color='green')
+    plt.bar(x + width/2, put_vol,  width, label='Put Volume',  color='red')
+    plt.xlabel('Strike'); plt.ylabel('Volume'); plt.title('Volume by Strike')
+    plt.xticks(x, strikes, rotation=45); plt.legend(); plt.tight_layout()
+    plt.savefig(VOL_CHART_PATH); plt.close()
+
+    # OI Chart
+    plt.figure(figsize=(10, 5))
+    plt.bar(x - width/2, call_oi, width, label='Call OI', color='green')
+    plt.bar(x + width/2, put_oi,  width, label='Put OI',  color='red')
+    plt.xlabel('Strike'); plt.ylabel('Open Interest'); plt.title('Open Interest by Strike')
+    plt.xticks(x, strikes, rotation=45); plt.legend(); plt.tight_layout()
+    plt.savefig(OI_CHART_PATH); plt.close()
+
 # ====== Jobs ======
 def run_market_job():
     global latest_df, last_run_status
@@ -335,7 +380,15 @@ def run_market_job():
         df   = to_side_by_side(rows)
         df   = pick_centered(df, spot, TARGET_STRIKES)
 
-        latest_df = df
+        with _df_lock:
+            latest_df = df.copy()
+
+        # NEW: create charts right after fresh data
+        try:
+            make_charts(df)
+        except Exception as ce:
+            print("[chart] error:", ce, flush=True)
+
         last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={len(df)}"}
         print("[pull] OK", last_run_status["msg"], flush=True)
     except Exception as e:
@@ -345,13 +398,18 @@ def run_market_job():
 def save_history_job():
     """Every N minutes: persist latest_df to Postgres for later analysis/tests."""
     global _last_saved_at
-    if not engine or latest_df is None or latest_df.empty:
+    if not engine:
         return
+    with _df_lock:
+        if latest_df is None or latest_df.empty:
+            return
+        df_copy = latest_df.copy()
+
     # avoid hammering DB if scheduler overlaps or pulls got too frequent
     if time.time() - _last_saved_at < 60:
         return
     try:
-        df = latest_df.copy()
+        df = df_copy
         df.columns = DISPLAY_COLS
         payload = {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
         msg = (last_run_status.get("msg") or "")
@@ -408,7 +466,7 @@ def on_shutdown():
         scheduler.shutdown()
         print("[sched] stopped", flush=True)
 
-# ====== Endpoints ======
+# ====== API & Pages ======
 @app.get("/api/health")
 def api_health():
     return {"status": "ok", "last": last_run_status}
@@ -421,108 +479,173 @@ def debug_env():
 def status():
     return last_run_status
 
-@app.get("/")
-def home():
+# NEW: charts endpoints
+@app.get("/chart/volume")
+def get_volume_chart():
+    return FileResponse(VOL_CHART_PATH)
+
+@app.get("/chart/oi")
+def get_oi_chart():
+    return FileResponse(OI_CHART_PATH)
+
+# NEW: sidebar home with tabs (Table / Charts)
+@app.get("/", response_class=HTMLResponse)
+def spxw_dashboard():
     open_now = market_open_now()
     status_text = "Market OPEN" if open_now else "Market CLOSED"
     status_color = "#10b981" if open_now else "#ef4444"
     last_msg = last_run_status.get("msg", "")
     last_ts  = last_run_status.get("ts", "")
 
-    html = f"""
-    <html>
-    <head>
-      <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <title>0DTE Alpha</title>
-      <style>
-        :root {{
-          --bg:#0a0a0a; --card:#121212; --text:#e5e5e5; --muted:#9ca3af; --ring:#2d2d2d;
-        }}
-        * {{ box-sizing:border-box; }}
-        body {{
-          margin:0; padding:24px; background:var(--bg); color:var(--text);
-          font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-        }}
-        .wrap {{ max-width: 880px; margin: 0 auto; }}
-        h1 {{ font-size:28px; margin:0 0 10px; }}
-        .sub {{ color:var(--muted); margin-bottom:20px; }}
-        .status {{
-          display:inline-flex; align-items:center; gap:10px; padding:10px 14px; border:1px solid var(--ring);
-          border-radius:12px; background:var(--card); margin-bottom:20px;
-        }}
-        .dot {{ width:10px; height:10px; border-radius:999px; background:{status_color}; display:inline-block; }}
-        .grid {{
-          display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-          margin-top:16px;
-        }}
-        .btn {{
-          display:flex; align-items:center; justify-content:center; text-decoration:none; color:var(--text);
-          border:1px solid var(--ring); background:var(--card); border-radius:14px; padding:16px;
-          transition: transform .05s ease, border-color .15s ease;
-        }}
-        .btn:hover {{ border-color:#3b3b3b; transform: translateY(-1px); }}
-        .btn small {{ display:block; color:var(--muted); margin-top:6px; }}
-        .foot {{ color:var(--muted); font-size:12px; margin-top:18px; }}
-      </style>
-    </head>
-    <body>
-      <div class="wrap">
-        <h1>0DTE Alpha</h1>
-        <div class="sub">SPXW 0DTE live data & history</div>
-
-        <div class="status">
-          <span class="dot"></span>
-          <div>
-            <div style="font-weight:600;">{status_text}</div>
-            <div style="color:var(--muted); font-size:12px;">Last run: {last_ts} — {last_msg}</div>
-          </div>
+    return HTMLResponse(f"""
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>SPXW 0DTE — Dashboard</title>
+  <style>
+    :root {{
+      --bg:#0b0c10; --panel:#121417; --muted:#8a8f98; --text:#e6e7e9; --accent:#1f6feb;
+      --green:#22c55e; --red:#ef4444; --border:#23262b;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin:0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }}
+    .layout {{ display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }}
+    .sidebar {{
+      background: var(--panel); border-right: 1px solid var(--border); padding: 20px 16px; position: sticky; top:0; height:100vh;
+    }}
+    .brand {{ font-weight: 700; letter-spacing: .3px; margin-bottom: 6px; }}
+    .small {{ color: var(--muted); font-size: 12px; margin-bottom: 16px; }}
+    .status {{ display:flex; gap:10px; align-items:center; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; margin-bottom:14px; }}
+    .dot {{ width:10px; height:10px; border-radius:999px; background:{status_color}; }}
+    .nav {{ display: grid; gap: 8px; margin-top: 8px; }}
+    .btn {{
+      display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 10px;
+      border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer;
+      transition: background .15s ease, border-color .15s ease;
+    }}
+    .btn:hover {{ background: #171a20; border-color: #2b3036; }}
+    .btn.active {{ background: #121a2e; border-color: #2a3a57; }}
+    .content {{ padding: 18px; }}
+    .panel {{
+      background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; overflow: hidden;
+    }}
+    .header {{ display:flex; align-items:center; justify-content:space-between; padding: 6px 10px 12px; border-bottom:1px solid var(--border); margin-bottom:10px;}}
+    .pill {{ font-size: 12px; padding: 4px 8px; border:1px solid var(--border); border-radius: 999px; color: var(--muted); }}
+    .charts {{ display: grid; grid-template-columns: 1fr; gap: 12px; }}
+    @media (min-width: 1100px){{ .charts {{ grid-template-columns: 1fr 1fr; }} }}
+    .chart-img {{ width: 100%; height: auto; display: block; border-radius: 10px; border: 1px solid var(--border); background: #0f1115; }}
+    iframe {{ width: 100%; height: calc(100vh - 180px); border: 0; background: #0f1115; }}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">SPXW 0DTE</div>
+      <div class="small">Live chain + charts</div>
+      <div class="status">
+        <span class="dot"></span>
+        <div>
+          <div style="font-weight:600;">{status_text}</div>
+          <div class="small">Last run: {last_ts} — {last_msg}</div>
         </div>
+      </div>
+      <div class="nav">
+        <button class="btn active" id="tabTable">Table</button>
+        <button class="btn" id="tabCharts">Charts</button>
+      </div>
+      <div style="margin-top: 12px;" class="small">Charts auto-refresh while visible.</div>
+      <div style="margin-top: 18px;" class="small">
+        <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> ·
+        <a href="/api/history" style="color:var(--muted)">History</a> ·
+        <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
+      </div>
+    </aside>
 
-        <div class="grid">
-          <a class="btn" href="/table">
-            <div>
-              <div style="font-weight:600;">Live Table</div>
-              <small>Auto-refresh every {PULL_EVERY}s</small>
-            </div>
-          </a>
-
-          <a class="btn" href="/api/snapshot">
-            <div>
-              <div style="font-weight:600;">Current JSON</div>
-              <small>For programmatic access</small>
-            </div>
-          </a>
-
-          <a class="btn" href="/api/history">
-            <div>
-              <div style="font-weight:600;">History (JSON)</div>
-              <small>Saved every {SAVE_EVERY_MIN} minutes</small>
-            </div>
-          </a>
-
-          <a class="btn" href="/download/history.csv">
-            <div>
-              <div style="font-weight:600;">Download CSV</div>
-              <small>Quick export for analysis</small>
-            </div>
-          </a>
+    <main class="content">
+      <div id="viewTable" class="panel">
+        <div class="header">
+          <div><strong>Live Chain Table</strong></div>
+          <div class="pill">auto-refresh</div>
         </div>
-
-        <div class="foot">Page refreshes status every 30s.</div>
+        <iframe id="tableFrame" src="/table"></iframe>
       </div>
 
-      <script>setTimeout(()=>location.reload(), 30000);</script>
-    </body>
-    </html>
-    """
-    return Response(content=html, media_type="text/html")
+      <div id="viewCharts" class="panel" style="display:none">
+        <div class="header">
+          <div><strong>Volume & Open Interest</strong></div>
+          <div class="pill">green=calls &middot; red=puts</div>
+        </div>
+        <div class="charts">
+          <img id="imgVol" class="chart-img" alt="Volume by Strike" />
+          <img id="imgOI"  class="chart-img" alt="Open Interest by Strike" />
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const tabTable  = document.getElementById('tabTable');
+    const tabCharts = document.getElementById('tabCharts');
+    const viewTable = document.getElementById('viewTable');
+    const viewCharts= document.getElementById('viewCharts');
+    const imgVol    = document.getElementById('imgVol');
+    const imgOI     = document.getElementById('imgOI');
+
+    let chartsTimer = null;
+
+    function setActive(btn) {{
+      [tabTable, tabCharts].forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }}
+
+    function showTable(){{
+      setActive(tabTable);
+      viewTable.style.display = '';
+      viewCharts.style.display = 'none';
+      stopCharts();
+    }}
+
+    function showCharts(){{
+      setActive(tabCharts);
+      viewTable.style.display = 'none';
+      viewCharts.style.display = '';
+      startCharts();
+    }}
+
+    function refreshChartsOnce(){{
+      const t = Date.now();
+      imgVol.src = `/chart/volume?cb=${{t}}`;
+      imgOI.src  = `/chart/oi?cb=${{t}}`;
+    }}
+
+    function startCharts(){{
+      refreshChartsOnce();
+      if (chartsTimer) clearInterval(chartsTimer);
+      chartsTimer = setInterval(refreshChartsOnce, {PULL_EVERY * 1000});
+    }}
+
+    function stopCharts(){{
+      if (chartsTimer) {{ clearInterval(chartsTimer); chartsTimer = null; }}
+    }}
+
+    tabTable.addEventListener('click', showTable);
+    tabCharts.addEventListener('click', showCharts);
+
+    // default: show table
+    showTable();
+  </script>
+</body>
+</html>
+    """)
 
 @app.get("/api/snapshot")
 def snapshot():
-    if latest_df is None or latest_df.empty:
+    with _df_lock:
+        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+    if df is None or df.empty:
         return {"columns": DISPLAY_COLS, "rows": []}
-    df = latest_df.copy()
     df.columns = DISPLAY_COLS
     return {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
 
@@ -539,11 +662,14 @@ def html_table():
     except Exception:
         spot_val = None
 
-    if latest_df is None or latest_df.empty:
+    with _df_lock:
+        df_src = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+
+    if df_src is None or df_src.empty:
         body = "<p>No data yet. If market is open, it will appear within ~15s.</p>"
     else:
         # Build a compact view from canonical cols (no BID/ASK)
-        base = latest_df.copy()
+        base = df_src
         wanted = [
             "C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Last",
             "Strike",
@@ -576,7 +702,6 @@ def html_table():
                     return str(v)
             return str(v)
 
-        # manual HTML (no jinja2)
         thead = "<tr>" + "".join(f"<th>{h}</th>" for h in df.columns) + "</tr>"
         trs = []
         for i, row in enumerate(df.itertuples(index=False), start=0):
@@ -594,7 +719,6 @@ def html_table():
       table.table {{ border-collapse:collapse; width:100%; font-size:12px; }}
       .table th,.table td {{ border:1px solid #333; padding:6px 8px; text-align:right; }}
       .table th {{ background:#111; position:sticky; top:0; z-index:1; }}
-      /* Strike column is now 7th */
       .table td:nth-child(7), .table th:nth-child(7) {{ background:#111; text-align:center; }}
       .table td:first-child, .table th:first-child {{ text-align:center; }}
       .table tr.atm td {{ background:#1a2634; }}
@@ -608,7 +732,7 @@ def html_table():
         rows={rows}
       </div>
       {body}
-      <script>setTimeout(()=>location.reload(), 15000);</script>
+      <script>setTimeout(()=>location.reload(), {PULL_EVERY * 1000});</script>
     </body></html>"""
     return Response(content=page, media_type="text/html")
 

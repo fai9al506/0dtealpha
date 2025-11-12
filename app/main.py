@@ -1,7 +1,7 @@
 # 0DTE Alpha — live chain + 5-min history (FastAPI + APScheduler + Postgres)
 from fastapi import FastAPI, Response, Query
-from datetime import datetime, time as dtime
-import os, time, json, requests, pandas as pd, pytz
+from datetime import datetime, time as dtime, timedelta
+import os, time, json, requests, pandas as pd, pytz, base64
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
 
@@ -19,10 +19,15 @@ DB_URL  = os.getenv("DATABASE_URL", "")  # Railway Postgres
 if DB_URL.startswith("postgresql://"):
     DB_URL = DB_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
-# Cadence (can be overridden in Railway Variables)
-PULL_EVERY     = int(os.getenv("PULL_EVERY", "15"))     # seconds (live refresh)
-SAVE_EVERY_MIN = int(os.getenv("SAVE_EVERY_MIN", "5"))  # minutes (history cadence)
+# Cadence (override via Railway variables)
+PULL_EVERY     = int(os.getenv("PULL_EVERY", "15"))     # seconds
+SAVE_EVERY_MIN = int(os.getenv("SAVE_EVERY_MIN", "5"))  # minutes
 
+# Stream window like TS.py
+STREAM_SECONDS = float(os.getenv("STREAM_SECONDS", "2.5"))
+TARGET_STRIKES = int(os.getenv("TARGET_STRIKES", "40"))
+
+# ====== APP ======
 app = FastAPI()
 NY = pytz.timezone("US/Eastern")
 
@@ -51,22 +56,30 @@ def db_init():
         """))
     print("[db] ready", flush=True)
 
-# ====== Auth (refresh-token only, headless) ======
+# ====== Auth (refresh-token with early refresh like TS.py) ======
+REFRESH_EARLY_SEC = 300  # refresh 5 min before expiry
 _access_token = None
 _access_exp_at = 0.0
+_refresh_token = RTOKEN or ""  # allow rotating refresh tokens if TS returns a new one
+
+def _stamp_token(exp_in: int):
+    global _access_exp_at
+    now = time.time()
+    _access_exp_at = now + int(exp_in or 900) - REFRESH_EARLY_SEC
 
 def ts_access_token() -> str:
-    global _access_token, _access_exp_at
+    """Refresh with RTOKEN; rotate if API returns a new refresh_token (rare but allowed)."""
+    global _access_token, _refresh_token
     now = time.time()
     if _access_token and now < _access_exp_at - 60:
         return _access_token
-    if not (CID and SECRET and RTOKEN):
+    if not (CID and SECRET and _refresh_token):
         raise RuntimeError("Missing env: TS_CLIENT_ID / TS_CLIENT_SECRET / TS_REFRESH_TOKEN")
     r = requests.post(
         f"{AUTH_DOMAIN}/oauth/token",
         data={
             "grant_type": "refresh_token",
-            "refresh_token": RTOKEN,
+            "refresh_token": _refresh_token,
             "client_id": CID,
             "client_secret": SECRET,
         },
@@ -76,13 +89,35 @@ def ts_access_token() -> str:
         raise RuntimeError(f"token refresh [{r.status_code}] {r.text[:300]}")
     tok = r.json()
     _access_token = tok["access_token"]
-    _access_exp_at = now + int(tok.get("expires_in", 900))
+    if tok.get("refresh_token"):
+        # rotate if TradeStation returns a new one
+        _refresh_token = tok["refresh_token"]
+    _stamp_token(tok.get("expires_in", 900))
     print("[auth] token refreshed; expires_in:", tok.get("expires_in"), flush=True)
     return _access_token
 
 def api_get(path, params=None, stream=False, timeout=10):
-    hdrs = {"Authorization": f"Bearer {ts_access_token()}"}
-    r = requests.get(f"{BASE}{path}", headers=hdrs, params=params or {}, timeout=timeout, stream=stream)
+    """Auto-refresh, retry once on 401, mirror TS.py resilience."""
+    def do_req(h):
+        return requests.get(f"{BASE}{path}", headers=h, params=params or {}, timeout=timeout, stream=stream)
+    token = ts_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    r = do_req(headers)
+
+    # Retry once on 401 with a forced refresh
+    if r.status_code == 401:
+        try:
+            _ = ts_access_token()  # force refresh
+            headers["Authorization"] = f"Bearer {_access_token}"
+            r = do_req(headers)
+        except Exception:
+            pass
+
+    # Final status check
+    if stream:
+        if r.status_code != 200:
+            raise RuntimeError(f"STREAM {path} [{r.status_code}] {r.text[:300]}")
+        return r
     if r.status_code >= 400:
         raise RuntimeError(f"GET {path} [{r.status_code}] {r.text[:300]}")
     return r
@@ -100,16 +135,14 @@ def market_open_now() -> bool:
         return False
     return dtime(9,30) <= t.time() <= dtime(16,0)
 
-# ====== TS API ======
+# ====== TS API helpers ======
 def get_spx_last() -> float:
     js = api_get("/marketdata/quotes/%24SPX.X", timeout=8).json()
     for q in js.get("Quotes", []):
         if q.get("Symbol") == "$SPX.X":
             v = q.get("Last") or q.get("Close")
-            try:
-                return float(v)
-            except:
-                return 0.0
+            try: return float(v)
+            except: return 0.0
     return 0.0
 
 def get_0dte_exp() -> str:
@@ -121,13 +154,91 @@ def get_0dte_exp() -> str:
             if d == ymd:
                 return d
     except Exception as e:
-        print("[exp] failed:", e, flush=True)
+        print("[exp] lookup failed; using today", ymd, "|", e, flush=True)
     return ymd
 
-def snapshot_chain(exp_ymd: str, spot: float) -> list[dict]:
-    params = {
+def _expiration_variants(ymd: str):
+    yield ymd  # 2025-11-12
+    try:
+        yield datetime.strptime(ymd, "%Y-%m-%d").strftime("%m-%d-%Y")  # 11-12-2025
+    except Exception:
+        pass
+    yield ymd + "T00:00:00Z"
+
+def _fnum(x):
+    if x in (None, "", "-", "NaN", "nan"): return None
+    try: return float(str(x).replace(",",""))
+    except: return None
+
+def _consume_chain_stream(r, max_seconds: float) -> list[dict]:
+    out, start = [], time.time()
+    try:
+        for line in r.iter_lines(decode_unicode=True):
+            if not line:
+                if time.time() - start > max_seconds: break
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            # StreamStatus EndSnapshot usually means we've got the snapshot header/footer
+            if isinstance(obj, dict) and obj.get("StreamStatus") == "EndSnapshot":
+                break
+            if isinstance(obj, dict):
+                out.append(obj)
+            if time.time() - start > max_seconds:
+                break
+    finally:
+        try: r.close()
+        except Exception: pass
+    return out
+
+def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
+    """Stream-first (forgiving), fallback to snapshot; try multiple expiration formats."""
+    # 1) Stream
+    params_stream = {
+        "spreadType": "Single",
+        "enableGreeks": "true",
+        "priceCenter": f"{spot:.2f}" if spot else "",
+        "strikeProximity": 50,
+        "optionType": "All",
+        "strikeInterval": 1
+    }
+    last_err = None
+    for exp in _expiration_variants(exp_ymd):
+        try:
+            p = dict(params_stream); p["expiration"] = exp
+            r = api_get("/marketdata/stream/options/chains/%24SPXW.X", params=p, stream=True, timeout=8)
+            objs = _consume_chain_stream(r, max_seconds=STREAM_SECONDS)
+            if objs:
+                rows = []
+                for it in objs:
+                    legs = it.get("Legs") or []
+                    leg0 = legs[0] if legs else {}
+                    side = (leg0.get("OptionType") or it.get("OptionType") or "").lower()
+                    side = "C" if side.startswith("c") else "P" if side.startswith("p") else "?"
+                    rows.append({
+                        "Type": side,
+                        "Strike": _fnum(leg0.get("StrikePrice")),
+                        "Bid": _fnum(it.get("Bid")), "Ask": _fnum(it.get("Ask")), "Last": _fnum(it.get("Last")),
+                        "BidSize": it.get("BidSize"), "AskSize": it.get("AskSize"),
+                        "Delta": _fnum(it.get("Delta") or it.get("TheoDelta")),
+                        "Gamma": _fnum(it.get("Gamma") or it.get("TheoGamma")),
+                        "Theta": _fnum(it.get("Theta") or it.get("TheoTheta")),
+                        "IV": _fnum(it.get("ImpliedVolatility") or it.get("TheoIV")),
+                        "Vega": _fnum(it.get("Vega")),
+                        "Volume": it.get("TotalVolume") or it.get("Volume"),
+                        "OpenInterest": it.get("OpenInterest") or it.get("DailyOpenInterest"),
+                    })
+                if rows:
+                    return rows
+        except Exception as e:
+            last_err = e
+            continue
+
+    # 2) Snapshot fallback
+    params_snap = {
         "symbol": "$SPXW.X",
-        "expiration": exp_ymd,
         "enableGreeks": "true",
         "optionType": "All",
         "priceCenter": f"{spot:.2f}" if spot else "",
@@ -135,32 +246,38 @@ def snapshot_chain(exp_ymd: str, spot: float) -> list[dict]:
         "strikeInterval": 1,
         "spreadType": "Single",
     }
-    js = api_get("/marketdata/options/chains", params=params, timeout=15).json()
-    rows = []
-    def fnum(x):
-        if x in (None, "", "-", "NaN", "nan"): return None
-        try: return float(str(x).replace(",",""))
-        except: return None
-    for it in js.get("Options", []):
-        legs = it.get("Legs") or []
-        leg0 = legs[0] if legs else {}
-        side = (leg0.get("OptionType") or it.get("OptionType") or "").lower()
-        side = "C" if side.startswith("c") else "P" if side.startswith("p") else "?"
-        rows.append({
-            "Type": side,
-            "Strike": fnum(leg0.get("StrikePrice")),
-            "Bid": fnum(it.get("Bid")), "Ask": fnum(it.get("Ask")), "Last": fnum(it.get("Last")),
-            "BidSize": it.get("BidSize"), "AskSize": it.get("AskSize"),
-            "Delta": fnum(it.get("Delta") or it.get("TheoDelta")),
-            "Gamma": fnum(it.get("Gamma") or it.get("TheoGamma")),
-            "Theta": fnum(it.get("Theta") or it.get("TheoTheta")),
-            "IV": fnum(it.get("ImpliedVolatility") or it.get("TheoIV")),
-            "Vega": fnum(it.get("Vega")),
-            "Volume": it.get("TotalVolume") or it.get("Volume"),
-            "OpenInterest": it.get("OpenInterest") or it.get("DailyOpenInterest"),
-        })
-    return rows
+    for exp in _expiration_variants(exp_ymd):
+        try:
+            p = dict(params_snap); p["expiration"] = exp
+            js = api_get("/marketdata/options/chains", params=p, timeout=12).json()
+            rows = []
+            for it in js.get("Options", []):
+                legs = it.get("Legs") or []
+                leg0 = legs[0] if legs else {}
+                side = (leg0.get("OptionType") or it.get("OptionType") or "").lower()
+                side = "C" if side.startswith("c") else "P" if side.startswith("p") else "?"
+                rows.append({
+                    "Type": side,
+                    "Strike": _fnum(leg0.get("StrikePrice")),
+                    "Bid": _fnum(it.get("Bid")), "Ask": _fnum(it.get("Ask")), "Last": _fnum(it.get("Last")),
+                    "BidSize": it.get("BidSize"), "AskSize": it.get("AskSize"),
+                    "Delta": _fnum(it.get("Delta") or it.get("TheoDelta")),
+                    "Gamma": _fnum(it.get("Gamma") or it.get("TheoGamma")),
+                    "Theta": _fnum(it.get("Theta") or it.get("TheoTheta")),
+                    "IV": _fnum(it.get("ImpliedVolatility") or it.get("TheoIV")),
+                    "Vega": _fnum(it.get("Vega")),
+                    "Volume": it.get("TotalVolume") or it.get("Volume"),
+                    "OpenInterest": it.get("OpenInterest") or it.get("DailyOpenInterest"),
+                })
+            if rows:
+                return rows
+        except Exception as e:
+            last_err = e
+            continue
 
+    raise RuntimeError(f"SPXW chain fetch failed (formats tried); last_err={last_err}")
+
+# ====== Frame shaping (TS.py style) ======
 CANONICAL_COLS = [
     "C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Bid","C_BidSize","C_Ask","C_AskSize","C_Last",
     "Strike",
@@ -192,7 +309,16 @@ def to_side_by_side(rows: list[dict]) -> pd.DataFrame:
             "P_Delta": p.get("Delta"), "P_Gamma": p.get("Gamma"), "P_IV": p.get("IV"),
             "P_OpenInterest": p.get("OpenInterest"), "P_Volume": p.get("Volume"),
         })
-    return pd.DataFrame.from_records(recs, columns=CANONICAL_COLS).sort_values("Strike").reset_index(drop=True)
+    df = pd.DataFrame.from_records(recs, columns=CANONICAL_COLS)
+    if not df.empty:
+        df = df.sort_values("Strike").reset_index(drop=True)
+    return df
+
+def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
+    if df is None or df.empty or not spot:
+        return df
+    idx = (df["Strike"] - spot).abs().sort_values().index[:n]
+    return df.loc[sorted(idx)].reset_index(drop=True)
 
 # ====== Jobs ======
 def run_market_job():
@@ -205,14 +331,12 @@ def run_market_job():
 
         spot = get_spx_last()
         exp  = get_0dte_exp()
-        rows = snapshot_chain(exp, spot)
+        rows = get_chain_rows(exp, spot)
         df   = to_side_by_side(rows)
-
-        if spot and not df.empty:
-            df = df.iloc[(df["Strike"]-spot).abs().sort_values().index[:40]].sort_values("Strike").reset_index(drop=True)
+        df   = pick_centered(df, spot, TARGET_STRIKES)
 
         latest_df = df
-        last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot,2)} rows={len(df)}"}
+        last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={len(df)}"}
         print("[pull] OK", last_run_status["msg"], flush=True)
     except Exception as e:
         last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}
@@ -223,6 +347,7 @@ def save_history_job():
     global _last_saved_at
     if not engine or latest_df is None or latest_df.empty:
         return
+    # avoid hammering DB if scheduler overlaps or pulls got too frequent
     if time.time() - _last_saved_at < 60:
         return
     try:
@@ -259,7 +384,6 @@ def start_scheduler():
     return sch
 
 REQUIRED_ENVS = ["TS_CLIENT_ID","TS_CLIENT_SECRET","TS_REFRESH_TOKEN","DATABASE_URL"]
-
 def missing_envs():
     return [k for k in REQUIRED_ENVS if not os.getenv(k)]
 

@@ -542,14 +542,21 @@ def html_table():
     if latest_df is None or latest_df.empty:
         body = "<p>No data yet. If market is open, it will appear within ~15s.</p>"
     else:
-        df = latest_df.copy()
-        df.columns = DISPLAY_COLS
+        # Build a compact view from canonical cols (no BID/ASK)
+        base = latest_df.copy()
+        wanted = [
+            "C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Last",
+            "Strike",
+            "P_Last","P_Delta","P_Gamma","P_IV","P_OpenInterest","P_Volume",
+        ]
+        df = base[wanted].copy()
+        df.columns = [
+            "Volume","Open Int","IV","Gamma","Delta","LAST",
+            "Strike",
+            "LAST","Delta","Gamma","IV","Open Int","Volume",
+        ]
 
-        # --- remove columns BID / BID QTY / ASK / ASK QTY (both sides) ---
-        drop_cols = {"BID", "BID QTY", "ASK", "ASK QTY"}
-        df = df[[c for c in df.columns if c not in drop_cols]]
-
-        # ATM (nearest-to-spot)
+        # ATM row (nearest-to-spot)
         atm_idx = None
         if spot_val:
             try:
@@ -557,23 +564,19 @@ def html_table():
             except Exception:
                 atm_idx = None
 
-        # Columns to comma-format
+        # format with thousands for volumes & open interest
         comma_cols = {"Volume", "Open Int"}
-
         def fmt_val(col, v):
-            if pd.isna(v):
-                return ""
+            if pd.isna(v): return ""
             if col in comma_cols:
                 try:
                     f = float(v)
-                    if abs(f - int(f)) < 1e-9:
-                        return f"{int(f):,}"
-                    return f"{f:,.2f}"
+                    return f"{int(f):,}" if abs(f - int(f)) < 1e-9 else f"{f:,.2f}"
                 except Exception:
                     return str(v)
             return str(v)
 
-        # Build HTML table manually
+        # manual HTML (no jinja2)
         thead = "<tr>" + "".join(f"<th>{h}</th>" for h in df.columns) + "</tr>"
         trs = []
         for i, row in enumerate(df.itertuples(index=False), start=0):
@@ -585,21 +588,15 @@ def html_table():
     page = f"""
     <html><head><meta charset="utf-8"><title>0DTE Alpha</title>
     <style>
-      body {{
-        font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-        background:#0a0a0a; color:#e5e5e5; padding:20px;
-      }}
-      .last {{
-        color:#9ca3af; font-size:12px; line-height:1.25; margin:0 0 10px 0;
-      }}
+      body {{ font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+              background:#0a0a0a; color:#e5e5e5; padding:20px; }}
+      .last {{ color:#9ca3af; font-size:12px; line-height:1.25; margin:0 0 10px 0; }}
       table.table {{ border-collapse:collapse; width:100%; font-size:12px; }}
       .table th,.table td {{ border:1px solid #333; padding:6px 8px; text-align:right; }}
       .table th {{ background:#111; position:sticky; top:0; z-index:1; }}
-      /* Shade Strike column (now column 7 after drops) */
+      /* Strike column is now 7th */
       .table td:nth-child(7), .table th:nth-child(7) {{ background:#111; text-align:center; }}
-      /* Leftmost column centered */
       .table td:first-child, .table th:first-child {{ text-align:center; }}
-      /* ATM row highlight */
       .table tr.atm td {{ background:#1a2634; }}
     </style>
     </head><body>

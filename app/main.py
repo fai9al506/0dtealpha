@@ -607,8 +607,8 @@ DASH_HTML_TEMPLATE = """
             <h3>SPX Price — TradingView</h3>
             <div id="tvContainer" class="plot"></div>
           </div>
-          <div class="card"><h3>Net GEX by Strike</h3><div id="gexSidePlot" class="plot"></div></div>
-          <div class="card"><h3>VOL by Strike (Calls vs Puts)</h3><div id="volSidePlot" class="plot"></div></div>
+          <div class="card"><h3>Net GEX</h3><div id="gexSidePlot" class="plot"></div></div>
+          <div class="card"><h3>VOL</h3><div id="volSidePlot" class="plot"></div></div>
         </div>
       </div>
     </main>
@@ -721,13 +721,35 @@ DASH_HTML_TEMPLATE = """
           volSideDiv=document.getElementById('volSidePlot');
     let spotTimer=null;
     let tvInitialized=false;
+    let tvWidget=null;
+    let spotYRangeOverride=null;
+
+    function applySpotYRange(from, to){
+      if (!isFinite(from) || !isFinite(to)) return;
+      if (from === to) {
+        const pad0 = Math.max(1, Math.abs(from) * 0.001);
+        from -= pad0; to += pad0;
+      }
+      const pad = (to - from) * 0.02;
+      const range = [from - pad, to + pad];
+      spotYRangeOverride = { from, to };
+      if (typeof Plotly !== 'undefined') {
+        if (gexSideDiv && gexSideDiv.data) {
+          Plotly.relayout(gexSideDiv, {'yaxis.range': range});
+        }
+        if (volSideDiv && volSideDiv.data) {
+          Plotly.relayout(volSideDiv, {'yaxis.range': range});
+        }
+      }
+    }
 
     function renderTV(){
       if (tvInitialized) return;
       if (typeof TradingView === 'undefined') return;
       if (!document.getElementById('tvContainer')) return;
       tvInitialized = true;
-      new TradingView.widget({
+
+      tvWidget = new TradingView.widget({
         "symbol": "BLACKBULL:SPX500",
         "interval": "3",
         "container_id": "tvContainer",
@@ -739,13 +761,49 @@ DASH_HTML_TEMPLATE = """
         "hide_side_toolbar": false,
         "hide_top_toolbar": false
       });
+
+      if (tvWidget && typeof tvWidget.onChartReady === 'function') {
+        tvWidget.onChartReady(function(){
+          try {
+            const chart = (typeof tvWidget.activeChart === 'function')
+              ? tvWidget.activeChart()
+              : (typeof tvWidget.chart === 'function' ? tvWidget.chart() : null);
+            if (!chart || !chart.getPanes) return;
+            const panes = chart.getPanes();
+            const pane0 = panes && panes.length ? panes[0] : null;
+            if (!pane0) return;
+
+            const priceScale =
+              (pane0.getMainSourcePriceScale && pane0.getMainSourcePriceScale()) ||
+              (pane0.getRightPriceScales && pane0.getRightPriceScales()[0]) ||
+              null;
+            if (!priceScale || !priceScale.getVisiblePriceRange) return;
+
+            function syncFromTV(){
+              const vr = priceScale.getVisiblePriceRange();
+              if (!vr || typeof vr.from !== 'number' || typeof vr.to !== 'number') return;
+              applySpotYRange(vr.from, vr.to);
+            }
+            syncFromTV();
+            setInterval(syncFromTV, 2000);
+          } catch(e) {
+            if (console && console.warn) console.warn('TradingView sync error', e);
+          }
+        });
+      }
     }
 
     function renderSpotFromSeries(data){
       const strikes = data.strikes || [];
       if (!strikes.length) return;
-      const yMin = Math.min(...strikes), yMax = Math.max(...strikes);
-      const pad = (yMax - yMin) * 0.02;
+
+      let yMin = Math.min(...strikes), yMax = Math.max(...strikes);
+      if (spotYRangeOverride && isFinite(spotYRangeOverride.from) && isFinite(spotYRangeOverride.to)) {
+        yMin = spotYRangeOverride.from;
+        yMax = spotYRangeOverride.to;
+      }
+      let pad = (yMax - yMin) * 0.02;
+      if (!isFinite(pad) || pad <= 0) pad = 1;
 
       const gexNet = data.netGEX || [];
       const gMax = Math.max(1, ...gexNet.map(v=>Math.abs(v))) * 1.1;
@@ -894,7 +952,6 @@ def spxw_dashboard():
     status_text = "Market OPEN" if open_now else "Market CLOSED"
     status_color = "#10b981" if open_now else "#ef4444"
 
-    # Make sure these are always strings
     last_ts  = last_run_status.get("ts")  or ""
     last_msg = last_run_status.get("msg") or ""
 
@@ -905,4 +962,3 @@ def spxw_dashboard():
             .replace("__LAST_MSG__", str(last_msg))
             .replace("__PULL_MS__", str(PULL_EVERY * 1000)))
     return HTMLResponse(html)
-

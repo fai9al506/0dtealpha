@@ -446,9 +446,10 @@ def api_series():
     # GEX = Gamma * OI * 100
     c_gamma  = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
     p_gamma  = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
-    call_gex = (c_gamma * call_oi * 100.0).astype(float)
-    put_gex  = (p_gamma * put_oi  * 100.0).astype(float)
-    net_gex  = (call_gex - put_gex).astype(float)
+    call_gex = ( c_gamma * call_oi * 100.0).astype(float)
+    put_gex  = (-p_gamma * put_oi  * 100.0).astype(float)
+    net_gex  = (call_gex + put_gex).astype(float)
+
 
     # read spot from last_run_status
     spot = None

@@ -22,7 +22,7 @@ DB_URL  = os.getenv("DATABASE_URL", "")  # Railway Postgres
 if DB_URL.startswith("postgresql://"):
     DB_URL = DB_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
-# Cadence (HARDCODED)
+# Cadence
 PULL_EVERY     = 30   # seconds
 SAVE_EVERY_MIN = 5    # minutes
 
@@ -39,8 +39,8 @@ last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
 _df_lock = Lock()
 
-# keep ~8h at 30s cadence => 960 points (+some room)
-spot_buf = deque(maxlen=1024)
+# keep ~8h at 30s cadence => 960 points (+extra)
+spot_buf = deque(maxlen=1200)
 
 # ====== DB ======
 engine = create_engine(DB_URL, pool_pre_ping=True) if DB_URL else None
@@ -140,10 +140,8 @@ def get_spx_last() -> float:
     for q in js.get("Quotes", []):
         if q.get("Symbol") == "$SPX.X":
             v = q.get("Last") or q.get("Close")
-            try:
-                return float(v)
-            except:
-                return 0.0
+            try: return float(v)
+            except: return 0.0
     return 0.0
 
 def get_0dte_exp() -> str:
@@ -443,7 +441,14 @@ def api_series():
 
 @app.get("/api/spot_data")
 def api_spot_data():
-    """Spot view: chain (strikes + netGEX + call/put VOL) and 3m candles for last 8h."""
+    """
+    Spot view: always returns usable arrays.
+    - strikes (list[float])
+    - chain (list[{strike,gex}])
+    - callVol / putVol (lists)
+    - candles (optional list of OHLC)
+    - line (always present: list[{t, v}] for price line fallback)
+    """
     with _df_lock:
         df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
         spot_list = list(spot_buf)
@@ -466,40 +471,42 @@ def api_spot_data():
         cvol  = call_vol.tolist()
         pvol  = put_vol.tolist()
     else:
+        # synthetic window around a guess (keeps UI alive after cold boot)
         base_strike = 6300
-        strikes_list = [base_strike + i*25 for i in range(-30, 30)]
+        strikes_list = [base_strike + i*25 for i in range(-30, 31)]
         for i, s in enumerate(strikes_list):
             chain.append({"strike": s, "gex": math.sin(i/6.0)*2_000_000})
             cvol.append( 2000 + int(1500*abs(math.cos(i/7.0))) )
             pvol.append( 1800 + int(1300*abs(math.sin(i/8.0))) )
 
-    # 3-minute candles over last 8h; if empty, synthesize one flat candle at last spot
-    candles = []
+    # Candles (may be empty), plus an always-present 1m line
+    candles, line = [], []
     if spot_list:
         dfspot = pd.DataFrame(spot_list)
         dfspot["ts"] = pd.to_datetime(dfspot["ts"], unit="ms", utc=True)
         cutoff = pd.Timestamp.utcnow().tz_localize("UTC") - pd.Timedelta(hours=8)
         dfspot = dfspot[dfspot["ts"] >= cutoff]
         if not dfspot.empty:
-            res = (dfspot
-                   .set_index("ts")["spot"]
-                   .resample("3T")
-                   .agg(["first","max","min","last"])
-                   .dropna(how="all"))
+            # 3m candles
+            res = (dfspot.set_index("ts")["spot"]
+                   .resample("3T").agg(["first","max","min","last"]).dropna(how="all"))
             for idx, row in res.iterrows():
                 o = float(row["first"] if pd.notna(row["first"]) else row["last"])
                 h = float(row["max"]   if pd.notna(row["max"])   else o)
                 l = float(row["min"]   if pd.notna(row["min"])   else o)
                 c = float(row["last"]  if pd.notna(row["last"])  else o)
                 candles.append({"t": int(idx.timestamp()*1000), "o": o, "h": h, "l": l, "c": c})
-    if not candles:
-        last_spot = spot_list[-1]["spot"] if spot_list else None
-        if last_spot:
-            t = int(datetime.now(timezone.utc).timestamp()*1000)
-            candles = [{"t": t-180000, "o": last_spot, "h": last_spot, "l": last_spot, "c": last_spot},
-                       {"t": t,        "o": last_spot, "h": last_spot, "l": last_spot, "c": last_spot}]
+            # 1m line (always)
+            res1 = dfspot.set_index("ts")["spot"].resample("1T").last().dropna()
+            line = [{"t": int(idx.timestamp()*1000), "v": float(v)} for idx, v in res1.items()]
+    if not line and spot_list:
+        # minimal fallback line from last point
+        t = int(datetime.now(timezone.utc).timestamp()*1000)
+        last_spot = float(spot_list[-1]["spot"])
+        line = [{"t": t-120000, "v": last_spot}, {"t": t, "v": last_spot}]
 
-    return {"strikes": strikes_list, "chain": chain, "callVol": cvol, "putVol": pvol, "candles": candles}
+    return {"strikes": strikes_list, "chain": chain, "callVol": cvol, "putVol": pvol,
+            "candles": candles, "line": line}
 
 @app.get("/api/health")
 def api_health():
@@ -551,7 +558,7 @@ def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
     csv = df.to_csv(index=False)
     return Response(csv, media_type="text/csv", headers={"Content-Disposition":"attachment; filename=history.csv"})
 
-# ====== TABLE (unchanged layout; compact columns) ======
+# ====== TABLE ======
 @app.get("/table")
 def html_table():
     ts  = last_run_status.get("ts") or ""
@@ -627,7 +634,7 @@ def html_table():
     </body></html>"""
     return Response(content=page, media_type="text/html")
 
-# ====== DASHBOARD (Spot fixed: candlesticks, symmetric GEX, non-negative VOL) ======
+# ====== DASHBOARD ======
 @app.get("/", response_class=HTMLResponse)
 def spxw_dashboard():
     open_now = market_open_now()
@@ -718,10 +725,10 @@ def spxw_dashboard():
       </div>
 
       <div id="viewSpot" class="panel" style="display:none">
-        <div class="header"><div><strong>Spot</strong></div><div class="pill">SPX 3-min candles (8h) + GEX & VOL (shared Y)</div></div>
+        <div class="header"><div><strong>Spot</strong></div><div class="pill">SPX 3-min candles (when available) or 1-min line + GEX & VOL</div></div>
         <div class="spot-grid">
-          <div class="card"><h3>SPX Price — 3m Candles (8h)</h3><div id="pricePlot" class="plot"></div></div>
-          <div class="card"><h3>GEX by Strike</h3><div id="gexSidePlot" class="plot"></div></div>
+          <div class="card"><h3>SPX Price — last 8h</h3><div id="pricePlot" class="plot"></div></div>
+          <div class="card"><h3>Net GEX by Strike</h3><div id="gexSidePlot" class="plot"></div></div>
           <div class="card"><h3>VOL by Strike (Calls vs Puts)</h3><div id="volSidePlot" class="plot"></div></div>
         </div>
       </div>
@@ -794,18 +801,18 @@ def spxw_dashboard():
     function startCharts(){{ drawOrUpdate(); if (chartsTimer) clearInterval(chartsTimer); chartsTimer=setInterval(drawOrUpdate, PULL_EVERY); }}
     function stopCharts(){{ if (chartsTimer){{ clearInterval(chartsTimer); chartsTimer=null; }} }}
 
-    // ===== Spot (fixed) =====
+    // ===== Spot (robust) =====
     const priceDiv=document.getElementById('pricePlot'), gexSideDiv=document.getElementById('gexSidePlot'), volSideDiv=document.getElementById('volSidePlot');
     let spotTimer=null;
 
     async function fetchSpotData(){{ const r=await fetch('/api/spot_data',{{cache:'no-store'}}); return await r.json(); }}
 
-    function renderSpot(data){{ 
+    function renderSpot(data){{
       const strikes = data.strikes||[];
       if (!strikes.length) return;
       const yMin=Math.min(...strikes), yMax=Math.max(...strikes), pad=(yMax-yMin)*0.02;
 
-      // GEX: symmetric axis around 0
+      // GEX (symmetric)
       const gexNet = (data.chain||[]).map(d=>d.gex||0);
       const gMax = Math.max(1, ...gexNet.map(v=>Math.abs(v))) * 1.1;
       const gex = {{type:'bar', orientation:'h', x:gexNet, y:strikes, marker:{{color:'#60a5fa'}}, hovertemplate:'Strike %{{y}}<br>Net GEX %{{x:.0f}}<extra></extra>'}};
@@ -816,7 +823,7 @@ def spxw_dashboard():
         font:{{color:'#e6e7e9'}}
       }}, {{displayModeBar:false,responsive:true}});
 
-      // VOL: calls vs puts, x >= 0
+      // VOL
       const vMax = Math.max(1, ...(data.callVol||[0]), ...(data.putVol||[0])) * 1.1;
       const volCalls = {{type:'bar', orientation:'h', name:'Calls', x:(data.callVol||[]), y:strikes, marker:{{color:'#22c55e'}}, hovertemplate:'Strike %{{y}}<br>Calls %{{x}}<extra></extra>'}};
       const volPuts  = {{type:'bar', orientation:'h', name:'Puts',  x:(data.putVol||[]),  y:strikes, marker:{{color:'#ef4444'}}, hovertemplate:'Strike %{{y}}<br>Puts %{{x}}<extra></extra>'}};
@@ -827,23 +834,32 @@ def spxw_dashboard():
         font:{{color:'#e6e7e9'}}
       }}, {{displayModeBar:false,responsive:true}});
 
-      // Price: 3-min candles (uses same Y range)
+      // PRICE: prefer candles if we have them, else 1-min line (always present)
       const candles = data.candles||[];
-      if (candles.length){{
-        const trace = {{
+      const line = data.line||[];
+      let plotData = [], layout={{}};
+      if (candles.length >= 2){{
+        plotData = [{{
           type:'candlestick',
           x: candles.map(d=>new Date(d.t)), open:candles.map(d=>d.o),
           high:candles.map(d=>d.h), low:candles.map(d=>d.l), close:candles.map(d=>d.c),
           increasing:{{line:{{color:'#22c55e'}}}}, decreasing:{{line:{{color:'#ef4444'}}}},
           hovertemplate:'%{{x|%H:%M}}<br>O %{{open:.2f}} H %{{high:.2f}}<br>L %{{low:.2f}} C %{{close:.2f}}<extra></extra>'
-        }};
-        Plotly.react(priceDiv, [trace], {{
-          margin:{{l:60,r:16,t:10,b:30}}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
-          xaxis:{{title:'Time (last 8h)', gridcolor:'#20242a'}},
-          yaxis:{{title:'Price', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'}},
-          font:{{color:'#e6e7e9'}}
-        }}, {{displayModeBar:false,responsive:true}});
+        }}];
+      }} else {{
+        plotData = [{{
+          type:'scattergl', mode:'lines',
+          x: line.map(d=>new Date(d.t)), y: line.map(d=>d.v),
+          line:{{width:1.6}}, hovertemplate:'%{{x|%H:%M}} — %{{y:.2f}}<extra></extra>'
+        }}];
       }}
+      layout = {{
+        margin:{{l:60,r:16,t:10,b:30}}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+        xaxis:{{title:'Time (last 8h)', gridcolor:'#20242a'}},
+        yaxis:{{title:'Price', gridcolor:'#20242a'}},
+        font:{{color:'#e6e7e9'}}
+      }};
+      Plotly.react(priceDiv, plotData, layout, {{displayModeBar:false,responsive:true}});
     }}
 
     async function tickSpot(){{ const data=await fetchSpotData(); renderSpot(data); }}

@@ -545,7 +545,7 @@ def html_table():
         df = latest_df.copy()
         df.columns = DISPLAY_COLS
 
-        # locate ATM row (nearest-to-spot)
+        # ATM row (nearest to spot)
         atm_idx = None
         if spot_val:
             try:
@@ -553,39 +553,32 @@ def html_table():
             except Exception:
                 atm_idx = None
 
-        # which columns to show with thousand separators (by index, not name)
-        # DISPLAY_COLS order:
-        #  0 Volume ...  10 LAST | 11 Strike | ... 19 Open Int | 20 Volume
-        fmt_idxs = [0, 19, 20]   # first Volume, put-side Open Int, put-side Volume
-        # If you also want call-side Open Int (col 1), include it:
-        fmt_idxs.insert(1, 1)    # now [0,1,19,20]
+        # Columns to comma-format
+        comma_cols = {"Volume", "Open Int"}
 
-        def fmt_commas(x):
-            try:
-                if pd.isna(x):
-                    return ""
-                v = float(x)
-                if abs(v - int(v)) < 1e-9:
-                    return f"{int(v):,}"
-                return f"{v:,.2f}"
-            except Exception:
-                return x
+        def fmt_val(col, v):
+            if pd.isna(v):
+                return ""
+            if col in comma_cols:
+                try:
+                    f = float(v)
+                    if abs(f - int(f)) < 1e-9:
+                        return f"{int(f):,}"
+                    return f"{f:,.2f}"
+                except Exception:
+                    return str(v)
+            return str(v)
 
-        # Styler with per-subset formatter and ATM row highlight
-        subset_cols = df.columns[fmt_idxs]
-        def highlight_atm(row):
-            if atm_idx is not None and row.name == atm_idx:
-                return ["background-color:#1a2634;"] * len(row)
-            return [""] * len(row)
-
-        sty = (
-            df.style
-              .hide(axis="index")
-              .format(fmt_commas, subset=pd.IndexSlice[:, subset_cols])
-              .apply(highlight_atm, axis=1)
-        )
-
-        body = sty.to_html().replace('class="dataframe"', 'class="table"')
+        # Build HTML table manually (no Styler / jinja2 dependency)
+        thead = "<tr>" + "".join(f"<th>{h}</th>" for h in df.columns) + "</tr>"
+        trs = []
+        for i, row in enumerate(df.itertuples(index=False), start=0):
+            cls = ' class="atm"' if (atm_idx is not None and i == atm_idx) else ""
+            tds = []
+            for col, v in zip(df.columns, row):
+                tds.append(f"<td>{fmt_val(col, v)}</td>")
+            trs.append(f"<tr{cls}>" + "".join(tds) + "</tr>")
+        body = f'<table class="table"><thead>{thead}</thead><tbody>{"".join(trs)}</tbody></table>'
 
     page = f"""
     <html><head><meta charset="utf-8"><title>0DTE Alpha</title>
@@ -597,21 +590,15 @@ def html_table():
       .last {{
         color:#9ca3af; font-size:12px; line-height:1.25; margin:0 0 10px 0;
       }}
-      table.table {{
-        border-collapse:collapse; width:100%; font-size:12px;
-      }}
-      .table th,.table td {{
-        border:1px solid #333; padding:6px 8px; text-align:right;
-      }}
-      .table th {{
-        background:#111; position:sticky; top:0; z-index:1;
-      }}
-      /* Shade Strike column like header */
-      .table td:nth-child(11), .table th:nth-child(11) {{
-        background:#111; text-align:center;
-      }}
-      /* Leftmost column centered */
+      table.table {{ border-collapse:collapse; width:100%; font-size:12px; }}
+      .table th,.table td {{ border:1px solid #333; padding:6px 8px; text-align:right; }}
+      .table th {{ background:#111; position:sticky; top:0; z-index:1; }}
+      /* Shade Strike column (11th) like header for call/put split */
+      .table td:nth-child(11), .table th:nth-child(11) {{ background:#111; text-align:center; }}
+      /* Leftmost column centered (C Volume) */
       .table td:first-child, .table th:first-child {{ text-align:center; }}
+      /* ATM row highlight */
+      .table tr.atm td {{ background:#1a2634; }}
     </style>
     </head><body>
       <h2>SPXW 0DTE — live table</h2>
@@ -625,8 +612,6 @@ def html_table():
       <script>setTimeout(()=>location.reload(), 15000);</script>
     </body></html>"""
     return Response(content=page, media_type="text/html")
-
-
 
 @app.get("/api/history")
 def api_history(limit: int = Query(288, ge=1, le=5000)):

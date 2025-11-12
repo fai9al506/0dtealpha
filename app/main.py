@@ -217,7 +217,7 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
                         "Type": side,
                         "Strike": _fnum(leg0.get("StrikePrice")),
                         "Bid": _fnum(it.get("Bid")), "Ask": _fnum(it.get("Ask")), "Last": _fnum(it.get("Last")),
-                        "BidSize": it.get("BidSize"), "AskSize": it.get("AskSize"),
+                        "BidSize": it.get("BidSize"), "AskSize": it.get("AskSize")),
                         "Delta": _fnum(it.get("Delta") or it.get("TheoDelta")),
                         "Gamma": _fnum(it.get("Gamma") or it.get("TheoGamma")),
                         "Theta": _fnum(it.get("Theta") or it.get("TheoTheta")),
@@ -255,7 +255,7 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
                     "Type": side,
                     "Strike": _fnum(leg0.get("StrikePrice")),
                     "Bid": _fnum(it.get("Bid")), "Ask": _fnum(it.get("Ask")), "Last": _fnum(it.get("Last")),
-                    "BidSize": it.get("BidSize"), "AskSize": it.get("AskSize"),
+                    "BidSize": it.get("BidSize"), "AskSize": it.get("AskSize")),
                     "Delta": _fnum(it.get("Delta") or it.get("TheoDelta")),
                     "Gamma": _fnum(it.get("Gamma") or it.get("TheoGamma")),
                     "Theta": _fnum(it.get("Theta") or it.get("TheoTheta")),
@@ -733,30 +733,35 @@ def spxw_dashboard():
     // Tabs
     const tabTable=document.getElementById('tabTable'), tabCharts=document.getElementById('tabCharts'), tabSpot=document.getElementById('tabSpot');
     const viewTable=document.getElementById('viewTable'), viewCharts=document.getElementById('viewCharts'), viewSpot=document.getElementById('viewSpot');
-    function setActive(btn){[tabTable,tabCharts,tabSpot].forEach(b=>b.classList.remove('active')); btn.classList.add('active');}
-    function showTable(){setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewSpot.style.display='none'; stopCharts(); stopSpot();}
-    function showCharts(){setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewSpot.style.display='none'; startCharts(); stopSpot();}
-    function showSpot(){setActive(tabSpot); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display=''; startSpot(); stopCharts();}
+    function setActive(btn){{[tabTable,tabCharts,tabSpot].forEach(b=>b.classList.remove('active')); btn.classList.add('active');}}
+    function showTable(){{setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewSpot.style.display='none'; stopCharts(); stopSpot();}}
+    function showCharts(){{setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewSpot.style.display='none'; startCharts(); stopSpot();}}
+    function showSpot(){{setActive(tabSpot); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display=''; startSpot(); stopCharts();}}
     tabTable.addEventListener('click', showTable); tabCharts.addEventListener('click', showCharts); tabSpot.addEventListener('click', showSpot);
 
-    // ===== Main charts (unchanged) =====
+    // ===== Main charts =====
     const volDiv=document.getElementById('volChart'), oiDiv=document.getElementById('oiChart'), gexDiv=document.getElementById('gexChart');
     let chartsTimer=null, firstDraw=true;
 
-    async function fetchSeries(){ const r=await fetch('/api/series',{cache:'no-store'}); return await r.json(); }
-    function verticalSpotShape(spot,yMax){ if(spot==null) return null; return {type:'line',x0:spot,x1:spot,y0:0,y1:yMax,line:{color:'#9aa0a6',width:2,dash:'dot'},xref:'x',yref:'y'}; }
-    function buildLayout(title,xTitle,yTitle,spot,yMax){ const shape=verticalSpotShape(spot,yMax); return { title:{text:title,font:{size:16}}, xaxis:{title:xTitle,gridcolor:'#20242a',tickfont:{size:11}}, yaxis:{title:yTitle,gridcolor:'#20242a',tickfont:{size:11}}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115', font:{color:'#e6e7e9'}, margin:{t:40,r:16,b:48,l:48}, barmode:'group', shapes:shape?[shape]:[] }; }
-    function tracesForBars(strikes,callArr,putArr,yLabel){ return [
-      {type:'bar', name:'Calls '+yLabel, x:strikes, y:callArr, marker:{color:'#22c55e'}, offsetgroup:'calls', hovertemplate:"Strike %{x}<br>Calls: %{y}<extra></extra>"},
-      {type:'bar', name:'Puts '+yLabel,  x:strikes, y:putArr,  marker:{color:'#ef4444'}, offsetgroup:'puts',  hovertemplate:"Strike %{x}<br>Puts: %{y}<extra></extra>"}
-    ];}
-    function tracesForGEX(strikes,callGEX,putGEX,netGEX){ return [
-      {type:'bar', name:'Call GEX', x:strikes, y:callGEX, marker:{color:'#22c55e'}, offsetgroup:'call_gex', hovertemplate:"Strike %{x}<br>Call GEX: %{y:.2f}<extra></extra>"},
-      {type:'bar', name:'Put GEX',  x:strikes, y:putGEX,  marker:{color:'#ef4444'}, offsetgroup:'put_gex',  hovertemplate:"Strike %{x}<br>Put GEX: %{y:.2f}<extra></extra>"},
-      {type:'bar', name:'Net GEX',  x:strikes, y:netGEX, marker:{color:'#60a5fa'}, offsetgroup:'net_gex', opacity:0.85, hovertemplate:"Strike %{x}<br>Net GEX: %{y:.2f}<extra></extra>"}
-    ];}
+    async function fetchSeries(){{ const r=await fetch('/api/series',{{cache:'no-store'}}); return await r.json(); }}
+    function verticalSpotShape(spot,yMax){{ if(spot==null) return null; return {{type:'line',x0:spot,x1:spot,y0:0,y1:yMax,line:{{color:'#9aa0a6',width:2,dash:'dot'}},xref:'x',yref:'y'}}; }}
+    function buildLayout(title,xTitle,yTitle,spot,yMax){{ const shape=verticalSpotShape(spot,yMax); return {{ title:{{text:title,font:{{size:16}}}}, xaxis:{{title:xTitle,gridcolor:'#20242a',tickfont:{{size:11}}}}, yaxis:{{title:yTitle,gridcolor:'#20242a',tickfont:{{size:11}}}}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115', font:{{color:'#e6e7e9'}}, margin:{{t:40,r:16,b:48,l:48}}, barmode:'group', shapes:shape?[shape]:[] }}; }}
+    function tracesForBars(strikes,callArr,putArr,yLabel){{ return [
+      {{type:'bar', name:'Calls '+yLabel, x:strikes, y:callArr, marker:{{color:'#22c55e'}}, offsetgroup:'calls',
+        hovertemplate:"Strike %{{x}}<br>Calls: %{{y}}<extra></extra>"}},
+      {{type:'bar', name:'Puts '+yLabel,  x:strikes, y:putArr,  marker:{{color:'#ef4444'}}, offsetgroup:'puts',
+        hovertemplate:"Strike %{{x}}<br>Puts: %{{y}}<extra></extra>"}}
+    ];}}
+    function tracesForGEX(strikes,callGEX,putGEX,netGEX){{ return [
+      {{type:'bar', name:'Call GEX', x:strikes, y:callGEX, marker:{{color:'#22c55e'}}, offsetgroup:'call_gex',
+        hovertemplate:"Strike %{{x}}<br>Call GEX: %{{y:.2f}}<extra></extra>"}},
+      {{type:'bar', name:'Put GEX',  x:strikes, y:putGEX,  marker:{{color:'#ef4444'}}, offsetgroup:'put_gex',
+        hovertemplate:"Strike %{{x}}<br>Put GEX: %{{y:.2f}}<extra></extra>"}},
+      {{type:'bar', name:'Net GEX',  x:strikes, y:netGEX, marker:{{color:'#60a5fa'}}, offsetgroup:'net_gex', opacity:0.85,
+        hovertemplate:"Strike %{{x}}<br>Net GEX: %{{y:.2f}}<extra></extra>"}}
+    ];}}
 
-    async function drawOrUpdate(){
+    async function drawOrUpdate(){{
       const data = await fetchSeries();
       if (!data || !data.strikes || data.strikes.length === 0) return;
 
@@ -774,27 +779,27 @@ def spxw_dashboard():
       const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
       const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
 
-      if (firstDraw){
-        Plotly.newPlot(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
-        Plotly.newPlot(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
-        Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
+      if (firstDraw){{
+        Plotly.newPlot(gexDiv, gexTraces, gexLayout, {{displayModeBar:false,responsive:true}});
+        Plotly.newPlot(volDiv, volTraces, volLayout, {{displayModeBar:false,responsive:true}});
+        Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false,responsive:true}});
         firstDraw=false;
-      } else {
-        Plotly.react(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
-        Plotly.react(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
-        Plotly.react(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
-      }
-    }
-    function startCharts(){ drawOrUpdate(); if (chartsTimer) clearInterval(chartsTimer); chartsTimer=setInterval(drawOrUpdate, PULL_EVERY); }
-    function stopCharts(){ if (chartsTimer){ clearInterval(chartsTimer); chartsTimer=null; } }
+      }} else {{
+        Plotly.react(gexDiv, gexTraces, gexLayout, {{displayModeBar:false,responsive:true}});
+        Plotly.react(volDiv, volTraces, volLayout, {{displayModeBar:false,responsive:true}});
+        Plotly.react(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false,responsive:true}});
+      }}
+    }}
+    function startCharts(){{ drawOrUpdate(); if (chartsTimer) clearInterval(chartsTimer); chartsTimer=setInterval(drawOrUpdate, PULL_EVERY); }}
+    function stopCharts(){{ if (chartsTimer){{ clearInterval(chartsTimer); chartsTimer=null; }} }}
 
     // ===== Spot (fixed) =====
     const priceDiv=document.getElementById('pricePlot'), gexSideDiv=document.getElementById('gexSidePlot'), volSideDiv=document.getElementById('volSidePlot');
     let spotTimer=null;
 
-    async function fetchSpotData(){ const r=await fetch('/api/spot_data',{cache:'no-store'}); return await r.json(); }
+    async function fetchSpotData(){{ const r=await fetch('/api/spot_data',{{cache:'no-store'}}); return await r.json(); }}
 
-    function renderSpot(data){
+    function renderSpot(data){{ 
       const strikes = data.strikes||[];
       if (!strikes.length) return;
       const yMin=Math.min(...strikes), yMax=Math.max(...strikes), pad=(yMax-yMin)*0.02;
@@ -802,47 +807,47 @@ def spxw_dashboard():
       // GEX: symmetric axis around 0
       const gexNet = (data.chain||[]).map(d=>d.gex||0);
       const gMax = Math.max(1, ...gexNet.map(v=>Math.abs(v))) * 1.1;
-      const gex = {type:'bar', orientation:'h', x:gexNet, y:strikes, marker:{color:'#60a5fa'}, hovertemplate:'Strike %{y}<br>Net GEX %{x:.0f}<extra></extra>'};
-      Plotly.react(gexSideDiv, [gex], {
-        margin:{l:60,r:16,t:10,b:30}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
-        xaxis:{title:'GEX', gridcolor:'#20242a', range:[-gMax, gMax]},
-        yaxis:{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'},
-        font:{color:'#e6e7e9'}
-      }, {displayModeBar:false,responsive:true});
+      const gex = {{type:'bar', orientation:'h', x:gexNet, y:strikes, marker:{{color:'#60a5fa'}}, hovertemplate:'Strike %{{y}}<br>Net GEX %{{x:.0f}}<extra></extra>'}};
+      Plotly.react(gexSideDiv, [gex], {{
+        margin:{{l:60,r:16,t:10,b:30}}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+        xaxis:{{title:'GEX', gridcolor:'#20242a', range:[-gMax, gMax]}},
+        yaxis:{{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'}},
+        font:{{color:'#e6e7e9'}}
+      }}, {{displayModeBar:false,responsive:true}});
 
       // VOL: calls vs puts, x >= 0
       const vMax = Math.max(1, ...(data.callVol||[0]), ...(data.putVol||[0])) * 1.1;
-      const volCalls = {type:'bar', orientation:'h', name:'Calls', x:(data.callVol||[]), y:strikes, marker:{color:'#22c55e'}, hovertemplate:'Strike %{y}<br>Calls %{x}<extra></extra>'};
-      const volPuts  = {type:'bar', orientation:'h', name:'Puts',  x:(data.putVol||[]),  y:strikes, marker:{color:'#ef4444'}, hovertemplate:'Strike %{y}<br>Puts %{x}<extra></extra>'};
-      Plotly.react(volSideDiv, [volCalls, volPuts], {
-        margin:{l:60,r:16,t:10,b:30}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
-        xaxis:{title:'VOL', gridcolor:'#20242a', range:[0, vMax]}, barmode:'group',
-        yaxis:{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'},
-        font:{color:'#e6e7e9'}
-      }, {displayModeBar:false,responsive:true});
+      const volCalls = {{type:'bar', orientation:'h', name:'Calls', x:(data.callVol||[]), y:strikes, marker:{{color:'#22c55e'}}, hovertemplate:'Strike %{{y}}<br>Calls %{{x}}<extra></extra>'}};
+      const volPuts  = {{type:'bar', orientation:'h', name:'Puts',  x:(data.putVol||[]),  y:strikes, marker:{{color:'#ef4444'}}, hovertemplate:'Strike %{{y}}<br>Puts %{{x}}<extra></extra>'}};
+      Plotly.react(volSideDiv, [volCalls, volPuts], {{
+        margin:{{l:60,r:16,t:10,b:30}}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+        xaxis:{{title:'VOL', gridcolor:'#20242a', range:[0, vMax]}}, barmode:'group',
+        yaxis:{{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'}},
+        font:{{color:'#e6e7e9'}}
+      }}, {{displayModeBar:false,responsive:true}});
 
       // Price: 3-min candles (uses same Y range)
       const candles = data.candles||[];
-      if (candles.length){
-        const trace = {
+      if (candles.length){{
+        const trace = {{
           type:'candlestick',
           x: candles.map(d=>new Date(d.t)), open:candles.map(d=>d.o),
           high:candles.map(d=>d.h), low:candles.map(d=>d.l), close:candles.map(d=>d.c),
-          increasing:{line:{color:'#22c55e'}}, decreasing:{line:{color:'#ef4444'}},
-          hovertemplate:'%{x|%H:%M}<br>O %{open:.2f} H %{high:.2f}<br>L %{low:.2f} C %{close:.2f}<extra></extra>'
-        };
-        Plotly.react(priceDiv, [trace], {
-          margin:{l:60,r:16,t:10,b:30}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
-          xaxis:{title:'Time (last 8h)', gridcolor:'#20242a'},
-          yaxis:{title:'Price', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'},
-          font:{color:'#e6e7e9'}
-        }, {displayModeBar:false,responsive:true});
-      }
-    }
+          increasing:{{line:{{color:'#22c55e'}}}}, decreasing:{{line:{{color:'#ef4444'}}}},
+          hovertemplate:'%{{x|%H:%M}}<br>O %{{open:.2f}} H %{{high:.2f}}<br>L %{{low:.2f}} C %{{close:.2f}}<extra></extra>'
+        }};
+        Plotly.react(priceDiv, [trace], {{
+          margin:{{l:60,r:16,t:10,b:30}}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          xaxis:{{title:'Time (last 8h)', gridcolor:'#20242a'}},
+          yaxis:{{title:'Price', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'}},
+          font:{{color:'#e6e7e9'}}
+        }}, {{displayModeBar:false,responsive:true}});
+      }}
+    }}
 
-    async function tickSpot(){ const data=await fetch('/api/spot_data',{cache:'no-store'}).then(r=>r.json()); renderSpot(data); }
-    function startSpot(){ tickSpot(); if(spotTimer) clearInterval(spotTimer); spotTimer=setInterval(tickSpot, 15000); }
-    function stopSpot(){ if(spotTimer){ clearInterval(spotTimer); spotTimer=null; } }
+    async function tickSpot(){{ const data=await fetchSpotData(); renderSpot(data); }}
+    function startSpot(){{ tickSpot(); if(spotTimer) clearInterval(spotTimer); spotTimer=setInterval(tickSpot, 15000); }}
+    function stopSpot(){{ if(spotTimer){{ clearInterval(spotTimer); spotTimer=null; }} }}
 
     // default
     showTable();

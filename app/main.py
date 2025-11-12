@@ -528,12 +528,17 @@ def snapshot():
 
 @app.get("/table")
 def html_table():
+    # --- parse status for the header and ATM calc ---
     ts  = last_run_status.get("ts") or ""
     msg = last_run_status.get("msg") or ""
     parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
     exp  = parts.get("exp", "")
-    spot = parts.get("spot", "")
+    spot_str = parts.get("spot", "")
     rows = parts.get("rows", "")
+    try:
+        spot_val = float(spot_str)
+    except Exception:
+        spot_val = None
 
     if latest_df is None or latest_df.empty:
         body = "<p>No data yet. If market is open, it will appear within ~15s.</p>"
@@ -541,13 +546,52 @@ def html_table():
         df = latest_df.copy()
         df.columns = DISPLAY_COLS
 
-        # Format volume columns with commas
-        for col in ["Volume", "Volume "]:  # handles both call & put sides
-            for c in df.columns:
-                if c.strip().lower() == col.strip().lower():
-                    df[c] = df[c].apply(lambda x: f"{int(x):,}" if pd.notna(x) and str(x).isdigit() else x)
+        # Find ATM row index (nearest Strike)
+        atm_idx = None
+        if spot_val:
+            try:
+                atm_idx = (df["Strike"] - spot_val).abs().idxmin()
+            except Exception:
+                atm_idx = None
 
-        body = df.to_html(index=False).replace('class="dataframe"', 'class="table"')
+        # Format numbers with commas for easier scanning
+        def fmt_commas(x):
+            try:
+                if pd.isna(x): return ""
+                # show integers without decimals
+                if float(x).is_integer():
+                    return f"{int(x):,}"
+                return f"{x:,.2f}"
+            except Exception:
+                return x
+
+        # Build per-column format map (apply to any column named Volume or Open Int)
+        fmt_map = {}
+        for c in df.columns:
+            n = c.strip().lower()
+            if n in ("volume", "open int"):
+                fmt_map[c] = lambda v, _f=fmt_commas: _f(v)
+
+        # Highlight function for ATM row
+        def highlight_atm(row):
+            if atm_idx is not None and row.name == atm_idx:
+                # subtle band; readable on dark bg
+                return ["background-color:#1a2634;"] * len(row)
+            return [""] * len(row)
+
+        # Use Styler for formatting + row highlight
+        sty = (
+            df.style
+              .hide(axis="index")
+              .format(fmt_map)
+              .apply(highlight_atm, axis=1)
+        )
+
+        # Render styled HTML
+        body = sty.to_html()
+
+        # Make sure our table gets the right class for CSS below
+        body = body.replace('class="dataframe"', 'class="table"')
 
     page = f"""
     <html><head><meta charset="utf-8"><title>0DTE Alpha</title>
@@ -559,26 +603,35 @@ def html_table():
       .last {{
         color:#9ca3af; font-size:12px; line-height:1.25; margin:0 0 10px 0;
       }}
-      table {{ border-collapse:collapse; width:100%; font-size:12px; }}
-      th,td {{ border:1px solid #333; padding:6px 8px; text-align:right; }}
-      th {{ background:#111; position:sticky; top:0; z-index:1; }}
-      /* Strike column shaded */
-      td:nth-child(11), th:nth-child(11) {{ background:#111; text-align:center; }}
-      /* Leftmost column centered */
-      td:first-child, th:first-child {{ text-align:center; }}
+      table.table {{
+        border-collapse:collapse; width:100%; font-size:12px;
+      }}
+      .table th,.table td {{
+        border:1px solid #333; padding:6px 8px; text-align:right;
+      }}
+      .table th {{
+        background:#111; position:sticky; top:0; z-index:1;
+      }}
+      /* Shade Strike column like header to split calls/puts */
+      .table td:nth-child(11), .table th:nth-child(11) {{
+        background:#111; text-align:center;
+      }}
+      /* Leftmost column centered (optional) */
+      .table td:first-child, .table th:first-child {{ text-align:center; }}
     </style>
     </head><body>
       <h2>SPXW 0DTE — live table</h2>
       <div class="last">
         Last run: {ts}<br>
         exp={exp}<br>
-        spot={spot}<br>
+        spot={spot_str}<br>
         rows={rows}
       </div>
       {body}
       <script>setTimeout(()=>location.reload(), 15000);</script>
     </body></html>"""
     return Response(content=page, media_type="text/html")
+
 
 @app.get("/api/history")
 def api_history(limit: int = Query(288, ge=1, le=5000)):

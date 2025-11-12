@@ -21,13 +21,13 @@ DB_URL  = os.getenv("DATABASE_URL", "")  # Railway Postgres
 if DB_URL.startswith("postgresql://"):
     DB_URL = DB_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
-# Cadence
-PULL_EVERY     = int(os.getenv("PULL_EVERY", "15"))     # seconds
-SAVE_EVERY_MIN = int(os.getenv("SAVE_EVERY_MIN", "5"))  # minutes
+# Cadence (HARDCODED as requested)
+PULL_EVERY     = 30   # seconds
+SAVE_EVERY_MIN = 5    # minutes
 
-# Chain window like TS.py
-STREAM_SECONDS = float(os.getenv("STREAM_SECONDS", "2.5"))
-TARGET_STRIKES = int(os.getenv("TARGET_STRIKES", "40"))
+# Chain window like TS.py (HARDCODED as requested)
+STREAM_SECONDS = 2.0
+TARGET_STRIKES = 40
 
 # ====== APP ======
 app = FastAPI()
@@ -505,7 +505,7 @@ def html_table():
         df_src = None if (latest_df is None or latest_df.empty) else latest_df.copy()
 
     if df_src is None or df_src.empty:
-        body = "<p>No data yet. If market is open, it will appear within ~15s.</p>"
+        body = "<p>No data yet. If market is open, it will appear within ~30s.</p>"
     else:
         base = df_src
         wanted = [
@@ -618,24 +618,24 @@ def spxw_dashboard():
     }}
     .header {{ display:flex; align-items:center; justify-content:space-between; padding: 6px 10px 12px; border-bottom:1px solid var(--border); margin-bottom:10px;}}
     .pill {{ font-size: 12px; padding: 4px 8px; border:1px solid var(--border); border-radius: 999px; color: var(--muted); }}
-   .charts { 
-  display: flex; 
-  flex-direction: column; 
-  gap: 24px; 
-}
 
-iframe { 
-  width: 100%; 
-  height: calc(100vh - 180px); 
-  border: 0; 
-  background: #0f1115; 
-}
+    .charts {{
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }}
 
-#volChart, 
-#oiChart { 
-  width: 100%; 
-  height: 480px; 
-}
+    iframe {{
+      width: 100%;
+      height: calc(100vh - 180px);
+      border: 0;
+      background: #0f1115;
+    }}
+
+    #volChart, #oiChart {{
+      width: 100%;
+      height: 480px;
+    }}
   </style>
 </head>
 <body>
@@ -754,7 +754,7 @@ iframe {
           x: strikes, y: callArr,
           marker: {{ color: '#22c55e' }},
           offsetgroup: 'calls',
-          hovertemplate: "Strike %%{{x}}<br>Calls: %%{{y}}<extra></extra>"
+          hovertemplate: "Strike %{{x}}<br>Calls: %{{y}}<extra></extra>"
         }},
         {{
           type: 'bar',
@@ -762,7 +762,7 @@ iframe {
           x: strikes, y: putArr,
           marker: {{ color: '#ef4444' }},
           offsetgroup: 'puts',
-          hovertemplate: "Strike %%{{x}}<br>Puts: %%{{y}}<extra></extra>"
+          hovertemplate: "Strike %{{x}}<br>Puts: %{{y}}<extra></extra>"
         }}
       ];
     }}
@@ -776,8 +776,8 @@ iframe {
       const vMax    = Math.max(...data.callVol, ...data.putVol, 0) * 1.05;
       const oiMax   = Math.max(...data.callOI,  ...data.putOI,  0) * 1.05;
 
-      const volLayout = buildLayout('Volume by Strike', 'Strike', 'Volume', spot, vMax);
-      const oiLayout  = buildLayout('Open Interest by Strike', 'Strike', 'Open Interest', spot, oiMax);
+      const volLayout = buildLayout('Volume', 'Strike', 'Volume', spot, vMax);
+      const oiLayout  = buildLayout('Open Interest', 'Strike', 'Open Interest', spot, oiMax);
 
       const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
       const oiTraces  = tracesForBars(strikes, data.callOI, data.putOI, 'OI');

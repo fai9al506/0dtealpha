@@ -3,4 +3,6 @@ uvicorn[standard]
 apscheduler
 pytz
 pandas
-openpyxl
+requests
+sqlalchemy
+psycopg[binary]

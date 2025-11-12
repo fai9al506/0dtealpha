@@ -15,6 +15,10 @@ SECRET  = os.getenv("TS_CLIENT_SECRET", "")
 RTOKEN  = os.getenv("TS_REFRESH_TOKEN", "")
 DB_URL  = os.getenv("DATABASE_URL", "")  # Railway Postgres
 
+# --- force SQLAlchemy to use psycopg (v3) driver instead of psycopg2 ---
+if DB_URL.startswith("postgresql://"):
+    DB_URL = DB_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+
 PULL_EVERY = 15  # seconds
 SAVE_EVERY_MIN = 5
 

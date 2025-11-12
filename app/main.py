@@ -1,12 +1,11 @@
 # 0DTE Alpha — live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
 from fastapi import FastAPI, Response, Query
 from fastapi.responses import HTMLResponse
-from datetime import datetime, time as dtime, timezone
-import os, time, json, requests, pandas as pd, pytz, math
+from datetime import datetime, time as dtime
+import os, time, json, requests, pandas as pd, pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
 from threading import Lock
-from collections import deque
 
 # ====== CONFIG ======
 USE_LIVE = True
@@ -38,9 +37,6 @@ latest_df: pd.DataFrame | None = None
 last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
 _df_lock = Lock()
-
-# keep ~8h at 30s cadence => 960 points (+extra)
-spot_buf = deque(maxlen=1200)
 
 # ====== DB ======
 engine = create_engine(DB_URL, pool_pre_ping=True) if DB_URL else None
@@ -140,8 +136,10 @@ def get_spx_last() -> float:
     for q in js.get("Quotes", []):
         if q.get("Symbol") == "$SPX.X":
             v = q.get("Last") or q.get("Close")
-            try: return float(v)
-            except: return 0.0
+            try:
+                return float(v)
+            except:
+                return 0.0
     return 0.0
 
 def get_0dte_exp() -> str:
@@ -165,16 +163,20 @@ def _expiration_variants(ymd: str):
     yield ymd + "T00:00:00Z"
 
 def _fnum(x):
-    if x in (None, "", "-", "NaN", "nan"): return None
-    try: return float(str(x).replace(",",""))
-    except: return None
+    if x in (None, "", "-", "NaN", "nan"):
+        return None
+    try:
+        return float(str(x).replace(",", ""))
+    except:
+        return None
 
 def _consume_chain_stream(r, max_seconds: float) -> list[dict]:
     out, start = [], time.time()
     try:
         for line in r.iter_lines(decode_unicode=True):
             if not line:
-                if time.time() - start > max_seconds: break
+                if time.time() - start > max_seconds:
+                    break
                 continue
             try:
                 obj = json.loads(line)
@@ -187,8 +189,10 @@ def _consume_chain_stream(r, max_seconds: float) -> list[dict]:
             if time.time() - start > max_seconds:
                 break
     finally:
-        try: r.close()
-        except Exception: pass
+        try:
+            r.close()
+        except Exception:
+            pass
     return out
 
 def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
@@ -287,12 +291,13 @@ DISPLAY_COLS = [
 def to_side_by_side(rows: list[dict]) -> pd.DataFrame:
     calls, puts = {}, {}
     for r in rows:
-        if r.get("Strike") is None: continue
+        if r.get("Strike") is None:
+            continue
         (calls if r["Type"]=="C" else puts)[r["Strike"]] = r
-    strikes = sorted(set(calls)|set(puts))
-    recs=[]
+    strikes = sorted(set(calls) | set(puts))
+    recs = []
     for k in strikes:
-        c, p = calls.get(k,{}), puts.get(k,{})
+        c, p = calls.get(k, {}), puts.get(k, {})
         recs.append({
             "C_Volume": c.get("Volume"), "C_OpenInterest": c.get("OpenInterest"), "C_IV": c.get("IV"),
             "C_Gamma": c.get("Gamma"), "C_Delta": c.get("Delta"), "C_Bid": c.get("Bid"),
@@ -317,7 +322,7 @@ def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
 
 # ====== jobs ======
 def run_market_job():
-    global latest_df, last_run_status, spot_buf
+    global latest_df, last_run_status
     try:
         if not market_open_now():
             last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
@@ -329,8 +334,6 @@ def run_market_job():
         df   = pick_centered(to_side_by_side(rows), spot, TARGET_STRIKES)
         with _df_lock:
             latest_df = df.copy()
-        if spot:
-            spot_buf.append({"ts": int(datetime.now(timezone.utc).timestamp()*1000), "spot": float(spot)})
         last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={len(df)}"}
         print("[pull] OK", last_run_status["msg"], flush=True)
     except Exception as e:
@@ -439,75 +442,6 @@ def api_series():
         "spot": spot
     }
 
-@app.get("/api/spot_data")
-def api_spot_data():
-    """
-    Spot view: always returns usable arrays.
-    - strikes (list[float])
-    - chain (list[{strike,gex}])
-    - callVol / putVol (lists)
-    - candles (optional list of OHLC)
-    - line (always present: list[{t, v}] for price line fallback)
-    """
-    with _df_lock:
-        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
-        spot_list = list(spot_buf)
-
-    strikes_list, chain, cvol, pvol = [], [], [], []
-
-    if df is not None and not df.empty:
-        sdf = df.sort_values("Strike")
-        strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
-        call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
-        put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
-        c_gamma  = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
-        p_gamma  = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
-        call_vol = pd.to_numeric(sdf["C_Volume"], errors="coerce").fillna(0.0).astype(float)
-        put_vol  = pd.to_numeric(sdf["P_Volume"], errors="coerce").fillna(0.0).astype(float)
-        net_gex  = (c_gamma*call_oi*100.0 - p_gamma*put_oi*100.0).astype(float)
-
-        strikes_list = strikes.tolist()
-        chain = [{"strike": float(s), "gex": float(g)} for s,g in zip(strikes_list, net_gex.tolist())]
-        cvol  = call_vol.tolist()
-        pvol  = put_vol.tolist()
-    else:
-        # synthetic window around a guess (keeps UI alive after cold boot)
-        base_strike = 6300
-        strikes_list = [base_strike + i*25 for i in range(-30, 31)]
-        for i, s in enumerate(strikes_list):
-            chain.append({"strike": s, "gex": math.sin(i/6.0)*2_000_000})
-            cvol.append( 2000 + int(1500*abs(math.cos(i/7.0))) )
-            pvol.append( 1800 + int(1300*abs(math.sin(i/8.0))) )
-
-    # Candles (may be empty), plus an always-present 1m line
-    candles, line = [], []
-    if spot_list:
-        dfspot = pd.DataFrame(spot_list)
-        dfspot["ts"] = pd.to_datetime(dfspot["ts"], unit="ms", utc=True)
-        cutoff = pd.Timestamp.utcnow().tz_localize("UTC") - pd.Timedelta(hours=8)
-        dfspot = dfspot[dfspot["ts"] >= cutoff]
-        if not dfspot.empty:
-            # 3m candles
-            res = (dfspot.set_index("ts")["spot"]
-                   .resample("3T").agg(["first","max","min","last"]).dropna(how="all"))
-            for idx, row in res.iterrows():
-                o = float(row["first"] if pd.notna(row["first"]) else row["last"])
-                h = float(row["max"]   if pd.notna(row["max"])   else o)
-                l = float(row["min"]   if pd.notna(row["min"])   else o)
-                c = float(row["last"]  if pd.notna(row["last"])  else o)
-                candles.append({"t": int(idx.timestamp()*1000), "o": o, "h": h, "l": l, "c": c})
-            # 1m line (always)
-            res1 = dfspot.set_index("ts")["spot"].resample("1T").last().dropna()
-            line = [{"t": int(idx.timestamp()*1000), "v": float(v)} for idx, v in res1.items()]
-    if not line and spot_list:
-        # minimal fallback line from last point
-        t = int(datetime.now(timezone.utc).timestamp()*1000)
-        last_spot = float(spot_list[-1]["spot"])
-        line = [{"t": t-120000, "v": last_spot}, {"t": t, "v": last_spot}]
-
-    return {"strikes": strikes_list, "chain": chain, "callVol": cvol, "putVol": pvol,
-            "candles": candles, "line": line}
-
 @app.get("/api/health")
 def api_health():
     return {"status": "ok", "last": last_run_status}
@@ -586,21 +520,27 @@ def html_table():
             "Strike",
             "LAST","Delta","Gamma","IV","Open Int","Volume",
         ]
-        try: spot_val = float(spot_str)
-        except: spot_val = None
+        try:
+            spot_val = float(spot_str)
+        except:
+            spot_val = None
         atm_idx = None
         if spot_val:
-            try: atm_idx = (df["Strike"] - spot_val).abs().idxmin()
-            except: pass
+            try:
+                atm_idx = (df["Strike"] - spot_val).abs().idxmin()
+            except:
+                pass
 
         comma_cols = {"Volume", "Open Int"}
         def fmt_val(col, v):
-            if pd.isna(v): return ""
+            if pd.isna(v):
+                return ""
             if col in comma_cols:
                 try:
                     f = float(v)
                     return f"{int(f):,}" if abs(f - int(f)) < 1e-9 else f"{f:,.2f}"
-                except: return str(v)
+                except:
+                    return str(v)
             return str(v)
 
         thead = "<tr>" + "".join(f"<th>{h}</th>" for h in df.columns) + "</tr>"
@@ -631,26 +571,6 @@ def html_table():
       </div>
       {body}
       <script>setTimeout(()=>location.reload(), {PULL_EVERY * 1000});</script>
-<script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-<script>
-  function renderTV() {
-    if (document.getElementById('tvContainer').firstChild) return; // already created
-
-    new TradingView.widget({
-      "symbol": "SPX",          // or "US500", "ES1!" etc.
-      "interval": "3",          // 3-minute candles
-      "container_id": "tvContainer",
-      "autosize": true,
-      "theme": "dark",
-      "style": "1",
-      "locale": "en",
-      "hide_legend": false,
-      "hide_side_toolbar": false,
-      "hide_top_toolbar": false
-    });
-  }
-</script>
-
     </body></html>"""
     return Response(content=page, media_type="text/html")
 
@@ -670,6 +590,7 @@ def spxw_dashboard():
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>SPXW 0DTE — Dashboard</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <style>
     :root {{
       --bg:#0b0c10; --panel:#121417; --muted:#8a8f98; --text:#e6e7e9; --border:#23262b;
@@ -745,13 +666,12 @@ def spxw_dashboard():
       </div>
 
       <div id="viewSpot" class="panel" style="display:none">
-        <div class="header"><div><strong>Spot</strong></div><div class="pill">SPX 3-min candles (when available) or 1-min line + GEX & VOL</div></div>
+        <div class="header"><div><strong>Spot</strong></div><div class="pill">TradingView price + GEX & VOL by strike</div></div>
         <div class="spot-grid">
           <div class="card">
-  <h3>SPX Price — TradingView</h3>
-  <div id="tvContainer" class="plot"></div>
-</div>
-
+            <h3>SPX Price — TradingView</h3>
+            <div id="tvContainer" class="plot"></div>
+          </div>
           <div class="card"><h3>Net GEX by Strike</h3><div id="gexSidePlot" class="plot"></div></div>
           <div class="card"><h3>VOL by Strike (Calls vs Puts)</h3><div id="volSidePlot" class="plot"></div></div>
         </div>
@@ -763,37 +683,70 @@ def spxw_dashboard():
     const PULL_EVERY = {PULL_EVERY * 1000};
 
     // Tabs
-    const tabTable=document.getElementById('tabTable'), tabCharts=document.getElementById('tabCharts'), tabSpot=document.getElementById('tabSpot');
-    const viewTable=document.getElementById('viewTable'), viewCharts=document.getElementById('viewCharts'), viewSpot=document.getElementById('viewSpot');
-    function setActive(btn){{[tabTable,tabCharts,tabSpot].forEach(b=>b.classList.remove('active')); btn.classList.add('active');}}
-    function showTable(){{setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewSpot.style.display='none'; stopCharts(); stopSpot();}}
-    function showCharts(){{setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewSpot.style.display='none'; startCharts(); stopSpot();}}
-    function showSpot(){{setActive(tabSpot); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display=''; startSpot(); stopCharts();}}
-    tabTable.addEventListener('click', showTable); tabCharts.addEventListener('click', showCharts); tabSpot.addEventListener('click', showSpot);
+    const tabTable=document.getElementById('tabTable'),
+          tabCharts=document.getElementById('tabCharts'),
+          tabSpot=document.getElementById('tabSpot');
+    const viewTable=document.getElementById('viewTable'),
+          viewCharts=document.getElementById('viewCharts'),
+          viewSpot=document.getElementById('viewSpot');
+
+    function setActive(btn){ [tabTable,tabCharts,tabSpot].forEach(b=>b.classList.remove('active')); btn.classList.add('active'); }
+    function showTable(){ setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewSpot.style.display='none'; stopCharts(); stopSpot(); }
+    function showCharts(){ setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewSpot.style.display='none'; startCharts(); stopSpot(); }
+    function showSpot(){ setActive(tabSpot); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display=''; startSpot(); stopCharts(); }
+    tabTable.addEventListener('click', showTable);
+    tabCharts.addEventListener('click', showCharts);
+    tabSpot.addEventListener('click', showSpot);
 
     // ===== Main charts =====
-    const volDiv=document.getElementById('volChart'), oiDiv=document.getElementById('oiChart'), gexDiv=document.getElementById('gexChart');
+    const volDiv=document.getElementById('volChart'),
+          oiDiv=document.getElementById('oiChart'),
+          gexDiv=document.getElementById('gexChart');
     let chartsTimer=null, firstDraw=true;
 
-    async function fetchSeries(){{ const r=await fetch('/api/series',{{cache:'no-store'}}); return await r.json(); }}
-    function verticalSpotShape(spot,yMax){{ if(spot==null) return null; return {{type:'line',x0:spot,x1:spot,y0:0,y1:yMax,line:{{color:'#9aa0a6',width:2,dash:'dot'}},xref:'x',yref:'y'}}; }}
-    function buildLayout(title,xTitle,yTitle,spot,yMax){{ const shape=verticalSpotShape(spot,yMax); return {{ title:{{text:title,font:{{size:16}}}}, xaxis:{{title:xTitle,gridcolor:'#20242a',tickfont:{{size:11}}}}, yaxis:{{title:yTitle,gridcolor:'#20242a',tickfont:{{size:11}}}}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115', font:{{color:'#e6e7e9'}}, margin:{{t:40,r:16,b:48,l:48}}, barmode:'group', shapes:shape?[shape]:[] }}; }}
-    function tracesForBars(strikes,callArr,putArr,yLabel){{ return [
-      {{type:'bar', name:'Calls '+yLabel, x:strikes, y:callArr, marker:{{color:'#22c55e'}}, offsetgroup:'calls',
-        hovertemplate:"Strike %{{x}}<br>Calls: %{{y}}<extra></extra>"}},
-      {{type:'bar', name:'Puts '+yLabel,  x:strikes, y:putArr,  marker:{{color:'#ef4444'}}, offsetgroup:'puts',
-        hovertemplate:"Strike %{{x}}<br>Puts: %{{y}}<extra></extra>"}}
-    ];}}
-    function tracesForGEX(strikes,callGEX,putGEX,netGEX){{ return [
-      {{type:'bar', name:'Call GEX', x:strikes, y:callGEX, marker:{{color:'#22c55e'}}, offsetgroup:'call_gex',
-        hovertemplate:"Strike %{{x}}<br>Call GEX: %{{y:.2f}}<extra></extra>"}},
-      {{type:'bar', name:'Put GEX',  x:strikes, y:putGEX,  marker:{{color:'#ef4444'}}, offsetgroup:'put_gex',
-        hovertemplate:"Strike %{{x}}<br>Put GEX: %{{y:.2f}}<extra></extra>"}},
-      {{type:'bar', name:'Net GEX',  x:strikes, y:netGEX, marker:{{color:'#60a5fa'}}, offsetgroup:'net_gex', opacity:0.85,
-        hovertemplate:"Strike %{{x}}<br>Net GEX: %{{y:.2f}}<extra></extra>"}}
-    ];}}
+    async function fetchSeries(){ const r=await fetch('/api/series',{cache:'no-store'}); return await r.json(); }
 
-    async function drawOrUpdate(){{
+    function verticalSpotShape(spot,yMax){
+      if(spot==null) return null;
+      return {type:'line',x0:spot,x1:spot,y0:0,y1:yMax,line:{color:'#9aa0a6',width:2,dash:'dot'},xref:'x',yref:'y'};
+    }
+
+    function buildLayout(title,xTitle,yTitle,spot,yMax){
+      const shape=verticalSpotShape(spot,yMax);
+      return {
+        title:{text:title,font:{size:16}},
+        xaxis:{title:xTitle,gridcolor:'#20242a',tickfont:{size:11}},
+        yaxis:{title:yTitle,gridcolor:'#20242a',tickfont:{size:11}},
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        font:{color:'#e6e7e9'},
+        margin:{t:40,r:16,b:48,l:48},
+        barmode:'group',
+        shapes:shape?[shape]:[]
+      };
+    }
+
+    function tracesForBars(strikes,callArr,putArr,yLabel){
+      return [
+        {type:'bar', name:'Calls '+yLabel, x:strikes, y:callArr, marker:{color:'#22c55e'}, offsetgroup:'calls',
+         hovertemplate:"Strike %{x}<br>Calls: %{y}<extra></extra>"},
+        {type:'bar', name:'Puts '+yLabel,  x:strikes, y:putArr,  marker:{color:'#ef4444'}, offsetgroup:'puts',
+         hovertemplate:"Strike %{x}<br>Puts: %{y}<extra></extra>"}
+      ];
+    }
+
+    function tracesForGEX(strikes,callGEX,putGEX,netGEX){
+      return [
+        {type:'bar', name:'Call GEX', x:strikes, y:callGEX, marker:{color:'#22c55e'}, offsetgroup:'call_gex',
+         hovertemplate:"Strike %{x}<br>Call GEX: %{y:.2f}<extra></extra>"},
+        {type:'bar', name:'Put GEX',  x:strikes, y:putGEX,  marker:{color:'#ef4444'}, offsetgroup:'put_gex',
+         hovertemplate:"Strike %{x}<br>Put GEX: %{y:.2f}<extra></extra>"},
+        {type:'bar', name:'Net GEX',  x:strikes, y:netGEX, marker:{color:'#60a5fa'}, offsetgroup:'net_gex', opacity:0.85,
+         hovertemplate:"Strike %{x}<br>Net GEX: %{y:.2f}<extra></extra>"}
+      ];
+    }
+
+    async function drawOrUpdate(){
       const data = await fetchSeries();
       if (!data || !data.strikes || data.strikes.length === 0) return;
 
@@ -811,84 +764,117 @@ def spxw_dashboard():
       const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
       const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
 
-      if (firstDraw){{
-        Plotly.newPlot(gexDiv, gexTraces, gexLayout, {{displayModeBar:false,responsive:true}});
-        Plotly.newPlot(volDiv, volTraces, volLayout, {{displayModeBar:false,responsive:true}});
-        Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false,responsive:true}});
+      if (firstDraw){
+        Plotly.newPlot(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
+        Plotly.newPlot(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
+        Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
         firstDraw=false;
-      }} else {{
-        Plotly.react(gexDiv, gexTraces, gexLayout, {{displayModeBar:false,responsive:true}});
-        Plotly.react(volDiv, volTraces, volLayout, {{displayModeBar:false,responsive:true}});
-        Plotly.react(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false,responsive:true}});
-      }}
-    }}
-    function startCharts(){{ drawOrUpdate(); if (chartsTimer) clearInterval(chartsTimer); chartsTimer=setInterval(drawOrUpdate, PULL_EVERY); }}
-    function stopCharts(){{ if (chartsTimer){{ clearInterval(chartsTimer); chartsTimer=null; }} }}
+      } else {
+        Plotly.react(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
+        Plotly.react(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
+        Plotly.react(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
+      }
+    }
+    function startCharts(){ drawOrUpdate(); if (chartsTimer) clearInterval(chartsTimer); chartsTimer=setInterval(drawOrUpdate, PULL_EVERY); }
+    function stopCharts(){ if (chartsTimer){ clearInterval(chartsTimer); chartsTimer=null; } }
 
-    // ===== Spot (robust) =====
-    const priceDiv=document.getElementById('pricePlot'), gexSideDiv=document.getElementById('gexSidePlot'), volSideDiv=document.getElementById('volSidePlot');
+    // ===== Spot: TradingView + GEX/VOL =====
+    const gexSideDiv=document.getElementById('gexSidePlot'),
+          volSideDiv=document.getElementById('volSidePlot');
     let spotTimer=null;
+    let tvInitialized=false;
 
-    async function fetchSpotData(){{ const r=await fetch('/api/spot_data',{{cache:'no-store'}}); return await r.json(); }}
+    function renderTV(){
+      if (tvInitialized) return;
+      if (typeof TradingView === 'undefined') return;
+      if (!document.getElementById('tvContainer')) return;
+      tvInitialized = true;
+      new TradingView.widget({
+        "symbol": "SPX",          // or "US500", "ES1!"
+        "interval": "3",
+        "container_id": "tvContainer",
+        "autosize": true,
+        "theme": "dark",
+        "style": "1",
+        "locale": "en",
+        "hide_legend": false,
+        "hide_side_toolbar": false,
+        "hide_top_toolbar": false
+      });
+    }
 
-    function renderSpot(data){{
-      const strikes = data.strikes||[];
+    function renderSpotFromSeries(data){
+      const strikes = data.strikes || [];
       if (!strikes.length) return;
-      const yMin=Math.min(...strikes), yMax=Math.max(...strikes), pad=(yMax-yMin)*0.02;
+      const yMin = Math.min(...strikes), yMax = Math.max(...strikes);
+      const pad = (yMax - yMin) * 0.02;
 
-      // GEX (symmetric)
-      const gexNet = (data.chain||[]).map(d=>d.gex||0);
+      // Net GEX (symmetric)
+      const gexNet = data.netGEX || [];
       const gMax = Math.max(1, ...gexNet.map(v=>Math.abs(v))) * 1.1;
-      const gex = {{type:'bar', orientation:'h', x:gexNet, y:strikes, marker:{{color:'#60a5fa'}}, hovertemplate:'Strike %{{y}}<br>Net GEX %{{x:.0f}}<extra></extra>'}};
-      Plotly.react(gexSideDiv, [gex], {{
-        margin:{{l:60,r:16,t:10,b:30}}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
-        xaxis:{{title:'GEX', gridcolor:'#20242a', range:[-gMax, gMax]}},
-        yaxis:{{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'}},
-        font:{{color:'#e6e7e9'}}
-      }}, {{displayModeBar:false,responsive:true}});
+      const gex = {
+        type:'bar',
+        orientation:'h',
+        x:gexNet,
+        y:strikes,
+        marker:{color:'#60a5fa'},
+        hovertemplate:'Strike %{y}<br>Net GEX %{x:.0f}<extra></extra>'
+      };
+      Plotly.react(gexSideDiv, [gex], {
+        margin:{l:60,r:16,t:10,b:30},
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        xaxis:{title:'Net GEX', gridcolor:'#20242a', range:[-gMax, gMax]},
+        yaxis:{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'},
+        font:{color:'#e6e7e9'}
+      }, {displayModeBar:false,responsive:true});
 
       // VOL
-      const vMax = Math.max(1, ...(data.callVol||[0]), ...(data.putVol||[0])) * 1.1;
-      const volCalls = {{type:'bar', orientation:'h', name:'Calls', x:(data.callVol||[]), y:strikes, marker:{{color:'#22c55e'}}, hovertemplate:'Strike %{{y}}<br>Calls %{{x}}<extra></extra>'}};
-      const volPuts  = {{type:'bar', orientation:'h', name:'Puts',  x:(data.putVol||[]),  y:strikes, marker:{{color:'#ef4444'}}, hovertemplate:'Strike %{{y}}<br>Puts %{{x}}<extra></extra>'}};
-      Plotly.react(volSideDiv, [volCalls, volPuts], {{
-        margin:{{l:60,r:16,t:10,b:30}}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
-        xaxis:{{title:'VOL', gridcolor:'#20242a', range:[0, vMax]}}, barmode:'group',
-        yaxis:{{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'}},
-        font:{{color:'#e6e7e9'}}
-      }}, {{displayModeBar:false,responsive:true}});
+      const callVol = data.callVol || [];
+      const putVol  = data.putVol  || [];
+      const vMax = Math.max(1, ...callVol, ...putVol) * 1.1;
+      const volCalls = {
+        type:'bar',
+        orientation:'h',
+        name:'Calls',
+        x:callVol,
+        y:strikes,
+        marker:{color:'#22c55e'},
+        hovertemplate:'Strike %{y}<br>Calls %{x}<extra></extra>'
+      };
+      const volPuts = {
+        type:'bar',
+        orientation:'h',
+        name:'Puts',
+        x:putVol,
+        y:strikes,
+        marker:{color:'#ef4444'},
+        hovertemplate:'Strike %{y}<br>Puts %{x}<extra></extra>'
+      };
+      Plotly.react(volSideDiv, [volCalls, volPuts], {
+        margin:{l:60,r:16,t:10,b:30},
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        xaxis:{title:'VOL', gridcolor:'#20242a', range:[0, vMax]},
+        yaxis:{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'},
+        barmode:'group',
+        font:{color:'#e6e7e9'}
+      }, {displayModeBar:false,responsive:true});
+    }
 
-      // PRICE: prefer candles if we have them, else 1-min line (always present)
-      const candles = data.candles||[];
-      const line = data.line||[];
-      let plotData = [], layout={{}};
-      if (candles.length >= 2){{
-        plotData = [{{
-          type:'candlestick',
-          x: candles.map(d=>new Date(d.t)), open:candles.map(d=>d.o),
-          high:candles.map(d=>d.h), low:candles.map(d=>d.l), close:candles.map(d=>d.c),
-          increasing:{{line:{{color:'#22c55e'}}}}, decreasing:{{line:{{color:'#ef4444'}}}},
-          hovertemplate:'%{{x|%H:%M}}<br>O %{{open:.2f}} H %{{high:.2f}}<br>L %{{low:.2f}} C %{{close:.2f}}<extra></extra>'
-        }}];
-      }} else {{
-        plotData = [{{
-          type:'scattergl', mode:'lines',
-          x: line.map(d=>new Date(d.t)), y: line.map(d=>d.v),
-          line:{{width:1.6}}, hovertemplate:'%{{x|%H:%M}} — %{{y:.2f}}<extra></extra>'
-        }}];
-      }}
-      layout = {{
-        margin:{{l:60,r:16,t:10,b:30}}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
-        xaxis:{{title:'Time (last 8h)', gridcolor:'#20242a'}},
-        yaxis:{{title:'Price', gridcolor:'#20242a'}},
-        font:{{color:'#e6e7e9'}}
-      }};
-      Plotly.react(priceDiv, plotData, layout, {{displayModeBar:false,responsive:true}});
-    }}
-
-    async function tickSpot(){{ const data=await fetchSpotData(); renderSpot(data); }}
-    function startSpot(){{ tickSpot(); if(spotTimer) clearInterval(spotTimer); spotTimer=setInterval(tickSpot, 15000); }}
-    function stopSpot(){{ if(spotTimer){{ clearInterval(spotTimer); spotTimer=null; }} }}
+    async function tickSpot(){
+      const data = await fetchSeries();
+      renderSpotFromSeries(data);
+    }
+    function startSpot(){
+      renderTV();
+      tickSpot();
+      if (spotTimer) clearInterval(spotTimer);
+      spotTimer = setInterval(tickSpot, PULL_EVERY);
+    }
+    function stopSpot(){
+      if (spotTimer){ clearInterval(spotTimer); spotTimer=null; }
+    }
 
     // default
     showTable();

@@ -1,19 +1,10 @@
-# 0DTE Alpha — live chain + 5-min history (FastAPI + APScheduler + Postgres)
+# 0DTE Alpha — live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
 from fastapi import FastAPI, Response, Query
-from datetime import datetime, time as dtime, timedelta
-import os, time, json, requests, pandas as pd, pytz, base64
+from fastapi.responses import HTMLResponse
+from datetime import datetime, time as dtime
+import os, time, json, requests, pandas as pd, pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
-
-# ====== NEW: charts backend & helpers ======
-import matplotlib
-matplotlib.use("Agg")  # server-safe, no GUI
-import os
-import matplotlib
-matplotlib.use("Agg")  # non-GUI backend
-import matplotlib.pyplot as plt
-import numpy as np
-from fastapi.responses import FileResponse, HTMLResponse
 from threading import Lock
 
 # ====== CONFIG ======
@@ -26,15 +17,15 @@ SECRET  = os.getenv("TS_CLIENT_SECRET", "")
 RTOKEN  = os.getenv("TS_REFRESH_TOKEN", "")
 DB_URL  = os.getenv("DATABASE_URL", "")  # Railway Postgres
 
-# Force SQLAlchemy to use psycopg (v3) driver
+# SQLAlchemy psycopg v3 URI
 if DB_URL.startswith("postgresql://"):
     DB_URL = DB_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
-# Cadence (override via Railway variables)
+# Cadence
 PULL_EVERY     = int(os.getenv("PULL_EVERY", "15"))     # seconds
 SAVE_EVERY_MIN = int(os.getenv("SAVE_EVERY_MIN", "5"))  # minutes
 
-# Stream window like TS.py
+# Chain window like TS.py
 STREAM_SECONDS = float(os.getenv("STREAM_SECONDS", "2.5"))
 TARGET_STRIKES = int(os.getenv("TARGET_STRIKES", "40"))
 
@@ -45,13 +36,7 @@ NY = pytz.timezone("US/Eastern")
 latest_df: pd.DataFrame | None = None
 last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
-
-# NEW: lock + chart paths
 _df_lock = Lock()
-CHART_DIR = "/app/static"
-os.makedirs(CHART_DIR, exist_ok=True)
-VOL_CHART_PATH = f"{CHART_DIR}/volume_chart.png"
-OI_CHART_PATH  = f"{CHART_DIR}/oi_chart.png"
 
 # ====== DB ======
 engine = create_engine(DB_URL, pool_pre_ping=True) if DB_URL else None
@@ -74,19 +59,17 @@ def db_init():
         """))
     print("[db] ready", flush=True)
 
-# ====== Auth (refresh-token with early refresh like TS.py) ======
-REFRESH_EARLY_SEC = 300  # refresh 5 min before expiry
+# ====== Auth (refresh-token) ======
+REFRESH_EARLY_SEC = 300
 _access_token = None
 _access_exp_at = 0.0
-_refresh_token = RTOKEN or ""  # allow rotating refresh tokens if TS returns a new one
+_refresh_token = RTOKEN or ""
 
 def _stamp_token(exp_in: int):
     global _access_exp_at
-    now = time.time()
-    _access_exp_at = now + int(exp_in or 900) - REFRESH_EARLY_SEC
+    _access_exp_at = time.time() + int(exp_in or 900) - REFRESH_EARLY_SEC
 
 def ts_access_token() -> str:
-    """Refresh with RTOKEN; rotate if API returns a new refresh_token (rare but allowed)."""
     global _access_token, _refresh_token
     now = time.time()
     if _access_token and now < _access_exp_at - 60:
@@ -108,30 +91,24 @@ def ts_access_token() -> str:
     tok = r.json()
     _access_token = tok["access_token"]
     if tok.get("refresh_token"):
-        # rotate if TradeStation returns a new one
         _refresh_token = tok["refresh_token"]
     _stamp_token(tok.get("expires_in", 900))
     print("[auth] token refreshed; expires_in:", tok.get("expires_in"), flush=True)
     return _access_token
 
 def api_get(path, params=None, stream=False, timeout=10):
-    """Auto-refresh, retry once on 401, mirror TS.py resilience."""
     def do_req(h):
         return requests.get(f"{BASE}{path}", headers=h, params=params or {}, timeout=timeout, stream=stream)
     token = ts_access_token()
     headers = {"Authorization": f"Bearer {token}"}
     r = do_req(headers)
-
-    # Retry once on 401 with a forced refresh
     if r.status_code == 401:
         try:
-            _ = ts_access_token()  # force refresh
+            _ = ts_access_token()
             headers["Authorization"] = f"Bearer {_access_token}"
             r = do_req(headers)
         except Exception:
             pass
-
-    # Final status check
     if stream:
         if r.status_code != 200:
             raise RuntimeError(f"STREAM {path} [{r.status_code}] {r.text[:300]}")
@@ -176,9 +153,9 @@ def get_0dte_exp() -> str:
     return ymd
 
 def _expiration_variants(ymd: str):
-    yield ymd  # 2025-11-12
+    yield ymd
     try:
-        yield datetime.strptime(ymd, "%Y-%m-%d").strftime("%m-%d-%Y")  # 11-12-2025
+        yield datetime.strptime(ymd, "%Y-%m-%d").strftime("%m-%d-%Y")
     except Exception:
         pass
     yield ymd + "T00:00:00Z"
@@ -211,8 +188,6 @@ def _consume_chain_stream(r, max_seconds: float) -> list[dict]:
     return out
 
 def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
-    """Stream-first (forgiving), fallback to snapshot; try multiple expiration formats."""
-    # 1) Stream
     params_stream = {
         "spreadType": "Single",
         "enableGreeks": "true",
@@ -253,7 +228,6 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
             last_err = e
             continue
 
-    # 2) Snapshot fallback
     params_snap = {
         "symbol": "$SPXW.X",
         "enableGreeks": "true",
@@ -294,7 +268,7 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
 
     raise RuntimeError(f"SPXW chain fetch failed (formats tried); last_err={last_err}")
 
-# ====== Frame shaping (TS.py style) ======
+# ====== Frame shaping ======
 CANONICAL_COLS = [
     "C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Bid","C_BidSize","C_Ask","C_AskSize","C_Last",
     "Strike",
@@ -337,39 +311,6 @@ def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
     idx = (df["Strike"] - spot).abs().sort_values().index[:n]
     return df.loc[sorted(idx)].reset_index(drop=True)
 
-# ====== NEW: chart maker ======
-def make_charts(df: pd.DataFrame):
-    """Save Volume and OI charts to disk using canonical columns."""
-    if df is None or df.empty:  # nothing to draw
-        return
-
-    # Ensure sorted by Strike
-    sdf = df.sort_values("Strike")
-    strikes = sdf["Strike"].astype(float).values
-    call_vol = pd.to_numeric(sdf["C_Volume"], errors="coerce").fillna(0).astype(float).values
-    put_vol  = pd.to_numeric(sdf["P_Volume"],  errors="coerce").fillna(0).astype(float).values
-    call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0).astype(float).values
-    put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0).astype(float).values
-
-    x = np.arange(len(strikes))
-    width = 0.4
-
-    # Volume Chart
-    plt.figure(figsize=(10, 5))
-    plt.bar(x - width/2, call_vol, width, label='Call Volume', color='green')
-    plt.bar(x + width/2, put_vol,  width, label='Put Volume',  color='red')
-    plt.xlabel('Strike'); plt.ylabel('Volume'); plt.title('Volume by Strike')
-    plt.xticks(x, strikes, rotation=45); plt.legend(); plt.tight_layout()
-    plt.savefig(VOL_CHART_PATH); plt.close()
-
-    # OI Chart
-    plt.figure(figsize=(10, 5))
-    plt.bar(x - width/2, call_oi, width, label='Call OI', color='green')
-    plt.bar(x + width/2, put_oi,  width, label='Put OI',  color='red')
-    plt.xlabel('Strike'); plt.ylabel('Open Interest'); plt.title('Open Interest by Strike')
-    plt.xticks(x, strikes, rotation=45); plt.legend(); plt.tight_layout()
-    plt.savefig(OI_CHART_PATH); plt.close()
-
 # ====== Jobs ======
 def run_market_job():
     global latest_df, last_run_status
@@ -382,17 +323,10 @@ def run_market_job():
         spot = get_spx_last()
         exp  = get_0dte_exp()
         rows = get_chain_rows(exp, spot)
-        df   = to_side_by_side(rows)
-        df   = pick_centered(df, spot, TARGET_STRIKES)
+        df   = pick_centered(to_side_by_side(rows), spot, TARGET_STRIKES)
 
         with _df_lock:
             latest_df = df.copy()
-
-        # NEW: create charts right after fresh data
-        try:
-            make_charts(df)
-        except Exception as ce:
-            print("[chart] error:", ce, flush=True)
 
         last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={len(df)}"}
         print("[pull] OK", last_run_status["msg"], flush=True)
@@ -401,7 +335,6 @@ def run_market_job():
         print("[pull] ERROR", e, flush=True)
 
 def save_history_job():
-    """Every N minutes: persist latest_df to Postgres for later analysis/tests."""
     global _last_saved_at
     if not engine:
         return
@@ -409,8 +342,6 @@ def save_history_job():
         if latest_df is None or latest_df.empty:
             return
         df_copy = latest_df.copy()
-
-    # avoid hammering DB if scheduler overlaps or pulls got too frequent
     if time.time() - _last_saved_at < 60:
         return
     try:
@@ -421,7 +352,7 @@ def save_history_job():
         spot = None
         exp  = None
         try:
-            parts = dict(s.split("=") for s in msg.split() if "=" in s)
+            parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
             spot = float(parts.get("spot",""))
             exp  = parts.get("exp")
         except:
@@ -471,7 +402,7 @@ def on_shutdown():
         scheduler.shutdown()
         print("[sched] stopped", flush=True)
 
-# ====== API & Pages ======
+# ====== API ======
 @app.get("/api/health")
 def api_health():
     return {"status": "ok", "last": last_run_status}
@@ -484,167 +415,6 @@ def debug_env():
 def status():
     return last_run_status
 
-# NEW: charts endpoints
-@app.get("/chart/volume")
-def get_volume_chart():
-    return FileResponse(VOL_CHART_PATH)
-
-@app.get("/chart/oi")
-def get_oi_chart():
-    return FileResponse(OI_CHART_PATH)
-
-# NEW: sidebar home with tabs (Table / Charts)
-@app.get("/", response_class=HTMLResponse)
-def spxw_dashboard():
-    open_now = market_open_now()
-    status_text = "Market OPEN" if open_now else "Market CLOSED"
-    status_color = "#10b981" if open_now else "#ef4444"
-    last_msg = last_run_status.get("msg", "")
-    last_ts  = last_run_status.get("ts", "")
-
-    return HTMLResponse(f"""
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>SPXW 0DTE — Dashboard</title>
-  <style>
-    :root {{
-      --bg:#0b0c10; --panel:#121417; --muted:#8a8f98; --text:#e6e7e9; --accent:#1f6feb;
-      --green:#22c55e; --red:#ef4444; --border:#23262b;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{ margin:0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }}
-    .layout {{ display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }}
-    .sidebar {{
-      background: var(--panel); border-right: 1px solid var(--border); padding: 20px 16px; position: sticky; top:0; height:100vh;
-    }}
-    .brand {{ font-weight: 700; letter-spacing: .3px; margin-bottom: 6px; }}
-    .small {{ color: var(--muted); font-size: 12px; margin-bottom: 16px; }}
-    .status {{ display:flex; gap:10px; align-items:center; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; margin-bottom:14px; }}
-    .dot {{ width:10px; height:10px; border-radius:999px; background:{status_color}; }}
-    .nav {{ display: grid; gap: 8px; margin-top: 8px; }}
-    .btn {{
-      display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 10px;
-      border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer;
-      transition: background .15s ease, border-color .15s ease;
-    }}
-    .btn:hover {{ background: #171a20; border-color: #2b3036; }}
-    .btn.active {{ background: #121a2e; border-color: #2a3a57; }}
-    .content {{ padding: 18px; }}
-    .panel {{
-      background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; overflow: hidden;
-    }}
-    .header {{ display:flex; align-items:center; justify-content:space-between; padding: 6px 10px 12px; border-bottom:1px solid var(--border); margin-bottom:10px;}}
-    .pill {{ font-size: 12px; padding: 4px 8px; border:1px solid var(--border); border-radius: 999px; color: var(--muted); }}
-    .charts {{ display: grid; grid-template-columns: 1fr; gap: 12px; }}
-    @media (min-width: 1100px){{ .charts {{ grid-template-columns: 1fr 1fr; }} }}
-    .chart-img {{ width: 100%; height: auto; display: block; border-radius: 10px; border: 1px solid var(--border); background: #0f1115; }}
-    iframe {{ width: 100%; height: calc(100vh - 180px); border: 0; background: #0f1115; }}
-  </style>
-</head>
-<body>
-  <div class="layout">
-    <aside class="sidebar">
-      <div class="brand">SPXW 0DTE</div>
-      <div class="small">Live chain + charts</div>
-      <div class="status">
-        <span class="dot"></span>
-        <div>
-          <div style="font-weight:600;">{status_text}</div>
-          <div class="small">Last run: {last_ts} — {last_msg}</div>
-        </div>
-      </div>
-      <div class="nav">
-        <button class="btn active" id="tabTable">Table</button>
-        <button class="btn" id="tabCharts">Charts</button>
-      </div>
-      <div style="margin-top: 12px;" class="small">Charts auto-refresh while visible.</div>
-      <div style="margin-top: 18px;" class="small">
-        <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> ·
-        <a href="/api/history" style="color:var(--muted)">History</a> ·
-        <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
-      </div>
-    </aside>
-
-    <main class="content">
-      <div id="viewTable" class="panel">
-        <div class="header">
-          <div><strong>Live Chain Table</strong></div>
-          <div class="pill">auto-refresh</div>
-        </div>
-        <iframe id="tableFrame" src="/table"></iframe>
-      </div>
-
-      <div id="viewCharts" class="panel" style="display:none">
-        <div class="header">
-          <div><strong>Volume & Open Interest</strong></div>
-          <div class="pill">green=calls &middot; red=puts</div>
-        </div>
-        <div class="charts">
-          <img id="imgVol" class="chart-img" alt="Volume by Strike" />
-          <img id="imgOI"  class="chart-img" alt="Open Interest by Strike" />
-        </div>
-      </div>
-    </main>
-  </div>
-
-  <script>
-    const tabTable  = document.getElementById('tabTable');
-    const tabCharts = document.getElementById('tabCharts');
-    const viewTable = document.getElementById('viewTable');
-    const viewCharts= document.getElementById('viewCharts');
-    const imgVol    = document.getElementById('imgVol');
-    const imgOI     = document.getElementById('imgOI');
-
-    let chartsTimer = null;
-
-    function setActive(btn) {{
-      [tabTable, tabCharts].forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-    }}
-
-    function showTable(){{
-      setActive(tabTable);
-      viewTable.style.display = '';
-      viewCharts.style.display = 'none';
-      stopCharts();
-    }}
-
-    function showCharts(){{
-      setActive(tabCharts);
-      viewTable.style.display = 'none';
-      viewCharts.style.display = '';
-      startCharts();
-    }}
-
-    function refreshChartsOnce(){{
-      const t = Date.now();
-      imgVol.src = `/chart/volume?cb=${{t}}`;
-      imgOI.src  = `/chart/oi?cb=${{t}}`;
-    }}
-
-    function startCharts(){{
-      refreshChartsOnce();
-      if (chartsTimer) clearInterval(chartsTimer);
-      chartsTimer = setInterval(refreshChartsOnce, {PULL_EVERY * 1000});
-    }}
-
-    function stopCharts(){{
-      if (chartsTimer) {{ clearInterval(chartsTimer); chartsTimer = null; }}
-    }}
-
-    tabTable.addEventListener('click', showTable);
-    tabCharts.addEventListener('click', showCharts);
-
-    // default: show table
-    showTable();
-  </script>
-</body>
-</html>
-    """)
-
 @app.get("/api/snapshot")
 def snapshot():
     with _df_lock:
@@ -654,6 +424,70 @@ def snapshot():
     df.columns = DISPLAY_COLS
     return {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
 
+@app.get("/api/series")
+def api_series():
+    """Series for charts: strikes (float), call/put volume & OI, plus spot."""
+    with _df_lock:
+        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+    if df is None or df.empty:
+        return {"strikes": [], "callVol": [], "putVol": [], "callOI": [], "putOI": [], "spot": None}
+
+    sdf = df.sort_values("Strike")
+    strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float).tolist()
+    call_vol = pd.to_numeric(sdf["C_Volume"], errors="coerce").fillna(0.0).astype(float).tolist()
+    put_vol  = pd.to_numeric(sdf["P_Volume"],  errors="coerce").fillna(0.0).astype(float).tolist()
+    call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float).tolist()
+    put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float).tolist()
+
+    # read spot from last_run_status
+    spot = None
+    try:
+        parts = dict(s.split("=", 1) for s in (last_run_status.get("msg") or "").split() if "=" in s)
+        spot = float(parts.get("spot",""))
+    except:
+        spot = None
+
+    return {
+        "strikes": strikes,
+        "callVol": call_vol, "putVol": put_vol,
+        "callOI":  call_oi,  "putOI":  put_oi,
+        "spot": spot
+    }
+
+@app.get("/api/history")
+def api_history(limit: int = Query(288, ge=1, le=5000)):
+    if not engine:
+        return {"error":"DATABASE_URL not set"}
+    with engine.begin() as conn:
+        rows = conn.execute(text(
+            "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
+        ), {"lim": limit}).mappings().all()
+    for r in rows:
+        r["columns"] = json.loads(r["columns"])
+        r["rows"]    = json.loads(r["rows"])
+        r["ts"]      = r["ts"].isoformat()
+    return rows
+
+@app.get("/download/history.csv")
+def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
+    if not engine:
+        return Response("DATABASE_URL not set", media_type="text/plain", status_code=500)
+    with engine.begin() as conn:
+        recs = conn.execute(text(
+            "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
+        ), {"lim": limit}).mappings().all()
+    out = []
+    for r in recs:
+        cols = json.loads(r["columns"]); rows = json.loads(r["rows"])
+        for arr in rows:
+            obj = {"ts": r["ts"].isoformat(), "exp": r["exp"], "spot": r["spot"]}
+            obj.update({cols[i]: arr[i] for i in range(len(cols))})
+            out.append(obj)
+    df = pd.DataFrame(out)
+    csv = df.to_csv(index=False)
+    return Response(csv, media_type="text/csv", headers={"Content-Disposition":"attachment; filename=history.csv"})
+
+# ====== TABLE PAGE ======
 @app.get("/table")
 def html_table():
     ts  = last_run_status.get("ts") or ""
@@ -673,7 +507,6 @@ def html_table():
     if df_src is None or df_src.empty:
         body = "<p>No data yet. If market is open, it will appear within ~15s.</p>"
     else:
-        # Build a compact view from canonical cols (no BID/ASK)
         base = df_src
         wanted = [
             "C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Last",
@@ -687,7 +520,6 @@ def html_table():
             "LAST","Delta","Gamma","IV","Open Int","Volume",
         ]
 
-        # ATM row (nearest-to-spot)
         atm_idx = None
         if spot_val:
             try:
@@ -695,7 +527,6 @@ def html_table():
             except Exception:
                 atm_idx = None
 
-        # format with thousands for volumes & open interest
         comma_cols = {"Volume", "Open Int"}
         def fmt_val(col, v):
             if pd.isna(v): return ""
@@ -741,40 +572,228 @@ def html_table():
     </body></html>"""
     return Response(content=page, media_type="text/html")
 
-@app.get("/api/history")
-def api_history(limit: int = Query(288, ge=1, le=5000)):
-    """
-    Last N snapshots (default 288 ≈ one trading day @5-min cadence).
-    Returns: [{ts, exp, spot, columns, rows}]
-    """
-    if not engine:
-        return {"error":"DATABASE_URL not set"}
-    with engine.begin() as conn:
-        rows = conn.execute(text(
-            "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
-        ), {"lim": limit}).mappings().all()
-    for r in rows:
-        r["columns"] = json.loads(r["columns"])
-        r["rows"]    = json.loads(r["rows"])
-        r["ts"]      = r["ts"].isoformat()
-    return rows
+# ====== DASHBOARD (sidebar + tabs + Plotly charts) ======
+@app.get("/", response_class=HTMLResponse)
+def spxw_dashboard():
+    open_now = market_open_now()
+    status_text = "Market OPEN" if open_now else "Market CLOSED"
+    status_color = "#10b981" if open_now else "#ef4444"
+    last_msg = last_run_status.get("msg", "")
+    last_ts  = last_run_status.get("ts", "")
 
-@app.get("/download/history.csv")
-def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
-    if not engine:
-        return Response("DATABASE_URL not set", media_type="text/plain", status_code=500)
-    with engine.begin() as conn:
-        recs = conn.execute(text(
-            "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
-        ), {"lim": limit}).mappings().all()
-    # flatten
-    out = []
-    for r in recs:
-        cols = json.loads(r["columns"]); rows = json.loads(r["rows"])
-        for arr in rows:
-            obj = {"ts": r["ts"].isoformat(), "exp": r["exp"], "spot": r["spot"]}
-            obj.update({cols[i]: arr[i] for i in range(len(cols))})
-            out.append(obj)
-    df = pd.DataFrame(out)
-    csv = df.to_csv(index=False)
-    return Response(csv, media_type="text/csv", headers={"Content-Disposition":"attachment; filename=history.csv"})
+    return HTMLResponse(f"""
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>SPXW 0DTE — Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {{
+      --bg:#0b0c10; --panel:#121417; --muted:#8a8f98; --text:#e6e7e9; --accent:#1f6feb;
+      --green:#22c55e; --red:#ef4444; --border:#23262b;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin:0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }}
+    .layout {{ display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }}
+    .sidebar {{
+      background: var(--panel); border-right: 1px solid var(--border); padding: 20px 16px; position: sticky; top:0; height:100vh;
+    }}
+    .brand {{ font-weight: 700; letter-spacing: .3px; margin-bottom: 6px; }}
+    .small {{ color: var(--muted); font-size: 12px; margin-bottom: 16px; }}
+    .status {{ display:flex; gap:10px; align-items:center; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; margin-bottom:14px; }}
+    .dot {{ width:10px; height:10px; border-radius:999px; background:{status_color}; }}
+    .nav {{ display: grid; gap: 8px; margin-top: 8px; }}
+    .btn {{
+      display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 10px;
+      border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer;
+      transition: background .15s ease, border-color .15s ease;
+    }}
+    .btn:hover {{ background: #171a20; border-color: #2b3036; }}
+    .btn.active {{ background: #121a2e; border-color: #2a3a57; }}
+    .content {{ padding: 18px; }}
+    .panel {{
+      background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; overflow: hidden;
+    }}
+    .header {{ display:flex; align-items:center; justify-content:space-between; padding: 6px 10px 12px; border-bottom:1px solid var(--border); margin-bottom:10px;}}
+    .pill {{ font-size: 12px; padding: 4px 8px; border:1px solid var(--border); border-radius: 999px; color: var(--muted); }}
+    .charts {{ display: grid; grid-template-columns: 1fr; gap: 12px; }}
+    @media (min-width: 1100px){{ .charts {{ grid-template-columns: 1fr 1fr; }} }}
+    iframe {{ width: 100%; height: calc(100vh - 180px); border: 0; background: #0f1115; }}
+    #volChart, #oiChart {{ width: 100%; height: 480px; }}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">SPXW 0DTE</div>
+      <div class="small">Live chain + charts</div>
+      <div class="status">
+        <span class="dot"></span>
+        <div>
+          <div style="font-weight:600;">{status_text}</div>
+          <div class="small">Last run: {last_ts} — {last_msg}</div>
+        </div>
+      </div>
+      <div class="nav">
+        <button class="btn active" id="tabTable">Table</button>
+        <button class="btn" id="tabCharts">Charts</button>
+      </div>
+      <div style="margin-top: 12px;" class="small">Charts auto-refresh while visible.</div>
+      <div style="margin-top: 18px;" class="small">
+        <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> ·
+        <a href="/api/history" style="color:var(--muted)">History</a> ·
+        <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div id="viewTable" class="panel">
+        <div class="header">
+          <div><strong>Live Chain Table</strong></div>
+          <div class="pill">auto-refresh</div>
+        </div>
+        <iframe id="tableFrame" src="/table"></iframe>
+      </div>
+
+      <div id="viewCharts" class="panel" style="display:none">
+        <div class="header">
+          <div><strong>Volume & Open Interest</strong></div>
+          <div class="pill">green = calls · red = puts · grey line = spot</div>
+        </div>
+        <div class="charts">
+          <div id="volChart"></div>
+          <div id="oiChart"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const PULL_EVERY = {PULL_EVERY * 1000};
+    const tabTable  = document.getElementById('tabTable');
+    const tabCharts = document.getElementById('tabCharts');
+    const viewTable = document.getElementById('viewTable');
+    const viewCharts= document.getElementById('viewCharts');
+    const volDiv    = document.getElementById('volChart');
+    const oiDiv     = document.getElementById('oiChart');
+
+    let chartsTimer = null;
+    let firstDraw   = true;
+
+    function setActive(btn) {{
+      [tabTable, tabCharts].forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }}
+
+    function showTable(){{
+      setActive(tabTable);
+      viewTable.style.display = '';
+      viewCharts.style.display = 'none';
+      stopCharts();
+    }}
+
+    function showCharts(){{
+      setActive(tabCharts);
+      viewTable.style.display = 'none';
+      viewCharts.style.display = '';
+      startCharts();
+    }}
+
+    async function fetchSeries(){{
+      const r = await fetch('/api/series');
+      return await r.json();
+    }}
+
+    function verticalSpotShape(spot, yMax){{
+      if (spot == null) return null;
+      return {{
+        type: 'line',
+        x0: spot, x1: spot,
+        y0: 0, y1: yMax,
+        line: {{ color: '#9aa0a6', width: 2, dash: 'dot' }},
+        xref: 'x', yref: 'y'
+      }};
+    }}
+
+    function buildLayout(title, xTitle, yTitle, spot, yMax){{
+      const shape = verticalSpotShape(spot, yMax);
+      return {{
+        title: {{ text: title, font: {{ size: 16 }} }},
+        xaxis: {{ title: xTitle, gridcolor: '#20242a', tickfont: {{size: 11}} }},
+        yaxis: {{ title: yTitle, gridcolor: '#20242a', tickfont: {{size: 11}} }},
+        paper_bgcolor: '#121417',
+        plot_bgcolor: '#0f1115',
+        font: {{ color: '#e6e7e9' }},
+        margin: {{ t: 40, r: 16, b: 48, l: 48 }},
+        barmode: 'group',
+        shapes: shape ? [shape] : []
+      }};
+    }}
+
+    function tracesForBars(strikes, callArr, putArr, yLabel){{
+      return [
+        {{
+          type: 'bar',
+          name: 'Calls ' + yLabel,
+          x: strikes, y: callArr,
+          marker: {{ color: '#22c55e' }},
+          offsetgroup: 'calls',
+          hovertemplate: 'Strike %{x}<br>Calls: %{y}<extra></extra>'
+        }},
+        {{
+          type: 'bar',
+          name: 'Puts ' + yLabel,
+          x: strikes, y: putArr,
+          marker: {{ color: '#ef4444' }},
+          offsetgroup: 'puts',
+          hovertemplate: 'Strike %{x}<br>Puts: %{y}<extra></extra>'
+        }}
+      ];
+    }}
+
+    async function drawOrUpdate(){{
+      const data = await fetchSeries();
+      if (!data || !data.strikes || data.strikes.length === 0) return;
+
+      const strikes = data.strikes;
+      const spot    = data.spot;
+      const vMax    = Math.max(...data.callVol, ...data.putVol, 0) * 1.05;
+      const oiMax   = Math.max(...data.callOI,  ...data.putOI,  0) * 1.05;
+
+      const volLayout = buildLayout('Volume by Strike', 'Strike', 'Volume', spot, vMax);
+      const oiLayout  = buildLayout('Open Interest by Strike', 'Strike', 'Open Interest', spot, oiMax);
+
+      const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
+      const oiTraces  = tracesForBars(strikes, data.callOI, data.putOI, 'OI');
+
+      if (firstDraw) {{
+        Plotly.newPlot(volDiv, volTraces, volLayout, {{displayModeBar:false, responsive:true}});
+        Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false, responsive:true}});
+        firstDraw = false;
+      }} else {{
+        Plotly.react(volDiv, volTraces, volLayout, {{displayModeBar:false, responsive:true}});
+        Plotly.react(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false, responsive:true}});
+      }}
+    }}
+
+    function startCharts(){{
+      drawOrUpdate();
+      if (chartsTimer) clearInterval(chartsTimer);
+      chartsTimer = setInterval(drawOrUpdate, PULL_EVERY);
+    }}
+
+    function stopCharts(){{
+      if (chartsTimer) {{ clearInterval(chartsTimer); chartsTimer = null; }}
+    }}
+
+    tabTable.addEventListener('click', showTable);
+    tabCharts.addEventListener('click', showCharts);
+
+    // default: show table
+    showTable();
+  </script>
+</body>
+</html>
+    """)

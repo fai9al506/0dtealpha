@@ -443,13 +443,12 @@ def api_series():
     call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
     put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
 
-    # GEX = Gamma * OI * 100
+    # Signed GEX (dealer convention): Calls +, Puts -
     c_gamma  = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
     p_gamma  = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
     call_gex = ( c_gamma * call_oi * 100.0).astype(float)
     put_gex  = (-p_gamma * put_oi  * 100.0).astype(float)
     net_gex  = (call_gex + put_gex).astype(float)
-
 
     # read spot from last_run_status
     spot = None
@@ -686,13 +685,14 @@ def spxw_dashboard():
 
       <div id="viewCharts" class="panel" style="display:none">
         <div class="header">
-          <div><strong>Volume, Open Interest & GEX</strong></div>
+          <div><strong>GEX, Volume & Open Interest</strong></div>
           <div class="pill">green = calls · red = puts · blue = net</div>
         </div>
         <div class="charts">
+          <!-- GEX first -->
+          <div id="gexChart"></div>
           <div id="volChart"></div>
           <div id="oiChart"></div>
-          <div id="gexChart"></div>
         </div>
       </div>
     </main>
@@ -826,23 +826,24 @@ def spxw_dashboard():
       const gexAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v => Math.abs(v));
       const gexMax = (gexAbs.length ? Math.max(...gexAbs) : 0) * 1.05;
 
+      const gexLayout = buildLayout('Gamma Exposure (GEX)', 'Strike', 'GEX', spot, gexMax);
       const volLayout = buildLayout('Volume', 'Strike', 'Volume', spot, vMax);
       const oiLayout  = buildLayout('Open Interest', 'Strike', 'Open Interest', spot, oiMax);
-      const gexLayout = buildLayout('Gamma Exposure (GEX)', 'Strike', 'GEX', spot, gexMax);
 
+      const gexTraces = tracesForGEX (strikes, data.callGEX, data.putGEX, data.netGEX);
       const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
       const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
-      const gexTraces = tracesForGEX (strikes, data.callGEX, data.putGEX, data.netGEX);
 
       if (firstDraw) {{
+        // GEX first
+        Plotly.newPlot(gexDiv, gexTraces, gexLayout, {{displayModeBar:false, responsive:true}});
         Plotly.newPlot(volDiv, volTraces, volLayout, {{displayModeBar:false, responsive:true}});
         Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false, responsive:true}});
-        Plotly.newPlot(gexDiv, gexTraces, gexLayout, {{displayModeBar:false, responsive:true}});
         firstDraw = false;
       }} else {{
+        Plotly.react(gexDiv, gexTraces, gexLayout, {{displayModeBar:false, responsive:true}});
         Plotly.react(volDiv, volTraces, volLayout, {{displayModeBar:false, responsive:true}});
         Plotly.react(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false, responsive:true}});
-        Plotly.react(gexDiv, gexTraces, gexLayout, {{displayModeBar:false, responsive:true}});
       }}
     }}
 

@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+apscheduler
+pytz
+pandas
+openpyxl

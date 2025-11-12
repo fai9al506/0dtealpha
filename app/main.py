@@ -492,97 +492,32 @@ def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
     csv = df.to_csv(index=False)
     return Response(csv, media_type="text/csv", headers={"Content-Disposition":"attachment; filename=history.csv"})
 
-# ====== TABLE ======
-@app.get("/table")
-def html_table():
-    ts  = last_run_status.get("ts") or ""
-    msg = last_run_status.get("msg") or ""
-    parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
-    exp  = parts.get("exp", "")
-    spot_str = parts.get("spot", "")
-    rows = parts.get("rows", "")
+# ====== TABLE & DASHBOARD HTML TEMPLATES ======
 
-    with _df_lock:
-        df_src = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+TABLE_HTML_TEMPLATE = """
+<html><head><meta charset="utf-8"><title>0DTE Alpha</title>
+<style>
+  body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+         background:#0a0a0a; color:#e5e5e5; padding:20px; }
+  .last { color:#9ca3af; font-size:12px; line-height:1.25; margin:0 0 10px 0; }
+  table.table { border-collapse:collapse; width:100%; font-size:12px; }
+  .table th,.table td { border:1px solid #333; padding:6px 8px; text-align:right; }
+  .table th { background:#111; position:sticky; top:0; z-index:1; }
+  .table td:nth-child(7), .table th:nth-child(7) { background:#111; text-align:center; }
+  .table td:first-child, .table th:first-child { text-align:center; }
+  .table tr.atm td { background:#1a2634; }
+</style>
+</head><body>
+  <h2>SPXW 0DTE — live table</h2>
+  <div class="last">
+    Last run: __TS__<br>exp=__EXP__<br>spot=__SPOT__<br>rows=__ROWS__
+  </div>
+  __BODY__
+  <script>setTimeout(()=>location.reload(), __PULL_MS__);</script>
+</body></html>
+"""
 
-    if df_src is None or df_src.empty:
-        body = "<p>No data yet. If market is open, it will appear within ~30s.</p>"
-    else:
-        base = df_src
-        wanted = [
-            "C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Last",
-            "Strike",
-            "P_Last","P_Delta","P_Gamma","P_IV","P_OpenInterest","P_Volume",
-        ]
-        df = base[wanted].copy()
-        df.columns = [
-            "Volume","Open Int","IV","Gamma","Delta","LAST",
-            "Strike",
-            "LAST","Delta","Gamma","IV","Open Int","Volume",
-        ]
-        try:
-            spot_val = float(spot_str)
-        except:
-            spot_val = None
-        atm_idx = None
-        if spot_val:
-            try:
-                atm_idx = (df["Strike"] - spot_val).abs().idxmin()
-            except:
-                pass
-
-        comma_cols = {"Volume", "Open Int"}
-        def fmt_val(col, v):
-            if pd.isna(v):
-                return ""
-            if col in comma_cols:
-                try:
-                    f = float(v)
-                    return f"{int(f):,}" if abs(f - int(f)) < 1e-9 else f"{f:,.2f}"
-                except:
-                    return str(v)
-            return str(v)
-
-        thead = "<tr>" + "".join(f"<th>{h}</th>" for h in df.columns) + "</tr>"
-        trs = []
-        for i, row in enumerate(df.itertuples(index=False), start=0):
-            cls = ' class="atm"' if (atm_idx is not None and i == atm_idx) else ""
-            tds = [f"<td>{fmt_val(col, v)}</td>" for col, v in zip(df.columns, row)]
-            trs.append(f"<tr{cls}>" + "".join(tds) + "</tr>")
-        body = f'<table class="table"><thead>{thead}</thead><tbody>{"".join(trs)}</tbody></table>'
-
-    page = f"""
-    <html><head><meta charset="utf-8"><title>0DTE Alpha</title>
-    <style>
-      body {{ font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-              background:#0a0a0a; color:#e5e5e5; padding:20px; }}
-      .last {{ color:#9ca3af; font-size:12px; line-height:1.25; margin:0 0 10px 0; }}
-      table.table {{ border-collapse:collapse; width:100%; font-size:12px; }}
-      .table th,.table td {{ border:1px solid #333; padding:6px 8px; text-align:right; }}
-      .table th {{ background:#111; position:sticky; top:0; z-index:1; }}
-      .table td:nth-child(7), .table th:nth-child(7) {{ background:#111; text-align:center; }}
-      .table td:first-child, .table th:first-child {{ text-align:center; }}
-      .table tr.atm td {{ background:#1a2634; }}
-    </style>
-    </head><body>
-      <h2>SPXW 0DTE — live table</h2>
-      <div class="last">
-        Last run: {ts}<br>exp={exp}<br>spot={spot_str}<br>rows={rows}
-      </div>
-      {body}
-      <script>setTimeout(()=>location.reload(), {PULL_EVERY * 1000});</script>
-    </body></html>"""
-    return Response(content=page, media_type="text/html")
-
-# ====== DASHBOARD ======
-@app.get("/", response_class=HTMLResponse)
-def spxw_dashboard():
-    open_now = market_open_now()
-    status_text = "Market OPEN" if open_now else "Market CLOSED"
-    status_color = "#10b981" if open_now else "#ef4444"
-    last_msg = last_run_status.get("msg", ""); last_ts  = last_run_status.get("ts", "")
-
-    return HTMLResponse(f"""
+DASH_HTML_TEMPLATE = """
 <!doctype html>
 <html>
 <head>
@@ -592,37 +527,37 @@ def spxw_dashboard():
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <style>
-    :root {{
+    :root {
       --bg:#0b0c10; --panel:#121417; --muted:#8a8f98; --text:#e6e7e9; --border:#23262b;
       --green:#22c55e; --red:#ef4444; --blue:#60a5fa;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{ margin:0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }}
-    .layout {{ display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }}
-    .sidebar {{
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+    .sidebar {
       background: var(--panel); border-right: 1px solid var(--border); padding: 20px 16px; position: sticky; top:0; height:100vh;
-    }}
-    .brand {{ font-weight: 700; margin-bottom: 6px; }}
-    .small {{ color: var(--muted); font-size: 12px; margin-bottom: 16px; }}
-    .status {{ display:flex; gap:10px; align-items:center; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; margin-bottom:14px; }}
-    .dot {{ width:10px; height:10px; border-radius:999px; background:{status_color}; }}
-    .nav {{ display: grid; gap: 8px; margin-top: 8px; }}
-    .btn {{ display:block; width:100%; text-align:left; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:transparent; color:var(--text); cursor:pointer; }}
-    .btn.active {{ background:#121a2e; border-color:#2a3a57; }}
-    .content {{ padding: 18px; }}
-    .panel {{ background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:12px; overflow:hidden; }}
-    .header {{ display:flex; align-items:center; justify-content:space-between; padding:6px 10px 12px; border-bottom:1px solid var(--border); margin-bottom:10px;}}
-    .pill {{ font-size:12px; padding:4px 8px; border:1px solid var(--border); border-radius:999px; color:var(--muted); }}
+    }
+    .brand { font-weight: 700; margin-bottom: 6px; }
+    .small { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+    .status { display:flex; gap:10px; align-items:center; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; margin-bottom:14px; }
+    .dot { width:10px; height:10px; border-radius:999px; background:__STATUS_COLOR__; }
+    .nav { display: grid; gap: 8px; margin-top: 8px; }
+    .btn { display:block; width:100%; text-align:left; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:transparent; color:var(--text); cursor:pointer; }
+    .btn.active { background:#121a2e; border-color:#2a3a57; }
+    .content { padding: 18px; }
+    .panel { background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:12px; overflow:hidden; }
+    .header { display:flex; align-items:center; justify-content:space-between; padding:6px 10px 12px; border-bottom:1px solid var(--border); margin-bottom:10px;}
+    .pill { font-size:12px; padding:4px 8px; border:1px solid var(--border); border-radius:999px; color:var(--muted); }
 
-    .charts {{ display:flex; flex-direction:column; gap:24px; }}
-    iframe {{ width:100%; height: calc(100vh - 180px); border:0; background:#0f1115; }}
-    #volChart, #oiChart, #gexChart {{ width:100%; height:480px; }}
+    .charts { display:flex; flex-direction:column; gap:24px; }
+    iframe { width:100%; height: calc(100vh - 180px); border:0; background:#0f1115; }
+    #volChart, #oiChart, #gexChart { width:100%; height:480px; }
 
-    .spot-grid {{ display:grid; grid-template-columns: 2fr 1fr 1fr; gap:12px; align-items:stretch; }}
-    .card {{ background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:12px; min-height:420px; display:flex; flex-direction:column }}
-    .card h3 {{ margin:0 0 8px; font-size:14px; color:var(--muted); font-weight:600 }}
-    .plot {{ width:100%; height:100% }}
-    @media (max-width: 1200px) {{ .spot-grid {{ grid-template-columns:1fr; }} }}
+    .spot-grid { display:grid; grid-template-columns: 2fr 1fr 1fr; gap:12px; align-items:stretch; }
+    .card { background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:12px; min-height:420px; display:flex; flex-direction:column }
+    .card h3 { margin:0 0 8px; font-size:14px; color:var(--muted); font-weight:600 }
+    .plot { width:100%; height:100% }
+    @media (max-width: 1200px) { .spot-grid { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -633,8 +568,8 @@ def spxw_dashboard():
       <div class="status">
         <span class="dot"></span>
         <div>
-          <div style="font-weight:600;">{status_text}</div>
-          <div class="small">Last run: {last_ts} — {last_msg}</div>
+          <div style="font-weight:600;">__STATUS_TEXT__</div>
+          <div class="small">Last run: __LAST_TS__ — __LAST_MSG__</div>
         </div>
       </div>
       <div class="nav">
@@ -680,7 +615,7 @@ def spxw_dashboard():
   </div>
 
   <script>
-    const PULL_EVERY = {PULL_EVERY * 1000};
+    const PULL_EVERY = __PULL_MS__;
 
     // Tabs
     const tabTable=document.getElementById('tabTable'),
@@ -690,7 +625,10 @@ def spxw_dashboard():
           viewCharts=document.getElementById('viewCharts'),
           viewSpot=document.getElementById('viewSpot');
 
-    function setActive(btn){ [tabTable,tabCharts,tabSpot].forEach(b=>b.classList.remove('active')); btn.classList.add('active'); }
+    function setActive(btn){
+      [tabTable,tabCharts,tabSpot].forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+    }
     function showTable(){ setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewSpot.style.display='none'; stopCharts(); stopSpot(); }
     function showCharts(){ setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewSpot.style.display='none'; startCharts(); stopSpot(); }
     function showSpot(){ setActive(tabSpot); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display=''; startSpot(); stopCharts(); }
@@ -790,7 +728,7 @@ def spxw_dashboard():
       if (!document.getElementById('tvContainer')) return;
       tvInitialized = true;
       new TradingView.widget({
-        "symbol": "SPX",          // or "US500", "ES1!"
+        "symbol": "SPX",
         "interval": "3",
         "container_id": "tvContainer",
         "autosize": true,
@@ -809,7 +747,6 @@ def spxw_dashboard():
       const yMin = Math.min(...strikes), yMax = Math.max(...strikes);
       const pad = (yMax - yMin) * 0.02;
 
-      // Net GEX (symmetric)
       const gexNet = data.netGEX || [];
       const gMax = Math.max(1, ...gexNet.map(v=>Math.abs(v))) * 1.1;
       const gex = {
@@ -829,7 +766,6 @@ def spxw_dashboard():
         font:{color:'#e6e7e9'}
       }, {displayModeBar:false,responsive:true});
 
-      // VOL
       const callVol = data.callVol || [];
       const putVol  = data.putVol  || [];
       const vMax = Math.max(1, ...callVol, ...putVol) * 1.1;
@@ -881,4 +817,89 @@ def spxw_dashboard():
   </script>
 </body>
 </html>
-    """)
+"""
+
+# ====== TABLE ENDPOINT ======
+@app.get("/table")
+def html_table():
+    ts  = last_run_status.get("ts") or ""
+    msg = last_run_status.get("msg") or ""
+    parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+    exp  = parts.get("exp", "")
+    spot_str = parts.get("spot", "")
+    rows = parts.get("rows", "")
+
+    with _df_lock:
+        df_src = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+
+    if df_src is None or df_src.empty:
+        body_html = "<p>No data yet. If market is open, it will appear within ~30s.</p>"
+    else:
+        base = df_src
+        wanted = [
+            "C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Last",
+            "Strike",
+            "P_Last","P_Delta","P_Gamma","P_IV","P_OpenInterest","P_Volume",
+        ]
+        df = base[wanted].copy()
+        df.columns = [
+            "Volume","Open Int","IV","Gamma","Delta","LAST",
+            "Strike",
+            "LAST","Delta","Gamma","IV","Open Int","Volume",
+        ]
+        try:
+            spot_val = float(spot_str)
+        except:
+            spot_val = None
+        atm_idx = None
+        if spot_val:
+            try:
+                atm_idx = (df["Strike"] - spot_val).abs().idxmin()
+            except:
+                pass
+
+        comma_cols = {"Volume", "Open Int"}
+        def fmt_val(col, v):
+            if pd.isna(v):
+                return ""
+            if col in comma_cols:
+                try:
+                    f = float(v)
+                    return f"{int(f):,}" if abs(f - int(f)) < 1e-9 else f"{f:,.2f}"
+                except:
+                    return str(v)
+            return str(v)
+
+        thead = "<tr>" + "".join(f"<th>{h}</th>" for h in df.columns) + "</tr>"
+        trs = []
+        for i, row in enumerate(df.itertuples(index=False), start=0):
+            cls = ' class="atm"' if (atm_idx is not None and i == atm_idx) else ""
+            tds = [f"<td>{fmt_val(col, v)}</td>" for col, v in zip(df.columns, row)]
+            trs.append(f"<tr{cls}>" + "".join(tds) + "</tr>")
+        body_html = f'<table class="table"><thead>{thead}</thead><tbody>{"".join(trs)}</tbody></table>'
+
+    html = (TABLE_HTML_TEMPLATE
+            .replace("__TS__", ts)
+            .replace("__EXP__", exp)
+            .replace("__SPOT__", spot_str)
+            .replace("__ROWS__", rows)
+            .replace("__BODY__", body_html)
+            .replace("__PULL_MS__", str(PULL_EVERY * 1000)))
+    return Response(content=html, media_type="text/html")
+
+# ====== DASHBOARD ENDPOINT ======
+@app.get("/", response_class=HTMLResponse)
+def spxw_dashboard():
+    open_now = market_open_now()
+    status_text = "Market OPEN" if open_now else "Market CLOSED"
+    status_color = "#10b981" if open_now else "#ef4444"
+    last_msg = last_run_status.get("msg", "")
+    last_ts  = last_run_status.get("ts", "")
+
+    html = (DASH_HTML_TEMPLATE
+            .replace("__STATUS_COLOR__", status_color)
+            .replace("__STATUS_TEXT__", status_text)
+            .replace("__LAST_TS__", last_ts)
+            .replace("__LAST_MSG__", last_msg)
+            .replace("__PULL_MS__", str(PULL_EVERY * 1000)))
+    return HTMLResponse(html)

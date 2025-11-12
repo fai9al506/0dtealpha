@@ -118,15 +118,15 @@ def snapshot_chain(exp_ymd: str, spot: float) -> list[dict]:
     }
     js = api_get("/marketdata/options/chains", params=params, timeout=15).json()
     rows = []
+    def fnum(x):
+        if x in (None, "", "-", "NaN", "nan"): return None
+        try: return float(str(x).replace(",",""))
+        except: return None
     for it in js.get("Options", []):
         legs = it.get("Legs") or []
         leg0 = legs[0] if legs else {}
         side = (leg0.get("OptionType") or it.get("OptionType") or "").lower()
         side = "C" if side.startswith("c") else "P" if side.startswith("p") else "?"
-        def fnum(x):
-            if x in (None, "", "-", "NaN", "nan"): return None
-            try: return float(str(x).replace(",",""))
-            except: return None
         rows.append({
             "Type": side,
             "Strike": fnum(leg0.get("StrikePrice")),
@@ -195,28 +195,24 @@ def run_market_job():
 def save_history_job():
     """Every 5 minutes: persist latest_df to Postgres for later analysis/tests."""
     global _last_saved_at
-    if not engine:  # no DB configured
+    if not engine:
         return
     if latest_df is None or latest_df.empty:
         return
-    # avoid double saves within same minute if scheduler overlaps
     if time.time() - _last_saved_at < 60:
         return
     try:
         df = latest_df.copy()
         df.columns = DISPLAY_COLS
         payload = {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
-        # spot/exp info from status
         msg = (last_run_status.get("msg") or "")
         spot = None
         exp  = None
         try:
-            # parse "exp=YYYY-MM-DD spot=1234.56 rows=40"
             parts = dict(s.split("=") for s in msg.split() if "=" in s)
             spot = float(parts.get("spot",""))
             exp  = parts.get("exp")
         except: pass
-
         with engine.begin() as conn:
             conn.execute(
                 text("INSERT INTO chain_snapshots (ts, exp, spot, columns, rows) VALUES (:ts, :exp, :spot, :columns, :rows)"),
@@ -225,14 +221,14 @@ def save_history_job():
                  "rows": json.dumps(payload["rows"])}
             )
         _last_saved_at = time.time()
-    except Exception as e:
-        # keep silent in API; check logs on Railway if needed
+    except Exception:
+        # Check Railway logs if needed
         pass
 
 def start_scheduler():
     sch = BackgroundScheduler(timezone="US/Eastern")
     sch.add_job(run_market_job, "interval", seconds=PULL_EVERY, id="pull")
-    sch.add_job(save_history_job, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="save")  # every 5 min
+    sch.add_job(save_history_job, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="save")
     sch.start()
 
 @app.on_event("startup")
@@ -241,9 +237,107 @@ def on_startup():
     start_scheduler()
 
 # ====== Endpoints ======
-@app.get("/")
-def health():
+@app.get("/api/health")
+def api_health():
     return {"status": "ok", "last": last_run_status}
+
+@app.get("/")
+def home():
+    # Landing page with status + buttons
+    open_now = market_open_now()
+    status_text = "Market OPEN" if open_now else "Market CLOSED"
+    status_color = "#10b981" if open_now else "#ef4444"
+    last_msg = last_run_status.get("msg", "")
+    last_ts  = last_run_status.get("ts", "")
+
+    html = f"""
+    <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>0DTE Alpha</title>
+      <style>
+        :root {{
+          --bg:#0a0a0a; --card:#121212; --text:#e5e5e5; --muted:#9ca3af; --ring:#2d2d2d;
+        }}
+        * {{ box-sizing:border-box; }}
+        body {{
+          margin:0; padding:24px; background:var(--bg); color:var(--text);
+          font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+        }}
+        .wrap {{ max-width: 880px; margin: 0 auto; }}
+        h1 {{ font-size:28px; margin:0 0 10px; }}
+        .sub {{ color:var(--muted); margin-bottom:20px; }}
+        .status {{
+          display:inline-flex; align-items:center; gap:10px; padding:10px 14px; border:1px solid var(--ring);
+          border-radius:12px; background:var(--card); margin-bottom:20px;
+        }}
+        .dot {{ width:10px; height:10px; border-radius:999px; background:{status_color}; display:inline-block; }}
+        .grid {{
+          display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          margin-top:16px;
+        }}
+        .btn {{
+          display:flex; align-items:center; justify-content:center; text-decoration:none; color:var(--text);
+          border:1px solid var(--ring); background:var(--card); border-radius:14px; padding:16px;
+          transition: transform .05s ease, border-color .15s ease;
+        }}
+        .btn:hover {{ border-color:#3b3b3b; transform: translateY(-1px); }}
+        .btn small {{ display:block; color:var(--muted); margin-top:6px; }}
+        .foot {{ color:var(--muted); font-size:12px; margin-top:18px; }}
+      </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <h1>0DTE Alpha</h1>
+        <div class="sub">SPXW 0DTE live data & history</div>
+
+        <div class="status">
+          <span class="dot"></span>
+          <div>
+            <div style="font-weight:600;">{status_text}</div>
+            <div style="color:var(--muted); font-size:12px;">Last run: {last_ts} — {last_msg}</div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <a class="btn" href="/table">
+            <div>
+              <div style="font-weight:600;">Live Table</div>
+              <small>Auto-refresh every 15s</small>
+            </div>
+          </a>
+
+          <a class="btn" href="/api/snapshot">
+            <div>
+              <div style="font-weight:600;">Current JSON</div>
+              <small>For programmatic access</small>
+            </div>
+          </a>
+
+          <a class="btn" href="/api/history">
+            <div>
+              <div style="font-weight:600;">History (JSON)</div>
+              <small>Saved every 5 minutes</small>
+            </div>
+          </a>
+
+          <a class="btn" href="/download/history.csv">
+            <div>
+              <div style="font-weight:600;">Download CSV</div>
+              <small>Quick export for analysis</small>
+            </div>
+          </a>
+        </div>
+
+        <div class="foot">Page refreshes status every 30s.</div>
+      </div>
+
+      <script>setTimeout(()=>location.reload(), 30000);</script>
+    </body>
+    </html>
+    """
+    return Response(content=html, media_type="text/html")
 
 @app.get("/api/snapshot")
 def snapshot():

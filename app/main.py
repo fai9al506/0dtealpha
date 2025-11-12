@@ -893,13 +893,16 @@ def spxw_dashboard():
     open_now = market_open_now()
     status_text = "Market OPEN" if open_now else "Market CLOSED"
     status_color = "#10b981" if open_now else "#ef4444"
-    last_msg = last_run_status.get("msg", "")
-    last_ts  = last_run_status.get("ts", "")
+
+    # Make sure these are always strings
+    last_ts  = last_run_status.get("ts")  or ""
+    last_msg = last_run_status.get("msg") or ""
 
     html = (DASH_HTML_TEMPLATE
             .replace("__STATUS_COLOR__", status_color)
             .replace("__STATUS_TEXT__", status_text)
-            .replace("__LAST_TS__", last_ts)
-            .replace("__LAST_MSG__", last_msg)
+            .replace("__LAST_TS__", str(last_ts))
+            .replace("__LAST_MSG__", str(last_msg))
             .replace("__PULL_MS__", str(PULL_EVERY * 1000)))
     return HTMLResponse(html)
+

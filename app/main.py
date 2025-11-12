@@ -8,6 +8,9 @@ from sqlalchemy import create_engine, text
 # ====== NEW: charts backend & helpers ======
 import matplotlib
 matplotlib.use("Agg")  # server-safe, no GUI
+import os
+import matplotlib
+matplotlib.use("Agg")  # non-GUI backend
 import matplotlib.pyplot as plt
 import numpy as np
 from fastapi.responses import FileResponse, HTMLResponse
@@ -45,8 +48,10 @@ _last_saved_at = 0.0
 
 # NEW: lock + chart paths
 _df_lock = Lock()
-VOL_CHART_PATH = "/mnt/data/volume_chart.png"
-OI_CHART_PATH  = "/mnt/data/oi_chart.png"
+CHART_DIR = "/app/static"
+os.makedirs(CHART_DIR, exist_ok=True)
+VOL_CHART_PATH = f"{CHART_DIR}/volume_chart.png"
+OI_CHART_PATH  = f"{CHART_DIR}/oi_chart.png"
 
 # ====== DB ======
 engine = create_engine(DB_URL, pool_pre_ping=True) if DB_URL else None

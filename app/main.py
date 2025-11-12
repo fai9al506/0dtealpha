@@ -528,19 +528,53 @@ def snapshot():
 
 @app.get("/table")
 def html_table():
+    ts  = last_run_status.get("ts") or ""
+    msg = last_run_status.get("msg") or ""
+    parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+    exp  = parts.get("exp", "")
+    spot = parts.get("spot", "")
+    rows = parts.get("rows", "")
+
     if latest_df is None or latest_df.empty:
         body = "<p>No data yet. If market is open, it will appear within ~15s.</p>"
     else:
-        df = latest_df.copy(); df.columns = DISPLAY_COLS
+        df = latest_df.copy()
+        df.columns = DISPLAY_COLS
+
+        # Format volume columns with commas
+        for col in ["Volume", "Volume "]:  # handles both call & put sides
+            for c in df.columns:
+                if c.strip().lower() == col.strip().lower():
+                    df[c] = df[c].apply(lambda x: f"{int(x):,}" if pd.notna(x) and str(x).isdigit() else x)
+
         body = df.to_html(index=False).replace('class="dataframe"', 'class="table"')
+
     page = f"""
     <html><head><meta charset="utf-8"><title>0DTE Alpha</title>
-    <style>body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0a0a0a;color:#e5e5e5;padding:20px}}
-    table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #333;padding:6px 8px;text-align:right}}
-    th{{background:#111;position:sticky;top:0}}td:first-child,th:first-child{{text-align:center}}</style>
+    <style>
+      body {{
+        font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+        background:#0a0a0a; color:#e5e5e5; padding:20px;
+      }}
+      .last {{
+        color:#9ca3af; font-size:12px; line-height:1.25; margin:0 0 10px 0;
+      }}
+      table {{ border-collapse:collapse; width:100%; font-size:12px; }}
+      th,td {{ border:1px solid #333; padding:6px 8px; text-align:right; }}
+      th {{ background:#111; position:sticky; top:0; z-index:1; }}
+      /* Strike column shaded */
+      td:nth-child(11), th:nth-child(11) {{ background:#111; text-align:center; }}
+      /* Leftmost column centered */
+      td:first-child, th:first-child {{ text-align:center; }}
+    </style>
     </head><body>
       <h2>SPXW 0DTE — live table</h2>
-      <small>Last run: {last_run_status.get("ts")} — {last_run_status.get("msg")}</small>
+      <div class="last">
+        Last run: {ts}<br>
+        exp={exp}<br>
+        spot={spot}<br>
+        rows={rows}
+      </div>
       {body}
       <script>setTimeout(()=>location.reload(), 15000);</script>
     </body></html>"""

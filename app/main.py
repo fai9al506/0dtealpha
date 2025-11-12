@@ -618,10 +618,24 @@ def spxw_dashboard():
     }}
     .header {{ display:flex; align-items:center; justify-content:space-between; padding: 6px 10px 12px; border-bottom:1px solid var(--border); margin-bottom:10px;}}
     .pill {{ font-size: 12px; padding: 4px 8px; border:1px solid var(--border); border-radius: 999px; color: var(--muted); }}
-    .charts {{ display: grid; grid-template-columns: 1fr; gap: 12px; }}
-    @media (min-width: 1100px){{ .charts {{ grid-template-columns: 1fr 1fr; }} }}
-    iframe {{ width: 100%; height: calc(100vh - 180px); border: 0; background: #0f1115; }}
-    #volChart, #oiChart {{ width: 100%; height: 480px; }}
+   .charts { 
+  display: flex; 
+  flex-direction: column; 
+  gap: 24px; 
+}
+
+iframe { 
+  width: 100%; 
+  height: calc(100vh - 180px); 
+  border: 0; 
+  background: #0f1115; 
+}
+
+#volChart, 
+#oiChart { 
+  width: 100%; 
+  height: 480px; 
+}
   </style>
 </head>
 <body>

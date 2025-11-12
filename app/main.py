@@ -999,7 +999,7 @@ def spxw_dashboard():
 
       // right side: GEX horizontal
       const gex = {{ type:'bar', orientation:'h', x: chain.map(d=>d.gex||0), y: chain.map(d=>d.strike),
-                     hovertemplate:'Strike %{y}<br>GEX %{x:.2f}<extra></extra>' }};
+                     hovertemplate:'Strike %{{y}}<br>GEX %{{x:.2f}}<extra></extra>' }};
       Plotly.react(gexSideDiv, [gex], {{
         margin:{{l:60,r:16,t:10,b:30}},
         paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
@@ -1010,7 +1010,7 @@ def spxw_dashboard():
 
       // right side: VOL horizontal
       const vol = {{ type:'bar', orientation:'h', x: chain.map(d=>d.vol||0), y: chain.map(d=>d.strike),
-                     hovertemplate:'Strike %{y}<br>VOL %{x}<extra></extra>' }};
+                     hovertemplate:'Strike %{{y}}<br>VOL %{{x}}<extra></extra>' }};
       Plotly.react(volSideDiv, [vol], {{
         margin:{{l:60,r:16,t:10,b:30}},
         paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
@@ -1026,7 +1026,7 @@ def spxw_dashboard():
         if(spot.length){{
           const trace = {{ type:'scatter', mode:'lines',
                            x: spot.map(d=>new Date(d.ts)), y: spot.map(d=>d.spot),
-                           hovertemplate:'%{{x|%H:%M}}<br>Spot %{y:.2f}<extra></extra>' }};
+                           hovertemplate:'%{{x|%H:%M}}<br>Spot %{{y:.2f}}<extra></extra>' }};
           Plotly.react(priceDiv, [trace], {{
             margin:{{l:60,r:16,t:10,b:30}},
             paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
@@ -1051,7 +1051,7 @@ def spxw_dashboard():
       spotTimer = setInterval(tickSpot, 15000);
     }}
     function stopSpot(){{
-      if(spotTimer){ clearInterval(spotTimer); spotTimer = null; }
+      if(spotTimer){{ clearInterval(spotTimer); spotTimer = null; }}
     }}
 
     // default: show table

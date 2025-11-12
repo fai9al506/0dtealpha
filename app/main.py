@@ -740,7 +740,7 @@ def spxw_dashboard():
           x: strikes, y: callArr,
           marker: {{ color: '#22c55e' }},
           offsetgroup: 'calls',
-          hovertemplate: "Strike %%{x}<br>Calls: %%{y}<extra></extra>"
+          hovertemplate: "Strike %%{{x}}<br>Calls: %%{{y}}<extra></extra>"
         }},
         {{
           type: 'bar',
@@ -748,7 +748,7 @@ def spxw_dashboard():
           x: strikes, y: putArr,
           marker: {{ color: '#ef4444' }},
           offsetgroup: 'puts',
-          hovertemplate: "Strike %%{x}<br>Puts: %%{y}<extra></extra>"
+          hovertemplate: "Strike %%{{x}}<br>Puts: %%{{y}}<extra></extra>"
         }}
       ];
     }}

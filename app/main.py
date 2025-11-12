@@ -35,6 +35,7 @@ engine = create_engine(DB_URL, pool_pre_ping=True) if DB_URL else None
 
 def db_init():
     if not engine:
+        print("[db] DATABASE_URL missing; history disabled", flush=True)
         return
     with engine.begin() as conn:
         conn.execute(text("""
@@ -48,6 +49,7 @@ def db_init():
         );
         CREATE INDEX IF NOT EXISTS ix_chain_snapshots_ts ON chain_snapshots (ts DESC);
         """))
+    print("[db] ready", flush=True)
 
 # ====== Auth (refresh-token only, headless) ======
 _access_token = None
@@ -60,16 +62,22 @@ def ts_access_token() -> str:
         return _access_token
     if not (CID and SECRET and RTOKEN):
         raise RuntimeError("Missing env: TS_CLIENT_ID / TS_CLIENT_SECRET / TS_REFRESH_TOKEN")
-    r = requests.post(f"{AUTH_DOMAIN}/oauth/token", data={
-        "grant_type":"refresh_token",
-        "refresh_token": RTOKEN,
-        "client_id": CID,
-        "client_secret": SECRET,
-    }, timeout=15)
-    r.raise_for_status()
+    r = requests.post(
+        f"{AUTH_DOMAIN}/oauth/token",
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": RTOKEN,
+            "client_id": CID,
+            "client_secret": SECRET,
+        },
+        timeout=15,
+    )
+    if r.status_code >= 400:
+        raise RuntimeError(f"token refresh [{r.status_code}] {r.text[:300]}")
     tok = r.json()
     _access_token = tok["access_token"]
     _access_exp_at = now + int(tok.get("expires_in", 900))
+    print("[auth] token refreshed; expires_in:", tok.get("expires_in"), flush=True)
     return _access_token
 
 def api_get(path, params=None, stream=False, timeout=10):
@@ -84,7 +92,6 @@ def now_et():
     return datetime.now(NY)
 
 def fmt_et(dt: datetime) -> str:
-    # Clean human string for UI only
     return dt.strftime("%Y-%m-%d %H:%M %Z")
 
 def market_open_now() -> bool:
@@ -99,8 +106,10 @@ def get_spx_last() -> float:
     for q in js.get("Quotes", []):
         if q.get("Symbol") == "$SPX.X":
             v = q.get("Last") or q.get("Close")
-            try: return float(v)
-            except: return 0.0
+            try:
+                return float(v)
+            except:
+                return 0.0
     return 0.0
 
 def get_0dte_exp() -> str:
@@ -111,8 +120,8 @@ def get_0dte_exp() -> str:
             d = str(e.get("Date") or e.get("Expiration") or "")[:10]
             if d == ymd:
                 return d
-    except:
-        pass
+    except Exception as e:
+        print("[exp] failed:", e, flush=True)
     return ymd
 
 def snapshot_chain(exp_ymd: str, spot: float) -> list[dict]:
@@ -190,36 +199,29 @@ def run_market_job():
     global latest_df, last_run_status
     try:
         if not market_open_now():
-            last_run_status = {
-                "ts": fmt_et(now_et()),
-                "ok": True,
-                "msg": "outside market hours"
-            }
+            last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
+            print("[pull] skipped (closed)", last_run_status["ts"], flush=True)
             return
+
         spot = get_spx_last()
         exp  = get_0dte_exp()
-        df   = to_side_by_side(snapshot_chain(exp, spot))
+        rows = snapshot_chain(exp, spot)
+        df   = to_side_by_side(rows)
+
         if spot and not df.empty:
             df = df.iloc[(df["Strike"]-spot).abs().sort_values().index[:40]].sort_values("Strike").reset_index(drop=True)
+
         latest_df = df
-        last_run_status = {
-            "ts": fmt_et(now_et()),
-            "ok": True,
-            "msg": f"exp={exp} spot={round(spot,2)} rows={len(df)}"
-        }
+        last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot,2)} rows={len(df)}"}
+        print("[pull] OK", last_run_status["msg"], flush=True)
     except Exception as e:
-        last_run_status = {
-            "ts": fmt_et(now_et()),
-            "ok": False,
-            "msg": f"error: {e}"
-        }
+        last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}
+        print("[pull] ERROR", e, flush=True)
 
 def save_history_job():
     """Every N minutes: persist latest_df to Postgres for later analysis/tests."""
     global _last_saved_at
-    if not engine:
-        return
-    if latest_df is None or latest_df.empty:
+    if not engine or latest_df is None or latest_df.empty:
         return
     if time.time() - _last_saved_at < 60:
         return
@@ -244,25 +246,56 @@ def save_history_job():
                  "rows": json.dumps(payload["rows"])}
             )
         _last_saved_at = time.time()
-    except Exception:
-        # Check Railway logs if needed
-        pass
+        print("[save] snapshot inserted", flush=True)
+    except Exception as e:
+        print("[save] failed:", e, flush=True)
 
 def start_scheduler():
     sch = BackgroundScheduler(timezone="US/Eastern")
-    sch.add_job(run_market_job, "interval", seconds=PULL_EVERY, id="pull")
-    sch.add_job(save_history_job, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="save")
+    sch.add_job(run_market_job, "interval", seconds=PULL_EVERY, id="pull", coalesce=True, max_instances=1)
+    sch.add_job(save_history_job, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="save", coalesce=True, max_instances=1)
     sch.start()
+    print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min", flush=True)
+    return sch
+
+REQUIRED_ENVS = ["TS_CLIENT_ID","TS_CLIENT_SECRET","TS_REFRESH_TOKEN","DATABASE_URL"]
+
+def missing_envs():
+    return [k for k in REQUIRED_ENVS if not os.getenv(k)]
+
+scheduler: BackgroundScheduler | None = None
 
 @app.on_event("startup")
 def on_startup():
-    if engine: db_init()
-    start_scheduler()
+    miss = missing_envs()
+    if miss:
+        print("[env] missing:", miss, flush=True)
+    if engine:
+        db_init()
+    else:
+        print("[db] engine not created (no DATABASE_URL)", flush=True)
+    global scheduler
+    scheduler = start_scheduler()
+
+@app.on_event("shutdown")
+def on_shutdown():
+    global scheduler
+    if scheduler:
+        scheduler.shutdown()
+        print("[sched] stopped", flush=True)
 
 # ====== Endpoints ======
 @app.get("/api/health")
 def api_health():
     return {"status": "ok", "last": last_run_status}
+
+@app.get("/debug/env")
+def debug_env():
+    return {"missing": missing_envs()}
+
+@app.get("/status")
+def status():
+    return last_run_status
 
 @app.get("/")
 def home():

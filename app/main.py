@@ -140,8 +140,10 @@ def get_spx_last() -> float:
     for q in js.get("Quotes", []):
         if q.get("Symbol") == "$SPX.X":
             v = q.get("Last") or q.get("Close")
-            try: return float(v)
-            except: return 0.0
+            try:
+                return float(v)
+            except:
+                return 0.0
     return 0.0
 
 def get_0dte_exp() -> str:
@@ -491,7 +493,6 @@ def api_spot_data():
                 c = float(row["last"]  if pd.notna(row["last"])  else o)
                 candles.append({"t": int(idx.timestamp()*1000), "o": o, "h": h, "l": l, "c": c})
     if not candles:
-        # placeholder from last known spot
         last_spot = spot_list[-1]["spot"] if spot_list else None
         if last_spot:
             t = int(datetime.now(timezone.utc).timestamp()*1000)

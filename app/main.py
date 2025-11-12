@@ -426,31 +426,43 @@ def snapshot():
 
 @app.get("/api/series")
 def api_series():
-    """Series for charts: strikes (float), call/put volume & OI, plus spot."""
+    """Series for charts: strikes, call/put volume & OI, GEX triplet, plus spot."""
     with _df_lock:
         df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
     if df is None or df.empty:
-        return {"strikes": [], "callVol": [], "putVol": [], "callOI": [], "putOI": [], "spot": None}
+        return {
+            "strikes": [], "callVol": [], "putVol": [], "callOI": [], "putOI": [],
+            "callGEX": [], "putGEX": [], "netGEX": [], "spot": None
+        }
 
     sdf = df.sort_values("Strike")
-    strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float).tolist()
-    call_vol = pd.to_numeric(sdf["C_Volume"], errors="coerce").fillna(0.0).astype(float).tolist()
-    put_vol  = pd.to_numeric(sdf["P_Volume"],  errors="coerce").fillna(0.0).astype(float).tolist()
-    call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float).tolist()
-    put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float).tolist()
+    s  = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
+
+    call_vol = pd.to_numeric(sdf["C_Volume"],       errors="coerce").fillna(0.0).astype(float)
+    put_vol  = pd.to_numeric(sdf["P_Volume"],       errors="coerce").fillna(0.0).astype(float)
+    call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+    put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+
+    # GEX = Gamma * OI * 100
+    c_gamma  = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+    p_gamma  = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+    call_gex = (c_gamma * call_oi * 100.0).astype(float)
+    put_gex  = (p_gamma * put_oi  * 100.0).astype(float)
+    net_gex  = (call_gex - put_gex).astype(float)
 
     # read spot from last_run_status
     spot = None
     try:
-        parts = dict(s.split("=", 1) for s in (last_run_status.get("msg") or "").split() if "=" in s)
+        parts = dict(splt.split("=", 1) for splt in (last_run_status.get("msg") or "").split() if "=" in splt)
         spot = float(parts.get("spot",""))
     except:
         spot = None
 
     return {
-        "strikes": strikes,
-        "callVol": call_vol, "putVol": put_vol,
-        "callOI":  call_oi,  "putOI":  put_oi,
+        "strikes": s.tolist(),
+        "callVol": call_vol.tolist(), "putVol": put_vol.tolist(),
+        "callOI":  call_oi.tolist(),  "putOI":  put_oi.tolist(),
+        "callGEX": call_gex.tolist(), "putGEX": put_gex.tolist(), "netGEX": net_gex.tolist(),
         "spot": spot
     }
 
@@ -592,7 +604,7 @@ def spxw_dashboard():
   <style>
     :root {{
       --bg:#0b0c10; --panel:#121417; --muted:#8a8f98; --text:#e6e7e9; --accent:#1f6feb;
-      --green:#22c55e; --red:#ef4444; --border:#23262b;
+      --green:#22c55e; --red:#ef4444; --border:#23262b; --blue:#60a5fa;
     }}
     * {{ box-sizing: border-box; }}
     body {{ margin:0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }}
@@ -632,7 +644,7 @@ def spxw_dashboard():
       background: #0f1115;
     }}
 
-    #volChart, #oiChart {{
+    #volChart, #oiChart, #gexChart {{
       width: 100%;
       height: 480px;
     }}
@@ -673,12 +685,13 @@ def spxw_dashboard():
 
       <div id="viewCharts" class="panel" style="display:none">
         <div class="header">
-          <div><strong>Volume & Open Interest</strong></div>
-          <div class="pill">green = calls · red = puts · grey line = spot</div>
+          <div><strong>Volume, Open Interest & GEX</strong></div>
+          <div class="pill">green = calls · red = puts · blue = net</div>
         </div>
         <div class="charts">
           <div id="volChart"></div>
           <div id="oiChart"></div>
+          <div id="gexChart"></div>
         </div>
       </div>
     </main>
@@ -692,6 +705,7 @@ def spxw_dashboard():
     const viewCharts= document.getElementById('viewCharts');
     const volDiv    = document.getElementById('volChart');
     const oiDiv     = document.getElementById('oiChart');
+    const gexDiv    = document.getElementById('gexChart');
 
     let chartsTimer = null;
     let firstDraw   = true;
@@ -716,7 +730,7 @@ def spxw_dashboard():
     }}
 
     async function fetchSeries(){{
-      const r = await fetch('/api/series');
+      const r = await fetch('/api/series', {{ cache: 'no-store' }});
       return await r.json();
     }}
 
@@ -767,28 +781,67 @@ def spxw_dashboard():
       ];
     }}
 
+    function tracesForGEX(strikes, callGEX, putGEX, netGEX){{
+      return [
+        {{
+          type: 'bar',
+          name: 'Call GEX',
+          x: strikes, y: callGEX,
+          marker: {{ color: '#22c55e' }},
+          offsetgroup: 'call_gex',
+          hovertemplate: "Strike %{{x}}<br>Call GEX: %{{y:.2f}}<extra></extra>"
+        }},
+        {{
+          type: 'bar',
+          name: 'Put GEX',
+          x: strikes, y: putGEX,
+          marker: {{ color: '#ef4444' }},
+          offsetgroup: 'put_gex',
+          hovertemplate: "Strike %{{x}}<br>Put GEX: %{{y:.2f}}<extra></extra>"
+        }},
+        {{
+          type: 'bar',
+          name: 'Net GEX',
+          x: strikes, y: netGEX,
+          marker: {{ color: '#60a5fa' }},
+          offsetgroup: 'net_gex',
+          opacity: 0.85,
+          hovertemplate: "Strike %{{x}}<br>Net GEX: %{{y:.2f}}<extra></extra>"
+        }}
+      ];
+    }}
+
     async function drawOrUpdate(){{
       const data = await fetchSeries();
       if (!data || !data.strikes || data.strikes.length === 0) return;
 
       const strikes = data.strikes;
       const spot    = data.spot;
-      const vMax    = Math.max(...data.callVol, ...data.putVol, 0) * 1.05;
-      const oiMax   = Math.max(...data.callOI,  ...data.putOI,  0) * 1.05;
+
+      const vMax  = Math.max(...data.callVol, ...data.putVol, 0) * 1.05;
+      const oiMax = Math.max(...data.callOI,  ...data.putOI,  0) * 1.05;
+
+      // GEX can be large; use absolute max across all three for vertical line height
+      const gexAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v => Math.abs(v));
+      const gexMax = (gexAbs.length ? Math.max(...gexAbs) : 0) * 1.05;
 
       const volLayout = buildLayout('Volume', 'Strike', 'Volume', spot, vMax);
       const oiLayout  = buildLayout('Open Interest', 'Strike', 'Open Interest', spot, oiMax);
+      const gexLayout = buildLayout('Gamma Exposure (GEX)', 'Strike', 'GEX', spot, gexMax);
 
       const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
-      const oiTraces  = tracesForBars(strikes, data.callOI, data.putOI, 'OI');
+      const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
+      const gexTraces = tracesForGEX (strikes, data.callGEX, data.putGEX, data.netGEX);
 
       if (firstDraw) {{
         Plotly.newPlot(volDiv, volTraces, volLayout, {{displayModeBar:false, responsive:true}});
         Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false, responsive:true}});
+        Plotly.newPlot(gexDiv, gexTraces, gexLayout, {{displayModeBar:false, responsive:true}});
         firstDraw = false;
       }} else {{
         Plotly.react(volDiv, volTraces, volLayout, {{displayModeBar:false, responsive:true}});
         Plotly.react(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false, responsive:true}});
+        Plotly.react(gexDiv, gexTraces, gexLayout, {{displayModeBar:false, responsive:true}});
       }}
     }}
 

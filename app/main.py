@@ -631,6 +631,26 @@ def html_table():
       </div>
       {body}
       <script>setTimeout(()=>location.reload(), {PULL_EVERY * 1000});</script>
+<script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+<script>
+  function renderTV() {
+    if (document.getElementById('tvContainer').firstChild) return; // already created
+
+    new TradingView.widget({
+      "symbol": "SPX",          // or "US500", "ES1!" etc.
+      "interval": "3",          // 3-minute candles
+      "container_id": "tvContainer",
+      "autosize": true,
+      "theme": "dark",
+      "style": "1",
+      "locale": "en",
+      "hide_legend": false,
+      "hide_side_toolbar": false,
+      "hide_top_toolbar": false
+    });
+  }
+</script>
+
     </body></html>"""
     return Response(content=page, media_type="text/html")
 
@@ -727,7 +747,11 @@ def spxw_dashboard():
       <div id="viewSpot" class="panel" style="display:none">
         <div class="header"><div><strong>Spot</strong></div><div class="pill">SPX 3-min candles (when available) or 1-min line + GEX & VOL</div></div>
         <div class="spot-grid">
-          <div class="card"><h3>SPX Price — last 8h</h3><div id="pricePlot" class="plot"></div></div>
+          <div class="card">
+  <h3>SPX Price — TradingView</h3>
+  <div id="tvContainer" class="plot"></div>
+</div>
+
           <div class="card"><h3>Net GEX by Strike</h3><div id="gexSidePlot" class="plot"></div></div>
           <div class="card"><h3>VOL by Strike (Calls vs Puts)</h3><div id="volSidePlot" class="plot"></div></div>
         </div>

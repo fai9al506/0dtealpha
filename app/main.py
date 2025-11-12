@@ -545,7 +545,11 @@ def html_table():
         df = latest_df.copy()
         df.columns = DISPLAY_COLS
 
-        # ATM row (nearest to spot)
+        # --- remove columns BID / BID QTY / ASK / ASK QTY (both sides) ---
+        drop_cols = {"BID", "BID QTY", "ASK", "ASK QTY"}
+        df = df[[c for c in df.columns if c not in drop_cols]]
+
+        # ATM (nearest-to-spot)
         atm_idx = None
         if spot_val:
             try:
@@ -569,14 +573,12 @@ def html_table():
                     return str(v)
             return str(v)
 
-        # Build HTML table manually (no Styler / jinja2 dependency)
+        # Build HTML table manually
         thead = "<tr>" + "".join(f"<th>{h}</th>" for h in df.columns) + "</tr>"
         trs = []
         for i, row in enumerate(df.itertuples(index=False), start=0):
             cls = ' class="atm"' if (atm_idx is not None and i == atm_idx) else ""
-            tds = []
-            for col, v in zip(df.columns, row):
-                tds.append(f"<td>{fmt_val(col, v)}</td>")
+            tds = [f"<td>{fmt_val(col, v)}</td>" for col, v in zip(df.columns, row)]
             trs.append(f"<tr{cls}>" + "".join(tds) + "</tr>")
         body = f'<table class="table"><thead>{thead}</thead><tbody>{"".join(trs)}</tbody></table>'
 
@@ -593,9 +595,9 @@ def html_table():
       table.table {{ border-collapse:collapse; width:100%; font-size:12px; }}
       .table th,.table td {{ border:1px solid #333; padding:6px 8px; text-align:right; }}
       .table th {{ background:#111; position:sticky; top:0; z-index:1; }}
-      /* Shade Strike column (11th) like header for call/put split */
-      .table td:nth-child(11), .table th:nth-child(11) {{ background:#111; text-align:center; }}
-      /* Leftmost column centered (C Volume) */
+      /* Shade Strike column (now column 7 after drops) */
+      .table td:nth-child(7), .table th:nth-child(7) {{ background:#111; text-align:center; }}
+      /* Leftmost column centered */
       .table td:first-child, .table th:first-child {{ text-align:center; }}
       /* ATM row highlight */
       .table tr.atm td {{ background:#1a2634; }}

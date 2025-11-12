@@ -22,11 +22,11 @@ DB_URL  = os.getenv("DATABASE_URL", "")  # Railway Postgres
 if DB_URL.startswith("postgresql://"):
     DB_URL = DB_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
-# Cadence (HARDCODED as requested)
-PULL_EVERY     = 30   # seconds (spot buffer uses this cadence)
+# Cadence (HARDCODED)
+PULL_EVERY     = 30   # seconds
 SAVE_EVERY_MIN = 5    # minutes
 
-# Chain window like TS.py (HARDCODED as requested)
+# Chain window
 STREAM_SECONDS = 2.0
 TARGET_STRIKES = 40
 
@@ -39,8 +39,7 @@ last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
 _df_lock = Lock()
 
-# rolling intraday spot buffer for the Spot view (kept in-memory)
-# need last 8 hours at 30s cadence -> 8*60*60 / 30 = 960 points
+# keep ~8h at 30s cadence => 960 points (+some room)
 spot_buf = deque(maxlen=1024)
 
 # ====== DB ======
@@ -64,7 +63,7 @@ def db_init():
         """))
     print("[db] ready", flush=True)
 
-# ====== Auth (refresh-token) ======
+# ====== Auth ======
 REFRESH_EARLY_SEC = 300
 _access_token = None
 _access_exp_at = 0.0
@@ -135,7 +134,7 @@ def market_open_now() -> bool:
         return False
     return dtime(9,30) <= t.time() <= dtime(16,0)
 
-# ====== TS API helpers ======
+# ====== TS helpers ======
 def get_spx_last() -> float:
     js = api_get("/marketdata/quotes/%24SPX.X", timeout=8).json()
     for q in js.get("Quotes", []):
@@ -224,7 +223,7 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
                         "Theta": _fnum(it.get("Theta") or it.get("TheoTheta")),
                         "IV": _fnum(it.get("ImpliedVolatility") or it.get("TheoIV")),
                         "Vega": _fnum(it.get("Vega")),
-                        "Volume": it.get("TotalVolume") or it.get("Volume"),
+                        "Volume": _fnum(it.get("TotalVolume") or it.get("Volume")),
                         "OpenInterest": it.get("OpenInterest") or it.get("DailyOpenInterest"),
                     })
                 if rows:
@@ -271,9 +270,9 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
             last_err = e
             continue
 
-    raise RuntimeError(f"SPXW chain fetch failed (formats tried); last_err={last_err}")
+    raise RuntimeError(f"SPXW chain fetch failed; last_err={last_err}")
 
-# ====== Frame shaping ======
+# ====== shaping ======
 CANONICAL_COLS = [
     "C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Bid","C_BidSize","C_Ask","C_AskSize","C_Last",
     "Strike",
@@ -316,7 +315,7 @@ def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
     idx = (df["Strike"] - spot).abs().sort_values().index[:n]
     return df.loc[sorted(idx)].reset_index(drop=True)
 
-# ====== Jobs ======
+# ====== jobs ======
 def run_market_job():
     global latest_df, last_run_status, spot_buf
     try:
@@ -324,18 +323,14 @@ def run_market_job():
             last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
             print("[pull] skipped (closed)", last_run_status["ts"], flush=True)
             return
-
         spot = get_spx_last()
         exp  = get_0dte_exp()
         rows = get_chain_rows(exp, spot)
         df   = pick_centered(to_side_by_side(rows), spot, TARGET_STRIKES)
-
         with _df_lock:
             latest_df = df.copy()
-
         if spot:
             spot_buf.append({"ts": int(datetime.now(timezone.utc).timestamp()*1000), "spot": float(spot)})
-
         last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={len(df)}"}
         print("[pull] OK", last_run_status["msg"], flush=True)
     except Exception as e:
@@ -357,8 +352,7 @@ def save_history_job():
         df.columns = DISPLAY_COLS
         payload = {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
         msg = (last_run_status.get("msg") or "")
-        spot = None
-        exp  = None
+        spot = None; exp  = None
         try:
             parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
             spot = float(parts.get("spot",""))
@@ -411,13 +405,104 @@ def on_shutdown():
         print("[sched] stopped", flush=True)
 
 # ====== API ======
+@app.get("/api/series")
+def api_series():
+    with _df_lock:
+        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+    if df is None or df.empty:
+        return {
+            "strikes": [], "callVol": [], "putVol": [], "callOI": [], "putOI": [],
+            "callGEX": [], "putGEX": [], "netGEX": [], "spot": None
+        }
+    sdf = df.sort_values("Strike")
+    s  = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
+    call_vol = pd.to_numeric(sdf["C_Volume"],       errors="coerce").fillna(0.0).astype(float)
+    put_vol  = pd.to_numeric(sdf["P_Volume"],       errors="coerce").fillna(0.0).astype(float)
+    call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+    put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+    c_gamma  = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+    p_gamma  = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+    call_gex = ( c_gamma * call_oi * 100.0).astype(float)
+    put_gex  = (-p_gamma * put_oi  * 100.0).astype(float)
+    net_gex  = (call_gex + put_gex).astype(float)
+    spot = None
+    try:
+        parts = dict(splt.split("=", 1) for splt in (last_run_status.get("msg") or "").split() if "=" in splt)
+        spot = float(parts.get("spot",""))
+    except:
+        spot = None
+    return {
+        "strikes": s.tolist(),
+        "callVol": call_vol.tolist(), "putVol": put_vol.tolist(),
+        "callOI":  call_oi.tolist(),  "putOI":  put_oi.tolist(),
+        "callGEX": call_gex.tolist(), "putGEX": put_gex.tolist(), "netGEX": net_gex.tolist(),
+        "spot": spot
+    }
+
+@app.get("/api/spot_data")
+def api_spot_data():
+    """Spot view: chain (strikes + netGEX + call/put VOL) and 3m candles for last 8h."""
+    with _df_lock:
+        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+        spot_list = list(spot_buf)
+
+    strikes_list, chain, cvol, pvol = [], [], [], []
+
+    if df is not None and not df.empty:
+        sdf = df.sort_values("Strike")
+        strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
+        call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+        put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+        c_gamma  = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+        p_gamma  = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+        call_vol = pd.to_numeric(sdf["C_Volume"], errors="coerce").fillna(0.0).astype(float)
+        put_vol  = pd.to_numeric(sdf["P_Volume"], errors="coerce").fillna(0.0).astype(float)
+        net_gex  = (c_gamma*call_oi*100.0 - p_gamma*put_oi*100.0).astype(float)
+
+        strikes_list = strikes.tolist()
+        chain = [{"strike": float(s), "gex": float(g)} for s,g in zip(strikes_list, net_gex.tolist())]
+        cvol  = call_vol.tolist()
+        pvol  = put_vol.tolist()
+    else:
+        base_strike = 6300
+        strikes_list = [base_strike + i*25 for i in range(-30, 30)]
+        for i, s in enumerate(strikes_list):
+            chain.append({"strike": s, "gex": math.sin(i/6.0)*2_000_000})
+            cvol.append( 2000 + int(1500*abs(math.cos(i/7.0))) )
+            pvol.append( 1800 + int(1300*abs(math.sin(i/8.0))) )
+
+    # 3-minute candles over last 8h; if empty, synthesize one flat candle at last spot
+    candles = []
+    if spot_list:
+        dfspot = pd.DataFrame(spot_list)
+        dfspot["ts"] = pd.to_datetime(dfspot["ts"], unit="ms", utc=True)
+        cutoff = pd.Timestamp.utcnow().tz_localize("UTC") - pd.Timedelta(hours=8)
+        dfspot = dfspot[dfspot["ts"] >= cutoff]
+        if not dfspot.empty:
+            res = (dfspot
+                   .set_index("ts")["spot"]
+                   .resample("3T")
+                   .agg(["first","max","min","last"])
+                   .dropna(how="all"))
+            for idx, row in res.iterrows():
+                o = float(row["first"] if pd.notna(row["first"]) else row["last"])
+                h = float(row["max"]   if pd.notna(row["max"])   else o)
+                l = float(row["min"]   if pd.notna(row["min"])   else o)
+                c = float(row["last"]  if pd.notna(row["last"])  else o)
+                candles.append({"t": int(idx.timestamp()*1000), "o": o, "h": h, "l": l, "c": c})
+    if not candles:
+        # placeholder from last known spot
+        last_spot = spot_list[-1]["spot"] if spot_list else None
+        if last_spot:
+            t = int(datetime.now(timezone.utc).timestamp()*1000)
+            candles = [{"t": t-180000, "o": last_spot, "h": last_spot, "l": last_spot, "c": last_spot},
+                       {"t": t,        "o": last_spot, "h": last_spot, "l": last_spot, "c": last_spot}]
+
+    return {"strikes": strikes_list, "chain": chain, "callVol": cvol, "putVol": pvol, "candles": candles}
+
 @app.get("/api/health")
 def api_health():
     return {"status": "ok", "last": last_run_status}
-
-@app.get("/debug/env")
-def debug_env():
-    return {"missing": missing_envs()}
 
 @app.get("/status")
 def status():
@@ -431,45 +516,6 @@ def snapshot():
         return {"columns": DISPLAY_COLS, "rows": []}
     df.columns = DISPLAY_COLS
     return {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
-
-@app.get("/api/series")
-def api_series():
-    with _df_lock:
-        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
-    if df is None or df.empty:
-        return {
-            "strikes": [], "callVol": [], "putVol": [], "callOI": [], "putOI": [],
-            "callGEX": [], "putGEX": [], "netGEX": [], "spot": None
-        }
-
-    sdf = df.sort_values("Strike")
-    s  = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
-
-    call_vol = pd.to_numeric(sdf["C_Volume"],       errors="coerce").fillna(0.0).astype(float)
-    put_vol  = pd.to_numeric(sdf["P_Volume"],       errors="coerce").fillna(0.0).astype(float)
-    call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
-    put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
-
-    c_gamma  = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
-    p_gamma  = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
-    call_gex = ( c_gamma * call_oi * 100.0).astype(float)
-    put_gex  = (-p_gamma * put_oi  * 100.0).astype(float)
-    net_gex  = (call_gex + put_gex).astype(float)
-
-    spot = None
-    try:
-        parts = dict(splt.split("=", 1) for splt in (last_run_status.get("msg") or "").split() if "=" in splt)
-        spot = float(parts.get("spot",""))
-    except:
-        spot = None
-
-    return {
-        "strikes": s.tolist(),
-        "callVol": call_vol.tolist(), "putVol": put_vol.tolist(),
-        "callOI":  call_oi.tolist(),  "putOI":  put_oi.tolist(),
-        "callGEX": call_gex.tolist(), "putGEX": put_gex.tolist(), "netGEX": net_gex.tolist(),
-        "spot": spot
-    }
 
 @app.get("/api/history")
 def api_history(limit: int = Query(288, ge=1, le=5000)):
@@ -504,70 +550,7 @@ def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
     csv = df.to_csv(index=False)
     return Response(csv, media_type="text/csv", headers={"Content-Disposition":"attachment; filename=history.csv"})
 
-# ====== SPOT DATA (8h, 3-min candles; plus chain with call/put VOL) ======
-@app.get("/api/spot_data")
-def api_spot_data():
-    with _df_lock:
-        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
-        spot_list = list(spot_buf)
-
-    chain = []
-    cvol = []
-    pvol = []
-
-    if df is not None and not df.empty:
-        sdf = df.sort_values("Strike")
-        strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
-        call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
-        put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
-        c_gamma  = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
-        p_gamma  = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
-        call_vol = pd.to_numeric(sdf["C_Volume"], errors="coerce").fillna(0.0).astype(float)
-        put_vol  = pd.to_numeric(sdf["P_Volume"], errors="coerce").fillna(0.0).astype(float)
-
-        call_gex = ( c_gamma * call_oi * 100.0).astype(float)
-        put_gex  = (-p_gamma * put_oi  * 100.0).astype(float)
-        net_gex  = (call_gex + put_gex).astype(float)
-
-        chain = [{"strike": float(s), "gex": float(g)} for s,g in zip(strikes.tolist(), net_gex.tolist())]
-        cvol  = call_vol.tolist()
-        pvol  = put_vol.tolist()
-        strikes_list = strikes.tolist()
-    else:
-        # fallback demo chain
-        base_strike = 5500
-        strikes_list = [base_strike + i*25 for i in range(0, 60)]
-        for k, s in enumerate(strikes_list):
-            gex = math.sin(k/7.5)*5_000_000 - (abs(s-6300)*7_500)
-            chain.append({"strike": s, "gex": round(gex,2)})
-            cvol.append(int(500 + 3000*abs(math.cos(k/8.0))))
-            pvol.append(int(400 + 2400*abs(math.sin(k/9.0))))
-
-    # Build 3-minute candles for last 8 hours
-    candles = []
-    if spot_list:
-        dfspot = pd.DataFrame(spot_list)
-        dfspot["ts"] = pd.to_datetime(dfspot["ts"], unit="ms", utc=True)
-        cutoff = pd.Timestamp.utcnow().tz_localize("UTC") - pd.Timedelta(hours=8)
-        dfspot = dfspot[dfspot["ts"] >= cutoff]
-        if not dfspot.empty:
-            res = (dfspot
-                   .set_index("ts")["spot"]
-                   .resample("3T")  # 3-minute buckets
-                   .agg(["first","max","min","last"])
-                   .dropna())
-            for idx, row in res.iterrows():
-                candles.append({
-                    "t": int(idx.timestamp()*1000),
-                    "o": float(row["first"]),
-                    "h": float(row["max"]),
-                    "l": float(row["min"]),
-                    "c": float(row["last"]),
-                })
-
-    return {"strikes": strikes_list, "chain": chain, "callVol": cvol, "putVol": pvol, "candles": candles}
-
-# ====== TABLE PAGE ======
+# ====== TABLE (unchanged layout; compact columns) ======
 @app.get("/table")
 def html_table():
     ts  = last_run_status.get("ts") or ""
@@ -576,10 +559,6 @@ def html_table():
     exp  = parts.get("exp", "")
     spot_str = parts.get("spot", "")
     rows = parts.get("rows", "")
-    try:
-        spot_val = float(spot_str)
-    except Exception:
-        spot_val = None
 
     with _df_lock:
         df_src = None if (latest_df is None or latest_df.empty) else latest_df.copy()
@@ -588,7 +567,6 @@ def html_table():
         body = "<p>No data yet. If market is open, it will appear within ~30s.</p>"
     else:
         base = df_src
-        # compact columns (no bid/ask qty)
         wanted = [
             "C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Last",
             "Strike",
@@ -600,13 +578,12 @@ def html_table():
             "Strike",
             "LAST","Delta","Gamma","IV","Open Int","Volume",
         ]
-
+        try: spot_val = float(spot_str)
+        except: spot_val = None
         atm_idx = None
         if spot_val:
-            try:
-                atm_idx = (df["Strike"] - spot_val).abs().idxmin()
-            except Exception:
-                atm_idx = None
+            try: atm_idx = (df["Strike"] - spot_val).abs().idxmin()
+            except: pass
 
         comma_cols = {"Volume", "Open Int"}
         def fmt_val(col, v):
@@ -615,8 +592,7 @@ def html_table():
                 try:
                     f = float(v)
                     return f"{int(f):,}" if abs(f - int(f)) < 1e-9 else f"{f:,.2f}"
-                except Exception:
-                    return str(v)
+                except: return str(v)
             return str(v)
 
         thead = "<tr>" + "".join(f"<th>{h}</th>" for h in df.columns) + "</tr>"
@@ -643,24 +619,20 @@ def html_table():
     </head><body>
       <h2>SPXW 0DTE — live table</h2>
       <div class="last">
-        Last run: {ts}<br>
-        exp={exp}<br>
-        spot={spot_str}<br>
-        rows={rows}
+        Last run: {ts}<br>exp={exp}<br>spot={spot_str}<br>rows={rows}
       </div>
       {body}
       <script>setTimeout(()=>location.reload(), {PULL_EVERY * 1000});</script>
     </body></html>"""
     return Response(content=page, media_type="text/html")
 
-# ====== DASHBOARD (Spot uses 3 panels; price is candlesticks, all share Y) ======
+# ====== DASHBOARD (Spot fixed: candlesticks, symmetric GEX, non-negative VOL) ======
 @app.get("/", response_class=HTMLResponse)
 def spxw_dashboard():
     open_now = market_open_now()
     status_text = "Market OPEN" if open_now else "Market CLOSED"
     status_color = "#10b981" if open_now else "#ef4444"
-    last_msg = last_run_status.get("msg", "")
-    last_ts  = last_run_status.get("ts", "")
+    last_msg = last_run_status.get("msg", ""); last_ts  = last_run_status.get("ts", "")
 
     return HTMLResponse(f"""
 <!doctype html>
@@ -681,36 +653,27 @@ def spxw_dashboard():
     .sidebar {{
       background: var(--panel); border-right: 1px solid var(--border); padding: 20px 16px; position: sticky; top:0; height:100vh;
     }}
-    .brand {{ font-weight: 700; letter-spacing: .3px; margin-bottom: 6px; }}
+    .brand {{ font-weight: 700; margin-bottom: 6px; }}
     .small {{ color: var(--muted); font-size: 12px; margin-bottom: 16px; }}
     .status {{ display:flex; gap:10px; align-items:center; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; margin-bottom:14px; }}
     .dot {{ width:10px; height:10px; border-radius:999px; background:{status_color}; }}
     .nav {{ display: grid; gap: 8px; margin-top: 8px; }}
-    .btn {{
-      display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 10px;
-      border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer;
-      transition: background .15s ease, border-color .15s ease;
-    }}
-    .btn:hover {{ background: #171a20; border-color: #2b3036; }}
-    .btn.active {{ background: #121a2e; border-color: #2a3a57; }}
+    .btn {{ display:block; width:100%; text-align:left; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:transparent; color:var(--text); cursor:pointer; }}
+    .btn.active {{ background:#121a2e; border-color:#2a3a57; }}
     .content {{ padding: 18px; }}
-    .panel {{
-      background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; overflow: hidden;
-    }}
-    .header {{ display:flex; align-items:center; justify-content:space-between; padding: 6px 10px 12px; border-bottom:1px solid var(--border); margin-bottom:10px;}}
-    .pill {{ font-size: 12px; padding: 4px 8px; border:1px solid var(--border); border-radius: 999px; color: var(--muted); }}
+    .panel {{ background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:12px; overflow:hidden; }}
+    .header {{ display:flex; align-items:center; justify-content:space-between; padding:6px 10px 12px; border-bottom:1px solid var(--border); margin-bottom:10px;}}
+    .pill {{ font-size:12px; padding:4px 8px; border:1px solid var(--border); border-radius:999px; color:var(--muted); }}
+
     .charts {{ display:flex; flex-direction:column; gap:24px; }}
-    iframe {{ width: 100%; height: calc(100vh - 180px); border: 0; background: #0f1115; }}
-    #volChart, #oiChart, #gexChart {{ width: 100%; height: 480px; }}
+    iframe {{ width:100%; height: calc(100vh - 180px); border:0; background:#0f1115; }}
+    #volChart, #oiChart, #gexChart {{ width:100%; height:480px; }}
 
     .spot-grid {{ display:grid; grid-template-columns: 2fr 1fr 1fr; gap:12px; align-items:stretch; }}
     .card {{ background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:12px; min-height:420px; display:flex; flex-direction:column }}
     .card h3 {{ margin:0 0 8px; font-size:14px; color:var(--muted); font-weight:600 }}
     .plot {{ width:100%; height:100% }}
-    @media (max-width: 1200px) {{
-      .spot-grid {{ grid-template-columns: 1fr; }}
-      .card {{ min-height:360px; }}
-    }}
+    @media (max-width: 1200px) {{ .spot-grid {{ grid-template-columns:1fr; }} }}
   </style>
 </head>
 <body>
@@ -730,30 +693,22 @@ def spxw_dashboard():
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabSpot">Spot</button>
       </div>
-      <div style="margin-top: 12px;" class="small">Charts auto-refresh while visible.</div>
-      <div style="margin-top: 18px;" class="small">
+      <div class="small" style="margin-top:12px">Charts auto-refresh while visible.</div>
+      <div class="small" style="margin-top:18px">
         <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> ·
-        <a href="/api/history" style="color:var(--muted)">History</a> ·
+        <a href="/api/history"  style="color:var(--muted)">History</a> ·
         <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
       </div>
     </aside>
 
     <main class="content">
-      <!-- TABLE -->
       <div id="viewTable" class="panel">
-        <div class="header">
-          <div><strong>Live Chain Table</strong></div>
-          <div class="pill">auto-refresh</div>
-        </div>
+        <div class="header"><div><strong>Live Chain Table</strong></div><div class="pill">auto-refresh</div></div>
         <iframe id="tableFrame" src="/table"></iframe>
       </div>
 
-      <!-- CHARTS -->
       <div id="viewCharts" class="panel" style="display:none">
-        <div class="header">
-          <div><strong>GEX, Volume & Open Interest</strong></div>
-          <div class="pill">green = calls · red = puts · blue = net</div>
-        </div>
+        <div class="header"><div><strong>GEX, Volume & Open Interest</strong></div><div class="pill">green = calls · red = puts · blue = net</div></div>
         <div class="charts">
           <div id="gexChart"></div>
           <div id="volChart"></div>
@@ -761,25 +716,12 @@ def spxw_dashboard():
         </div>
       </div>
 
-      <!-- SPOT -->
       <div id="viewSpot" class="panel" style="display:none">
-        <div class="header">
-          <div><strong>Spot</strong></div>
-          <div class="pill">SPX 3-min candles (8h) + GEX & VOL (shared Y = strike/price)</div>
-        </div>
+        <div class="header"><div><strong>Spot</strong></div><div class="pill">SPX 3-min candles (8h) + GEX & VOL (shared Y)</div></div>
         <div class="spot-grid">
-          <div class="card">
-            <h3>SPX Price — 3m Candles (8h)</h3>
-            <div id="pricePlot" class="plot"></div>
-          </div>
-          <div class="card">
-            <h3>GEX by Strike</h3>
-            <div id="gexSidePlot" class="plot"></div>
-          </div>
-          <div class="card">
-            <h3>VOL by Strike (Calls vs Puts)</h3>
-            <div id="volSidePlot" class="plot"></div>
-          </div>
+          <div class="card"><h3>SPX Price — 3m Candles (8h)</h3><div id="pricePlot" class="plot"></div></div>
+          <div class="card"><h3>GEX by Strike</h3><div id="gexSidePlot" class="plot"></div></div>
+          <div class="card"><h3>VOL by Strike (Calls vs Puts)</h3><div id="volSidePlot" class="plot"></div></div>
         </div>
       </div>
     </main>
@@ -789,218 +731,120 @@ def spxw_dashboard():
     const PULL_EVERY = {PULL_EVERY * 1000};
 
     // Tabs
-    const tabTable  = document.getElementById('tabTable');
-    const tabCharts = document.getElementById('tabCharts');
-    const tabSpot   = document.getElementById('tabSpot');
+    const tabTable=document.getElementById('tabTable'), tabCharts=document.getElementById('tabCharts'), tabSpot=document.getElementById('tabSpot');
+    const viewTable=document.getElementById('viewTable'), viewCharts=document.getElementById('viewCharts'), viewSpot=document.getElementById('viewSpot');
+    function setActive(btn){[tabTable,tabCharts,tabSpot].forEach(b=>b.classList.remove('active')); btn.classList.add('active');}
+    function showTable(){setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewSpot.style.display='none'; stopCharts(); stopSpot();}
+    function showCharts(){setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewSpot.style.display='none'; startCharts(); stopSpot();}
+    function showSpot(){setActive(tabSpot); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display=''; startSpot(); stopCharts();}
+    tabTable.addEventListener('click', showTable); tabCharts.addEventListener('click', showCharts); tabSpot.addEventListener('click', showSpot);
 
-    const viewTable = document.getElementById('viewTable');
-    const viewCharts= document.getElementById('viewCharts');
-    const viewSpot  = document.getElementById('viewSpot');
+    // ===== Main charts (unchanged) =====
+    const volDiv=document.getElementById('volChart'), oiDiv=document.getElementById('oiChart'), gexDiv=document.getElementById('gexChart');
+    let chartsTimer=null, firstDraw=true;
 
-    function setActive(btn) {{
-      [tabTable, tabCharts, tabSpot].forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-    }}
-    function showTable(){{
-      setActive(tabTable);
-      viewTable.style.display = '';
-      viewCharts.style.display = 'none';
-      viewSpot.style.display = 'none';
-      stopCharts(); stopSpot();
-    }}
-    function showCharts(){{
-      setActive(tabCharts);
-      viewTable.style.display = 'none';
-      viewCharts.style.display = '';
-      viewSpot.style.display = 'none';
-      startCharts(); stopSpot();
-    }}
-    function showSpot(){{
-      setActive(tabSpot);
-      viewTable.style.display = 'none';
-      viewCharts.style.display = 'none';
-      viewSpot.style.display = '';
-      startSpot(); stopCharts();
-    }}
-    tabTable.addEventListener('click', showTable);
-    tabCharts.addEventListener('click', showCharts);
-    tabSpot.addEventListener('click', showSpot);
+    async function fetchSeries(){ const r=await fetch('/api/series',{cache:'no-store'}); return await r.json(); }
+    function verticalSpotShape(spot,yMax){ if(spot==null) return null; return {type:'line',x0:spot,x1:spot,y0:0,y1:yMax,line:{color:'#9aa0a6',width:2,dash:'dot'},xref:'x',yref:'y'}; }
+    function buildLayout(title,xTitle,yTitle,spot,yMax){ const shape=verticalSpotShape(spot,yMax); return { title:{text:title,font:{size:16}}, xaxis:{title:xTitle,gridcolor:'#20242a',tickfont:{size:11}}, yaxis:{title:yTitle,gridcolor:'#20242a',tickfont:{size:11}}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115', font:{color:'#e6e7e9'}, margin:{t:40,r:16,b:48,l:48}, barmode:'group', shapes:shape?[shape]:[] }; }
+    function tracesForBars(strikes,callArr,putArr,yLabel){ return [
+      {type:'bar', name:'Calls '+yLabel, x:strikes, y:callArr, marker:{color:'#22c55e'}, offsetgroup:'calls', hovertemplate:"Strike %{x}<br>Calls: %{y}<extra></extra>"},
+      {type:'bar', name:'Puts '+yLabel,  x:strikes, y:putArr,  marker:{color:'#ef4444'}, offsetgroup:'puts',  hovertemplate:"Strike %{x}<br>Puts: %{y}<extra></extra>"}
+    ];}
+    function tracesForGEX(strikes,callGEX,putGEX,netGEX){ return [
+      {type:'bar', name:'Call GEX', x:strikes, y:callGEX, marker:{color:'#22c55e'}, offsetgroup:'call_gex', hovertemplate:"Strike %{x}<br>Call GEX: %{y:.2f}<extra></extra>"},
+      {type:'bar', name:'Put GEX',  x:strikes, y:putGEX,  marker:{color:'#ef4444'}, offsetgroup:'put_gex',  hovertemplate:"Strike %{x}<br>Put GEX: %{y:.2f}<extra></extra>"},
+      {type:'bar', name:'Net GEX',  x:strikes, y:netGEX, marker:{color:'#60a5fa'}, offsetgroup:'net_gex', opacity:0.85, hovertemplate:"Strike %{x}<br>Net GEX: %{y:.2f}<extra></extra>"}
+    ];}
 
-    // ===== Charts (unchanged) =====
-    const volDiv    = document.getElementById('volChart');
-    const oiDiv     = document.getElementById('oiChart');
-    const gexDiv    = document.getElementById('gexChart');
-    let chartsTimer = null, firstDraw = true;
-
-    async function fetchSeries(){{
-      const r = await fetch('/api/series', {{ cache: 'no-store' }});
-      return await r.json();
-    }}
-    function verticalSpotShape(spot, yMax){{
-      if (spot == null) return null;
-      return {{
-        type: 'line', x0: spot, x1: spot, y0: 0, y1: yMax,
-        line: {{ color: '#9aa0a6', width: 2, dash: 'dot' }}, xref: 'x', yref: 'y'
-      }};
-    }}
-    function buildLayout(title, xTitle, yTitle, spot, yMax){{
-      const shape = verticalSpotShape(spot, yMax);
-      return {{
-        title: {{ text: title, font: {{ size: 16 }} }},
-        xaxis: {{ title: xTitle, gridcolor: '#20242a', tickfont: {{size: 11}} }},
-        yaxis: {{ title: yTitle, gridcolor: '#20242a', tickfont: {{size: 11}} }},
-        paper_bgcolor: '#121417', plot_bgcolor: '#0f1115',
-        font: {{ color: '#e6e7e9' }},
-        margin: {{ t: 40, r: 16, b: 48, l: 48 }},
-        barmode: 'group',
-        shapes: shape ? [shape] : []
-      }};
-    }}
-    function tracesForBars(strikes, callArr, putArr, yLabel){{
-      return [
-        {{ type:'bar', name:'Calls ' + yLabel, x: strikes, y: callArr, marker: {{ color:'#22c55e' }}, offsetgroup:'calls',
-           hovertemplate: "Strike %{{x}}<br>Calls: %{{y}}<extra></extra>" }},
-        {{ type:'bar', name:'Puts ' + yLabel,  x: strikes, y: putArr,  marker: {{ color:'#ef4444' }}, offsetgroup:'puts',
-           hovertemplate: "Strike %{{x}}<br>Puts: %{{y}}<extra></extra>" }}
-      ];
-    }}
-    function tracesForGEX(strikes, callGEX, putGEX, netGEX){{
-      return [
-        {{ type:'bar', name:'Call GEX', x: strikes, y: callGEX, marker: {{ color:'#22c55e' }}, offsetgroup:'call_gex',
-           hovertemplate: "Strike %{{x}}<br>Call GEX: %{{y:.2f}}<extra></extra>" }},
-        {{ type:'bar', name:'Put GEX',  x: strikes, y: putGEX,  marker: {{ color:'#ef4444' }}, offsetgroup:'put_gex',
-           hovertemplate: "Strike %{{x}}<br>Put GEX: %{{y:.2f}}<extra></extra>" }},
-        {{ type:'bar', name:'Net GEX',  x: strikes, y: netGEX, marker: {{ color:'#60a5fa' }}, offsetgroup:'net_gex', opacity:0.85,
-           hovertemplate: "Strike %{{x}}<br>Net GEX: %{{y:.2f}}<extra></extra>" }}
-      ];
-    }}
-    async function drawOrUpdate(){{
+    async function drawOrUpdate(){
       const data = await fetchSeries();
       if (!data || !data.strikes || data.strikes.length === 0) return;
 
-      const strikes = data.strikes;
-      const spot    = data.spot;
+      const strikes = data.strikes, spot = data.spot;
+      const vMax = Math.max(0, ...data.callVol, ...data.putVol) * 1.05;
+      const oiMax= Math.max(0, ...data.callOI,  ...data.putOI ) * 1.05;
+      const gAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v=>Math.abs(v));
+      const gMax = (gAbs.length? Math.max(...gAbs):0) * 1.05;
 
-      const vMax  = Math.max(...data.callVol, ...data.putVol, 0) * 1.05;
-      const oiMax = Math.max(...data.callOI,  ...data.putOI,  0) * 1.05;
-      const gexAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v => Math.abs(v));
-      const gexMax = (gexAbs.length ? Math.max(...gexAbs) : 0) * 1.05;
+      const gexLayout = buildLayout('Gamma Exposure (GEX)','Strike','GEX',spot,gMax);
+      const volLayout = buildLayout('Volume','Strike','Volume',spot,vMax);
+      const oiLayout  = buildLayout('Open Interest','Strike','Open Interest',spot,oiMax);
 
-      const gexLayout = buildLayout('Gamma Exposure (GEX)', 'Strike', 'GEX', spot, gexMax);
-      const volLayout = buildLayout('Volume', 'Strike', 'Volume', spot, vMax);
-      const oiLayout  = buildLayout('Open Interest', 'Strike', 'Open Interest', spot, oiMax);
-
-      const gexTraces = tracesForGEX (strikes, data.callGEX, data.putGEX, data.netGEX);
+      const gexTraces = tracesForGEX(strikes, data.callGEX, data.putGEX, data.netGEX);
       const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
       const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
 
-      if (firstDraw) {{
-        Plotly.newPlot(gexDiv, gexTraces, gexLayout, {{displayModeBar:false, responsive:true}});
-        Plotly.newPlot(volDiv, volTraces, volLayout, {{displayModeBar:false, responsive:true}});
-        Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false, responsive:true}});
-        firstDraw = false;
-      }} else {{
-        Plotly.react(gexDiv, gexTraces, gexLayout, {{displayModeBar:false, responsive:true}});
-        Plotly.react(volDiv, volTraces, volLayout, {{displayModeBar:false, responsive:true}});
-        Plotly.react(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false, responsive:true}});
-      }}
-    }}
-    function startCharts(){{
-      drawOrUpdate();
-      if (chartsTimer) clearInterval(chartsTimer);
-      chartsTimer = setInterval(drawOrUpdate, PULL_EVERY);
-    }}
-    function stopCharts(){{
-      if (chartsTimer) {{ clearInterval(chartsTimer); chartsTimer = null; }}
-    }}
+      if (firstDraw){
+        Plotly.newPlot(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
+        Plotly.newPlot(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
+        Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
+        firstDraw=false;
+      } else {
+        Plotly.react(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
+        Plotly.react(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
+        Plotly.react(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
+      }
+    }
+    function startCharts(){ drawOrUpdate(); if (chartsTimer) clearInterval(chartsTimer); chartsTimer=setInterval(drawOrUpdate, PULL_EVERY); }
+    function stopCharts(){ if (chartsTimer){ clearInterval(chartsTimer); chartsTimer=null; } }
 
-    // ===== Spot (3 panels; shared Y) =====
-    const priceDiv   = document.getElementById('pricePlot');
-    const gexSideDiv = document.getElementById('gexSidePlot');
-    const volSideDiv = document.getElementById('volSidePlot');
-    let spotTimer=null, spotCache=null;
+    // ===== Spot (fixed) =====
+    const priceDiv=document.getElementById('pricePlot'), gexSideDiv=document.getElementById('gexSidePlot'), volSideDiv=document.getElementById('volSidePlot');
+    let spotTimer=null;
 
-    async function fetchSpotData(){{
-      const r = await fetch('/api/spot_data', {{ cache: 'no-store' }});
-      return await r.json();
-    }}
+    async function fetchSpotData(){ const r=await fetch('/api/spot_data',{cache:'no-store'}); return await r.json(); }
 
-    function renderSpot(data){{
-      spotCache = data;
-      const strikes = (data.strikes||[]);
-      if(!strikes.length) return;
-      const yMin = Math.min(...strikes), yMax = Math.max(...strikes);
-      const pad  = (yMax - yMin) * 0.02;
+    function renderSpot(data){
+      const strikes = data.strikes||[];
+      if (!strikes.length) return;
+      const yMin=Math.min(...strikes), yMax=Math.max(...strikes), pad=(yMax-yMin)*0.02;
 
-      // GEX horizontal
-      const gex = {{ type:'bar', orientation:'h',
-                     x: (data.chain||[]).map(d=>d.gex||0), y: strikes,
-                     marker:{{color:'#60a5fa'}},
-                     hovertemplate:'Strike %{{y}}<br>GEX %{{x:.2f}}<extra></extra>' }};
-      Plotly.react(gexSideDiv, [gex], {{
-        margin:{{l:60,r:16,t:10,b:30}},
-        paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
-        xaxis:{{title:'GEX', gridcolor:'#20242a'}},
-        yaxis:{{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'}},
-        font:{{color:'#e6e7e9'}}
-      }}, {{displayModeBar:false, responsive:true}});
+      // GEX: symmetric axis around 0
+      const gexNet = (data.chain||[]).map(d=>d.gex||0);
+      const gMax = Math.max(1, ...gexNet.map(v=>Math.abs(v))) * 1.1;
+      const gex = {type:'bar', orientation:'h', x:gexNet, y:strikes, marker:{color:'#60a5fa'}, hovertemplate:'Strike %{y}<br>Net GEX %{x:.0f}<extra></extra>'};
+      Plotly.react(gexSideDiv, [gex], {
+        margin:{l:60,r:16,t:10,b:30}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+        xaxis:{title:'GEX', gridcolor:'#20242a', range:[-gMax, gMax]},
+        yaxis:{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'},
+        font:{color:'#e6e7e9'}
+      }, {displayModeBar:false,responsive:true});
 
-      // VOL horizontal (calls vs puts)
-      const volCalls = {{ type:'bar', orientation:'h', name:'Calls',
-                          x: (data.callVol||[]), y: strikes,
-                          marker:{{color:'#22c55e'}},
-                          hovertemplate:'Strike %{{y}}<br>Calls %{{x}}<extra></extra>' }};
-      const volPuts  = {{ type:'bar', orientation:'h', name:'Puts',
-                          x: (data.putVol||[]),  y: strikes,
-                          marker:{{color:'#ef4444'}},
-                          hovertemplate:'Strike %{{y}}<br>Puts %{{x}}<extra></extra>' }};
-      Plotly.react(volSideDiv, [volCalls, volPuts], {{
-        margin:{{l:60,r:16,t:10,b:30}},
-        paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
-        xaxis:{{title:'VOL', gridcolor:'#20242a'}},
-        yaxis:{{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'}},
-        barmode:'group',
-        font:{{color:'#e6e7e9'}}
-      }}, {{displayModeBar:false, responsive:true}});
+      // VOL: calls vs puts, x >= 0
+      const vMax = Math.max(1, ...(data.callVol||[0]), ...(data.putVol||[0])) * 1.1;
+      const volCalls = {type:'bar', orientation:'h', name:'Calls', x:(data.callVol||[]), y:strikes, marker:{color:'#22c55e'}, hovertemplate:'Strike %{y}<br>Calls %{x}<extra></extra>'};
+      const volPuts  = {type:'bar', orientation:'h', name:'Puts',  x:(data.putVol||[]),  y:strikes, marker:{color:'#ef4444'}, hovertemplate:'Strike %{y}<br>Puts %{x}<extra></extra>'};
+      Plotly.react(volSideDiv, [volCalls, volPuts], {
+        margin:{l:60,r:16,t:10,b:30}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+        xaxis:{title:'VOL', gridcolor:'#20242a', range:[0, vMax]}, barmode:'group',
+        yaxis:{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'},
+        font:{color:'#e6e7e9'}
+      }, {displayModeBar:false,responsive:true});
 
-      // Price candlesticks (3m, 8h) shares same Y range
+      // Price: 3-min candles (uses same Y range)
       const candles = data.candles||[];
-      if(candles.length){{
-        const trace = {{
+      if (candles.length){
+        const trace = {
           type:'candlestick',
-          x: candles.map(d=>new Date(d.t)),
-          open: candles.map(d=>d.o),
-          high: candles.map(d=>d.h),
-          low:  candles.map(d=>d.l),
-          close:candles.map(d=>d.c),
-          increasing: {{ line: {{ color: '#22c55e' }} }},
-          decreasing: {{ line: {{ color: '#ef4444' }} }},
-          hovertemplate:'%{{x|%H:%M}}<br>O %{{open:.2f}} H %{{high:.2f}}<br>L %{{low:.2f}} C %{{close:.2f}}<extra></extra>'
-        }};
-        Plotly.react(priceDiv, [trace], {{
-          margin:{{l:60,r:16,t:10,b:30}},
-          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
-          xaxis:{{title:'Time (last 8h)', gridcolor:'#20242a'}},
-          yaxis:{{title:'Price', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'}},
-          font:{{color:'#e6e7e9'}}
-        }}, {{displayModeBar:false, responsive:true}});
-      }}
-    }}
+          x: candles.map(d=>new Date(d.t)), open:candles.map(d=>d.o),
+          high:candles.map(d=>d.h), low:candles.map(d=>d.l), close:candles.map(d=>d.c),
+          increasing:{line:{color:'#22c55e'}}, decreasing:{line:{color:'#ef4444'}},
+          hovertemplate:'%{x|%H:%M}<br>O %{open:.2f} H %{high:.2f}<br>L %{low:.2f} C %{close:.2f}<extra></extra>'
+        };
+        Plotly.react(priceDiv, [trace], {
+          margin:{l:60,r:16,t:10,b:30}, paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          xaxis:{title:'Time (last 8h)', gridcolor:'#20242a'},
+          yaxis:{title:'Price', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'},
+          font:{color:'#e6e7e9'}
+        }, {displayModeBar:false,responsive:true});
+      }
+    }
 
-    async function tickSpot(){{
-      const data = await fetchSpotData();
-      renderSpot(data);
-    }}
-    function startSpot(){{
-      tickSpot();
-      if(spotTimer) clearInterval(spotTimer);
-      spotTimer = setInterval(tickSpot, 15000);
-    }}
-    function stopSpot(){{
-      if(spotTimer){{ clearInterval(spotTimer); spotTimer = null; }}
-    }}
+    async function tickSpot(){ const data=await fetch('/api/spot_data',{cache:'no-store'}).then(r=>r.json()); renderSpot(data); }
+    function startSpot(){ tickSpot(); if(spotTimer) clearInterval(spotTimer); spotTimer=setInterval(tickSpot, 15000); }
+    function stopSpot(){ if(spotTimer){ clearInterval(spotTimer); spotTimer=null; } }
 
-    // default: show table
+    // default
     showTable();
   </script>
 </body>

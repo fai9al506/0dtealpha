@@ -728,7 +728,7 @@ DASH_HTML_TEMPLATE = """
       if (!document.getElementById('tvContainer')) return;
       tvInitialized = true;
       new TradingView.widget({
-        "symbol": "SPX500USD",
+        "symbol": "BLACKBULL:SPX500",
         "interval": "3",
         "container_id": "tvContainer",
         "autosize": true,

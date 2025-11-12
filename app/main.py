@@ -528,7 +528,6 @@ def snapshot():
 
 @app.get("/table")
 def html_table():
-    # --- parse status for the header and ATM calc ---
     ts  = last_run_status.get("ts") or ""
     msg = last_run_status.get("msg") or ""
     parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
@@ -546,7 +545,7 @@ def html_table():
         df = latest_df.copy()
         df.columns = DISPLAY_COLS
 
-        # Find ATM row index (nearest Strike)
+        # locate ATM row (nearest-to-spot)
         atm_idx = None
         if spot_val:
             try:
@@ -554,44 +553,39 @@ def html_table():
             except Exception:
                 atm_idx = None
 
-        # Format numbers with commas for easier scanning
+        # which columns to show with thousand separators (by index, not name)
+        # DISPLAY_COLS order:
+        #  0 Volume ...  10 LAST | 11 Strike | ... 19 Open Int | 20 Volume
+        fmt_idxs = [0, 19, 20]   # first Volume, put-side Open Int, put-side Volume
+        # If you also want call-side Open Int (col 1), include it:
+        fmt_idxs.insert(1, 1)    # now [0,1,19,20]
+
         def fmt_commas(x):
             try:
-                if pd.isna(x): return ""
-                # show integers without decimals
-                if float(x).is_integer():
-                    return f"{int(x):,}"
-                return f"{x:,.2f}"
+                if pd.isna(x):
+                    return ""
+                v = float(x)
+                if abs(v - int(v)) < 1e-9:
+                    return f"{int(v):,}"
+                return f"{v:,.2f}"
             except Exception:
                 return x
 
-        # Build per-column format map (apply to any column named Volume or Open Int)
-        fmt_map = {}
-        for c in df.columns:
-            n = c.strip().lower()
-            if n in ("volume", "open int"):
-                fmt_map[c] = lambda v, _f=fmt_commas: _f(v)
-
-        # Highlight function for ATM row
+        # Styler with per-subset formatter and ATM row highlight
+        subset_cols = df.columns[fmt_idxs]
         def highlight_atm(row):
             if atm_idx is not None and row.name == atm_idx:
-                # subtle band; readable on dark bg
                 return ["background-color:#1a2634;"] * len(row)
             return [""] * len(row)
 
-        # Use Styler for formatting + row highlight
         sty = (
             df.style
               .hide(axis="index")
-              .format(fmt_map)
+              .format(fmt_commas, subset=pd.IndexSlice[:, subset_cols])
               .apply(highlight_atm, axis=1)
         )
 
-        # Render styled HTML
-        body = sty.to_html()
-
-        # Make sure our table gets the right class for CSS below
-        body = body.replace('class="dataframe"', 'class="table"')
+        body = sty.to_html().replace('class="dataframe"', 'class="table"')
 
     page = f"""
     <html><head><meta charset="utf-8"><title>0DTE Alpha</title>
@@ -612,11 +606,11 @@ def html_table():
       .table th {{
         background:#111; position:sticky; top:0; z-index:1;
       }}
-      /* Shade Strike column like header to split calls/puts */
+      /* Shade Strike column like header */
       .table td:nth-child(11), .table th:nth-child(11) {{
         background:#111; text-align:center;
       }}
-      /* Leftmost column centered (optional) */
+      /* Leftmost column centered */
       .table td:first-child, .table th:first-child {{ text-align:center; }}
     </style>
     </head><body>
@@ -631,6 +625,7 @@ def html_table():
       <script>setTimeout(()=>location.reload(), 15000);</script>
     </body></html>"""
     return Response(content=page, media_type="text/html")
+
 
 
 @app.get("/api/history")

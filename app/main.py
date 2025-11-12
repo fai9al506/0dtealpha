@@ -1,11 +1,12 @@
 # 0DTE Alpha — live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
 from fastapi import FastAPI, Response, Query
 from fastapi.responses import HTMLResponse
-from datetime import datetime, time as dtime
-import os, time, json, requests, pandas as pd, pytz
+from datetime import datetime, time as dtime, timezone
+import os, time, json, requests, pandas as pd, pytz, math
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
 from threading import Lock
+from collections import deque
 
 # ====== CONFIG ======
 USE_LIVE = True
@@ -37,6 +38,10 @@ latest_df: pd.DataFrame | None = None
 last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
 _df_lock = Lock()
+
+# rolling intraday spot buffer for the Spot view (kept in-memory)
+# ~6 hours at 30s cadence -> 720 points
+spot_buf = deque(maxlen=720)
 
 # ====== DB ======
 engine = create_engine(DB_URL, pool_pre_ping=True) if DB_URL else None
@@ -313,7 +318,7 @@ def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
 
 # ====== Jobs ======
 def run_market_job():
-    global latest_df, last_run_status
+    global latest_df, last_run_status, spot_buf
     try:
         if not market_open_now():
             last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
@@ -325,8 +330,13 @@ def run_market_job():
         rows = get_chain_rows(exp, spot)
         df   = pick_centered(to_side_by_side(rows), spot, TARGET_STRIKES)
 
+        # update shared df
         with _df_lock:
             latest_df = df.copy()
+
+        # append to in-memory spot time series
+        if spot:
+            spot_buf.append({"ts": int(datetime.now(timezone.utc).timestamp()*1000), "spot": float(spot)})
 
         last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={len(df)}"}
         print("[pull] OK", last_run_status["msg"], flush=True)
@@ -499,6 +509,55 @@ def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
     csv = df.to_csv(index=False)
     return Response(csv, media_type="text/csv", headers={"Content-Disposition":"attachment; filename=history.csv"})
 
+# ====== NEW: SPOT DATA ENDPOINT (for Spot tab)
+@app.get("/api/spot_data")
+def api_spot_data():
+    """
+    Returns: chain (strike, gex, vol) and spot intraday series from in-memory buffer.
+    """
+    with _df_lock:
+        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+
+    # if we have a live DF, compute net GEX and total VOL per strike
+    if df is not None and not df.empty:
+        sdf = df.sort_values("Strike")
+        strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
+        call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+        put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+        c_gamma  = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+        p_gamma  = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+        call_vol = pd.to_numeric(sdf["C_Volume"], errors="coerce").fillna(0.0).astype(float)
+        put_vol  = pd.to_numeric(sdf["P_Volume"], errors="coerce").fillna(0.0).astype(float)
+
+        call_gex = ( c_gamma * call_oi * 100.0).astype(float)
+        put_gex  = (-p_gamma * put_oi  * 100.0).astype(float)
+        net_gex  = (call_gex + put_gex).astype(float)
+        tot_vol  = (call_vol + put_vol).astype(float)
+
+        chain = [{"strike": float(s), "gex": float(g), "vol": float(v)}
+                 for s,g,v in zip(strikes.tolist(), net_gex.tolist(), tot_vol.tolist())]
+
+        return {"chain": chain, "spot": list(spot_buf)}
+
+    # fallback demo if no DF yet (renders even off-hours)
+    base_strike = 5500
+    strikes = [base_strike + i*25 for i in range(0, 60)]
+    demo = []
+    for k, s in enumerate(strikes):
+        gex = math.sin(k/7.5)*5_000_000 - (abs(s-6300)*7_500)
+        vol = int(500 + 3000*abs(math.cos(k/8.0)))
+        demo.append({"strike": s, "gex": round(gex,2), "vol": vol})
+
+    # toy price path ~ 3 hours
+    now_ms = int(datetime.now(timezone.utc).timestamp()*1000)
+    demo_spot = []
+    px = 6310
+    for i in range(360):
+        px += math.sin(i/11.0)*1.0 + math.cos(i/17.0)*0.7
+        demo_spot.append({"ts": now_ms - (360-i)*30*1000, "spot": round(px,2)})
+
+    return {"chain": demo, "spot": demo_spot}
+
 # ====== TABLE PAGE ======
 @app.get("/table")
 def html_table():
@@ -520,6 +579,7 @@ def html_table():
         body = "<p>No data yet. If market is open, it will appear within ~30s.</p>"
     else:
         base = df_src
+        # removed BID/ASK and sizes from the visible table as requested earlier
         wanted = [
             "C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Last",
             "Strike",
@@ -584,7 +644,7 @@ def html_table():
     </body></html>"""
     return Response(content=page, media_type="text/html")
 
-# ====== DASHBOARD (sidebar + tabs + Plotly charts) ======
+# ====== DASHBOARD (sidebar + tabs + Plotly charts + Spot tab) ======
 @app.get("/", response_class=HTMLResponse)
 def spxw_dashboard():
     open_now = market_open_now()
@@ -648,6 +708,19 @@ def spxw_dashboard():
       width: 100%;
       height: 480px;
     }}
+
+    /* Spot view layout */
+    .spot-grid {{
+      display:grid; grid-template-columns: 1.5fr 1fr; gap:12px; align-items:stretch;
+      grid-auto-rows: minmax(200px, auto);
+    }}
+    .card {{ background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:12px; min-height:200px; display:flex; flex-direction:column }}
+    .card h3 {{ margin:0 0 8px; font-size:14px; color:var(--muted); font-weight:600 }}
+    .stack {{ display:grid; grid-template-rows: 1fr 1fr; gap:12px }}
+    .tv-wrap, .plot-wrap {{ flex:1; min-height:420px }}
+    .plot {{ width:100%; height:100% }}
+    .row {{ display:flex; gap:12px; align-items:center; justify-content:space-between; margin-bottom:10px }}
+    .toggle {{ display:inline-flex; align-items:center; gap:8px; user-select:none; cursor:pointer }}
   </style>
 </head>
 <body>
@@ -665,6 +738,7 @@ def spxw_dashboard():
       <div class="nav">
         <button class="btn active" id="tabTable">Table</button>
         <button class="btn" id="tabCharts">Charts</button>
+        <button class="btn" id="tabSpot">Spot</button>
       </div>
       <div style="margin-top: 12px;" class="small">Charts auto-refresh while visible.</div>
       <div style="margin-top: 18px;" class="small">
@@ -675,6 +749,7 @@ def spxw_dashboard():
     </aside>
 
     <main class="content">
+      <!-- TABLE -->
       <div id="viewTable" class="panel">
         <div class="header">
           <div><strong>Live Chain Table</strong></div>
@@ -683,16 +758,53 @@ def spxw_dashboard():
         <iframe id="tableFrame" src="/table"></iframe>
       </div>
 
+      <!-- CHARTS -->
       <div id="viewCharts" class="panel" style="display:none">
         <div class="header">
           <div><strong>GEX, Volume & Open Interest</strong></div>
           <div class="pill">green = calls · red = puts · blue = net</div>
         </div>
         <div class="charts">
-          <!-- GEX first -->
           <div id="gexChart"></div>
           <div id="volChart"></div>
           <div id="oiChart"></div>
+        </div>
+      </div>
+
+      <!-- SPOT -->
+      <div id="viewSpot" class="panel" style="display:none">
+        <div class="header">
+          <div><strong>Spot</strong></div>
+          <div class="pill">SPX chart + GEX & VOL (shared Y = strike/price)</div>
+        </div>
+
+        <div class="row">
+          <label class="toggle">
+            <input type="checkbox" id="syncToggle"> Use Plotly price (synced Y)
+          </label>
+        </div>
+
+        <div class="spot-grid">
+          <div class="card">
+            <h3>SPX Spot</h3>
+            <div class="tv-wrap" id="tvBox">
+              <div id="tv-container" style="width:100%;height:100%"></div>
+            </div>
+            <div class="plot-wrap" id="plotPriceBox" style="display:none">
+              <div id="pricePlot" class="plot"></div>
+            </div>
+          </div>
+
+          <div class="stack">
+            <div class="card">
+              <h3>GEX by Strike</h3>
+              <div id="gexSidePlot" class="plot"></div>
+            </div>
+            <div class="card">
+              <h3>VOL by Strike</h3>
+              <div id="volSidePlot" class="plot"></div>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -700,118 +812,93 @@ def spxw_dashboard():
 
   <script>
     const PULL_EVERY = {PULL_EVERY * 1000};
+
+    // Tabs
     const tabTable  = document.getElementById('tabTable');
     const tabCharts = document.getElementById('tabCharts');
+    const tabSpot   = document.getElementById('tabSpot');
+
     const viewTable = document.getElementById('viewTable');
     const viewCharts= document.getElementById('viewCharts');
-    const volDiv    = document.getElementById('volChart');
-    const oiDiv     = document.getElementById('oiChart');
-    const gexDiv    = document.getElementById('gexChart');
-
-    let chartsTimer = null;
-    let firstDraw   = true;
+    const viewSpot  = document.getElementById('viewSpot');
 
     function setActive(btn) {{
-      [tabTable, tabCharts].forEach(b => b.classList.remove('active'));
+      [tabTable, tabCharts, tabSpot].forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
     }}
-
     function showTable(){{
       setActive(tabTable);
       viewTable.style.display = '';
       viewCharts.style.display = 'none';
-      stopCharts();
+      viewSpot.style.display = 'none';
+      stopCharts(); stopSpot();
     }}
-
     function showCharts(){{
       setActive(tabCharts);
       viewTable.style.display = 'none';
       viewCharts.style.display = '';
-      startCharts();
+      viewSpot.style.display = 'none';
+      startCharts(); stopSpot();
     }}
+    function showSpot(){{
+      setActive(tabSpot);
+      viewTable.style.display = 'none';
+      viewCharts.style.display = 'none';
+      viewSpot.style.display = '';
+      startSpot(); stopCharts();
+    }}
+    tabTable.addEventListener('click', showTable);
+    tabCharts.addEventListener('click', showCharts);
+    tabSpot.addEventListener('click', showSpot);
+
+    // ===== Charts (existing) =====
+    const volDiv    = document.getElementById('volChart');
+    const oiDiv     = document.getElementById('oiChart');
+    const gexDiv    = document.getElementById('gexChart');
+    let chartsTimer = null, firstDraw = true;
 
     async function fetchSeries(){{
       const r = await fetch('/api/series', {{ cache: 'no-store' }});
       return await r.json();
     }}
-
     function verticalSpotShape(spot, yMax){{
       if (spot == null) return null;
       return {{
-        type: 'line',
-        x0: spot, x1: spot,
-        y0: 0, y1: yMax,
-        line: {{ color: '#9aa0a6', width: 2, dash: 'dot' }},
-        xref: 'x', yref: 'y'
+        type: 'line', x0: spot, x1: spot, y0: 0, y1: yMax,
+        line: {{ color: '#9aa0a6', width: 2, dash: 'dot' }}, xref: 'x', yref: 'y'
       }};
     }}
-
     function buildLayout(title, xTitle, yTitle, spot, yMax){{
       const shape = verticalSpotShape(spot, yMax);
       return {{
         title: {{ text: title, font: {{ size: 16 }} }},
         xaxis: {{ title: xTitle, gridcolor: '#20242a', tickfont: {{size: 11}} }},
         yaxis: {{ title: yTitle, gridcolor: '#20242a', tickfont: {{size: 11}} }},
-        paper_bgcolor: '#121417',
-        plot_bgcolor: '#0f1115',
+        paper_bgcolor: '#121417', plot_bgcolor: '#0f1115',
         font: {{ color: '#e6e7e9' }},
         margin: {{ t: 40, r: 16, b: 48, l: 48 }},
         barmode: 'group',
         shapes: shape ? [shape] : []
       }};
     }}
-
     function tracesForBars(strikes, callArr, putArr, yLabel){{
       return [
-        {{
-          type: 'bar',
-          name: 'Calls ' + yLabel,
-          x: strikes, y: callArr,
-          marker: {{ color: '#22c55e' }},
-          offsetgroup: 'calls',
-          hovertemplate: "Strike %{{x}}<br>Calls: %{{y}}<extra></extra>"
-        }},
-        {{
-          type: 'bar',
-          name: 'Puts ' + yLabel,
-          x: strikes, y: putArr,
-          marker: {{ color: '#ef4444' }},
-          offsetgroup: 'puts',
-          hovertemplate: "Strike %{{x}}<br>Puts: %{{y}}<extra></extra>"
-        }}
+        {{ type:'bar', name:'Calls ' + yLabel, x: strikes, y: callArr, marker: {{ color:'#22c55e' }}, offsetgroup:'calls',
+           hovertemplate: "Strike %{{x}}<br>Calls: %{{y}}<extra></extra>" }},
+        {{ type:'bar', name:'Puts ' + yLabel,  x: strikes, y: putArr,  marker: {{ color:'#ef4444' }}, offsetgroup:'puts',
+           hovertemplate: "Strike %{{x}}<br>Puts: %{{y}}<extra></extra>" }}
       ];
     }}
-
     function tracesForGEX(strikes, callGEX, putGEX, netGEX){{
       return [
-        {{
-          type: 'bar',
-          name: 'Call GEX',
-          x: strikes, y: callGEX,
-          marker: {{ color: '#22c55e' }},
-          offsetgroup: 'call_gex',
-          hovertemplate: "Strike %{{x}}<br>Call GEX: %{{y:.2f}}<extra></extra>"
-        }},
-        {{
-          type: 'bar',
-          name: 'Put GEX',
-          x: strikes, y: putGEX,
-          marker: {{ color: '#ef4444' }},
-          offsetgroup: 'put_gex',
-          hovertemplate: "Strike %{{x}}<br>Put GEX: %{{y:.2f}}<extra></extra>"
-        }},
-        {{
-          type: 'bar',
-          name: 'Net GEX',
-          x: strikes, y: netGEX,
-          marker: {{ color: '#60a5fa' }},
-          offsetgroup: 'net_gex',
-          opacity: 0.85,
-          hovertemplate: "Strike %{{x}}<br>Net GEX: %{{y:.2f}}<extra></extra>"
-        }}
+        {{ type:'bar', name:'Call GEX', x: strikes, y: callGEX, marker: {{ color:'#22c55e' }}, offsetgroup:'call_gex',
+           hovertemplate: "Strike %{{x}}<br>Call GEX: %{{y:.2f}}<extra></extra>" }},
+        {{ type:'bar', name:'Put GEX',  x: strikes, y: putGEX,  marker: {{ color:'#ef4444' }}, offsetgroup:'put_gex',
+           hovertemplate: "Strike %{{x}}<br>Put GEX: %{{y:.2f}}<extra></extra>" }},
+        {{ type:'bar', name:'Net GEX',  x: strikes, y: netGEX,  marker: {{ color:'#60a5fa' }}, offsetgroup:'net_gex', opacity:0.85,
+           hovertemplate: "Strike %{{x}}<br>Net GEX: %{{y:.2f}}<extra></extra>" }}
       ];
     }}
-
     async function drawOrUpdate(){{
       const data = await fetchSeries();
       if (!data || !data.strikes || data.strikes.length === 0) return;
@@ -822,7 +909,6 @@ def spxw_dashboard():
       const vMax  = Math.max(...data.callVol, ...data.putVol, 0) * 1.05;
       const oiMax = Math.max(...data.callOI,  ...data.putOI,  0) * 1.05;
 
-      // GEX can be large; use absolute max across all three for vertical line height
       const gexAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v => Math.abs(v));
       const gexMax = (gexAbs.length ? Math.max(...gexAbs) : 0) * 1.05;
 
@@ -835,7 +921,6 @@ def spxw_dashboard():
       const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
 
       if (firstDraw) {{
-        // GEX first
         Plotly.newPlot(gexDiv, gexTraces, gexLayout, {{displayModeBar:false, responsive:true}});
         Plotly.newPlot(volDiv, volTraces, volLayout, {{displayModeBar:false, responsive:true}});
         Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false, responsive:true}});
@@ -846,19 +931,128 @@ def spxw_dashboard():
         Plotly.react(oiDiv,  oiTraces,  oiLayout,  {{displayModeBar:false, responsive:true}});
       }}
     }}
-
     function startCharts(){{
       drawOrUpdate();
       if (chartsTimer) clearInterval(chartsTimer);
       chartsTimer = setInterval(drawOrUpdate, PULL_EVERY);
     }}
-
     function stopCharts(){{
       if (chartsTimer) {{ clearInterval(chartsTimer); chartsTimer = null; }}
     }}
 
-    tabTable.addEventListener('click', showTable);
-    tabCharts.addEventListener('click', showCharts);
+    // ===== Spot tab (TradingView + synced Y option) =====
+    const syncToggle = document.getElementById('syncToggle');
+    const tvBox      = document.getElementById('tvBox');
+    const plotPriceBox = document.getElementById('plotPriceBox');
+    const priceDiv   = document.getElementById('pricePlot');
+    const gexSideDiv = document.getElementById('gexSidePlot');
+    const volSideDiv = document.getElementById('volSidePlot');
+
+    let tvLoaded=false, spotTimer=null, spotCache=null;
+
+    function mountTV(){{
+      if(tvLoaded) return;
+      tvLoaded = true;
+      const s = document.createElement('script');
+      s.src = "https://s3.tradingview.com/tv.js";
+      s.onload = () => {{
+        new TradingView.widget({{
+          autosize: true,
+          symbol: "TVC:SPX",
+          interval: "5",
+          timezone: "Etc/UTC",
+          theme: "dark",
+          style: "1",
+          locale: "en",
+          hide_top_toolbar: true,
+          hide_legend: true,
+          hide_volume: true,
+          allow_symbol_change: false,
+          container_id: "tv-container"
+        }});
+      }};
+      document.body.appendChild(s);
+    }}
+
+    function toggleSyncedY(){{
+      const on = syncToggle.checked;
+      tvBox.style.display = on ? 'none' : 'block';
+      plotPriceBox.style.display = on ? 'block' : 'none';
+      if (spotCache) renderSpot(spotCache); // re-apply domains
+    }}
+    syncToggle.addEventListener('change', toggleSyncedY);
+
+    async function fetchSpotData(){{
+      const r = await fetch('/api/spot_data', {{ cache: 'no-store' }});
+      return await r.json();
+    }}
+
+    function renderSpot(data){{
+      spotCache = data;
+      const chain = data.chain || [];
+      if(!chain.length) return;
+
+      // Y (shared) from strikes
+      const strikes = chain.map(d=>+d.strike);
+      const yMin = Math.min(...strikes), yMax = Math.max(...strikes);
+      const pad  = (yMax - yMin) * 0.02;
+
+      // right side: GEX horizontal
+      const gex = {{ type:'bar', orientation:'h', x: chain.map(d=>d.gex||0), y: chain.map(d=>d.strike),
+                     hovertemplate:'Strike %{y}<br>GEX %{x:.2f}<extra></extra>' }};
+      Plotly.react(gexSideDiv, [gex], {{
+        margin:{{l:60,r:16,t:10,b:30}},
+        paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+        xaxis:{{title:'GEX', gridcolor:'#20242a'}},
+        yaxis:{{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'}},
+        font:{{color:'#e6e7e9'}}
+      }}, {{displayModeBar:false, responsive:true}});
+
+      // right side: VOL horizontal
+      const vol = {{ type:'bar', orientation:'h', x: chain.map(d=>d.vol||0), y: chain.map(d=>d.strike),
+                     hovertemplate:'Strike %{y}<br>VOL %{x}<extra></extra>' }};
+      Plotly.react(volSideDiv, [vol], {{
+        margin:{{l:60,r:16,t:10,b:30}},
+        paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+        xaxis:{{title:'VOL', gridcolor:'#20242a'}},
+        yaxis:{{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'}},
+        font:{{color:'#e6e7e9'}}
+      }}, {{displayModeBar:false, responsive:true}});
+
+      // optional synced price panel
+      const useSynced = syncToggle.checked;
+      if(useSynced){{
+        const spot = (data.spot||[]);
+        if(spot.length){{
+          const trace = {{ type:'scatter', mode:'lines',
+                           x: spot.map(d=>new Date(d.ts)), y: spot.map(d=>d.spot),
+                           hovertemplate:'%{{x|%H:%M}}<br>Spot %{y:.2f}<extra></extra>' }};
+          Plotly.react(priceDiv, [trace], {{
+            margin:{{l:60,r:16,t:10,b:30}},
+            paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+            xaxis:{{title:'Time', gridcolor:'#20242a'}},
+            yaxis:{{title:'Price', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'}},
+            font:{{color:'#e6e7e9'}}
+          }}, {{displayModeBar:false, responsive:true}});
+        }}
+      }}
+    }}
+
+    async function tickSpot(){{
+      const data = await fetchSpotData();
+      renderSpot(data);
+    }}
+
+    function startSpot(){{
+      // mount TV once
+      if(!tvLoaded) mountTV();
+      tickSpot();
+      if(spotTimer) clearInterval(spotTimer);
+      spotTimer = setInterval(tickSpot, 15000);
+    }}
+    function stopSpot(){{
+      if(spotTimer){ clearInterval(spotTimer); spotTimer = null; }
+    }}
 
     // default: show table
     showTable();

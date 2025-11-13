@@ -525,39 +525,157 @@ DASH_HTML_TEMPLATE = """
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>SPXW 0DTE — Dashboard</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <style>
     :root {
       --bg:#0b0c10; --panel:#121417; --muted:#8a8f98; --text:#e6e7e9; --border:#23262b;
       --green:#22c55e; --red:#ef4444; --blue:#60a5fa;
     }
     * { box-sizing: border-box; }
-    body { margin:0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
-    .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
-    .sidebar {
-      background: var(--panel); border-right: 1px solid var(--border); padding: 20px 16px; position: sticky; top:0; height:100vh;
+    body {
+      margin:0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      font-size: 13px;
     }
-    .brand { font-weight: 700; margin-bottom: 6px; }
-    .small { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
-    .status { display:flex; gap:10px; align-items:center; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; margin-bottom:14px; }
-    .dot { width:10px; height:10px; border-radius:999px; background:__STATUS_COLOR__; }
-    .nav { display: grid; gap: 8px; margin-top: 8px; }
-    .btn { display:block; width:100%; text-align:left; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:transparent; color:var(--text); cursor:pointer; }
+
+    /* ===== Desktop layout ===== */
+    .layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: 100vh;
+    }
+    .sidebar {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 18px 14px;
+      position: sticky;
+      top:0;
+      height:100vh;
+    }
+    .brand { font-weight: 700; margin-bottom: 4px; font-size:14px; }
+    .small { color: var(--muted); font-size: 11px; margin-bottom: 12px; }
+    .status {
+      display:flex;
+      gap:8px;
+      align-items:center;
+      padding:8px;
+      border:1px solid var(--border);
+      border-radius:10px;
+      background:#0f1216;
+      margin-bottom:12px;
+    }
+    .dot { width:9px; height:9px; border-radius:999px; background:__STATUS_COLOR__; }
+    .nav { display: grid; gap: 6px; margin-top: 6px; }
+    .btn {
+      display:block;
+      width:100%;
+      text-align:left;
+      padding:8px 10px;
+      border-radius:9px;
+      border:1px solid var(--border);
+      background:transparent;
+      color:var(--text);
+      cursor:pointer;
+      font-size:12px;
+    }
     .btn.active { background:#121a2e; border-color:#2a3a57; }
-    .content { padding: 18px; }
-    .panel { background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:12px; overflow:hidden; }
-    .header { display:flex; align-items:center; justify-content:space-between; padding:6px 10px 12px; border-bottom:1px solid var(--border); margin-bottom:10px;}
-    .pill { font-size:12px; padding:4px 8px; border:1px solid var(--border); border-radius:999px; color:var(--muted); }
 
-    .charts { display:flex; flex-direction:column; gap:24px; }
-    iframe { width:100%; height: calc(100vh - 180px); border:0; background:#0f1115; }
-    #volChart, #oiChart, #gexChart { width:100%; height:480px; }
+    .content { padding: 14px 16px; }
+    .panel {
+      background: var(--panel);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:10px;
+      overflow:hidden;
+    }
+    .header {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:4px 6px 8px;
+      border-bottom:1px solid var(--border);
+      margin-bottom:8px;
+      font-size:13px;
+    }
+    .pill {
+      font-size:11px;
+      padding:3px 7px;
+      border:1px solid var(--border);
+      border-radius:999px;
+      color:var(--muted);
+    }
 
-    .spot-grid { display:grid; grid-template-columns: 2fr 1fr 1fr; gap:12px; align-items:stretch; }
-    .card { background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:12px; min-height:420px; display:flex; flex-direction:column }
-    .card h3 { margin:0 0 8px; font-size:14px; color:var(--muted); font-weight:600 }
+    .charts { display:flex; flex-direction:column; gap:18px; }
+    iframe {
+      width:100%;
+      height: calc(100vh - 190px);
+      border:0;
+      background:#0f1115;
+    }
+    #volChart, #oiChart, #gexChart { width:100%; height:420px; }
+
+    .spot-grid {
+      display:grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap:10px;
+      align-items:stretch;
+    }
+    .card {
+      background: var(--panel);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:10px;
+      min-height:360px;
+      display:flex;
+      flex-direction:column;
+    }
+    .card h3 {
+      margin:0 0 6px;
+      font-size:13px;
+      color:var(--muted);
+      font-weight:600;
+    }
     .plot { width:100%; height:100% }
-    @media (max-width: 1200px) { .spot-grid { grid-template-columns:1fr; } }
+
+    /* ===== Mobile / small screens ===== */
+    @media (max-width: 900px) {
+      .layout {
+        display:block;
+        min-height:0;
+      }
+      .sidebar {
+        position:static;
+        height:auto;
+        border-right:none;
+        border-bottom:1px solid var(--border);
+        padding:10px 10px 6px;
+      }
+      .status { margin-bottom:8px; }
+      .nav {
+        grid-auto-flow:column;
+        grid-auto-columns:1fr;
+        overflow-x:auto;
+      }
+      .btn {
+        text-align:center;
+        padding:7px 5px;
+        font-size:11px;
+        white-space:nowrap;
+      }
+      .content { padding:10px; }
+      .panel { padding:8px; border-radius:10px; }
+      iframe { height:60vh; }
+      #volChart, #oiChart, #gexChart { height:340px; }
+      .spot-grid { grid-template-columns:1fr; }
+      .card { min-height:260px; }
+    }
+
+    @media (max-width: 480px) {
+      .brand { font-size:13px; }
+      .status { padding:7px; }
+      .pill { display:none; }
+    }
   </style>
 </head>
 <body>
@@ -568,7 +686,7 @@ DASH_HTML_TEMPLATE = """
       <div class="status">
         <span class="dot"></span>
         <div>
-          <div style="font-weight:600;">__STATUS_TEXT__</div>
+          <div style="font-weight:600; font-size:12px;">__STATUS_TEXT__</div>
           <div class="small">Last run: __LAST_TS__ — __LAST_MSG__</div>
         </div>
       </div>
@@ -577,8 +695,8 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabSpot">Spot</button>
       </div>
-      <div class="small" style="margin-top:12px">Charts auto-refresh while visible.</div>
-      <div class="small" style="margin-top:18px">
+      <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
+      <div class="small" style="margin-top:14px">
         <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> ·
         <a href="/api/history"  style="color:var(--muted)">History</a> ·
         <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
@@ -587,12 +705,18 @@ DASH_HTML_TEMPLATE = """
 
     <main class="content">
       <div id="viewTable" class="panel">
-        <div class="header"><div><strong>Live Chain Table</strong></div><div class="pill">auto-refresh</div></div>
+        <div class="header">
+          <div><strong>Live Chain Table</strong></div>
+          <div class="pill">auto-refresh</div>
+        </div>
         <iframe id="tableFrame" src="/table"></iframe>
       </div>
 
       <div id="viewCharts" class="panel" style="display:none">
-        <div class="header"><div><strong>GEX, Volume & Open Interest</strong></div><div class="pill">green = calls · red = puts · blue = net</div></div>
+        <div class="header">
+          <div><strong>GEX, Volume & Open Interest</strong></div>
+          <div class="pill">green = calls · red = puts · blue = net</div>
+        </div>
         <div class="charts">
           <div id="gexChart"></div>
           <div id="volChart"></div>
@@ -601,14 +725,23 @@ DASH_HTML_TEMPLATE = """
       </div>
 
       <div id="viewSpot" class="panel" style="display:none">
-        <div class="header"><div><strong>Spot</strong></div><div class="pill">TradingView price + GEX & VOL by strike</div></div>
+        <div class="header">
+          <div><strong>Spot</strong></div>
+          <div class="pill">SPX price + GEX & VOL by strike (shared Y axis)</div>
+        </div>
         <div class="spot-grid">
           <div class="card">
-            <h3>SPX Price — TradingView</h3>
-            <div id="tvContainer" class="plot"></div>
+            <h3>SPX Price</h3>
+            <div id="spotPricePlot" class="plot"></div>
           </div>
-          <div class="card"><h3>Net GEX</h3><div id="gexSidePlot" class="plot"></div></div>
-          <div class="card"><h3>VOL</h3><div id="volSidePlot" class="plot"></div></div>
+          <div class="card">
+            <h3>Net GEX by Strike</h3>
+            <div id="gexSidePlot" class="plot"></div>
+          </div>
+          <div class="card">
+            <h3>VOL by Strike (Calls vs Puts)</h3>
+            <div id="volSidePlot" class="plot"></div>
+          </div>
         </div>
       </div>
     </main>
@@ -636,7 +769,7 @@ DASH_HTML_TEMPLATE = """
     tabCharts.addEventListener('click', showCharts);
     tabSpot.addEventListener('click', showSpot);
 
-    // ===== Main charts =====
+    // ===== Main charts (GEX / VOL / OI stacked) =====
     const volDiv=document.getElementById('volChart'),
           oiDiv=document.getElementById('oiChart'),
           gexDiv=document.getElementById('gexChart');
@@ -652,13 +785,13 @@ DASH_HTML_TEMPLATE = """
     function buildLayout(title,xTitle,yTitle,spot,yMax){
       const shape=verticalSpotShape(spot,yMax);
       return {
-        title:{text:title,font:{size:16}},
-        xaxis:{title:xTitle,gridcolor:'#20242a',tickfont:{size:11}},
-        yaxis:{title:yTitle,gridcolor:'#20242a',tickfont:{size:11}},
+        title:{text:title,font:{size:14}},
+        xaxis:{title:xTitle,gridcolor:'#20242a',tickfont:{size:10},dtick:5},
+        yaxis:{title:yTitle,gridcolor:'#20242a',tickfont:{size:10}},
         paper_bgcolor:'#121417',
         plot_bgcolor:'#0f1115',
-        font:{color:'#e6e7e9'},
-        margin:{t:40,r:16,b:48,l:48},
+        font:{color:'#e6e7e9',size:11},
+        margin:{t:32,r:12,b:40,l:44},
         barmode:'group',
         shapes:shape?[shape]:[]
       };
@@ -716,94 +849,67 @@ DASH_HTML_TEMPLATE = """
     function startCharts(){ drawOrUpdate(); if (chartsTimer) clearInterval(chartsTimer); chartsTimer=setInterval(drawOrUpdate, PULL_EVERY); }
     function stopCharts(){ if (chartsTimer){ clearInterval(chartsTimer); chartsTimer=null; } }
 
-    // ===== Spot: TradingView + GEX/VOL =====
-    const gexSideDiv=document.getElementById('gexSidePlot'),
+    // ===== Spot: price + GEX/VOL with shared Y axis =====
+    const spotPriceDiv=document.getElementById('spotPricePlot'),
+          gexSideDiv=document.getElementById('gexSidePlot'),
           volSideDiv=document.getElementById('volSidePlot');
     let spotTimer=null;
-    let tvInitialized=false;
-    let tvWidget=null;
-    let spotYRangeOverride=null;
 
-    function applySpotYRange(from, to){
-      if (!isFinite(from) || !isFinite(to)) return;
-      if (from === to) {
-        const pad0 = Math.max(1, Math.abs(from) * 0.001);
-        from -= pad0; to += pad0;
+    async function fetchSpot(){ const r=await fetch('/api/spot',{cache:'no-store'}); return await r.json(); }
+
+    function computeYRange(strikes, prices){
+      const vals = [];
+      if (Array.isArray(strikes) && strikes.length) vals.push(...strikes);
+      if (Array.isArray(prices) && prices.length) vals.push(...prices.filter(v=>typeof v==='number' && !isNaN(v)));
+      if (!vals.length) return null;
+      let yMin = Math.min(...vals), yMax = Math.max(...vals);
+      if (yMin === yMax){
+        const pad0 = Math.max(1, Math.abs(yMin)*0.001);
+        yMin -= pad0; yMax += pad0;
       }
-      const pad = (to - from) * 0.02;
-      const range = [from - pad, to + pad];
-      spotYRangeOverride = { from, to };
-      if (typeof Plotly !== 'undefined') {
-        if (gexSideDiv && gexSideDiv.data) {
-          Plotly.relayout(gexSideDiv, {'yaxis.range': range});
-        }
-        if (volSideDiv && volSideDiv.data) {
-          Plotly.relayout(volSideDiv, {'yaxis.range': range});
-        }
-      }
+      const pad = (yMax - yMin) * 0.02 || 1;
+      return {min: yMin - pad, max: yMax + pad};
     }
 
-    function renderTV(){
-      if (tvInitialized) return;
-      if (typeof TradingView === 'undefined') return;
-      if (!document.getElementById('tvContainer')) return;
-      tvInitialized = true;
-
-      tvWidget = new TradingView.widget({
-        "symbol": "BLACKBULL:SPX500",
-        "interval": "3",
-        "container_id": "tvContainer",
-        "autosize": true,
-        "theme": "dark",
-        "style": "1",
-        "locale": "en",
-        "hide_legend": false,
-        "hide_side_toolbar": false,
-        "hide_top_toolbar": false
-      });
-
-      if (tvWidget && typeof tvWidget.onChartReady === 'function') {
-        tvWidget.onChartReady(function(){
-          try {
-            const chart = (typeof tvWidget.activeChart === 'function')
-              ? tvWidget.activeChart()
-              : (typeof tvWidget.chart === 'function' ? tvWidget.chart() : null);
-            if (!chart || !chart.getPanes) return;
-            const panes = chart.getPanes();
-            const pane0 = panes && panes.length ? panes[0] : null;
-            if (!pane0) return;
-
-            const priceScale =
-              (pane0.getMainSourcePriceScale && pane0.getMainSourcePriceScale()) ||
-              (pane0.getRightPriceScales && pane0.getRightPriceScales()[0]) ||
-              null;
-            if (!priceScale || !priceScale.getVisiblePriceRange) return;
-
-            function syncFromTV(){
-              const vr = priceScale.getVisiblePriceRange();
-              if (!vr || typeof vr.from !== 'number' || typeof vr.to !== 'number') return;
-              applySpotYRange(vr.from, vr.to);
-            }
-            syncFromTV();
-            setInterval(syncFromTV, 2000);
-          } catch(e) {
-            if (console && console.warn) console.warn('TradingView sync error', e);
-          }
-        });
+    function renderSpotPrice(spotData, yRange){
+      if (!spotData || !spotData.time || !spotData.time.length) return;
+      const x = (spotData.time || []).map(t => new Date(t));
+      const closeArr = spotData.close || [];
+      const trace = {
+        type:'scatter',
+        mode:'lines',
+        x:x,
+        y:closeArr,
+        line:{shape:'linear'},
+        hovertemplate:'%{x}<br>Price %{y:.2f}<extra></extra>'
+      };
+      let yr = yRange;
+      if (!yr){
+        const tmp = computeYRange([], closeArr);
+        if (tmp) yr = tmp;
       }
+      const layout = {
+        margin:{l:54,r:12,t:10,b:32},
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        xaxis:{title:'Time', gridcolor:'#20242a', tickfont:{size:10}},
+        yaxis:{title:'Price', gridcolor:'#20242a', range: yr ? [yr.min, yr.max] : undefined, tickfont:{size:10}},
+        font:{color:'#e6e7e9',size:11}
+      };
+      Plotly.react(spotPriceDiv, [trace], layout, {displayModeBar:false,responsive:true});
     }
 
-    function renderSpotFromSeries(data){
+    function renderSpotFromSeries(data, yRange){
       const strikes = data.strikes || [];
       if (!strikes.length) return;
 
-      let yMin = Math.min(...strikes), yMax = Math.max(...strikes);
-      if (spotYRangeOverride && isFinite(spotYRangeOverride.from) && isFinite(spotYRangeOverride.to)) {
-        yMin = spotYRangeOverride.from;
-        yMax = spotYRangeOverride.to;
+      let yr = yRange;
+      if (!yr){
+        const tmp = computeYRange(strikes, []);
+        if (tmp) yr = tmp;
       }
-      let pad = (yMax - yMin) * 0.02;
-      if (!isFinite(pad) || pad <= 0) pad = 1;
+      const yMin = yr ? yr.min : Math.min(...strikes);
+      const yMax = yr ? yr.max : Math.max(...strikes);
 
       const gexNet = data.netGEX || [];
       const gMax = Math.max(1, ...gexNet.map(v=>Math.abs(v))) * 1.1;
@@ -816,12 +922,12 @@ DASH_HTML_TEMPLATE = """
         hovertemplate:'Strike %{y}<br>Net GEX %{x:.0f}<extra></extra>'
       };
       Plotly.react(gexSideDiv, [gex], {
-        margin:{l:60,r:16,t:10,b:30},
+        margin:{l:54,r:12,t:10,b:28},
         paper_bgcolor:'#121417',
         plot_bgcolor:'#0f1115',
-        xaxis:{title:'Net GEX', gridcolor:'#20242a', range:[-gMax, gMax]},
-        yaxis:{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'},
-        font:{color:'#e6e7e9'}
+        xaxis:{title:'Net GEX', gridcolor:'#20242a', range:[-gMax, gMax], tickfont:{size:10}},
+        yaxis:{title:'Strike', range:[yMin,yMax], gridcolor:'#20242a', dtick:5, tickfont:{size:10}},
+        font:{color:'#e6e7e9',size:11}
       }, {displayModeBar:false,responsive:true});
 
       const callVol = data.callVol || [];
@@ -846,22 +952,25 @@ DASH_HTML_TEMPLATE = """
         hovertemplate:'Strike %{y}<br>Puts %{x}<extra></extra>'
       };
       Plotly.react(volSideDiv, [volCalls, volPuts], {
-        margin:{l:60,r:16,t:10,b:30},
+        margin:{l:54,r:12,t:10,b:28},
         paper_bgcolor:'#121417',
         plot_bgcolor:'#0f1115',
-        xaxis:{title:'VOL', gridcolor:'#20242a', range:[0, vMax]},
-        yaxis:{title:'Strike', range:[yMin-pad, yMax+pad], gridcolor:'#20242a'},
+        xaxis:{title:'VOL', gridcolor:'#20242a', range:[0, vMax], tickfont:{size:10}},
+        yaxis:{title:'Strike', range:[yMin,yMax], gridcolor:'#20242a', dtick:5, tickfont:{size:10}},
         barmode:'group',
-        font:{color:'#e6e7e9'}
+        font:{color:'#e6e7e9',size:11}
       }, {displayModeBar:false,responsive:true});
     }
 
     async function tickSpot(){
-      const data = await fetchSeries();
-      renderSpotFromSeries(data);
+      const [opt, spot] = await Promise.all([fetchSeries(), fetchSpot()]);
+      const prices = (spot && Array.isArray(spot.close)) ? spot.close : [];
+      const yRange = computeYRange(opt.strikes || [], prices);
+      renderSpotPrice(spot, yRange);
+      renderSpotFromSeries(opt, yRange);
     }
+
     function startSpot(){
-      renderTV();
       tickSpot();
       if (spotTimer) clearInterval(spotTimer);
       spotTimer = setInterval(tickSpot, PULL_EVERY);
@@ -876,6 +985,7 @@ DASH_HTML_TEMPLATE = """
 </body>
 </html>
 """
+
 
 # ====== TABLE ENDPOINT ======
 @app.get("/table")

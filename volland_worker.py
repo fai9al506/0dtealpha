@@ -38,19 +38,17 @@ def save_snapshot(payload: dict):
 
 
 def login_if_needed(page):
-    # Go to workspace; if not logged in, it will redirect to /sign-in
     page.goto(URL, wait_until="domcontentloaded", timeout=120000)
     page.wait_for_timeout(1500)
 
-    # If already logged in, return
+    # already logged in
     if "/sign-in" not in page.url and page.locator("input[name='password'], input[type='password']").count() == 0:
         return
 
-    # Wait for login fields (email is type="text" on Volland)
+    # Volland login fields (email is type="text")
     email_box = page.locator(
         "input[data-cy='sign-in-email-input'], input[name='email']"
     ).first
-
     pwd_box = page.locator(
         "input[data-cy='sign-in-password-input'], input[name='password'], input[type='password']"
     ).first
@@ -69,22 +67,16 @@ def login_if_needed(page):
         page.locator("button[type='submit']").first.click()
 
     # Wait until we leave /sign-in
-    try:
-        page.wait_for_url(lambda u: "/sign-in" not in u, timeout=90000)
-    except Exception:
-        err = ""
-        try:
-            err = (page.locator("[role='alert'], .error, .toast, .notification").first.inner_text() or "").strip()
-        except Exception:
-            pass
-        raise RuntimeError(f"Login did not redirect. Still on: {page.url}. Error: {err}")
+    page.wait_for_url(lambda u: "/sign-in" not in u, timeout=90000)
 
 
 def extract_tooltip(page) -> dict:
     """
-    Tries to locate a chart element (canvas/svg/etc) in main page or iframes,
-    hover on it, and grab tooltip text. If nothing found, returns debug data
-    + screenshot (base64) so you can see what Railway is rendering.
+    Finds a chart element (canvas/svg/etc) in main page or iframes, hovers it,
+    and grabs text from likely tooltip/container selectors.
+
+    Note: In Volland this often returns the "accessible chart text" (big text).
+    We'll parse it into structured fields using parse_volland_text().
     """
     def make_debug(reason: str) -> dict:
         try:
@@ -133,19 +125,20 @@ def extract_tooltip(page) -> dict:
         "div[class*='canvas' i]",
     ]
 
+    # These are "best effort" selectors; Volland seems to expose text around "Gamma/Vanna/Charm"
     tooltip_selectors = [
         "[role='tooltip']",
         ".tooltip",
         "[data-tooltip]",
-        "div:has-text('Strike')",
         "div:has-text('Gamma')",
         "div:has-text('Vanna')",
         "div:has-text('Charm')",
+        "div:has-text('Notional Hedging Requirement')",
     ]
 
     frames = [page.main_frame] + [f for f in page.frames if f != page.main_frame]
 
-    best_tooltip = ""
+    best_text = ""
     best_used = {"frame_url": None, "chart_sel": None, "tooltip_sel": None}
 
     for fr in frames:
@@ -170,12 +163,14 @@ def extract_tooltip(page) -> dict:
 
                 candidates = []
                 for sel in tooltip_selectors:
+                    # same frame
                     try:
                         tloc = fr.locator(sel).first
                         if tloc.count() > 0:
                             candidates.append((sel, (tloc.inner_text() or "").strip()))
                     except Exception:
                         pass
+                    # page-level
                     try:
                         tloc2 = page.locator(sel).first
                         if tloc2.count() > 0:
@@ -184,13 +179,13 @@ def extract_tooltip(page) -> dict:
                         pass
 
                 for sel, txt in candidates:
-                    if len(txt) > len(best_tooltip):
-                        best_tooltip = txt
+                    if len(txt) > len(best_text):
+                        best_text = txt
                         best_used = {"frame_url": fr.url, "chart_sel": chart_sel, "tooltip_sel": sel}
 
-                if len(best_tooltip) >= 10:
+                if len(best_text) >= 20:
                     return {
-                        "tooltip_raw": best_tooltip,
+                        "tooltip_raw": best_text,
                         "debug": {
                             "url": page.url,
                             "title": page.title(),
@@ -203,6 +198,72 @@ def extract_tooltip(page) -> dict:
                     }
 
     return make_debug("No visible chart target (canvas/svg/chart div) found in main page or frames.")
+
+
+def parse_volland_text(raw: str) -> dict:
+    """
+    Extracts useful fields from Volland's accessible chart text.
+    This is not the full curve values, but it gives:
+      - spot
+      - as_of_utc
+      - expiration_label
+      - strikes list
+      - exposure_ticks_m ($-200M ... etc)
+    """
+    out = {}
+
+    # spot like $6876.26
+    m = re.search(r"\$([0-9]+\.[0-9]+)", raw)
+    if m:
+        try:
+            out["spot"] = float(m.group(1))
+        except Exception:
+            pass
+
+    # as-of timestamp like: as of 2025-12-22T23:00:00Z
+    m = re.search(r"as of\s+([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z)", raw, flags=re.I)
+    if m:
+        out["as_of_utc"] = m.group(1)
+
+    # Expiration label like: Expiration: Dec 26
+    m = re.search(r"Expiration:\s*([A-Za-z]{3}\s+\d{1,2})", raw)
+    if m:
+        out["expiration_label"] = m.group(1)
+
+    # Collect strike ladder numbers like 5250.00, 5550.00, ...
+    strikes = re.findall(r"\b(\d{4,5}\.\d{2})\b", raw)
+    strike_vals = []
+    for s in strikes:
+        try:
+            v = float(s)
+        except Exception:
+            continue
+        if 2000 <= v <= 9000:
+            strike_vals.append(v)
+
+    # de-duplicate while preserving order
+    seen = set()
+    dedup = []
+    for v in strike_vals:
+        if v not in seen:
+            seen.add(v)
+            dedup.append(v)
+
+    out["strikes"] = dedup[:250]
+
+    # Exposure scale ticks like $-200M ... $100M
+    ticks = re.findall(r"\$(-?\d+)M", raw)
+    if ticks:
+        vals = []
+        for x in ticks:
+            try:
+                vals.append(int(x))
+            except Exception:
+                pass
+        if vals:
+            out["exposure_ticks_m"] = vals
+
+    return out
 
 
 def run():
@@ -234,20 +295,31 @@ def run():
                     page.wait_for_timeout(2000)
 
                 tip = extract_tooltip(page)
+                raw = tip.get("tooltip_raw", "") or ""
+                parsed = parse_volland_text(raw) if raw else {}
 
                 payload = {
                     "ts_utc": datetime.now(timezone.utc).isoformat(),
-                    "tooltip_raw": tip.get("tooltip_raw", ""),
+                    "raw": raw,            # keep for debugging
+                    "parsed": parsed,      # ✅ this is what your web should use
                     "debug": tip.get("debug", {})
                 }
 
                 save_snapshot(payload)
-                print("[volland] saved", payload["ts_utc"], "tooltip_len=", len(payload["tooltip_raw"]))
+                print(
+                    "[volland] saved",
+                    payload["ts_utc"],
+                    "raw_len=",
+                    len(raw),
+                    "parsed_keys=",
+                    list(parsed.keys())
+                )
 
             except Exception as e:
                 err_payload = {
                     "ts_utc": datetime.now(timezone.utc).isoformat(),
-                    "tooltip_raw": "",
+                    "raw": "",
+                    "parsed": {},
                     "debug": {
                         "reason": "exception",
                         "error": str(e),

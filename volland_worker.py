@@ -37,6 +37,26 @@ def save_snapshot(payload: dict):
         )
 
 
+def handle_session_limit_modal(page) -> bool:
+    """
+    Volland supports 2 active sessions. On a 3rd device, a confirmation modal appears.
+    We must click Continue, otherwise login will never complete.
+    """
+    btn = page.locator(
+        "button[data-cy='confirmation-modal-confirm-button'], button:has-text('Continue')"
+    ).first
+    if btn.count() == 0:
+        return False
+    try:
+        btn.wait_for(state="visible", timeout=3000)
+        btn.click()
+        page.wait_for_timeout(1200)
+        print("[login] session modal: clicked Continue")
+        return True
+    except Exception:
+        return False
+
+
 def login_if_needed(page):
     page.goto(URL, wait_until="domcontentloaded", timeout=120000)
     page.wait_for_timeout(1500)
@@ -45,30 +65,33 @@ def login_if_needed(page):
     if "/sign-in" not in page.url and page.locator("input[name='password'], input[type='password']").count() == 0:
         return
 
-    # Wait for Volland login fields (email is type="text")
+    # Volland login fields (email is type="text")
     email_box = page.locator("input[data-cy='sign-in-email-input'], input[name='email']").first
     pwd_box   = page.locator("input[data-cy='sign-in-password-input'], input[name='password'], input[type='password']").first
     email_box.wait_for(state="visible", timeout=90000)
     pwd_box.wait_for(state="visible", timeout=90000)
 
-    # Fill
     email_box.fill(EMAIL)
     pwd_box.fill(PASS)
 
-    # Click submit (try multiple patterns)
     submit = page.locator(
         "button:has-text('Log In'), button:has-text('Login'), button[type='submit']"
     ).first
     submit.click()
 
-    # ✅ Poll for success (SPA may not trigger 'load')
+    # If session-limit popup appears, confirm it
+    handle_session_limit_modal(page)
+
+    # Poll for success (SPA may not trigger 'load')
     deadline = time.time() + 90
     while time.time() < deadline:
-        # success condition
+        # Sometimes the modal appears a bit later
+        handle_session_limit_modal(page)
+
         if "/sign-in" not in page.url:
             return
 
-        # look for any visible error message
+        # Look for visible error message
         err_text = ""
         for sel in ["[role='alert']", ".error", ".toast", ".notification"]:
             loc = page.locator(sel).first
@@ -86,7 +109,6 @@ def login_if_needed(page):
 
         page.wait_for_timeout(500)
 
-    # Timeout: still sign-in (often bot/captcha/blocked)
     page.screenshot(path="debug_login_timeout.png", full_page=True)
     body = ""
     try:
@@ -96,14 +118,12 @@ def login_if_needed(page):
     raise RuntimeError(f"Login did not redirect after 90s. Still on: {page.url}. Body: {body}")
 
 
-
 def extract_tooltip(page) -> dict:
     """
     Finds a chart element (canvas/svg/etc) in main page or iframes, hovers it,
     and grabs text from likely tooltip/container selectors.
 
-    Note: In Volland this often returns the "accessible chart text" (big text).
-    We'll parse it into structured fields using parse_volland_text().
+    Note: Volland often exposes "accessible chart text" (big text). We'll parse it.
     """
     def make_debug(reason: str) -> dict:
         try:
@@ -152,7 +172,6 @@ def extract_tooltip(page) -> dict:
         "div[class*='canvas' i]",
     ]
 
-    # These are "best effort" selectors; Volland seems to expose text around "Gamma/Vanna/Charm"
     tooltip_selectors = [
         "[role='tooltip']",
         ".tooltip",
@@ -172,7 +191,7 @@ def extract_tooltip(page) -> dict:
         for chart_sel in chart_selectors:
             loc = fr.locator(chart_sel).first
             try:
-                loc.wait_for(state="visible", timeout=5000)
+                loc.wait_for(state="visible", timeout=8000)
             except Exception:
                 continue
 
@@ -190,14 +209,12 @@ def extract_tooltip(page) -> dict:
 
                 candidates = []
                 for sel in tooltip_selectors:
-                    # same frame
                     try:
                         tloc = fr.locator(sel).first
                         if tloc.count() > 0:
                             candidates.append((sel, (tloc.inner_text() or "").strip()))
                     except Exception:
                         pass
-                    # page-level
                     try:
                         tloc2 = page.locator(sel).first
                         if tloc2.count() > 0:
@@ -228,18 +245,8 @@ def extract_tooltip(page) -> dict:
 
 
 def parse_volland_text(raw: str) -> dict:
-    """
-    Extracts useful fields from Volland's accessible chart text.
-    This is not the full curve values, but it gives:
-      - spot
-      - as_of_utc
-      - expiration_label
-      - strikes list
-      - exposure_ticks_m ($-200M ... etc)
-    """
     out = {}
 
-    # spot like $6876.26
     m = re.search(r"\$([0-9]+\.[0-9]+)", raw)
     if m:
         try:
@@ -247,17 +254,14 @@ def parse_volland_text(raw: str) -> dict:
         except Exception:
             pass
 
-    # as-of timestamp like: as of 2025-12-22T23:00:00Z
     m = re.search(r"as of\s+([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z)", raw, flags=re.I)
     if m:
         out["as_of_utc"] = m.group(1)
 
-    # Expiration label like: Expiration: Dec 26
     m = re.search(r"Expiration:\s*([A-Za-z]{3}\s+\d{1,2})", raw)
     if m:
         out["expiration_label"] = m.group(1)
 
-    # Collect strike ladder numbers like 5250.00, 5550.00, ...
     strikes = re.findall(r"\b(\d{4,5}\.\d{2})\b", raw)
     strike_vals = []
     for s in strikes:
@@ -268,17 +272,14 @@ def parse_volland_text(raw: str) -> dict:
         if 2000 <= v <= 9000:
             strike_vals.append(v)
 
-    # de-duplicate while preserving order
     seen = set()
     dedup = []
     for v in strike_vals:
         if v not in seen:
             seen.add(v)
             dedup.append(v)
-
     out["strikes"] = dedup[:250]
 
-    # Exposure scale ticks like $-200M ... $100M
     ticks = re.findall(r"\$(-?\d+)M", raw)
     if ticks:
         vals = []
@@ -327,8 +328,8 @@ def run():
 
                 payload = {
                     "ts_utc": datetime.now(timezone.utc).isoformat(),
-                    "raw": raw,            # keep for debugging
-                    "parsed": parsed,      # ✅ this is what your web should use
+                    "raw": raw,            # debugging / audit
+                    "parsed": parsed,      # ✅ use this on the web
                     "debug": tip.get("debug", {})
                 }
 

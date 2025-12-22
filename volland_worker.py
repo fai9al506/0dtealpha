@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 import psycopg
 from psycopg.rows import dict_row
 from playwright.sync_api import sync_playwright
+import base64
+from playwright.sync_api import TimeoutError as PWTimeout
 
 DB_URL = os.getenv("DATABASE_URL", "")
 EMAIL  = os.getenv("VOLLAND_EMAIL", "")
@@ -78,76 +80,138 @@ def login_if_needed(page):
 
 def extract_tooltip(page) -> dict:
     """
-    Tries to hover the main chart and capture tooltip text.
-    Returns dict with tooltip_raw + some debug.
+    Robust: looks for chart in main page or iframes.
+    If it can't find a hover target, it saves a debug screenshot + page info (in returned dict).
     """
-    tooltip_text = ""
-    used_selector = None
+    def make_debug(reason: str) -> dict:
+        try:
+            png = page.screenshot(full_page=False)
+            shot_b64 = base64.b64encode(png).decode("ascii")
+        except Exception:
+            shot_b64 = ""
 
-    # 1) Find a hover target (most Volland charts use <canvas>)
-    hover_target = page.locator("canvas").first
-    hover_target.wait_for(timeout=60000)
+        # frame urls help a LOT if chart is inside iframe
+        frame_urls = []
+        try:
+            frame_urls = [f.url for f in page.frames]
+        except Exception:
+            pass
 
-    box = hover_target.bounding_box()
-    if not box:
-        return {"tooltip_raw": "", "debug": {"err": "no bounding box for canvas"}}
+        body_sample = ""
+        try:
+            body_sample = (page.locator("body").inner_text() or "")[:800]
+        except Exception:
+            pass
 
-    # 2) Hover a few points (tooltips sometimes need the cursor in a specific zone)
-    hover_points = [
-        (0.55, 0.35),
-        (0.65, 0.40),
-        (0.75, 0.45),
-        (0.60, 0.55),
+        return {
+            "tooltip_raw": "",
+            "debug": {
+                "reason": reason,
+                "url": page.url,
+                "title": page.title(),
+                "frame_urls": frame_urls[:20],
+                "body_text_sample": body_sample,
+                "canvas_count_main": page.locator("canvas").count(),
+                "svg_count_main": page.locator("svg").count(),
+                "screenshot_b64_png": shot_b64
+            }
+        }
+
+    # Give the app time to render
+    try:
+        page.wait_for_load_state("networkidle", timeout=120000)
+    except Exception:
+        pass
+    page.wait_for_timeout(2000)
+
+    # Candidate selectors for the chart area
+    chart_selectors = [
+        "canvas",
+        "svg",
+        "[role='img']",
+        "div[class*='chart' i]",
+        "div[class*='canvas' i]",
     ]
 
     tooltip_selectors = [
         "[role='tooltip']",
         ".tooltip",
         "[data-tooltip]",
-        # fallback: look for a floating panel that has common words (adjust later if needed)
         "div:has-text('Strike')",
         "div:has-text('Gamma')",
         "div:has-text('Vanna')",
         "div:has-text('Charm')",
     ]
 
-    for (rx, ry) in hover_points:
-        x = box["x"] + box["width"] * rx
-        y = box["y"] + box["height"] * ry
-        page.mouse.move(x, y)
-        page.wait_for_timeout(500)
+    # Search main frame + all iframes
+    frames = [page.main_frame] + [f for f in page.frames if f != page.main_frame]
 
-        best = ""
-        best_sel = None
-        for sel in tooltip_selectors:
-            loc = page.locator(sel).first
-            if loc.count() > 0:
-                try:
-                    t = (loc.inner_text() or "").strip()
-                except Exception:
-                    t = ""
-                if len(t) > len(best):
-                    best = t
-                    best_sel = sel
+    best_tooltip = ""
+    best_used = {"frame_url": None, "chart_sel": None, "tooltip_sel": None}
 
-        if len(best) > len(tooltip_text):
-            tooltip_text = best
-            used_selector = best_sel
+    for fr in frames:
+        for chart_sel in chart_selectors:
+            loc = fr.locator(chart_sel).first
+            try:
+                loc.wait_for(state="visible", timeout=5000)
+            except Exception:
+                continue
 
-        # If we got something meaningful, stop early
-        if len(tooltip_text) >= 10:
-            break
+            box = loc.bounding_box()
+            if not box:
+                continue
 
-    return {
-        "tooltip_raw": tooltip_text,
-        "debug": {
-            "url": page.url,
-            "title": page.title(),
-            "tooltip_selector": used_selector,
-            "canvas_count": page.locator("canvas").count(),
-            "role_tooltip_count": page.locator("[role='tooltip']").count(),
-        }
-    }
+            # Hover several points
+            points = [(0.55, 0.35), (0.65, 0.40), (0.75, 0.45), (0.60, 0.55)]
+            for (rx, ry) in points:
+                x = box["x"] + box["width"] * rx
+                y = box["y"] + box["height"] * ry
+
+                # If element is inside iframe, mouse coordinates still work (Playwright uses page coords)
+                page.mouse.move(x, y)
+                page.wait_for_timeout(400)
+
+                # Find tooltip text (try in same frame first, then main page)
+                candidates = []
+                for sel in tooltip_selectors:
+                    try:
+                        tloc = fr.locator(sel).first
+                        if tloc.count() > 0:
+                            candidates.append((sel, (tloc.inner_text() or "").strip()))
+                    except Exception:
+                        pass
+                    try:
+                        tloc2 = page.locator(sel).first
+                        if tloc2.count() > 0:
+                            candidates.append((sel, (tloc2.inner_text() or "").strip()))
+                    except Exception:
+                        pass
+
+                for sel, txt in candidates:
+                    if len(txt) > len(best_tooltip):
+                        best_tooltip = txt
+                        best_used = {
+                            "frame_url": fr.url,
+                            "chart_sel": chart_sel,
+                            "tooltip_sel": sel
+                        }
+
+                if len(best_tooltip) >= 10:
+                    return {
+                        "tooltip_raw": best_tooltip,
+                        "debug": {
+                            "url": page.url,
+                            "title": page.title(),
+                            "frame_url_used": best_used["frame_url"],
+                            "chart_selector_used": best_used["chart_sel"],
+                            "tooltip_selector_used": best_used["tooltip_sel"],
+                            "canvas_count_main": page.locator("canvas").count(),
+                            "svg_count_main": page.locator("svg").count(),
+                        }
+                    }
+
+    # Nothing found anywhere → return debug snapshot
+    return make_debug("No visible chart target (canvas/svg/chart div) found in main page or frames.")
 
 def run():
     if not DB_URL or not EMAIL or not PASS or not URL:

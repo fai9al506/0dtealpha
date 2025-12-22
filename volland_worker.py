@@ -41,33 +41,60 @@ def login_if_needed(page):
     page.goto(URL, wait_until="domcontentloaded", timeout=120000)
     page.wait_for_timeout(1500)
 
-    # already logged in
+    # Already logged in
     if "/sign-in" not in page.url and page.locator("input[name='password'], input[type='password']").count() == 0:
         return
 
-    # Volland login fields (email is type="text")
-    email_box = page.locator(
-        "input[data-cy='sign-in-email-input'], input[name='email']"
-    ).first
-    pwd_box = page.locator(
-        "input[data-cy='sign-in-password-input'], input[name='password'], input[type='password']"
-    ).first
-
+    # Wait for Volland login fields (email is type="text")
+    email_box = page.locator("input[data-cy='sign-in-email-input'], input[name='email']").first
+    pwd_box   = page.locator("input[data-cy='sign-in-password-input'], input[name='password'], input[type='password']").first
     email_box.wait_for(state="visible", timeout=90000)
     pwd_box.wait_for(state="visible", timeout=90000)
 
+    # Fill
     email_box.fill(EMAIL)
     pwd_box.fill(PASS)
 
-    # Click "Log In"
-    btn = page.get_by_role("button", name=re.compile(r"^log in$", re.I))
-    if btn.count() > 0:
-        btn.first.click()
-    else:
-        page.locator("button[type='submit']").first.click()
+    # Click submit (try multiple patterns)
+    submit = page.locator(
+        "button:has-text('Log In'), button:has-text('Login'), button[type='submit']"
+    ).first
+    submit.click()
 
-    # Wait until we leave /sign-in
-    page.wait_for_url(lambda u: "/sign-in" not in u, timeout=90000)
+    # ✅ Poll for success (SPA may not trigger 'load')
+    deadline = time.time() + 90
+    while time.time() < deadline:
+        # success condition
+        if "/sign-in" not in page.url:
+            return
+
+        # look for any visible error message
+        err_text = ""
+        for sel in ["[role='alert']", ".error", ".toast", ".notification"]:
+            loc = page.locator(sel).first
+            if loc.count() > 0:
+                try:
+                    err_text = (loc.inner_text() or "").strip()
+                except Exception:
+                    err_text = ""
+                if err_text:
+                    break
+
+        if err_text:
+            page.screenshot(path="debug_login_failed.png", full_page=True)
+            raise RuntimeError(f"Login failed (still on sign-in). Error: {err_text}")
+
+        page.wait_for_timeout(500)
+
+    # Timeout: still sign-in (often bot/captcha/blocked)
+    page.screenshot(path="debug_login_timeout.png", full_page=True)
+    body = ""
+    try:
+        body = (page.locator("body").inner_text() or "")[:500]
+    except Exception:
+        pass
+    raise RuntimeError(f"Login did not redirect after 90s. Still on: {page.url}. Body: {body}")
+
 
 
 def extract_tooltip(page) -> dict:

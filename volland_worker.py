@@ -231,26 +231,42 @@ def run():
         login_if_needed(page)
 
         while True:
-            try:
-                page.goto(URL, wait_until="domcontentloaded", timeout=120000)
-                page.wait_for_timeout(2000)
+    try:
+        page.goto(URL, wait_until="domcontentloaded", timeout=120000)
+        page.wait_for_timeout(2000)
 
-                tip = extract_tooltip(page)
+        tip = extract_tooltip(page)
 
-                payload = {
-                    "ts_utc": datetime.now(timezone.utc).isoformat(),
-                    "tooltip_raw": tip.get("tooltip_raw", ""),
-                    "debug": tip.get("debug", {})
-                }
+        payload = {
+            "ts_utc": datetime.now(timezone.utc).isoformat(),
+            "tooltip_raw": tip.get("tooltip_raw", ""),
+            "debug": tip.get("debug", {})
+        }
 
-                save_snapshot(payload)
-                print("[volland] saved", payload["ts_utc"], "tooltip_len=", len(payload["tooltip_raw"]))
+        save_snapshot(payload)
+        print("[volland] saved", payload["ts_utc"], "tooltip_len=", len(payload["tooltip_raw"]))
 
-            except Exception as e:
-                print("[volland] error:", e)
-                traceback.print_exc()
+    except Exception as e:
+        # Save a failure snapshot too
+        err_payload = {
+            "ts_utc": datetime.now(timezone.utc).isoformat(),
+            "tooltip_raw": "",
+            "debug": {
+                "reason": "exception",
+                "error": str(e),
+                "url": page.url if page else "",
+            }
+        }
+        try:
+            save_snapshot(err_payload)
+        except Exception:
+            pass
 
-            time.sleep(PULL_EVERY)
+        print("[volland] error:", e)
+        traceback.print_exc()
+
+    time.sleep(PULL_EVERY)
+
 
 if __name__ == "__main__":
     run()

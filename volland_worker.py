@@ -1,4 +1,4 @@
-import os, json, time, traceback, base64
+import os, json, time, traceback, base64, re
 from datetime import datetime, timezone
 
 import psycopg
@@ -38,61 +38,53 @@ def save_snapshot(payload: dict):
 
 
 def login_if_needed(page):
-    # Go directly to workspace; if not logged in, it should redirect to login
+    # Go to workspace; if not logged in, it will redirect to /sign-in
     page.goto(URL, wait_until="domcontentloaded", timeout=120000)
     page.wait_for_timeout(1500)
 
-    # If a "Sign in / Log in" button exists, click it
-    for text in ["Sign in", "Log in", "Login"]:
-        btn = page.get_by_role("button", name=text)
-        if btn.count() > 0:
-            btn.first.click()
-            page.wait_for_timeout(1200)
-            break
-
-    # If we are already inside the app (no password field), skip
-    if page.locator("input[type='password']").count() == 0:
+    # If already logged in, return
+    if "/sign-in" not in page.url and page.locator("input[name='password'], input[type='password']").count() == 0:
         return
 
-    # Flexible selectors for email field
-    email_label = page.get_by_label("Email")
-    if email_label.count() > 0:
-        email_box = email_label.first
-    else:
-        email_box = page.locator(
-            "input[type='email'], input[name='email'], input[autocomplete='email'], input[placeholder*='mail' i]"
-        ).first
+    # Wait for login fields (email is type="text" on Volland)
+    email_box = page.locator(
+        "input[data-cy='sign-in-email-input'], input[name='email']"
+    ).first
 
-    pwd_box = page.locator("input[type='password']").first
+    pwd_box = page.locator(
+        "input[data-cy='sign-in-password-input'], input[name='password'], input[type='password']"
+    ).first
 
-    try:
-        email_box.wait_for(timeout=90000)
-        pwd_box.wait_for(timeout=90000)
-    except Exception:
-        print("[login] could not find login fields")
-        print("[login] url:", page.url)
-        try:
-            print("[login] title:", page.title())
-        except Exception:
-            pass
-        page.screenshot(path="debug_login.png", full_page=True)
-        raise
+    email_box.wait_for(state="visible", timeout=90000)
+    pwd_box.wait_for(state="visible", timeout=90000)
 
     email_box.fill(EMAIL)
     pwd_box.fill(PASS)
 
-    # Submit (try common patterns)
-    submit = page.locator(
-        "button[type='submit'], button:has-text('Sign in'), button:has-text('Log in')"
-    ).first
-    submit.click()
-    page.wait_for_timeout(2500)
+    # Click "Log In"
+    btn = page.get_by_role("button", name=re.compile(r"^log in$", re.I))
+    if btn.count() > 0:
+        btn.first.click()
+    else:
+        page.locator("button[type='submit']").first.click()
+
+    # Wait until we leave /sign-in
+    try:
+        page.wait_for_url(lambda u: "/sign-in" not in u, timeout=90000)
+    except Exception:
+        err = ""
+        try:
+            err = (page.locator("[role='alert'], .error, .toast, .notification").first.inner_text() or "").strip()
+        except Exception:
+            pass
+        raise RuntimeError(f"Login did not redirect. Still on: {page.url}. Error: {err}")
 
 
 def extract_tooltip(page) -> dict:
     """
-    Robust: looks for chart target in main page or iframes, tries hover and reads tooltip.
-    If nothing found, returns debug data + screenshot (base64) so we can see what loaded.
+    Tries to locate a chart element (canvas/svg/etc) in main page or iframes,
+    hover on it, and grab tooltip text. If nothing found, returns debug data
+    + screenshot (base64) so you can see what Railway is rendering.
     """
     def make_debug(reason: str) -> dict:
         try:
@@ -127,7 +119,6 @@ def extract_tooltip(page) -> dict:
             }
         }
 
-    # Give the app time to render
     try:
         page.wait_for_load_state("networkidle", timeout=120000)
     except Exception:
@@ -228,12 +219,19 @@ def run():
         page = browser.new_page(viewport={"width": 1400, "height": 900})
         page.set_default_timeout(90000)
 
+        # login once at start
         login_if_needed(page)
 
         while True:
             try:
                 page.goto(URL, wait_until="domcontentloaded", timeout=120000)
                 page.wait_for_timeout(2000)
+
+                # ensure we didn't get kicked to sign-in
+                if "/sign-in" in page.url:
+                    login_if_needed(page)
+                    page.goto(URL, wait_until="domcontentloaded", timeout=120000)
+                    page.wait_for_timeout(2000)
 
                 tip = extract_tooltip(page)
 

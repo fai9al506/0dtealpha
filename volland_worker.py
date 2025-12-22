@@ -49,16 +49,16 @@ def login_if_needed(page):
     email_box = (
         page.get_by_label("Email")
         if page.get_by_label("Email").count() > 0
-        else page.locator("input[type='email'], input[name='email'], input[autocomplete='email'], input[placeholder*='mail' i]").first
+        else page.locator(
+            "input[type='email'], input[name='email'], input[autocomplete='email'], input[placeholder*='mail' i]"
+        ).first
     )
-
     pwd_box = page.locator("input[type='password']").first
 
     try:
         email_box.wait_for(timeout=90000)
         pwd_box.wait_for(timeout=90000)
     except Exception:
-        # Debug: screenshot + url + title
         print("[login] could not find login fields")
         print("[login] url:", page.url)
         try:
@@ -76,6 +76,79 @@ def login_if_needed(page):
     submit.click()
     page.wait_for_timeout(2500)
 
+def extract_tooltip(page) -> dict:
+    """
+    Tries to hover the main chart and capture tooltip text.
+    Returns dict with tooltip_raw + some debug.
+    """
+    tooltip_text = ""
+    used_selector = None
+
+    # 1) Find a hover target (most Volland charts use <canvas>)
+    hover_target = page.locator("canvas").first
+    hover_target.wait_for(timeout=60000)
+
+    box = hover_target.bounding_box()
+    if not box:
+        return {"tooltip_raw": "", "debug": {"err": "no bounding box for canvas"}}
+
+    # 2) Hover a few points (tooltips sometimes need the cursor in a specific zone)
+    hover_points = [
+        (0.55, 0.35),
+        (0.65, 0.40),
+        (0.75, 0.45),
+        (0.60, 0.55),
+    ]
+
+    tooltip_selectors = [
+        "[role='tooltip']",
+        ".tooltip",
+        "[data-tooltip]",
+        # fallback: look for a floating panel that has common words (adjust later if needed)
+        "div:has-text('Strike')",
+        "div:has-text('Gamma')",
+        "div:has-text('Vanna')",
+        "div:has-text('Charm')",
+    ]
+
+    for (rx, ry) in hover_points:
+        x = box["x"] + box["width"] * rx
+        y = box["y"] + box["height"] * ry
+        page.mouse.move(x, y)
+        page.wait_for_timeout(500)
+
+        best = ""
+        best_sel = None
+        for sel in tooltip_selectors:
+            loc = page.locator(sel).first
+            if loc.count() > 0:
+                try:
+                    t = (loc.inner_text() or "").strip()
+                except Exception:
+                    t = ""
+                if len(t) > len(best):
+                    best = t
+                    best_sel = sel
+
+        if len(best) > len(tooltip_text):
+            tooltip_text = best
+            used_selector = best_sel
+
+        # If we got something meaningful, stop early
+        if len(tooltip_text) >= 10:
+            break
+
+    return {
+        "tooltip_raw": tooltip_text,
+        "debug": {
+            "url": page.url,
+            "title": page.title(),
+            "tooltip_selector": used_selector,
+            "canvas_count": page.locator("canvas").count(),
+            "role_tooltip_count": page.locator("[role='tooltip']").count(),
+        }
+    }
+
 def run():
     if not DB_URL or not EMAIL or not PASS or not URL:
         raise RuntimeError("Missing env vars: DATABASE_URL / VOLLAND_EMAIL / VOLLAND_PASSWORD / VOLLAND_URL")
@@ -83,11 +156,14 @@ def run():
     ensure_tables()
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox","--disable-dev-shm-usage"])
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"]
+        )
         page = browser.new_page(viewport={"width": 1400, "height": 900})
         page.set_default_timeout(90000)
 
-        # ✅ robust login
+        # robust login
         login_if_needed(page)
 
         while True:
@@ -95,13 +171,16 @@ def run():
                 page.goto(URL, wait_until="domcontentloaded", timeout=120000)
                 page.wait_for_timeout(2000)
 
+                tip = extract_tooltip(page)
+
                 payload = {
                     "ts_utc": datetime.now(timezone.utc).isoformat(),
-                    "raw": "PUT YOUR TOOLTIP DATA HERE"
+                    "tooltip_raw": tip.get("tooltip_raw", ""),
+                    "debug": tip.get("debug", {})
                 }
 
                 save_snapshot(payload)
-                print("[volland] saved", payload["ts_utc"])
+                print("[volland] saved", payload["ts_utc"], "tooltip_len=", len(payload["tooltip_raw"]))
 
             except Exception as e:
                 print("[volland] error:", e)

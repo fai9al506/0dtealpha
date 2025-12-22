@@ -1,10 +1,10 @@
-import os, json, time, traceback
+import os, json, time, traceback, base64
 from datetime import datetime, timezone
+
 import psycopg
 from psycopg.rows import dict_row
 from playwright.sync_api import sync_playwright
-import base64
-from playwright.sync_api import TimeoutError as PWTimeout
+
 
 DB_URL = os.getenv("DATABASE_URL", "")
 EMAIL  = os.getenv("VOLLAND_EMAIL", "")
@@ -12,8 +12,10 @@ PASS   = os.getenv("VOLLAND_PASSWORD", "")
 URL    = os.getenv("VOLLAND_URL", "")
 PULL_EVERY = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "60"))
 
+
 def db():
     return psycopg.connect(DB_URL, autocommit=True, row_factory=dict_row)
+
 
 def ensure_tables():
     with db() as conn, conn.cursor() as cur:
@@ -26,9 +28,14 @@ def ensure_tables():
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_snapshots_ts ON volland_snapshots(ts DESC);")
 
+
 def save_snapshot(payload: dict):
     with db() as conn, conn.cursor() as cur:
-        cur.execute("INSERT INTO volland_snapshots(payload) VALUES (%s::jsonb)", (json.dumps(payload),))
+        cur.execute(
+            "INSERT INTO volland_snapshots(payload) VALUES (%s::jsonb)",
+            (json.dumps(payload),)
+        )
+
 
 def login_if_needed(page):
     # Go directly to workspace; if not logged in, it should redirect to login
@@ -47,14 +54,15 @@ def login_if_needed(page):
     if page.locator("input[type='password']").count() == 0:
         return
 
-    # Use more flexible selectors for email field
-    email_box = (
-        page.get_by_label("Email")
-        if page.get_by_label("Email").count() > 0
-        else page.locator(
+    # Flexible selectors for email field
+    email_label = page.get_by_label("Email")
+    if email_label.count() > 0:
+        email_box = email_label.first
+    else:
+        email_box = page.locator(
             "input[type='email'], input[name='email'], input[autocomplete='email'], input[placeholder*='mail' i]"
         ).first
-    )
+
     pwd_box = page.locator("input[type='password']").first
 
     try:
@@ -74,14 +82,17 @@ def login_if_needed(page):
     pwd_box.fill(PASS)
 
     # Submit (try common patterns)
-    submit = page.locator("button[type='submit'], button:has-text('Sign in'), button:has-text('Log in')").first
+    submit = page.locator(
+        "button[type='submit'], button:has-text('Sign in'), button:has-text('Log in')"
+    ).first
     submit.click()
     page.wait_for_timeout(2500)
 
+
 def extract_tooltip(page) -> dict:
     """
-    Robust: looks for chart in main page or iframes.
-    If it can't find a hover target, it saves a debug screenshot + page info (in returned dict).
+    Robust: looks for chart target in main page or iframes, tries hover and reads tooltip.
+    If nothing found, returns debug data + screenshot (base64) so we can see what loaded.
     """
     def make_debug(reason: str) -> dict:
         try:
@@ -90,7 +101,6 @@ def extract_tooltip(page) -> dict:
         except Exception:
             shot_b64 = ""
 
-        # frame urls help a LOT if chart is inside iframe
         frame_urls = []
         try:
             frame_urls = [f.url for f in page.frames]
@@ -124,7 +134,6 @@ def extract_tooltip(page) -> dict:
         pass
     page.wait_for_timeout(2000)
 
-    # Candidate selectors for the chart area
     chart_selectors = [
         "canvas",
         "svg",
@@ -143,7 +152,6 @@ def extract_tooltip(page) -> dict:
         "div:has-text('Charm')",
     ]
 
-    # Search main frame + all iframes
     frames = [page.main_frame] + [f for f in page.frames if f != page.main_frame]
 
     best_tooltip = ""
@@ -161,17 +169,14 @@ def extract_tooltip(page) -> dict:
             if not box:
                 continue
 
-            # Hover several points
             points = [(0.55, 0.35), (0.65, 0.40), (0.75, 0.45), (0.60, 0.55)]
             for (rx, ry) in points:
                 x = box["x"] + box["width"] * rx
                 y = box["y"] + box["height"] * ry
 
-                # If element is inside iframe, mouse coordinates still work (Playwright uses page coords)
                 page.mouse.move(x, y)
                 page.wait_for_timeout(400)
 
-                # Find tooltip text (try in same frame first, then main page)
                 candidates = []
                 for sel in tooltip_selectors:
                     try:
@@ -190,11 +195,7 @@ def extract_tooltip(page) -> dict:
                 for sel, txt in candidates:
                     if len(txt) > len(best_tooltip):
                         best_tooltip = txt
-                        best_used = {
-                            "frame_url": fr.url,
-                            "chart_sel": chart_sel,
-                            "tooltip_sel": sel
-                        }
+                        best_used = {"frame_url": fr.url, "chart_sel": chart_sel, "tooltip_sel": sel}
 
                 if len(best_tooltip) >= 10:
                     return {
@@ -210,8 +211,8 @@ def extract_tooltip(page) -> dict:
                         }
                     }
 
-    # Nothing found anywhere → return debug snapshot
     return make_debug("No visible chart target (canvas/svg/chart div) found in main page or frames.")
+
 
 def run():
     if not DB_URL or not EMAIL or not PASS or not URL:
@@ -227,45 +228,43 @@ def run():
         page = browser.new_page(viewport={"width": 1400, "height": 900})
         page.set_default_timeout(90000)
 
-        # robust login
         login_if_needed(page)
 
         while True:
-    try:
-        page.goto(URL, wait_until="domcontentloaded", timeout=120000)
-        page.wait_for_timeout(2000)
+            try:
+                page.goto(URL, wait_until="domcontentloaded", timeout=120000)
+                page.wait_for_timeout(2000)
 
-        tip = extract_tooltip(page)
+                tip = extract_tooltip(page)
 
-        payload = {
-            "ts_utc": datetime.now(timezone.utc).isoformat(),
-            "tooltip_raw": tip.get("tooltip_raw", ""),
-            "debug": tip.get("debug", {})
-        }
+                payload = {
+                    "ts_utc": datetime.now(timezone.utc).isoformat(),
+                    "tooltip_raw": tip.get("tooltip_raw", ""),
+                    "debug": tip.get("debug", {})
+                }
 
-        save_snapshot(payload)
-        print("[volland] saved", payload["ts_utc"], "tooltip_len=", len(payload["tooltip_raw"]))
+                save_snapshot(payload)
+                print("[volland] saved", payload["ts_utc"], "tooltip_len=", len(payload["tooltip_raw"]))
 
-    except Exception as e:
-        # Save a failure snapshot too
-        err_payload = {
-            "ts_utc": datetime.now(timezone.utc).isoformat(),
-            "tooltip_raw": "",
-            "debug": {
-                "reason": "exception",
-                "error": str(e),
-                "url": page.url if page else "",
-            }
-        }
-        try:
-            save_snapshot(err_payload)
-        except Exception:
-            pass
+            except Exception as e:
+                err_payload = {
+                    "ts_utc": datetime.now(timezone.utc).isoformat(),
+                    "tooltip_raw": "",
+                    "debug": {
+                        "reason": "exception",
+                        "error": str(e),
+                        "url": getattr(page, "url", "")
+                    }
+                }
+                try:
+                    save_snapshot(err_payload)
+                except Exception:
+                    pass
 
-        print("[volland] error:", e)
-        traceback.print_exc()
+                print("[volland] error:", e)
+                traceback.print_exc()
 
-    time.sleep(PULL_EVERY)
+            time.sleep(PULL_EVERY)
 
 
 if __name__ == "__main__":

@@ -1219,3 +1219,4 @@ def spxw_dashboard():
             .replace("__LAST_MSG__", str(last_msg))
             .replace("__PULL_MS__", str(PULL_EVERY * 1000)))
     return HTMLResponse(html)
+ 

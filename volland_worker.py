@@ -1,338 +1,357 @@
 # volland_worker.py
-import os, json, time, hashlib
+import os, json, time, traceback, re
 from datetime import datetime, timezone
-from urllib.parse import urlparse, parse_qs
 
-from sqlalchemy import create_engine, text
-from playwright.sync_api import sync_playwright, TimeoutError as PWTimeoutError
+import psycopg
+from psycopg.rows import dict_row
+from playwright.sync_api import sync_playwright
 
-VERSION = "2025-12-23E"
 
-EMAIL = os.getenv("VOLLAND_EMAIL", "")
-PASSWORD = os.getenv("VOLLAND_PASSWORD", "")
-WORKSPACE_URL = os.getenv("WORKSPACE_URL", "https://vol.land/app/workspace/6787a95cfe7b13a115716f54")
-DB_URL = os.getenv("DATABASE_URL", "")
+DB_URL   = os.getenv("DATABASE_URL", "")
+EMAIL    = os.getenv("VOLLAND_EMAIL", "")
+PASS     = os.getenv("VOLLAND_PASSWORD", "")
+URL      = os.getenv("VOLLAND_URL", "")
 
-HEADLESS = True
-CAPTURE_WAIT_SECONDS = int(os.getenv("CAPTURE_WAIT", "60"))
+PULL_EVERY   = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "60"))
+WAIT_AFTER_GOTO_SEC = float(os.getenv("VOLLAND_WAIT_AFTER_GOTO_SEC", "6"))
 
-# Capture exposure endpoints (a bit flexible)
-CAPTURE_PATH_KEYWORDS = ("/api/v1/data/exposure", "/api/v1/data/expos")
+# safety caps (avoid huge DB rows)
+MAX_CAPTURE_ITEMS = int(os.getenv("VOLLAND_MAX_CAPTURE_ITEMS", "40"))
+MAX_BODY_CHARS    = int(os.getenv("VOLLAND_MAX_BODY_CHARS", "20000"))
 
-DEBUG_LOGIN_PNG = "/app/debug_login.png"
-DEBUG_LOGIN_HTML = "/app/debug_login.html"
 
-def normalize_db_url(db_url: str) -> str:
-    if db_url.startswith("postgresql://"):
-        return db_url.replace("postgresql://", "postgresql+psycopg://", 1)
-    return db_url
+def db():
+    return psycopg.connect(DB_URL, autocommit=True, row_factory=dict_row)
 
-def ensure_table(engine):
-    sql = """
-    CREATE TABLE IF NOT EXISTS volland_exposure (
-        id BIGSERIAL PRIMARY KEY,
-        ts_utc TIMESTAMPTZ NOT NULL,
-        endpoint TEXT NOT NULL,
-        ticker TEXT,
-        greek TEXT,
-        data_type TEXT,
-        kind TEXT,
-        expirations_opt TEXT,
-        expirations TEXT,
-        current_price DOUBLE PRECISION,
-        last_modified TIMESTAMPTZ,
-        body_sha256 TEXT NOT NULL,
-        payload JSONB NOT NULL,
-        UNIQUE (endpoint, ticker, greek, data_type, kind, expirations_opt, expirations, last_modified, body_sha256)
-    );
-    """
-    with engine.begin() as conn:
-        conn.execute(text(sql))
 
-def sha256_str(s: str) -> str:
-    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+def ensure_tables():
+    with db() as conn, conn.cursor() as cur:
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS volland_snapshots (
+          id BIGSERIAL PRIMARY KEY,
+          ts TIMESTAMPTZ NOT NULL DEFAULT now(),
+          payload JSONB NOT NULL
+        );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_snapshots_ts ON volland_snapshots(ts DESC);")
 
-def parse_meta_from_url(url: str):
-    p = urlparse(url)
-    qs = parse_qs(p.query)
 
-    def one(k):
-        v = qs.get(k)
-        return v[0] if v else None
+def save_snapshot(payload: dict):
+    with db() as conn, conn.cursor() as cur:
+        cur.execute("INSERT INTO volland_snapshots(payload) VALUES (%s::jsonb)", (json.dumps(payload),))
 
-    return {
-        "endpoint": p.path,
-        "ticker": one("ticker"),
-        "greek": one("greek"),
-        "data_type": one("type"),
-        "kind": one("kind"),
-        "expirations_opt": one("expirations[option]") or one("expirations.option") or one("expirationsOption"),
-        "expirations": one("expirations[dates]") or one("expirations.dates") or one("dates"),
-    }
 
-def to_timestamptz(value):
-    if not value:
-        return None
+def handle_session_limit_modal(page) -> bool:
+    btn = page.locator(
+        "button[data-cy='confirmation-modal-confirm-button'], button:has-text('Continue')"
+    ).first
+    if btn.count() == 0:
+        return False
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        btn.wait_for(state="visible", timeout=3000)
+        btn.click()
+        page.wait_for_timeout(1200)
+        print("[login] session modal: clicked Continue")
+        return True
     except Exception:
-        return None
+        return False
 
-def path_of(page_url: str) -> str:
-    return urlparse(page_url).path
 
-def is_on_workspace_url(page_url: str) -> bool:
-    return path_of(page_url).startswith("/app/workspace/")
+def login_if_needed(page):
+    page.goto(URL, wait_until="domcontentloaded", timeout=120000)
+    page.wait_for_timeout(1500)
 
-EMAIL_SELECTORS = [
-    'input[type="email"]',
-    'input[autocomplete="username"]',
-    'input[name*="email" i]',
-    'input[id*="email" i]',
-    'input[placeholder*="email" i]',
-    'input[aria-label*="email" i]',
-]
-PASS_SELECTORS = [
-    'input[type="password"]',
-    'input[autocomplete="current-password"]',
-    'input[name*="pass" i]',
-    'input[id*="pass" i]',
-    'input[placeholder*="password" i]',
-    'input[aria-label*="password" i]',
-]
-SUBMIT_BUTTONS = [
-    'button:has-text("Sign in")',
-    'button:has-text("Log in")',
-    'button:has-text("Login")',
-    'button:has-text("Continue")',
-    'button[type="submit"]',
-]
-
-def find_visible_in_any_frame(page, selectors, timeout_ms=20000):
-    deadline = time.time() + timeout_ms / 1000
-    while time.time() < deadline:
-        for frame in page.frames:
-            for sel in selectors:
-                loc = frame.locator(sel).first
-                try:
-                    loc.wait_for(state="visible", timeout=700)
-                    return frame, loc
-                except Exception:
-                    pass
-        time.sleep(0.25)
-    return None, None
-
-def click_first_available(page, selectors, timeout_ms=8000):
-    deadline = time.time() + timeout_ms / 1000
-    while time.time() < deadline:
-        for frame in page.frames:
-            for sel in selectors:
-                loc = frame.locator(sel).first
-                try:
-                    loc.wait_for(state="visible", timeout=700)
-                    loc.click(timeout=2500)
-                    return True
-                except Exception:
-                    pass
-        time.sleep(0.25)
-    return False
-
-def wait_until_workspace(page, timeout_ms=60000):
-    # STRICT: wait on pathname, not URL text (redirectUri query was tricking wait_for_url)
-    page.wait_for_function(
-        "() => location && location.pathname && location.pathname.startsWith('/app/workspace/')",
-        timeout=timeout_ms
-    )
-
-def ensure_logged_in(page):
-    page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_timeout(800)
-    print(f"[login] landed url={page.url}")
-
-    if is_on_workspace_url(page.url):
-        print("[login] already authenticated (workspace page)")
+    if "/sign-in" not in page.url and page.locator("input[name='password'], input[type='password']").count() == 0:
         return
 
-    # If session exists, sometimes it redirects automatically (wait by pathname)
+    email_box = page.locator("input[data-cy='sign-in-email-input'], input[name='email']").first
+    pwd_box   = page.locator("input[data-cy='sign-in-password-input'], input[name='password'], input[type='password']").first
+
+    email_box.wait_for(state="visible", timeout=90000)
+    pwd_box.wait_for(state="visible", timeout=90000)
+
+    email_box.fill(EMAIL)
+    pwd_box.fill(PASS)
+
+    page.locator("button:has-text('Log In'), button:has-text('Login'), button[type='submit']").first.click()
+    handle_session_limit_modal(page)
+
+    deadline = time.time() + 90
+    while time.time() < deadline:
+        handle_session_limit_modal(page)
+        if "/sign-in" not in page.url:
+            return
+        page.wait_for_timeout(500)
+
+    body = ""
     try:
-        wait_until_workspace(page, timeout_ms=12000)
-        print(f"[login] already authenticated (auto-redirect) url={page.url}")
-        return
+        body = (page.locator("body").inner_text() or "")[:600]
+    except Exception:
+        pass
+    raise RuntimeError(f"Login did not complete. Still on: {page.url}. Body: {body}")
+
+
+# ---- Install hooks BEFORE any navigation ----
+INIT_CAPTURE_JS = r"""
+(() => {
+  const MAX = 200; // in-browser buffer
+  const cap = {
+    fetch: [],
+    xhr: [],
+    ws: [],
+    note: []
+  };
+
+  function push(arr, item) {
+    try {
+      arr.push(item);
+      if (arr.length > MAX) arr.shift();
+    } catch(e) {}
+  }
+
+  function safeText(t) {
+    try {
+      if (!t) return "";
+      t = String(t);
+      return t.length > 20000 ? t.slice(0, 20000) : t;
+    } catch(e) { return ""; }
+  }
+
+  // --- fetch hook ---
+  const _fetch = window.fetch;
+  window.fetch = async function(...args) {
+    const url = (args && args[0] && args[0].url) ? args[0].url : String(args[0] || "");
+    const t0 = Date.now();
+    try {
+      const res = await _fetch.apply(this, args);
+      const ct = (res.headers.get("content-type") || "").toLowerCase();
+
+      // clone to read body
+      let body = "";
+      try {
+        if (ct.includes("json") || ct.includes("text") || ct.includes("graphql")) {
+          const clone = res.clone();
+          body = safeText(await clone.text());
+        }
+      } catch(e) {}
+
+      push(cap.fetch, { url, status: res.status, ct, ms: Date.now() - t0, body });
+      return res;
+    } catch(e) {
+      push(cap.fetch, { url, status: -1, ct: "", ms: Date.now() - t0, body: "FETCH_ERR: " + String(e) });
+      throw e;
+    }
+  };
+
+  // --- XHR hook ---
+  const _open = XMLHttpRequest.prototype.open;
+  const _send = XMLHttpRequest.prototype.send;
+
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    this.__cap = { method, url: String(url || ""), t0: Date.now() };
+    return _open.call(this, method, url, ...rest);
+  };
+
+  XMLHttpRequest.prototype.send = function(body) {
+    const xhr = this;
+    function done() {
+      try {
+        const ct = (xhr.getResponseHeader("content-type") || "").toLowerCase();
+        let text = "";
+        try { text = safeText(xhr.responseText || ""); } catch(e) {}
+        push(cap.xhr, {
+          url: (xhr.__cap && xhr.__cap.url) ? xhr.__cap.url : "",
+          method: (xhr.__cap && xhr.__cap.method) ? xhr.__cap.method : "",
+          status: xhr.status,
+          ct,
+          ms: Date.now() - ((xhr.__cap && xhr.__cap.t0) ? xhr.__cap.t0 : Date.now()),
+          body: text
+        });
+      } catch(e) {}
+    }
+    xhr.addEventListener("loadend", done);
+    return _send.call(this, body);
+  };
+
+  // --- WebSocket hook (optional) ---
+  const _WS = window.WebSocket;
+  window.WebSocket = function(url, protocols) {
+    const ws = protocols ? new _WS(url, protocols) : new _WS(url);
+    try {
+      push(cap.ws, { url: String(url || ""), event: "open_attempt", t: Date.now() });
+      ws.addEventListener("message", (ev) => {
+        const data = safeText(ev.data);
+        push(cap.ws, { url: String(url || ""), event: "message", t: Date.now(), data });
+      });
+    } catch(e) {}
+    return ws;
+  };
+  window.WebSocket.prototype = _WS.prototype;
+
+  window.__volland_cap = cap;
+  window.__volland_cap_reset = () => {
+    cap.fetch = [];
+    cap.xhr = [];
+    cap.ws = [];
+    cap.note = [];
+  };
+})();
+"""
+
+
+def get_captures(page) -> dict:
+    """
+    Pull captured fetch/xhr/ws from the browser.
+    """
+    try:
+        data = page.evaluate("() => window.__volland_cap || null")
+        if not data:
+            return {"fetch": [], "xhr": [], "ws": []}
+        return data
+    except Exception:
+        return {"fetch": [], "xhr": [], "ws": []}
+
+
+def reset_captures(page):
+    try:
+        page.evaluate("() => window.__volland_cap_reset && window.__volland_cap_reset()")
     except Exception:
         pass
 
-    # Login form
-    _, email_loc = find_visible_in_any_frame(page, EMAIL_SELECTORS, timeout_ms=45000)
-    if not email_loc:
-        # Debug dump
-        page.screenshot(path=DEBUG_LOGIN_PNG, full_page=True)
-        with open(DEBUG_LOGIN_HTML, "w", encoding="utf-8") as f:
-            f.write(page.content())
-        raise RuntimeError(f"Email input not found. Saved {DEBUG_LOGIN_PNG} / {DEBUG_LOGIN_HTML}. URL={page.url}")
 
-    email_loc.fill(EMAIL)
+def filter_and_score(items):
+    """
+    Keep likely relevant endpoints and score candidates.
+    """
+    out = []
+    for it in items:
+        url = (it.get("url") or "").lower()
+        if not url:
+            continue
 
-    _, pass_loc = find_visible_in_any_frame(page, PASS_SELECTORS, timeout_ms=30000)
-    if not pass_loc:
-        page.screenshot(path=DEBUG_LOGIN_PNG, full_page=True)
-        with open(DEBUG_LOGIN_HTML, "w", encoding="utf-8") as f:
-            f.write(page.content())
-        raise RuntimeError(f"Password input not found. Saved {DEBUG_LOGIN_PNG} / {DEBUG_LOGIN_HTML}. URL={page.url}")
+        # drop noisy analytics
+        if any(x in url for x in ("sentry.io", "gleap.io", "googletagmanager", "google-analytics")):
+            continue
 
-    pass_loc.fill(PASSWORD)
+        body = it.get("body") or ""
+        s = (url + "\n" + body).lower()
 
-    if not click_first_available(page, SUBMIT_BUTTONS, timeout_ms=12000):
-        pass_loc.press("Enter")
+        score = 0
+        for w in ["exposure", "gamma", "vanna", "charm", "dealer", "hedg", "notional", "strike", "expiration", "spx", "spy"]:
+            if w in s:
+                score += 3
 
-    # Now wait for real workspace navigation
-    try:
-        wait_until_workspace(page, timeout_ms=60000)
-    except Exception:
-        # Debug: stuck on sign-in (captcha/2FA/wrong creds/etc.)
-        page.screenshot(path=DEBUG_LOGIN_PNG, full_page=True)
-        with open(DEBUG_LOGIN_HTML, "w", encoding="utf-8") as f:
-            f.write(page.content())
-        raise RuntimeError(
-            f"Did not reach workspace after login. Still at URL={page.url}. "
-            f"Saved {DEBUG_LOGIN_PNG} / {DEBUG_LOGIN_HTML}."
-        )
+        # JSON-ish
+        if "json" in (it.get("ct") or "").lower():
+            score += 2
+        if "graphql" in s:
+            score += 2
+        if len(body) > 200:
+            score += 1
 
-    print(f"[login] after auth url={page.url}")
+        it2 = dict(it)
+        it2["score"] = score
+        out.append(it2)
 
-def main():
-    print(f"[boot] VERSION={VERSION}")
+    out.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return out[:MAX_CAPTURE_ITEMS]
 
-    if not EMAIL or not PASSWORD:
-        raise SystemExit("Set VOLLAND_EMAIL and VOLLAND_PASSWORD.")
-    if not DB_URL:
-        raise SystemExit("Set DATABASE_URL.")
 
-    engine = create_engine(normalize_db_url(DB_URL), future=True, pool_pre_ping=True)
-    ensure_table(engine)
+def trim_body(item):
+    it = dict(item)
+    b = it.get("body") or ""
+    if len(b) > MAX_BODY_CHARS:
+        it["body"] = b[:MAX_BODY_CHARS]
+    return it
 
-    captured_rows = []
-    seen_api_paths = []  # debug list
 
-    def should_capture(resp_url: str) -> bool:
-        p = urlparse(resp_url)
-        return any(k in p.path for k in CAPTURE_PATH_KEYWORDS)
+def run():
+    if not DB_URL or not EMAIL or not PASS or not URL:
+        raise RuntimeError("Missing env vars: DATABASE_URL / VOLLAND_EMAIL / VOLLAND_PASSWORD / VOLLAND_URL")
+
+    ensure_tables()
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=HEADLESS, args=["--no-sandbox", "--disable-dev-shm-usage"])
-        context = browser.new_context()
-        page = context.new_page()
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+        page = browser.new_page(viewport={"width": 1400, "height": 900})
+        page.set_default_timeout(90000)
 
-        def on_response(resp):
-            url = resp.url
-            purl = urlparse(url)
-            if purl.path.startswith("/api/"):
-                seen_api_paths.append(purl.path)
-                if len(seen_api_paths) > 60:
-                    del seen_api_paths[:10]
+        # ✅ hooks must be installed before any navigation
+        page.add_init_script(INIT_CAPTURE_JS)
 
-            if not should_capture(url):
-                return
+        # login once
+        login_if_needed(page)
 
+        while True:
             try:
-                if resp.status != 200:
-                    return
-                ct = (resp.headers.get("content-type") or "").lower()
-                if "application/json" not in ct:
-                    return
+                reset_captures(page)
 
-                payload = resp.json()
-                print(f"[cap] 200 {purl.path}")
+                page.goto(URL, wait_until="domcontentloaded", timeout=120000)
+                page.wait_for_timeout(int(WAIT_AFTER_GOTO_SEC * 1000))
 
-                payload_str = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-                body_hash = sha256_str(payload_str)
+                if "/sign-in" in page.url:
+                    login_if_needed(page)
+                    reset_captures(page)
+                    page.goto(URL, wait_until="domcontentloaded", timeout=120000)
+                    page.wait_for_timeout(int(WAIT_AFTER_GOTO_SEC * 1000))
 
-                meta = parse_meta_from_url(url)
-                ts_utc = datetime.now(timezone.utc)
-                last_modified = to_timestamptz(payload.get("lastModified"))
-                current_price = payload.get("currentPrice")
+                cap = get_captures(page)
 
-                expirations_list = payload.get("expirations")
-                expirations_compact = None
-                if isinstance(expirations_list, list) and expirations_list:
-                    expirations_compact = ",".join(map(str, expirations_list))
+                fetch_scored = filter_and_score(cap.get("fetch", []))
+                xhr_scored   = filter_and_score(cap.get("xhr", []))
 
-                captured_rows.append({
-                    "ts_utc": ts_utc.isoformat(),
-                    "endpoint": meta["endpoint"],
-                    "ticker": meta["ticker"],
-                    "greek": meta["greek"],
-                    "data_type": meta["data_type"],
-                    "kind": meta["kind"],
-                    "expirations_opt": meta["expirations_opt"],
-                    "expirations": meta["expirations"] or expirations_compact,
-                    "current_price": float(current_price) if current_price is not None else None,
-                    "last_modified": last_modified.isoformat() if last_modified else None,
-                    "body_sha256": body_hash,
-                    "payload": payload,
-                })
-            except Exception:
-                return
+                # ws messages can be huge; keep only top few
+                ws = cap.get("ws", [])
+                ws = ws[-10:] if isinstance(ws, list) else []
 
-        page.on("response", on_response)
+                payload = {
+                    "ts_utc": datetime.now(timezone.utc).isoformat(),
+                    "page_url": page.url,
+                    "captures": {
+                        "fetch_top": [trim_body(x) for x in fetch_scored],
+                        "xhr_top":   [trim_body(x) for x in xhr_scored],
+                        "ws_tail":   ws,
+                        "counts": {
+                            "fetch": len(cap.get("fetch", []) if isinstance(cap.get("fetch", []), list) else []),
+                            "xhr":   len(cap.get("xhr", []) if isinstance(cap.get("xhr", []), list) else []),
+                            "ws":    len(cap.get("ws", []) if isinstance(cap.get("ws", []), list) else []),
+                        }
+                    }
+                }
 
-        ensure_logged_in(page)
+                save_snapshot(payload)
 
-        # Trigger data fetches
-        try:
-            page.reload(wait_until="domcontentloaded", timeout=60000)
-        except PWTimeoutError:
-            pass
+                print(
+                    "[volland] saved",
+                    payload["ts_utc"],
+                    "fetch=",
+                    payload["captures"]["counts"]["fetch"],
+                    "xhr=",
+                    payload["captures"]["counts"]["xhr"],
+                    "ws=",
+                    payload["captures"]["counts"]["ws"],
+                    "top_fetch_score=",
+                    (fetch_scored[0]["score"] if fetch_scored else None),
+                    "top_xhr_score=",
+                    (xhr_scored[0]["score"] if xhr_scored else None),
+                )
 
-        # Small UI nudge
-        try:
-            page.wait_for_timeout(1200)
-            page.mouse.move(400, 300)
-            page.mouse.wheel(0, 900)
-            page.wait_for_timeout(600)
-            page.mouse.click(550, 300)
-            page.wait_for_timeout(600)
-        except Exception:
-            pass
+            except Exception as e:
+                err_payload = {
+                    "ts_utc": datetime.now(timezone.utc).isoformat(),
+                    "page_url": getattr(page, "url", ""),
+                    "error": str(e),
+                    "trace": traceback.format_exc()[-4000:]
+                }
+                try:
+                    save_snapshot({"error_event": err_payload})
+                except Exception:
+                    pass
+                print("[volland] error:", e)
+                traceback.print_exc()
 
-        # Wait for exposure responses
-        time.sleep(CAPTURE_WAIT_SECONDS)
+            time.sleep(PULL_EVERY)
 
-        browser.close()
-
-    if not captured_rows:
-        print("[capture] No /api/v1/data/exposure captured.")
-        if seen_api_paths:
-            uniq = []
-            for x in seen_api_paths:
-                if x not in uniq:
-                    uniq.append(x)
-            print("[debug] seen api paths (unique, last window):")
-            for x in uniq[-20:]:
-                print("   ", x)
-        return
-
-    insert_sql = """
-    INSERT INTO volland_exposure (
-        ts_utc, endpoint, ticker, greek, data_type, kind,
-        expirations_opt, expirations, current_price, last_modified,
-        body_sha256, payload
-    )
-    VALUES (
-        :ts_utc::timestamptz, :endpoint, :ticker, :greek, :data_type, :kind,
-        :expirations_opt, :expirations, :current_price, :last_modified::timestamptz,
-        :body_sha256, :payload::jsonb
-    )
-    ON CONFLICT DO NOTHING;
-    """
-
-    with engine.begin() as conn:
-        for r in captured_rows:
-            conn.execute(
-                text(insert_sql),
-                {**r, "payload": json.dumps(r["payload"], ensure_ascii=False)},
-            )
-
-    print(f"[save] captured={len(captured_rows)} rows (dedupe enabled)")
 
 if __name__ == "__main__":
-    main()
+    run()

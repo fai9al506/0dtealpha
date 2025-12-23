@@ -1,5 +1,5 @@
 # 0DTE Alpha — live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
-from fastapi import FastAPI, Response, Query
+from fastapi import FastAPI, Response, Query, HTTPException
 from fastapi.responses import HTMLResponse
 from datetime import datetime, time as dtime
 import os, time, json, requests, pandas as pd, pytz
@@ -25,15 +25,18 @@ if DB_URL.startswith("postgresql://"):
 PULL_EVERY     = 30   # seconds
 SAVE_EVERY_MIN = 5    # minutes
 
-# Chain window
+# Chain stream
 STREAM_SECONDS = 2.0
+
+# Table size (keep it light)
 TARGET_STRIKES = 40
 
 # ====== APP ======
 app = FastAPI()
 NY = pytz.timezone("US/Eastern")
 
-latest_df: pd.DataFrame | None = None
+latest_df: pd.DataFrame | None = None          # table df (centered)
+latest_full_df: pd.DataFrame | None = None     # full df (for windowed API)
 last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
 _df_lock = Lock()
@@ -320,22 +323,51 @@ def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
     idx = (df["Strike"] - spot).abs().sort_values().index[:n]
     return df.loc[sorted(idx)].reset_index(drop=True)
 
+def window_around_spot(df: pd.DataFrame, spot: float, window: int) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    if not spot:
+        return df
+    sdf = df.sort_values("Strike").reset_index(drop=True)
+    atm = int((sdf["Strike"] - spot).abs().idxmin())
+    lo = max(0, atm - window)
+    hi = min(len(sdf), atm + window + 1)  # includes ATM
+    return sdf.iloc[lo:hi].reset_index(drop=True)
+
+def _spot_from_status():
+    try:
+        parts = dict(splt.split("=", 1) for splt in (last_run_status.get("msg") or "").split() if "=" in splt)
+        return float(parts.get("spot",""))
+    except:
+        return None
+
 # ====== jobs ======
 def run_market_job():
-    global latest_df, last_run_status
+    global latest_df, latest_full_df, last_run_status
     try:
         if not market_open_now():
             last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
             print("[pull] skipped (closed)", last_run_status["ts"], flush=True)
             return
+
         spot = get_spx_last()
         exp  = get_0dte_exp()
         rows = get_chain_rows(exp, spot)
-        df   = pick_centered(to_side_by_side(rows), spot, TARGET_STRIKES)
+
+        full_df = to_side_by_side(rows)
+        table_df = pick_centered(full_df, spot, TARGET_STRIKES)
+
         with _df_lock:
-            latest_df = df.copy()
-        last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={len(df)}"}
+            latest_full_df = full_df.copy()
+            latest_df = table_df.copy()
+
+        last_run_status = {
+            "ts": fmt_et(now_et()),
+            "ok": True,
+            "msg": f"exp={exp} spot={round(spot or 0,2)} rows={len(table_df)}"
+        }
         print("[pull] OK", last_run_status["msg"], flush=True)
+
     except Exception as e:
         last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}
         print("[pull] ERROR", e, flush=True)
@@ -408,32 +440,43 @@ def on_shutdown():
         print("[sched] stopped", flush=True)
 
 # ====== API ======
+# /api/series now returns EXACTLY window strikes above + window below around spot (plus ATM)
 @app.get("/api/series")
-def api_series():
+def api_series(window: int = Query(20, ge=1, le=200)):
     with _df_lock:
-        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+        df = None
+        if latest_full_df is not None and not latest_full_df.empty:
+            df = latest_full_df.copy()
+        elif latest_df is not None and not latest_df.empty:
+            df = latest_df.copy()
+
     if df is None or df.empty:
         return {
             "strikes": [], "callVol": [], "putVol": [], "callOI": [], "putOI": [],
             "callGEX": [], "putGEX": [], "netGEX": [], "spot": None
         }
+
+    spot = _spot_from_status()
+    if spot:
+        df = window_around_spot(df, float(spot), int(window))
+    else:
+        df = df.sort_values("Strike").reset_index(drop=True)
+
     sdf = df.sort_values("Strike")
     s  = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
+
     call_vol = pd.to_numeric(sdf["C_Volume"],       errors="coerce").fillna(0.0).astype(float)
     put_vol  = pd.to_numeric(sdf["P_Volume"],       errors="coerce").fillna(0.0).astype(float)
     call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
     put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+
     c_gamma  = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
     p_gamma  = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+
     call_gex = ( c_gamma * call_oi * 100.0).astype(float)
     put_gex  = (-p_gamma * put_oi  * 100.0).astype(float)
     net_gex  = (call_gex + put_gex).astype(float)
-    spot = None
-    try:
-        parts = dict(splt.split("=", 1) for splt in (last_run_status.get("msg") or "").split() if "=" in splt)
-        spot = float(parts.get("spot",""))
-    except:
-        spot = None
+
     return {
         "strikes": s.tolist(),
         "callVol": call_vol.tolist(), "putVol": put_vol.tolist(),
@@ -492,6 +535,12 @@ def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
     csv = df.to_csv(index=False)
     return Response(csv, media_type="text/csv", headers={"Content-Disposition":"attachment; filename=history.csv"})
 
+# Optional: keep spot tab alive even if you don’t implement bars yet
+@app.get("/api/spot")
+def api_spot():
+    # return empty arrays so the Spot tab JS doesn't break
+    return {"time": [], "close": []}
+
 # ====== TABLE & DASHBOARD HTML TEMPLATES ======
 
 TABLE_HTML_TEMPLATE = """
@@ -539,12 +588,7 @@ DASH_HTML_TEMPLATE = """
       font-size: 13px;
     }
 
-    /* ===== Desktop layout ===== */
-    .layout {
-      display: grid;
-      grid-template-columns: 240px 1fr;
-      min-height: 100vh;
-    }
+    .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
     .sidebar {
       background: var(--panel);
       border-right: 1px solid var(--border);
@@ -638,12 +682,8 @@ DASH_HTML_TEMPLATE = """
     }
     .plot { width:100%; height:100% }
 
-    /* ===== Mobile / small screens ===== */
     @media (max-width: 900px) {
-      .layout {
-        display:block;
-        min-height:0;
-      }
+      .layout { display:block; min-height:0; }
       .sidebar {
         position:static;
         height:auto;
@@ -652,17 +692,8 @@ DASH_HTML_TEMPLATE = """
         padding:10px 10px 6px;
       }
       .status { margin-bottom:8px; }
-      .nav {
-        grid-auto-flow:column;
-        grid-auto-columns:1fr;
-        overflow-x:auto;
-      }
-      .btn {
-        text-align:center;
-        padding:7px 5px;
-        font-size:11px;
-        white-space:nowrap;
-      }
+      .nav { grid-auto-flow:column; grid-auto-columns:1fr; overflow-x:auto; }
+      .btn { text-align:center; padding:7px 5px; font-size:11px; white-space:nowrap; }
       .content { padding:10px; }
       .panel { padding:8px; border-radius:10px; }
       iframe { height:60vh; }
@@ -670,7 +701,6 @@ DASH_HTML_TEMPLATE = """
       .spot-grid { grid-template-columns:1fr; }
       .card { min-height:260px; }
     }
-
     @media (max-width: 480px) {
       .brand { font-size:13px; }
       .status { padding:7px; }
@@ -769,13 +799,17 @@ DASH_HTML_TEMPLATE = """
     tabCharts.addEventListener('click', showCharts);
     tabSpot.addEventListener('click', showSpot);
 
-    // ===== Main charts (GEX / VOL / OI stacked) =====
+    // ===== Main charts (GEX / VOL / OI) =====
     const volDiv=document.getElementById('volChart'),
           oiDiv=document.getElementById('oiChart'),
           gexDiv=document.getElementById('gexChart');
     let chartsTimer=null, firstDraw=true;
 
-    async function fetchSeries(){ const r=await fetch('/api/series',{cache:'no-store'}); return await r.json(); }
+    async function fetchSeries(){
+      // window=20 => 20 strikes above + 20 below + ATM
+      const r=await fetch('/api/series?window=20',{cache:'no-store'});
+      return await r.json();
+    }
 
     function verticalSpotShape(spot,yMax){
       if(spot==null) return null;
@@ -849,7 +883,7 @@ DASH_HTML_TEMPLATE = """
     function startCharts(){ drawOrUpdate(); if (chartsTimer) clearInterval(chartsTimer); chartsTimer=setInterval(drawOrUpdate, PULL_EVERY); }
     function stopCharts(){ if (chartsTimer){ clearInterval(chartsTimer); chartsTimer=null; } }
 
-    // ===== Spot: price + GEX/VOL with shared Y axis =====
+    // ===== Spot tab (kept as-is) =====
     const spotPriceDiv=document.getElementById('spotPricePlot'),
           gexSideDiv=document.getElementById('gexSidePlot'),
           volSideDiv=document.getElementById('volSidePlot');
@@ -985,7 +1019,6 @@ DASH_HTML_TEMPLATE = """
 </body>
 </html>
 """
-
 
 # ====== TABLE ENDPOINT ======
 @app.get("/table")

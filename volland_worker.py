@@ -1,12 +1,5 @@
 # volland_worker.py
-# Capture Volland /api/v1/data/exposure responses and store them in Postgres (JSONB).
-#
-# ENV VARS:
-#   VOLLAND_EMAIL, VOLLAND_PASSWORD, WORKSPACE_URL, DATABASE_URL
-#
-# INSTALL:
-#   pip install playwright sqlalchemy psycopg[binary]
-#   playwright install chromium
+# Robust Volland login + capture /api/v1/data/exposure responses + save to Postgres (JSONB)
 
 import os
 import json
@@ -18,7 +11,9 @@ from urllib.parse import urlparse, parse_qs
 from sqlalchemy import create_engine, text
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeoutError
 
-# ====== CONFIG ======
+VERSION = "2025-12-23A"
+
+# ====== ENV ======
 EMAIL = os.getenv("VOLLAND_EMAIL", "")
 PASSWORD = os.getenv("VOLLAND_PASSWORD", "")
 WORKSPACE_URL = os.getenv(
@@ -34,7 +29,7 @@ ONLY_CAPTURE_PATHS = (
     "/api/v1/data/exposure",
 )
 
-# ====== DB HELPERS ======
+# ====== DB ======
 def normalize_db_url(db_url: str) -> str:
     if not db_url:
         return db_url
@@ -93,7 +88,7 @@ def to_timestamptz(value):
     except Exception:
         return None
 
-# ====== PLAYWRIGHT LOGIN HELPERS ======
+# ====== LOGIN (ROBUST) ======
 EMAIL_SELECTORS = [
     'input[type="email"]',
     'input[autocomplete="username"]',
@@ -131,35 +126,29 @@ SUBMIT_BUTTONS = [
 def dump_debug(page, prefix="debug_login"):
     try:
         page.screenshot(path=f"{prefix}.png", full_page=True)
-    except Exception:
-        pass
+        print(f"[debug] saved {prefix}.png")
+    except Exception as e:
+        print(f"[debug] screenshot failed: {e}")
     try:
         html = page.content()
         with open(f"{prefix}.html", "w", encoding="utf-8") as f:
             f.write(html)
-    except Exception:
-        pass
+        print(f"[debug] saved {prefix}.html")
+    except Exception as e:
+        print(f"[debug] html dump failed: {e}")
 
 def find_visible_in_any_frame(page, selectors, timeout_ms=20000):
-    """
-    Returns (frame, locator) for the first selector that becomes visible
-    across any frame/iframe. Otherwise returns (None, None).
-    """
     deadline = time.time() + (timeout_ms / 1000.0)
-    last_err = None
-
     while time.time() < deadline:
-        for frame in page.frames:  # includes main frame
+        for frame in page.frames:
             for sel in selectors:
                 loc = frame.locator(sel).first
                 try:
                     loc.wait_for(state="visible", timeout=800)
                     return frame, loc
-                except Exception as e:
-                    last_err = e
+                except Exception:
                     continue
         time.sleep(0.25)
-
     return None, None
 
 def click_first_available(page, selectors, timeout_ms=8000):
@@ -177,58 +166,70 @@ def click_first_available(page, selectors, timeout_ms=8000):
         time.sleep(0.25)
     return False
 
-def robust_login(page, email, password):
-    # Go to login (might redirect)
-    page.goto("https://vol.land/login", wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_timeout(1500)
+def ensure_logged_in(page, email, password, workspace_url):
+    # Open workspace directly (best: app redirects you to auth if needed)
+    page.goto(workspace_url, wait_until="domcontentloaded", timeout=60000)
+    page.wait_for_timeout(1200)
 
-    # Helpful logs in Railway
-    print(f"[login] url={page.url}")
-    try:
-        print(f"[login] title={page.title()}")
-    except Exception:
-        pass
+    print(f"[login] landed url={page.url}")
 
-    # Find email field (any selector, any frame)
+    # If already logged in, you should be on /app/workspace/...
+    if "/app/workspace/" in page.url:
+        print("[login] already authenticated")
+        return
+
+    # Otherwise, locate email input (any selector, any iframe)
     frame, email_loc = find_visible_in_any_frame(page, EMAIL_SELECTORS, timeout_ms=45000)
     if not email_loc:
         dump_debug(page, "debug_no_email")
-        raise RuntimeError(f"Email input not found. Current URL: {page.url} (see debug_no_email.png/html)")
+        raise RuntimeError(f"Email input not found. URL={page.url}")
 
     email_loc.fill(email)
 
-    # If password not visible yet, try clicking Continue/Next to reveal it
-    frame2, pass_loc = find_visible_in_any_frame(page, PASS_SELECTORS, timeout_ms=4000)
+    # Some flows require Continue/Next to reveal password
+    frame2, pass_loc = find_visible_in_any_frame(page, PASS_SELECTORS, timeout_ms=3000)
     if not pass_loc:
-        click_first_available(page, CONTINUE_BUTTONS, timeout_ms=8000)
+        click_first_available(page, CONTINUE_BUTTONS, timeout_ms=9000)
         frame2, pass_loc = find_visible_in_any_frame(page, PASS_SELECTORS, timeout_ms=30000)
 
     if not pass_loc:
         dump_debug(page, "debug_no_password")
-        raise RuntimeError(f"Password input not found. Current URL: {page.url} (see debug_no_password.png/html)")
+        raise RuntimeError(f"Password input not found. URL={page.url}")
 
     pass_loc.fill(password)
 
     # Submit
     if not click_first_available(page, SUBMIT_BUTTONS, timeout_ms=12000):
-        # last fallback: press Enter in password field
         try:
             pass_loc.press("Enter")
         except Exception:
             dump_debug(page, "debug_no_submit")
-            raise RuntimeError(f"Submit button not found. Current URL: {page.url} (see debug_no_submit.png/html)")
+            raise RuntimeError(f"Submit not found. URL={page.url}")
 
-    # Wait for post-login navigation
+    # Wait for post-login redirect back to app
     try:
         page.wait_for_load_state("networkidle", timeout=60000)
     except PWTimeoutError:
-        # some apps keep network busy; continue anyway
         pass
 
-    print(f"[login] after submit url={page.url}")
+    # Ensure we end up at workspace
+    if "/app/workspace/" not in page.url:
+        # one more explicit navigation
+        page.goto(workspace_url, wait_until="domcontentloaded", timeout=60000)
+        try:
+            page.wait_for_load_state("networkidle", timeout=60000)
+        except PWTimeoutError:
+            pass
 
-# ====== MAIN CAPTURE ======
+    print(f"[login] after auth url={page.url}")
+    if "/app/workspace/" not in page.url:
+        dump_debug(page, "debug_login_failed")
+        raise RuntimeError(f"Login failed (not in workspace). URL={page.url}")
+
+# ====== MAIN ======
 def main():
+    print(f"[boot] VERSION={VERSION}")
+
     if not EMAIL or not PASSWORD:
         raise SystemExit("Set VOLLAND_EMAIL and VOLLAND_PASSWORD.")
     if not DB_URL:
@@ -249,11 +250,9 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=HEADLESS,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-            ],
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
+
         context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -288,7 +287,7 @@ def main():
                 if isinstance(expirations_list, list) and expirations_list:
                     expirations_compact = ",".join(map(str, expirations_list))
 
-                row = {
+                captured.append({
                     "ts_utc": ts_utc.isoformat(),
                     "endpoint": meta["endpoint"],
                     "ticker": meta["ticker"],
@@ -301,19 +300,17 @@ def main():
                     "last_modified": last_modified.isoformat() if last_modified else None,
                     "body_sha256": body_hash,
                     "payload": payload,
-                }
-                captured.append(row)
+                })
 
             except Exception:
                 return
 
         page.on("response", on_response)
 
-        # --- LOGIN ---
-        robust_login(page, EMAIL, PASSWORD)
+        # LOGIN
+        ensure_logged_in(page, EMAIL, PASSWORD, WORKSPACE_URL)
 
-        # --- OPEN WORKSPACE (triggers exposure calls) ---
-        page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=60000)
+        # Let workspace load + trigger API calls
         try:
             page.wait_for_load_state("networkidle", timeout=60000)
         except PWTimeoutError:
@@ -323,9 +320,9 @@ def main():
 
         browser.close()
 
-    # ====== SAVE TO DB (ONLY HERE, AT THE END) ======
+    # SAVE (ONLY AT END)
     if not captured:
-        print("[capture] No /data/exposure responses captured.")
+        print("[capture] No /api/v1/data/exposure captured.")
         return
 
     insert_sql = """

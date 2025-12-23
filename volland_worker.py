@@ -1,6 +1,7 @@
 # volland_worker.py
-import os, json, time, traceback, re
+import os, json, time, traceback
 from datetime import datetime, timezone
+from bisect import bisect_left
 
 import psycopg
 from psycopg.rows import dict_row
@@ -12,8 +13,12 @@ EMAIL    = os.getenv("VOLLAND_EMAIL", "")
 PASS     = os.getenv("VOLLAND_PASSWORD", "")
 URL      = os.getenv("VOLLAND_URL", "")
 
-PULL_EVERY   = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "60"))
-WAIT_AFTER_GOTO_SEC = float(os.getenv("VOLLAND_WAIT_AFTER_GOTO_SEC", "6"))
+PULL_EVERY           = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "60"))
+WAIT_AFTER_GOTO_SEC  = float(os.getenv("VOLLAND_WAIT_AFTER_GOTO_SEC", "6"))
+
+# keep 20 below + ATM + 20 above
+KEEP_BELOW = int(os.getenv("VOLLAND_KEEP_STRIKES_BELOW", "20"))
+KEEP_ABOVE = int(os.getenv("VOLLAND_KEEP_STRIKES_ABOVE", "20"))
 
 # safety caps (avoid huge DB rows)
 MAX_CAPTURE_ITEMS = int(os.getenv("VOLLAND_MAX_CAPTURE_ITEMS", "40"))
@@ -95,18 +100,10 @@ def login_if_needed(page):
 INIT_CAPTURE_JS = r"""
 (() => {
   const MAX = 200; // in-browser buffer
-  const cap = {
-    fetch: [],
-    xhr: [],
-    ws: [],
-    note: []
-  };
+  const cap = { fetch: [], xhr: [], ws: [], note: [] };
 
   function push(arr, item) {
-    try {
-      arr.push(item);
-      if (arr.length > MAX) arr.shift();
-    } catch(e) {}
+    try { arr.push(item); if (arr.length > MAX) arr.shift(); } catch(e) {}
   }
 
   function safeText(t) {
@@ -126,7 +123,6 @@ INIT_CAPTURE_JS = r"""
       const res = await _fetch.apply(this, args);
       const ct = (res.headers.get("content-type") || "").toLowerCase();
 
-      // clone to read body
       let body = "";
       try {
         if (ct.includes("json") || ct.includes("text") || ct.includes("graphql")) {
@@ -189,20 +185,12 @@ INIT_CAPTURE_JS = r"""
   window.WebSocket.prototype = _WS.prototype;
 
   window.__volland_cap = cap;
-  window.__volland_cap_reset = () => {
-    cap.fetch = [];
-    cap.xhr = [];
-    cap.ws = [];
-    cap.note = [];
-  };
+  window.__volland_cap_reset = () => { cap.fetch = []; cap.xhr = []; cap.ws = []; cap.note = []; };
 })();
 """
 
 
 def get_captures(page) -> dict:
-    """
-    Pull captured fetch/xhr/ws from the browser.
-    """
     try:
         data = page.evaluate("() => window.__volland_cap || null")
         if not data:
@@ -241,7 +229,6 @@ def filter_and_score(items):
             if w in s:
                 score += 3
 
-        # JSON-ish
         if "json" in (it.get("ct") or "").lower():
             score += 2
         if "graphql" in s:
@@ -257,8 +244,140 @@ def filter_and_score(items):
     return out[:MAX_CAPTURE_ITEMS]
 
 
-def trim_body(item):
+# ---------- strike limiting / JSON shrinking ----------
+
+def _to_float(x):
+    try:
+        return float(x)
+    except Exception:
+        return None
+
+
+def limit_strikes_around_spot(points, spot, below=20, above=20, include_atm=True):
+    """
+    points: list of dicts like {"x":"6900","y":-164833242.48}
+    spot  : float
+    returns filtered list (keeps closest strikes around spot)
+    """
+    if not isinstance(points, list) or not points or spot is None:
+        return points
+
+    parsed = []
+    for it in points:
+        if not isinstance(it, dict):
+            continue
+        k = _to_float(it.get("x"))
+        v = _to_float(it.get("y"))
+        if k is None or v is None:
+            continue
+        parsed.append((int(round(k)), float(v)))
+
+    if not parsed:
+        return points
+
+    parsed.sort(key=lambda t: t[0])
+    strikes = [k for k, _ in parsed]
+
+    i = bisect_left(strikes, spot)
+    if i == 0:
+        atm_idx = 0
+    elif i >= len(strikes):
+        atm_idx = len(strikes) - 1
+    else:
+        atm_idx = i if abs(strikes[i] - spot) < abs(strikes[i - 1] - spot) else i - 1
+
+    left = max(0, atm_idx - below)
+    right = min(len(strikes), atm_idx + above + 1)
+
+    window = parsed[left:right]
+    if not include_atm:
+        atm_strike = strikes[atm_idx]
+        window = [t for t in window if t[0] != atm_strike]
+
+    return [{"x": str(k), "y": v} for k, v in window]
+
+
+def _is_xy_points_list(lst) -> bool:
+    if not isinstance(lst, list) or len(lst) < 10:
+        return False
+    # must be list of dicts with x/y mostly numeric-ish
+    ok = 0
+    for it in lst[:20]:
+        if isinstance(it, dict) and ("x" in it) and ("y" in it):
+            if _to_float(it.get("x")) is not None and _to_float(it.get("y")) is not None:
+                ok += 1
+    return ok >= max(3, min(10, len(lst) // 3))
+
+
+def _find_spot(obj):
+    """
+    Search for a spot-like value in dicts.
+    """
+    if not isinstance(obj, dict):
+        return None
+
+    for k in ("spot", "underlying", "underlyingPrice", "underlying_price", "last", "price", "px"):
+        if k in obj:
+            v = _to_float(obj.get(k))
+            if v is not None and v > 0:
+                return v
+
+    # common nesting
+    for k in ("meta", "metadata", "underlyingData", "underlying_data"):
+        v = obj.get(k)
+        if isinstance(v, dict):
+            s = _find_spot(v)
+            if s is not None:
+                return s
+
+    return None
+
+
+def _shrink_json(obj, spot=None):
+    """
+    Recursively:
+    - when we detect strike-point arrays [{x,y}...], keep only 20 below + 20 above around spot
+    - leave other content as-is
+    """
+    if isinstance(obj, dict):
+        spot_here = spot if spot is not None else _find_spot(obj)
+        out = {}
+        for k, v in obj.items():
+            if _is_xy_points_list(v) and spot_here is not None:
+                out[k] = limit_strikes_around_spot(v, spot_here, below=KEEP_BELOW, above=KEEP_ABOVE, include_atm=True)
+            else:
+                out[k] = _shrink_json(v, spot_here)
+        return out
+
+    if isinstance(obj, list):
+        # keep list as-is, but recurse inside
+        return [_shrink_json(v, spot) for v in obj]
+
+    return obj
+
+
+def optimize_and_trim_item(item: dict) -> dict:
+    """
+    - If body is JSON and contains strike series, shrink to 20/20 around spot.
+    - Always cap body length.
+    """
     it = dict(item)
+    body = it.get("body") or ""
+    ct = (it.get("ct") or "").lower()
+
+    # try JSON optimization
+    if body and ("json" in ct or body.lstrip().startswith("{") or body.lstrip().startswith("[")):
+        try:
+            obj = json.loads(body)
+            obj2 = _shrink_json(obj, None)
+            # compact JSON
+            body2 = json.dumps(obj2, separators=(",", ":"), ensure_ascii=False)
+            it["body"] = body2
+        except Exception:
+            # keep original body if parsing fails
+            pass
+
+    # final cap
     b = it.get("body") or ""
     if len(b) > MAX_BODY_CHARS:
         it["body"] = b[:MAX_BODY_CHARS]
@@ -300,7 +419,7 @@ def run():
                 fetch_scored = filter_and_score(cap.get("fetch", []))
                 xhr_scored   = filter_and_score(cap.get("xhr", []))
 
-                # ws messages can be huge; keep only top few
+                # ws messages can be huge; keep only tail
                 ws = cap.get("ws", [])
                 ws = ws[-10:] if isinstance(ws, list) else []
 
@@ -308,8 +427,8 @@ def run():
                     "ts_utc": datetime.now(timezone.utc).isoformat(),
                     "page_url": page.url,
                     "captures": {
-                        "fetch_top": [trim_body(x) for x in fetch_scored],
-                        "xhr_top":   [trim_body(x) for x in xhr_scored],
+                        "fetch_top": [optimize_and_trim_item(x) for x in fetch_scored],
+                        "xhr_top":   [optimize_and_trim_item(x) for x in xhr_scored],
                         "ws_tail":   ws,
                         "counts": {
                             "fetch": len(cap.get("fetch", []) if isinstance(cap.get("fetch", []), list) else []),

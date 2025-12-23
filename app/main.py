@@ -23,6 +23,10 @@ VOLLAND_TABLE       = os.getenv("VOLLAND_TABLE", "volland_exposures")
 VOLLAND_TS_COL      = os.getenv("VOLLAND_TS_COL", "ts")
 VOLLAND_PAYLOAD_COL = os.getenv("VOLLAND_PAYLOAD_COL", "payload")
 
+# Volland vanna by-strike view/table (you already have this in Postgres)
+VOLLAND_VANNA_POINTS = os.getenv("VOLLAND_VANNA_POINTS", "public.volland_vanna_points_dedup")
+VOLLAND_VANNA_TS_COL = os.getenv("VOLLAND_VANNA_TS_COL", "ts_utc")
+
 # SQLAlchemy psycopg v3 URI
 if DB_URL.startswith("postgresql://"):
     DB_URL = DB_URL.replace("postgresql://", "postgresql+psycopg://", 1)
@@ -125,6 +129,75 @@ def db_volland_history(limit: int = 500) -> list[dict]:
         out.append({"ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts), "payload": payload})
     return out
 
+def db_volland_vanna_window(limit: int = 40) -> dict:
+    """
+    Returns latest 40 strikes around the "mid" strike where abs(vanna) is max (from VOLLAND_VANNA_POINTS).
+    """
+    if not engine:
+        raise RuntimeError("DATABASE_URL not set")
+
+    lim = int(limit)
+    if lim < 5: lim = 5
+    if lim > 200: lim = 200
+
+    sql = text(f"""
+    WITH latest AS (
+      SELECT max({VOLLAND_VANNA_TS_COL}) AS ts_utc
+      FROM {VOLLAND_VANNA_POINTS}
+    ),
+    mid AS (
+      SELECT v.strike::numeric AS mid_strike,
+             v.vanna::numeric  AS mid_vanna
+      FROM {VOLLAND_VANNA_POINTS} v
+      JOIN latest l ON v.{VOLLAND_VANNA_TS_COL} = l.ts_utc
+      ORDER BY abs(v.vanna::numeric) DESC
+      LIMIT 1
+    ),
+    ranked AS (
+      SELECT
+        v.{VOLLAND_VANNA_TS_COL} AS ts_utc,
+        v.strike::numeric AS strike,
+        v.vanna::numeric  AS vanna,
+        m.mid_strike,
+        m.mid_vanna,
+        (v.strike::numeric - m.mid_strike) AS rel,
+        ROW_NUMBER() OVER (
+          ORDER BY abs(v.strike::numeric - m.mid_strike), v.strike::numeric
+        ) AS rn
+      FROM {VOLLAND_VANNA_POINTS} v
+      JOIN latest l ON v.{VOLLAND_VANNA_TS_COL} = l.ts_utc
+      CROSS JOIN mid m
+    )
+    SELECT ts_utc, strike, vanna, mid_strike, mid_vanna, rel
+    FROM ranked
+    WHERE rn <= :lim
+    ORDER BY strike;
+    """)
+    with engine.begin() as conn:
+        rows = conn.execute(sql, {"lim": lim}).mappings().all()
+
+    if not rows:
+        return {"ts_utc": None, "mid_strike": None, "mid_vanna": None, "points": []}
+
+    ts_utc = rows[0]["ts_utc"]
+    mid_strike = rows[0]["mid_strike"]
+    mid_vanna  = rows[0]["mid_vanna"]
+
+    pts = []
+    for r in rows:
+        pts.append({
+            "strike": float(r["strike"]) if r["strike"] is not None else None,
+            "vanna":  float(r["vanna"])  if r["vanna"]  is not None else None,
+            "rel":    float(r["rel"])    if r["rel"]    is not None else None,
+        })
+
+    return {
+        "ts_utc": ts_utc.isoformat() if hasattr(ts_utc, "isoformat") else str(ts_utc),
+        "mid_strike": float(mid_strike) if mid_strike is not None else None,
+        "mid_vanna":  float(mid_vanna)  if mid_vanna  is not None else None,
+        "points": pts
+    }
+
 def _is_number(x: Any) -> bool:
     try:
         if x is None: return False
@@ -141,50 +214,36 @@ def volland_series_from_history(hist: list[dict]) -> dict:
       { "ts":[...], "series": { key:[...], ... }, "by_strike": {...optional...} }
     """
     ts_list = []
-    # key -> list
     series: dict[str, list] = {}
-    # Optional: attempt to detect strike arrays
     by_strike: dict[str, Any] = {}
 
-    # oldest -> newest
     hist2 = list(reversed(hist))
 
-    # pass 1: scalar numeric keys
     for item in hist2:
         ts_list.append(item.get("ts"))
         payload = item.get("payload")
         if not isinstance(payload, dict):
-            # keep alignment
             for k in list(series.keys()):
                 series[k].append(None)
             continue
 
-        # gather numeric scalars
         numeric_keys = [k for k, v in payload.items() if _is_number(v)]
-        known = set(series.keys())
 
-        # initialize new keys
         for k in numeric_keys:
             if k not in series:
                 series[k] = [None] * (len(ts_list) - 1)
 
-        # append values for all keys
         for k in series.keys():
             v = payload.get(k)
             series[k].append(float(v) if _is_number(v) else None)
 
-        # Try detect "by strike" blocks (optional)
-        # common patterns: payload["by_strike"] or payload["strikes"] + payload["netGEX"] etc
         if "by_strike" in payload and isinstance(payload["by_strike"], dict):
             by_strike = payload["by_strike"]
         else:
-            # if payload has strikes + arrays
             if isinstance(payload.get("strikes"), list):
-                # keep last snapshot only
                 by_strike = {k: payload.get(k) for k in payload.keys() if k != "strikes"}
                 by_strike["strikes"] = payload.get("strikes")
 
-    # ensure all series lists match length
     n = len(ts_list)
     for k, arr in series.items():
         if len(arr) < n:
@@ -637,7 +696,6 @@ def api_volland_latest():
             return {"ts": None, "payload": None}
         return r
     except Exception as e:
-        # Always JSON (prevents "Unexpected token 'I' Internal Server Error")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/volland/history")
@@ -666,6 +724,19 @@ def api_volland_series(limit: int = Query(800, ge=10, le=5000)):
         if not hist:
             return {"ts": [], "series": {}, "by_strike": {}}
         return volland_series_from_history(hist)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/volland/vanna_window")
+def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
+    """
+    Latest 40 strikes around mid_strike (mid_strike = strike where abs(vanna) is max).
+    Reads from: public.volland_vanna_points_dedup (or override env VOLLAND_VANNA_POINTS)
+    """
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        return db_volland_vanna_window(limit=limit)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -920,16 +991,16 @@ DASH_HTML_TEMPLATE = """
 
       <div id="viewVolland" class="panel" style="display:none">
         <div class="header">
-          <div><strong>Volland Exposure (from Postgres)</strong></div>
+          <div><strong>Volland (from Postgres)</strong></div>
           <div class="pill">auto-refresh</div>
         </div>
         <div class="volland-grid">
           <div class="card" style="min-height:520px">
-            <h3>Timeseries (numeric keys in payload)</h3>
+            <h3>Timeseries (numeric scalar keys in payload)</h3>
             <div id="vollandTS" class="plot"></div>
           </div>
           <div class="card" style="min-height:520px">
-            <h3>By-Strike (if present in payload)</h3>
+            <h3>Vanna by Strike (40 around mid = max |vanna|)</h3>
             <div id="vollandStrike" class="plot"></div>
           </div>
         </div>
@@ -989,7 +1060,6 @@ DASH_HTML_TEMPLATE = """
         yaxis:{title:yTitle,gridcolor:'#20242a',tickfont:{size:10}},
         paper_bgcolor:'#121417',
         plot_bgcolor:'#0f1115',
-        reminder:{},
         font:{color:'#e6e7e9',size:11},
         margin:{t:32,r:12,b:40,l:44},
         barmode:'group',
@@ -1050,7 +1120,6 @@ DASH_HTML_TEMPLATE = """
     function stopCharts(){ if (chartsTimer){ clearInterval(chartsTimer); chartsTimer=null; } }
 
     // ===== Spot: your existing code expects /api/spot. If you have it elsewhere, keep it.
-    // Keeping your Spot tab as-is (no changes here).
     const spotPriceDiv=document.getElementById('spotPricePlot'),
           gexSideDiv=document.getElementById('gexSidePlot'),
           volSideDiv=document.getElementById('volSidePlot');
@@ -1193,6 +1262,11 @@ DASH_HTML_TEMPLATE = """
       return await r.json();
     }
 
+    async function fetchVannaWindow(){
+      const r = await fetch('/api/volland/vanna_window?limit=40', {cache:'no-store'});
+      return await r.json();
+    }
+
     function drawVollandTS(data){
       if (!data || data.error) {
         const msg = data && data.error ? data.error : "no data";
@@ -1239,53 +1313,69 @@ DASH_HTML_TEMPLATE = """
       Plotly.react(vollandTSDiv, traces, layout, {displayModeBar:false,responsive:true});
     }
 
-    function drawVollandByStrike(data){
-      const bs = data && data.by_strike ? data.by_strike : null;
-      if (!bs || !Array.isArray(bs.strikes) || !bs.strikes.length) {
+    function drawVannaWindow(w){
+      if (!w || w.error) {
+        const msg = w && w.error ? w.error : "no data";
         Plotly.react(vollandStrikeDiv, [], {
           paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
           margin:{l:40,r:10,t:10,b:30},
-          annotations:[{text:"No by-strike arrays detected in payload", x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
+          annotations:[{text:"Vanna window error: "+msg, x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
           font:{color:'#e6e7e9'}
         }, {displayModeBar:false,responsive:true});
         return;
       }
-      const strikes = bs.strikes;
-      // Pick a few common keys if present
-      const candidates = ["netGEX","net_gex","gex","GEX","netVanna","net_vanna","vanna","charm","netCharm","net_charm"];
-      const found = candidates.find(k => Array.isArray(bs[k]) && bs[k].length === strikes.length);
-      if (!found) {
+      const pts = w.points || [];
+      if (!pts.length) {
         Plotly.react(vollandStrikeDiv, [], {
           paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
           margin:{l:40,r:10,t:10,b:30},
-          annotations:[{text:"by_strike exists but no matching arrays (same length as strikes)", x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
+          annotations:[{text:"No vanna points returned yet", x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
           font:{color:'#e6e7e9'}
         }, {displayModeBar:false,responsive:true});
         return;
       }
 
+      const strikes = pts.map(p=>p.strike);
+      const vanna   = pts.map(p=>p.vanna);
+
+      const mid = w.mid_strike;
+      const shapes = (mid!=null) ? [{
+        type:'line', x0:mid, x1:mid, y0:Math.min(...vanna), y1:Math.max(...vanna),
+        xref:'x', yref:'y',
+        line:{color:'#9aa0a6', width:2, dash:'dot'}
+      }] : [];
+
       const trace = {
         type:'bar',
-        name: found,
         x: strikes,
-        y: bs[found],
-        hovertemplate:"Strike %{x}<br>"+found+": %{y}<extra></extra>"
+        y: vanna,
+        marker:{color:'#60a5fa'},
+        hovertemplate:"Strike %{x}<br>Vanna %{y}<extra></extra>"
       };
 
       Plotly.react(vollandStrikeDiv, [trace], {
         paper_bgcolor:'#121417',
         plot_bgcolor:'#0f1115',
-        margin:{l:50,r:10,t:10,b:40},
-        xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}},
-        yaxis:{title:found, gridcolor:'#20242a', tickfont:{size:10}},
+        margin:{l:55,r:10,t:10,b:40},
+        xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}, dtick:5},
+        yaxis:{title:'Vanna',  gridcolor:'#20242a', tickfont:{size:10}},
+        shapes: shapes,
+        annotations: (mid!=null) ? [{
+          text: "mid="+mid,
+          x: mid, y: Math.max(...vanna),
+          xref:'x', yref:'y',
+          showarrow:false,
+          yanchor:'bottom',
+          font:{color:'#e6e7e9', size:10}
+        }] : [],
         font:{color:'#e6e7e9',size:11}
       }, {displayModeBar:false,responsive:true});
     }
 
     async function tickVolland(){
-      const data = await fetchVollandSeries();
-      drawVollandTS(data);
-      drawVollandByStrike(data);
+      const [series, window] = await Promise.all([fetchVollandSeries(), fetchVannaWindow()]);
+      drawVollandTS(series);
+      drawVannaWindow(window);
     }
 
     function startVolland(){

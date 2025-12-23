@@ -1,3 +1,4 @@
+# volland_worker.py
 import os, json, time, traceback, re
 from datetime import datetime, timezone
 
@@ -6,20 +7,22 @@ from psycopg.rows import dict_row
 from playwright.sync_api import sync_playwright
 
 
-# ========= ENV =========
 DB_URL   = os.getenv("DATABASE_URL", "")
 EMAIL    = os.getenv("VOLLAND_EMAIL", "")
 PASS     = os.getenv("VOLLAND_PASSWORD", "")
-URL      = os.getenv("VOLLAND_URL", "")  # workspace URL
+URL      = os.getenv("VOLLAND_URL", "")
 
-PULL_EVERY     = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "60"))
-SNIFF_SECONDS  = float(os.getenv("VOLLAND_SNIFF_SECONDS", "8"))   # request logging window
-MAX_POINTS     = int(os.getenv("VOLLAND_MAX_POINTS", "6000"))     # safety cap
+PULL_EVERY   = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "60"))
+WAIT_AFTER_GOTO_SEC = float(os.getenv("VOLLAND_WAIT_AFTER_GOTO_SEC", "6"))
+
+# safety caps (avoid huge DB rows)
+MAX_CAPTURE_ITEMS = int(os.getenv("VOLLAND_MAX_CAPTURE_ITEMS", "40"))
+MAX_BODY_CHARS    = int(os.getenv("VOLLAND_MAX_BODY_CHARS", "20000"))
 
 
-# ========= DB =========
 def db():
     return psycopg.connect(DB_URL, autocommit=True, row_factory=dict_row)
+
 
 def ensure_tables():
     with db() as conn, conn.cursor() as cur:
@@ -32,12 +35,12 @@ def ensure_tables():
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_snapshots_ts ON volland_snapshots(ts DESC);")
 
+
 def save_snapshot(payload: dict):
     with db() as conn, conn.cursor() as cur:
         cur.execute("INSERT INTO volland_snapshots(payload) VALUES (%s::jsonb)", (json.dumps(payload),))
 
 
-# ========= LOGIN =========
 def handle_session_limit_modal(page) -> bool:
     btn = page.locator(
         "button[data-cy='confirmation-modal-confirm-button'], button:has-text('Continue')"
@@ -53,11 +56,11 @@ def handle_session_limit_modal(page) -> bool:
     except Exception:
         return False
 
+
 def login_if_needed(page):
     page.goto(URL, wait_until="domcontentloaded", timeout=120000)
     page.wait_for_timeout(1500)
 
-    # already logged in
     if "/sign-in" not in page.url and page.locator("input[name='password'], input[type='password']").count() == 0:
         return
 
@@ -70,11 +73,7 @@ def login_if_needed(page):
     email_box.fill(EMAIL)
     pwd_box.fill(PASS)
 
-    submit = page.locator(
-        "button:has-text('Log In'), button:has-text('Login'), button[type='submit']"
-    ).first
-    submit.click()
-
+    page.locator("button:has-text('Log In'), button:has-text('Login'), button[type='submit']").first.click()
     handle_session_limit_modal(page)
 
     deadline = time.time() + 90
@@ -84,7 +83,6 @@ def login_if_needed(page):
             return
         page.wait_for_timeout(500)
 
-    # still on sign-in
     body = ""
     try:
         body = (page.locator("body").inner_text() or "")[:600]
@@ -93,177 +91,178 @@ def login_if_needed(page):
     raise RuntimeError(f"Login did not complete. Still on: {page.url}. Body: {body}")
 
 
-# ========= REQUEST URL SNIFF (to discover hidden endpoints) =========
-def sniff_request_urls(page, seconds: float):
-    urls = []
+# ---- Install hooks BEFORE any navigation ----
+INIT_CAPTURE_JS = r"""
+(() => {
+  const MAX = 200; // in-browser buffer
+  const cap = {
+    fetch: [],
+    xhr: [],
+    ws: [],
+    note: []
+  };
 
-    def on_req(req):
-        try:
-            u = req.url
-            # ignore noise
-            if any(x in u for x in ("sentry.io", "gleap.io", "googletagmanager", "google-analytics")):
-                return
-            # keep likely relevant
-            if ("vol.land" in u) or ("graphql" in u) or ("/api/" in u) or ("ws" in u):
-                urls.append({"url": u, "type": req.resource_type})
-        except Exception:
-            return
+  function push(arr, item) {
+    try {
+      arr.push(item);
+      if (arr.length > MAX) arr.shift();
+    } catch(e) {}
+  }
 
-    page.on("request", on_req)
+  function safeText(t) {
+    try {
+      if (!t) return "";
+      t = String(t);
+      return t.length > 20000 ? t.slice(0, 20000) : t;
+    } catch(e) { return ""; }
+  }
 
-    end = time.time() + seconds
-    while time.time() < end:
-        page.wait_for_timeout(200)
+  // --- fetch hook ---
+  const _fetch = window.fetch;
+  window.fetch = async function(...args) {
+    const url = (args && args[0] && args[0].url) ? args[0].url : String(args[0] || "");
+    const t0 = Date.now();
+    try {
+      const res = await _fetch.apply(this, args);
+      const ct = (res.headers.get("content-type") || "").toLowerCase();
 
+      // clone to read body
+      let body = "";
+      try {
+        if (ct.includes("json") || ct.includes("text") || ct.includes("graphql")) {
+          const clone = res.clone();
+          body = safeText(await clone.text());
+        }
+      } catch(e) {}
+
+      push(cap.fetch, { url, status: res.status, ct, ms: Date.now() - t0, body });
+      return res;
+    } catch(e) {
+      push(cap.fetch, { url, status: -1, ct: "", ms: Date.now() - t0, body: "FETCH_ERR: " + String(e) });
+      throw e;
+    }
+  };
+
+  // --- XHR hook ---
+  const _open = XMLHttpRequest.prototype.open;
+  const _send = XMLHttpRequest.prototype.send;
+
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    this.__cap = { method, url: String(url || ""), t0: Date.now() };
+    return _open.call(this, method, url, ...rest);
+  };
+
+  XMLHttpRequest.prototype.send = function(body) {
+    const xhr = this;
+    function done() {
+      try {
+        const ct = (xhr.getResponseHeader("content-type") || "").toLowerCase();
+        let text = "";
+        try { text = safeText(xhr.responseText || ""); } catch(e) {}
+        push(cap.xhr, {
+          url: (xhr.__cap && xhr.__cap.url) ? xhr.__cap.url : "",
+          method: (xhr.__cap && xhr.__cap.method) ? xhr.__cap.method : "",
+          status: xhr.status,
+          ct,
+          ms: Date.now() - ((xhr.__cap && xhr.__cap.t0) ? xhr.__cap.t0 : Date.now()),
+          body: text
+        });
+      } catch(e) {}
+    }
+    xhr.addEventListener("loadend", done);
+    return _send.call(this, body);
+  };
+
+  // --- WebSocket hook (optional) ---
+  const _WS = window.WebSocket;
+  window.WebSocket = function(url, protocols) {
+    const ws = protocols ? new _WS(url, protocols) : new _WS(url);
+    try {
+      push(cap.ws, { url: String(url || ""), event: "open_attempt", t: Date.now() });
+      ws.addEventListener("message", (ev) => {
+        const data = safeText(ev.data);
+        push(cap.ws, { url: String(url || ""), event: "message", t: Date.now(), data });
+      });
+    } catch(e) {}
+    return ws;
+  };
+  window.WebSocket.prototype = _WS.prototype;
+
+  window.__volland_cap = cap;
+  window.__volland_cap_reset = () => {
+    cap.fetch = [];
+    cap.xhr = [];
+    cap.ws = [];
+    cap.note = [];
+  };
+})();
+"""
+
+
+def get_captures(page) -> dict:
+    """
+    Pull captured fetch/xhr/ws from the browser.
+    """
     try:
-        page.remove_listener("request", on_req)
+        data = page.evaluate("() => window.__volland_cap || null")
+        if not data:
+            return {"fetch": [], "xhr": [], "ws": []}
+        return data
+    except Exception:
+        return {"fetch": [], "xhr": [], "ws": []}
+
+
+def reset_captures(page):
+    try:
+        page.evaluate("() => window.__volland_cap_reset && window.__volland_cap_reset()")
     except Exception:
         pass
 
-    # de-dupe preserve order
-    seen = set()
+
+def filter_and_score(items):
+    """
+    Keep likely relevant endpoints and score candidates.
+    """
     out = []
-    for item in urls:
-        if item["url"] in seen:
+    for it in items:
+        url = (it.get("url") or "").lower()
+        if not url:
             continue
-        seen.add(item["url"])
-        out.append(item)
-        if len(out) >= 200:
-            break
-    return out
 
-
-# ========= REAL DATA (read from chart library objects) =========
-def extract_chart_series_js(page):
-    """
-    Try to extract real series points from Highcharts or ECharts objects.
-    Returns dict: {highcharts, echarts, series:[...], meta:{...}}
-    """
-    js = r"""
-() => {
-  const out = { highcharts:false, echarts:false, series:[], meta:{} };
-
-  // --- Highcharts ---
-  try {
-    if (window.Highcharts && window.Highcharts.charts) {
-      out.highcharts = true;
-      const charts = window.Highcharts.charts.filter(Boolean);
-      out.meta.highcharts_charts = charts.length;
-
-      charts.forEach((c, ci) => {
-        (c.series || []).forEach((s, si) => {
-          const ptsRaw = (s.points && s.points.length) ? s.points : (s.data || []);
-          const pts = [];
-
-          for (const p of ptsRaw) {
-            const x = (p && p.x !== undefined) ? p.x : (p && p.category !== undefined ? p.category : undefined);
-            const y = (p && p.y !== undefined) ? p.y : (p && p.value !== undefined ? p.value : undefined);
-            if (x !== undefined && y !== undefined && y !== null) pts.push([x, y]);
-          }
-
-          if (pts.length) {
-            out.series.push({
-              lib: "highcharts",
-              chart_index: ci,
-              series_index: si,
-              name: s.name || "",
-              type: s.type || "",
-              points: pts
-            });
-          }
-        });
-      });
-    }
-  } catch (e) {
-    out.meta.highcharts_error = String(e);
-  }
-
-  // --- ECharts ---
-  try {
-    if (window.echarts) {
-      out.echarts = true;
-
-      const insts = [];
-      // try common containers
-      const candidates = Array.from(document.querySelectorAll("div, canvas, svg"));
-      for (const el of candidates) {
-        try {
-          const inst = window.echarts.getInstanceByDom(el);
-          if (inst) insts.push(inst);
-        } catch (e) {}
-      }
-      out.meta.echarts_instances = insts.length;
-
-      insts.forEach((inst, ci) => {
-        try {
-          const opt = inst.getOption();
-          const sers = (opt && opt.series) ? opt.series : [];
-          sers.forEach((s, si) => {
-            const data = s.data || [];
-            const pts = [];
-
-            for (const p of data) {
-              if (Array.isArray(p) && p.length >= 2) {
-                pts.push([p[0], p[1]]);
-              } else if (p && typeof p === "object") {
-                const x = (p.name !== undefined) ? p.name : (p.x !== undefined ? p.x : undefined);
-                const y = (p.value !== undefined) ? p.value : (p.y !== undefined ? p.y : undefined);
-                if (x !== undefined && y !== undefined) pts.push([x, y]);
-              }
-            }
-
-            if (pts.length) {
-              out.series.push({
-                lib: "echarts",
-                chart_index: ci,
-                series_index: si,
-                name: s.name || "",
-                type: s.type || "",
-                points: pts
-              });
-            }
-          });
-        } catch (e) {
-          out.meta.echarts_error = String(e);
-        }
-      });
-    }
-  } catch (e) {
-    out.meta.echarts_error2 = String(e);
-  }
-
-  // diagnostics
-  try { out.meta.svg_paths = document.querySelectorAll("svg path").length; } catch(e) {}
-  try { out.meta.svg_count = document.querySelectorAll("svg").length; } catch(e) {}
-
-  return out;
-}
-"""
-    return page.evaluate(js)
-
-
-def cap_series_points(series_list, max_points: int):
-    """
-    Cap total points to avoid huge DB rows.
-    """
-    total = 0
-    out = []
-    for s in series_list:
-        pts = s.get("points", [])
-        if not pts:
+        # drop noisy analytics
+        if any(x in url for x in ("sentry.io", "gleap.io", "googletagmanager", "google-analytics")):
             continue
-        remaining = max_points - total
-        if remaining <= 0:
-            break
-        if len(pts) > remaining:
-            s = dict(s)
-            s["points"] = pts[:remaining]
-            out.append(s)
-            total += remaining
-            break
-        out.append(s)
-        total += len(pts)
-    return out, total
+
+        body = it.get("body") or ""
+        s = (url + "\n" + body).lower()
+
+        score = 0
+        for w in ["exposure", "gamma", "vanna", "charm", "dealer", "hedg", "notional", "strike", "expiration", "spx", "spy"]:
+            if w in s:
+                score += 3
+
+        # JSON-ish
+        if "json" in (it.get("ct") or "").lower():
+            score += 2
+        if "graphql" in s:
+            score += 2
+        if len(body) > 200:
+            score += 1
+
+        it2 = dict(it)
+        it2["score"] = score
+        out.append(it2)
+
+    out.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return out[:MAX_CAPTURE_ITEMS]
+
+
+def trim_body(item):
+    it = dict(item)
+    b = it.get("body") or ""
+    if len(b) > MAX_BODY_CHARS:
+        it["body"] = b[:MAX_BODY_CHARS]
+    return it
 
 
 def run():
@@ -273,42 +272,69 @@ def run():
     ensure_tables()
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
-        )
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
         page = browser.new_page(viewport={"width": 1400, "height": 900})
         page.set_default_timeout(90000)
 
+        # ✅ hooks must be installed before any navigation
+        page.add_init_script(INIT_CAPTURE_JS)
+
+        # login once
         login_if_needed(page)
 
         while True:
             try:
+                reset_captures(page)
+
                 page.goto(URL, wait_until="domcontentloaded", timeout=120000)
-                page.wait_for_timeout(2500)
+                page.wait_for_timeout(int(WAIT_AFTER_GOTO_SEC * 1000))
 
                 if "/sign-in" in page.url:
                     login_if_needed(page)
+                    reset_captures(page)
                     page.goto(URL, wait_until="domcontentloaded", timeout=120000)
-                    page.wait_for_timeout(2500)
+                    page.wait_for_timeout(int(WAIT_AFTER_GOTO_SEC * 1000))
 
-                # 1) log request URLs (to find hidden API)
-                req_urls = sniff_request_urls(page, seconds=SNIFF_SECONDS)
+                cap = get_captures(page)
 
-                # 2) extract real series from JS objects
-                series_pack = extract_chart_series_js(page)
-                series_pack["series"], total_pts = cap_series_points(series_pack.get("series", []), MAX_POINTS)
+                fetch_scored = filter_and_score(cap.get("fetch", []))
+                xhr_scored   = filter_and_score(cap.get("xhr", []))
+
+                # ws messages can be huge; keep only top few
+                ws = cap.get("ws", [])
+                ws = ws[-10:] if isinstance(ws, list) else []
 
                 payload = {
                     "ts_utc": datetime.now(timezone.utc).isoformat(),
                     "page_url": page.url,
-                    "request_urls_sample": req_urls[:60],
-                    "chart_series": series_pack,   # ✅ THIS is what we want (points!)
-                    "points_total": total_pts,
+                    "captures": {
+                        "fetch_top": [trim_body(x) for x in fetch_scored],
+                        "xhr_top":   [trim_body(x) for x in xhr_scored],
+                        "ws_tail":   ws,
+                        "counts": {
+                            "fetch": len(cap.get("fetch", []) if isinstance(cap.get("fetch", []), list) else []),
+                            "xhr":   len(cap.get("xhr", []) if isinstance(cap.get("xhr", []), list) else []),
+                            "ws":    len(cap.get("ws", []) if isinstance(cap.get("ws", []), list) else []),
+                        }
+                    }
                 }
 
                 save_snapshot(payload)
-                print("[volland] saved", payload["ts_utc"], "series=", len(series_pack.get("series", [])), "pts=", total_pts)
+
+                print(
+                    "[volland] saved",
+                    payload["ts_utc"],
+                    "fetch=",
+                    payload["captures"]["counts"]["fetch"],
+                    "xhr=",
+                    payload["captures"]["counts"]["xhr"],
+                    "ws=",
+                    payload["captures"]["counts"]["ws"],
+                    "top_fetch_score=",
+                    (fetch_scored[0]["score"] if fetch_scored else None),
+                    "top_xhr_score=",
+                    (xhr_scored[0]["score"] if xhr_scored else None),
+                )
 
             except Exception as e:
                 err_payload = {

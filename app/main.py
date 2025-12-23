@@ -1,11 +1,12 @@
 # 0DTE Alpha — live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
-from fastapi import FastAPI, Response, Query, Request, HTTPException
+from fastapi import FastAPI, Response, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from datetime import datetime, time as dtime
-import os, time, json, requests, pandas as pd, pytz, traceback, logging
+import os, time, json, requests, pandas as pd, pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
 from threading import Lock
+from typing import Any, Optional
 
 # ====== CONFIG ======
 USE_LIVE = True
@@ -16,6 +17,11 @@ CID     = os.getenv("TS_CLIENT_ID", "")
 SECRET  = os.getenv("TS_CLIENT_SECRET", "")
 RTOKEN  = os.getenv("TS_REFRESH_TOKEN", "")
 DB_URL  = os.getenv("DATABASE_URL", "")  # Railway Postgres
+
+# Volland storage (already scraped into Postgres)
+VOLLAND_TABLE       = os.getenv("VOLLAND_TABLE", "volland_exposures")
+VOLLAND_TS_COL      = os.getenv("VOLLAND_TS_COL", "ts")
+VOLLAND_PAYLOAD_COL = os.getenv("VOLLAND_PAYLOAD_COL", "payload")
 
 # SQLAlchemy psycopg v3 URI
 if DB_URL.startswith("postgresql://"):
@@ -38,19 +44,6 @@ last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
 _df_lock = Lock()
 
-# ====== LOG + JSON error responses (prevents JS "Unexpected token 'I'") ======
-log = logging.getLogger("app")
-logging.basicConfig(level=logging.INFO)
-
-@app.exception_handler(Exception)
-async def any_exception(request: Request, exc: Exception):
-    log.error("Unhandled error on %s: %s", request.url.path, repr(exc))
-    log.error(traceback.format_exc())
-    return JSONResponse(
-        status_code=500,
-        content={"ok": False, "error": "internal", "detail": str(exc)}
-    )
-
 # ====== DB ======
 engine = create_engine(DB_URL, pool_pre_ping=True) if DB_URL else None
 
@@ -70,20 +63,134 @@ def db_init():
         );
         CREATE INDEX IF NOT EXISTS ix_chain_snapshots_ts ON chain_snapshots (ts DESC);
         """))
+
+        # Volland table (safe to create even if you already have your own table; override via env vars)
+        # This expects: ts timestamptz, payload jsonb
+        conn.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS {VOLLAND_TABLE} (
+            id BIGSERIAL PRIMARY KEY,
+            {VOLLAND_TS_COL} TIMESTAMPTZ NOT NULL DEFAULT now(),
+            {VOLLAND_PAYLOAD_COL} JSONB NOT NULL
+        );
+        """))
+        conn.execute(text(f"""
+        CREATE INDEX IF NOT EXISTS ix_{VOLLAND_TABLE}_{VOLLAND_TS_COL}
+        ON {VOLLAND_TABLE} ({VOLLAND_TS_COL} DESC);
+        """))
+
     print("[db] ready", flush=True)
 
-def _maybe_json_load(x):
-    # JSONB may come back already as list/dict; only json.loads if it's a string
-    if x is None:
+def _json_load_maybe(v: Any) -> Any:
+    if v is None:
         return None
-    if isinstance(x, (list, dict)):
-        return x
-    if isinstance(x, str):
+    if isinstance(v, (dict, list)):
+        return v
+    if isinstance(v, (bytes, bytearray)):
         try:
-            return json.loads(x)
+            v = v.decode("utf-8", "ignore")
         except Exception:
-            return x
-    return x
+            pass
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return None
+        try:
+            return json.loads(s)
+        except Exception:
+            return v
+    return v
+
+def db_latest_volland() -> Optional[dict]:
+    if not engine:
+        return None
+    q = text(f"SELECT {VOLLAND_TS_COL} AS ts, {VOLLAND_PAYLOAD_COL} AS payload FROM {VOLLAND_TABLE} ORDER BY {VOLLAND_TS_COL} DESC LIMIT 1")
+    with engine.begin() as conn:
+        r = conn.execute(q).mappings().first()
+    if not r:
+        return None
+    payload = _json_load_maybe(r["payload"])
+    ts = r["ts"]
+    return {"ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts), "payload": payload}
+
+def db_volland_history(limit: int = 500) -> list[dict]:
+    if not engine:
+        return []
+    q = text(f"SELECT {VOLLAND_TS_COL} AS ts, {VOLLAND_PAYLOAD_COL} AS payload FROM {VOLLAND_TABLE} ORDER BY {VOLLAND_TS_COL} DESC LIMIT :lim")
+    with engine.begin() as conn:
+        rows = conn.execute(q, {"lim": int(limit)}).mappings().all()
+    out = []
+    for r in rows:
+        payload = _json_load_maybe(r["payload"])
+        ts = r["ts"]
+        out.append({"ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts), "payload": payload})
+    return out
+
+def _is_number(x: Any) -> bool:
+    try:
+        if x is None: return False
+        if isinstance(x, bool): return False
+        float(x)
+        return True
+    except Exception:
+        return False
+
+def volland_series_from_history(hist: list[dict]) -> dict:
+    """
+    Build timeseries for scalar numeric keys in payload.
+    Returns:
+      { "ts":[...], "series": { key:[...], ... }, "by_strike": {...optional...} }
+    """
+    ts_list = []
+    # key -> list
+    series: dict[str, list] = {}
+    # Optional: attempt to detect strike arrays
+    by_strike: dict[str, Any] = {}
+
+    # oldest -> newest
+    hist2 = list(reversed(hist))
+
+    # pass 1: scalar numeric keys
+    for item in hist2:
+        ts_list.append(item.get("ts"))
+        payload = item.get("payload")
+        if not isinstance(payload, dict):
+            # keep alignment
+            for k in list(series.keys()):
+                series[k].append(None)
+            continue
+
+        # gather numeric scalars
+        numeric_keys = [k for k, v in payload.items() if _is_number(v)]
+        known = set(series.keys())
+
+        # initialize new keys
+        for k in numeric_keys:
+            if k not in series:
+                series[k] = [None] * (len(ts_list) - 1)
+
+        # append values for all keys
+        for k in series.keys():
+            v = payload.get(k)
+            series[k].append(float(v) if _is_number(v) else None)
+
+        # Try detect "by strike" blocks (optional)
+        # common patterns: payload["by_strike"] or payload["strikes"] + payload["netGEX"] etc
+        if "by_strike" in payload and isinstance(payload["by_strike"], dict):
+            by_strike = payload["by_strike"]
+        else:
+            # if payload has strikes + arrays
+            if isinstance(payload.get("strikes"), list):
+                # keep last snapshot only
+                by_strike = {k: payload.get(k) for k in payload.keys() if k != "strikes"}
+                by_strike["strikes"] = payload.get("strikes")
+
+    # ensure all series lists match length
+    n = len(ts_list)
+    for k, arr in series.items():
+        if len(arr) < n:
+            arr.extend([None] * (n - len(arr)))
+
+    return {"ts": ts_list, "series": series, "by_strike": by_strike}
 
 # ====== Auth ======
 REFRESH_EARLY_SEC = 300
@@ -485,31 +592,6 @@ def snapshot():
     df.columns = DISPLAY_COLS
     return {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
 
-# NEW: latest saved snapshot from Postgres (used by "Latest Exposure (from Postgres)")
-@app.get("/api/latest-exposure")
-def api_latest_exposure():
-    if not engine:
-        return {"ok": False, "error": "DATABASE_URL not set"}
-    with engine.begin() as conn:
-        r = conn.execute(text("""
-            SELECT ts, exp, spot, columns, rows
-            FROM chain_snapshots
-            ORDER BY ts DESC
-            LIMIT 1
-        """)).mappings().first()
-    if not r:
-        return {"ok": False, "error": "no rows"}
-    cols = _maybe_json_load(r["columns"])
-    rows = _maybe_json_load(r["rows"])
-    return {
-        "ok": True,
-        "ts": r["ts"].isoformat() if r.get("ts") else None,
-        "exp": str(r["exp"]) if r.get("exp") is not None else None,
-        "spot": r.get("spot"),
-        "columns": cols,
-        "rows": rows,
-    }
-
 @app.get("/api/history")
 def api_history(limit: int = Query(288, ge=1, le=5000)):
     if not engine:
@@ -518,18 +600,11 @@ def api_history(limit: int = Query(288, ge=1, le=5000)):
         rows = conn.execute(text(
             "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
         ), {"lim": limit}).mappings().all()
-    out = []
     for r in rows:
-        cols = _maybe_json_load(r.get("columns"))
-        rr   = _maybe_json_load(r.get("rows"))
-        out.append({
-            "ts": r["ts"].isoformat() if r.get("ts") else None,
-            "exp": str(r["exp"]) if r.get("exp") is not None else None,
-            "spot": r.get("spot"),
-            "columns": cols,
-            "rows": rr
-        })
-    return out
+        r["columns"] = json.loads(r["columns"]) if isinstance(r["columns"], str) else r["columns"]
+        r["rows"]    = json.loads(r["rows"])    if isinstance(r["rows"], str) else r["rows"]
+        r["ts"]      = r["ts"].isoformat()
+    return rows
 
 @app.get("/download/history.csv")
 def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
@@ -541,44 +616,58 @@ def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
         ), {"lim": limit}).mappings().all()
     out = []
     for r in recs:
-        cols = _maybe_json_load(r.get("columns")) or []
-        rr   = _maybe_json_load(r.get("rows")) or []
-        for arr in rr:
-            obj = {"ts": r["ts"].isoformat(), "exp": str(r["exp"]) if r.get("exp") is not None else None, "spot": r["spot"]}
-            try:
-                obj.update({cols[i]: arr[i] for i in range(len(cols))})
-            except Exception:
-                pass
+        cols = json.loads(r["columns"]) if isinstance(r["columns"], str) else r["columns"]
+        rows = json.loads(r["rows"])    if isinstance(r["rows"], str) else r["rows"]
+        for arr in rows:
+            obj = {"ts": r["ts"].isoformat(), "exp": r["exp"], "spot": r["spot"]}
+            obj.update({cols[i]: arr[i] for i in range(len(cols))})
             out.append(obj)
     df = pd.DataFrame(out)
     csv = df.to_csv(index=False)
     return Response(csv, media_type="text/csv", headers={"Content-Disposition":"attachment; filename=history.csv"})
 
-# NEW: spot series for Spot tab (5-min bars)
-@app.get("/api/spot")
-def api_spot(bars: int = Query(180, ge=10, le=2000), interval: int = Query(5, ge=1, le=60)):
+# ===== Volland API (from Postgres) =====
+@app.get("/api/volland/latest")
+def api_volland_latest():
     try:
-        js = api_get(
-            "/marketdata/barcharts/%24SPX.X",
-            params={"unit": "Minute", "interval": interval, "barsback": bars},
-            timeout=12
-        ).json()
-        b = js.get("Bars") or js.get("bars") or []
-        t, c = [], []
-        for it in b:
-            ts = it.get("TimeStamp") or it.get("Timestamp") or it.get("timeStamp") or it.get("time")
-            cl = it.get("Close") or it.get("close")
-            if ts is None or cl is None:
-                continue
-            # keep timestamp as string; JS converts with new Date()
-            t.append(str(ts).replace(" ", "T"))
-            try:
-                c.append(float(cl))
-            except:
-                c.append(None)
-        return {"time": t, "close": c}
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        r = db_latest_volland()
+        if not r:
+            return {"ts": None, "payload": None}
+        return r
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Always JSON (prevents "Unexpected token 'I' Internal Server Error")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/volland/history")
+def api_volland_history(limit: int = Query(500, ge=1, le=5000)):
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        return db_volland_history(limit=limit)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/volland/series")
+def api_volland_series(limit: int = Query(800, ge=10, le=5000)):
+    """
+    Returns:
+      {
+        "ts":[...],
+        "series": { "net_gex":[...], "net_vanna":[...], ... },     (scalar numeric keys only)
+        "by_strike": {...}                                       (optional best-effort)
+      }
+    """
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        hist = db_volland_history(limit=limit)
+        if not hist:
+            return {"ts": [], "series": {}, "by_strike": {}}
+        return volland_series_from_history(hist)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 # ====== TABLE & DASHBOARD HTML TEMPLATES ======
 
@@ -627,7 +716,6 @@ DASH_HTML_TEMPLATE = """
       font-size: 13px;
     }
 
-    /* ===== Desktop layout ===== */
     .layout {
       display: grid;
       grid-template-columns: 240px 1fr;
@@ -726,12 +814,17 @@ DASH_HTML_TEMPLATE = """
     }
     .plot { width:100%; height:100% }
 
-    /* ===== Mobile / small screens ===== */
+    /* Volland layout */
+    .volland-grid{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:10px;
+    }
+    #vollandTS { width:100%; height:520px; }
+    #vollandStrike { width:100%; height:520px; }
+
     @media (max-width: 900px) {
-      .layout {
-        display:block;
-        min-height:0;
-      }
+      .layout { display:block; min-height:0; }
       .sidebar {
         position:static;
         height:auto;
@@ -745,24 +838,14 @@ DASH_HTML_TEMPLATE = """
         grid-auto-columns:1fr;
         overflow-x:auto;
       }
-      .btn {
-        text-align:center;
-        padding:7px 5px;
-        font-size:11px;
-        white-space:nowrap;
-      }
+      .btn { text-align:center; padding:7px 5px; font-size:11px; white-space:nowrap; }
       .content { padding:10px; }
       .panel { padding:8px; border-radius:10px; }
       iframe { height:60vh; }
       #volChart, #oiChart, #gexChart { height:340px; }
       .spot-grid { grid-template-columns:1fr; }
       .card { min-height:260px; }
-    }
-
-    @media (max-width: 480px) {
-      .brand { font-size:13px; }
-      .status { padding:7px; }
-      .pill { display:none; }
+      #vollandTS, #vollandStrike { height:380px; }
     }
   </style>
 </head>
@@ -782,12 +865,13 @@ DASH_HTML_TEMPLATE = """
         <button class="btn active" id="tabTable">Table</button>
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabSpot">Spot</button>
+        <button class="btn" id="tabVolland">Volland</button>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
       <div class="small" style="margin-top:14px">
         <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> ·
         <a href="/api/history"  style="color:var(--muted)">History</a> ·
-        <a href="/api/latest-exposure" style="color:var(--muted)">Latest Exposure</a> ·
+        <a href="/api/volland/latest" style="color:var(--muted)">Latest Exposure</a> ·
         <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
       </div>
     </aside>
@@ -833,52 +917,64 @@ DASH_HTML_TEMPLATE = """
           </div>
         </div>
       </div>
+
+      <div id="viewVolland" class="panel" style="display:none">
+        <div class="header">
+          <div><strong>Volland Exposure (from Postgres)</strong></div>
+          <div class="pill">auto-refresh</div>
+        </div>
+        <div class="volland-grid">
+          <div class="card" style="min-height:520px">
+            <h3>Timeseries (numeric keys in payload)</h3>
+            <div id="vollandTS" class="plot"></div>
+          </div>
+          <div class="card" style="min-height:520px">
+            <h3>By-Strike (if present in payload)</h3>
+            <div id="vollandStrike" class="plot"></div>
+          </div>
+        </div>
+      </div>
+
     </main>
   </div>
 
   <script>
     const PULL_EVERY = __PULL_MS__;
 
-    async function fetchJson(url){
-      const r = await fetch(url, {cache:'no-store'});
-      const txt = await r.text();
-      if (!r.ok){
-        console.log("API error:", url, r.status, txt.slice(0,200));
-        throw new Error(url + " " + r.status);
-      }
-      try { return JSON.parse(txt); }
-      catch(e){
-        console.log("Bad JSON:", url, e.message, txt.slice(0,200));
-        throw e;
-      }
-    }
-
     // Tabs
     const tabTable=document.getElementById('tabTable'),
           tabCharts=document.getElementById('tabCharts'),
-          tabSpot=document.getElementById('tabSpot');
+          tabSpot=document.getElementById('tabSpot'),
+          tabVolland=document.getElementById('tabVolland');
+
     const viewTable=document.getElementById('viewTable'),
           viewCharts=document.getElementById('viewCharts'),
-          viewSpot=document.getElementById('viewSpot');
+          viewSpot=document.getElementById('viewSpot'),
+          viewVolland=document.getElementById('viewVolland');
 
     function setActive(btn){
-      [tabTable,tabCharts,tabSpot].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabCharts,tabSpot,tabVolland].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function showTable(){ setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewSpot.style.display='none'; stopCharts(); stopSpot(); }
-    function showCharts(){ setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewSpot.style.display='none'; startCharts(); stopSpot(); }
-    function showSpot(){ setActive(tabSpot); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display=''; startSpot(); stopCharts(); }
+    function showTable(){ setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewSpot.style.display='none'; viewVolland.style.display='none'; stopCharts(); stopSpot(); stopVolland(); }
+    function showCharts(){ setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewSpot.style.display='none'; viewVolland.style.display='none'; startCharts(); stopSpot(); stopVolland(); }
+    function showSpot(){ setActive(tabSpot); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display=''; viewVolland.style.display='none'; startSpot(); stopCharts(); stopVolland(); }
+    function showVolland(){ setActive(tabVolland); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewVolland.style.display=''; startVolland(); stopCharts(); stopSpot(); }
     tabTable.addEventListener('click', showTable);
     tabCharts.addEventListener('click', showCharts);
     tabSpot.addEventListener('click', showSpot);
+    tabVolland.addEventListener('click', showVolland);
 
-    // ===== Main charts (GEX / VOL / OI stacked) =====
+    // ===== Main charts (GEX / VOL / OI) =====
     const volDiv=document.getElementById('volChart'),
           oiDiv=document.getElementById('oiChart'),
           gexDiv=document.getElementById('gexChart');
     let chartsTimer=null, firstDraw=true;
 
-    async function fetchSeries(){ return await fetchJson('/api/series'); }
+    async function fetchSeries(){
+      const r=await fetch('/api/series',{cache:'no-store'});
+      return await r.json();
+    }
 
     function verticalSpotShape(spot,yMax){
       if(spot==null) return null;
@@ -893,6 +989,7 @@ DASH_HTML_TEMPLATE = """
         yaxis:{title:yTitle,gridcolor:'#20242a',tickfont:{size:10}},
         paper_bgcolor:'#121417',
         plot_bgcolor:'#0f1115',
+        reminder:{},
         font:{color:'#e6e7e9',size:11},
         margin:{t:32,r:12,b:40,l:44},
         barmode:'group',
@@ -921,48 +1018,48 @@ DASH_HTML_TEMPLATE = """
     }
 
     async function drawOrUpdate(){
-      try{
-        const data = await fetchSeries();
-        if (!data || !data.strikes || data.strikes.length === 0) return;
+      const data = await fetchSeries();
+      if (!data || !data.strikes || data.strikes.length === 0) return;
 
-        const strikes = data.strikes, spot = data.spot;
-        const vMax = Math.max(0, ...data.callVol, ...data.putVol) * 1.05;
-        const oiMax= Math.max(0, ...data.callOI,  ...data.putOI ) * 1.05;
-        const gAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v=>Math.abs(v));
-        const gMax = (gAbs.length? Math.max(...gAbs):0) * 1.05;
+      const strikes = data.strikes, spot = data.spot;
+      const vMax = Math.max(0, ...data.callVol, ...data.putVol) * 1.05;
+      const oiMax= Math.max(0, ...data.callOI,  ...data.putOI ) * 1.05;
+      const gAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v=>Math.abs(v));
+      const gMax = (gAbs.length? Math.max(...gAbs):0) * 1.05;
 
-        const gexLayout = buildLayout('Gamma Exposure (GEX)','Strike','GEX',spot,gMax);
-        const volLayout = buildLayout('Volume','Strike','Volume',spot,vMax);
-        const oiLayout  = buildLayout('Open Interest','Strike','Open Interest',spot,oiMax);
+      const gexLayout = buildLayout('Gamma Exposure (GEX)','Strike','GEX',spot,gMax);
+      const volLayout = buildLayout('Volume','Strike','Volume',spot,vMax);
+      const oiLayout  = buildLayout('Open Interest','Strike','Open Interest',spot,oiMax);
 
-        const gexTraces = tracesForGEX(strikes, data.callGEX, data.putGEX, data.netGEX);
-        const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
-        const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
+      const gexTraces = tracesForGEX(strikes, data.callGEX, data.putGEX, data.netGEX);
+      const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
+      const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
 
-        if (firstDraw){
-          Plotly.newPlot(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
-          Plotly.newPlot(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
-          Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
-          firstDraw=false;
-        } else {
-          Plotly.react(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
-          Plotly.react(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
-          Plotly.react(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
-        }
-      } catch(e){
-        // keep UI alive
+      if (firstDraw){
+        Plotly.newPlot(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
+        Plotly.newPlot(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
+        Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
+        firstDraw=false;
+      } else {
+        Plotly.react(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
+        Plotly.react(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
+        Plotly.react(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
       }
     }
     function startCharts(){ drawOrUpdate(); if (chartsTimer) clearInterval(chartsTimer); chartsTimer=setInterval(drawOrUpdate, PULL_EVERY); }
     function stopCharts(){ if (chartsTimer){ clearInterval(chartsTimer); chartsTimer=null; } }
 
-    // ===== Spot: price + GEX/VOL with shared Y axis =====
+    // ===== Spot: your existing code expects /api/spot. If you have it elsewhere, keep it.
+    // Keeping your Spot tab as-is (no changes here).
     const spotPriceDiv=document.getElementById('spotPricePlot'),
           gexSideDiv=document.getElementById('gexSidePlot'),
           volSideDiv=document.getElementById('volSidePlot');
     let spotTimer=null;
 
-    async function fetchSpot(){ return await fetchJson('/api/spot'); }
+    async function fetchSpot(){
+      const r=await fetch('/api/spot',{cache:'no-store'});
+      return await r.json();
+    }
 
     function computeYRange(strikes, prices){
       const vals = [];
@@ -1070,14 +1167,11 @@ DASH_HTML_TEMPLATE = """
     }
 
     async function tickSpot(){
-      try{
-        const [opt, spot] = await Promise.all([fetchSeries(), fetchSpot()]);
-        const prices = (spot && Array.isArray(spot.close)) ? spot.close : [];
-        const yRange = computeYRange(opt.strikes || [], prices);
-        renderSpotPrice(spot, yRange);
-        renderSpotFromSeries(opt, yRange);
-      } catch(e){
-      }
+      const [opt, spot] = await Promise.all([fetchSeries(), fetchSpot()]);
+      const prices = (spot && Array.isArray(spot.close)) ? spot.close : [];
+      const yRange = computeYRange(opt.strikes || [], prices);
+      renderSpotPrice(spot, yRange);
+      renderSpotFromSeries(opt, yRange);
     }
 
     function startSpot(){
@@ -1087,6 +1181,120 @@ DASH_HTML_TEMPLATE = """
     }
     function stopSpot(){
       if (spotTimer){ clearInterval(spotTimer); spotTimer=null; }
+    }
+
+    // ===== Volland charts =====
+    const vollandTSDiv = document.getElementById('vollandTS');
+    const vollandStrikeDiv = document.getElementById('vollandStrike');
+    let vollandTimer = null;
+
+    async function fetchVollandSeries(){
+      const r = await fetch('/api/volland/series?limit=800', {cache:'no-store'});
+      return await r.json();
+    }
+
+    function drawVollandTS(data){
+      if (!data || data.error) {
+        const msg = data && data.error ? data.error : "no data";
+        Plotly.react(vollandTSDiv, [], {
+          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          margin:{l:40,r:10,t:10,b:30},
+          annotations:[{text:"Volland error: "+msg, x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
+          font:{color:'#e6e7e9'}
+        }, {displayModeBar:false,responsive:true});
+        return;
+      }
+      const ts = data.ts || [];
+      const series = data.series || {};
+      const keys = Object.keys(series);
+      if (!ts.length || !keys.length) {
+        Plotly.react(vollandTSDiv, [], {
+          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          margin:{l:40,r:10,t:10,b:30},
+          annotations:[{text:"No Volland series in payload yet", x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
+          font:{color:'#e6e7e9'}
+        }, {displayModeBar:false,responsive:true});
+        return;
+      }
+
+      const x = ts.map(t => new Date(t));
+      const traces = keys.slice(0, 12).map(k => ({
+        type:'scatter',
+        mode:'lines',
+        name:k,
+        x:x,
+        y:series[k],
+        hovertemplate: k + "<br>%{x}<br>%{y}<extra></extra>"
+      }));
+
+      const layout = {
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        margin:{l:50,r:10,t:10,b:34},
+        xaxis:{title:'Time', gridcolor:'#20242a', tickfont:{size:10}},
+        yaxis:{title:'Value', gridcolor:'#20242a', tickfont:{size:10}},
+        legend:{orientation:'h', y:-0.25},
+        font:{color:'#e6e7e9',size:11}
+      };
+      Plotly.react(vollandTSDiv, traces, layout, {displayModeBar:false,responsive:true});
+    }
+
+    function drawVollandByStrike(data){
+      const bs = data && data.by_strike ? data.by_strike : null;
+      if (!bs || !Array.isArray(bs.strikes) || !bs.strikes.length) {
+        Plotly.react(vollandStrikeDiv, [], {
+          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          margin:{l:40,r:10,t:10,b:30},
+          annotations:[{text:"No by-strike arrays detected in payload", x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
+          font:{color:'#e6e7e9'}
+        }, {displayModeBar:false,responsive:true});
+        return;
+      }
+      const strikes = bs.strikes;
+      // Pick a few common keys if present
+      const candidates = ["netGEX","net_gex","gex","GEX","netVanna","net_vanna","vanna","charm","netCharm","net_charm"];
+      const found = candidates.find(k => Array.isArray(bs[k]) && bs[k].length === strikes.length);
+      if (!found) {
+        Plotly.react(vollandStrikeDiv, [], {
+          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          margin:{l:40,r:10,t:10,b:30},
+          annotations:[{text:"by_strike exists but no matching arrays (same length as strikes)", x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
+          font:{color:'#e6e7e9'}
+        }, {displayModeBar:false,responsive:true});
+        return;
+      }
+
+      const trace = {
+        type:'bar',
+        name: found,
+        x: strikes,
+        y: bs[found],
+        hovertemplate:"Strike %{x}<br>"+found+": %{y}<extra></extra>"
+      };
+
+      Plotly.react(vollandStrikeDiv, [trace], {
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        margin:{l:50,r:10,t:10,b:40},
+        xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}},
+        yaxis:{title:found, gridcolor:'#20242a', tickfont:{size:10}},
+        font:{color:'#e6e7e9',size:11}
+      }, {displayModeBar:false,responsive:true});
+    }
+
+    async function tickVolland(){
+      const data = await fetchVollandSeries();
+      drawVollandTS(data);
+      drawVollandByStrike(data);
+    }
+
+    function startVolland(){
+      tickVolland();
+      if (vollandTimer) clearInterval(vollandTimer);
+      vollandTimer = setInterval(tickVolland, PULL_EVERY);
+    }
+    function stopVolland(){
+      if (vollandTimer){ clearInterval(vollandTimer); vollandTimer=null; }
     }
 
     // default

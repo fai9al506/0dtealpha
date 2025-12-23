@@ -2,7 +2,7 @@
 from fastapi import FastAPI, Response, Query, HTTPException
 from fastapi.responses import HTMLResponse
 from datetime import datetime, time as dtime
-import os, time, json, requests, pandas as pd, pytz
+import os, time, json, requests, pandas as pd, pytz, re
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
 from threading import Lock
@@ -16,6 +16,15 @@ CID     = os.getenv("TS_CLIENT_ID", "")
 SECRET  = os.getenv("TS_CLIENT_SECRET", "")
 RTOKEN  = os.getenv("TS_REFRESH_TOKEN", "")
 DB_URL  = os.getenv("DATABASE_URL", "")  # Railway Postgres
+
+def _safe_ident(name: str, default: str) -> str:
+    if not name:
+        return default
+    name = name.strip()
+    return name if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) else default
+
+# Volland table name (auto-created)
+VOLLAND_TABLE = _safe_ident(os.getenv("VOLLAND_TABLE", "volland_snapshots"), "volland_snapshots")
 
 # SQLAlchemy psycopg v3 URI
 if DB_URL.startswith("postgresql://"):
@@ -60,6 +69,17 @@ def db_init():
         );
         CREATE INDEX IF NOT EXISTS ix_chain_snapshots_ts ON chain_snapshots (ts DESC);
         """))
+
+        # Volland snapshots (generic JSON payload)
+        conn.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS {VOLLAND_TABLE} (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            payload JSONB NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_{VOLLAND_TABLE}_ts ON {VOLLAND_TABLE} (ts DESC);
+        """))
+
     print("[db] ready", flush=True)
 
 # ====== Auth ======
@@ -440,7 +460,6 @@ def on_shutdown():
         print("[sched] stopped", flush=True)
 
 # ====== API ======
-# /api/series now returns EXACTLY window strikes above + window below around spot (plus ATM)
 @app.get("/api/series")
 def api_series(window: int = Query(20, ge=1, le=200)):
     with _df_lock:
@@ -538,11 +557,113 @@ def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
 # Optional: keep spot tab alive even if you don’t implement bars yet
 @app.get("/api/spot")
 def api_spot():
-    # return empty arrays so the Spot tab JS doesn't break
     return {"time": [], "close": []}
 
-# ====== TABLE & DASHBOARD HTML TEMPLATES ======
+# ====== Volland helpers / API ======
+def _to_float(v):
+    if v is None or v == "" or v == "-" or v == "NaN":
+        return None
+    try:
+        return float(str(v).replace(",", ""))
+    except:
+        return None
 
+def _find_key(payload: dict, candidates: list[str]):
+    if not isinstance(payload, dict):
+        return None
+    for k in candidates:
+        if k in payload:
+            return k
+    lower = {str(k).lower(): k for k in payload.keys()}
+    for k in candidates:
+        lk = str(k).lower()
+        if lk in lower:
+            return lower[lk]
+    return None
+
+# aliases for whatever your scraper stored yesterday
+VOLLAND_METRICS = {
+    "dap":  ["dap","DAP","DeltaAdjustedNetPremiums","deltaAdjustedNetPremiums","delta_adjusted_net_premiums","netPremiumsDAP","net_premiums_dap"],
+    "dads": ["dads","DADS","DeltaAdjustedDealerSpread","deltaAdjustedDealerSpread","delta_adjusted_dealer_spread"],
+    "vanna": ["vanna","Vanna","VANNA","aggVanna","aggregateVanna","netVanna","net_vanna"],
+    "gamma": ["gamma","Gamma","GEX","gex","netGEX","net_gex"],
+    "charm": ["charm","Charm","netCharm","net_charm"],
+}
+
+@app.post("/api/volland/ingest")
+def volland_ingest(payload: dict):
+    if not engine:
+        raise HTTPException(status_code=500, detail="DATABASE_URL not set")
+    if not isinstance(payload, dict) or not payload:
+        raise HTTPException(status_code=400, detail="payload must be a non-empty JSON object")
+    with engine.begin() as conn:
+        conn.execute(
+            text(f"INSERT INTO {VOLLAND_TABLE} (ts, payload) VALUES (NOW(), :p)"),
+            {"p": json.dumps(payload)}
+        )
+    return {"ok": True}
+
+@app.get("/api/volland/history")
+def volland_history(limit: int = Query(500, ge=1, le=5000)):
+    if not engine:
+        return {"error": "DATABASE_URL not set"}
+    with engine.begin() as conn:
+        recs = conn.execute(
+            text(f"SELECT ts, payload FROM {VOLLAND_TABLE} ORDER BY ts DESC LIMIT :lim"),
+            {"lim": limit}
+        ).mappings().all()
+
+    out = []
+    for r in recs:
+        p = r["payload"]
+        if isinstance(p, str):
+            try:
+                p = json.loads(p)
+            except:
+                p = {}
+        out.append({"ts": r["ts"].isoformat(), "payload": p})
+    return out
+
+@app.get("/api/volland/series")
+def volland_series(
+    limit: int = Query(300, ge=10, le=5000),
+    m1: str = "dap",
+    m2: str = "dads",
+    m3: str = "vanna",
+):
+    if not engine:
+        return {"time": [], "series": {}, "metrics": [m1, m2, m3]}
+
+    metrics = [m1, m2, m3]
+    series = {m: [] for m in metrics}
+    times = []
+
+    with engine.begin() as conn:
+        recs = conn.execute(
+            text(f"SELECT ts, payload FROM {VOLLAND_TABLE} ORDER BY ts DESC LIMIT :lim"),
+            {"lim": limit}
+        ).mappings().all()
+
+    recs = list(reversed(recs))  # oldest -> newest
+
+    for r in recs:
+        ts = r["ts"].isoformat()
+        p = r["payload"]
+        if isinstance(p, str):
+            try:
+                p = json.loads(p)
+            except:
+                p = {}
+        times.append(ts)
+
+        for m in metrics:
+            cand = VOLLAND_METRICS.get(m, [m])
+            key = _find_key(p, cand)
+            series[m].append(_to_float(p.get(key)) if key else None)
+
+    return {"time": times, "series": series, "metrics": metrics}
+
+# ====== TABLE & DASHBOARD HTML TEMPLATES ======
 TABLE_HTML_TEMPLATE = """
 <html><head><meta charset="utf-8"><title>0DTE Alpha</title>
 <style>
@@ -658,6 +779,7 @@ DASH_HTML_TEMPLATE = """
       background:#0f1115;
     }
     #volChart, #oiChart, #gexChart { width:100%; height:420px; }
+    #vollandChart1, #vollandChart2, #vollandChart3 { width:100%; height:360px; }
 
     .spot-grid {
       display:grid;
@@ -698,6 +820,7 @@ DASH_HTML_TEMPLATE = """
       .panel { padding:8px; border-radius:10px; }
       iframe { height:60vh; }
       #volChart, #oiChart, #gexChart { height:340px; }
+      #vollandChart1, #vollandChart2, #vollandChart3 { height:320px; }
       .spot-grid { grid-template-columns:1fr; }
       .card { min-height:260px; }
     }
@@ -724,12 +847,14 @@ DASH_HTML_TEMPLATE = """
         <button class="btn active" id="tabTable">Table</button>
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabSpot">Spot</button>
+        <button class="btn" id="tabVolland">Volland</button>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
       <div class="small" style="margin-top:14px">
         <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> ·
         <a href="/api/history"  style="color:var(--muted)">History</a> ·
-        <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
+        <a href="/download/history.csv" style="color:var(--muted)">CSV</a><br/>
+        <a href="/api/volland/history" style="color:var(--muted)">Volland JSON</a>
       </div>
     </aside>
 
@@ -774,6 +899,19 @@ DASH_HTML_TEMPLATE = """
           </div>
         </div>
       </div>
+
+      <div id="viewVolland" class="panel" style="display:none">
+        <div class="header">
+          <div><strong>Volland</strong></div>
+          <div class="pill">reads from Postgres (auto-refresh)</div>
+        </div>
+        <div class="charts">
+          <div id="vollandChart1"></div>
+          <div id="vollandChart2"></div>
+          <div id="vollandChart3"></div>
+        </div>
+      </div>
+
     </main>
   </div>
 
@@ -783,21 +921,27 @@ DASH_HTML_TEMPLATE = """
     // Tabs
     const tabTable=document.getElementById('tabTable'),
           tabCharts=document.getElementById('tabCharts'),
-          tabSpot=document.getElementById('tabSpot');
+          tabSpot=document.getElementById('tabSpot'),
+          tabVolland=document.getElementById('tabVolland');
+
     const viewTable=document.getElementById('viewTable'),
           viewCharts=document.getElementById('viewCharts'),
-          viewSpot=document.getElementById('viewSpot');
+          viewSpot=document.getElementById('viewSpot'),
+          viewVolland=document.getElementById('viewVolland');
 
     function setActive(btn){
-      [tabTable,tabCharts,tabSpot].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabCharts,tabSpot,tabVolland].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function showTable(){ setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewSpot.style.display='none'; stopCharts(); stopSpot(); }
-    function showCharts(){ setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewSpot.style.display='none'; startCharts(); stopSpot(); }
-    function showSpot(){ setActive(tabSpot); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display=''; startSpot(); stopCharts(); }
+    function showTable(){ setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewSpot.style.display='none'; viewVolland.style.display='none'; stopCharts(); stopSpot(); stopVolland(); }
+    function showCharts(){ setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewSpot.style.display='none'; viewVolland.style.display='none'; startCharts(); stopSpot(); stopVolland(); }
+    function showSpot(){ setActive(tabSpot); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display=''; viewVolland.style.display='none'; startSpot(); stopCharts(); stopVolland(); }
+    function showVolland(){ setActive(tabVolland); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewVolland.style.display=''; startVolland(); stopCharts(); stopSpot(); }
+
     tabTable.addEventListener('click', showTable);
     tabCharts.addEventListener('click', showCharts);
     tabSpot.addEventListener('click', showSpot);
+    tabVolland.addEventListener('click', showVolland);
 
     // ===== Main charts (GEX / VOL / OI) =====
     const volDiv=document.getElementById('volChart'),
@@ -806,7 +950,6 @@ DASH_HTML_TEMPLATE = """
     let chartsTimer=null, firstDraw=true;
 
     async function fetchSeries(){
-      // window=20 => 20 strikes above + 20 below + ATM
       const r=await fetch('/api/series?window=20',{cache:'no-store'});
       return await r.json();
     }
@@ -1011,6 +1154,66 @@ DASH_HTML_TEMPLATE = """
     }
     function stopSpot(){
       if (spotTimer){ clearInterval(spotTimer); spotTimer=null; }
+    }
+
+    // ===== Volland tab =====
+    const v1=document.getElementById('vollandChart1'),
+          v2=document.getElementById('vollandChart2'),
+          v3=document.getElementById('vollandChart3');
+
+    let vollandTimer=null;
+
+    async function fetchVolland(){
+      const r=await fetch('/api/volland/series?limit=400&m1=dap&m2=dads&m3=vanna', {cache:'no-store'});
+      return await r.json();
+    }
+
+    function lineLayout(title, yTitle){
+      return {
+        title:{text:title,font:{size:14}},
+        xaxis:{title:'Time', gridcolor:'#20242a', tickfont:{size:10}},
+        yaxis:{title:yTitle, gridcolor:'#20242a', tickfont:{size:10}},
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        font:{color:'#e6e7e9',size:11},
+        margin:{t:32,r:12,b:36,l:54},
+      };
+    }
+
+    function toDates(arr){
+      return (arr || []).map(t => new Date(t));
+    }
+
+    function drawVollandChart(div, x, y, title, yTitle){
+      const trace = {
+        type:'scatter',
+        mode:'lines',
+        x:x,
+        y:y,
+        hovertemplate:'%{x}<br>%{y}<extra></extra>'
+      };
+      Plotly.react(div, [trace], lineLayout(title, yTitle), {displayModeBar:false,responsive:true});
+    }
+
+    async function tickVolland(){
+      const d = await fetchVolland();
+      if (!d || !d.time || !d.time.length) return;
+
+      const x = toDates(d.time);
+      const s = d.series || {};
+
+      drawVollandChart(v1, x, s.dap  || [], 'Volland — DAP',  'DAP');
+      drawVollandChart(v2, x, s.dads || [], 'Volland — DADS', 'DADS');
+      drawVollandChart(v3, x, s.vanna|| [], 'Volland — Vanna','Vanna');
+    }
+
+    function startVolland(){
+      tickVolland();
+      if (vollandTimer) clearInterval(vollandTimer);
+      vollandTimer = setInterval(tickVolland, PULL_EVERY);
+    }
+    function stopVolland(){
+      if (vollandTimer){ clearInterval(vollandTimer); vollandTimer=null; }
     }
 
     // default

@@ -6,7 +6,7 @@ from urllib.parse import urlparse, parse_qs
 from sqlalchemy import create_engine, text
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeoutError
 
-VERSION = "2025-12-23C"
+VERSION = "2025-12-23D"
 
 EMAIL = os.getenv("VOLLAND_EMAIL", "")
 PASSWORD = os.getenv("VOLLAND_PASSWORD", "")
@@ -125,15 +125,29 @@ def click_first_available(page, selectors, timeout_ms=8000):
         time.sleep(0.25)
     return False
 
+def is_on_workspace(page) -> bool:
+    # FIX: check PATH, not full URL (because sign-in contains redirectUri=/app/workspace in query)
+    return urlparse(page.url).path.startswith("/app/workspace/")
+
 def ensure_logged_in(page):
     page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(800)
     print(f"[login] landed url={page.url}")
 
-    if "/app/workspace/" in page.url:
-        print("[login] already authenticated")
+    if is_on_workspace(page):
+        print("[login] already authenticated (workspace page)")
         return
 
+    # If session exists, sometimes it auto-redirects after a moment
+    try:
+        page.wait_for_url("**/app/workspace/**", timeout=8000)
+    except Exception:
+        pass
+    if is_on_workspace(page):
+        print("[login] already authenticated (auto-redirect)")
+        return
+
+    # Normal login flow
     _, email_loc = find_visible_in_any_frame(page, EMAIL_SELECTORS, timeout_ms=45000)
     if not email_loc:
         raise RuntimeError(f"Email input not found. URL={page.url}")
@@ -147,17 +161,9 @@ def ensure_logged_in(page):
     if not click_first_available(page, SUBMIT_BUTTONS, timeout_ms=12000):
         pass_loc.press("Enter")
 
-    try:
-        page.wait_for_load_state("networkidle", timeout=60000)
-    except PWTimeoutError:
-        pass
-
-    if "/app/workspace/" not in page.url:
-        page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=60000)
-
+    # Wait until we truly reach workspace
+    page.wait_for_url("**/app/workspace/**", timeout=60000)
     print(f"[login] after auth url={page.url}")
-    if "/app/workspace/" not in page.url:
-        raise RuntimeError(f"Login failed. URL={page.url}")
 
 def main():
     print(f"[boot] VERSION={VERSION}")
@@ -179,10 +185,7 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=HEADLESS, args=["--no-sandbox", "--disable-dev-shm-usage"])
         context = browser.new_context()
-
-        # KEY FIX: disable cache so exposure refetches
         context.set_extra_http_headers({"Cache-Control": "no-cache"})
-
         page = context.new_page()
 
         def on_response(resp):
@@ -232,13 +235,13 @@ def main():
 
         ensure_logged_in(page)
 
-        # KEY FIX: force reload to trigger /api/v1/data/exposure again
+        # Force fresh data requests
         try:
             page.reload(wait_until="domcontentloaded", timeout=60000)
         except PWTimeoutError:
             pass
 
-        # KEY FIX: UI nudge so lazy-load triggers
+        # Small UI nudge
         try:
             page.wait_for_timeout(1200)
             page.mouse.move(400, 300)

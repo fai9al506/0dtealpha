@@ -6,7 +6,7 @@ from urllib.parse import urlparse, parse_qs
 from sqlalchemy import create_engine, text
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeoutError
 
-VERSION = "2025-12-23D"
+VERSION = "2025-12-23E"
 
 EMAIL = os.getenv("VOLLAND_EMAIL", "")
 PASSWORD = os.getenv("VOLLAND_PASSWORD", "")
@@ -14,9 +14,13 @@ WORKSPACE_URL = os.getenv("WORKSPACE_URL", "https://vol.land/app/workspace/6787a
 DB_URL = os.getenv("DATABASE_URL", "")
 
 HEADLESS = True
-CAPTURE_SECONDS_AFTER_LOAD = int(os.getenv("CAPTURE_WAIT", "60"))
+CAPTURE_WAIT_SECONDS = int(os.getenv("CAPTURE_WAIT", "60"))
 
-ONLY_CAPTURE_PATHS = ("/api/v1/data/exposure",)
+# Capture exposure endpoints (a bit flexible)
+CAPTURE_PATH_KEYWORDS = ("/api/v1/data/exposure", "/api/v1/data/expos")
+
+DEBUG_LOGIN_PNG = "/app/debug_login.png"
+DEBUG_LOGIN_HTML = "/app/debug_login.html"
 
 def normalize_db_url(db_url: str) -> str:
     if db_url.startswith("postgresql://"):
@@ -51,9 +55,11 @@ def sha256_str(s: str) -> str:
 def parse_meta_from_url(url: str):
     p = urlparse(url)
     qs = parse_qs(p.query)
+
     def one(k):
         v = qs.get(k)
         return v[0] if v else None
+
     return {
         "endpoint": p.path,
         "ticker": one("ticker"),
@@ -71,6 +77,12 @@ def to_timestamptz(value):
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except Exception:
         return None
+
+def path_of(page_url: str) -> str:
+    return urlparse(page_url).path
+
+def is_on_workspace_url(page_url: str) -> bool:
+    return path_of(page_url).startswith("/app/workspace/")
 
 EMAIL_SELECTORS = [
     'input[type="email"]',
@@ -125,44 +137,66 @@ def click_first_available(page, selectors, timeout_ms=8000):
         time.sleep(0.25)
     return False
 
-def is_on_workspace(page) -> bool:
-    # FIX: check PATH, not full URL (because sign-in contains redirectUri=/app/workspace in query)
-    return urlparse(page.url).path.startswith("/app/workspace/")
+def wait_until_workspace(page, timeout_ms=60000):
+    # STRICT: wait on pathname, not URL text (redirectUri query was tricking wait_for_url)
+    page.wait_for_function(
+        "() => location && location.pathname && location.pathname.startsWith('/app/workspace/')",
+        timeout=timeout_ms
+    )
 
 def ensure_logged_in(page):
     page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(800)
     print(f"[login] landed url={page.url}")
 
-    if is_on_workspace(page):
+    if is_on_workspace_url(page.url):
         print("[login] already authenticated (workspace page)")
         return
 
-    # If session exists, sometimes it auto-redirects after a moment
+    # If session exists, sometimes it redirects automatically (wait by pathname)
     try:
-        page.wait_for_url("**/app/workspace/**", timeout=8000)
+        wait_until_workspace(page, timeout_ms=12000)
+        print(f"[login] already authenticated (auto-redirect) url={page.url}")
+        return
     except Exception:
         pass
-    if is_on_workspace(page):
-        print("[login] already authenticated (auto-redirect)")
-        return
 
-    # Normal login flow
+    # Login form
     _, email_loc = find_visible_in_any_frame(page, EMAIL_SELECTORS, timeout_ms=45000)
     if not email_loc:
-        raise RuntimeError(f"Email input not found. URL={page.url}")
+        # Debug dump
+        page.screenshot(path=DEBUG_LOGIN_PNG, full_page=True)
+        with open(DEBUG_LOGIN_HTML, "w", encoding="utf-8") as f:
+            f.write(page.content())
+        raise RuntimeError(f"Email input not found. Saved {DEBUG_LOGIN_PNG} / {DEBUG_LOGIN_HTML}. URL={page.url}")
+
     email_loc.fill(EMAIL)
 
     _, pass_loc = find_visible_in_any_frame(page, PASS_SELECTORS, timeout_ms=30000)
     if not pass_loc:
-        raise RuntimeError(f"Password input not found. URL={page.url}")
+        page.screenshot(path=DEBUG_LOGIN_PNG, full_page=True)
+        with open(DEBUG_LOGIN_HTML, "w", encoding="utf-8") as f:
+            f.write(page.content())
+        raise RuntimeError(f"Password input not found. Saved {DEBUG_LOGIN_PNG} / {DEBUG_LOGIN_HTML}. URL={page.url}")
+
     pass_loc.fill(PASSWORD)
 
     if not click_first_available(page, SUBMIT_BUTTONS, timeout_ms=12000):
         pass_loc.press("Enter")
 
-    # Wait until we truly reach workspace
-    page.wait_for_url("**/app/workspace/**", timeout=60000)
+    # Now wait for real workspace navigation
+    try:
+        wait_until_workspace(page, timeout_ms=60000)
+    except Exception:
+        # Debug: stuck on sign-in (captcha/2FA/wrong creds/etc.)
+        page.screenshot(path=DEBUG_LOGIN_PNG, full_page=True)
+        with open(DEBUG_LOGIN_HTML, "w", encoding="utf-8") as f:
+            f.write(page.content())
+        raise RuntimeError(
+            f"Did not reach workspace after login. Still at URL={page.url}. "
+            f"Saved {DEBUG_LOGIN_PNG} / {DEBUG_LOGIN_HTML}."
+        )
+
     print(f"[login] after auth url={page.url}")
 
 def main():
@@ -176,30 +210,38 @@ def main():
     engine = create_engine(normalize_db_url(DB_URL), future=True, pool_pre_ping=True)
     ensure_table(engine)
 
-    captured = []
+    captured_rows = []
+    seen_api_paths = []  # debug list
 
     def should_capture(resp_url: str) -> bool:
         p = urlparse(resp_url)
-        return any(p.path.endswith(x) for x in ONLY_CAPTURE_PATHS)
+        return any(k in p.path for k in CAPTURE_PATH_KEYWORDS)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=HEADLESS, args=["--no-sandbox", "--disable-dev-shm-usage"])
         context = browser.new_context()
-        context.set_extra_http_headers({"Cache-Control": "no-cache"})
         page = context.new_page()
 
         def on_response(resp):
             url = resp.url
+            purl = urlparse(url)
+            if purl.path.startswith("/api/"):
+                seen_api_paths.append(purl.path)
+                if len(seen_api_paths) > 60:
+                    del seen_api_paths[:10]
+
             if not should_capture(url):
                 return
+
             try:
                 if resp.status != 200:
                     return
                 ct = (resp.headers.get("content-type") or "").lower()
                 if "application/json" not in ct:
                     return
+
                 payload = resp.json()
-                print(f"[cap] 200 {urlparse(url).path}")
+                print(f"[cap] 200 {purl.path}")
 
                 payload_str = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
                 body_hash = sha256_str(payload_str)
@@ -214,7 +256,7 @@ def main():
                 if isinstance(expirations_list, list) and expirations_list:
                     expirations_compact = ",".join(map(str, expirations_list))
 
-                captured.append({
+                captured_rows.append({
                     "ts_utc": ts_utc.isoformat(),
                     "endpoint": meta["endpoint"],
                     "ticker": meta["ticker"],
@@ -235,7 +277,7 @@ def main():
 
         ensure_logged_in(page)
 
-        # Force fresh data requests
+        # Trigger data fetches
         try:
             page.reload(wait_until="domcontentloaded", timeout=60000)
         except PWTimeoutError:
@@ -252,11 +294,21 @@ def main():
         except Exception:
             pass
 
-        time.sleep(CAPTURE_SECONDS_AFTER_LOAD)
+        # Wait for exposure responses
+        time.sleep(CAPTURE_WAIT_SECONDS)
+
         browser.close()
 
-    if not captured:
+    if not captured_rows:
         print("[capture] No /api/v1/data/exposure captured.")
+        if seen_api_paths:
+            uniq = []
+            for x in seen_api_paths:
+                if x not in uniq:
+                    uniq.append(x)
+            print("[debug] seen api paths (unique, last window):")
+            for x in uniq[-20:]:
+                print("   ", x)
         return
 
     insert_sql = """
@@ -274,13 +326,13 @@ def main():
     """
 
     with engine.begin() as conn:
-        for r in captured:
+        for r in captured_rows:
             conn.execute(
                 text(insert_sql),
                 {**r, "payload": json.dumps(r["payload"], ensure_ascii=False)},
             )
 
-    print(f"[save] captured={len(captured)} rows (dedupe enabled)")
+    print(f"[save] captured={len(captured_rows)} rows (dedupe enabled)")
 
 if __name__ == "__main__":
     main()

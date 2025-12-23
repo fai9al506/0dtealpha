@@ -1,11 +1,17 @@
 # 0DTE Alpha — live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
-from fastapi import FastAPI, Response, Query, HTTPException
+# Fixes for common “Railway not working” issues:
+# - No Python 3.10-only typing (no `pd.DataFrame | None`)
+# - DB init executes ONE statement per execute (avoids “cannot execute multiple commands”)
+# - Safer startup (won’t crash if DB missing; logs are clearer)
+
+from fastapi import FastAPI, Response, Query
 from fastapi.responses import HTMLResponse
 from datetime import datetime, time as dtime
 import os, time, json, requests, pandas as pd, pytz, re
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
 from threading import Lock
+from typing import Optional, List, Dict, Any
 
 # ====== CONFIG ======
 USE_LIVE = True
@@ -25,6 +31,7 @@ def _safe_ident(name: str, default: str) -> str:
 
 # IMPORTANT: Volland table must contain a JSONB column named payload
 VOLLAND_TABLE = _safe_ident(os.getenv("VOLLAND_TABLE", "volland_snapshots"), "volland_snapshots")
+VOLLAND_INDEX = _safe_ident(f"ix_{VOLLAND_TABLE}_ts", f"ix_{VOLLAND_TABLE}_ts")
 
 # SQLAlchemy psycopg v3 URI
 if DB_URL.startswith("postgresql://"):
@@ -47,9 +54,9 @@ VOLLAND_WINDOW = 20
 app = FastAPI()
 NY = pytz.timezone("US/Eastern")
 
-latest_df: pd.DataFrame | None = None          # table df (centered)
-latest_full_df: pd.DataFrame | None = None     # full df (for windowed API)
-last_run_status = {"ts": None, "ok": False, "msg": "boot"}
+latest_df: Optional[pd.DataFrame] = None          # table df (centered)
+latest_full_df: Optional[pd.DataFrame] = None     # full df (for windowed API)
+last_run_status: Dict[str, Any] = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
 _df_lock = Lock()
 
@@ -61,34 +68,37 @@ def db_init():
         print("[db] DATABASE_URL missing; history disabled", flush=True)
         return
     with engine.begin() as conn:
+        # IMPORTANT: one statement per execute (prevents multi-statement execute errors)
         conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS chain_snapshots (
-            id BIGSERIAL PRIMARY KEY,
-            ts TIMESTAMPTZ NOT NULL,
-            exp DATE,
-            spot DOUBLE PRECISION,
-            columns JSONB NOT NULL,
-            rows JSONB NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS ix_chain_snapshots_ts ON chain_snapshots (ts DESC);
+            CREATE TABLE IF NOT EXISTS chain_snapshots (
+                id BIGSERIAL PRIMARY KEY,
+                ts TIMESTAMPTZ NOT NULL,
+                exp DATE,
+                spot DOUBLE PRECISION,
+                columns JSONB NOT NULL,
+                rows JSONB NOT NULL
+            )
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_chain_snapshots_ts ON chain_snapshots (ts DESC)
         """))
 
-        # Volland snapshots (generic JSON payload)
-        # payload must be JSONB and contain Volland values (DAP/DADS/strike-series...etc)
         conn.execute(text(f"""
-        CREATE TABLE IF NOT EXISTS {VOLLAND_TABLE} (
-            id BIGSERIAL PRIMARY KEY,
-            ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            payload JSONB NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS ix_{VOLLAND_TABLE}_ts ON {VOLLAND_TABLE} (ts DESC);
+            CREATE TABLE IF NOT EXISTS {VOLLAND_TABLE} (
+                id BIGSERIAL PRIMARY KEY,
+                ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                payload JSONB NOT NULL
+            )
+        """))
+        conn.execute(text(f"""
+            CREATE INDEX IF NOT EXISTS {VOLLAND_INDEX} ON {VOLLAND_TABLE} (ts DESC)
         """))
 
     print("[db] ready", flush=True)
 
 # ====== Auth ======
 REFRESH_EARLY_SEC = 300
-_access_token = None
+_access_token: Optional[str] = None
 _access_exp_at = 0.0
 _refresh_token = RTOKEN or ""
 
@@ -103,6 +113,7 @@ def ts_access_token() -> str:
         return _access_token
     if not (CID and SECRET and _refresh_token):
         raise RuntimeError("Missing env: TS_CLIENT_ID / TS_CLIENT_SECRET / TS_REFRESH_TOKEN")
+
     r = requests.post(
         f"{AUTH_DOMAIN}/oauth/token",
         data={
@@ -123,12 +134,14 @@ def ts_access_token() -> str:
     print("[auth] token refreshed; expires_in:", tok.get("expires_in"), flush=True)
     return _access_token
 
-def api_get(path, params=None, stream=False, timeout=10):
+def api_get(path: str, params: Optional[dict]=None, stream: bool=False, timeout: int=10):
     def do_req(h):
         return requests.get(f"{BASE}{path}", headers=h, params=params or {}, timeout=timeout, stream=stream)
+
     token = ts_access_token()
     headers = {"Authorization": f"Bearer {token}"}
     r = do_req(headers)
+
     if r.status_code == 401:
         try:
             _ = ts_access_token()
@@ -136,10 +149,12 @@ def api_get(path, params=None, stream=False, timeout=10):
             r = do_req(headers)
         except Exception:
             pass
+
     if stream:
         if r.status_code != 200:
             raise RuntimeError(f"STREAM {path} [{r.status_code}] {r.text[:300]}")
         return r
+
     if r.status_code >= 400:
         raise RuntimeError(f"GET {path} [{r.status_code}] {r.text[:300]}")
     return r
@@ -197,8 +212,9 @@ def _fnum(x):
     except:
         return None
 
-def _consume_chain_stream(r, max_seconds: float) -> list[dict]:
-    out, start = [], time.time()
+def _consume_chain_stream(r, max_seconds: float) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    start = time.time()
     try:
         for line in r.iter_lines(decode_unicode=True):
             if not line:
@@ -222,7 +238,7 @@ def _consume_chain_stream(r, max_seconds: float) -> list[dict]:
             pass
     return out
 
-def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
+def get_chain_rows(exp_ymd: str, spot: float) -> List[Dict[str, Any]]:
     params_stream = {
         "spreadType": "Single",
         "enableGreeks": "true",
@@ -315,7 +331,7 @@ DISPLAY_COLS = [
     "LAST","ASK","ASK QTY","BID","BID QTY","Delta","Gamma","IV","Open Int","Volume"
 ]
 
-def to_side_by_side(rows: list[dict]) -> pd.DataFrame:
+def to_side_by_side(rows: List[Dict[str, Any]]) -> pd.DataFrame:
     calls, puts = {}, {}
     for r in rows:
         if r.get("Strike") is None:
@@ -394,7 +410,7 @@ def run_market_job():
 
     except Exception as e:
         last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}
-        print("[pull] ERROR", e, flush=True)
+        print("[pull] ERROR", repr(e), flush=True)
 
 def save_history_job():
     global _last_saved_at
@@ -410,6 +426,7 @@ def save_history_job():
         df = df_copy
         df.columns = DISPLAY_COLS
         payload = {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
+
         msg = (last_run_status.get("msg") or "")
         spot = None; exp  = None
         try:
@@ -418,17 +435,20 @@ def save_history_job():
             exp  = parts.get("exp")
         except:
             pass
+
         with engine.begin() as conn:
             conn.execute(
                 text("INSERT INTO chain_snapshots (ts, exp, spot, columns, rows) VALUES (:ts, :exp, :spot, :columns, :rows)"),
-                {"ts": now_et(), "exp": exp, "spot": spot,
-                 "columns": json.dumps(payload["columns"]),
-                 "rows": json.dumps(payload["rows"])}
+                {
+                    "ts": now_et(), "exp": exp, "spot": spot,
+                    "columns": json.dumps(payload["columns"]),
+                    "rows": json.dumps(payload["rows"]),
+                }
             )
         _last_saved_at = time.time()
         print("[save] snapshot inserted", flush=True)
     except Exception as e:
-        print("[save] failed:", e, flush=True)
+        print("[save] failed:", repr(e), flush=True)
 
 def start_scheduler():
     sch = BackgroundScheduler(timezone="US/Eastern")
@@ -442,17 +462,22 @@ REQUIRED_ENVS = ["TS_CLIENT_ID","TS_CLIENT_SECRET","TS_REFRESH_TOKEN","DATABASE_
 def missing_envs():
     return [k for k in REQUIRED_ENVS if not os.getenv(k)]
 
-scheduler: BackgroundScheduler | None = None
+scheduler: Optional[BackgroundScheduler] = None
 
 @app.on_event("startup")
 def on_startup():
     miss = missing_envs()
     if miss:
         print("[env] missing:", miss, flush=True)
+
     if engine:
-        db_init()
+        try:
+            db_init()
+        except Exception as e:
+            print("[db] init failed:", repr(e), flush=True)
     else:
         print("[db] engine not created (no DATABASE_URL)", flush=True)
+
     global scheduler
     scheduler = start_scheduler()
 
@@ -558,7 +583,6 @@ def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
     csv = df.to_csv(index=False)
     return Response(csv, media_type="text/csv", headers={"Content-Disposition":"attachment; filename=history.csv"})
 
-# Optional: keep spot tab alive even if you don’t implement bars yet
 @app.get("/api/spot")
 def api_spot():
     return {"time": [], "close": []}
@@ -579,14 +603,9 @@ def _looks_like_json_array(s: str) -> bool:
     return t.startswith("[") and ("\"x\"" in t or "'x'" in t) and ("\"y\"" in t or "'y'" in t)
 
 def _xy_from_value(val):
-    """
-    Return list of dicts [{"x":..., "y":...}, ...] if val contains x/y pairs.
-    Accepts: list[dict], or JSON string that parses to list[dict].
-    """
     if val is None:
         return None
 
-    # already a list
     if isinstance(val, list):
         good = []
         for it in val:
@@ -594,7 +613,6 @@ def _xy_from_value(val):
                 good.append(it)
         return good if good else None
 
-    # JSON string
     if isinstance(val, str) and _looks_like_json_array(val):
         try:
             parsed = json.loads(val)
@@ -610,22 +628,15 @@ def _xy_from_value(val):
     return None
 
 def _find_xy_series(payload: dict, metric_hint: str):
-    """
-    Search inside payload (recursively) for a series of x/y pairs.
-    Priority:
-      1) keys that contain metric_hint
-      2) any x/y list anywhere
-    """
     hint = (metric_hint or "").lower().strip()
     best = None
 
-    def walk(node, path_key=""):
+    def walk(node):
         nonlocal best
         if best is not None:
             return
 
         if isinstance(node, dict):
-            # first pass: keys matching hint
             if hint:
                 for k, v in node.items():
                     if hint in str(k).lower():
@@ -633,15 +644,13 @@ def _find_xy_series(payload: dict, metric_hint: str):
                         if xy:
                             best = xy
                             return
-            # second pass: any direct x/y list under any key
-            for k, v in node.items():
+            for _, v in node.items():
                 xy = _xy_from_value(v)
                 if xy:
                     best = xy
                     return
-            # recurse
-            for k, v in node.items():
-                walk(v, str(k))
+            for _, v in node.items():
+                walk(v)
 
         elif isinstance(node, list):
             xy = _xy_from_value(node)
@@ -649,15 +658,12 @@ def _find_xy_series(payload: dict, metric_hint: str):
                 best = xy
                 return
             for it in node:
-                walk(it, path_key)
-
-        else:
-            return
+                walk(it)
 
     walk(payload)
     return best
 
-def _window_around_spot_xy(xy_list: list[dict], spot: float, window: int):
+def _window_around_spot_xy(xy_list, spot: float, window: int):
     pts = []
     for it in xy_list:
         sx = _to_float(it.get("x"))
@@ -671,14 +677,12 @@ def _window_around_spot_xy(xy_list: list[dict], spot: float, window: int):
         return [], []
 
     if not spot:
-        # fallback: just take middle window
         mid = len(pts) // 2
         lo = max(0, mid - window)
         hi = min(len(pts), mid + window + 1)
         sel = pts[lo:hi]
         return [p[0] for p in sel], [p[1] for p in sel]
 
-    # nearest strike to spot
     idx = min(range(len(pts)), key=lambda i: abs(pts[i][0] - spot))
     lo = max(0, idx - window)
     hi = min(len(pts), idx + window + 1)
@@ -714,7 +718,6 @@ def volland_strike_series(
 
     spot = _spot_from_status()
     if spot is None:
-        # optional fallback (avoid extra TS calls if you don't want)
         try:
             spot = get_spx_last()
         except:
@@ -723,7 +726,6 @@ def volland_strike_series(
     xs, ys = _window_around_spot_xy(xy, float(spot) if spot else 0.0, int(window))
     return {"strikes": xs, "values": ys, "metric": metric, "spot": spot, "ts": rec["ts"].isoformat()}
 
-# keep this if you want to inspect raw data
 @app.get("/api/volland/latest")
 def volland_latest():
     if not engine:
@@ -821,7 +823,6 @@ DASH_HTML_TEMPLATE = """
       font-size:12px;
     }
     .btn.active { background:#121a2e; border-color:#2a3a57; }
-
     .content { padding: 14px 16px; }
     .panel {
       background: var(--panel);
@@ -847,24 +848,12 @@ DASH_HTML_TEMPLATE = """
       color:var(--muted);
     }
     .charts { display:flex; flex-direction:column; gap:18px; }
-    iframe {
-      width:100%;
-      height: calc(100vh - 190px);
-      border:0;
-      background:#0f1115;
-    }
+    iframe { width:100%; height: calc(100vh - 190px); border:0; background:#0f1115; }
     #volChart, #oiChart, #gexChart { width:100%; height:420px; }
     #vollandStrikeChart { width:100%; height:520px; }
-
     @media (max-width: 900px) {
       .layout { display:block; min-height:0; }
-      .sidebar {
-        position:static;
-        height:auto;
-        border-right:none;
-        border-bottom:1px solid var(--border);
-        padding:10px 10px 6px;
-      }
+      .sidebar { position:static; height:auto; border-right:none; border-bottom:1px solid var(--border); padding:10px 10px 6px; }
       .status { margin-bottom:8px; }
       .nav { grid-auto-flow:column; grid-auto-columns:1fr; overflow-x:auto; }
       .btn { text-align:center; padding:7px 5px; font-size:11px; white-space:nowrap; }
@@ -935,14 +924,12 @@ DASH_HTML_TEMPLATE = """
         </div>
         <div id="vollandStrikeChart"></div>
       </div>
-
     </main>
   </div>
 
   <script>
     const PULL_EVERY = __PULL_MS__;
 
-    // Tabs
     const tabTable=document.getElementById('tabTable'),
           tabCharts=document.getElementById('tabCharts'),
           tabVolland=document.getElementById('tabVolland');
@@ -963,7 +950,7 @@ DASH_HTML_TEMPLATE = """
     tabCharts.addEventListener('click', showCharts);
     tabVolland.addEventListener('click', showVolland);
 
-    // ===== Main charts (GEX / VOL / OI) =====
+    // ===== Main charts =====
     const volDiv=document.getElementById('volChart'),
           oiDiv=document.getElementById('oiChart'),
           gexDiv=document.getElementById('gexChart');
@@ -996,21 +983,16 @@ DASH_HTML_TEMPLATE = """
 
     function tracesForBars(strikes,callArr,putArr,yLabel){
       return [
-        {type:'bar', name:'Calls '+yLabel, x:strikes, y:callArr, marker:{color:'#22c55e'}, offsetgroup:'calls',
-         hovertemplate:"Strike %{x}<br>Calls: %{y}<extra></extra>"},
-        {type:'bar', name:'Puts '+yLabel,  x:strikes, y:putArr,  marker:{color:'#ef4444'}, offsetgroup:'puts',
-         hovertemplate:"Strike %{x}<br>Puts: %{y}<extra></extra>"}
+        {type:'bar', name:'Calls '+yLabel, x:strikes, y:callArr, marker:{color:'#22c55e'}, offsetgroup:'calls'},
+        {type:'bar', name:'Puts '+yLabel,  x:strikes, y:putArr,  marker:{color:'#ef4444'}, offsetgroup:'puts'}
       ];
     }
 
     function tracesForGEX(strikes,callGEX,putGEX,netGEX){
       return [
-        {type:'bar', name:'Call GEX', x:strikes, y:callGEX, marker:{color:'#22c55e'}, offsetgroup:'call_gex',
-         hovertemplate:"Strike %{x}<br>Call GEX: %{y:.2f}<extra></extra>"},
-        {type:'bar', name:'Put GEX',  x:strikes, y:putGEX,  marker:{color:'#ef4444'}, offsetgroup:'put_gex',
-         hovertemplate:"Strike %{x}<br>Put GEX: %{y:.2f}<extra></extra>"},
-        {type:'bar', name:'Net GEX',  x:strikes, y:netGEX, marker:{color:'#60a5fa'}, offsetgroup:'net_gex', opacity:0.85,
-         hovertemplate:"Strike %{x}<br>Net GEX: %{y:.2f}<extra></extra>"}
+        {type:'bar', name:'Call GEX', x:strikes, y:callGEX, marker:{color:'#22c55e'}, offsetgroup:'call_gex'},
+        {type:'bar', name:'Put GEX',  x:strikes, y:putGEX,  marker:{color:'#ef4444'}, offsetgroup:'put_gex'},
+        {type:'bar', name:'Net GEX',  x:strikes, y:netGEX, marker:{color:'#60a5fa'}, offsetgroup:'net_gex', opacity:0.85}
       ];
     }
 
@@ -1022,7 +1004,6 @@ DASH_HTML_TEMPLATE = """
 
       const vMax = Math.max(0, ...data.callVol, ...data.putVol) * 1.05;
       const oiMax= Math.max(0, ...data.callOI,  ...data.putOI ) * 1.05;
-
       const gAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v=>Math.abs(v));
       const gMax = (gAbs.length? Math.max(...gAbs):0) * 1.05;
 
@@ -1048,19 +1029,17 @@ DASH_HTML_TEMPLATE = """
     function startCharts(){ drawOrUpdate(); if (chartsTimer) clearInterval(chartsTimer); chartsTimer=setInterval(drawOrUpdate, PULL_EVERY); }
     function stopCharts(){ if (chartsTimer){ clearInterval(chartsTimer); chartsTimer=null; } }
 
-    // ===== Volland strike chart (ONLY) =====
+    // ===== Volland strike chart =====
     const vollandDiv = document.getElementById('vollandStrikeChart');
     let vollandTimer=null;
     let vollandFirst=true;
 
     function lineSpotOnX(spot, yMin, yMax){
       if(spot==null) return [];
-      return [{type:'line', x0:spot, x1:spot, y0:yMin, y1:yMax, xref:'x', yref:'y',
-               line:{color:'#9aa0a6', width:2, dash:'dot'}}];
+      return [{type:'line', x0:spot, x1:spot, y0:yMin, y1:yMax, xref:'x', yref:'y', line:{color:'#9aa0a6', width:2, dash:'dot'}}];
     }
 
     async function fetchVollandStrike(){
-      // metric can be changed later; default vanna
       const r = await fetch('/api/volland/strike_series?metric=vanna&window=20', {cache:'no-store'});
       return await r.json();
     }
@@ -1072,12 +1051,11 @@ DASH_HTML_TEMPLATE = """
       const spot    = d.spot ?? null;
 
       if (!strikes.length || !values.length){
-        const msg = (d && d.error) ? d.error : 'no data';
         Plotly.react(vollandDiv, [], {
-          title:{text:'Volland — Vanna (strike series) — ' + msg, font:{size:14}},
+          title:{text:'Volland — Vanna by Strike (no data)', font:{size:14}},
           paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
           font:{color:'#e6e7e9',size:11},
-          margin:{t:40,r:12,b:40,l:54},
+          margin:{t:36,r:12,b:44,l:54},
           xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}},
           yaxis:{title:'Vanna',  gridcolor:'#20242a', tickfont:{size:10}}
         }, {displayModeBar:false,responsive:true});
@@ -1085,24 +1063,14 @@ DASH_HTML_TEMPLATE = """
       }
 
       let yMin = Math.min(...values), yMax = Math.max(...values);
-      if (yMin === yMax){
-        const pad0 = Math.max(1, Math.abs(yMin)*0.001);
-        yMin -= pad0; yMax += pad0;
-      }
+      if (yMin === yMax){ yMin -= 1; yMax += 1; }
       const pad = (yMax - yMin) * 0.06 || 1;
       yMin -= pad; yMax += pad;
 
-      const trace = {
-        type:'bar',
-        x: strikes,
-        y: values,
-        hovertemplate:'Strike %{x}<br>Vanna %{y}<extra></extra>'
-      };
-
+      const trace = { type:'bar', x: strikes, y: values };
       const layout = {
         title:{text:'Volland — Vanna by Strike', font:{size:14}},
-        paper_bgcolor:'#121417',
-        plot_bgcolor:'#0f1115',
+        paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
         font:{color:'#e6e7e9',size:11},
         margin:{t:36,r:12,b:44,l:54},
         xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}, dtick:5},
@@ -1118,14 +1086,8 @@ DASH_HTML_TEMPLATE = """
       }
     }
 
-    function startVolland(){
-      tickVolland();
-      if (vollandTimer) clearInterval(vollandTimer);
-      vollandTimer = setInterval(tickVolland, PULL_EVERY);
-    }
-    function stopVolland(){
-      if (vollandTimer){ clearInterval(vollandTimer); vollandTimer=null; }
-    }
+    function startVolland(){ tickVolland(); if (vollandTimer) clearInterval(vollandTimer); vollandTimer=setInterval(tickVolland, PULL_EVERY); }
+    function stopVolland(){ if (vollandTimer){ clearInterval(vollandTimer); vollandTimer=null; } }
 
     // default
     showTable();
@@ -1134,7 +1096,6 @@ DASH_HTML_TEMPLATE = """
 </html>
 """
 
-# ====== TABLE ENDPOINT ======
 @app.get("/table")
 def html_table():
     ts  = last_run_status.get("ts") or ""
@@ -1150,13 +1111,12 @@ def html_table():
     if df_src is None or df_src.empty:
         body_html = "<p>No data yet. If market is open, it will appear within ~30s.</p>"
     else:
-        base = df_src
         wanted = [
             "C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Last",
             "Strike",
             "P_Last","P_Delta","P_Gamma","P_IV","P_OpenInterest","P_Volume",
         ]
-        df = base[wanted].copy()
+        df = df_src[wanted].copy()
         df.columns = [
             "Volume","Open Int","IV","Gamma","Delta","LAST",
             "Strike",
@@ -1202,7 +1162,6 @@ def html_table():
             .replace("__PULL_MS__", str(PULL_EVERY * 1000)))
     return Response(content=html, media_type="text/html")
 
-# ====== DASHBOARD ENDPOINT ======
 @app.get("/", response_class=HTMLResponse)
 def spxw_dashboard():
     open_now = market_open_now()

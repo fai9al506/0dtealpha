@@ -1,5 +1,4 @@
-# volland_worker.py
-import os, json, time, traceback, base64, re
+import os, json, time, traceback, re
 from datetime import datetime, timezone
 
 import psycopg
@@ -12,12 +11,10 @@ DB_URL   = os.getenv("DATABASE_URL", "")
 EMAIL    = os.getenv("VOLLAND_EMAIL", "")
 PASS     = os.getenv("VOLLAND_PASSWORD", "")
 URL      = os.getenv("VOLLAND_URL", "")  # workspace URL
-PULL_EVERY = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "60"))
 
-# sniff network for JSON responses (chart data usually comes as JSON)
-SNIFF_SECONDS     = float(os.getenv("VOLLAND_SNIFF_SECONDS", "10"))   # how long to watch responses after page load
-MAX_JSON_KB       = int(os.getenv("VOLLAND_MAX_JSON_KB", "900"))      # skip huge JSON
-LOG_MATCHED_URLS  = os.getenv("VOLLAND_LOG_MATCHED_URLS", "1") == "1" # print matched JSON URLs
+PULL_EVERY     = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "60"))
+SNIFF_SECONDS  = float(os.getenv("VOLLAND_SNIFF_SECONDS", "8"))   # request logging window
+MAX_POINTS     = int(os.getenv("VOLLAND_MAX_POINTS", "6000"))     # safety cap
 
 
 # ========= DB =========
@@ -40,19 +37,13 @@ def save_snapshot(payload: dict):
         cur.execute("INSERT INTO volland_snapshots(payload) VALUES (%s::jsonb)", (json.dumps(payload),))
 
 
-# ========= LOGIN HELPERS =========
+# ========= LOGIN =========
 def handle_session_limit_modal(page) -> bool:
-    """
-    Volland supports 2 active sessions. On a 3rd device, a confirmation modal appears.
-    We must click Continue.
-    """
     btn = page.locator(
         "button[data-cy='confirmation-modal-confirm-button'], button:has-text('Continue')"
     ).first
-
     if btn.count() == 0:
         return False
-
     try:
         btn.wait_for(state="visible", timeout=3000)
         btn.click()
@@ -70,7 +61,6 @@ def login_if_needed(page):
     if "/sign-in" not in page.url and page.locator("input[name='password'], input[type='password']").count() == 0:
         return
 
-    # wait for login inputs (Volland email is type=text with data-cy)
     email_box = page.locator("input[data-cy='sign-in-email-input'], input[name='email']").first
     pwd_box   = page.locator("input[data-cy='sign-in-password-input'], input[name='password'], input[type='password']").first
 
@@ -85,144 +75,197 @@ def login_if_needed(page):
     ).first
     submit.click()
 
-    # modal may appear immediately or slightly later
     handle_session_limit_modal(page)
 
-    # SPA login: poll until we leave /sign-in
     deadline = time.time() + 90
     while time.time() < deadline:
         handle_session_limit_modal(page)
-
         if "/sign-in" not in page.url:
             return
-
         page.wait_for_timeout(500)
 
-    page.screenshot(path="debug_login_timeout.png", full_page=True)
+    # still on sign-in
     body = ""
     try:
-        body = (page.locator("body").inner_text() or "")[:500]
+        body = (page.locator("body").inner_text() or "")[:600]
     except Exception:
         pass
-    raise RuntimeError(f"Login did not redirect after 90s. Still on: {page.url}. Body: {body}")
+    raise RuntimeError(f"Login did not complete. Still on: {page.url}. Body: {body}")
 
 
-# ========= NETWORK SNIFFING (REAL DATA) =========
-def _safe_json_from_response(resp):
-    try:
-        ct = (resp.headers.get("content-type") or "").lower()
-    except Exception:
-        ct = ""
-    if "application/json" not in ct and "json" not in ct:
-        return None
+# ========= REQUEST URL SNIFF (to discover hidden endpoints) =========
+def sniff_request_urls(page, seconds: float):
+    urls = []
 
-    try:
-        data = resp.json()
-    except Exception:
-        return None
-
-    # estimate size to avoid saving huge payloads
-    try:
-        raw = json.dumps(data, ensure_ascii=False)
-        kb = len(raw.encode("utf-8")) / 1024.0
-    except Exception:
-        kb = 0
-        raw = None
-
-    if raw is None:
-        return None
-    if kb > MAX_JSON_KB:
-        return None
-
-    return data
-
-def _score_json(obj) -> int:
-    """
-    Heuristic scoring: prefer objects that look like chart series payloads.
-    """
-    score = 0
-    s = json.dumps(obj, ensure_ascii=False).lower()
-
-    # common chart-ish words
-    for w in ["series", "data", "points", "xaxis", "yaxis", "categories", "tooltip", "highcharts", "echarts"]:
-        if w in s:
-            score += 2
-
-    # Volland-ish words
-    for w in ["exposure", "gamma", "vanna", "charm", "dealer", "hedg", "notional", "puts", "calls", "spx", "spot", "strike", "expiration", "expiry"]:
-        if w in s:
-            score += 2
-
-    # numeric density hint
-    score += min(20, s.count("[") + s.count("{"))
-
-    return score
-
-def capture_chart_json(page, sniff_seconds: float):
-    """
-    Listen to network responses and capture likely JSON used to render charts.
-    Returns list of captured items (best-first).
-    """
-    captured = []
-
-    def on_response(resp):
+    def on_req(req):
         try:
-            url = resp.url
-            if resp.status != 200:
+            u = req.url
+            # ignore noise
+            if any(x in u for x in ("sentry.io", "gleap.io", "googletagmanager", "google-analytics")):
                 return
-
-            data = _safe_json_from_response(resp)
-            if data is None:
-                return
-
-            sc = _score_json(data)
-
-            item = {
-                "url": url,
-                "status": resp.status,
-                "score": sc,
-                "json": data
-            }
-            captured.append(item)
-
-            if LOG_MATCHED_URLS:
-                print(f"[sniff] json captured score={sc} url={url}")
-
+            # keep likely relevant
+            if ("vol.land" in u) or ("graphql" in u) or ("/api/" in u) or ("ws" in u):
+                urls.append({"url": u, "type": req.resource_type})
         except Exception:
             return
 
-    page.on("response", on_response)
+    page.on("request", on_req)
 
-    # Let responses arrive
-    end = time.time() + sniff_seconds
+    end = time.time() + seconds
     while time.time() < end:
-        page.wait_for_timeout(250)
+        page.wait_for_timeout(200)
 
-    # stop listening (avoid memory growth)
     try:
-        page.remove_listener("response", on_response)
+        page.remove_listener("request", on_req)
     except Exception:
         pass
 
-    # sort best-first
-    captured.sort(key=lambda x: x["score"], reverse=True)
-
-    # keep top 5
-    return captured[:5]
-
-
-# ========= FALLBACK TEXT (NOT REAL VALUES, but helps debugging) =========
-def extract_accessible_chart_text(page) -> str:
-    try:
-        page.wait_for_timeout(1000)
-        # often the chart accessibility text is in body; keep it short
-        txt = (page.locator("body").inner_text() or "")
-        return txt[:20000]
-    except Exception:
-        return ""
+    # de-dupe preserve order
+    seen = set()
+    out = []
+    for item in urls:
+        if item["url"] in seen:
+            continue
+        seen.add(item["url"])
+        out.append(item)
+        if len(out) >= 200:
+            break
+    return out
 
 
-# ========= MAIN LOOP =========
+# ========= REAL DATA (read from chart library objects) =========
+def extract_chart_series_js(page):
+    """
+    Try to extract real series points from Highcharts or ECharts objects.
+    Returns dict: {highcharts, echarts, series:[...], meta:{...}}
+    """
+    js = r"""
+() => {
+  const out = { highcharts:false, echarts:false, series:[], meta:{} };
+
+  // --- Highcharts ---
+  try {
+    if (window.Highcharts && window.Highcharts.charts) {
+      out.highcharts = true;
+      const charts = window.Highcharts.charts.filter(Boolean);
+      out.meta.highcharts_charts = charts.length;
+
+      charts.forEach((c, ci) => {
+        (c.series || []).forEach((s, si) => {
+          const ptsRaw = (s.points && s.points.length) ? s.points : (s.data || []);
+          const pts = [];
+
+          for (const p of ptsRaw) {
+            const x = (p && p.x !== undefined) ? p.x : (p && p.category !== undefined ? p.category : undefined);
+            const y = (p && p.y !== undefined) ? p.y : (p && p.value !== undefined ? p.value : undefined);
+            if (x !== undefined && y !== undefined && y !== null) pts.push([x, y]);
+          }
+
+          if (pts.length) {
+            out.series.push({
+              lib: "highcharts",
+              chart_index: ci,
+              series_index: si,
+              name: s.name || "",
+              type: s.type || "",
+              points: pts
+            });
+          }
+        });
+      });
+    }
+  } catch (e) {
+    out.meta.highcharts_error = String(e);
+  }
+
+  // --- ECharts ---
+  try {
+    if (window.echarts) {
+      out.echarts = true;
+
+      const insts = [];
+      // try common containers
+      const candidates = Array.from(document.querySelectorAll("div, canvas, svg"));
+      for (const el of candidates) {
+        try {
+          const inst = window.echarts.getInstanceByDom(el);
+          if (inst) insts.push(inst);
+        } catch (e) {}
+      }
+      out.meta.echarts_instances = insts.length;
+
+      insts.forEach((inst, ci) => {
+        try {
+          const opt = inst.getOption();
+          const sers = (opt && opt.series) ? opt.series : [];
+          sers.forEach((s, si) => {
+            const data = s.data || [];
+            const pts = [];
+
+            for (const p of data) {
+              if (Array.isArray(p) && p.length >= 2) {
+                pts.push([p[0], p[1]]);
+              } else if (p && typeof p === "object") {
+                const x = (p.name !== undefined) ? p.name : (p.x !== undefined ? p.x : undefined);
+                const y = (p.value !== undefined) ? p.value : (p.y !== undefined ? p.y : undefined);
+                if (x !== undefined && y !== undefined) pts.push([x, y]);
+              }
+            }
+
+            if (pts.length) {
+              out.series.push({
+                lib: "echarts",
+                chart_index: ci,
+                series_index: si,
+                name: s.name || "",
+                type: s.type || "",
+                points: pts
+              });
+            }
+          });
+        } catch (e) {
+          out.meta.echarts_error = String(e);
+        }
+      });
+    }
+  } catch (e) {
+    out.meta.echarts_error2 = String(e);
+  }
+
+  // diagnostics
+  try { out.meta.svg_paths = document.querySelectorAll("svg path").length; } catch(e) {}
+  try { out.meta.svg_count = document.querySelectorAll("svg").length; } catch(e) {}
+
+  return out;
+}
+"""
+    return page.evaluate(js)
+
+
+def cap_series_points(series_list, max_points: int):
+    """
+    Cap total points to avoid huge DB rows.
+    """
+    total = 0
+    out = []
+    for s in series_list:
+        pts = s.get("points", [])
+        if not pts:
+            continue
+        remaining = max_points - total
+        if remaining <= 0:
+            break
+        if len(pts) > remaining:
+            s = dict(s)
+            s["points"] = pts[:remaining]
+            out.append(s)
+            total += remaining
+            break
+        out.append(s)
+        total += len(pts)
+    return out, total
+
+
 def run():
     if not DB_URL or not EMAIL or not PASS or not URL:
         raise RuntimeError("Missing env vars: DATABASE_URL / VOLLAND_EMAIL / VOLLAND_PASSWORD / VOLLAND_URL")
@@ -237,52 +280,35 @@ def run():
         page = browser.new_page(viewport={"width": 1400, "height": 900})
         page.set_default_timeout(90000)
 
-        # login once
         login_if_needed(page)
 
         while True:
             try:
-                # open workspace
                 page.goto(URL, wait_until="domcontentloaded", timeout=120000)
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(2500)
 
-                # if kicked to sign-in, log in again
                 if "/sign-in" in page.url:
                     login_if_needed(page)
                     page.goto(URL, wait_until="domcontentloaded", timeout=120000)
-                    page.wait_for_timeout(2000)
+                    page.wait_for_timeout(2500)
 
-                # sniff real JSON used by charts
-                chart_json = capture_chart_json(page, sniff_seconds=SNIFF_SECONDS)
+                # 1) log request URLs (to find hidden API)
+                req_urls = sniff_request_urls(page, seconds=SNIFF_SECONDS)
 
-                # fallback “text” (for debugging only)
-                raw_text = extract_accessible_chart_text(page)
+                # 2) extract real series from JS objects
+                series_pack = extract_chart_series_js(page)
+                series_pack["series"], total_pts = cap_series_points(series_pack.get("series", []), MAX_POINTS)
 
                 payload = {
                     "ts_utc": datetime.now(timezone.utc).isoformat(),
                     "page_url": page.url,
-                    "sniff": {
-                        "seconds": SNIFF_SECONDS,
-                        "count": len(chart_json),
-                        "top_urls": [c["url"] for c in chart_json[:3]],
-                        "top_scores": [c["score"] for c in chart_json[:3]],
-                    },
-                    # ✅ this is what you want: real JSON the site fetched (best candidates)
-                    "chart_json": chart_json,   # contains [{"url","score","json"}, ...]
-                    # debug text (axis labels etc.)
-                    "raw_text": raw_text[:4000],
+                    "request_urls_sample": req_urls[:60],
+                    "chart_series": series_pack,   # ✅ THIS is what we want (points!)
+                    "points_total": total_pts,
                 }
 
                 save_snapshot(payload)
-
-                print(
-                    "[volland] saved",
-                    payload["ts_utc"],
-                    "json_count=",
-                    len(chart_json),
-                    "top_score=",
-                    (chart_json[0]["score"] if chart_json else None)
-                )
+                print("[volland] saved", payload["ts_utc"], "series=", len(series_pack.get("series", [])), "pts=", total_pts)
 
             except Exception as e:
                 err_payload = {
@@ -295,7 +321,6 @@ def run():
                     save_snapshot({"error_event": err_payload})
                 except Exception:
                     pass
-
                 print("[volland] error:", e)
                 traceback.print_exc()
 

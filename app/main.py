@@ -23,7 +23,7 @@ def _safe_ident(name: str, default: str) -> str:
     name = name.strip()
     return name if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) else default
 
-# Volland table name (auto-created)
+# IMPORTANT: Volland table must contain a JSONB column named payload
 VOLLAND_TABLE = _safe_ident(os.getenv("VOLLAND_TABLE", "volland_snapshots"), "volland_snapshots")
 
 # SQLAlchemy psycopg v3 URI
@@ -39,6 +39,9 @@ STREAM_SECONDS = 2.0
 
 # Table size (keep it light)
 TARGET_STRIKES = 40
+
+# Volland strike-window (20 above + 20 below => 41 points)
+VOLLAND_WINDOW = 20
 
 # ====== APP ======
 app = FastAPI()
@@ -71,6 +74,7 @@ def db_init():
         """))
 
         # Volland snapshots (generic JSON payload)
+        # payload must be JSONB and contain Volland values (DAP/DADS/strike-series...etc)
         conn.execute(text(f"""
         CREATE TABLE IF NOT EXISTS {VOLLAND_TABLE} (
             id BIGSERIAL PRIMARY KEY,
@@ -151,7 +155,7 @@ def market_open_now() -> bool:
     t = now_et()
     if t.weekday() >= 5:
         return False
-    return dtime(9,30) <= t.time() <= dtime(16,0)
+    return dtime(9, 30) <= t.time() <= dtime(16, 0)
 
 # ====== TS helpers ======
 def get_spx_last() -> float:
@@ -351,13 +355,13 @@ def window_around_spot(df: pd.DataFrame, spot: float, window: int) -> pd.DataFra
     sdf = df.sort_values("Strike").reset_index(drop=True)
     atm = int((sdf["Strike"] - spot).abs().idxmin())
     lo = max(0, atm - window)
-    hi = min(len(sdf), atm + window + 1)  # includes ATM
+    hi = min(len(sdf), atm + window + 1)
     return sdf.iloc[lo:hi].reset_index(drop=True)
 
 def _spot_from_status():
     try:
-        parts = dict(splt.split("=", 1) for splt in (last_run_status.get("msg") or "").split() if "=" in splt)
-        return float(parts.get("spot",""))
+        parts = dict(s.split("=", 1) for s in (last_run_status.get("msg") or "").split() if "=" in s)
+        return float(parts.get("spot", ""))
     except:
         return None
 
@@ -410,7 +414,7 @@ def save_history_job():
         spot = None; exp  = None
         try:
             parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
-            spot = float(parts.get("spot",""))
+            spot = float(parts.get("spot", ""))
             exp  = parts.get("exp")
         except:
             pass
@@ -459,7 +463,7 @@ def on_shutdown():
         scheduler.shutdown()
         print("[sched] stopped", flush=True)
 
-# ====== API ======
+# ====== API (chain) ======
 @app.get("/api/series")
 def api_series(window: int = Query(20, ge=1, le=200)):
     with _df_lock:
@@ -481,7 +485,7 @@ def api_series(window: int = Query(20, ge=1, le=200)):
     else:
         df = df.sort_values("Strike").reset_index(drop=True)
 
-    sdf = df.sort_values("Strike")
+    sdf = df.sort_values("Strike").reset_index(drop=True)
     s  = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
 
     call_vol = pd.to_numeric(sdf["C_Volume"],       errors="coerce").fillna(0.0).astype(float)
@@ -524,7 +528,7 @@ def snapshot():
 @app.get("/api/history")
 def api_history(limit: int = Query(288, ge=1, le=5000)):
     if not engine:
-        return {"error":"DATABASE_URL not set"}
+        return {"error": "DATABASE_URL not set"}
     with engine.begin() as conn:
         rows = conn.execute(text(
             "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
@@ -559,7 +563,7 @@ def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
 def api_spot():
     return {"time": [], "close": []}
 
-# ====== Volland helpers / API ======
+# ====== Volland (strike vs metric) ======
 def _to_float(v):
     if v is None or v == "" or v == "-" or v == "NaN":
         return None
@@ -568,102 +572,175 @@ def _to_float(v):
     except:
         return None
 
-def _find_key(payload: dict, candidates: list[str]):
-    if not isinstance(payload, dict):
+def _looks_like_json_array(s: str) -> bool:
+    if not isinstance(s, str):
+        return False
+    t = s.strip()
+    return t.startswith("[") and ("\"x\"" in t or "'x'" in t) and ("\"y\"" in t or "'y'" in t)
+
+def _xy_from_value(val):
+    """
+    Return list of dicts [{"x":..., "y":...}, ...] if val contains x/y pairs.
+    Accepts: list[dict], or JSON string that parses to list[dict].
+    """
+    if val is None:
         return None
-    for k in candidates:
-        if k in payload:
-            return k
-    lower = {str(k).lower(): k for k in payload.keys()}
-    for k in candidates:
-        lk = str(k).lower()
-        if lk in lower:
-            return lower[lk]
+
+    # already a list
+    if isinstance(val, list):
+        good = []
+        for it in val:
+            if isinstance(it, dict) and ("x" in it) and ("y" in it):
+                good.append(it)
+        return good if good else None
+
+    # JSON string
+    if isinstance(val, str) and _looks_like_json_array(val):
+        try:
+            parsed = json.loads(val)
+            if isinstance(parsed, list):
+                good = []
+                for it in parsed:
+                    if isinstance(it, dict) and ("x" in it) and ("y" in it):
+                        good.append(it)
+                return good if good else None
+        except:
+            return None
+
     return None
 
-# aliases for whatever your scraper stored yesterday
-VOLLAND_METRICS = {
-    "dap":  ["dap","DAP","DeltaAdjustedNetPremiums","deltaAdjustedNetPremiums","delta_adjusted_net_premiums","netPremiumsDAP","net_premiums_dap"],
-    "dads": ["dads","DADS","DeltaAdjustedDealerSpread","deltaAdjustedDealerSpread","delta_adjusted_dealer_spread"],
-    "vanna": ["vanna","Vanna","VANNA","aggVanna","aggregateVanna","netVanna","net_vanna"],
-    "gamma": ["gamma","Gamma","GEX","gex","netGEX","net_gex"],
-    "charm": ["charm","Charm","netCharm","net_charm"],
-}
+def _find_xy_series(payload: dict, metric_hint: str):
+    """
+    Search inside payload (recursively) for a series of x/y pairs.
+    Priority:
+      1) keys that contain metric_hint
+      2) any x/y list anywhere
+    """
+    hint = (metric_hint or "").lower().strip()
+    best = None
 
-@app.post("/api/volland/ingest")
-def volland_ingest(payload: dict):
+    def walk(node, path_key=""):
+        nonlocal best
+        if best is not None:
+            return
+
+        if isinstance(node, dict):
+            # first pass: keys matching hint
+            if hint:
+                for k, v in node.items():
+                    if hint in str(k).lower():
+                        xy = _xy_from_value(v)
+                        if xy:
+                            best = xy
+                            return
+            # second pass: any direct x/y list under any key
+            for k, v in node.items():
+                xy = _xy_from_value(v)
+                if xy:
+                    best = xy
+                    return
+            # recurse
+            for k, v in node.items():
+                walk(v, str(k))
+
+        elif isinstance(node, list):
+            xy = _xy_from_value(node)
+            if xy:
+                best = xy
+                return
+            for it in node:
+                walk(it, path_key)
+
+        else:
+            return
+
+    walk(payload)
+    return best
+
+def _window_around_spot_xy(xy_list: list[dict], spot: float, window: int):
+    pts = []
+    for it in xy_list:
+        sx = _to_float(it.get("x"))
+        sy = _to_float(it.get("y"))
+        if sx is None or sy is None:
+            continue
+        pts.append((sx, sy))
+
+    pts.sort(key=lambda t: t[0])
+    if not pts:
+        return [], []
+
+    if not spot:
+        # fallback: just take middle window
+        mid = len(pts) // 2
+        lo = max(0, mid - window)
+        hi = min(len(pts), mid + window + 1)
+        sel = pts[lo:hi]
+        return [p[0] for p in sel], [p[1] for p in sel]
+
+    # nearest strike to spot
+    idx = min(range(len(pts)), key=lambda i: abs(pts[i][0] - spot))
+    lo = max(0, idx - window)
+    hi = min(len(pts), idx + window + 1)
+    sel = pts[lo:hi]
+    return [p[0] for p in sel], [p[1] for p in sel]
+
+@app.get("/api/volland/strike_series")
+def volland_strike_series(
+    metric: str = Query("vanna"),
+    window: int = Query(VOLLAND_WINDOW, ge=5, le=200),
+):
     if not engine:
-        raise HTTPException(status_code=500, detail="DATABASE_URL not set")
-    if not isinstance(payload, dict) or not payload:
-        raise HTTPException(status_code=400, detail="payload must be a non-empty JSON object")
-    with engine.begin() as conn:
-        conn.execute(
-            text(f"INSERT INTO {VOLLAND_TABLE} (ts, payload) VALUES (NOW(), :p)"),
-            {"p": json.dumps(payload)}
-        )
-    return {"ok": True}
+        return {"strikes": [], "values": [], "metric": metric, "spot": None, "error": "DATABASE_URL not set"}
 
-@app.get("/api/volland/history")
-def volland_history(limit: int = Query(500, ge=1, le=5000)):
+    with engine.begin() as conn:
+        rec = conn.execute(
+            text(f"SELECT ts, payload FROM {VOLLAND_TABLE} ORDER BY ts DESC LIMIT 1")
+        ).mappings().first()
+
+    if not rec:
+        return {"strikes": [], "values": [], "metric": metric, "spot": _spot_from_status(), "error": "no volland rows"}
+
+    p = rec["payload"]
+    if isinstance(p, str):
+        try:
+            p = json.loads(p)
+        except:
+            p = {}
+
+    xy = _find_xy_series(p if isinstance(p, dict) else {}, metric)
+    if not xy:
+        return {"strikes": [], "values": [], "metric": metric, "spot": _spot_from_status(), "error": "no x/y series found in payload"}
+
+    spot = _spot_from_status()
+    if spot is None:
+        # optional fallback (avoid extra TS calls if you don't want)
+        try:
+            spot = get_spx_last()
+        except:
+            spot = None
+
+    xs, ys = _window_around_spot_xy(xy, float(spot) if spot else 0.0, int(window))
+    return {"strikes": xs, "values": ys, "metric": metric, "spot": spot, "ts": rec["ts"].isoformat()}
+
+# keep this if you want to inspect raw data
+@app.get("/api/volland/latest")
+def volland_latest():
     if not engine:
         return {"error": "DATABASE_URL not set"}
     with engine.begin() as conn:
-        recs = conn.execute(
-            text(f"SELECT ts, payload FROM {VOLLAND_TABLE} ORDER BY ts DESC LIMIT :lim"),
-            {"lim": limit}
-        ).mappings().all()
+        rec = conn.execute(text(f"SELECT ts, payload FROM {VOLLAND_TABLE} ORDER BY ts DESC LIMIT 1")).mappings().first()
+    if not rec:
+        return {"error": "no volland rows"}
+    p = rec["payload"]
+    if isinstance(p, str):
+        try:
+            p = json.loads(p)
+        except:
+            p = {}
+    return {"ts": rec["ts"].isoformat(), "payload": p}
 
-    out = []
-    for r in recs:
-        p = r["payload"]
-        if isinstance(p, str):
-            try:
-                p = json.loads(p)
-            except:
-                p = {}
-        out.append({"ts": r["ts"].isoformat(), "payload": p})
-    return out
-
-@app.get("/api/volland/series")
-def volland_series(
-    limit: int = Query(300, ge=10, le=5000),
-    m1: str = "dap",
-    m2: str = "dads",
-    m3: str = "vanna",
-):
-    if not engine:
-        return {"time": [], "series": {}, "metrics": [m1, m2, m3]}
-
-    metrics = [m1, m2, m3]
-    series = {m: [] for m in metrics}
-    times = []
-
-    with engine.begin() as conn:
-        recs = conn.execute(
-            text(f"SELECT ts, payload FROM {VOLLAND_TABLE} ORDER BY ts DESC LIMIT :lim"),
-            {"lim": limit}
-        ).mappings().all()
-
-    recs = list(reversed(recs))  # oldest -> newest
-
-    for r in recs:
-        ts = r["ts"].isoformat()
-        p = r["payload"]
-        if isinstance(p, str):
-            try:
-                p = json.loads(p)
-            except:
-                p = {}
-        times.append(ts)
-
-        for m in metrics:
-            cand = VOLLAND_METRICS.get(m, [m])
-            key = _find_key(p, cand)
-            series[m].append(_to_float(p.get(key)) if key else None)
-
-    return {"time": times, "series": series, "metrics": metrics}
-
-# ====== TABLE & DASHBOARD HTML TEMPLATES ======
+# ====== HTML ======
 TABLE_HTML_TEMPLATE = """
 <html><head><meta charset="utf-8"><title>0DTE Alpha</title>
 <style>
@@ -708,7 +785,6 @@ DASH_HTML_TEMPLATE = """
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
       font-size: 13px;
     }
-
     .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
     .sidebar {
       background: var(--panel);
@@ -770,7 +846,6 @@ DASH_HTML_TEMPLATE = """
       border-radius:999px;
       color:var(--muted);
     }
-
     .charts { display:flex; flex-direction:column; gap:18px; }
     iframe {
       width:100%;
@@ -779,30 +854,7 @@ DASH_HTML_TEMPLATE = """
       background:#0f1115;
     }
     #volChart, #oiChart, #gexChart { width:100%; height:420px; }
-    #vollandChart1, #vollandChart2, #vollandChart3 { width:100%; height:360px; }
-
-    .spot-grid {
-      display:grid;
-      grid-template-columns: 2fr 1fr 1fr;
-      gap:10px;
-      align-items:stretch;
-    }
-    .card {
-      background: var(--panel);
-      border:1px solid var(--border);
-      border-radius:12px;
-      padding:10px;
-      min-height:360px;
-      display:flex;
-      flex-direction:column;
-    }
-    .card h3 {
-      margin:0 0 6px;
-      font-size:13px;
-      color:var(--muted);
-      font-weight:600;
-    }
-    .plot { width:100%; height:100% }
+    #vollandStrikeChart { width:100%; height:520px; }
 
     @media (max-width: 900px) {
       .layout { display:block; min-height:0; }
@@ -820,9 +872,7 @@ DASH_HTML_TEMPLATE = """
       .panel { padding:8px; border-radius:10px; }
       iframe { height:60vh; }
       #volChart, #oiChart, #gexChart { height:340px; }
-      #vollandChart1, #vollandChart2, #vollandChart3 { height:320px; }
-      .spot-grid { grid-template-columns:1fr; }
-      .card { min-height:260px; }
+      #vollandStrikeChart { height:420px; }
     }
     @media (max-width: 480px) {
       .brand { font-size:13px; }
@@ -846,7 +896,6 @@ DASH_HTML_TEMPLATE = """
       <div class="nav">
         <button class="btn active" id="tabTable">Table</button>
         <button class="btn" id="tabCharts">Charts</button>
-        <button class="btn" id="tabSpot">Spot</button>
         <button class="btn" id="tabVolland">Volland</button>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
@@ -854,7 +903,7 @@ DASH_HTML_TEMPLATE = """
         <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> ·
         <a href="/api/history"  style="color:var(--muted)">History</a> ·
         <a href="/download/history.csv" style="color:var(--muted)">CSV</a><br/>
-        <a href="/api/volland/history" style="color:var(--muted)">Volland JSON</a>
+        <a href="/api/volland/latest" style="color:var(--muted)">Volland JSON</a>
       </div>
     </aside>
 
@@ -879,37 +928,12 @@ DASH_HTML_TEMPLATE = """
         </div>
       </div>
 
-      <div id="viewSpot" class="panel" style="display:none">
-        <div class="header">
-          <div><strong>Spot</strong></div>
-          <div class="pill">SPX price + GEX & VOL by strike (shared Y axis)</div>
-        </div>
-        <div class="spot-grid">
-          <div class="card">
-            <h3>SPX Price</h3>
-            <div id="spotPricePlot" class="plot"></div>
-          </div>
-          <div class="card">
-            <h3>Net GEX by Strike</h3>
-            <div id="gexSidePlot" class="plot"></div>
-          </div>
-          <div class="card">
-            <h3>VOL by Strike (Calls vs Puts)</h3>
-            <div id="volSidePlot" class="plot"></div>
-          </div>
-        </div>
-      </div>
-
       <div id="viewVolland" class="panel" style="display:none">
         <div class="header">
-          <div><strong>Volland</strong></div>
-          <div class="pill">reads from Postgres (auto-refresh)</div>
+          <div><strong>Volland — Strike vs Metric</strong></div>
+          <div class="pill">20 strikes above/below spot</div>
         </div>
-        <div class="charts">
-          <div id="vollandChart1"></div>
-          <div id="vollandChart2"></div>
-          <div id="vollandChart3"></div>
-        </div>
+        <div id="vollandStrikeChart"></div>
       </div>
 
     </main>
@@ -921,26 +945,22 @@ DASH_HTML_TEMPLATE = """
     // Tabs
     const tabTable=document.getElementById('tabTable'),
           tabCharts=document.getElementById('tabCharts'),
-          tabSpot=document.getElementById('tabSpot'),
           tabVolland=document.getElementById('tabVolland');
 
     const viewTable=document.getElementById('viewTable'),
           viewCharts=document.getElementById('viewCharts'),
-          viewSpot=document.getElementById('viewSpot'),
           viewVolland=document.getElementById('viewVolland');
 
     function setActive(btn){
-      [tabTable,tabCharts,tabSpot,tabVolland].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabCharts,tabVolland].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function showTable(){ setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewSpot.style.display='none'; viewVolland.style.display='none'; stopCharts(); stopSpot(); stopVolland(); }
-    function showCharts(){ setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewSpot.style.display='none'; viewVolland.style.display='none'; startCharts(); stopSpot(); stopVolland(); }
-    function showSpot(){ setActive(tabSpot); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display=''; viewVolland.style.display='none'; startSpot(); stopCharts(); stopVolland(); }
-    function showVolland(){ setActive(tabVolland); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewVolland.style.display=''; startVolland(); stopCharts(); stopSpot(); }
+    function showTable(){ setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewVolland.style.display='none'; stopCharts(); stopVolland(); }
+    function showCharts(){ setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewVolland.style.display='none'; startCharts(); stopVolland(); }
+    function showVolland(){ setActive(tabVolland); viewTable.style.display='none'; viewCharts.style.display='none'; viewVolland.style.display=''; startVolland(); stopCharts(); }
 
     tabTable.addEventListener('click', showTable);
     tabCharts.addEventListener('click', showCharts);
-    tabSpot.addEventListener('click', showSpot);
     tabVolland.addEventListener('click', showVolland);
 
     // ===== Main charts (GEX / VOL / OI) =====
@@ -954,13 +974,13 @@ DASH_HTML_TEMPLATE = """
       return await r.json();
     }
 
-    function verticalSpotShape(spot,yMax){
+    function verticalSpotShape(spot,yMin,yMax){
       if(spot==null) return null;
-      return {type:'line',x0:spot,x1:spot,y0:0,y1:yMax,line:{color:'#9aa0a6',width:2,dash:'dot'},xref:'x',yref:'y'};
+      return {type:'line',x0:spot,x1:spot,y0:yMin,y1:yMax,line:{color:'#9aa0a6',width:2,dash:'dot'},xref:'x',yref:'y'};
     }
 
-    function buildLayout(title,xTitle,yTitle,spot,yMax){
-      const shape=verticalSpotShape(spot,yMax);
+    function buildLayout(title,xTitle,yTitle,spot,yMin,yMax){
+      const shape=verticalSpotShape(spot,yMin,yMax);
       return {
         title:{text:title,font:{size:14}},
         xaxis:{title:xTitle,gridcolor:'#20242a',tickfont:{size:10},dtick:5},
@@ -999,14 +1019,16 @@ DASH_HTML_TEMPLATE = """
       if (!data || !data.strikes || data.strikes.length === 0) return;
 
       const strikes = data.strikes, spot = data.spot;
+
       const vMax = Math.max(0, ...data.callVol, ...data.putVol) * 1.05;
       const oiMax= Math.max(0, ...data.callOI,  ...data.putOI ) * 1.05;
+
       const gAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v=>Math.abs(v));
       const gMax = (gAbs.length? Math.max(...gAbs):0) * 1.05;
 
-      const gexLayout = buildLayout('Gamma Exposure (GEX)','Strike','GEX',spot,gMax);
-      const volLayout = buildLayout('Volume','Strike','Volume',spot,vMax);
-      const oiLayout  = buildLayout('Open Interest','Strike','Open Interest',spot,oiMax);
+      const gexLayout = buildLayout('Gamma Exposure (GEX)','Strike','GEX',spot,-gMax,gMax);
+      const volLayout = buildLayout('Volume','Strike','Volume',spot,0,vMax);
+      const oiLayout  = buildLayout('Open Interest','Strike','Open Interest',spot,0,oiMax);
 
       const gexTraces = tracesForGEX(strikes, data.callGEX, data.putGEX, data.netGEX);
       const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
@@ -1026,185 +1048,74 @@ DASH_HTML_TEMPLATE = """
     function startCharts(){ drawOrUpdate(); if (chartsTimer) clearInterval(chartsTimer); chartsTimer=setInterval(drawOrUpdate, PULL_EVERY); }
     function stopCharts(){ if (chartsTimer){ clearInterval(chartsTimer); chartsTimer=null; } }
 
-    // ===== Spot tab (kept as-is) =====
-    const spotPriceDiv=document.getElementById('spotPricePlot'),
-          gexSideDiv=document.getElementById('gexSidePlot'),
-          volSideDiv=document.getElementById('volSidePlot');
-    let spotTimer=null;
+    // ===== Volland strike chart (ONLY) =====
+    const vollandDiv = document.getElementById('vollandStrikeChart');
+    let vollandTimer=null;
+    let vollandFirst=true;
 
-    async function fetchSpot(){ const r=await fetch('/api/spot',{cache:'no-store'}); return await r.json(); }
+    function lineSpotOnX(spot, yMin, yMax){
+      if(spot==null) return [];
+      return [{type:'line', x0:spot, x1:spot, y0:yMin, y1:yMax, xref:'x', yref:'y',
+               line:{color:'#9aa0a6', width:2, dash:'dot'}}];
+    }
 
-    function computeYRange(strikes, prices){
-      const vals = [];
-      if (Array.isArray(strikes) && strikes.length) vals.push(...strikes);
-      if (Array.isArray(prices) && prices.length) vals.push(...prices.filter(v=>typeof v==='number' && !isNaN(v)));
-      if (!vals.length) return null;
-      let yMin = Math.min(...vals), yMax = Math.max(...vals);
+    async function fetchVollandStrike(){
+      // metric can be changed later; default vanna
+      const r = await fetch('/api/volland/strike_series?metric=vanna&window=20', {cache:'no-store'});
+      return await r.json();
+    }
+
+    async function tickVolland(){
+      const d = await fetchVollandStrike();
+      const strikes = d.strikes || [];
+      const values  = d.values  || [];
+      const spot    = d.spot ?? null;
+
+      if (!strikes.length || !values.length){
+        const msg = (d && d.error) ? d.error : 'no data';
+        Plotly.react(vollandDiv, [], {
+          title:{text:'Volland — Vanna (strike series) — ' + msg, font:{size:14}},
+          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          font:{color:'#e6e7e9',size:11},
+          margin:{t:40,r:12,b:40,l:54},
+          xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}},
+          yaxis:{title:'Vanna',  gridcolor:'#20242a', tickfont:{size:10}}
+        }, {displayModeBar:false,responsive:true});
+        return;
+      }
+
+      let yMin = Math.min(...values), yMax = Math.max(...values);
       if (yMin === yMax){
         const pad0 = Math.max(1, Math.abs(yMin)*0.001);
         yMin -= pad0; yMax += pad0;
       }
-      const pad = (yMax - yMin) * 0.02 || 1;
-      return {min: yMin - pad, max: yMax + pad};
-    }
+      const pad = (yMax - yMin) * 0.06 || 1;
+      yMin -= pad; yMax += pad;
 
-    function renderSpotPrice(spotData, yRange){
-      if (!spotData || !spotData.time || !spotData.time.length) return;
-      const x = (spotData.time || []).map(t => new Date(t));
-      const closeArr = spotData.close || [];
       const trace = {
-        type:'scatter',
-        mode:'lines',
-        x:x,
-        y:closeArr,
-        line:{shape:'linear'},
-        hovertemplate:'%{x}<br>Price %{y:.2f}<extra></extra>'
+        type:'bar',
+        x: strikes,
+        y: values,
+        hovertemplate:'Strike %{x}<br>Vanna %{y}<extra></extra>'
       };
-      let yr = yRange;
-      if (!yr){
-        const tmp = computeYRange([], closeArr);
-        if (tmp) yr = tmp;
-      }
+
       const layout = {
-        margin:{l:54,r:12,t:10,b:32},
-        paper_bgcolor:'#121417',
-        plot_bgcolor:'#0f1115',
-        xaxis:{title:'Time', gridcolor:'#20242a', tickfont:{size:10}},
-        yaxis:{title:'Price', gridcolor:'#20242a', range: yr ? [yr.min, yr.max] : undefined, tickfont:{size:10}},
-        font:{color:'#e6e7e9',size:11}
-      };
-      Plotly.react(spotPriceDiv, [trace], layout, {displayModeBar:false,responsive:true});
-    }
-
-    function renderSpotFromSeries(data, yRange){
-      const strikes = data.strikes || [];
-      if (!strikes.length) return;
-
-      let yr = yRange;
-      if (!yr){
-        const tmp = computeYRange(strikes, []);
-        if (tmp) yr = tmp;
-      }
-      const yMin = yr ? yr.min : Math.min(...strikes);
-      const yMax = yr ? yr.max : Math.max(...strikes);
-
-      const gexNet = data.netGEX || [];
-      const gMax = Math.max(1, ...gexNet.map(v=>Math.abs(v))) * 1.1;
-      const gex = {
-        type:'bar',
-        orientation:'h',
-        x:gexNet,
-        y:strikes,
-        marker:{color:'#60a5fa'},
-        hovertemplate:'Strike %{y}<br>Net GEX %{x:.0f}<extra></extra>'
-      };
-      Plotly.react(gexSideDiv, [gex], {
-        margin:{l:54,r:12,t:10,b:28},
-        paper_bgcolor:'#121417',
-        plot_bgcolor:'#0f1115',
-        xaxis:{title:'Net GEX', gridcolor:'#20242a', range:[-gMax, gMax], tickfont:{size:10}},
-        yaxis:{title:'Strike', range:[yMin,yMax], gridcolor:'#20242a', dtick:5, tickfont:{size:10}},
-        font:{color:'#e6e7e9',size:11}
-      }, {displayModeBar:false,responsive:true});
-
-      const callVol = data.callVol || [];
-      const putVol  = data.putVol  || [];
-      const vMax = Math.max(1, ...callVol, ...putVol) * 1.1;
-      const volCalls = {
-        type:'bar',
-        orientation:'h',
-        name:'Calls',
-        x:callVol,
-        y:strikes,
-        marker:{color:'#22c55e'},
-        hovertemplate:'Strike %{y}<br>Calls %{x}<extra></extra>'
-      };
-      const volPuts = {
-        type:'bar',
-        orientation:'h',
-        name:'Puts',
-        x:putVol,
-        y:strikes,
-        marker:{color:'#ef4444'},
-        hovertemplate:'Strike %{y}<br>Puts %{x}<extra></extra>'
-      };
-      Plotly.react(volSideDiv, [volCalls, volPuts], {
-        margin:{l:54,r:12,t:10,b:28},
-        paper_bgcolor:'#121417',
-        plot_bgcolor:'#0f1115',
-        xaxis:{title:'VOL', gridcolor:'#20242a', range:[0, vMax], tickfont:{size:10}},
-        yaxis:{title:'Strike', range:[yMin,yMax], gridcolor:'#20242a', dtick:5, tickfont:{size:10}},
-        barmode:'group',
-        font:{color:'#e6e7e9',size:11}
-      }, {displayModeBar:false,responsive:true});
-    }
-
-    async function tickSpot(){
-      const [opt, spot] = await Promise.all([fetchSeries(), fetchSpot()]);
-      const prices = (spot && Array.isArray(spot.close)) ? spot.close : [];
-      const yRange = computeYRange(opt.strikes || [], prices);
-      renderSpotPrice(spot, yRange);
-      renderSpotFromSeries(opt, yRange);
-    }
-
-    function startSpot(){
-      tickSpot();
-      if (spotTimer) clearInterval(spotTimer);
-      spotTimer = setInterval(tickSpot, PULL_EVERY);
-    }
-    function stopSpot(){
-      if (spotTimer){ clearInterval(spotTimer); spotTimer=null; }
-    }
-
-    // ===== Volland tab =====
-    const v1=document.getElementById('vollandChart1'),
-          v2=document.getElementById('vollandChart2'),
-          v3=document.getElementById('vollandChart3');
-
-    let vollandTimer=null;
-
-    async function fetchVolland(){
-      const r=await fetch('/api/volland/series?limit=400&m1=dap&m2=dads&m3=vanna', {cache:'no-store'});
-      return await r.json();
-    }
-
-    function lineLayout(title, yTitle){
-      return {
-        title:{text:title,font:{size:14}},
-        xaxis:{title:'Time', gridcolor:'#20242a', tickfont:{size:10}},
-        yaxis:{title:yTitle, gridcolor:'#20242a', tickfont:{size:10}},
+        title:{text:'Volland — Vanna by Strike', font:{size:14}},
         paper_bgcolor:'#121417',
         plot_bgcolor:'#0f1115',
         font:{color:'#e6e7e9',size:11},
-        margin:{t:32,r:12,b:36,l:54},
+        margin:{t:36,r:12,b:44,l:54},
+        xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}, dtick:5},
+        yaxis:{title:'Vanna',  gridcolor:'#20242a', tickfont:{size:10}, range:[yMin, yMax]},
+        shapes: lineSpotOnX(spot, yMin, yMax)
       };
-    }
 
-    function toDates(arr){
-      return (arr || []).map(t => new Date(t));
-    }
-
-    function drawVollandChart(div, x, y, title, yTitle){
-      const trace = {
-        type:'scatter',
-        mode:'lines',
-        x:x,
-        y:y,
-        hovertemplate:'%{x}<br>%{y}<extra></extra>'
-      };
-      Plotly.react(div, [trace], lineLayout(title, yTitle), {displayModeBar:false,responsive:true});
-    }
-
-    async function tickVolland(){
-      const d = await fetchVolland();
-      if (!d || !d.time || !d.time.length) return;
-
-      const x = toDates(d.time);
-      const s = d.series || {};
-
-      drawVollandChart(v1, x, s.dap  || [], 'Volland — DAP',  'DAP');
-      drawVollandChart(v2, x, s.dads || [], 'Volland — DADS', 'DADS');
-      drawVollandChart(v3, x, s.vanna|| [], 'Volland — Vanna','Vanna');
+      if (vollandFirst){
+        Plotly.newPlot(vollandDiv, [trace], layout, {displayModeBar:false,responsive:true});
+        vollandFirst=false;
+      } else {
+        Plotly.react(vollandDiv, [trace], layout, {displayModeBar:false,responsive:true});
+      }
     }
 
     function startVolland(){

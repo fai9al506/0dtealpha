@@ -131,7 +131,8 @@ def db_volland_history(limit: int = 500) -> list[dict]:
 
 def db_volland_vanna_window(limit: int = 40) -> dict:
     """
-    Returns latest 40 strikes around the "mid" strike where abs(vanna) is max (from VOLLAND_VANNA_POINTS).
+    Returns latest 'limit' strikes around the "mid" strike where abs(vanna) is max (from VOLLAND_VANNA_POINTS).
+    (The chart line will be spot; we still return mid info for reference.)
     """
     if not engine:
         raise RuntimeError("DATABASE_URL not set")
@@ -730,8 +731,8 @@ def api_volland_series(limit: int = Query(800, ge=10, le=5000)):
 @app.get("/api/volland/vanna_window")
 def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
     """
-    Latest 40 strikes around mid_strike (mid_strike = strike where abs(vanna) is max).
-    Reads from: public.volland_vanna_points_dedup (or override env VOLLAND_VANNA_POINTS)
+    Latest strikes around mid_strike (mid_strike = strike where abs(vanna) is max).
+    Chart will draw the vertical line at SPOT (from /api/series).
     """
     try:
         if not engine:
@@ -1000,7 +1001,7 @@ DASH_HTML_TEMPLATE = """
             <div id="vollandTS" class="plot"></div>
           </div>
           <div class="card" style="min-height:520px">
-            <h3>Vanna by Strike (40 around mid = max |vanna|)</h3>
+            <h3>Vanna by Strike (line = SPOT)</h3>
             <div id="vollandStrike" class="plot"></div>
           </div>
         </div>
@@ -1036,16 +1037,17 @@ DASH_HTML_TEMPLATE = """
     tabSpot.addEventListener('click', showSpot);
     tabVolland.addEventListener('click', showVolland);
 
+    // ===== Shared fetch for options series (includes spot) =====
+    async function fetchSeries(){
+      const r=await fetch('/api/series',{cache:'no-store'});
+      return await r.json();
+    }
+
     // ===== Main charts (GEX / VOL / OI) =====
     const volDiv=document.getElementById('volChart'),
           oiDiv=document.getElementById('oiChart'),
           gexDiv=document.getElementById('gexChart');
     let chartsTimer=null, firstDraw=true;
-
-    async function fetchSeries(){
-      const r=await fetch('/api/series',{cache:'no-store'});
-      return await r.json();
-    }
 
     function verticalSpotShape(spot,yMax){
       if(spot==null) return null;
@@ -1119,7 +1121,7 @@ DASH_HTML_TEMPLATE = """
     function startCharts(){ drawOrUpdate(); if (chartsTimer) clearInterval(chartsTimer); chartsTimer=setInterval(drawOrUpdate, PULL_EVERY); }
     function stopCharts(){ if (chartsTimer){ clearInterval(chartsTimer); chartsTimer=null; } }
 
-    // ===== Spot: your existing code expects /api/spot. If you have it elsewhere, keep it.
+    // ===== Spot: expects /api/spot (keep your existing endpoint) =====
     const spotPriceDiv=document.getElementById('spotPricePlot'),
           gexSideDiv=document.getElementById('gexSidePlot'),
           volSideDiv=document.getElementById('volSidePlot');
@@ -1313,7 +1315,7 @@ DASH_HTML_TEMPLATE = """
       Plotly.react(vollandTSDiv, traces, layout, {displayModeBar:false,responsive:true});
     }
 
-    function drawVannaWindow(w){
+    function drawVannaWindow(w, spot){
       if (!w || w.error) {
         const msg = w && w.error ? w.error : "no data";
         Plotly.react(vollandStrikeDiv, [], {
@@ -1338,12 +1340,26 @@ DASH_HTML_TEMPLATE = """
       const strikes = pts.map(p=>p.strike);
       const vanna   = pts.map(p=>p.vanna);
 
-      const mid = w.mid_strike;
-      const shapes = (mid!=null) ? [{
-        type:'line', x0:mid, x1:mid, y0:Math.min(...vanna), y1:Math.max(...vanna),
+      const yMin = Math.min(...vanna);
+      const yMax = Math.max(...vanna);
+
+      const shapes = (spot!=null) ? [{
+        type:'line', x0:spot, x1:spot, y0:yMin, y1:yMax,
         xref:'x', yref:'y',
         line:{color:'#9aa0a6', width:2, dash:'dot'}
       }] : [];
+
+      const annotations = [];
+      if (spot!=null){
+        annotations.push({
+          text: "spot=" + Number(spot).toFixed(2),
+          x: spot, y: yMax,
+          xref:'x', yref:'y',
+          showarrow:false,
+          yanchor:'bottom',
+          font:{color:'#e6e7e9', size:10}
+        });
+      }
 
       const trace = {
         type:'bar',
@@ -1360,22 +1376,17 @@ DASH_HTML_TEMPLATE = """
         xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}, dtick:5},
         yaxis:{title:'Vanna',  gridcolor:'#20242a', tickfont:{size:10}},
         shapes: shapes,
-        annotations: (mid!=null) ? [{
-          text: "mid="+mid,
-          x: mid, y: Math.max(...vanna),
-          xref:'x', yref:'y',
-          showarrow:false,
-          yanchor:'bottom',
-          font:{color:'#e6e7e9', size:10}
-        }] : [],
+        annotations: annotations,
         font:{color:'#e6e7e9',size:11}
       }, {displayModeBar:false,responsive:true});
     }
 
     async function tickVolland(){
-      const [series, window] = await Promise.all([fetchVollandSeries(), fetchVannaWindow()]);
+      // also get SPOT so the line matches the GEX chart behavior
+      const [series, window, opt] = await Promise.all([fetchVollandSeries(), fetchVannaWindow(), fetchSeries()]);
+      const spot = (opt && opt.spot!=null) ? opt.spot : null;
       drawVollandTS(series);
-      drawVannaWindow(window);
+      drawVannaWindow(window, spot);
     }
 
     function startVolland(){

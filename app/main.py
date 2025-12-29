@@ -1060,38 +1060,48 @@ DASH_HTML_TEMPLATE = """
     }
 
     async function drawOrUpdate(){
-      const [data, vannaW] = await Promise.all([fetchSeries(), fetchVannaWindow()]);
-      if (!data || !data.strikes || data.strikes.length === 0) return;
+  // 1) Fetch the fast data first (DO NOT wait for vanna)
+  const data = await fetchSeries();
+  if (!data || !data.strikes || data.strikes.length === 0) return;
 
-      const strikes = data.strikes, spot = data.spot;
+  const strikes = data.strikes, spot = data.spot;
 
-      const vMax = Math.max(0, ...data.callVol, ...data.putVol) * 1.05;
-      const oiMax= Math.max(0, ...data.callOI,  ...data.putOI ) * 1.05;
-      const gAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v=>Math.abs(v));
-      const gMax = (gAbs.length ? Math.max(...gAbs) : 0) * 1.05;
+  const vMax = Math.max(0, ...data.callVol, ...data.putVol) * 1.05;
+  const oiMax= Math.max(0, ...data.callOI,  ...data.putOI ) * 1.05;
+  const gAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v=>Math.abs(v));
+  const gMax = (gAbs.length ? Math.max(...gAbs) : 0) * 1.05;
 
-      const gexLayout = buildLayout('Gamma Exposure (GEX)','Strike','GEX',spot,-gMax,gMax,5);
-      const volLayout = buildLayout('Volume','Strike','Volume',spot,0,vMax,5);
-      const oiLayout  = buildLayout('Open Interest','Strike','Open Interest',spot,0,oiMax,5);
+  const gexLayout = buildLayout('Gamma Exposure (GEX)','Strike','GEX',spot,-gMax,gMax,5);
+  const volLayout = buildLayout('Volume','Strike','Volume',spot,0,vMax,5);
+  const oiLayout  = buildLayout('Open Interest','Strike','Open Interest',spot,0,oiMax,5);
 
-      const gexTraces = tracesForGEX(strikes, data.callGEX, data.putGEX, data.netGEX);
-      const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
-      const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
+  const gexTraces = tracesForGEX(strikes, data.callGEX, data.putGEX, data.netGEX);
+  const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
+  const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
 
-      if (firstDraw){
-        Plotly.newPlot(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
-        Plotly.newPlot(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
-        Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
-        firstDraw=false;
-      } else {
-        Plotly.react(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
-        Plotly.react(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
-        Plotly.react(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
-      }
+  if (firstDraw){
+    Plotly.newPlot(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
+    Plotly.newPlot(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
+    Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
+    firstDraw=false;
+  } else {
+    Plotly.react(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
+    Plotly.react(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
+    Plotly.react(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
+  }
 
-      // Vanna chart after OI
-      drawVannaWindow(vannaW, spot);
-    }
+  // 2) Show a quick "loading" state for vanna (optional but recommended)
+  if (!window.__vannaLoadingShown) {
+    window.__vannaLoadingShown = true;
+    drawVannaWindow({ error: "Loading Vanna…" }, spot); // your function will render the message
+  }
+
+  // 3) Fetch vanna in the background (doesn't block charts)
+  fetchVannaWindow()
+    .then(vannaW => drawVannaWindow(vannaW, spot))
+    .catch(err => drawVannaWindow({ error: String(err) }, spot));
+}
+
 
     function startCharts(){
       drawOrUpdate();

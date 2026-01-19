@@ -1,14 +1,12 @@
-# 0DTE Alpha — live chain + 5-min history + MOCK DATA SUPPORT + HOLIDAY DETECTION
-# Automatically uses latest saved data when market is closed or APIs fail
+# 0DTE Alpha â€” live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
 from fastapi import FastAPI, Response, Query
 from fastapi.responses import HTMLResponse, JSONResponse
-from datetime import datetime, time as dtime, timedelta
+from datetime import datetime, time as dtime
 import os, time, json, requests, pandas as pd, pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
 from threading import Lock
 from typing import Any, Optional
-
 
 # ====== CONFIG ======
 USE_LIVE = True
@@ -41,15 +39,12 @@ SAVE_EVERY_MIN = 5    # minutes
 STREAM_SECONDS = 2.0
 TARGET_STRIKES = 40
 
-# Mock data override (set USE_MOCK_DATA=true in Railway to force mock mode)
-USE_MOCK_DATA_OVERRIDE = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
-
 # ====== APP ======
 app = FastAPI()
 NY = pytz.timezone("US/Eastern")
 
 latest_df: pd.DataFrame | None = None
-last_run_status = {"ts": None, "ok": False, "msg": "boot", "is_mock": False}
+last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
 _df_lock = Lock()
 
@@ -108,48 +103,16 @@ def _json_load_maybe(v: Any) -> Any:
     return v
 
 def db_latest_volland() -> Optional[dict]:
-    """
-    Get the latest Volland exposure data.
-    Now returns structured data from volland_exposure_points.
-    """
     if not engine:
         return None
-    
-    sql = text("""
-    WITH latest AS (
-        SELECT MAX(ts_utc) AS max_ts
-        FROM volland_exposure_points
-    )
-    SELECT 
-        e.ts_utc,
-        e.ticker,
-        e.greek,
-        e.current_price,
-        json_agg(
-            json_build_object('strike', e.strike, 'value', e.value)
-            ORDER BY e.strike
-        ) AS points
-    FROM volland_exposure_points e
-    JOIN latest l ON e.ts_utc = l.max_ts
-    GROUP BY e.ts_utc, e.ticker, e.greek, e.current_price
-    LIMIT 1;
-    """)
-    
+    q = text(f"SELECT {VOLLAND_TS_COL} AS ts, {VOLLAND_PAYLOAD_COL} AS payload FROM {VOLLAND_TABLE} ORDER BY {VOLLAND_TS_COL} DESC LIMIT 1")
     with engine.begin() as conn:
-        r = conn.execute(sql).mappings().first()
-    
+        r = conn.execute(q).mappings().first()
     if not r:
         return None
-    
-    return {
-        "ts": r["ts_utc"].isoformat() if hasattr(r["ts_utc"], "isoformat") else str(r["ts_utc"]),
-        "ticker": r["ticker"],
-        "greek": r["greek"],
-        "current_price": float(r["current_price"]) if r["current_price"] else None,
-        "payload": {
-            "points": r["points"] if isinstance(r["points"], list) else json.loads(r["points"])
-        }
-    }
+    payload = _json_load_maybe(r["payload"])
+    ts = r["ts"]
+    return {"ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts), "payload": payload}
 
 def db_volland_history(limit: int = 500) -> list[dict]:
     if not engine:
@@ -166,8 +129,8 @@ def db_volland_history(limit: int = 500) -> list[dict]:
 
 def db_volland_vanna_window(limit: int = 40) -> dict:
     """
-    Returns latest 'limit' strikes around the current spot price.
-    Now reads from volland_exposure_points table.
+    Returns latest 'limit' strikes around the "mid" strike where abs(vanna) is max.
+    (UI draws the vertical line at SPOT; mid info is returned for reference.)
     """
     if not engine:
         raise RuntimeError("DATABASE_URL not set")
@@ -176,51 +139,39 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
     if lim < 5: lim = 5
     if lim > 200: lim = 200
 
-    sql = text("""
+    sql = text(f"""
     WITH latest AS (
-        SELECT MAX(ts_utc) AS max_ts
-        FROM volland_exposure_points
-        WHERE greek IN ('charm', 'vanna')
-    ),
-    latest_data AS (
-        SELECT 
-            e.ts_utc,
-            e.strike,
-            e.value AS vanna,
-            e.current_price,
-            e.greek
-        FROM volland_exposure_points e
-        JOIN latest l ON e.ts_utc = l.max_ts
-        WHERE e.greek IN ('charm', 'vanna')
+      SELECT max({VOLLAND_VANNA_TS_COL}) AS ts_utc
+      FROM {VOLLAND_VANNA_POINTS}
     ),
     mid AS (
-        SELECT 
-            strike AS mid_strike,
-            vanna AS mid_vanna
-        FROM latest_data
-        ORDER BY ABS(vanna) DESC
-        LIMIT 1
+      SELECT v.strike::numeric AS mid_strike,
+             v.vanna::numeric  AS mid_vanna
+      FROM {VOLLAND_VANNA_POINTS} v
+      JOIN latest l ON v.{VOLLAND_VANNA_TS_COL} = l.ts_utc
+      ORDER BY abs(v.vanna::numeric) DESC
+      LIMIT 1
     ),
     ranked AS (
-        SELECT
-            d.ts_utc,
-            d.strike,
-            d.vanna,
-            m.mid_strike,
-            m.mid_vanna,
-            (d.strike - m.mid_strike) AS rel,
-            ROW_NUMBER() OVER (
-                ORDER BY ABS(d.strike - COALESCE(d.current_price, m.mid_strike)), d.strike
-            ) AS rn
-        FROM latest_data d
-        CROSS JOIN mid m
+      SELECT
+        v.{VOLLAND_VANNA_TS_COL} AS ts_utc,
+        v.strike::numeric AS strike,
+        v.vanna::numeric  AS vanna,
+        m.mid_strike,
+        m.mid_vanna,
+        (v.strike::numeric - m.mid_strike) AS rel,
+        ROW_NUMBER() OVER (
+          ORDER BY abs(v.strike::numeric - m.mid_strike), v.strike::numeric
+        ) AS rn
+      FROM {VOLLAND_VANNA_POINTS} v
+      JOIN latest l ON v.{VOLLAND_VANNA_TS_COL} = l.ts_utc
+      CROSS JOIN mid m
     )
     SELECT ts_utc, strike, vanna, mid_strike, mid_vanna, rel
     FROM ranked
     WHERE rn <= :lim
     ORDER BY strike;
     """)
-    
     with engine.begin() as conn:
         rows = conn.execute(sql, {"lim": lim}).mappings().all()
 
@@ -229,94 +180,22 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
 
     ts_utc = rows[0]["ts_utc"]
     mid_strike = rows[0]["mid_strike"]
-    mid_vanna = rows[0]["mid_vanna"]
+    mid_vanna  = rows[0]["mid_vanna"]
 
     pts = []
     for r in rows:
         pts.append({
             "strike": float(r["strike"]) if r["strike"] is not None else None,
-            "vanna": float(r["vanna"]) if r["vanna"] is not None else None,
-            "rel": float(r["rel"]) if r["rel"] is not None else None,
+            "vanna":  float(r["vanna"])  if r["vanna"]  is not None else None,
+            "rel":    float(r["rel"])    if r["rel"]    is not None else None,
         })
 
     return {
         "ts_utc": ts_utc.isoformat() if hasattr(ts_utc, "isoformat") else str(ts_utc),
         "mid_strike": float(mid_strike) if mid_strike is not None else None,
-        "mid_vanna": float(mid_vanna) if mid_vanna is not None else None,
+        "mid_vanna":  float(mid_vanna)  if mid_vanna  is not None else None,
         "points": pts
     }
-
-# ====== Mock Data Support ======
-def get_latest_saved_chain_as_mock():
-    """
-    Get the most recent saved chain snapshot from DB to use as mock data.
-    Returns (df, spot, exp) or (None, None, None) if no data available.
-    """
-    if not engine:
-        return None, None, None
-    
-    try:
-        with engine.begin() as conn:
-            result = conn.execute(text(
-                "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT 1"
-            )).mappings().first()
-        
-        if not result:
-            return None, None, None
-        
-        columns = json.loads(result["columns"]) if isinstance(result["columns"], str) else result["columns"]
-        rows = json.loads(result["rows"]) if isinstance(result["rows"], str) else result["rows"]
-        
-        # Reconstruct DataFrame with proper column names
-        df = pd.DataFrame(rows, columns=columns)
-        spot = float(result["spot"]) if result["spot"] else None
-        exp = result["exp"]
-        
-        print(f"[mock] Loaded saved chain: {len(df)} rows, spot={spot}, exp={exp}", flush=True)
-        return df, spot, exp
-        
-    except Exception as e:
-        print(f"[mock] Failed to load latest chain: {e}", flush=True)
-        return None, None, None
-
-
-def should_use_mock_data() -> bool:
-    """
-    Determine if we should use mock data.
-    Returns True if:
-    - Manual override is set (USE_MOCK_DATA_OVERRIDE=true)
-    - Market is closed (outside 9:30-16:00 ET Mon-Fri OR holiday)
-    """
-    if USE_MOCK_DATA_OVERRIDE:
-        return True
-    
-    # Check if market is open
-    if not market_open_now():
-        return True
-    
-    return False
-
-
-def get_mock_data_info() -> dict:
-    """
-    Returns information about mock data status.
-    Used for displaying warnings in the UI.
-    """
-    if not should_use_mock_data():
-        return {"is_mock": False}
-    
-    reasons = []
-    if USE_MOCK_DATA_OVERRIDE:
-        reasons.append("Manual override enabled")
-    if not market_open_now():
-        reasons.append("Market closed")
-    
-    return {
-        "is_mock": True,
-        "reasons": reasons,
-        "timestamp": fmt_et(now_et())
-    }
-
 
 # ====== Auth ======
 REFRESH_EARLY_SEC = 300
@@ -384,88 +263,10 @@ def fmt_et(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d %H:%M %Z")
 
 def market_open_now() -> bool:
-    """
-    Check if US stock market is currently open.
-    Accounts for:
-    - Trading hours: 9:30 AM - 4:00 PM ET
-    - Weekends: Closed Saturday & Sunday
-    - US Market Holidays (2025-2027)
-    """
     t = now_et()
-    
-    # Check if weekend
-    if t.weekday() >= 5:  # Saturday = 5, Sunday = 6
+    if t.weekday() >= 5:
         return False
-    
-    # Check trading hours
-    if not (dtime(9, 30) <= t.time() <= dtime(16, 0)):
-        return False
-    
-    # US market holidays by year
-    # Format: (month, day)
-    market_holidays_2025 = [
-        (1, 1),   # New Year's Day
-        (1, 20),  # MLK Day
-        (2, 17),  # Presidents Day
-        (4, 18),  # Good Friday
-        (5, 26),  # Memorial Day
-        (6, 19),  # Juneteenth
-        (7, 4),   # Independence Day
-        (9, 1),   # Labor Day
-        (11, 27), # Thanksgiving
-        (12, 25), # Christmas
-    ]
-    
-    market_holidays_2026 = [
-        (1, 1),   # New Year's Day
-        (1, 19),  # MLK Day ← TODAY'S HOLIDAY!
-        (2, 16),  # Presidents Day
-        (4, 3),   # Good Friday
-        (5, 25),  # Memorial Day
-        (6, 19),  # Juneteenth
-        (7, 3),   # Independence Day (observed)
-        (9, 7),   # Labor Day
-        (11, 26), # Thanksgiving
-        (12, 25), # Christmas
-    ]
-    
-    market_holidays_2027 = [
-        (1, 1),   # New Year's Day
-        (1, 18),  # MLK Day
-        (2, 15),  # Presidents Day
-        (3, 26),  # Good Friday
-        (5, 31),  # Memorial Day
-        (6, 18),  # Juneteenth (observed)
-        (7, 5),   # Independence Day (observed)
-        (9, 6),   # Labor Day
-        (11, 25), # Thanksgiving
-        (12, 24), # Christmas (observed)
-    ]
-    
-    # Select holidays for current year
-    year = t.year
-    if year == 2025:
-        holidays = market_holidays_2025
-    elif year == 2026:
-        holidays = market_holidays_2026
-    elif year == 2027:
-        holidays = market_holidays_2027
-    else:
-        # For years beyond 2027, check only fixed holidays
-        holidays = [
-            (1, 1),   # New Year's Day
-            (6, 19),  # Juneteenth
-            (7, 4),   # Independence Day
-            (12, 25), # Christmas
-        ]
-    
-    # Check if today is a holiday
-    today = (t.month, t.day)
-    if today in holidays:
-        print(f"[market] Holiday detected: {t.month}/{t.day}", flush=True)
-        return False
-    
-    return True
+    return dtime(9, 30) <= t.time() <= dtime(16, 0)
 
 # ====== TS helpers ======
 def get_spx_last() -> float:
@@ -657,99 +458,256 @@ def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
     idx = (df["Strike"] - spot).abs().sort_values().index[:n]
     return df.loc[sorted(idx)].reset_index(drop=True)
 
-
-
 # ====== jobs ======
 def run_market_job():
     global latest_df, last_run_status
     try:
-        use_mock = should_use_mock_data()
-        
-        if use_mock:
-            # Try to use latest saved data as mock
-            df, spot, exp = get_latest_saved_chain_as_mock()
-            
-            if df is not None and not df.empty:
-                # Convert back to CANONICAL_COLS format if needed
-                if 'Volume' in df.columns:  # Already in DISPLAY_COLS format
-                    # Map back to CANONICAL_COLS
-                    df.columns = CANONICAL_COLS
-                
-                with _df_lock:
-                    latest_df = df.copy()
-                
-                reasons = []
-                if USE_MOCK_DATA_OVERRIDE:
-                    reasons.append("override")
-                if not market_open_now():
-                    reasons.append("market closed")
-                reason_str = ", ".join(reasons)
-                
-                last_run_status = {
-                    "ts": fmt_et(now_et()), 
-                    "ok": True, 
-                    "msg": f"MOCK ({reason_str}): exp={exp} spot={round(spot or 0, 2)} rows={len(df)}",
-                    "is_mock": True
-                }
-                print("[pull] MOCK DATA (using latest saved)", last_run_status["msg"], flush=True)
-            else:
-                last_run_status = {
-                    "ts": fmt_et(now_et()), 
-                    "ok": True, 
-                    "msg": "MOCK: No saved data available yet",
-                    "is_mock": True
-                }
-                print("[pull] MOCK: No saved data available", flush=True)
+        if not market_open_now():
+            last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
+            print("[pull] skipped (closed)", last_run_status["ts"], flush=True)
             return
-        
-        # Regular TradeStation data fetch (market is open)
         spot = get_spx_last()
-        exp = get_0dte_exp()
+        exp  = get_0dte_exp()
         rows = get_chain_rows(exp, spot)
-        df = pick_centered(to_side_by_side(rows), spot, TARGET_STRIKES)
-        
+        df   = pick_centered(to_side_by_side(rows), spot, TARGET_STRIKES)
         with _df_lock:
             latest_df = df.copy()
-        
-        last_run_status = {
-            "ts": fmt_et(now_et()), 
-            "ok": True, 
-            "msg": f"exp={exp} spot={round(spot or 0, 2)} rows={len(df)}",
-            "is_mock": False
-        }
+        last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={len(df)}"}
         print("[pull] OK", last_run_status["msg"], flush=True)
-        
     except Exception as e:
-        # ====== FALLBACK TO MOCK DATA ON ERROR ======
-        print(f"[pull] TradeStation error: {e}, trying mock data...", flush=True)
-        
-        df, spot, exp = get_latest_saved_chain_as_mock()
-        
-        if df is not None and not df.empty:
-            # Convert to CANONICAL_COLS if needed
-            if 'Volume' in df.columns:
-                df.columns = CANONICAL_COLS
-            
-            with _df_lock:
-                latest_df = df.copy()
-            
-            last_run_status = {
-                "ts": fmt_et(now_et()), 
-                "ok": True, 
-                "msg": f"MOCK (API failed): exp={exp} spot={round(spot or 0, 2)} rows={len(df)}",
-                "is_mock": True
-            }
-            print("[pull] Using mock data due to API failure", flush=True)
-        else:
-            # No mock data available either
-            last_run_status = {
-                "ts": fmt_et(now_et()), 
-                "ok": False, 
-                "msg": f"error: {e}",
-                "is_mock": False
-            }
-            print("[pull] ERROR - no mock data available:", e, flush=True)
+        last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}
+        print("[pull] ERROR", e, flush=True)
 
+def save_history_job():
+    global _last_saved_at
+    if not engine:
+        return
+    with _df_lock:
+        if latest_df is None or latest_df.empty:
+            return
+        df_copy = latest_df.copy()
+    if time.time() - _last_saved_at < 60:
+        return
+    try:
+        df = df_copy
+        df.columns = DISPLAY_COLS
+        payload = {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
+        msg = (last_run_status.get("msg") or "")
+        spot = None; exp = None
+        try:
+            parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+            spot = float(parts.get("spot", ""))
+            exp  = parts.get("exp")
+        except:
+            pass
+        with engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO chain_snapshots (ts, exp, spot, columns, rows) VALUES (:ts, :exp, :spot, :columns, :rows)"),
+                {"ts": now_et(), "exp": exp, "spot": spot,
+                 "columns": json.dumps(payload["columns"]),
+                 "rows": json.dumps(payload["rows"])}
+            )
+        _last_saved_at = time.time()
+        print("[save] snapshot inserted", flush=True)
+    except Exception as e:
+        print("[save] failed:", e, flush=True)
+
+def start_scheduler():
+    sch = BackgroundScheduler(timezone="US/Eastern")
+    sch.add_job(run_market_job, "interval", seconds=PULL_EVERY, id="pull", coalesce=True, max_instances=1)
+    sch.add_job(save_history_job, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="save", coalesce=True, max_instances=1)
+    sch.start()
+    print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min", flush=True)
+    return sch
+
+REQUIRED_ENVS = ["TS_CLIENT_ID", "TS_CLIENT_SECRET", "TS_REFRESH_TOKEN", "DATABASE_URL"]
+def missing_envs():
+    return [k for k in REQUIRED_ENVS if not os.getenv(k)]
+
+scheduler: BackgroundScheduler | None = None
+
+@app.on_event("startup")
+def on_startup():
+    # Debug: Print registered routes
+    print("[startup] Registered routes:", flush=True)
+    for route in app.routes:
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            print(f"  {list(route.methods)} {route.path}", flush=True)
+
+    miss = missing_envs()
+    if miss:
+        print("[env] missing:", miss, flush=True)
+    if engine:
+        db_init()
+    else:
+        print("[db] engine not created (no DATABASE_URL)", flush=True)
+    global scheduler
+    scheduler = start_scheduler()
+
+@app.on_event("shutdown")
+def on_shutdown():
+    global scheduler
+    if scheduler:
+        scheduler.shutdown()
+        print("[sched] stopped", flush=True)
+
+# ====== API ======
+@app.get("/api/series")
+def api_series():
+    with _df_lock:
+        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+    if df is None or df.empty:
+        return {
+            "strikes": [], "callVol": [], "putVol": [], "callOI": [], "putOI": [],
+            "callGEX": [], "putGEX": [], "netGEX": [], "spot": None
+        }
+    sdf = df.sort_values("Strike")
+    s  = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
+    call_vol = pd.to_numeric(sdf["C_Volume"],       errors="coerce").fillna(0.0).astype(float)
+    put_vol  = pd.to_numeric(sdf["P_Volume"],       errors="coerce").fillna(0.0).astype(float)
+    call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+    put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+    c_gamma  = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+    p_gamma  = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+    call_gex = ( c_gamma * call_oi * 100.0).astype(float)
+    put_gex  = (-p_gamma * put_oi  * 100.0).astype(float)
+    net_gex  = (call_gex + put_gex).astype(float)
+    spot = None
+    try:
+        parts = dict(splt.split("=", 1) for splt in (last_run_status.get("msg") or "").split() if "=" in splt)
+        spot = float(parts.get("spot", ""))
+    except:
+        spot = None
+    return {
+        "strikes": s.tolist(),
+        "callVol": call_vol.tolist(), "putVol": put_vol.tolist(),
+        "callOI":  call_oi.tolist(),  "putOI":  put_oi.tolist(),
+        "callGEX": call_gex.tolist(), "putGEX": put_gex.tolist(), "netGEX": net_gex.tolist(),
+        "spot": spot
+    }
+
+@app.get("/api/health")
+def api_health():
+    return {"status": "ok", "last": last_run_status}
+
+@app.get("/status")
+def status():
+    return last_run_status
+
+@app.get("/api/snapshot")
+def snapshot():
+    with _df_lock:
+        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+    if df is None or df.empty:
+        return {"columns": DISPLAY_COLS, "rows": []}
+    df.columns = DISPLAY_COLS
+    return {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
+
+
+@app.get("/api/spot")
+def api_spot():
+    """
+    Returns time-series data for SPX spot price from historical snapshots.
+    Required by the Spot dashboard tab.
+    """
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        
+        # Query last 100 snapshots to get spot price history
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT ts, spot 
+                FROM chain_snapshots 
+                WHERE spot IS NOT NULL 
+                ORDER BY ts DESC 
+                LIMIT 100
+            """)).mappings().all()
+        
+        if not rows:
+            return {"time": [], "close": []}
+        
+        # Reverse to get chronological order (oldest first)
+        rows = list(reversed(rows))
+        
+        return {
+            "time": [r["ts"].isoformat() for r in rows],
+            "close": [float(r["spot"]) for r in rows]
+        }
+    except Exception as e:
+        print(f"[api_spot] error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/history")
+def api_history(limit: int = Query(288, ge=1, le=5000)):
+    if not engine:
+        return {"error": "DATABASE_URL not set"}
+    with engine.begin() as conn:
+        rows = conn.execute(text(
+            "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
+        ), {"lim": limit}).mappings().all()
+    for r in rows:
+        r["columns"] = json.loads(r["columns"]) if isinstance(r["columns"], str) else r["columns"]
+        r["rows"]    = json.loads(r["rows"])    if isinstance(r["rows"], str) else r["rows"]
+        r["ts"]      = r["ts"].isoformat()
+    return rows
+
+@app.get("/download/history.csv")
+def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
+    if not engine:
+        return Response("DATABASE_URL not set", media_type="text/plain", status_code=500)
+    with engine.begin() as conn:
+        recs = conn.execute(text(
+            "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
+        ), {"lim": limit}).mappings().all()
+    out = []
+    for r in recs:
+        cols = json.loads(r["columns"]) if isinstance(r["columns"], str) else r["columns"]
+        rows = json.loads(r["rows"])    if isinstance(r["rows"], str) else r["rows"]
+        for arr in rows:
+            obj = {"ts": r["ts"].isoformat(), "exp": r["exp"], "spot": r["spot"]}
+            obj.update({cols[i]: arr[i] for i in range(len(cols))})
+            out.append(obj)
+    df = pd.DataFrame(out)
+    csv = df.to_csv(index=False)
+    return Response(csv, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=history.csv"})
+
+# ===== Volland API (from Postgres) =====
+@app.get("/api/volland/latest")
+def api_volland_latest():
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        r = db_latest_volland()
+        if not r:
+            return {"ts": None, "payload": None}
+        return r
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/volland/history")
+def api_volland_history(limit: int = Query(500, ge=1, le=5000)):
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        return db_volland_history(limit=limit)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/volland/vanna_window")
+def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
+    """
+    Latest strikes around mid_strike (mid_strike = strike where abs(vanna) is max).
+    UI draws the vertical line at SPOT (from /api/series).
+    """
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        return db_volland_vanna_window(limit=limit)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 # ====== TABLE & DASHBOARD HTML TEMPLATES ======
 
@@ -767,7 +725,7 @@ TABLE_HTML_TEMPLATE = """
   .table tr.atm td { background:#1a2634; }
 </style>
 </head><body>
-  <h2>SPXW 0DTE — live table</h2>
+  <h2>SPXW 0DTE â€” live table</h2>
   <div class="last">
     Last run: __TS__<br>exp=__EXP__<br>spot=__SPOT__<br>rows=__ROWS__
   </div>
@@ -782,15 +740,12 @@ DASH_HTML_TEMPLATE = """
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>SPXW 0DTE — Dashboard</title>
+  <title>SPXW 0DTE â€” Dashboard</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <style>
     :root {
       --bg:#0b0c10; --panel:#121417; --muted:#8a8f98; --text:#e6e7e9; --border:#23262b;
       --green:#22c55e; --red:#ef4444; --blue:#60a5fa;
-      --warning-bg: #fef3c7;
-      --warning-border: #fbbf24;
-      --warning-text: #92400e;
     }
     * { box-sizing: border-box; }
     body {
@@ -799,22 +754,6 @@ DASH_HTML_TEMPLATE = """
       color: var(--text);
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
       font-size: 13px;
-    }
-
-    .mock-warning {
-      background: var(--warning-bg);
-      border: 2px solid var(--warning-border);
-      color: var(--warning-text);
-      padding: 12px 16px;
-      border-radius: 8px;
-      margin: 0 0 16px 0;
-      font-weight: 600;
-      display: none;
-      font-size: 14px;
-      text-align: center;
-    }
-    .mock-warning.show {
-      display: block;
     }
 
     .layout {
@@ -949,7 +888,7 @@ DASH_HTML_TEMPLATE = """
         <span class="dot"></span>
         <div>
           <div style="font-weight:600; font-size:12px;">__STATUS_TEXT__</div>
-          <div class="small">Last run: __LAST_TS__ — __LAST_MSG__</div>
+          <div class="small">Last run: __LAST_TS__ â€” __LAST_MSG__</div>
         </div>
       </div>
       <div class="nav">
@@ -959,20 +898,14 @@ DASH_HTML_TEMPLATE = """
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
       <div class="small" style="margin-top:14px">
-        <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> ·
-        <a href="/api/history"  style="color:var(--muted)">History</a> ·
-        <a href="/api/volland/latest" style="color:var(--muted)">Latest Exposure</a> ·
+        <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> Â·
+        <a href="/api/history"  style="color:var(--muted)">History</a> Â·
+        <a href="/api/volland/latest" style="color:var(--muted)">Latest Exposure</a> Â·
         <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
       </div>
     </aside>
 
     <main class="content">
-      <!-- Mock Data Warning Banner -->
-      <div id="mockWarning" class="mock-warning">
-        <span>⚠️</span>
-        <span id="mockWarningText">Using mock data - Market is closed</span>
-      </div>
-      
       <div id="viewTable" class="panel">
         <div class="header">
           <div><strong>Live Chain Table</strong></div>
@@ -1170,44 +1103,48 @@ DASH_HTML_TEMPLATE = """
     }
 
     async function drawOrUpdate(){
-      const data = await fetchSeries();
-      if (!data || !data.strikes || data.strikes.length === 0) return;
+  // 1) Fetch the fast data first (DO NOT wait for vanna)
+  const data = await fetchSeries();
+  if (!data || !data.strikes || data.strikes.length === 0) return;
 
-      const strikes = data.strikes, spot = data.spot;
+  const strikes = data.strikes, spot = data.spot;
 
-      const vMax = Math.max(0, ...data.callVol, ...data.putVol) * 1.05;
-      const oiMax= Math.max(0, ...data.callOI,  ...data.putOI ) * 1.05;
-      const gAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v=>Math.abs(v));
-      const gMax = (gAbs.length ? Math.max(...gAbs) : 0) * 1.05;
+  const vMax = Math.max(0, ...data.callVol, ...data.putVol) * 1.05;
+  const oiMax= Math.max(0, ...data.callOI,  ...data.putOI ) * 1.05;
+  const gAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v=>Math.abs(v));
+  const gMax = (gAbs.length ? Math.max(...gAbs) : 0) * 1.05;
 
-      const gexLayout = buildLayout('Gamma Exposure (GEX)','Strike','GEX',spot,-gMax,gMax,5);
-      const volLayout = buildLayout('Volume','Strike','Volume',spot,0,vMax,5);
-      const oiLayout  = buildLayout('Open Interest','Strike','Open Interest',spot,0,oiMax,5);
+  const gexLayout = buildLayout('Gamma Exposure (GEX)','Strike','GEX',spot,-gMax,gMax,5);
+  const volLayout = buildLayout('Volume','Strike','Volume',spot,0,vMax,5);
+  const oiLayout  = buildLayout('Open Interest','Strike','Open Interest',spot,0,oiMax,5);
 
-      const gexTraces = tracesForGEX(strikes, data.callGEX, data.putGEX, data.netGEX);
-      const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
-      const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
+  const gexTraces = tracesForGEX(strikes, data.callGEX, data.putGEX, data.netGEX);
+  const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
+  const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
 
-      if (firstDraw){
-        Plotly.newPlot(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
-        Plotly.newPlot(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
-        Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
-        firstDraw=false;
-      } else {
-        Plotly.react(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
-        Plotly.react(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
-        Plotly.react(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
-      }
+  if (firstDraw){
+    Plotly.newPlot(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
+    Plotly.newPlot(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
+    Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
+    firstDraw=false;
+  } else {
+    Plotly.react(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
+    Plotly.react(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
+    Plotly.react(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
+  }
 
-      if (!window.__vannaLoadingShown) {
-        window.__vannaLoadingShown = true;
-        drawVannaWindow({ error: "Loading Vanna…" }, spot);
-      }
+  // 2) Show a quick "loading" state for vanna (optional but recommended)
+  if (!window.__vannaLoadingShown) {
+    window.__vannaLoadingShown = true;
+    drawVannaWindow({ error: "Loading Vannaâ€¦" }, spot); // your function will render the message
+  }
 
-      fetchVannaWindow()
-        .then(vannaW => drawVannaWindow(vannaW, spot))
-        .catch(err => drawVannaWindow({ error: String(err) }, spot));
-    }
+  // 3) Fetch vanna in the background (doesn't block charts)
+  fetchVannaWindow()
+    .then(vannaW => drawVannaWindow(vannaW, spot))
+    .catch(err => drawVannaWindow({ error: String(err) }, spot));
+}
+
 
     function startCharts(){
       drawOrUpdate();
@@ -1221,7 +1158,7 @@ DASH_HTML_TEMPLATE = """
       }
     }
 
-    // ===== Spot =====
+    // ===== Spot: expects /api/spot (keep your existing endpoint) =====
     const spotPriceDiv=document.getElementById('spotPricePlot'),
           gexSideDiv=document.getElementById('gexSidePlot'),
           volSideDiv=document.getElementById('volSidePlot');
@@ -1356,30 +1293,6 @@ DASH_HTML_TEMPLATE = """
         spotTimer=null;
       }
     }
-
-    // ===== Mock Data Status Check =====
-    async function checkMockStatus() {
-      try {
-        const r = await fetch('/api/mock_status', {cache: 'no-store'});
-        const status = await r.json();
-        const warning = document.getElementById('mockWarning');
-        const warningText = document.getElementById('mockWarningText');
-        
-        if (status.is_mock) {
-          const reasons = status.reasons ? status.reasons.join(', ') : 'Market closed';
-          warningText.innerHTML = `⚠️ Using latest saved data - ${reasons}`;
-          warning.classList.add('show');
-        } else {
-          warning.classList.remove('show');
-        }
-      } catch (e) {
-        console.error('Failed to check mock status:', e);
-      }
-    }
-
-    // Check mock status on load and every 60 seconds
-    checkMockStatus();
-    setInterval(checkMockStatus, 60000);
 
     // default
     showTable();

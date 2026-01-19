@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, text
 from threading import Lock
 from typing import Any, Optional
 
+
 # ====== CONFIG ======
 USE_LIVE = True
 BASE = "https://api.tradestation.com/v3" if USE_LIVE else "https://sim-api.tradestation.com/v3"

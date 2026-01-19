@@ -262,10 +262,49 @@ def now_et():
 def fmt_et(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d %H:%M %Z")
 
+
+# US Market Holidays for 2025-2026 (NYSE/NASDAQ)
+US_MARKET_HOLIDAYS_2025_2026 = {
+    date(2025, 1, 1),   # New Year's Day
+    date(2025, 1, 20),  # MLK Day
+    date(2025, 2, 17),  # Presidents Day
+    date(2025, 4, 18),  # Good Friday
+    date(2025, 5, 26),  # Memorial Day
+    date(2025, 6, 19),  # Juneteenth
+    date(2025, 7, 4),   # Independence Day
+    date(2025, 9, 1),   # Labor Day
+    date(2025, 11, 27), # Thanksgiving
+    date(2025, 12, 25), # Christmas
+    
+    date(2026, 1, 1),   # New Year's Day
+    date(2026, 1, 19),  # MLK Day 2026
+    date(2026, 2, 16),  # Presidents Day
+    date(2026, 4, 3),   # Good Friday
+    date(2026, 5, 25),  # Memorial Day
+    date(2026, 6, 19),  # Juneteenth
+    date(2026, 7, 3),   # Independence Day (observed)
+    date(2026, 9, 7),   # Labor Day
+    date(2026, 11, 26), # Thanksgiving
+    date(2026, 12, 25), # Christmas
+}
+
 def market_open_now() -> bool:
+    """
+    Check if US stock market is currently open.
+    Returns False if weekend, holiday, or outside trading hours.
+    """
     t = now_et()
-    if t.weekday() >= 5:
+    today = t.date()
+    
+    # Check if weekend
+    if t.weekday() >= 5:  # 5=Saturday, 6=Sunday
         return False
+    
+    # Check if market holiday
+    if today in US_MARKET_HOLIDAYS_2025_2026:
+        return False
+    
+    # Check if within trading hours (9:30 AM - 4:00 PM ET)
     return dtime(9, 30) <= t.time() <= dtime(16, 0)
 
 # ====== TS helpers ======

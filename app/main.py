@@ -1,7 +1,7 @@
 # 0DTE Alpha â€” live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
 from fastapi import FastAPI, Response, Query
 from fastapi.responses import HTMLResponse, JSONResponse
-from datetime import datetime, time as dtime
+from datetime import datetime, time as dtime, date
 import os, time, json, requests, pandas as pd, pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text

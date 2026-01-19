@@ -38,9 +38,47 @@ def db():
 
 
 def ensure_tables():
-    """Create all required tables and views."""
     with db() as conn, conn.cursor() as cur:
-        # Original snapshots table (keep for backward compatibility and debugging)
+        # Drop view first if it exists (views can't be altered, only replaced)
+        cur.execute("DROP VIEW IF EXISTS volland_vanna_points_dedup CASCADE;")
+        
+        # Create main table
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS volland_exposure_points (
+            id BIGSERIAL PRIMARY KEY,
+            ts_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            strike NUMERIC NOT NULL,
+            value NUMERIC NOT NULL
+        );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_exposure_points_ts ON volland_exposure_points(ts_utc DESC);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_exposure_points_strike ON volland_exposure_points(strike);")
+        
+        # Create deduped view
+        cur.execute("""
+        CREATE VIEW volland_vanna_points_dedup AS
+        WITH latest_ts AS (
+            SELECT MAX(ts_utc) AS ts_utc
+            FROM volland_exposure_points
+        ),
+        ranked AS (
+            SELECT 
+                v.ts_utc,
+                v.strike,
+                v.value AS vanna,
+                ROW_NUMBER() OVER (
+                    PARTITION BY v.strike 
+                    ORDER BY v.id DESC
+                ) AS rn
+            FROM volland_exposure_points v
+            JOIN latest_ts l ON v.ts_utc = l.ts_utc
+        )
+        SELECT ts_utc, strike, vanna
+        FROM ranked
+        WHERE rn = 1;
+        """)
+        
+        # Legacy snapshots table
         cur.execute("""
         CREATE TABLE IF NOT EXISTS volland_snapshots (
             id BIGSERIAL PRIMARY KEY,
@@ -49,49 +87,6 @@ def ensure_tables():
         );
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_snapshots_ts ON volland_snapshots(ts DESC);")
-
-        # NEW: Structured exposure points table
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS volland_exposure_points (
-            id BIGSERIAL PRIMARY KEY,
-            ts_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
-            ticker VARCHAR(20) NOT NULL DEFAULT 'SPX',
-            greek VARCHAR(20) NOT NULL,
-            expiration_option VARCHAR(30),
-            strike NUMERIC NOT NULL,
-            value NUMERIC NOT NULL,
-            current_price NUMERIC,
-            last_modified TIMESTAMPTZ,
-            expirations JSONB
-        );
-        """)
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_exposure_ts ON volland_exposure_points(ts_utc DESC);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_exposure_greek ON volland_exposure_points(greek);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_exposure_strike ON volland_exposure_points(strike);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_exposure_ts_greek ON volland_exposure_points(ts_utc DESC, greek);")
-
-        # NEW: Create the view that main.py expects for vanna data
-        cur.execute("""
-        CREATE OR REPLACE VIEW volland_vanna_points_dedup AS
-        WITH latest AS (
-            SELECT MAX(ts_utc) AS max_ts
-            FROM volland_exposure_points
-            WHERE greek = 'charm'  -- or 'vanna' depending on what you're fetching
-        )
-        SELECT 
-            e.ts_utc,
-            e.strike,
-            e.value AS vanna,
-            e.current_price,
-            e.ticker
-        FROM volland_exposure_points e
-        JOIN latest l ON e.ts_utc = l.max_ts
-        WHERE e.greek = 'charm'  -- match the greek being fetched
-        ORDER BY e.strike;
-        """)
-
-        print("[db] tables and views ready", flush=True)
-
 
 def save_raw_snapshot(payload: dict):
     """Save raw snapshot for debugging/backup."""

@@ -1,7 +1,7 @@
 # 0DTE Alpha — live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
 from fastapi import FastAPI, Response, Query
 from fastapi.responses import HTMLResponse, JSONResponse
-from datetime import datetime, time as dtime
+from datetime import datetime, time as dtime, timedelta 
 import os, time, json, requests, pandas as pd, pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
@@ -103,16 +103,48 @@ def _json_load_maybe(v: Any) -> Any:
     return v
 
 def db_latest_volland() -> Optional[dict]:
+    """
+    Get the latest Volland exposure data.
+    Now returns structured data from volland_exposure_points.
+    """
     if not engine:
         return None
-    q = text(f"SELECT {VOLLAND_TS_COL} AS ts, {VOLLAND_PAYLOAD_COL} AS payload FROM {VOLLAND_TABLE} ORDER BY {VOLLAND_TS_COL} DESC LIMIT 1")
+    
+    sql = text("""
+    WITH latest AS (
+        SELECT MAX(ts_utc) AS max_ts
+        FROM volland_exposure_points
+    )
+    SELECT 
+        e.ts_utc,
+        e.ticker,
+        e.greek,
+        e.current_price,
+        json_agg(
+            json_build_object('strike', e.strike, 'value', e.value)
+            ORDER BY e.strike
+        ) AS points
+    FROM volland_exposure_points e
+    JOIN latest l ON e.ts_utc = l.max_ts
+    GROUP BY e.ts_utc, e.ticker, e.greek, e.current_price
+    LIMIT 1;
+    """)
+    
     with engine.begin() as conn:
-        r = conn.execute(q).mappings().first()
+        r = conn.execute(sql).mappings().first()
+    
     if not r:
         return None
-    payload = _json_load_maybe(r["payload"])
-    ts = r["ts"]
-    return {"ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts), "payload": payload}
+    
+    return {
+        "ts": r["ts_utc"].isoformat() if hasattr(r["ts_utc"], "isoformat") else str(r["ts_utc"]),
+        "ticker": r["ticker"],
+        "greek": r["greek"],
+        "current_price": float(r["current_price"]) if r["current_price"] else None,
+        "payload": {
+            "points": r["points"] if isinstance(r["points"], list) else json.loads(r["points"])
+        }
+    }
 
 def db_volland_history(limit: int = 500) -> list[dict]:
     if not engine:
@@ -129,8 +161,8 @@ def db_volland_history(limit: int = 500) -> list[dict]:
 
 def db_volland_vanna_window(limit: int = 40) -> dict:
     """
-    Returns latest 'limit' strikes around the "mid" strike where abs(vanna) is max.
-    (UI draws the vertical line at SPOT; mid info is returned for reference.)
+    Returns latest 'limit' strikes around the current spot price.
+    Now reads from volland_exposure_points table.
     """
     if not engine:
         raise RuntimeError("DATABASE_URL not set")
@@ -139,39 +171,51 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
     if lim < 5: lim = 5
     if lim > 200: lim = 200
 
-    sql = text(f"""
+    sql = text("""
     WITH latest AS (
-      SELECT max({VOLLAND_VANNA_TS_COL}) AS ts_utc
-      FROM {VOLLAND_VANNA_POINTS}
+        SELECT MAX(ts_utc) AS max_ts
+        FROM volland_exposure_points
+        WHERE greek IN ('charm', 'vanna')
+    ),
+    latest_data AS (
+        SELECT 
+            e.ts_utc,
+            e.strike,
+            e.value AS vanna,
+            e.current_price,
+            e.greek
+        FROM volland_exposure_points e
+        JOIN latest l ON e.ts_utc = l.max_ts
+        WHERE e.greek IN ('charm', 'vanna')
     ),
     mid AS (
-      SELECT v.strike::numeric AS mid_strike,
-             v.vanna::numeric  AS mid_vanna
-      FROM {VOLLAND_VANNA_POINTS} v
-      JOIN latest l ON v.{VOLLAND_VANNA_TS_COL} = l.ts_utc
-      ORDER BY abs(v.vanna::numeric) DESC
-      LIMIT 1
+        SELECT 
+            strike AS mid_strike,
+            vanna AS mid_vanna
+        FROM latest_data
+        ORDER BY ABS(vanna) DESC
+        LIMIT 1
     ),
     ranked AS (
-      SELECT
-        v.{VOLLAND_VANNA_TS_COL} AS ts_utc,
-        v.strike::numeric AS strike,
-        v.vanna::numeric  AS vanna,
-        m.mid_strike,
-        m.mid_vanna,
-        (v.strike::numeric - m.mid_strike) AS rel,
-        ROW_NUMBER() OVER (
-          ORDER BY abs(v.strike::numeric - m.mid_strike), v.strike::numeric
-        ) AS rn
-      FROM {VOLLAND_VANNA_POINTS} v
-      JOIN latest l ON v.{VOLLAND_VANNA_TS_COL} = l.ts_utc
-      CROSS JOIN mid m
+        SELECT
+            d.ts_utc,
+            d.strike,
+            d.vanna,
+            m.mid_strike,
+            m.mid_vanna,
+            (d.strike - m.mid_strike) AS rel,
+            ROW_NUMBER() OVER (
+                ORDER BY ABS(d.strike - COALESCE(d.current_price, m.mid_strike)), d.strike
+            ) AS rn
+        FROM latest_data d
+        CROSS JOIN mid m
     )
     SELECT ts_utc, strike, vanna, mid_strike, mid_vanna, rel
     FROM ranked
     WHERE rn <= :lim
     ORDER BY strike;
     """)
+    
     with engine.begin() as conn:
         rows = conn.execute(sql, {"lim": lim}).mappings().all()
 
@@ -180,20 +224,20 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
 
     ts_utc = rows[0]["ts_utc"]
     mid_strike = rows[0]["mid_strike"]
-    mid_vanna  = rows[0]["mid_vanna"]
+    mid_vanna = rows[0]["mid_vanna"]
 
     pts = []
     for r in rows:
         pts.append({
             "strike": float(r["strike"]) if r["strike"] is not None else None,
-            "vanna":  float(r["vanna"])  if r["vanna"]  is not None else None,
-            "rel":    float(r["rel"])    if r["rel"]    is not None else None,
+            "vanna": float(r["vanna"]) if r["vanna"] is not None else None,
+            "rel": float(r["rel"]) if r["rel"] is not None else None,
         })
 
     return {
         "ts_utc": ts_utc.isoformat() if hasattr(ts_utc, "isoformat") else str(ts_utc),
         "mid_strike": float(mid_strike) if mid_strike is not None else None,
-        "mid_vanna":  float(mid_vanna)  if mid_vanna  is not None else None,
+        "mid_vanna": float(mid_vanna) if mid_vanna is not None else None,
         "points": pts
     }
 
@@ -665,6 +709,92 @@ def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
         return db_volland_vanna_window(limit=limit)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/volland/exposure_history")
+def api_volland_exposure_history(
+    greek: str = Query("charm", description="Greek type: charm, vanna, gamma, delta"),
+    ticker: str = Query("SPX", description="Ticker: SPX, SPY, QQQ"),
+    limit: int = Query(100, ge=1, le=1000, description="Number of time points")
+):
+    """
+    Get historical exposure data for charting over time.
+    Returns aggregated data by time bucket.
+    """
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        
+        sql = text("""
+        SELECT 
+            date_trunc('minute', ts_utc) AS ts_bucket,
+            strike,
+            AVG(value) AS avg_value,
+            MAX(current_price) AS spot_price
+        FROM volland_exposure_points
+        WHERE greek = :greek AND ticker = :ticker
+        GROUP BY date_trunc('minute', ts_utc), strike
+        ORDER BY ts_bucket DESC, strike
+        LIMIT :lim;
+        """)
+        
+        with engine.begin() as conn:
+            rows = conn.execute(sql, {"greek": greek, "ticker": ticker, "lim": limit}).mappings().all()
+        
+        result = []
+        for r in rows:
+            result.append({
+                "ts": r["ts_bucket"].isoformat() if hasattr(r["ts_bucket"], "isoformat") else str(r["ts_bucket"]),
+                "strike": float(r["strike"]),
+                "value": float(r["avg_value"]),
+                "spot": float(r["spot_price"]) if r["spot_price"] else None
+            })
+        
+        return result
+    
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/volland/meta")
+def api_volland_meta():
+    """
+    Get metadata about available Volland data.
+    """
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        
+        sql = text("""
+        SELECT 
+            ticker,
+            greek,
+            MIN(ts_utc) AS first_ts,
+            MAX(ts_utc) AS last_ts,
+            COUNT(DISTINCT date_trunc('minute', ts_utc)) AS time_points,
+            COUNT(DISTINCT strike) AS strike_count
+        FROM volland_exposure_points
+        GROUP BY ticker, greek
+        ORDER BY ticker, greek;
+        """)
+        
+        with engine.begin() as conn:
+            rows = conn.execute(sql).mappings().all()
+        
+        result = []
+        for r in rows:
+            result.append({
+                "ticker": r["ticker"],
+                "greek": r["greek"],
+                "first_ts": r["first_ts"].isoformat() if hasattr(r["first_ts"], "isoformat") else str(r["first_ts"]),
+                "last_ts": r["last_ts"].isoformat() if hasattr(r["last_ts"], "isoformat") else str(r["last_ts"]),
+                "time_points": r["time_points"],
+                "strike_count": r["strike_count"]
+            })
+        
+        return {"data_sources": result}
+    
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 
 # ====== TABLE & DASHBOARD HTML TEMPLATES ======
 

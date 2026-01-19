@@ -1,5 +1,5 @@
-# 0DTE Alpha — live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
-# WITH MOCK DATA SUPPORT - Automatically uses latest saved data when market is closed
+# 0DTE Alpha — live chain + 5-min history + MOCK DATA SUPPORT + HOLIDAY DETECTION
+# Automatically uses latest saved data when market is closed or APIs fail
 from fastapi import FastAPI, Response, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from datetime import datetime, time as dtime, timedelta
@@ -284,7 +284,7 @@ def should_use_mock_data() -> bool:
     Determine if we should use mock data.
     Returns True if:
     - Manual override is set (USE_MOCK_DATA_OVERRIDE=true)
-    - Market is closed (outside 9:30-16:00 ET Mon-Fri)
+    - Market is closed (outside 9:30-16:00 ET Mon-Fri OR holiday)
     """
     if USE_MOCK_DATA_OVERRIDE:
         return True
@@ -383,10 +383,88 @@ def fmt_et(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d %H:%M %Z")
 
 def market_open_now() -> bool:
+    """
+    Check if US stock market is currently open.
+    Accounts for:
+    - Trading hours: 9:30 AM - 4:00 PM ET
+    - Weekends: Closed Saturday & Sunday
+    - US Market Holidays (2025-2027)
+    """
     t = now_et()
-    if t.weekday() >= 5:
+    
+    # Check if weekend
+    if t.weekday() >= 5:  # Saturday = 5, Sunday = 6
         return False
-    return dtime(9, 30) <= t.time() <= dtime(16, 0)
+    
+    # Check trading hours
+    if not (dtime(9, 30) <= t.time() <= dtime(16, 0)):
+        return False
+    
+    # US market holidays by year
+    # Format: (month, day)
+    market_holidays_2025 = [
+        (1, 1),   # New Year's Day
+        (1, 20),  # MLK Day
+        (2, 17),  # Presidents Day
+        (4, 18),  # Good Friday
+        (5, 26),  # Memorial Day
+        (6, 19),  # Juneteenth
+        (7, 4),   # Independence Day
+        (9, 1),   # Labor Day
+        (11, 27), # Thanksgiving
+        (12, 25), # Christmas
+    ]
+    
+    market_holidays_2026 = [
+        (1, 1),   # New Year's Day
+        (1, 19),  # MLK Day ← TODAY'S HOLIDAY!
+        (2, 16),  # Presidents Day
+        (4, 3),   # Good Friday
+        (5, 25),  # Memorial Day
+        (6, 19),  # Juneteenth
+        (7, 3),   # Independence Day (observed)
+        (9, 7),   # Labor Day
+        (11, 26), # Thanksgiving
+        (12, 25), # Christmas
+    ]
+    
+    market_holidays_2027 = [
+        (1, 1),   # New Year's Day
+        (1, 18),  # MLK Day
+        (2, 15),  # Presidents Day
+        (3, 26),  # Good Friday
+        (5, 31),  # Memorial Day
+        (6, 18),  # Juneteenth (observed)
+        (7, 5),   # Independence Day (observed)
+        (9, 6),   # Labor Day
+        (11, 25), # Thanksgiving
+        (12, 24), # Christmas (observed)
+    ]
+    
+    # Select holidays for current year
+    year = t.year
+    if year == 2025:
+        holidays = market_holidays_2025
+    elif year == 2026:
+        holidays = market_holidays_2026
+    elif year == 2027:
+        holidays = market_holidays_2027
+    else:
+        # For years beyond 2027, check only fixed holidays
+        holidays = [
+            (1, 1),   # New Year's Day
+            (6, 19),  # Juneteenth
+            (7, 4),   # Independence Day
+            (12, 25), # Christmas
+        ]
+    
+    # Check if today is a holiday
+    today = (t.month, t.day)
+    if today in holidays:
+        print(f"[market] Holiday detected: {t.month}/{t.day}", flush=True)
+        return False
+    
+    return True
 
 # ====== TS helpers ======
 def get_spx_last() -> float:
@@ -579,6 +657,7 @@ def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
     return df.loc[sorted(idx)].reset_index(drop=True)
 
 
+
 # ====== jobs ======
 def run_market_job():
     global latest_df, last_run_status
@@ -640,293 +719,35 @@ def run_market_job():
         print("[pull] OK", last_run_status["msg"], flush=True)
         
     except Exception as e:
-        last_run_status = {
-            "ts": fmt_et(now_et()), 
-            "ok": False, 
-            "msg": f"error: {e}",
-            "is_mock": False
-        }
-        print("[pull] ERROR", e, flush=True)
-
-def save_history_job():
-    global _last_saved_at
-    if not engine:
-        return
-    with _df_lock:
-        if latest_df is None or latest_df.empty:
-            return
-        df_copy = latest_df.copy()
-    if time.time() - _last_saved_at < 60:
-        return
-    try:
-        df = df_copy
-        df.columns = DISPLAY_COLS
-        payload = {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
-        msg = (last_run_status.get("msg") or "")
-        spot = None; exp = None
-        try:
-            parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
-            spot = float(parts.get("spot", ""))
-            exp  = parts.get("exp")
-        except:
-            pass
-        with engine.begin() as conn:
-            conn.execute(
-                text("INSERT INTO chain_snapshots (ts, exp, spot, columns, rows) VALUES (:ts, :exp, :spot, :columns, :rows)"),
-                {"ts": now_et(), "exp": exp, "spot": spot,
-                 "columns": json.dumps(payload["columns"]),
-                 "rows": json.dumps(payload["rows"])}
-            )
-        _last_saved_at = time.time()
-        print("[save] snapshot inserted", flush=True)
-    except Exception as e:
-        print("[save] failed:", e, flush=True)
-
-def start_scheduler():
-    sch = BackgroundScheduler(timezone="US/Eastern")
-    sch.add_job(run_market_job, "interval", seconds=PULL_EVERY, id="pull", coalesce=True, max_instances=1)
-    sch.add_job(save_history_job, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="save", coalesce=True, max_instances=1)
-    sch.start()
-    print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min", flush=True)
-    return sch
-
-REQUIRED_ENVS = ["TS_CLIENT_ID", "TS_CLIENT_SECRET", "TS_REFRESH_TOKEN", "DATABASE_URL"]
-def missing_envs():
-    return [k for k in REQUIRED_ENVS if not os.getenv(k)]
-
-scheduler: BackgroundScheduler | None = None
-
-@app.on_event("startup")
-def on_startup():
-    miss = missing_envs()
-    if miss:
-        print("[env] missing:", miss, flush=True)
-    if engine:
-        db_init()
-    else:
-        print("[db] engine not created (no DATABASE_URL)", flush=True)
-    global scheduler
-    scheduler = start_scheduler()
-
-@app.on_event("shutdown")
-def on_shutdown():
-    global scheduler
-    if scheduler:
-        scheduler.shutdown()
-        print("[sched] stopped", flush=True)
-
-# ====== API ======
-@app.get("/api/series")
-def api_series():
-    with _df_lock:
-        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
-    if df is None or df.empty:
-        return {
-            "strikes": [], "callVol": [], "putVol": [], "callOI": [], "putOI": [],
-            "callGEX": [], "putGEX": [], "netGEX": [], "spot": None
-        }
-    sdf = df.sort_values("Strike")
-    s  = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
-    call_vol = pd.to_numeric(sdf["C_Volume"],       errors="coerce").fillna(0.0).astype(float)
-    put_vol  = pd.to_numeric(sdf["P_Volume"],       errors="coerce").fillna(0.0).astype(float)
-    call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
-    put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
-    c_gamma  = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
-    p_gamma  = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
-    call_gex = ( c_gamma * call_oi * 100.0).astype(float)
-    put_gex  = (-p_gamma * put_oi  * 100.0).astype(float)
-    net_gex  = (call_gex + put_gex).astype(float)
-    spot = None
-    try:
-        parts = dict(splt.split("=", 1) for splt in (last_run_status.get("msg") or "").split() if "=" in splt)
-        spot = float(parts.get("spot", ""))
-    except:
-        spot = None
-    return {
-        "strikes": s.tolist(),
-        "callVol": call_vol.tolist(), "putVol": put_vol.tolist(),
-        "callOI":  call_oi.tolist(),  "putOI":  put_oi.tolist(),
-        "callGEX": call_gex.tolist(), "putGEX": put_gex.tolist(), "netGEX": net_gex.tolist(),
-        "spot": spot
-    }
-
-@app.get("/api/health")
-def api_health():
-    return {"status": "ok", "last": last_run_status}
-
-@app.get("/api/mock_status")
-def api_mock_status():
-    """Returns information about whether mock data is being used"""
-    return get_mock_data_info()
-
-@app.get("/status")
-def status():
-    status_data = dict(last_run_status)
-    status_data["is_mock"] = status_data.get("is_mock", False)
-    return status_data
-
-@app.get("/api/snapshot")
-def snapshot():
-    with _df_lock:
-        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
-    if df is None or df.empty:
-        return {"columns": DISPLAY_COLS, "rows": []}
-    df.columns = DISPLAY_COLS
-    return {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
-
-@app.get("/api/history")
-def api_history(limit: int = Query(288, ge=1, le=5000)):
-    if not engine:
-        return {"error": "DATABASE_URL not set"}
-    with engine.begin() as conn:
-        rows = conn.execute(text(
-            "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
-        ), {"lim": limit}).mappings().all()
-    for r in rows:
-        r["columns"] = json.loads(r["columns"]) if isinstance(r["columns"], str) else r["columns"]
-        r["rows"]    = json.loads(r["rows"])    if isinstance(r["rows"], str) else r["rows"]
-        r["ts"]      = r["ts"].isoformat()
-    return rows
-
-@app.get("/download/history.csv")
-def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
-    if not engine:
-        return Response("DATABASE_URL not set", media_type="text/plain", status_code=500)
-    with engine.begin() as conn:
-        recs = conn.execute(text(
-            "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
-        ), {"lim": limit}).mappings().all()
-    out = []
-    for r in recs:
-        cols = json.loads(r["columns"]) if isinstance(r["columns"], str) else r["columns"]
-        rows = json.loads(r["rows"])    if isinstance(r["rows"], str) else r["rows"]
-        for arr in rows:
-            obj = {"ts": r["ts"].isoformat(), "exp": r["exp"], "spot": r["spot"]}
-            obj.update({cols[i]: arr[i] for i in range(len(cols))})
-            out.append(obj)
-    df = pd.DataFrame(out)
-    csv = df.to_csv(index=False)
-    return Response(csv, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=history.csv"})
-
-# ===== Volland API (from Postgres) =====
-@app.get("/api/volland/latest")
-def api_volland_latest():
-    try:
-        if not engine:
-            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        r = db_latest_volland()
-        if not r:
-            return {"ts": None, "payload": None}
-        return r
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-@app.get("/api/volland/history")
-def api_volland_history(limit: int = Query(500, ge=1, le=5000)):
-    try:
-        if not engine:
-            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        return db_volland_history(limit=limit)
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-@app.get("/api/volland/vanna_window")
-def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
-    """
-    Latest strikes around mid_strike (mid_strike = strike where abs(vanna) is max).
-    UI draws the vertical line at SPOT (from /api/series).
-    """
-    try:
-        if not engine:
-            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        return db_volland_vanna_window(limit=limit)
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-@app.get("/api/volland/exposure_history")
-def api_volland_exposure_history(
-    greek: str = Query("charm", description="Greek type: charm, vanna, gamma, delta"),
-    ticker: str = Query("SPX", description="Ticker: SPX, SPY, QQQ"),
-    limit: int = Query(100, ge=1, le=1000, description="Number of time points")
-):
-    """
-    Get historical exposure data for charting over time.
-    Returns aggregated data by time bucket.
-    """
-    try:
-        if not engine:
-            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        # ====== FALLBACK TO MOCK DATA ON ERROR ======
+        print(f"[pull] TradeStation error: {e}, trying mock data...", flush=True)
         
-        sql = text("""
-        SELECT 
-            date_trunc('minute', ts_utc) AS ts_bucket,
-            strike,
-            AVG(value) AS avg_value,
-            MAX(current_price) AS spot_price
-        FROM volland_exposure_points
-        WHERE greek = :greek AND ticker = :ticker
-        GROUP BY date_trunc('minute', ts_utc), strike
-        ORDER BY ts_bucket DESC, strike
-        LIMIT :lim;
-        """)
+        df, spot, exp = get_latest_saved_chain_as_mock()
         
-        with engine.begin() as conn:
-            rows = conn.execute(sql, {"greek": greek, "ticker": ticker, "lim": limit}).mappings().all()
-        
-        result = []
-        for r in rows:
-            result.append({
-                "ts": r["ts_bucket"].isoformat() if hasattr(r["ts_bucket"], "isoformat") else str(r["ts_bucket"]),
-                "strike": float(r["strike"]),
-                "value": float(r["avg_value"]),
-                "spot": float(r["spot_price"]) if r["spot_price"] else None
-            })
-        
-        return result
-    
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-@app.get("/api/volland/meta")
-def api_volland_meta():
-    """
-    Get metadata about available Volland data.
-    """
-    try:
-        if not engine:
-            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        
-        sql = text("""
-        SELECT 
-            ticker,
-            greek,
-            MIN(ts_utc) AS first_ts,
-            MAX(ts_utc) AS last_ts,
-            COUNT(DISTINCT date_trunc('minute', ts_utc)) AS time_points,
-            COUNT(DISTINCT strike) AS strike_count
-        FROM volland_exposure_points
-        GROUP BY ticker, greek
-        ORDER BY ticker, greek;
-        """)
-        
-        with engine.begin() as conn:
-            rows = conn.execute(sql).mappings().all()
-        
-        result = []
-        for r in rows:
-            result.append({
-                "ticker": r["ticker"],
-                "greek": r["greek"],
-                "first_ts": r["first_ts"].isoformat() if hasattr(r["first_ts"], "isoformat") else str(r["first_ts"]),
-                "last_ts": r["last_ts"].isoformat() if hasattr(r["last_ts"], "isoformat") else str(r["last_ts"]),
-                "time_points": r["time_points"],
-                "strike_count": r["strike_count"]
-            })
-        
-        return {"data_sources": result}
-    
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        if df is not None and not df.empty:
+            # Convert to CANONICAL_COLS if needed
+            if 'Volume' in df.columns:
+                df.columns = CANONICAL_COLS
+            
+            with _df_lock:
+                latest_df = df.copy()
+            
+            last_run_status = {
+                "ts": fmt_et(now_et()), 
+                "ok": True, 
+                "msg": f"MOCK (API failed): exp={exp} spot={round(spot or 0, 2)} rows={len(df)}",
+                "is_mock": True
+            }
+            print("[pull] Using mock data due to API failure", flush=True)
+        else:
+            # No mock data available either
+            last_run_status = {
+                "ts": fmt_et(now_et()), 
+                "ok": False, 
+                "msg": f"error: {e}",
+                "is_mock": False
+            }
+            print("[pull] ERROR - no mock data available:", e, flush=True)
 
 
 # ====== TABLE & DASHBOARD HTML TEMPLATES ======

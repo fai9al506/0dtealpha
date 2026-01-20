@@ -839,8 +839,17 @@ def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        return db_volland_vanna_window(limit=limit)
+        
+        result = db_volland_vanna_window(limit=limit)
+        
+        # Debug logging
+        ts = result.get('ts_utc', 'None')
+        pts = len(result.get('points', []))
+        print(f"[vanna_window] Returning ts={ts}, points={pts}", flush=True)
+        
+        return result
     except Exception as e:
+        print(f"[vanna_window] ERROR: {e}", flush=True)
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/volland/exposure_history")
@@ -1128,6 +1137,9 @@ DASH_HTML_TEMPLATE = """
         <div>
           <div style="font-weight:600; font-size:12px;">__STATUS_TEXT__</div>
           <div class="small">Last run: __LAST_TS__ — __LAST_MSG__</div>
+          <div class="small" style="margin-top:4px; color:#60a5fa;">
+            Next update in: <span id="countdown">30s</span>
+          </div>
         </div>
       </div>
       <div class="nav">
@@ -1228,7 +1240,9 @@ DASH_HTML_TEMPLATE = """
     // ===== Volland vanna window =====
     async function fetchVannaWindow(){
       const r = await fetch('/api/volland/vanna_window?limit=40', {cache:'no-store'});
-      return await r.json();
+      const data = await r.json();
+      console.log('[fetchVannaWindow] ts=' + (data.ts_utc || 'null') + ', points=' + (data.points?.length || 0));
+      return data;
     }
 
     // ===== Main charts (GEX / VOL / OI / VANNA) =====
@@ -1558,6 +1572,30 @@ DASH_HTML_TEMPLATE = """
     // Check mock status on load and every 60 seconds
     checkMockStatus();
     setInterval(checkMockStatus, 60000);
+
+    // ===== Countdown Timer =====
+    let countdownSeconds = 30;
+    const countdownEl = document.getElementById('countdown');
+    
+    function updateCountdown() {
+      countdownSeconds--;
+      if (countdownSeconds <= 0) {
+        countdownSeconds = 30; // Reset to pull interval
+      }
+      countdownEl.textContent = countdownSeconds + 's';
+      
+      // Change color based on time remaining
+      if (countdownSeconds <= 5) {
+        countdownEl.style.color = '#22c55e'; // Green when about to update
+      } else if (countdownSeconds <= 10) {
+        countdownEl.style.color = '#fbbf24'; // Yellow
+      } else {
+        countdownEl.style.color = '#60a5fa'; // Blue
+      }
+    }
+    
+    // Update countdown every second
+    setInterval(updateCountdown, 1000);
 
     // default
     showTable();

@@ -1583,15 +1583,6 @@ DASH_HTML_TEMPLATE = """
         countdownSeconds = 30; // Reset to pull interval
       }
       countdownEl.textContent = countdownSeconds + 's';
-      
-      // Change color based on time remaining
-      if (countdownSeconds <= 5) {
-        countdownEl.style.color = '#22c55e'; // Green when about to update
-      } else if (countdownSeconds <= 10) {
-        countdownEl.style.color = '#fbbf24'; // Yellow
-      } else {
-        countdownEl.style.color = '#60a5fa'; // Blue
-      }
     }
     
     // Update countdown every second

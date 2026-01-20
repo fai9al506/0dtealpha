@@ -267,13 +267,11 @@ def trim_body(item):
 
 
 
-def parse_statistics(page_content: str) -> dict:
+def parse_statistics(page) -> dict:
     """
-    Parse SPX statistics from the page content.
-    Looks for: Paradigm, Target, Lines in the Sand, Delta Decay Hedging, Opt Volume
+    Parse SPX statistics using Playwright selectors.
+    More reliable than regex on HTML.
     """
-    import re
-    
     stats = {
         "paradigm": None,
         "target": None,
@@ -283,33 +281,53 @@ def parse_statistics(page_content: str) -> dict:
     }
     
     try:
-        # Look for Paradigm (e.g., "BofA-LIS")
-        paradigm_match = re.search(r'Paradigm[^<]*?<[^>]*>([^<]+)', page_content, re.IGNORECASE)
-        if paradigm_match:
-            stats["paradigm"] = paradigm_match.group(1).strip()
+        # Wait for content to load
+        page.wait_for_timeout(2000)
         
-        # Look for Target (e.g., "N/A" or "$6,797 - $6,844")
-        target_match = re.search(r'Target[^<]*?<[^>]*>([^<]+)', page_content, re.IGNORECASE)
-        if target_match:
-            stats["target"] = target_match.group(1).strip()
+        # Try to find text content directly
+        try:
+            # Look for all text content
+            all_text = page.inner_text("body")
+            
+            # Parse using simple string matching
+            lines = all_text.split('\n')
+            for i, line in enumerate(lines):
+                line_clean = line.strip()
+                
+                # Paradigm
+                if 'Paradigm' in line_clean and i + 1 < len(lines):
+                    stats["paradigm"] = lines[i + 1].strip()
+                    print(f"[stats] Found Paradigm: {stats['paradigm']}", flush=True)
+                
+                # Target
+                if 'Target' in line_clean and i + 1 < len(lines):
+                    val = lines[i + 1].strip()
+                    if val and val != 'Paradigm':  # Avoid false matches
+                        stats["target"] = val
+                        print(f"[stats] Found Target: {stats['target']}", flush=True)
+                
+                # Lines in the Sand
+                if 'Lines in the Sand' in line_clean and i + 1 < len(lines):
+                    stats["lines_in_sand"] = lines[i + 1].strip()
+                    print(f"[stats] Found Lines: {stats['lines_in_sand']}", flush=True)
+                
+                # Total 0DTE Delta Decay Hedging
+                if 'Total 0DTE Delta Decay Hedging' in line_clean and i + 1 < len(lines):
+                    stats["delta_decay_hedging"] = lines[i + 1].strip()
+                    print(f"[stats] Found Delta: {stats['delta_decay_hedging']}", flush=True)
+                
+                # Total 0DTE Opt Volume
+                if 'Total 0DTE Opt Volume' in line_clean and i + 1 < len(lines):
+                    stats["opt_volume"] = lines[i + 1].strip()
+                    print(f"[stats] Found Volume: {stats['opt_volume']}", flush=True)
         
-        # Look for Lines in the Sand
-        lines_match = re.search(r'Lines in the Sand[^<]*?<[^>]*>([^<]+)', page_content, re.IGNORECASE)
-        if lines_match:
-            stats["lines_in_sand"] = lines_match.group(1).strip()
-        
-        # Look for Total 0DTE Delta Decay Hedging
-        delta_match = re.search(r'Total 0DTE Delta Decay Hedging[^<]*?<[^>]*>([^<]+)', page_content, re.IGNORECASE)
-        if delta_match:
-            stats["delta_decay_hedging"] = delta_match.group(1).strip()
-        
-        # Look for Total 0DTE Opt Volume
-        volume_match = re.search(r'Total 0DTE Opt Volume[^<]*?<[^>]*>([^<]+)', page_content, re.IGNORECASE)
-        if volume_match:
-            stats["opt_volume"] = volume_match.group(1).strip()
+        except Exception as e:
+            print(f"[stats] Text extraction error: {e}", flush=True)
         
     except Exception as e:
         print(f"[stats] Parse error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
     
     return stats
 
@@ -352,9 +370,8 @@ def run():
                     page.goto(STATS_URL, wait_until="domcontentloaded", timeout=120000)
                     page.wait_for_timeout(int(WAIT_AFTER_GOTO_SEC * 1000))
                     
-                    # Get page HTML content
-                    page_html = page.content()
-                    stats_data = parse_statistics(page_html)
+                    # Parse statistics from page
+                    stats_data = parse_statistics(page)
                     
                     print(f"[stats] Paradigm={stats_data.get('paradigm')}, Lines={stats_data.get('lines_in_sand')}", flush=True)
                 except Exception as e:

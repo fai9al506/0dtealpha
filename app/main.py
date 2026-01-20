@@ -37,8 +37,8 @@ PULL_EVERY     = 30   # seconds
 SAVE_EVERY_MIN = 5    # minutes
 
 # Chain window
-STREAM_SECONDS = 2.0
-TARGET_STRIKES = 40
+STREAM_SECONDS = 6.0
+TARGET_STRIKES = 60
 
 # Mock data override (set USE_MOCK_DATA=true in Railway to force mock mode)
 USE_MOCK_DATA_OVERRIDE = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
@@ -458,7 +458,7 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
         "spreadType": "Single",
         "enableGreeks": "true",
         "priceCenter": f"{spot:.2f}" if spot else "",
-        "strikeProximity": 50,
+        "strikeProximity": 100,
         "optionType": "All",
         "strikeInterval": 1
     }
@@ -499,7 +499,7 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
         "enableGreeks": "true",
         "optionType": "All",
         "priceCenter": f"{spot:.2f}" if spot else "",
-        "strikeProximity": 50,
+        "strikeProximity": 100,
         "strikeInterval": 1,
         "spreadType": "Single",
     }

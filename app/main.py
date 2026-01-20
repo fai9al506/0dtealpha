@@ -1228,7 +1228,7 @@ DASH_HTML_TEMPLATE = """
 
       <div id="viewCharts" class="panel" style="display:none">
         <div class="header">
-          <div><strong>GEX, Volume, Open Interest + Volland Vanna</strong></div>
+          <div><strong>GEX, Volume, Open Interest + Volland Charm</strong></div>
           <div class="pill">spot line = dotted</div>
         </div>
         <div class="charts">
@@ -1352,7 +1352,7 @@ DASH_HTML_TEMPLATE = """
         Plotly.react(vannaDiv, [], {
           paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
           margin:{l:40,r:10,t:10,b:30},
-          annotations:[{text:"Vanna error: "+msg, x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
+          annotations:[{text:"Charm error: "+msg, x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
           font:{color:'#e6e7e9'}
         }, {displayModeBar:false,responsive:true});
         return;
@@ -1399,16 +1399,16 @@ DASH_HTML_TEMPLATE = """
         x: strikes,
         y: vanna,
         marker:{color: colors},
-        hovertemplate:"Strike %{x}<br>Vanna %{y}<extra></extra>"
+        hovertemplate:"Strike %{x}<br>Charm %{y}<extra></extra>"
       };
 
       Plotly.react(vannaDiv, [trace], {
-        title:{text:'Vanna by Strike (Volland)', font:{size:14}},
+        title:{text:'Charm by Strike (Volland)', font:{size:14}},
         paper_bgcolor:'#121417',
         plot_bgcolor:'#0f1115',
         margin:{l:55,r:10,t:32,b:40},
         xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}, dtick:5},
-        yaxis:{title:'Vanna',  gridcolor:'#20242a', tickfont:{size:10}, range:[yMin,yMax]},
+        yaxis:{title:'Charm',  gridcolor:'#20242a', tickfont:{size:10}, range:[yMin,yMax]},
         shapes: shapes,
         font:{color:'#e6e7e9',size:11}
       }, {displayModeBar:false,responsive:true});
@@ -1446,7 +1446,7 @@ DASH_HTML_TEMPLATE = """
 
       if (!window.__vannaLoadingShown) {
         window.__vannaLoadingShown = true;
-        drawVannaWindow({ error: "Loading Vanna…" }, spot);
+        drawVannaWindow({ error: "Loading Charm…" }, spot);
       }
 
       fetchVannaWindow()

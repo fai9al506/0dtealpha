@@ -839,61 +839,17 @@ def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        return db_volland_vanna_window(limit=limit)
+        
+        result = db_volland_vanna_window(limit=limit)
+        
+        # Debug logging
+        ts = result.get('ts_utc', 'None')
+        pts = len(result.get('points', []))
+        print(f"[vanna_window] Returning ts={ts}, points={pts}", flush=True)
+        
+        return result
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-
-
-@app.get("/api/volland/stats")
-def api_volland_stats():
-    """
-    Returns latest SPX statistics from Volland
-    (Paradigm, Target, Lines in Sand, Delta Hedging, Volume)
-    """
-    try:
-        if not engine:
-            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        
-        # Get latest snapshot with statistics
-        sql = text("""
-            SELECT ts, payload->'statistics' as statistics
-            FROM volland_snapshots
-            WHERE payload->'statistics' IS NOT NULL
-            ORDER BY ts DESC
-            LIMIT 1
-        """)
-        
-        with engine.begin() as conn:
-            result = conn.execute(sql).mappings().first()
-        
-        if not result:
-            return {
-                "ts": None,
-                "paradigm": None,
-                "target": None,
-                "lines_in_sand": None,
-                "delta_decay_hedging": None,
-                "opt_volume": None
-            }
-        
-        stats = result["statistics"]
-        if isinstance(stats, str):
-            import json
-            stats = json.loads(stats)
-        
-        return {
-            "ts": result["ts"].isoformat() if hasattr(result["ts"], "isoformat") else str(result["ts"]),
-            "paradigm": stats.get("paradigm"),
-            "target": stats.get("target"),
-            "lines_in_sand": stats.get("lines_in_sand"),
-            "delta_decay_hedging": stats.get("delta_decay_hedging"),
-            "opt_volume": stats.get("opt_volume")
-        }
-    except Exception as e:
-        print(f"[api_volland_stats] error: {e}", flush=True)
-        import traceback
-        traceback.print_exc()
+        print(f"[vanna_window] ERROR: {e}", flush=True)
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/volland/exposure_history")
@@ -1191,17 +1147,6 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabSpot">Spot</button>
       </div>
-      
-      <!-- SPX Statistics -->
-      <div style="margin-top:14px; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216;">
-        <div style="font-weight:600; font-size:12px; margin-bottom:8px; color:var(--text);">SPX Statistics</div>
-        <div class="small" style="line-height:1.6;">
-          <div><span style="color:var(--muted);">Paradigm:</span> <span id="statParadigm">--</span></div>
-          <div><span style="color:var(--muted);">Lines in Sand:</span> <span id="statLines">--</span></div>
-          <div><span style="color:var(--muted);">Delta Hedging:</span> <span id="statDelta">--</span></div>
-          <div><span style="color:var(--muted);">Volume:</span> <span id="statVolume">--</span></div>
-        </div>
-      </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
       <div class="small" style="margin-top:14px">
         <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> ·
@@ -1295,7 +1240,9 @@ DASH_HTML_TEMPLATE = """
     // ===== Volland vanna window =====
     async function fetchVannaWindow(){
       const r = await fetch('/api/volland/vanna_window?limit=40', {cache:'no-store'});
-      return await r.json();
+      const data = await r.json();
+      console.log('[fetchVannaWindow] ts=' + (data.ts_utc || 'null') + ', points=' + (data.points?.length || 0));
+      return data;
     }
 
     // ===== Main charts (GEX / VOL / OI / VANNA) =====
@@ -1633,31 +1580,13 @@ DASH_HTML_TEMPLATE = """
     function updateCountdown() {
       countdownSeconds--;
       if (countdownSeconds <= 0) {
-        countdownSeconds = 30;
+        countdownSeconds = 30; // Reset to pull interval
       }
       countdownEl.textContent = countdownSeconds + 's';
     }
     
+    // Update countdown every second
     setInterval(updateCountdown, 1000);
-
-    // ===== SPX Statistics =====
-    async function fetchStats() {
-      try {
-        const r = await fetch('/api/volland/stats', {cache: 'no-store'});
-        const stats = await r.json();
-        
-        document.getElementById('statParadigm').textContent = stats.paradigm || 'N/A';
-        document.getElementById('statLines').textContent = stats.lines_in_sand || 'N/A';
-        document.getElementById('statDelta').textContent = stats.delta_decay_hedging || 'N/A';
-        document.getElementById('statVolume').textContent = stats.opt_volume || 'N/A';
-      } catch (e) {
-        console.error('Failed to fetch stats:', e);
-      }
-    }
-    
-    // Fetch stats on load and every 60 seconds
-    fetchStats();
-    setInterval(fetchStats, 60000);
 
     // default
     showTable();

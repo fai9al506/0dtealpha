@@ -11,7 +11,6 @@ DB_URL   = os.getenv("DATABASE_URL", "")
 EMAIL    = os.getenv("VOLLAND_EMAIL", "")
 PASS     = os.getenv("VOLLAND_PASSWORD", "")
 URL      = os.getenv("VOLLAND_URL", "")
-STATS_URL = os.getenv("VOLLAND_STATS_URL", "https://vol.land/app/workspace/696fcf236547cfa9b4d09267")
 
 PULL_EVERY   = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "60"))
 WAIT_AFTER_GOTO_SEC = float(os.getenv("VOLLAND_WAIT_AFTER_GOTO_SEC", "6"))
@@ -266,71 +265,6 @@ def trim_body(item):
     return it
 
 
-
-def parse_statistics(page) -> dict:
-    """
-    Parse SPX statistics using Playwright selectors.
-    More reliable than regex on HTML.
-    """
-    stats = {
-        "paradigm": None,
-        "target": None,
-        "lines_in_sand": None,
-        "delta_decay_hedging": None,
-        "opt_volume": None
-    }
-    
-    try:
-        # Wait for content to load
-        page.wait_for_timeout(2000)
-        
-        # Try to find text content directly
-        try:
-            # Look for all text content
-            all_text = page.inner_text("body")
-            
-            # Parse using simple string matching
-            lines = all_text.split('\n')
-            for i, line in enumerate(lines):
-                line_clean = line.strip()
-                
-                # Paradigm
-                if 'Paradigm' in line_clean and i + 1 < len(lines):
-                    stats["paradigm"] = lines[i + 1].strip()
-                    print(f"[stats] Found Paradigm: {stats['paradigm']}", flush=True)
-                
-                # Target
-                if 'Target' in line_clean and i + 1 < len(lines):
-                    val = lines[i + 1].strip()
-                    if val and val != 'Paradigm':  # Avoid false matches
-                        stats["target"] = val
-                        print(f"[stats] Found Target: {stats['target']}", flush=True)
-                
-                # Lines in the Sand
-                if 'Lines in the Sand' in line_clean and i + 1 < len(lines):
-                    stats["lines_in_sand"] = lines[i + 1].strip()
-                    print(f"[stats] Found Lines: {stats['lines_in_sand']}", flush=True)
-                
-                # Total 0DTE Delta Decay Hedging
-                if 'Total 0DTE Delta Decay Hedging' in line_clean and i + 1 < len(lines):
-                    stats["delta_decay_hedging"] = lines[i + 1].strip()
-                    print(f"[stats] Found Delta: {stats['delta_decay_hedging']}", flush=True)
-                
-                # Total 0DTE Opt Volume
-                if 'Total 0DTE Opt Volume' in line_clean and i + 1 < len(lines):
-                    stats["opt_volume"] = lines[i + 1].strip()
-                    print(f"[stats] Found Volume: {stats['opt_volume']}", flush=True)
-        
-        except Exception as e:
-            print(f"[stats] Text extraction error: {e}", flush=True)
-        
-    except Exception as e:
-        print(f"[stats] Parse error: {e}", flush=True)
-        import traceback
-        traceback.print_exc()
-    
-    return stats
-
 def run():
     if not DB_URL or not EMAIL or not PASS or not URL:
         raise RuntimeError("Missing env vars: DATABASE_URL / VOLLAND_EMAIL / VOLLAND_PASSWORD / VOLLAND_URL")
@@ -352,7 +286,6 @@ def run():
             try:
                 reset_captures(page)
 
-                # Scrape charm/exposure data
                 page.goto(URL, wait_until="domcontentloaded", timeout=120000)
                 page.wait_for_timeout(int(WAIT_AFTER_GOTO_SEC * 1000))
 
@@ -363,20 +296,6 @@ def run():
                     page.wait_for_timeout(int(WAIT_AFTER_GOTO_SEC * 1000))
 
                 cap = get_captures(page)
-                
-                # Scrape statistics page
-                stats_data = {}
-                try:
-                    page.goto(STATS_URL, wait_until="domcontentloaded", timeout=120000)
-                    page.wait_for_timeout(int(WAIT_AFTER_GOTO_SEC * 1000))
-                    
-                    # Parse statistics from page
-                    stats_data = parse_statistics(page)
-                    
-                    print(f"[stats] Paradigm={stats_data.get('paradigm')}, Lines={stats_data.get('lines_in_sand')}", flush=True)
-                except Exception as e:
-                    print(f"[stats] Failed to scrape statistics: {e}", flush=True)
-                    stats_data = {}
 
                 fetch_scored = filter_and_score(cap.get("fetch", []))
                 xhr_scored   = filter_and_score(cap.get("xhr", []))
@@ -388,7 +307,6 @@ def run():
                 payload = {
                     "ts_utc": datetime.now(timezone.utc).isoformat(),
                     "page_url": page.url,
-                    "statistics": stats_data,
                     "captures": {
                         "fetch_top": [trim_body(x) for x in fetch_scored],
                         "xhr_top":   [trim_body(x) for x in xhr_scored],

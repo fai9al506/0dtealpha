@@ -199,108 +199,116 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
 
 def db_volland_stats() -> Optional[dict]:
     """
-    Debug version - shows raw structure of captured data.
+    Get Volland stats - checks both volland_snapshots and volland_exposure_points tables.
     """
     if not engine:
         return None
     
-    # Get the most recent snapshot
-    q = text("""
-        SELECT ts, payload 
-        FROM volland_snapshots 
-        ORDER BY ts DESC 
-        LIMIT 1
-    """)
-    
-    with engine.begin() as conn:
-        rows = conn.execute(q).mappings().all()
-    
-    if not rows:
-        return {"ts": None, "stats": None, "error": "No snapshots in database"}
-    
-    row = rows[0]
-    ts = row["ts"]
-    payload = _json_load_maybe(row["payload"])
-    
-    if not payload or not isinstance(payload, dict):
-        return {"ts": str(ts), "stats": None, "error": "Payload is not a dict", "raw_type": str(type(payload))}
-    
     stats = {
-        "payload_keys": list(payload.keys())[:10],
-        "has_captures": "captures" in payload,
-        "page_url": payload.get("page_url", "")[:100] if payload.get("page_url") else None,
+        "source": None,
+        "current_price": None,
+        "total_points": 0,
+        "greeks": [],
+        "latest_ts": None,
     }
     
-    captures = payload.get("captures", {})
-    if captures and isinstance(captures, dict):
-        stats["captures_keys"] = list(captures.keys())
+    # First, check volland_snapshots for metadata
+    try:
+        q = text("""
+            SELECT ts, payload 
+            FROM volland_snapshots 
+            ORDER BY ts DESC 
+            LIMIT 1
+        """)
+        with engine.begin() as conn:
+            row = conn.execute(q).mappings().first()
         
-        # Check counts
-        counts = captures.get("counts", {})
-        stats["counts"] = counts
+        if row:
+            stats["latest_ts"] = row["ts"].isoformat() if hasattr(row["ts"], "isoformat") else str(row["ts"])
+            payload = _json_load_maybe(row["payload"])
+            if payload and isinstance(payload, dict):
+                stats["snapshot_keys"] = list(payload.keys())
+                stats["total_points"] = payload.get("total_points", 0)
+                stats["exposure_count"] = payload.get("exposure_count", 0)
+                stats["page_url"] = str(payload.get("page_url", ""))[-50:]
+    except Exception as e:
+        stats["snapshot_error"] = str(e)[:100]
+    
+    # Check if volland_exposure_points table exists and has data
+    try:
+        q = text("""
+            SELECT 
+                COUNT(*) as total_rows,
+                COUNT(DISTINCT greek) as greek_count,
+                MAX(ts_utc) as latest_ts,
+                MAX(current_price) as current_price
+            FROM volland_exposure_points
+            WHERE ts_utc > NOW() - INTERVAL '1 hour'
+        """)
+        with engine.begin() as conn:
+            row = conn.execute(q).mappings().first()
         
-        # Get first fetch_top item structure
-        fetch_top = captures.get("fetch_top", [])
-        if fetch_top and isinstance(fetch_top, list) and len(fetch_top) > 0:
-            first_item = fetch_top[0]
-            stats["fetch_top_count"] = len(fetch_top)
-            stats["fetch_top_first_keys"] = list(first_item.keys()) if isinstance(first_item, dict) else str(type(first_item))
-            
-            # Get URL from first item
-            if isinstance(first_item, dict):
-                stats["fetch_first_url"] = str(first_item.get("url", ""))[:100]
-                stats["fetch_first_score"] = first_item.get("score")
+        if row and row["total_rows"] > 0:
+            stats["source"] = "volland_exposure_points"
+            stats["exposure_points_count"] = row["total_rows"]
+            stats["current_price"] = float(row["current_price"]) if row["current_price"] else None
+            if row["latest_ts"]:
+                stats["exposure_latest_ts"] = row["latest_ts"].isoformat() if hasattr(row["latest_ts"], "isoformat") else str(row["latest_ts"])
+        
+        # Get list of greeks
+        q2 = text("""
+            SELECT DISTINCT greek 
+            FROM volland_exposure_points 
+            WHERE ts_utc > NOW() - INTERVAL '1 hour'
+        """)
+        with engine.begin() as conn:
+            greek_rows = conn.execute(q2).mappings().all()
+        stats["greeks"] = [r["greek"] for r in greek_rows]
+        
+        # Get latest exposure data sample
+        q3 = text("""
+            SELECT greek, strike, value, current_price, ticker
+            FROM volland_exposure_points
+            ORDER BY ts_utc DESC
+            LIMIT 5
+        """)
+        with engine.begin() as conn:
+            sample_rows = conn.execute(q3).mappings().all()
+        if sample_rows:
+            stats["sample_data"] = [
+                {"greek": r["greek"], "strike": float(r["strike"]) if r["strike"] else None, 
+                 "value": float(r["value"]) if r["value"] else None, "ticker": r["ticker"]}
+                for r in sample_rows
+            ]
+            # Get price from sample if not already set
+            if not stats["current_price"] and sample_rows[0].get("current_price"):
+                stats["current_price"] = float(sample_rows[0]["current_price"])
                 
-                # Check body
-                body = first_item.get("body", "")
-                stats["fetch_first_body_len"] = len(body) if body else 0
-                stats["fetch_first_body_preview"] = str(body)[:200] if body else None
-                
-                # Try to parse body as JSON
-                if body and isinstance(body, str) and body.strip().startswith("{"):
-                    try:
-                        body_json = json.loads(body)
-                        if isinstance(body_json, dict):
-                            stats["fetch_first_body_keys"] = list(body_json.keys())[:15]
-                            # Look for useful fields
-                            if body_json.get("currentPrice"):
-                                stats["currentPrice"] = body_json["currentPrice"]
-                            if body_json.get("items"):
-                                stats["items_count"] = len(body_json["items"])
-                                # Get first item structure
-                                if len(body_json["items"]) > 0:
-                                    stats["items_first"] = body_json["items"][0]
-                    except Exception as e:
-                        stats["body_parse_error"] = str(e)
+    except Exception as e:
+        error_str = str(e)
+        if "does not exist" in error_str or "relation" in error_str.lower():
+            stats["exposure_points_note"] = "Table does not exist"
         else:
-            stats["fetch_top_count"] = 0
-            stats["fetch_top_note"] = "Empty or not a list"
-        
-        # Check xhr_top too
-        xhr_top = captures.get("xhr_top", [])
-        if xhr_top and isinstance(xhr_top, list) and len(xhr_top) > 0:
-            stats["xhr_top_count"] = len(xhr_top)
-            first_xhr = xhr_top[0]
-            if isinstance(first_xhr, dict):
-                stats["xhr_first_url"] = str(first_xhr.get("url", ""))[:100]
-                xhr_body = first_xhr.get("body", "")
-                stats["xhr_first_body_len"] = len(xhr_body) if xhr_body else 0
-        
-        # Check ws_tail
-        ws_tail = captures.get("ws_tail", [])
-        if ws_tail and isinstance(ws_tail, list) and len(ws_tail) > 0:
-            stats["ws_tail_count"] = len(ws_tail)
-            # Get last ws message
-            last_ws = ws_tail[-1]
-            if isinstance(last_ws, dict):
-                stats["ws_last_event"] = last_ws.get("event")
-                ws_data = last_ws.get("data", "")
-                stats["ws_last_data_len"] = len(ws_data) if ws_data else 0
-                if ws_data and len(ws_data) > 0:
-                    stats["ws_last_data_preview"] = str(ws_data)[:300]
+            stats["exposure_points_error"] = error_str[:100]
+    
+    # If no exposure_points data, try to get stats from vanna_points view
+    if not stats.get("exposure_points_count"):
+        try:
+            q = text(f"""
+                SELECT COUNT(*) as cnt, MAX(ts_utc) as latest
+                FROM {VOLLAND_VANNA_POINTS}
+                WHERE ts_utc > NOW() - INTERVAL '1 hour'
+            """)
+            with engine.begin() as conn:
+                row = conn.execute(q).mappings().first()
+            if row and row["cnt"] > 0:
+                stats["source"] = "vanna_points_view"
+                stats["vanna_points_count"] = row["cnt"]
+        except Exception as e:
+            stats["vanna_view_error"] = str(e)[:50]
     
     return {
-        "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+        "ts": stats.get("latest_ts") or stats.get("exposure_latest_ts"),
         "stats": stats
     }
 
@@ -775,7 +783,7 @@ def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
 
 @app.get("/api/volland/stats")
 def api_volland_stats():
-    """Debug endpoint - shows structure of captured Volland data."""
+    """Get Volland stats from database."""
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
@@ -785,7 +793,7 @@ def api_volland_stats():
         return result
     except Exception as e:
         import traceback
-        return JSONResponse({"error": str(e), "trace": traceback.format_exc()[-800:]}, status_code=500)
+        return JSONResponse({"error": str(e), "trace": traceback.format_exc()[-500:]}, status_code=500)
 
 # ====== TABLE & DASHBOARD HTML TEMPLATES ======
 
@@ -955,13 +963,13 @@ DASH_HTML_TEMPLATE = """
       .spot-grid { grid-template-columns:1fr; }
       .card { min-height:260px; }
     }
-    .stats-box { margin-top:14px; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; max-height:350px; overflow-y:auto; }
+    .stats-box { margin-top:14px; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; max-height:320px; overflow-y:auto; }
     .stats-box h4 { margin:0 0 8px; font-size:12px; font-weight:600; }
-    .stats-row { display:flex; justify-content:space-between; font-size:10px; padding:2px 0; border-bottom:1px solid var(--border); }
+    .stats-row { display:flex; justify-content:space-between; font-size:10px; padding:3px 0; border-bottom:1px solid var(--border); }
     .stats-row:last-child { border-bottom:none; }
     .stats-label { color:var(--muted); }
     .stats-value { color:var(--text); font-weight:500; }
-    .stats-code { font-size:8px; color:var(--muted); word-break:break-all; background:#0a0a0a; padding:4px; border-radius:4px; margin-top:4px; max-height:80px; overflow-y:auto; }
+    .stats-value.green { color:var(--green); }
   </style>
 </head>
 <body>
@@ -981,16 +989,15 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabSpot">Spot</button>
       </div>
-      <div class="small" style="margin-top:10px">
-        <a href="/api/volland/stats" style="color:var(--muted)" target="_blank">Stats</a> |
-        <a href="/api/volland/latest" style="color:var(--muted)" target="_blank">Raw</a>
+      <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
+      <div class="small" style="margin-top:14px">
+        <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> Â·
+        <a href="/api/history"  style="color:var(--muted)">History</a> Â·
+        <a href="/api/volland/latest" style="color:var(--muted)">Latest Exposure</a> Â·
+        <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
       </div>
-      <div class="stats-box" id="statsBox">
-        <h4>Volland Debug</h4>
-        <div id="statsContent" style="font-size:10px;color:var(--muted)">Loading...</div>
-      </div>
+    <div class="stats-box"><h4>Volland Stats</h4><div id="statsContent" style="color:var(--muted);font-size:10px">Loading...</div></div>
     </aside>
-
 
     <main class="content">
       <div id="viewTable" class="panel">
@@ -1041,7 +1048,7 @@ DASH_HTML_TEMPLATE = """
   <script>
     const PULL_EVERY = __PULL_MS__;
 
-    // ===== Stats Debug =====
+    // ===== Stats =====
     const statsContent = document.getElementById('statsContent');
     async function fetchStats() {
       try {
@@ -1049,60 +1056,75 @@ DASH_HTML_TEMPLATE = """
         const data = await r.json();
         renderStats(data);
       } catch (err) {
-        statsContent.innerHTML = '<div style="color:#ef4444">Error: ' + err.message + '</div>';
+        statsContent.innerHTML = '<span style="color:#ef4444">Error: ' + err.message + '</span>';
       }
     }
     function renderStats(data) {
       if (!data || data.error) {
-        statsContent.innerHTML = '<div style="color:#ef4444">' + (data?.error || 'No data') + '</div>';
+        statsContent.innerHTML = '<span style="color:#ef4444">' + (data?.error || 'No data') + '</span>';
         return;
       }
       const s = data.stats || {};
       let h = '';
-      // Basic info
-      h += '<div class="stats-row"><span class="stats-label">Page</span><span class="stats-value" style="font-size:8px">' + (s.page_url || 'N/A').slice(-40) + '</span></div>';
-      h += '<div class="stats-row"><span class="stats-label">Has Captures</span><span class="stats-value">' + (s.has_captures ? 'Yes' : 'No') + '</span></div>';
-      if (s.counts) {
-        h += '<div class="stats-row"><span class="stats-label">Counts</span><span class="stats-value">F:' + (s.counts.fetch||0) + ' X:' + (s.counts.xhr||0) + ' W:' + (s.counts.ws||0) + '</span></div>';
+      
+      // Source
+      if (s.source) {
+        h += '<div class="stats-row"><span class="stats-label">Source</span><span class="stats-value">' + s.source + '</span></div>';
       }
-      // fetch_top info
-      if (s.fetch_top_count !== undefined) {
-        h += '<div class="stats-row"><span class="stats-label">Fetch Top</span><span class="stats-value">' + s.fetch_top_count + ' items</span></div>';
+      
+      // Current price
+      if (s.current_price) {
+        h += '<div class="stats-row"><span class="stats-label">Price</span><span class="stats-value green">' + s.current_price.toFixed(2) + '</span></div>';
       }
-      if (s.fetch_first_url) {
-        h += '<div class="stats-row"><span class="stats-label">First URL</span></div>';
-        h += '<div class="stats-code">' + s.fetch_first_url + '</div>';
+      
+      // Exposure points count
+      if (s.exposure_points_count) {
+        h += '<div class="stats-row"><span class="stats-label">Exposure Pts</span><span class="stats-value">' + s.exposure_points_count + '</span></div>';
       }
-      if (s.fetch_first_body_len !== undefined) {
-        h += '<div class="stats-row"><span class="stats-label">Body Len</span><span class="stats-value">' + s.fetch_first_body_len + '</span></div>';
+      
+      // Total points from snapshot
+      if (s.total_points) {
+        h += '<div class="stats-row"><span class="stats-label">Total Points</span><span class="stats-value">' + s.total_points + '</span></div>';
       }
-      if (s.fetch_first_body_keys) {
-        h += '<div class="stats-row"><span class="stats-label">Body Keys</span></div>';
-        h += '<div class="stats-code">' + s.fetch_first_body_keys.join(', ') + '</div>';
+      
+      // Greeks
+      if (s.greeks && s.greeks.length > 0) {
+        h += '<div class="stats-row"><span class="stats-label">Greeks</span><span class="stats-value">' + s.greeks.join(', ') + '</span></div>';
       }
-      // Useful data found
-      if (s.currentPrice) {
-        h += '<div class="stats-row"><span class="stats-label">Price</span><span class="stats-value" style="color:#22c55e">' + s.currentPrice + '</span></div>';
+      
+      // Vanna points
+      if (s.vanna_points_count) {
+        h += '<div class="stats-row"><span class="stats-label">Vanna Pts</span><span class="stats-value">' + s.vanna_points_count + '</span></div>';
       }
-      if (s.items_count) {
-        h += '<div class="stats-row"><span class="stats-label">Items</span><span class="stats-value">' + s.items_count + '</span></div>';
+      
+      // Sample data
+      if (s.sample_data && s.sample_data.length > 0) {
+        h += '<div class="stats-row"><span class="stats-label">Sample</span></div>';
+        s.sample_data.slice(0, 2).forEach(function(d) {
+          h += '<div style="font-size:9px;color:var(--muted)">' + d.greek + ' @ ' + (d.strike||'?') + ': ' + (d.value ? d.value.toFixed(2) : '?') + '</div>';
+        });
       }
-      // Body preview
-      if (s.fetch_first_body_preview) {
-        h += '<div class="stats-row"><span class="stats-label">Body Preview</span></div>';
-        h += '<div class="stats-code">' + s.fetch_first_body_preview.slice(0, 300) + '</div>';
+      
+      // Page URL
+      if (s.page_url) {
+        h += '<div class="stats-row"><span class="stats-label">Page</span><span class="stats-value" style="font-size:8px">' + s.page_url + '</span></div>';
       }
-      // WS info
-      if (s.ws_tail_count) {
-        h += '<div class="stats-row"><span class="stats-label">WS Messages</span><span class="stats-value">' + s.ws_tail_count + '</span></div>';
-        if (s.ws_last_data_preview) {
-          h += '<div class="stats-code">' + s.ws_last_data_preview.slice(0, 200) + '</div>';
-        }
+      
+      // Notes
+      if (s.exposure_points_note) {
+        h += '<div class="stats-row"><span class="stats-label">Note</span><span class="stats-value" style="font-size:9px">' + s.exposure_points_note + '</span></div>';
       }
+      
+      // Errors
+      if (s.exposure_points_error) {
+        h += '<div style="color:#ef4444;font-size:9px">' + s.exposure_points_error + '</div>';
+      }
+      
       // Timestamp
       const ts = data.ts ? new Date(data.ts).toLocaleTimeString() : 'N/A';
-      h += '<div class="stats-row" style="margin-top:6px"><span class="stats-label">Updated</span><span class="stats-value">' + ts + '</span></div>';
-      statsContent.innerHTML = h || 'No data';
+      h += '<div class="stats-row" style="margin-top:4px"><span class="stats-label">Updated</span><span class="stats-value">' + ts + '</span></div>';
+      
+      statsContent.innerHTML = h || 'No stats data';
     }
     fetchStats();
     setInterval(fetchStats, PULL_EVERY);

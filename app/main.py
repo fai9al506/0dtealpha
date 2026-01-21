@@ -1,12 +1,11 @@
-# 0DTE Alpha - live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
-# WITH MOCK DATA SUPPORT AND SPX STATISTICS SIDEBAR
+# 0DTE Alpha â€” live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
 from fastapi import FastAPI, Response, Query
 from fastapi.responses import HTMLResponse, JSONResponse
-from datetime import datetime, time as dtime, timedelta
-import os, time, json, requests, pandas as pd, pytz, re
+from datetime import datetime, time as dtime
+import os, time, json, requests, pandas as pd, pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
-from threading import Lock, Thread
+from threading import Lock
 from typing import Any, Optional
 
 # ====== CONFIG ======
@@ -17,36 +16,39 @@ AUTH_DOMAIN = "https://signin.tradestation.com"
 CID     = os.getenv("TS_CLIENT_ID", "")
 SECRET  = os.getenv("TS_CLIENT_SECRET", "")
 RTOKEN  = os.getenv("TS_REFRESH_TOKEN", "")
-DB_URL  = os.getenv("DATABASE_URL", "")
+DB_URL  = os.getenv("DATABASE_URL", "")  # Railway Postgres
 
-VOLLAND_EMAIL = os.getenv("VOLLAND_EMAIL", "")
-VOLLAND_PASSWORD = os.getenv("VOLLAND_PASSWORD", "")
-VOLLAND_STATS_URL = os.getenv("VOLLAND_STATS_URL", "https://vol.land/app/workspace/696fcf236547cfa9b4d09267")
-
+# Volland storage (already scraped into Postgres)
 VOLLAND_TABLE       = os.getenv("VOLLAND_TABLE", "volland_exposures")
 VOLLAND_TS_COL      = os.getenv("VOLLAND_TS_COL", "ts")
 VOLLAND_PAYLOAD_COL = os.getenv("VOLLAND_PAYLOAD_COL", "payload")
+
+# Volland vanna by-strike view/table (you already have this in Postgres)
 VOLLAND_VANNA_POINTS = os.getenv("VOLLAND_VANNA_POINTS", "public.volland_vanna_points_dedup")
 VOLLAND_VANNA_TS_COL = os.getenv("VOLLAND_VANNA_TS_COL", "ts_utc")
 
+# SQLAlchemy psycopg v3 URI
 if DB_URL.startswith("postgresql://"):
     DB_URL = DB_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
-PULL_EVERY     = 30
-SAVE_EVERY_MIN = 5
-STATS_PULL_EVERY = 60
+# Cadence
+PULL_EVERY     = 30   # seconds
+SAVE_EVERY_MIN = 5    # minutes
+
+# Chain window
 STREAM_SECONDS = 2.0
 TARGET_STRIKES = 40
-USE_MOCK_DATA_OVERRIDE = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
 
+# ====== APP ======
 app = FastAPI()
 NY = pytz.timezone("US/Eastern")
-latest_df = None
-last_run_status = {"ts": None, "ok": False, "msg": "boot", "is_mock": False}
+
+latest_df: pd.DataFrame | None = None
+last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
 _df_lock = Lock()
-_stats_lock = Lock()
-_latest_stats = {"paradigm": None, "target": None, "lines_in_sand": None, "delta_decay_hedging": None, "opt_volume": None, "ts": None, "error": None}
+
+# ====== DB ======
 engine = create_engine(DB_URL, pool_pre_ping=True) if DB_URL else None
 
 def db_init():
@@ -54,277 +56,440 @@ def db_init():
         print("[db] DATABASE_URL missing; history disabled", flush=True)
         return
     with engine.begin() as conn:
-        conn.execute(text("""CREATE TABLE IF NOT EXISTS chain_snapshots (id BIGSERIAL PRIMARY KEY, ts TIMESTAMPTZ NOT NULL, exp DATE, spot DOUBLE PRECISION, columns JSONB NOT NULL, rows JSONB NOT NULL); CREATE INDEX IF NOT EXISTS ix_chain_snapshots_ts ON chain_snapshots (ts DESC);"""))
-        conn.execute(text(f"""CREATE TABLE IF NOT EXISTS {VOLLAND_TABLE} (id BIGSERIAL PRIMARY KEY, {VOLLAND_TS_COL} TIMESTAMPTZ NOT NULL DEFAULT now(), {VOLLAND_PAYLOAD_COL} JSONB NOT NULL);"""))
-        conn.execute(text(f"""CREATE INDEX IF NOT EXISTS ix_{VOLLAND_TABLE}_{VOLLAND_TS_COL} ON {VOLLAND_TABLE} ({VOLLAND_TS_COL} DESC);"""))
-        conn.execute(text("""CREATE TABLE IF NOT EXISTS volland_statistics (id BIGSERIAL PRIMARY KEY, ts_utc TIMESTAMPTZ NOT NULL DEFAULT now(), paradigm VARCHAR(100), target VARCHAR(100), lines_in_sand VARCHAR(100), delta_decay_hedging VARCHAR(100), opt_volume VARCHAR(100)); CREATE INDEX IF NOT EXISTS idx_volland_stats_ts ON volland_statistics(ts_utc DESC);"""))
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS chain_snapshots (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL,
+            exp DATE,
+            spot DOUBLE PRECISION,
+            columns JSONB NOT NULL,
+            rows JSONB NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_chain_snapshots_ts ON chain_snapshots (ts DESC);
+        """))
+
+        conn.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS {VOLLAND_TABLE} (
+            id BIGSERIAL PRIMARY KEY,
+            {VOLLAND_TS_COL} TIMESTAMPTZ NOT NULL DEFAULT now(),
+            {VOLLAND_PAYLOAD_COL} JSONB NOT NULL
+        );
+        """))
+        conn.execute(text(f"""
+        CREATE INDEX IF NOT EXISTS ix_{VOLLAND_TABLE}_{VOLLAND_TS_COL}
+        ON {VOLLAND_TABLE} ({VOLLAND_TS_COL} DESC);
+        """))
+
     print("[db] ready", flush=True)
 
-def _json_load_maybe(v):
-    if v is None: return None
-    if isinstance(v, (dict, list)): return v
+def _json_load_maybe(v: Any) -> Any:
+    if v is None:
+        return None
+    if isinstance(v, (dict, list)):
+        return v
     if isinstance(v, (bytes, bytearray)):
-        try: v = v.decode("utf-8", "ignore")
-        except: pass
+        try:
+            v = v.decode("utf-8", "ignore")
+        except Exception:
+            pass
     if isinstance(v, str):
         s = v.strip()
-        if not s: return None
-        try: return json.loads(s)
-        except: return v
+        if not s:
+            return None
+        try:
+            return json.loads(s)
+        except Exception:
+            return v
     return v
 
-def db_latest_volland():
-    if not engine: return None
-    sql = text("""WITH latest AS (SELECT MAX(ts_utc) AS max_ts FROM volland_exposure_points) SELECT e.ts_utc, e.ticker, e.greek, e.current_price, json_agg(json_build_object('strike', e.strike, 'value', e.value) ORDER BY e.strike) AS points FROM volland_exposure_points e JOIN latest l ON e.ts_utc = l.max_ts GROUP BY e.ts_utc, e.ticker, e.greek, e.current_price LIMIT 1;""")
+def db_latest_volland() -> Optional[dict]:
+    if not engine:
+        return None
+    q = text(f"SELECT {VOLLAND_TS_COL} AS ts, {VOLLAND_PAYLOAD_COL} AS payload FROM {VOLLAND_TABLE} ORDER BY {VOLLAND_TS_COL} DESC LIMIT 1")
     with engine.begin() as conn:
-        r = conn.execute(sql).mappings().first()
-    if not r: return None
-    return {"ts": r["ts_utc"].isoformat() if hasattr(r["ts_utc"], "isoformat") else str(r["ts_utc"]), "ticker": r["ticker"], "greek": r["greek"], "current_price": float(r["current_price"]) if r["current_price"] else None, "payload": {"points": r["points"] if isinstance(r["points"], list) else json.loads(r["points"])}}
+        r = conn.execute(q).mappings().first()
+    if not r:
+        return None
+    payload = _json_load_maybe(r["payload"])
+    ts = r["ts"]
+    return {"ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts), "payload": payload}
 
-def db_volland_history(limit=500):
-    if not engine: return []
+def db_volland_history(limit: int = 500) -> list[dict]:
+    if not engine:
+        return []
     q = text(f"SELECT {VOLLAND_TS_COL} AS ts, {VOLLAND_PAYLOAD_COL} AS payload FROM {VOLLAND_TABLE} ORDER BY {VOLLAND_TS_COL} DESC LIMIT :lim")
     with engine.begin() as conn:
         rows = conn.execute(q, {"lim": int(limit)}).mappings().all()
-    return [{"ts": r["ts"].isoformat() if hasattr(r["ts"], "isoformat") else str(r["ts"]), "payload": _json_load_maybe(r["payload"])} for r in rows]
+    out = []
+    for r in rows:
+        payload = _json_load_maybe(r["payload"])
+        ts = r["ts"]
+        out.append({"ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts), "payload": payload})
+    return out
 
-def db_volland_vanna_window(limit=40):
-    if not engine: raise RuntimeError("DATABASE_URL not set")
-    lim = max(5, min(200, int(limit)))
-    sql = text("""WITH latest AS (SELECT MAX(ts_utc) AS max_ts FROM volland_exposure_points WHERE greek IN ('charm', 'vanna')), latest_data AS (SELECT e.ts_utc, e.strike, e.value AS vanna, e.current_price, e.greek FROM volland_exposure_points e JOIN latest l ON e.ts_utc = l.max_ts WHERE e.greek IN ('charm', 'vanna')), mid AS (SELECT strike AS mid_strike, vanna AS mid_vanna FROM latest_data ORDER BY ABS(vanna) DESC LIMIT 1), ranked AS (SELECT d.ts_utc, d.strike, d.vanna, m.mid_strike, m.mid_vanna, (d.strike - m.mid_strike) AS rel, ROW_NUMBER() OVER (ORDER BY ABS(d.strike - COALESCE(d.current_price, m.mid_strike)), d.strike) AS rn FROM latest_data d CROSS JOIN mid m) SELECT ts_utc, strike, vanna, mid_strike, mid_vanna, rel FROM ranked WHERE rn <= :lim ORDER BY strike;""")
+def db_volland_vanna_window(limit: int = 40) -> dict:
+    """
+    Returns latest 'limit' strikes around the "mid" strike where abs(vanna) is max.
+    (UI draws the vertical line at SPOT; mid info is returned for reference.)
+    """
+    if not engine:
+        raise RuntimeError("DATABASE_URL not set")
+
+    lim = int(limit)
+    if lim < 5: lim = 5
+    if lim > 200: lim = 200
+
+    sql = text(f"""
+    WITH latest AS (
+      SELECT max({VOLLAND_VANNA_TS_COL}) AS ts_utc
+      FROM {VOLLAND_VANNA_POINTS}
+    ),
+    mid AS (
+      SELECT v.strike::numeric AS mid_strike,
+             v.vanna::numeric  AS mid_vanna
+      FROM {VOLLAND_VANNA_POINTS} v
+      JOIN latest l ON v.{VOLLAND_VANNA_TS_COL} = l.ts_utc
+      ORDER BY abs(v.vanna::numeric) DESC
+      LIMIT 1
+    ),
+    ranked AS (
+      SELECT
+        v.{VOLLAND_VANNA_TS_COL} AS ts_utc,
+        v.strike::numeric AS strike,
+        v.vanna::numeric  AS vanna,
+        m.mid_strike,
+        m.mid_vanna,
+        (v.strike::numeric - m.mid_strike) AS rel,
+        ROW_NUMBER() OVER (
+          ORDER BY abs(v.strike::numeric - m.mid_strike), v.strike::numeric
+        ) AS rn
+      FROM {VOLLAND_VANNA_POINTS} v
+      JOIN latest l ON v.{VOLLAND_VANNA_TS_COL} = l.ts_utc
+      CROSS JOIN mid m
+    )
+    SELECT ts_utc, strike, vanna, mid_strike, mid_vanna, rel
+    FROM ranked
+    WHERE rn <= :lim
+    ORDER BY strike;
+    """)
     with engine.begin() as conn:
         rows = conn.execute(sql, {"lim": lim}).mappings().all()
-    if not rows: return {"ts_utc": None, "mid_strike": None, "mid_vanna": None, "points": []}
-    return {"ts_utc": rows[0]["ts_utc"].isoformat() if hasattr(rows[0]["ts_utc"], "isoformat") else str(rows[0]["ts_utc"]), "mid_strike": float(rows[0]["mid_strike"]) if rows[0]["mid_strike"] else None, "mid_vanna": float(rows[0]["mid_vanna"]) if rows[0]["mid_vanna"] else None, "points": [{"strike": float(r["strike"]) if r["strike"] else None, "vanna": float(r["vanna"]) if r["vanna"] else None, "rel": float(r["rel"]) if r["rel"] else None} for r in rows]}
 
-def save_stats_to_db(stats):
-    if not engine: return
-    try:
-        with engine.begin() as conn:
-            conn.execute(text("INSERT INTO volland_statistics (ts_utc, paradigm, target, lines_in_sand, delta_decay_hedging, opt_volume) VALUES (now(), :paradigm, :target, :lines_in_sand, :delta_decay_hedging, :opt_volume)"), {"paradigm": stats.get("paradigm"), "target": stats.get("target"), "lines_in_sand": stats.get("lines_in_sand"), "delta_decay_hedging": stats.get("delta_decay_hedging"), "opt_volume": stats.get("opt_volume")})
-        print("[stats] saved to DB", flush=True)
-    except Exception as e:
-        print(f"[stats] DB save error: {e}", flush=True)
+    if not rows:
+        return {"ts_utc": None, "mid_strike": None, "mid_vanna": None, "points": []}
 
-def get_latest_stats_from_db():
-    if not engine: return None
-    try:
-        with engine.begin() as conn:
-            r = conn.execute(text("SELECT ts_utc, paradigm, target, lines_in_sand, delta_decay_hedging, opt_volume FROM volland_statistics ORDER BY ts_utc DESC LIMIT 1")).mappings().first()
-        if r: return {"ts": r["ts_utc"].isoformat() if hasattr(r["ts_utc"], "isoformat") else str(r["ts_utc"]), "paradigm": r["paradigm"], "target": r["target"], "lines_in_sand": r["lines_in_sand"], "delta_decay_hedging": r["delta_decay_hedging"], "opt_volume": r["opt_volume"]}
-    except Exception as e:
-        print(f"[stats] DB read error: {e}", flush=True)
-    return None
+    ts_utc = rows[0]["ts_utc"]
+    mid_strike = rows[0]["mid_strike"]
+    mid_vanna  = rows[0]["mid_vanna"]
 
-def format_large_number(value):
-    if not value or value == "N/A": return value
-    try:
-        clean = value.replace("$", "").replace(",", "").strip()
-        negative = clean.startswith("-")
-        if negative: clean = clean[1:]
-        num = float(clean)
-        if num >= 1e9: formatted = f"${num/1e9:.1f}B"
-        elif num >= 1e6: formatted = f"${num/1e6:.1f}M"
-        elif num >= 1e3: formatted = f"${num/1e3:.1f}K"
-        else: formatted = f"${num:.0f}"
-        return f"-{formatted}" if negative else formatted
-    except: return value
+    pts = []
+    for r in rows:
+        pts.append({
+            "strike": float(r["strike"]) if r["strike"] is not None else None,
+            "vanna":  float(r["vanna"])  if r["vanna"]  is not None else None,
+            "rel":    float(r["rel"])    if r["rel"]    is not None else None,
+        })
 
-def format_volume(value):
-    if not value or value == "N/A": return value
-    try:
-        num = float(value.replace(",", "").strip())
-        if num >= 1e6: return f"{num/1e6:.2f}M"
-        elif num >= 1e3: return f"{num/1e3:.1f}K"
-        else: return f"{num:.0f}"
-    except: return value
+    return {
+        "ts_utc": ts_utc.isoformat() if hasattr(ts_utc, "isoformat") else str(ts_utc),
+        "mid_strike": float(mid_strike) if mid_strike is not None else None,
+        "mid_vanna":  float(mid_vanna)  if mid_vanna  is not None else None,
+        "points": pts
+    }
 
-def scrape_volland_stats():
-    global _latest_stats
-    if not VOLLAND_EMAIL or not VOLLAND_PASSWORD:
-        print("[stats] Missing credentials, skipping scrape", flush=True)
-        with _stats_lock: _latest_stats["error"] = "Missing credentials"
-        return
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        print("[stats] Playwright not installed", flush=True)
-        with _stats_lock: _latest_stats["error"] = "Playwright not installed"
-        return
-    print("[stats] Starting scrape...", flush=True)
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
-            page = browser.new_page(viewport={"width": 1400, "height": 900})
-            page.set_default_timeout(60000)
-            page.goto(VOLLAND_STATS_URL, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(2000)
-            if "/sign-in" in page.url or page.locator("input[name='password'], input[type='password']").count() > 0:
-                print("[stats] Need to login...", flush=True)
-                email_box = page.locator("input[data-cy='sign-in-email-input'], input[name='email']").first
-                pwd_box = page.locator("input[data-cy='sign-in-password-input'], input[name='password'], input[type='password']").first
-                email_box.wait_for(state="visible", timeout=30000)
-                pwd_box.wait_for(state="visible", timeout=30000)
-                email_box.fill(VOLLAND_EMAIL)
-                pwd_box.fill(VOLLAND_PASSWORD)
-                page.locator("button:has-text('Log In'), button:has-text('Login'), button[type='submit']").first.click()
+def db_volland_stats() -> Optional[dict]:
+    """
+    Extract SPX stats from the latest volland_snapshots payload.
+    Parses the captured API responses looking for paradigm, target levels,
+    lines in sand, delta decay hedging, options volume, etc.
+    """
+    if not engine:
+        return None
+    
+    # Get the latest snapshot that has captures (not an error)
+    q = text("""
+        SELECT ts, payload 
+        FROM volland_snapshots 
+        WHERE payload->>'error_event' IS NULL 
+          AND payload->'captures' IS NOT NULL
+        ORDER BY ts DESC 
+        LIMIT 10
+    """)
+    
+    with engine.begin() as conn:
+        rows = conn.execute(q).mappings().all()
+    
+    if not rows:
+        return {"ts": None, "stats": None, "error": "No valid snapshots found"}
+    
+    stats = {
+        "paradigm": None,
+        "target_high": None,
+        "target_low": None,
+        "line_in_sand_high": None,
+        "line_in_sand_low": None,
+        "delta_decay_hedging": None,
+        "options_volume": None,
+        "gamma_flip": None,
+        "charm_level": None,
+        "vanna_level": None,
+        "raw_matches": []
+    }
+    
+    ts = None
+    
+    # Search through recent snapshots for stats data
+    for row in rows:
+        payload = _json_load_maybe(row["payload"])
+        if not payload or not isinstance(payload, dict):
+            continue
+        
+        ts = row["ts"]
+        captures = payload.get("captures", {})
+        
+        # Check fetch_top and xhr_top for stats data
+        for source_key in ["fetch_top", "xhr_top"]:
+            items = captures.get(source_key, [])
+            if not isinstance(items, list):
+                continue
+            
+            for item in items:
+                body = item.get("body", "")
+                if not body or not isinstance(body, str):
+                    continue
+                
+                # Try to parse as JSON
                 try:
-                    btn = page.locator("button[data-cy='confirmation-modal-confirm-button'], button:has-text('Continue')").first
-                    if btn.count() > 0: btn.wait_for(state="visible", timeout=3000); btn.click(); page.wait_for_timeout(1200)
-                except: pass
-                page.wait_for_timeout(5000)
-                page.goto(VOLLAND_STATS_URL, wait_until="domcontentloaded", timeout=60000)
-                page.wait_for_timeout(5000)
-            page.wait_for_timeout(3000)
-            stats = {"paradigm": None, "target": None, "lines_in_sand": None, "delta_decay_hedging": None, "opt_volume": None, "ts": datetime.now(pytz.UTC).isoformat(), "error": None}
-            try:
-                page_text = page.locator("body").inner_text()
-                m = re.search(r"Paradigm\s*\n?\s*([^\n]+)", page_text, re.IGNORECASE)
-                if m: stats["paradigm"] = m.group(1).strip()
-                m = re.search(r"Target\s*\n?\s*([^\n]+)", page_text, re.IGNORECASE)
-                if m: stats["target"] = m.group(1).strip()
-                m = re.search(r"Lines in the Sand\s*\n?\s*([\$\d,\s\-\u2013]+)", page_text, re.IGNORECASE)
-                if m: stats["lines_in_sand"] = m.group(1).strip()
-                m = re.search(r"Delta Decay Hedging\s*\n?\s*([\-\$\d,]+)", page_text, re.IGNORECASE)
-                if m: stats["delta_decay_hedging"] = m.group(1).strip()
-                m = re.search(r"0DTE Opt Volume\s*\n?\s*([\d,]+)", page_text, re.IGNORECASE)
-                if m: stats["opt_volume"] = m.group(1).strip()
-            except Exception as e:
-                print(f"[stats] Parsing error: {e}", flush=True)
-                stats["error"] = str(e)
-            browser.close()
-            with _stats_lock: _latest_stats = stats
-            if stats["paradigm"] or stats["lines_in_sand"] or stats["delta_decay_hedging"]: save_stats_to_db(stats)
-            print(f"[stats] Scraped: Paradigm={stats.get('paradigm')}, Lines={stats.get('lines_in_sand')}, Delta={stats.get('delta_decay_hedging')}, Vol={stats.get('opt_volume')}", flush=True)
-    except Exception as e:
-        print(f"[stats] Scrape error: {e}", flush=True)
-        with _stats_lock: _latest_stats["error"] = str(e); _latest_stats["ts"] = datetime.now(pytz.UTC).isoformat()
+                    data = json.loads(body)
+                except:
+                    continue
+                
+                if not isinstance(data, dict):
+                    continue
+                
+                # Look for stats fields in the response
+                _extract_stats_from_data(data, stats)
+        
+        # Also check WebSocket messages
+        ws_items = captures.get("ws_tail", [])
+        if isinstance(ws_items, list):
+            for ws in ws_items:
+                ws_data = ws.get("data", "")
+                if not ws_data or not isinstance(ws_data, str):
+                    continue
+                try:
+                    data = json.loads(ws_data)
+                    if isinstance(data, dict):
+                        _extract_stats_from_data(data, stats)
+                except:
+                    pass
+        
+        # If we found any stats, stop searching older snapshots
+        if any(v is not None for k, v in stats.items() if k != "raw_matches"):
+            break
+    
+    return {
+        "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts) if ts else None,
+        "stats": stats
+    }
 
-def stats_scraper_loop():
-    print("[stats] Starting stats scraper background thread...", flush=True)
-    time.sleep(10)
-    while True:
-        try: scrape_volland_stats()
-        except Exception as e: print(f"[stats] Loop error: {e}", flush=True)
-        time.sleep(STATS_PULL_EVERY)
+def _extract_stats_from_data(data: dict, stats: dict):
+    """
+    Extract known stats fields from a parsed JSON response.
+    Updates stats dict in place.
+    """
+    if not isinstance(data, dict):
+        return
+    
+    # Common field name patterns for Volland data
+    field_mappings = {
+        "paradigm": ["paradigm", "regime", "market_paradigm", "marketParadigm"],
+        "target_high": ["target_high", "targetHigh", "upper_target", "upperTarget", "high_target"],
+        "target_low": ["target_low", "targetLow", "lower_target", "lowerTarget", "low_target"],
+        "line_in_sand_high": ["line_in_sand_high", "lineInSandHigh", "lis_high", "lisHigh", "upper_lis"],
+        "line_in_sand_low": ["line_in_sand_low", "lineInSandLow", "lis_low", "lisLow", "lower_lis"],
+        "delta_decay_hedging": ["delta_decay", "deltaDecay", "delta_decay_hedging", "deltaDecayHedging", "dd_hedging"],
+        "options_volume": ["options_volume", "optionsVolume", "total_volume", "totalVolume", "volume"],
+        "gamma_flip": ["gamma_flip", "gammaFlip", "gamma_neutral", "gammaNeutral", "gex_flip"],
+        "charm_level": ["charm", "charm_level", "charmLevel", "total_charm"],
+        "vanna_level": ["vanna", "vanna_level", "vannaLevel", "total_vanna"],
+    }
+    
+    def find_value(d: dict, keys: list):
+        """Recursively search for keys in nested dict"""
+        for key in keys:
+            if key in d:
+                return d[key]
+        # Check nested dicts
+        for v in d.values():
+            if isinstance(v, dict):
+                result = find_value(v, keys)
+                if result is not None:
+                    return result
+        return None
+    
+    for stat_name, possible_keys in field_mappings.items():
+        if stats[stat_name] is None:
+            value = find_value(data, possible_keys)
+            if value is not None:
+                try:
+                    stats[stat_name] = float(value) if isinstance(value, (int, float, str)) and str(value).replace('.', '').replace('-', '').isdigit() else str(value)
+                except:
+                    stats[stat_name] = str(value)
+    
+    # Also capture any interesting looking keys we find
+    interesting_keys = ["exposure", "gex", "dex", "vex", "charm", "vanna", "gamma", "delta", "target", "level", "flip", "paradigm"]
+    for key, value in data.items():
+        key_lower = key.lower()
+        if any(ik in key_lower for ik in interesting_keys):
+            if isinstance(value, (int, float, str)) and len(str(value)) < 50:
+                stats["raw_matches"].append({"key": key, "value": value})
 
-def get_latest_saved_chain_as_mock():
-    if not engine: return None, None, None
-    try:
-        with engine.begin() as conn:
-            result = conn.execute(text("SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT 1")).mappings().first()
-        if not result: return None, None, None
-        columns = json.loads(result["columns"]) if isinstance(result["columns"], str) else result["columns"]
-        rows = json.loads(result["rows"]) if isinstance(result["rows"], str) else result["rows"]
-        df = pd.DataFrame(rows, columns=columns)
-        spot = float(result["spot"]) if result["spot"] else None
-        exp = result["exp"]
-        print(f"[mock] Loaded saved chain: {len(df)} rows, spot={spot}, exp={exp}", flush=True)
-        return df, spot, exp
-    except Exception as e:
-        print(f"[mock] Failed to load latest chain: {e}", flush=True)
-        return None, None, None
-
-def should_use_mock_data(): return USE_MOCK_DATA_OVERRIDE or not market_open_now()
-def get_mock_data_info():
-    if not should_use_mock_data(): return {"is_mock": False}
-    reasons = []
-    if USE_MOCK_DATA_OVERRIDE: reasons.append("Manual override enabled")
-    if not market_open_now(): reasons.append("Market closed")
-    return {"is_mock": True, "reasons": reasons, "timestamp": fmt_et(now_et())}
-
+# ====== Auth ======
 REFRESH_EARLY_SEC = 300
 _access_token = None
 _access_exp_at = 0.0
 _refresh_token = RTOKEN or ""
 
-def _stamp_token(exp_in): global _access_exp_at; _access_exp_at = time.time() + int(exp_in or 900) - REFRESH_EARLY_SEC
+def _stamp_token(exp_in: int):
+    global _access_exp_at
+    _access_exp_at = time.time() + int(exp_in or 900) - REFRESH_EARLY_SEC
 
-def ts_access_token():
+def ts_access_token() -> str:
     global _access_token, _refresh_token
     now = time.time()
-    if _access_token and now < _access_exp_at - 60: return _access_token
-    if not (CID and SECRET and _refresh_token): raise RuntimeError("Missing env: TS_CLIENT_ID / TS_CLIENT_SECRET / TS_REFRESH_TOKEN")
-    r = requests.post(f"{AUTH_DOMAIN}/oauth/token", data={"grant_type": "refresh_token", "refresh_token": _refresh_token, "client_id": CID, "client_secret": SECRET}, timeout=15)
-    if r.status_code >= 400: raise RuntimeError(f"token refresh [{r.status_code}] {r.text[:300]}")
+    if _access_token and now < _access_exp_at - 60:
+        return _access_token
+    if not (CID and SECRET and _refresh_token):
+        raise RuntimeError("Missing env: TS_CLIENT_ID / TS_CLIENT_SECRET / TS_REFRESH_TOKEN")
+    r = requests.post(
+        f"{AUTH_DOMAIN}/oauth/token",
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": _refresh_token,
+            "client_id": CID,
+            "client_secret": SECRET,
+        },
+        timeout=15,
+    )
+    if r.status_code >= 400:
+        raise RuntimeError(f"token refresh [{r.status_code}] {r.text[:300]}")
     tok = r.json()
     _access_token = tok["access_token"]
-    if tok.get("refresh_token"): _refresh_token = tok["refresh_token"]
+    if tok.get("refresh_token"):
+        _refresh_token = tok["refresh_token"]
     _stamp_token(tok.get("expires_in", 900))
     print("[auth] token refreshed; expires_in:", tok.get("expires_in"), flush=True)
     return _access_token
 
 def api_get(path, params=None, stream=False, timeout=10):
-    def do_req(h): return requests.get(f"{BASE}{path}", headers=h, params=params or {}, timeout=timeout, stream=stream)
+    def do_req(h):
+        return requests.get(f"{BASE}{path}", headers=h, params=params or {}, timeout=timeout, stream=stream)
     token = ts_access_token()
     headers = {"Authorization": f"Bearer {token}"}
     r = do_req(headers)
     if r.status_code == 401:
-        try: _ = ts_access_token(); headers["Authorization"] = f"Bearer {_access_token}"; r = do_req(headers)
-        except: pass
+        try:
+            _ = ts_access_token()
+            headers["Authorization"] = f"Bearer {_access_token}"
+            r = do_req(headers)
+        except Exception:
+            pass
     if stream:
-        if r.status_code != 200: raise RuntimeError(f"STREAM {path} [{r.status_code}] {r.text[:300]}")
+        if r.status_code != 200:
+            raise RuntimeError(f"STREAM {path} [{r.status_code}] {r.text[:300]}")
         return r
-    if r.status_code >= 400: raise RuntimeError(f"GET {path} [{r.status_code}] {r.text[:300]}")
+    if r.status_code >= 400:
+        raise RuntimeError(f"GET {path} [{r.status_code}] {r.text[:300]}")
     return r
 
-def now_et(): return datetime.now(NY)
-def fmt_et(dt): return dt.strftime("%Y-%m-%d %H:%M %Z")
-def market_open_now():
+# ====== Time helpers ======
+def now_et():
+    return datetime.now(NY)
+
+def fmt_et(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%d %H:%M %Z")
+
+def market_open_now() -> bool:
     t = now_et()
-    if t.weekday() >= 5: return False
+    if t.weekday() >= 5:
+        return False
     return dtime(9, 30) <= t.time() <= dtime(16, 0)
 
-def get_spx_last():
+# ====== TS helpers ======
+def get_spx_last() -> float:
     js = api_get("/marketdata/quotes/%24SPX.X", timeout=8).json()
     for q in js.get("Quotes", []):
         if q.get("Symbol") == "$SPX.X":
             v = q.get("Last") or q.get("Close")
-            try: return float(v)
-            except: return 0.0
+            try:
+                return float(v)
+            except:
+                return 0.0
     return 0.0
 
-def get_0dte_exp():
+def get_0dte_exp() -> str:
     ymd = now_et().date().isoformat()
     try:
         js = api_get("/marketdata/options/expirations/%24SPXW.X", timeout=10).json()
         for e in js.get("Expirations", []):
             d = str(e.get("Date") or e.get("Expiration") or "")[:10]
-            if d == ymd: return d
+            if d == ymd:
+                return d
     except Exception as e:
         print("[exp] lookup failed; using today", ymd, "|", e, flush=True)
     return ymd
 
-def _expiration_variants(ymd):
+def _expiration_variants(ymd: str):
     yield ymd
-    try: yield datetime.strptime(ymd, "%Y-%m-%d").strftime("%m-%d-%Y")
-    except: pass
+    try:
+        yield datetime.strptime(ymd, "%Y-%m-%d").strftime("%m-%d-%Y")
+    except Exception:
+        pass
     yield ymd + "T00:00:00Z"
 
 def _fnum(x):
-    if x in (None, "", "-", "NaN", "nan"): return None
-    try: return float(str(x).replace(",", ""))
-    except: return None
+    if x in (None, "", "-", "NaN", "nan"):
+        return None
+    try:
+        return float(str(x).replace(",", ""))
+    except:
+        return None
 
-def _consume_chain_stream(r, max_seconds):
+def _consume_chain_stream(r, max_seconds: float) -> list[dict]:
     out, start = [], time.time()
     try:
         for line in r.iter_lines(decode_unicode=True):
             if not line:
-                if time.time() - start > max_seconds: break
+                if time.time() - start > max_seconds:
+                    break
                 continue
-            try: obj = json.loads(line)
-            except: continue
-            if isinstance(obj, dict) and obj.get("StreamStatus") == "EndSnapshot": break
-            if isinstance(obj, dict): out.append(obj)
-            if time.time() - start > max_seconds: break
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(obj, dict) and obj.get("StreamStatus") == "EndSnapshot":
+                break
+            if isinstance(obj, dict):
+                out.append(obj)
+            if time.time() - start > max_seconds:
+                break
     finally:
-        try: r.close()
-        except: pass
+        try:
+            r.close()
+        except Exception:
+            pass
     return out
 
-def get_chain_rows(exp_ymd, spot):
-    params_stream = {"spreadType": "Single", "enableGreeks": "true", "priceCenter": f"{spot:.2f}" if spot else "", "strikeProximity": 50, "optionType": "All", "strikeInterval": 1}
+def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
+    params_stream = {
+        "spreadType": "Single",
+        "enableGreeks": "true",
+        "priceCenter": f"{spot:.2f}" if spot else "",
+        "strikeProximity": 50,
+        "optionType": "All",
+        "strikeInterval": 1
+    }
     last_err = None
     for exp in _expiration_variants(exp_ymd):
         try:
@@ -338,12 +503,34 @@ def get_chain_rows(exp_ymd, spot):
                     leg0 = legs[0] if legs else {}
                     side = (leg0.get("OptionType") or it.get("OptionType") or "").lower()
                     side = "C" if side.startswith("c") else "P" if side.startswith("p") else "?"
-                    rows.append({"Type": side, "Strike": _fnum(leg0.get("StrikePrice")), "Bid": _fnum(it.get("Bid")), "Ask": _fnum(it.get("Ask")), "Last": _fnum(it.get("Last")), "BidSize": it.get("BidSize"), "AskSize": it.get("AskSize"), "Delta": _fnum(it.get("Delta") or it.get("TheoDelta")), "Gamma": _fnum(it.get("Gamma") or it.get("TheoGamma")), "Theta": _fnum(it.get("Theta") or it.get("TheoTheta")), "IV": _fnum(it.get("ImpliedVolatility") or it.get("TheoIV")), "Vega": _fnum(it.get("Vega")), "Volume": _fnum(it.get("TotalVolume") or it.get("Volume")), "OpenInterest": it.get("OpenInterest") or it.get("DailyOpenInterest")})
-                if rows: return rows
+                    rows.append({
+                        "Type": side,
+                        "Strike": _fnum(leg0.get("StrikePrice")),
+                        "Bid": _fnum(it.get("Bid")), "Ask": _fnum(it.get("Ask")), "Last": _fnum(it.get("Last")),
+                        "BidSize": it.get("BidSize"), "AskSize": it.get("AskSize"),
+                        "Delta": _fnum(it.get("Delta") or it.get("TheoDelta")),
+                        "Gamma": _fnum(it.get("Gamma") or it.get("TheoGamma")),
+                        "Theta": _fnum(it.get("Theta") or it.get("TheoTheta")),
+                        "IV": _fnum(it.get("ImpliedVolatility") or it.get("TheoIV")),
+                        "Vega": _fnum(it.get("Vega")),
+                        "Volume": _fnum(it.get("TotalVolume") or it.get("Volume")),
+                        "OpenInterest": it.get("OpenInterest") or it.get("DailyOpenInterest"),
+                    })
+                if rows:
+                    return rows
         except Exception as e:
             last_err = e
             continue
-    params_snap = {"symbol": "$SPXW.X", "enableGreeks": "true", "optionType": "All", "priceCenter": f"{spot:.2f}" if spot else "", "strikeProximity": 50, "strikeInterval": 1, "spreadType": "Single"}
+
+    params_snap = {
+        "symbol": "$SPXW.X",
+        "enableGreeks": "true",
+        "optionType": "All",
+        "priceCenter": f"{spot:.2f}" if spot else "",
+        "strikeProximity": 50,
+        "strikeInterval": 1,
+        "spreadType": "Single",
+    }
     for exp in _expiration_variants(exp_ymd):
         try:
             p = dict(params_snap); p["expiration"] = exp
@@ -354,71 +541,101 @@ def get_chain_rows(exp_ymd, spot):
                 leg0 = legs[0] if legs else {}
                 side = (leg0.get("OptionType") or it.get("OptionType") or "").lower()
                 side = "C" if side.startswith("c") else "P" if side.startswith("p") else "?"
-                rows.append({"Type": side, "Strike": _fnum(leg0.get("StrikePrice")), "Bid": _fnum(it.get("Bid")), "Ask": _fnum(it.get("Ask")), "Last": _fnum(it.get("Last")), "BidSize": it.get("BidSize"), "AskSize": it.get("AskSize"), "Delta": _fnum(it.get("Delta") or it.get("TheoDelta")), "Gamma": _fnum(it.get("Gamma") or it.get("TheoGamma")), "Theta": _fnum(it.get("Theta") or it.get("TheoTheta")), "IV": _fnum(it.get("ImpliedVolatility") or it.get("TheoIV")), "Vega": _fnum(it.get("Vega")), "Volume": _fnum(it.get("TotalVolume") or it.get("Volume")), "OpenInterest": it.get("OpenInterest") or it.get("DailyOpenInterest")})
-            if rows: return rows
+                rows.append({
+                    "Type": side,
+                    "Strike": _fnum(leg0.get("StrikePrice")),
+                    "Bid": _fnum(it.get("Bid")), "Ask": _fnum(it.get("Ask")), "Last": _fnum(it.get("Last")),
+                    "BidSize": it.get("BidSize"), "AskSize": it.get("AskSize"),
+                    "Delta": _fnum(it.get("Delta") or it.get("TheoDelta")),
+                    "Gamma": _fnum(it.get("Gamma") or it.get("TheoGamma")),
+                    "Theta": _fnum(it.get("Theta") or it.get("TheoTheta")),
+                    "IV": _fnum(it.get("ImpliedVolatility") or it.get("TheoIV")),
+                    "Vega": _fnum(it.get("Vega")),
+                    "Volume": _fnum(it.get("TotalVolume") or it.get("Volume")),
+                    "OpenInterest": it.get("OpenInterest") or it.get("DailyOpenInterest"),
+                })
+            if rows:
+                return rows
         except Exception as e:
             last_err = e
             continue
+
     raise RuntimeError(f"SPXW chain fetch failed; last_err={last_err}")
 
-CANONICAL_COLS = ["C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Bid","C_BidSize","C_Ask","C_AskSize","C_Last","Strike","P_Last","P_Ask","P_AskSize","P_Bid","P_BidSize","P_Delta","P_Gamma","P_IV","P_OpenInterest","P_Volume"]
-DISPLAY_COLS = ["Volume","Open Int","IV","Gamma","Delta","BID","BID QTY","ASK","ASK QTY","LAST","Strike","LAST","ASK","ASK QTY","BID","BID QTY","Delta","Gamma","IV","Open Int","Volume"]
+# ====== shaping ======
+CANONICAL_COLS = [
+    "C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Bid","C_BidSize","C_Ask","C_AskSize","C_Last",
+    "Strike",
+    "P_Last","P_Ask","P_AskSize","P_Bid","P_BidSize","P_Delta","P_Gamma","P_IV","P_OpenInterest","P_Volume"
+]
+DISPLAY_COLS = [
+    "Volume","Open Int","IV","Gamma","Delta","BID","BID QTY","ASK","ASK QTY","LAST",
+    "Strike",
+    "LAST","ASK","ASK QTY","BID","BID QTY","Delta","Gamma","IV","Open Int","Volume"
+]
 
-def to_side_by_side(rows):
+def to_side_by_side(rows: list[dict]) -> pd.DataFrame:
     calls, puts = {}, {}
     for r in rows:
-        if r.get("Strike") is None: continue
+        if r.get("Strike") is None:
+            continue
         (calls if r["Type"] == "C" else puts)[r["Strike"]] = r
     strikes = sorted(set(calls) | set(puts))
     recs = []
     for k in strikes:
         c, p = calls.get(k, {}), puts.get(k, {})
-        recs.append({"C_Volume": c.get("Volume"), "C_OpenInterest": c.get("OpenInterest"), "C_IV": c.get("IV"), "C_Gamma": c.get("Gamma"), "C_Delta": c.get("Delta"), "C_Bid": c.get("Bid"), "C_BidSize": c.get("BidSize"), "C_Ask": c.get("Ask"), "C_AskSize": c.get("AskSize"), "C_Last": c.get("Last"), "Strike": k, "P_Last": p.get("Last"), "P_Ask": p.get("Ask"), "P_AskSize": p.get("AskSize"), "P_Bid": p.get("Bid"), "P_BidSize": p.get("BidSize"), "P_Delta": p.get("Delta"), "P_Gamma": p.get("Gamma"), "P_IV": p.get("IV"), "P_OpenInterest": p.get("OpenInterest"), "P_Volume": p.get("Volume")})
+        recs.append({
+            "C_Volume": c.get("Volume"), "C_OpenInterest": c.get("OpenInterest"), "C_IV": c.get("IV"),
+            "C_Gamma": c.get("Gamma"), "C_Delta": c.get("Delta"), "C_Bid": c.get("Bid"),
+            "C_BidSize": c.get("BidSize"), "C_Ask": c.get("Ask"), "C_AskSize": c.get("AskSize"),
+            "C_Last": c.get("Last"),
+            "Strike": k,
+            "P_Last": p.get("Last"), "P_Ask": p.get("Ask"), "P_AskSize": p.get("AskSize"),
+            "P_Bid": p.get("Bid"), "P_BidSize": p.get("BidSize"),
+            "P_Delta": p.get("Delta"), "P_Gamma": p.get("Gamma"), "P_IV": p.get("IV"),
+            "P_OpenInterest": p.get("OpenInterest"), "P_Volume": p.get("Volume"),
+        })
     df = pd.DataFrame.from_records(recs, columns=CANONICAL_COLS)
-    if not df.empty: df = df.sort_values("Strike").reset_index(drop=True)
+    if not df.empty:
+        df = df.sort_values("Strike").reset_index(drop=True)
     return df
 
-def pick_centered(df, spot, n):
-    if df is None or df.empty or not spot: return df
+def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
+    if df is None or df.empty or not spot:
+        return df
     idx = (df["Strike"] - spot).abs().sort_values().index[:n]
     return df.loc[sorted(idx)].reset_index(drop=True)
 
+# ====== jobs ======
 def run_market_job():
     global latest_df, last_run_status
     try:
-        use_mock = should_use_mock_data()
-        if use_mock:
-            df, spot, exp = get_latest_saved_chain_as_mock()
-            if df is not None and not df.empty:
-                if 'Volume' in df.columns: df.columns = CANONICAL_COLS
-                with _df_lock: latest_df = df.copy()
-                reasons = []
-                if USE_MOCK_DATA_OVERRIDE: reasons.append("override")
-                if not market_open_now(): reasons.append("market closed")
-                last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"MOCK ({', '.join(reasons)}): exp={exp} spot={round(spot or 0, 2)} rows={len(df)}", "is_mock": True}
-                print("[pull] MOCK DATA (using latest saved)", last_run_status["msg"], flush=True)
-            else:
-                last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "MOCK: No saved data available yet", "is_mock": True}
-                print("[pull] MOCK: No saved data available", flush=True)
+        if not market_open_now():
+            last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
+            print("[pull] skipped (closed)", last_run_status["ts"], flush=True)
             return
         spot = get_spx_last()
-        exp = get_0dte_exp()
+        exp  = get_0dte_exp()
         rows = get_chain_rows(exp, spot)
-        df = pick_centered(to_side_by_side(rows), spot, TARGET_STRIKES)
-        with _df_lock: latest_df = df.copy()
-        last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0, 2)} rows={len(df)}", "is_mock": False}
+        df   = pick_centered(to_side_by_side(rows), spot, TARGET_STRIKES)
+        with _df_lock:
+            latest_df = df.copy()
+        last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={len(df)}"}
         print("[pull] OK", last_run_status["msg"], flush=True)
     except Exception as e:
-        last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}", "is_mock": False}
+        last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}
         print("[pull] ERROR", e, flush=True)
 
 def save_history_job():
     global _last_saved_at
-    if not engine: return
+    if not engine:
+        return
     with _df_lock:
-        if latest_df is None or latest_df.empty: return
+        if latest_df is None or latest_df.empty:
+            return
         df_copy = latest_df.copy()
-    if time.time() - _last_saved_at < 60: return
+    if time.time() - _last_saved_at < 60:
+        return
     try:
         df = df_copy
         df.columns = DISPLAY_COLS
@@ -428,10 +645,16 @@ def save_history_job():
         try:
             parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
             spot = float(parts.get("spot", ""))
-            exp = parts.get("exp")
-        except: pass
+            exp  = parts.get("exp")
+        except:
+            pass
         with engine.begin() as conn:
-            conn.execute(text("INSERT INTO chain_snapshots (ts, exp, spot, columns, rows) VALUES (:ts, :exp, :spot, :columns, :rows)"), {"ts": now_et(), "exp": exp, "spot": spot, "columns": json.dumps(payload["columns"]), "rows": json.dumps(payload["rows"])})
+            conn.execute(
+                text("INSERT INTO chain_snapshots (ts, exp, spot, columns, rows) VALUES (:ts, :exp, :spot, :columns, :rows)"),
+                {"ts": now_et(), "exp": exp, "spot": spot,
+                 "columns": json.dumps(payload["columns"]),
+                 "rows": json.dumps(payload["rows"])}
+            )
         _last_saved_at = time.time()
         print("[save] snapshot inserted", flush=True)
     except Exception as e:
@@ -446,102 +669,108 @@ def start_scheduler():
     return sch
 
 REQUIRED_ENVS = ["TS_CLIENT_ID", "TS_CLIENT_SECRET", "TS_REFRESH_TOKEN", "DATABASE_URL"]
-def missing_envs(): return [k for k in REQUIRED_ENVS if not os.getenv(k)]
-scheduler = None
-stats_thread = None
+def missing_envs():
+    return [k for k in REQUIRED_ENVS if not os.getenv(k)]
+
+scheduler: BackgroundScheduler | None = None
 
 @app.on_event("startup")
 def on_startup():
-    global scheduler, stats_thread
     miss = missing_envs()
-    if miss: print("[env] missing:", miss, flush=True)
-    if engine: db_init()
-    else: print("[db] engine not created (no DATABASE_URL)", flush=True)
-    scheduler = start_scheduler()
-    if VOLLAND_EMAIL and VOLLAND_PASSWORD:
-        stats_thread = Thread(target=stats_scraper_loop, daemon=True)
-        stats_thread.start()
-        print("[stats] Background scraper thread started", flush=True)
+    if miss:
+        print("[env] missing:", miss, flush=True)
+    if engine:
+        db_init()
     else:
-        print("[stats] Skipping stats scraper (no VOLLAND credentials)", flush=True)
+        print("[db] engine not created (no DATABASE_URL)", flush=True)
+    global scheduler
+    scheduler = start_scheduler()
 
 @app.on_event("shutdown")
 def on_shutdown():
     global scheduler
-    if scheduler: scheduler.shutdown(); print("[sched] stopped", flush=True)
+    if scheduler:
+        scheduler.shutdown()
+        print("[sched] stopped", flush=True)
 
+# ====== API ======
 @app.get("/api/series")
 def api_series():
-    with _df_lock: df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
-    if df is None or df.empty: return {"strikes": [], "callVol": [], "putVol": [], "callOI": [], "putOI": [], "callGEX": [], "putGEX": [], "netGEX": [], "spot": None}
+    with _df_lock:
+        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+    if df is None or df.empty:
+        return {
+            "strikes": [], "callVol": [], "putVol": [], "callOI": [], "putOI": [],
+            "callGEX": [], "putGEX": [], "netGEX": [], "spot": None
+        }
     sdf = df.sort_values("Strike")
-    s = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
-    call_vol = pd.to_numeric(sdf["C_Volume"], errors="coerce").fillna(0.0).astype(float)
-    put_vol = pd.to_numeric(sdf["P_Volume"], errors="coerce").fillna(0.0).astype(float)
-    call_oi = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
-    put_oi = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
-    c_gamma = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
-    p_gamma = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
-    call_gex = (c_gamma * call_oi * 100.0).astype(float)
-    put_gex = (-p_gamma * put_oi * 100.0).astype(float)
-    net_gex = (call_gex + put_gex).astype(float)
+    s  = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
+    call_vol = pd.to_numeric(sdf["C_Volume"],       errors="coerce").fillna(0.0).astype(float)
+    put_vol  = pd.to_numeric(sdf["P_Volume"],       errors="coerce").fillna(0.0).astype(float)
+    call_oi  = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+    put_oi   = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+    c_gamma  = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+    p_gamma  = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+    call_gex = ( c_gamma * call_oi * 100.0).astype(float)
+    put_gex  = (-p_gamma * put_oi  * 100.0).astype(float)
+    net_gex  = (call_gex + put_gex).astype(float)
     spot = None
     try:
         parts = dict(splt.split("=", 1) for splt in (last_run_status.get("msg") or "").split() if "=" in splt)
         spot = float(parts.get("spot", ""))
-    except: spot = None
-    return {"strikes": s.tolist(), "callVol": call_vol.tolist(), "putVol": put_vol.tolist(), "callOI": call_oi.tolist(), "putOI": put_oi.tolist(), "callGEX": call_gex.tolist(), "putGEX": put_gex.tolist(), "netGEX": net_gex.tolist(), "spot": spot}
+    except:
+        spot = None
+    return {
+        "strikes": s.tolist(),
+        "callVol": call_vol.tolist(), "putVol": put_vol.tolist(),
+        "callOI":  call_oi.tolist(),  "putOI":  put_oi.tolist(),
+        "callGEX": call_gex.tolist(), "putGEX": put_gex.tolist(), "netGEX": net_gex.tolist(),
+        "spot": spot
+    }
 
 @app.get("/api/health")
-def api_health(): return {"status": "ok", "last": last_run_status}
-
-@app.get("/api/mock_status")
-def api_mock_status(): return get_mock_data_info()
+def api_health():
+    return {"status": "ok", "last": last_run_status}
 
 @app.get("/status")
 def status():
-    status_data = dict(last_run_status)
-    status_data["is_mock"] = status_data.get("is_mock", False)
-    return status_data
+    return last_run_status
 
 @app.get("/api/snapshot")
 def snapshot():
-    with _df_lock: df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
-    if df is None or df.empty: return {"columns": DISPLAY_COLS, "rows": []}
+    with _df_lock:
+        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+    if df is None or df.empty:
+        return {"columns": DISPLAY_COLS, "rows": []}
     df.columns = DISPLAY_COLS
     return {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
 
 @app.get("/api/history")
 def api_history(limit: int = Query(288, ge=1, le=5000)):
-    if not engine: return {"error": "DATABASE_URL not set"}
+    if not engine:
+        return {"error": "DATABASE_URL not set"}
     with engine.begin() as conn:
-        rows = conn.execute(text("SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"), {"lim": limit}).mappings().all()
+        rows = conn.execute(text(
+            "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
+        ), {"lim": limit}).mappings().all()
     for r in rows:
         r["columns"] = json.loads(r["columns"]) if isinstance(r["columns"], str) else r["columns"]
-        r["rows"] = json.loads(r["rows"]) if isinstance(r["rows"], str) else r["rows"]
-        r["ts"] = r["ts"].isoformat()
+        r["rows"]    = json.loads(r["rows"])    if isinstance(r["rows"], str) else r["rows"]
+        r["ts"]      = r["ts"].isoformat()
     return rows
-
-@app.get("/api/spot")
-def api_spot():
-    if not engine: return {"time": [], "close": [], "error": "DATABASE_URL not set"}
-    try:
-        with engine.begin() as conn:
-            rows = conn.execute(text("SELECT ts, spot FROM chain_snapshots WHERE spot IS NOT NULL ORDER BY ts DESC LIMIT 100")).mappings().all()
-        if not rows: return {"time": [], "close": []}
-        rows = list(reversed(rows))
-        return {"time": [r["ts"].isoformat() for r in rows], "close": [float(r["spot"]) for r in rows]}
-    except Exception as e: return {"time": [], "close": [], "error": str(e)}
 
 @app.get("/download/history.csv")
 def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
-    if not engine: return Response("DATABASE_URL not set", media_type="text/plain", status_code=500)
+    if not engine:
+        return Response("DATABASE_URL not set", media_type="text/plain", status_code=500)
     with engine.begin() as conn:
-        recs = conn.execute(text("SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"), {"lim": limit}).mappings().all()
+        recs = conn.execute(text(
+            "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
+        ), {"lim": limit}).mappings().all()
     out = []
     for r in recs:
         cols = json.loads(r["columns"]) if isinstance(r["columns"], str) else r["columns"]
-        rows = json.loads(r["rows"]) if isinstance(r["rows"], str) else r["rows"]
+        rows = json.loads(r["rows"])    if isinstance(r["rows"], str) else r["rows"]
         for arr in rows:
             obj = {"ts": r["ts"].isoformat(), "exp": r["exp"], "spot": r["spot"]}
             obj.update({cols[i]: arr[i] for i in range(len(cols))})
@@ -550,106 +779,863 @@ def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
     csv = df.to_csv(index=False)
     return Response(csv, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=history.csv"})
 
+# ===== Volland API (from Postgres) =====
 @app.get("/api/volland/latest")
 def api_volland_latest():
     try:
-        if not engine: return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
         r = db_latest_volland()
-        if not r: return {"ts": None, "payload": None}
+        if not r:
+            return {"ts": None, "payload": None}
         return r
-    except Exception as e: return JSONResponse({"error": str(e)}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/volland/history")
 def api_volland_history(limit: int = Query(500, ge=1, le=5000)):
     try:
-        if not engine: return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
         return db_volland_history(limit=limit)
-    except Exception as e: return JSONResponse({"error": str(e)}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/volland/vanna_window")
 def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
+    """
+    Latest strikes around mid_strike (mid_strike = strike where abs(vanna) is max).
+    UI draws the vertical line at SPOT (from /api/series).
+    """
     try:
-        if not engine: return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        result = db_volland_vanna_window(limit=limit)
-        print(f"[vanna_window] Returning ts={result.get('ts_utc', 'None')}, points={len(result.get('points', []))}", flush=True)
-        return result
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        return db_volland_vanna_window(limit=limit)
     except Exception as e:
-        print(f"[vanna_window] ERROR: {e}", flush=True)
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/volland/stats")
 def api_volland_stats():
-    with _stats_lock: stats = dict(_latest_stats)
-    if not stats.get("paradigm") and not stats.get("lines_in_sand"):
-        db_stats = get_latest_stats_from_db()
-        if db_stats: stats = db_stats; stats["error"] = None
-    return {"paradigm": stats.get("paradigm") or "-", "target": stats.get("target") or "N/A", "lines_in_sand": stats.get("lines_in_sand") or "-", "delta_decay_hedging": format_large_number(stats.get("delta_decay_hedging") or ""), "delta_decay_hedging_raw": stats.get("delta_decay_hedging") or "-", "opt_volume": format_volume(stats.get("opt_volume") or ""), "opt_volume_raw": stats.get("opt_volume") or "-", "ts": stats.get("ts"), "error": stats.get("error")}
-
-@app.get("/api/volland/exposure_history")
-def api_volland_exposure_history(greek: str = Query("charm"), ticker: str = Query("SPX"), limit: int = Query(100, ge=1, le=1000)):
+    """
+    Get SPX statistics extracted from Volland data.
+    Returns paradigm, target levels, lines in sand, delta decay hedging, etc.
+    Data is parsed from captured API responses stored by volland_worker.
+    """
     try:
-        if not engine: return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        sql = text("SELECT date_trunc('minute', ts_utc) AS ts_bucket, strike, AVG(value) AS avg_value, MAX(current_price) AS spot_price FROM volland_exposure_points WHERE greek = :greek AND ticker = :ticker GROUP BY date_trunc('minute', ts_utc), strike ORDER BY ts_bucket DESC, strike LIMIT :lim;")
-        with engine.begin() as conn: rows = conn.execute(sql, {"greek": greek, "ticker": ticker, "lim": limit}).mappings().all()
-        return [{"ts": r["ts_bucket"].isoformat() if hasattr(r["ts_bucket"], "isoformat") else str(r["ts_bucket"]), "strike": float(r["strike"]), "value": float(r["avg_value"]), "spot": float(r["spot_price"]) if r["spot_price"] else None} for r in rows]
-    except Exception as e: return JSONResponse({"error": str(e)}, status_code=500)
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        result = db_volland_stats()
+        if not result:
+            return {"ts": None, "stats": None, "error": "No stats available"}
+        return result
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
-@app.get("/api/volland/meta")
-def api_volland_meta():
-    try:
-        if not engine: return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        sql = text("SELECT ticker, greek, MIN(ts_utc) AS first_ts, MAX(ts_utc) AS last_ts, COUNT(DISTINCT date_trunc('minute', ts_utc)) AS time_points, COUNT(DISTINCT strike) AS strike_count FROM volland_exposure_points GROUP BY ticker, greek ORDER BY ticker, greek;")
-        with engine.begin() as conn: rows = conn.execute(sql).mappings().all()
-        return {"data_sources": [{"ticker": r["ticker"], "greek": r["greek"], "first_ts": r["first_ts"].isoformat() if hasattr(r["first_ts"], "isoformat") else str(r["first_ts"]), "last_ts": r["last_ts"].isoformat() if hasattr(r["last_ts"], "isoformat") else str(r["last_ts"]), "time_points": r["time_points"], "strike_count": r["strike_count"]} for r in rows]}
-    except Exception as e: return JSONResponse({"error": str(e)}, status_code=500)
+# ====== TABLE & DASHBOARD HTML TEMPLATES ======
 
-TABLE_HTML_TEMPLATE = """<html><head><meta charset="utf-8"><title>0DTE Alpha</title>
-<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0a0a0a;color:#e5e5e5;padding:20px}.last{color:#9ca3af;font-size:12px;line-height:1.25;margin:0 0 10px 0}table.table{border-collapse:collapse;width:100%;font-size:12px}.table th,.table td{border:1px solid #333;padding:6px 8px;text-align:right}.table th{background:#111;position:sticky;top:0;z-index:1}.table td:nth-child(7),.table th:nth-child(7){background:#111;text-align:center}.table td:first-child,.table th:first-child{text-align:center}.table tr.atm td{background:#1a2634}</style>
-</head><body><h2>SPXW 0DTE - live table</h2><div class="last">Last run: __TS__<br>exp=__EXP__<br>spot=__SPOT__<br>rows=__ROWS__</div>__BODY__<script>setTimeout(()=>location.reload(), __PULL_MS__);</script></body></html>"""
+TABLE_HTML_TEMPLATE = """
+<html><head><meta charset="utf-8"><title>0DTE Alpha</title>
+<style>
+  body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+         background:#0a0a0a; color:#e5e5e5; padding:20px; }
+  .last { color:#9ca3af; font-size:12px; line-height:1.25; margin:0 0 10px 0; }
+  table.table { border-collapse:collapse; width:100%; font-size:12px; }
+  .table th,.table td { border:1px solid #333; padding:6px 8px; text-align:right; }
+  .table th { background:#111; position:sticky; top:0; z-index:1; }
+  .table td:nth-child(7), .table th:nth-child(7) { background:#111; text-align:center; }
+  .table td:first-child, .table th:first-child { text-align:center; }
+  .table tr.atm td { background:#1a2634; }
+</style>
+</head><body>
+  <h2>SPXW 0DTE â€” live table</h2>
+  <div class="last">
+    Last run: __TS__<br>exp=__EXP__<br>spot=__SPOT__<br>rows=__ROWS__
+  </div>
+  __BODY__
+  <script>setTimeout(()=>location.reload(), __PULL_MS__);</script>
+</body></html>
+"""
 
-DASH_HTML_TEMPLATE = '''<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>SPXW 0DTE - Dashboard</title><script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-<style>:root{--bg:#0b0c10;--panel:#121417;--muted:#8a8f98;--text:#e6e7e9;--border:#23262b;--green:#22c55e;--red:#ef4444;--blue:#60a5fa;--warning-bg:#fef3c7;--warning-border:#fbbf24;--warning-text:#92400e}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;font-size:13px}.mock-warning{background:var(--warning-bg);border:2px solid var(--warning-border);color:var(--warning-text);padding:12px 16px;border-radius:8px;margin:0 0 16px 0;font-weight:600;display:none;font-size:14px;text-align:center}.mock-warning.show{display:block}.layout{display:grid;grid-template-columns:260px 1fr;min-height:100vh}.sidebar{background:var(--panel);border-right:1px solid var(--border);padding:18px 14px;position:sticky;top:0;height:100vh;overflow-y:auto}.brand{font-weight:700;margin-bottom:4px;font-size:14px}.small{color:var(--muted);font-size:11px;margin-bottom:12px}.status{display:flex;gap:8px;align-items:center;padding:8px;border:1px solid var(--border);border-radius:10px;background:#0f1216;margin-bottom:12px}.dot{width:9px;height:9px;border-radius:999px;background:__STATUS_COLOR__}.nav{display:grid;gap:6px;margin-top:6px}.btn{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-size:12px}.btn.active{background:#121a2e;border-color:#2a3a57}.stats-section{margin-top:16px;padding:12px;border:1px solid var(--border);border-radius:10px;background:#0f1216}.stats-title{font-weight:600;font-size:12px;color:var(--text);margin-bottom:10px;display:flex;align-items:center;gap:6px}.stats-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:11px;border-bottom:1px solid #1a1d22}.stats-row:last-child{border-bottom:none}.stats-label{color:var(--muted)}.stats-value{font-weight:600;color:var(--text)}.stats-value.positive{color:var(--green)}.stats-value.negative{color:var(--red)}.stats-loading{color:var(--muted);font-style:italic;font-size:11px;text-align:center;padding:8px 0}.content{padding:14px 16px}.panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px;overflow:hidden}.header{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 8px;border-bottom:1px solid var(--border);margin-bottom:8px;font-size:13px}.pill{font-size:11px;padding:3px 7px;border:1px solid var(--border);border-radius:999px;color:var(--muted)}.charts{display:flex;flex-direction:column;gap:18px}iframe{width:100%;height:calc(100vh - 190px);border:0;background:#0f1115}#volChart,#oiChart,#gexChart,#vannaChart{width:100%;height:420px}.spot-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;align-items:stretch}.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px;min-height:360px;display:flex;flex-direction:column}.card h3{margin:0 0 6px;font-size:13px;color:var(--muted);font-weight:600}.plot{width:100%;height:100%}@media(max-width:900px){.layout{display:block;min-height:0}.sidebar{position:static;height:auto;border-right:none;border-bottom:1px solid var(--border);padding:10px 10px 6px}.status{margin-bottom:8px}.nav{grid-auto-flow:column;grid-auto-columns:1fr;overflow-x:auto}.btn{text-align:center;padding:7px 5px;font-size:11px;white-space:nowrap}.content{padding:10px}.panel{padding:8px;border-radius:10px}iframe{height:60vh}#volChart,#oiChart,#gexChart,#vannaChart{height:340px}.spot-grid{grid-template-columns:1fr}.card{min-height:260px}.stats-section{margin-top:12px;padding:10px}}</style></head>
-<body><div class="layout"><aside class="sidebar"><div class="brand">SPXW 0DTE</div><div class="small">Live chain + charts</div><div class="status"><span class="dot"></span><div><div style="font-weight:600;font-size:12px">__STATUS_TEXT__</div><div class="small">Last run: __LAST_TS__ - __LAST_MSG__</div><div class="small" style="margin-top:4px;color:#60a5fa">Next update in: <span id="countdown">30s</span></div></div></div><div class="nav"><button class="btn active" id="tabTable">Table</button><button class="btn" id="tabCharts">Charts</button><button class="btn" id="tabSpot">Spot</button></div><div class="stats-section" id="statsSection"><div class="stats-title">SPX Statistics</div><div id="statsContent"><div class="stats-loading">Loading...</div></div></div><div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div><div class="small" style="margin-top:14px"><a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> · <a href="/api/history" style="color:var(--muted)">History</a> · <a href="/api/volland/latest" style="color:var(--muted)">Latest Exposure</a> · <a href="/download/history.csv" style="color:var(--muted)">CSV</a></div></aside>
-<main class="content"><div id="mockWarning" class="mock-warning"><span id="mockWarningText">Using mock data - Market is closed</span></div><div id="viewTable" class="panel"><div class="header"><div><strong>Live Chain Table</strong></div><div class="pill">auto-refresh</div></div><iframe id="tableFrame" src="/table"></iframe></div><div id="viewCharts" class="panel" style="display:none"><div class="header"><div><strong>GEX, Volume, Open Interest + Volland Charm</strong></div><div class="pill">spot line = dotted</div></div><div class="charts"><div id="gexChart"></div><div id="volChart"></div><div id="oiChart"></div><div id="vannaChart"></div></div></div><div id="viewSpot" class="panel" style="display:none"><div class="header"><div><strong>Spot</strong></div><div class="pill">SPX price + GEX & VOL by strike</div></div><div class="spot-grid"><div class="card"><h3>SPX Price</h3><div id="spotPricePlot" class="plot"></div></div><div class="card"><h3>Net GEX by Strike</h3><div id="gexSidePlot" class="plot"></div></div><div class="card"><h3>VOL by Strike (Calls vs Puts)</h3><div id="volSidePlot" class="plot"></div></div></div></div></main></div>
-<script>
-const PULL_EVERY=__PULL_MS__,STATS_PULL_EVERY=60000;const tabTable=document.getElementById('tabTable'),tabCharts=document.getElementById('tabCharts'),tabSpot=document.getElementById('tabSpot');const viewTable=document.getElementById('viewTable'),viewCharts=document.getElementById('viewCharts'),viewSpot=document.getElementById('viewSpot');function setActive(btn){[tabTable,tabCharts,tabSpot].forEach(b=>b.classList.remove('active'));btn.classList.add('active')}function showTable(){setActive(tabTable);viewTable.style.display='';viewCharts.style.display='none';viewSpot.style.display='none';stopCharts();stopSpot()}function showCharts(){setActive(tabCharts);viewTable.style.display='none';viewCharts.style.display='';viewSpot.style.display='none';startCharts();stopSpot()}function showSpot(){setActive(tabSpot);viewTable.style.display='none';viewCharts.style.display='none';viewSpot.style.display='';startSpot();stopCharts()}tabTable.addEventListener('click',showTable);tabCharts.addEventListener('click',showCharts);tabSpot.addEventListener('click',showSpot);
-async function fetchStats(){try{const r=await fetch('/api/volland/stats',{cache:'no-store'});return await r.json()}catch(e){return{error:String(e)}}}function renderStats(stats){const container=document.getElementById('statsContent');if(stats.error&&!stats.paradigm&&!stats.lines_in_sand){container.innerHTML='<div class="stats-loading">Waiting for data...</div>';return}let deltaClass='';const deltaRaw=stats.delta_decay_hedging_raw||'';if(deltaRaw.includes('-')){deltaClass='negative'}else if(deltaRaw&&deltaRaw!=='-'){deltaClass='positive'}container.innerHTML='<div class="stats-row"><span class="stats-label">Paradigm</span><span class="stats-value">'+(stats.paradigm||'-')+'</span></div><div class="stats-row"><span class="stats-label">Lines in Sand</span><span class="stats-value">'+(stats.lines_in_sand||'-')+'</span></div><div class="stats-row"><span class="stats-label">Delta Hedging</span><span class="stats-value '+deltaClass+'">'+(stats.delta_decay_hedging||'-')+'</span></div><div class="stats-row"><span class="stats-label">0DTE Volume</span><span class="stats-value">'+(stats.opt_volume||'-')+'</span></div>'}async function updateStats(){const stats=await fetchStats();renderStats(stats)}updateStats();setInterval(updateStats,STATS_PULL_EVERY);
-async function fetchSeries(){const r=await fetch('/api/series',{cache:'no-store'});return await r.json()}async function fetchVannaWindow(){const r=await fetch('/api/volland/vanna_window?limit=40',{cache:'no-store'});return await r.json()}const volDiv=document.getElementById('volChart'),oiDiv=document.getElementById('oiChart'),gexDiv=document.getElementById('gexChart'),vannaDiv=document.getElementById('vannaChart');let chartsTimer=null,firstDraw=true;
-function verticalSpotShape(spot,yMin,yMax){if(spot==null)return null;return{type:'line',x0:spot,x1:spot,y0:yMin,y1:yMax,line:{color:'#9aa0a6',width:2,dash:'dot'},xref:'x',yref:'y'}}function buildLayout(title,xTitle,yTitle,spot,yMin,yMax,dtick=5){const shape=verticalSpotShape(spot,yMin,yMax);return{title:{text:title,font:{size:14}},xaxis:{title:xTitle,gridcolor:'#20242a',tickfont:{size:10},dtick:dtick},yaxis:{title:yTitle,gridcolor:'#20242a',tickfont:{size:10}},paper_bgcolor:'#121417',plot_bgcolor:'#0f1115',font:{color:'#e6e7e9',size:11},margin:{t:32,r:12,b:40,l:44},barmode:'group',shapes:shape?[shape]:[]}}function tracesForBars(strikes,callArr,putArr,yLabel){return[{type:'bar',name:'Calls '+yLabel,x:strikes,y:callArr,marker:{color:'#22c55e'},offsetgroup:'calls',hovertemplate:"Strike %{x}<br>Calls: %{y}<extra></extra>"},{type:'bar',name:'Puts '+yLabel,x:strikes,y:putArr,marker:{color:'#ef4444'},offsetgroup:'puts',hovertemplate:"Strike %{x}<br>Puts: %{y}<extra></extra>"}]}function tracesForGEX(strikes,callGEX,putGEX,netGEX){return[{type:'bar',name:'Call GEX',x:strikes,y:callGEX,marker:{color:'#22c55e'},offsetgroup:'call_gex',hovertemplate:"Strike %{x}<br>Call GEX: %{y:.2f}<extra></extra>"},{type:'bar',name:'Put GEX',x:strikes,y:putGEX,marker:{color:'#ef4444'},offsetgroup:'put_gex',hovertemplate:"Strike %{x}<br>Put GEX: %{y:.2f}<extra></extra>"},{type:'bar',name:'Net GEX',x:strikes,y:netGEX,marker:{color:'#60a5fa'},offsetgroup:'net_gex',opacity:0.85,hovertemplate:"Strike %{x}<br>Net GEX: %{y:.2f}<extra></extra>"}]}
-function drawVannaWindow(w,spot){if(!w||w.error){Plotly.react(vannaDiv,[],{paper_bgcolor:'#121417',plot_bgcolor:'#0f1115',margin:{l:40,r:10,t:10,b:30},annotations:[{text:"Charm error: "+(w&&w.error?w.error:"no data"),x:0.5,y:0.5,xref:'paper',yref:'paper',showarrow:false,font:{color:'#e6e7e9'}}],font:{color:'#e6e7e9'}},{displayModeBar:false,responsive:true});return}const pts=w.points||[];if(!pts.length){Plotly.react(vannaDiv,[],{paper_bgcolor:'#121417',plot_bgcolor:'#0f1115',margin:{l:40,r:10,t:10,b:30},annotations:[{text:"No charm points returned yet",x:0.5,y:0.5,xref:'paper',yref:'paper',showarrow:false,font:{color:'#e6e7e9'}}],font:{color:'#e6e7e9'}},{displayModeBar:false,responsive:true});return}const strikes=pts.map(p=>p.strike),vanna=pts.map(p=>p.vanna);const colors=vanna.map(v=>(v>=0?'#22c55e':'#ef4444'));let yMin=Math.min(...vanna),yMax=Math.max(...vanna);if(yMin===yMax){const pad0=Math.max(1,Math.abs(yMin)*0.05);yMin-=pad0;yMax+=pad0}else{const pad=(yMax-yMin)*0.05;yMin-=pad;yMax+=pad}const shapes=[];if(spot!=null){shapes.push({type:'line',x0:spot,x1:spot,y0:yMin,y1:yMax,xref:'x',yref:'y',line:{color:'#9aa0a6',width:2,dash:'dot'}})}const trace={type:'bar',x:strikes,y:vanna,marker:{color:colors},hovertemplate:"Strike %{x}<br>Charm %{y}<extra></extra>"};Plotly.react(vannaDiv,[trace],{title:{text:'Charm by Strike (Volland)',font:{size:14}},paper_bgcolor:'#121417',plot_bgcolor:'#0f1115',margin:{l:55,r:10,t:32,b:40},xaxis:{title:'Strike',gridcolor:'#20242a',tickfont:{size:10},dtick:5},yaxis:{title:'Charm',gridcolor:'#20242a',tickfont:{size:10},range:[yMin,yMax]},shapes:shapes,font:{color:'#e6e7e9',size:11}},{displayModeBar:false,responsive:true})}
-async function drawOrUpdate(){const data=await fetchSeries();if(!data||!data.strikes||data.strikes.length===0)return;const strikes=data.strikes,spot=data.spot;const vMax=Math.max(0,...data.callVol,...data.putVol)*1.05;const oiMax=Math.max(0,...data.callOI,...data.putOI)*1.05;const gAbs=[...data.callGEX,...data.putGEX,...data.netGEX].map(v=>Math.abs(v));const gMax=(gAbs.length?Math.max(...gAbs):0)*1.05;const gexLayout=buildLayout('Gamma Exposure (GEX)','Strike','GEX',spot,-gMax,gMax,5);const volLayout=buildLayout('Volume','Strike','Volume',spot,0,vMax,5);const oiLayout=buildLayout('Open Interest','Strike','Open Interest',spot,0,oiMax,5);const gexTraces=tracesForGEX(strikes,data.callGEX,data.putGEX,data.netGEX);const volTraces=tracesForBars(strikes,data.callVol,data.putVol,'Vol');const oiTraces=tracesForBars(strikes,data.callOI,data.putOI,'OI');if(firstDraw){Plotly.newPlot(gexDiv,gexTraces,gexLayout,{displayModeBar:false,responsive:true});Plotly.newPlot(volDiv,volTraces,volLayout,{displayModeBar:false,responsive:true});Plotly.newPlot(oiDiv,oiTraces,oiLayout,{displayModeBar:false,responsive:true});firstDraw=false}else{Plotly.react(gexDiv,gexTraces,gexLayout,{displayModeBar:false,responsive:true});Plotly.react(volDiv,volTraces,volLayout,{displayModeBar:false,responsive:true});Plotly.react(oiDiv,oiTraces,oiLayout,{displayModeBar:false,responsive:true})}if(!window.__vannaLoadingShown){window.__vannaLoadingShown=true;drawVannaWindow({error:"Loading Charm..."},spot)}fetchVannaWindow().then(vannaW=>drawVannaWindow(vannaW,spot)).catch(err=>drawVannaWindow({error:String(err)},spot))}function startCharts(){drawOrUpdate();if(chartsTimer)clearInterval(chartsTimer);chartsTimer=setInterval(drawOrUpdate,PULL_EVERY)}function stopCharts(){if(chartsTimer){clearInterval(chartsTimer);chartsTimer=null}}
-const spotPriceDiv=document.getElementById('spotPricePlot'),gexSideDiv=document.getElementById('gexSidePlot'),volSideDiv=document.getElementById('volSidePlot');let spotTimer=null;async function fetchSpot(){const r=await fetch('/api/spot',{cache:'no-store'});return await r.json()}function computeYRange(strikes,prices){const vals=[];if(Array.isArray(strikes)&&strikes.length)vals.push(...strikes);if(Array.isArray(prices)&&prices.length)vals.push(...prices.filter(v=>typeof v==='number'&&!isNaN(v)));if(!vals.length)return null;let yMin=Math.min(...vals),yMax=Math.max(...vals);if(yMin===yMax){const pad0=Math.max(1,Math.abs(yMin)*0.001);yMin-=pad0;yMax+=pad0}const pad=(yMax-yMin)*0.02||1;return{min:yMin-pad,max:yMax+pad}}function renderSpotPrice(spotData,yRange){if(!spotData||!spotData.time||!spotData.time.length)return;const x=(spotData.time||[]).map(t=>new Date(t)),closeArr=spotData.close||[];const trace={type:'scatter',mode:'lines',x:x,y:closeArr,line:{shape:'linear'},hovertemplate:'%{x}<br>Price %{y:.2f}<extra></extra>'};let yr=yRange;if(!yr){const tmp=computeYRange([],closeArr);if(tmp)yr=tmp}Plotly.react(spotPriceDiv,[trace],{margin:{l:54,r:12,t:10,b:32},paper_bgcolor:'#121417',plot_bgcolor:'#0f1115',xaxis:{title:'Time',gridcolor:'#20242a',tickfont:{size:10}},yaxis:{title:'Price',gridcolor:'#20242a',range:yr?[yr.min,yr.max]:undefined,tickfont:{size:10}},font:{color:'#e6e7e9',size:11}},{displayModeBar:false,responsive:true})}function renderSpotFromSeries(data,yRange){const strikes=data.strikes||[];if(!strikes.length)return;let yr=yRange;if(!yr){const tmp=computeYRange(strikes,[]);if(tmp)yr=tmp}const yMin=yr?yr.min:Math.min(...strikes),yMax=yr?yr.max:Math.max(...strikes);const gexNet=data.netGEX||[];const gMax=Math.max(1,...gexNet.map(v=>Math.abs(v)))*1.1;const gex={type:'bar',orientation:'h',x:gexNet,y:strikes,marker:{color:'#60a5fa'},hovertemplate:'Strike %{y}<br>Net GEX %{x:.0f}<extra></extra>'};Plotly.react(gexSideDiv,[gex],{margin:{l:54,r:12,t:10,b:28},paper_bgcolor:'#121417',plot_bgcolor:'#0f1115',xaxis:{title:'Net GEX',gridcolor:'#20242a',range:[-gMax,gMax],tickfont:{size:10}},yaxis:{title:'Strike',range:[yMin,yMax],gridcolor:'#20242a',dtick:5,tickfont:{size:10}},font:{color:'#e6e7e9',size:11}},{displayModeBar:false,responsive:true});const callVol=data.callVol||[],putVol=data.putVol||[];const vMax=Math.max(1,...callVol,...putVol)*1.1;const volCalls={type:'bar',orientation:'h',name:'Calls',x:callVol,y:strikes,marker:{color:'#22c55e'},hovertemplate:'Strike %{y}<br>Calls %{x}<extra></extra>'};const volPuts={type:'bar',orientation:'h',name:'Puts',x:putVol,y:strikes,marker:{color:'#ef4444'},hovertemplate:'Strike %{y}<br>Puts %{x}<extra></extra>'};Plotly.react(volSideDiv,[volCalls,volPuts],{margin:{l:54,r:12,t:10,b:28},paper_bgcolor:'#121417',plot_bgcolor:'#0f1115',xaxis:{title:'VOL',gridcolor:'#20242a',range:[0,vMax],tickfont:{size:10}},yaxis:{title:'Strike',range:[yMin,yMax],gridcolor:'#20242a',dtick:5,tickfont:{size:10}},barmode:'group',font:{color:'#e6e7e9',size:11}},{displayModeBar:false,responsive:true})}async function tickSpot(){const[opt,spot]=await Promise.all([fetchSeries(),fetchSpot()]);const prices=(spot&&Array.isArray(spot.close))?spot.close:[];const yRange=computeYRange(opt.strikes||[],prices);renderSpotPrice(spot,yRange);renderSpotFromSeries(opt,yRange)}function startSpot(){tickSpot();if(spotTimer)clearInterval(spotTimer);spotTimer=setInterval(tickSpot,PULL_EVERY)}function stopSpot(){if(spotTimer){clearInterval(spotTimer);spotTimer=null}}
-async function checkMockStatus(){try{const r=await fetch('/api/mock_status',{cache:'no-store'});const status=await r.json();const warning=document.getElementById('mockWarning'),warningText=document.getElementById('mockWarningText');if(status.is_mock){const reasons=status.reasons?status.reasons.join(', '):'Market closed';warningText.innerHTML='Using latest saved data - '+reasons;warning.classList.add('show')}else{warning.classList.remove('show')}}catch(e){console.error('Failed to check mock status:',e)}}checkMockStatus();setInterval(checkMockStatus,60000);let countdownSeconds=30;const countdownEl=document.getElementById('countdown');function updateCountdown(){countdownSeconds--;if(countdownSeconds<=0){countdownSeconds=30}countdownEl.textContent=countdownSeconds+'s'}setInterval(updateCountdown,1000);showTable();
-</script></body></html>'''
+DASH_HTML_TEMPLATE = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>SPXW 0DTE â€” Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      --bg:#0b0c10; --panel:#121417; --muted:#8a8f98; --text:#e6e7e9; --border:#23262b;
+      --green:#22c55e; --red:#ef4444; --blue:#60a5fa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin:0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      font-size: 13px;
+    }
 
+    .layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: 100vh;
+    }
+    .sidebar {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 18px 14px;
+      position: sticky;
+      top:0;
+      height:100vh;
+    }
+    .brand { font-weight: 700; margin-bottom: 4px; font-size:14px; }
+    .small { color: var(--muted); font-size: 11px; margin-bottom: 12px; }
+    .status {
+      display:flex;
+      gap:8px;
+      align-items:center;
+      padding:8px;
+      border:1px solid var(--border);
+      border-radius:10px;
+      background:#0f1216;
+      margin-bottom:12px;
+    }
+    .dot { width:9px; height:9px; border-radius:999px; background:__STATUS_COLOR__; }
+    .nav { display: grid; gap: 6px; margin-top: 6px; }
+    .btn {
+      display:block;
+      width:100%;
+      text-align:left;
+      padding:8px 10px;
+      border-radius:9px;
+      border:1px solid var(--border);
+      background:transparent;
+      color:var(--text);
+      cursor:pointer;
+      font-size:12px;
+    }
+    .btn.active { background:#121a2e; border-color:#2a3a57; }
+
+    .content { padding: 14px 16px; }
+    .panel {
+      background: var(--panel);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:10px;
+      overflow:hidden;
+    }
+    .header {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:4px 6px 8px;
+      border-bottom:1px solid var(--border);
+      margin-bottom:8px;
+      font-size:13px;
+    }
+    .pill {
+      font-size:11px;
+      padding:3px 7px;
+      border:1px solid var(--border);
+      border-radius:999px;
+      color:var(--muted);
+    }
+
+    .charts { display:flex; flex-direction:column; gap:18px; }
+    iframe {
+      width:100%;
+      height: calc(100vh - 190px);
+      border:0;
+      background:#0f1115;
+    }
+    #volChart, #oiChart, #gexChart, #vannaChart { width:100%; height:420px; }
+
+    .spot-grid {
+      display:grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap:10px;
+      align-items:stretch;
+    }
+    .card {
+      background: var(--panel);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:10px;
+      min-height:360px;
+      display:flex;
+      flex-direction:column;
+    }
+    .card h3 {
+      margin:0 0 6px;
+      font-size:13px;
+      color:var(--muted);
+      font-weight:600;
+    }
+    .plot { width:100%; height:100% }
+
+    @media (max-width: 900px) {
+      .layout { display:block; min-height:0; }
+      .sidebar {
+        position:static;
+        height:auto;
+        border-right:none;
+        border-bottom:1px solid var(--border);
+        padding:10px 10px 6px;
+      }
+      .status { margin-bottom:8px; }
+      .nav {
+        grid-auto-flow:column;
+        grid-auto-columns:1fr;
+        overflow-x:auto;
+      }
+      .btn { text-align:center; padding:7px 5px; font-size:11px; white-space:nowrap; }
+      .content { padding:10px; }
+      .panel { padding:8px; border-radius:10px; }
+      iframe { height:60vh; }
+      #volChart, #oiChart, #gexChart, #vannaChart { height:340px; }
+      .spot-grid { grid-template-columns:1fr; }
+      .card { min-height:260px; }
+    }
+
+    /* Stats sidebar styles */
+    .stats-box {
+      margin-top: 14px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #0f1216;
+    }
+    .stats-box h4 {
+      margin: 0 0 8px 0;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .stats-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      padding: 3px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .stats-row:last-child {
+      border-bottom: none;
+    }
+    .stats-label {
+      color: var(--muted);
+    }
+    .stats-value {
+      color: var(--text);
+      font-weight: 500;
+    }
+    .stats-value.positive { color: var(--green); }
+    .stats-value.negative { color: var(--red); }
+    .stats-value.neutral { color: var(--blue); }
+    .stats-loading {
+      color: var(--muted);
+      font-size: 11px;
+      font-style: italic;
+    }
+    .stats-error {
+      color: var(--red);
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">SPXW 0DTE</div>
+      <div class="small">Live chain + charts</div>
+      <div class="status">
+        <span class="dot"></span>
+        <div>
+          <div style="font-weight:600; font-size:12px;">__STATUS_TEXT__</div>
+          <div class="small">Last run: __LAST_TS__ â€” __LAST_MSG__</div>
+        </div>
+      </div>
+      <div class="nav">
+        <button class="btn active" id="tabTable">Table</button>
+        <button class="btn" id="tabCharts">Charts</button>
+        <button class="btn" id="tabSpot">Spot</button>
+      </div>
+      <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
+      <div class="small" style="margin-top:14px">
+        <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> ·
+        <a href="/api/history"  style="color:var(--muted)">History</a> ·
+        <a href="/api/volland/latest" style="color:var(--muted)">Latest Exposure</a> ·
+        <a href="/api/volland/stats" style="color:var(--muted)">Stats API</a> ·
+        <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
+      </div>
+
+      <!-- SPX Stats from Volland -->
+      <div class="stats-box" id="statsBox">
+        <h4>SPX Statistics</h4>
+        <div id="statsContent" class="stats-loading">Loading stats...</div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div id="viewTable" class="panel">
+        <div class="header">
+          <div><strong>Live Chain Table</strong></div>
+          <div class="pill">auto-refresh</div>
+        </div>
+        <iframe id="tableFrame" src="/table"></iframe>
+      </div>
+
+      <div id="viewCharts" class="panel" style="display:none">
+        <div class="header">
+          <div><strong>GEX, Volume, Open Interest + Volland Vanna</strong></div>
+          <div class="pill">spot line = dotted</div>
+        </div>
+        <div class="charts">
+          <div id="gexChart"></div>
+          <div id="volChart"></div>
+          <div id="oiChart"></div>
+          <div id="vannaChart"></div>
+        </div>
+      </div>
+
+      <div id="viewSpot" class="panel" style="display:none">
+        <div class="header">
+          <div><strong>Spot</strong></div>
+          <div class="pill">SPX price + GEX & VOL by strike (shared Y axis)</div>
+        </div>
+        <div class="spot-grid">
+          <div class="card">
+            <h3>SPX Price</h3>
+            <div id="spotPricePlot" class="plot"></div>
+          </div>
+          <div class="card">
+            <h3>Net GEX by Strike</h3>
+            <div id="gexSidePlot" class="plot"></div>
+          </div>
+          <div class="card">
+            <h3>VOL by Strike (Calls vs Puts)</h3>
+            <div id="volSidePlot" class="plot"></div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    const PULL_EVERY = __PULL_MS__;
+
+    // ===== Stats sidebar =====
+    const statsContent = document.getElementById('statsContent');
+    let statsTimer = null;
+
+    async function fetchStats() {
+      try {
+        const r = await fetch('/api/volland/stats', {cache: 'no-store'});
+        const data = await r.json();
+        renderStats(data);
+      } catch (err) {
+        statsContent.innerHTML = '<div class="stats-error">Error loading stats</div>';
+      }
+    }
+
+    function renderStats(data) {
+      if (!data || data.error) {
+        statsContent.innerHTML = '<div class="stats-error">' + (data?.error || 'No data') + '</div>';
+        return;
+      }
+
+      const stats = data.stats || {};
+      const ts = data.ts ? new Date(data.ts).toLocaleTimeString() : 'N/A';
+
+      // Format a stat value
+      function fmt(val, prefix='', suffix='') {
+        if (val === null || val === undefined) return '<span class="stats-value">—</span>';
+        const numVal = parseFloat(val);
+        let cls = 'stats-value';
+        if (!isNaN(numVal)) {
+          if (numVal > 0) cls += ' positive';
+          else if (numVal < 0) cls += ' negative';
+          const formatted = Math.abs(numVal) >= 1000 ? numVal.toLocaleString(undefined, {maximumFractionDigits: 0}) : numVal.toLocaleString(undefined, {maximumFractionDigits: 2});
+          return '<span class="' + cls + '">' + prefix + formatted + suffix + '</span>';
+        }
+        return '<span class="stats-value neutral">' + String(val) + '</span>';
+      }
+
+      let html = '';
+
+      // Paradigm (regime)
+      if (stats.paradigm !== null) {
+        html += '<div class="stats-row"><span class="stats-label">Paradigm</span>' + fmt(stats.paradigm) + '</div>';
+      }
+
+      // Target levels
+      if (stats.target_high !== null || stats.target_low !== null) {
+        html += '<div class="stats-row"><span class="stats-label">Target High</span>' + fmt(stats.target_high) + '</div>';
+        html += '<div class="stats-row"><span class="stats-label">Target Low</span>' + fmt(stats.target_low) + '</div>';
+      }
+
+      // Lines in sand
+      if (stats.line_in_sand_high !== null || stats.line_in_sand_low !== null) {
+        html += '<div class="stats-row"><span class="stats-label">LIS High</span>' + fmt(stats.line_in_sand_high) + '</div>';
+        html += '<div class="stats-row"><span class="stats-label">LIS Low</span>' + fmt(stats.line_in_sand_low) + '</div>';
+      }
+
+      // Gamma flip
+      if (stats.gamma_flip !== null) {
+        html += '<div class="stats-row"><span class="stats-label">Gamma Flip</span>' + fmt(stats.gamma_flip) + '</div>';
+      }
+
+      // Delta decay hedging
+      if (stats.delta_decay_hedging !== null) {
+        html += '<div class="stats-row"><span class="stats-label">DD Hedging</span>' + fmt(stats.delta_decay_hedging, '', 'B') + '</div>';
+      }
+
+      // Greeks levels
+      if (stats.charm_level !== null) {
+        html += '<div class="stats-row"><span class="stats-label">Charm</span>' + fmt(stats.charm_level) + '</div>';
+      }
+      if (stats.vanna_level !== null) {
+        html += '<div class="stats-row"><span class="stats-label">Vanna</span>' + fmt(stats.vanna_level) + '</div>';
+      }
+
+      // Options volume
+      if (stats.options_volume !== null) {
+        html += '<div class="stats-row"><span class="stats-label">Opts Volume</span>' + fmt(stats.options_volume) + '</div>';
+      }
+
+      // Show raw matches if we didn't get structured stats
+      if (!html && stats.raw_matches && stats.raw_matches.length > 0) {
+        stats.raw_matches.slice(0, 8).forEach(m => {
+          html += '<div class="stats-row"><span class="stats-label">' + m.key + '</span>' + fmt(m.value) + '</div>';
+        });
+      }
+
+      if (!html) {
+        html = '<div class="stats-loading">No stats found in data</div>';
+      }
+
+      html += '<div class="stats-row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;"><span class="stats-label">Updated</span><span class="stats-value" style="font-size:10px">' + ts + '</span></div>';
+
+      statsContent.innerHTML = html;
+    }
+
+    function startStats() {
+      fetchStats();
+      if (statsTimer) clearInterval(statsTimer);
+      statsTimer = setInterval(fetchStats, PULL_EVERY);
+    }
+
+    function stopStats() {
+      if (statsTimer) {
+        clearInterval(statsTimer);
+        statsTimer = null;
+      }
+    }
+
+    // Start stats polling on page load
+    startStats();
+
+    // Tabs
+    const tabTable=document.getElementById('tabTable'),
+          tabCharts=document.getElementById('tabCharts'),
+          tabSpot=document.getElementById('tabSpot');
+
+    const viewTable=document.getElementById('viewTable'),
+          viewCharts=document.getElementById('viewCharts'),
+          viewSpot=document.getElementById('viewSpot');
+
+    function setActive(btn){
+      [tabTable,tabCharts,tabSpot].forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+    function showTable(){ setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewSpot.style.display='none'; stopCharts(); stopSpot(); }
+    function showCharts(){ setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewSpot.style.display='none'; startCharts(); stopSpot(); }
+    function showSpot(){ setActive(tabSpot); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display=''; startSpot(); stopCharts(); }
+    tabTable.addEventListener('click', showTable);
+    tabCharts.addEventListener('click', showCharts);
+    tabSpot.addEventListener('click', showSpot);
+
+    // ===== Shared fetch for options series (includes spot) =====
+    async function fetchSeries(){
+      const r=await fetch('/api/series',{cache:'no-store'});
+      return await r.json();
+    }
+
+    // ===== Volland vanna window =====
+    async function fetchVannaWindow(){
+      const r = await fetch('/api/volland/vanna_window?limit=40', {cache:'no-store'});
+      return await r.json();
+    }
+
+    // ===== Main charts (GEX / VOL / OI / VANNA) =====
+    const volDiv=document.getElementById('volChart'),
+          oiDiv=document.getElementById('oiChart'),
+          gexDiv=document.getElementById('gexChart'),
+          vannaDiv=document.getElementById('vannaChart');
+
+    let chartsTimer=null, firstDraw=true;
+
+    function verticalSpotShape(spot,yMin,yMax){
+      if(spot==null) return null;
+      return {type:'line', x0:spot, x1:spot, y0:yMin, y1:yMax, line:{color:'#9aa0a6', width:2, dash:'dot'}, xref:'x', yref:'y'};
+    }
+
+    function buildLayout(title,xTitle,yTitle,spot,yMin,yMax,dtick=5){
+      const shape=verticalSpotShape(spot,yMin,yMax);
+      return {
+        title:{text:title,font:{size:14}},
+        xaxis:{title:xTitle,gridcolor:'#20242a',tickfont:{size:10},dtick:dtick},
+        yaxis:{title:yTitle,gridcolor:'#20242a',tickfont:{size:10}},
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        font:{color:'#e6e7e9',size:11},
+        margin:{t:32,r:12,b:40,l:44},
+        barmode:'group',
+        shapes:shape?[shape]:[]
+      };
+    }
+
+    function tracesForBars(strikes,callArr,putArr,yLabel){
+      return [
+        {type:'bar', name:'Calls '+yLabel, x:strikes, y:callArr, marker:{color:'#22c55e'}, offsetgroup:'calls',
+         hovertemplate:"Strike %{x}<br>Calls: %{y}<extra></extra>"},
+        {type:'bar', name:'Puts '+yLabel,  x:strikes, y:putArr,  marker:{color:'#ef4444'}, offsetgroup:'puts',
+         hovertemplate:"Strike %{x}<br>Puts: %{y}<extra></extra>"}
+      ];
+    }
+
+    function tracesForGEX(strikes,callGEX,putGEX,netGEX){
+      return [
+        {type:'bar', name:'Call GEX', x:strikes, y:callGEX, marker:{color:'#22c55e'}, offsetgroup:'call_gex',
+         hovertemplate:"Strike %{x}<br>Call GEX: %{y:.2f}<extra></extra>"},
+        {type:'bar', name:'Put GEX',  x:strikes, y:putGEX,  marker:{color:'#ef4444'}, offsetgroup:'put_gex',
+         hovertemplate:"Strike %{x}<br>Put GEX: %{y:.2f}<extra></extra>"},
+        {type:'bar', name:'Net GEX',  x:strikes, y:netGEX, marker:{color:'#60a5fa'}, offsetgroup:'net_gex', opacity:0.85,
+         hovertemplate:"Strike %{x}<br>Net GEX: %{y:.2f}<extra></extra>"}
+      ];
+    }
+
+    function drawVannaWindow(w, spot){
+      if (!w || w.error) {
+        const msg = w && w.error ? w.error : "no data";
+        Plotly.react(vannaDiv, [], {
+          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          margin:{l:40,r:10,t:10,b:30},
+          annotations:[{text:"Vanna error: "+msg, x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
+          font:{color:'#e6e7e9'}
+        }, {displayModeBar:false,responsive:true});
+        return;
+      }
+
+      const pts = w.points || [];
+      if (!pts.length) {
+        Plotly.react(vannaDiv, [], {
+          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          margin:{l:40,r:10,t:10,b:30},
+          annotations:[{text:"No vanna points returned yet", x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
+          font:{color:'#e6e7e9'}
+        }, {displayModeBar:false,responsive:true});
+        return;
+      }
+
+      const strikes = pts.map(p=>p.strike);
+      const vanna   = pts.map(p=>p.vanna);
+
+      // green for +, red for -
+      const colors = vanna.map(v => (v >= 0 ? '#22c55e' : '#ef4444'));
+
+      let yMin = Math.min(...vanna);
+      let yMax = Math.max(...vanna);
+      if (yMin === yMax){
+        const pad0 = Math.max(1, Math.abs(yMin)*0.05);
+        yMin -= pad0; yMax += pad0;
+      } else {
+        const pad = (yMax - yMin) * 0.05;
+        yMin -= pad; yMax += pad;
+      }
+
+      const shapes = [];
+      if (spot != null) {
+        shapes.push({
+          type:'line', x0:spot, x1:spot, y0:yMin, y1:yMax,
+          xref:'x', yref:'y',
+          line:{color:'#9aa0a6', width:2, dash:'dot'}
+        });
+      }
+
+      const trace = {
+        type:'bar',
+        x: strikes,
+        y: vanna,
+        marker:{color: colors},
+        hovertemplate:"Strike %{x}<br>Vanna %{y}<extra></extra>"
+      };
+
+      Plotly.react(vannaDiv, [trace], {
+        title:{text:'Vanna by Strike (Volland)', font:{size:14}},
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        margin:{l:55,r:10,t:32,b:40},
+        xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}, dtick:5},
+        yaxis:{title:'Vanna',  gridcolor:'#20242a', tickfont:{size:10}, range:[yMin,yMax]},
+        shapes: shapes,
+        font:{color:'#e6e7e9',size:11}
+      }, {displayModeBar:false,responsive:true});
+    }
+
+    async function drawOrUpdate(){
+  // 1) Fetch the fast data first (DO NOT wait for vanna)
+  const data = await fetchSeries();
+  if (!data || !data.strikes || data.strikes.length === 0) return;
+
+  const strikes = data.strikes, spot = data.spot;
+
+  const vMax = Math.max(0, ...data.callVol, ...data.putVol) * 1.05;
+  const oiMax= Math.max(0, ...data.callOI,  ...data.putOI ) * 1.05;
+  const gAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v=>Math.abs(v));
+  const gMax = (gAbs.length ? Math.max(...gAbs) : 0) * 1.05;
+
+  const gexLayout = buildLayout('Gamma Exposure (GEX)','Strike','GEX',spot,-gMax,gMax,5);
+  const volLayout = buildLayout('Volume','Strike','Volume',spot,0,vMax,5);
+  const oiLayout  = buildLayout('Open Interest','Strike','Open Interest',spot,0,oiMax,5);
+
+  const gexTraces = tracesForGEX(strikes, data.callGEX, data.putGEX, data.netGEX);
+  const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
+  const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
+
+  if (firstDraw){
+    Plotly.newPlot(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
+    Plotly.newPlot(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
+    Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
+    firstDraw=false;
+  } else {
+    Plotly.react(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
+    Plotly.react(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
+    Plotly.react(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
+  }
+
+  // 2) Show a quick "loading" state for vanna (optional but recommended)
+  if (!window.__vannaLoadingShown) {
+    window.__vannaLoadingShown = true;
+    drawVannaWindow({ error: "Loading Vannaâ€¦" }, spot); // your function will render the message
+  }
+
+  // 3) Fetch vanna in the background (doesn't block charts)
+  fetchVannaWindow()
+    .then(vannaW => drawVannaWindow(vannaW, spot))
+    .catch(err => drawVannaWindow({ error: String(err) }, spot));
+}
+
+
+    function startCharts(){
+      drawOrUpdate();
+      if (chartsTimer) clearInterval(chartsTimer);
+      chartsTimer = setInterval(drawOrUpdate, PULL_EVERY);
+    }
+    function stopCharts(){
+      if (chartsTimer){
+        clearInterval(chartsTimer);
+        chartsTimer=null;
+      }
+    }
+
+    // ===== Spot: expects /api/spot (keep your existing endpoint) =====
+    const spotPriceDiv=document.getElementById('spotPricePlot'),
+          gexSideDiv=document.getElementById('gexSidePlot'),
+          volSideDiv=document.getElementById('volSidePlot');
+    let spotTimer=null;
+
+    async function fetchSpot(){
+      const r=await fetch('/api/spot',{cache:'no-store'});
+      return await r.json();
+    }
+
+    function computeYRange(strikes, prices){
+      const vals = [];
+      if (Array.isArray(strikes) && strikes.length) vals.push(...strikes);
+      if (Array.isArray(prices) && prices.length) vals.push(...prices.filter(v=>typeof v==='number' && !isNaN(v)));
+      if (!vals.length) return null;
+      let yMin = Math.min(...vals), yMax = Math.max(...vals);
+      if (yMin === yMax){
+        const pad0 = Math.max(1, Math.abs(yMin)*0.001);
+        yMin -= pad0; yMax += pad0;
+      }
+      const pad = (yMax - yMin) * 0.02 || 1;
+      return {min: yMin - pad, max: yMax + pad};
+    }
+
+    function renderSpotPrice(spotData, yRange){
+      if (!spotData || !spotData.time || !spotData.time.length) return;
+      const x = (spotData.time || []).map(t => new Date(t));
+      const closeArr = spotData.close || [];
+      const trace = {
+        type:'scatter',
+        mode:'lines',
+        x:x,
+        y:closeArr,
+        line:{shape:'linear'},
+        hovertemplate:'%{x}<br>Price %{y:.2f}<extra></extra>'
+      };
+      let yr = yRange;
+      if (!yr){
+        const tmp = computeYRange([], closeArr);
+        if (tmp) yr = tmp;
+      }
+      const layout = {
+        margin:{l:54,r:12,t:10,b:32},
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        xaxis:{title:'Time', gridcolor:'#20242a', tickfont:{size:10}},
+        yaxis:{title:'Price', gridcolor:'#20242a', range: yr ? [yr.min, yr.max] : undefined, tickfont:{size:10}},
+        font:{color:'#e6e7e9',size:11}
+      };
+      Plotly.react(spotPriceDiv, [trace], layout, {displayModeBar:false,responsive:true});
+    }
+
+    function renderSpotFromSeries(data, yRange){
+      const strikes = data.strikes || [];
+      if (!strikes.length) return;
+
+      let yr = yRange;
+      if (!yr){
+        const tmp = computeYRange(strikes, []);
+        if (tmp) yr = tmp;
+      }
+      const yMin = yr ? yr.min : Math.min(...strikes);
+      const yMax = yr ? yr.max : Math.max(...strikes);
+
+      const gexNet = data.netGEX || [];
+      const gMax = Math.max(1, ...gexNet.map(v=>Math.abs(v))) * 1.1;
+      const gex = {
+        type:'bar',
+        orientation:'h',
+        x:gexNet,
+        y:strikes,
+        marker:{color:'#60a5fa'},
+        hovertemplate:'Strike %{y}<br>Net GEX %{x:.0f}<extra></extra>'
+      };
+      Plotly.react(gexSideDiv, [gex], {
+        margin:{l:54,r:12,t:10,b:28},
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        xaxis:{title:'Net GEX', gridcolor:'#20242a', range:[-gMax, gMax], tickfont:{size:10}},
+        yaxis:{title:'Strike', range:[yMin,yMax], gridcolor:'#20242a', dtick:5, tickfont:{size:10}},
+        font:{color:'#e6e7e9',size:11}
+      }, {displayModeBar:false,responsive:true});
+
+      const callVol = data.callVol || [];
+      const putVol  = data.putVol  || [];
+      const vMax = Math.max(1, ...callVol, ...putVol) * 1.1;
+      const volCalls = {
+        type:'bar',
+        orientation:'h',
+        name:'Calls',
+        x:callVol,
+        y:strikes,
+        marker:{color:'#22c55e'},
+        hovertemplate:'Strike %{y}<br>Calls %{x}<extra></extra>'
+      };
+      const volPuts = {
+        type:'bar',
+        orientation:'h',
+        name:'Puts',
+        x:putVol,
+        y:strikes,
+        marker:{color:'#ef4444'},
+        hovertemplate:'Strike %{y}<br>Puts %{x}<extra></extra>'
+      };
+      Plotly.react(volSideDiv, [volCalls, volPuts], {
+        margin:{l:54,r:12,t:10,b:28},
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        xaxis:{title:'VOL', gridcolor:'#20242a', range:[0, vMax], tickfont:{size:10}},
+        yaxis:{title:'Strike', range:[yMin,yMax], gridcolor:'#20242a', dtick:5, tickfont:{size:10}},
+        barmode:'group',
+        font:{color:'#e6e7e9',size:11}
+      }, {displayModeBar:false,responsive:true});
+    }
+
+    async function tickSpot(){
+      const [opt, spot] = await Promise.all([fetchSeries(), fetchSpot()]);
+      const prices = (spot && Array.isArray(spot.close)) ? spot.close : [];
+      const yRange = computeYRange(opt.strikes || [], prices);
+      renderSpotPrice(spot, yRange);
+      renderSpotFromSeries(opt, yRange);
+    }
+
+    function startSpot(){
+      tickSpot();
+      if (spotTimer) clearInterval(spotTimer);
+      spotTimer = setInterval(tickSpot, PULL_EVERY);
+    }
+    function stopSpot(){
+      if (spotTimer){
+        clearInterval(spotTimer);
+        spotTimer=null;
+      }
+    }
+
+    // default
+    showTable();
+  </script>
+</body>
+</html>
+"""
+
+# ====== TABLE ENDPOINT ======
 @app.get("/table")
 def html_table():
-    ts = last_run_status.get("ts") or ""
+    ts  = last_run_status.get("ts") or ""
     msg = last_run_status.get("msg") or ""
     parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
-    exp = parts.get("exp", "")
+    exp  = parts.get("exp", "")
     spot_str = parts.get("spot", "")
-    rows_count = parts.get("rows", "")
-    with _df_lock: df_src = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+    rows = parts.get("rows", "")
+
+    with _df_lock:
+        df_src = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+
     if df_src is None or df_src.empty:
         body_html = "<p>No data yet. If market is open, it will appear within ~30s.</p>"
     else:
-        wanted = ["C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Last","Strike","P_Last","P_Delta","P_Gamma","P_IV","P_OpenInterest","P_Volume"]
-        df = df_src[wanted].copy()
-        df.columns = ["Volume","Open Int","IV","Gamma","Delta","LAST","Strike","LAST","Delta","Gamma","IV","Open Int","Volume"]
-        try: spot_val = float(spot_str)
-        except: spot_val = None
+        base = df_src
+        wanted = [
+            "C_Volume","C_OpenInterest","C_IV","C_Gamma","C_Delta","C_Last",
+            "Strike",
+            "P_Last","P_Delta","P_Gamma","P_IV","P_OpenInterest","P_Volume",
+        ]
+        df = base[wanted].copy()
+        df.columns = [
+            "Volume","Open Int","IV","Gamma","Delta","LAST",
+            "Strike",
+            "LAST","Delta","Gamma","IV","Open Int","Volume",
+        ]
+        try:
+            spot_val = float(spot_str)
+        except:
+            spot_val = None
         atm_idx = None
         if spot_val:
-            try: atm_idx = (df["Strike"] - spot_val).abs().idxmin()
-            except: pass
+            try:
+                atm_idx = (df["Strike"] - spot_val).abs().idxmin()
+            except:
+                pass
+
         comma_cols = {"Volume", "Open Int"}
         def fmt_val(col, v):
-            if pd.isna(v): return ""
+            if pd.isna(v):
+                return ""
             if col in comma_cols:
-                try: f = float(v); return f"{int(f):,}" if abs(f - int(f)) < 1e-9 else f"{f:,.2f}"
-                except: return str(v)
+                try:
+                    f = float(v)
+                    return f"{int(f):,}" if abs(f - int(f)) < 1e-9 else f"{f:,.2f}"
+                except:
+                    return str(v)
             return str(v)
+
         thead = "<tr>" + "".join(f"<th>{h}</th>" for h in df.columns) + "</tr>"
         trs = []
         for i, row in enumerate(df.itertuples(index=False), start=0):
@@ -657,15 +1643,30 @@ def html_table():
             tds = [f"<td>{fmt_val(col, v)}</td>" for col, v in zip(df.columns, row)]
             trs.append(f"<tr{cls}>" + "".join(tds) + "</tr>")
         body_html = f'<table class="table"><thead>{thead}</thead><tbody>{"".join(trs)}</tbody></table>'
-    html = TABLE_HTML_TEMPLATE.replace("__TS__", ts).replace("__EXP__", exp).replace("__SPOT__", spot_str).replace("__ROWS__", rows_count).replace("__BODY__", body_html).replace("__PULL_MS__", str(PULL_EVERY * 1000))
+
+    html = (TABLE_HTML_TEMPLATE
+            .replace("__TS__", ts)
+            .replace("__EXP__", exp)
+            .replace("__SPOT__", spot_str)
+            .replace("__ROWS__", rows)
+            .replace("__BODY__", body_html)
+            .replace("__PULL_MS__", str(PULL_EVERY * 1000)))
     return Response(content=html, media_type="text/html")
 
+# ====== DASHBOARD ENDPOINT ======
 @app.get("/", response_class=HTMLResponse)
 def spxw_dashboard():
     open_now = market_open_now()
     status_text = "Market OPEN" if open_now else "Market CLOSED"
     status_color = "#10b981" if open_now else "#ef4444"
-    last_ts = last_run_status.get("ts") or ""
+
+    last_ts  = last_run_status.get("ts")  or ""
     last_msg = last_run_status.get("msg") or ""
-    html = DASH_HTML_TEMPLATE.replace("__STATUS_COLOR__", status_color).replace("__STATUS_TEXT__", status_text).replace("__LAST_TS__", str(last_ts)).replace("__LAST_MSG__", str(last_msg)).replace("__PULL_MS__", str(PULL_EVERY * 1000))
+
+    html = (DASH_HTML_TEMPLATE
+            .replace("__STATUS_COLOR__", status_color)
+            .replace("__STATUS_TEXT__", status_text)
+            .replace("__LAST_TS__", str(last_ts))
+            .replace("__LAST_MSG__", str(last_msg))
+            .replace("__PULL_MS__", str(PULL_EVERY * 1000)))
     return HTMLResponse(html)

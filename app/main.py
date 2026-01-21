@@ -199,160 +199,127 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
 
 def db_volland_stats() -> Optional[dict]:
     """
-    Extract SPX stats from the latest volland_snapshots payload.
-    Parses the captured API responses looking for exposure data,
-    current price, and any available stats from Volland.
+    Extract stats from volland_snapshots - debug version that shows all available data.
     """
     if not engine:
         return None
     
-    # Get recent snapshots that have captures (not errors)
+    # Get the most recent snapshot
     q = text("""
         SELECT ts, payload 
         FROM volland_snapshots 
-        WHERE payload->>'error_event' IS NULL 
-          AND payload->'captures' IS NOT NULL
         ORDER BY ts DESC 
-        LIMIT 20
+        LIMIT 5
     """)
     
     with engine.begin() as conn:
         rows = conn.execute(q).mappings().all()
     
     if not rows:
-        return {"ts": None, "stats": None, "error": "No valid snapshots found"}
+        return {"ts": None, "stats": None, "error": "No snapshots in database", "debug": "volland_snapshots table is empty"}
     
     stats = {
-        "current_price": None,
-        "last_modified": None,
-        "total_exposure_points": 0,
-        "greeks_found": [],
-        "expirations": [],
-        "data_sources": [],
+        "snapshot_count": len(rows),
+        "urls_captured": [],
+        "has_captures": False,
+        "fetch_count": 0,
+        "xhr_count": 0,
+        "ws_count": 0,
+        "interesting_bodies": [],
+        "all_keys_found": set(),
     }
     
     ts = None
     
-    # Search through recent snapshots for exposure/stats data
     for row in rows:
         payload = _json_load_maybe(row["payload"])
         if not payload or not isinstance(payload, dict):
             continue
         
-        ts = row["ts"]
+        if ts is None:
+            ts = row["ts"]
+        
+        # Check if this is an error event
+        if "error_event" in payload:
+            stats["last_error"] = str(payload.get("error_event", {}).get("error", ""))[:100]
+            continue
+        
+        # Get captures
         captures = payload.get("captures", {})
-        
-        # Check fetch_top and xhr_top for exposure data
-        for source_key in ["fetch_top", "xhr_top"]:
-            items = captures.get(source_key, [])
-            if not isinstance(items, list):
-                continue
+        if captures:
+            stats["has_captures"] = True
             
-            for item in items:
+            # Count items
+            counts = captures.get("counts", {})
+            stats["fetch_count"] = max(stats["fetch_count"], counts.get("fetch", 0))
+            stats["xhr_count"] = max(stats["xhr_count"], counts.get("xhr", 0))
+            stats["ws_count"] = max(stats["ws_count"], counts.get("ws", 0))
+            
+            # Check fetch_top
+            for item in captures.get("fetch_top", [])[:10]:
                 url = item.get("url", "")
+                if url and url not in stats["urls_captured"]:
+                    stats["urls_captured"].append(url[:100])
+                
                 body = item.get("body", "")
-                if not body or not isinstance(body, str):
-                    continue
+                if body and isinstance(body, str) and body.strip().startswith("{"):
+                    try:
+                        data = json.loads(body)
+                        if isinstance(data, dict):
+                            # Collect all top-level keys
+                            for k in data.keys():
+                                stats["all_keys_found"].add(k)
+                            
+                            # Look for specific useful fields
+                            if data.get("currentPrice"):
+                                stats["currentPrice"] = data["currentPrice"]
+                            if data.get("items"):
+                                stats["items_count"] = len(data["items"])
+                            if data.get("lastModified"):
+                                stats["lastModified"] = str(data["lastModified"])[:30]
+                            if data.get("expirations"):
+                                stats["expirations"] = data["expirations"][:3]
+                            
+                            # Store a sample of interesting body
+                            if len(stats["interesting_bodies"]) < 2:
+                                sample = {k: str(v)[:50] for k, v in list(data.items())[:5]}
+                                stats["interesting_bodies"].append(sample)
+                    except:
+                        pass
+            
+            # Check xhr_top too
+            for item in captures.get("xhr_top", [])[:10]:
+                url = item.get("url", "")
+                if url and url not in stats["urls_captured"]:
+                    stats["urls_captured"].append(url[:100])
                 
-                # Skip non-JSON responses
-                if not body.strip().startswith("{") and not body.strip().startswith("["):
-                    continue
-                
-                # Try to parse as JSON
-                try:
-                    data = json.loads(body)
-                except:
-                    continue
-                
-                if not isinstance(data, dict):
-                    continue
-                
-                # Look for exposure endpoint data
-                if "exposure" in url.lower() or "api/v1/data" in url.lower():
-                    stats["data_sources"].append(url[:80])
-                    
-                    # Extract currentPrice
-                    if data.get("currentPrice") and stats["current_price"] is None:
-                        try:
-                            stats["current_price"] = float(data["currentPrice"])
-                        except:
-                            pass
-                    
-                    # Extract lastModified
-                    if data.get("lastModified") and stats["last_modified"] is None:
-                        stats["last_modified"] = str(data["lastModified"])
-                    
-                    # Extract expirations
-                    if data.get("expirations") and not stats["expirations"]:
-                        exp_list = data.get("expirations", [])
-                        if isinstance(exp_list, list):
-                            stats["expirations"] = exp_list[:5]  # Keep first 5
-                    
-                    # Count exposure points (items array)
-                    items_arr = data.get("items") or data.get("data") or []
-                    if isinstance(items_arr, list):
-                        stats["total_exposure_points"] += len(items_arr)
-                
-                # Try to extract any greek-related fields
-                _extract_greek_info(data, url, stats)
+                body = item.get("body", "")
+                if body and isinstance(body, str) and body.strip().startswith("{"):
+                    try:
+                        data = json.loads(body)
+                        if isinstance(data, dict):
+                            for k in data.keys():
+                                stats["all_keys_found"].add(k)
+                            
+                            if data.get("currentPrice") and "currentPrice" not in stats:
+                                stats["currentPrice"] = data["currentPrice"]
+                            if data.get("items") and "items_count" not in stats:
+                                stats["items_count"] = len(data["items"])
+                    except:
+                        pass
         
-        # Also check WebSocket messages for real-time data
-        ws_items = captures.get("ws_tail", [])
-        if isinstance(ws_items, list):
-            for ws in ws_items:
-                ws_data = ws.get("data", "")
-                if not ws_data or not isinstance(ws_data, str):
-                    continue
-                if not ws_data.strip().startswith("{"):
-                    continue
-                try:
-                    data = json.loads(ws_data)
-                    if isinstance(data, dict):
-                        _extract_greek_info(data, "websocket", stats)
-                        # Check for currentPrice in WS data
-                        if data.get("currentPrice") and stats["current_price"] is None:
-                            try:
-                                stats["current_price"] = float(data["currentPrice"])
-                            except:
-                                pass
-                except:
-                    pass
-        
-        # If we found useful data, stop searching older snapshots
-        if stats["current_price"] is not None or stats["total_exposure_points"] > 0:
-            break
+        # Also check page_url
+        if payload.get("page_url"):
+            stats["page_url"] = payload["page_url"][:100]
     
-    # Dedupe data sources
-    stats["data_sources"] = list(set(stats["data_sources"]))[:5]
-    stats["greeks_found"] = list(set(stats["greeks_found"]))
+    # Convert set to list for JSON serialization
+    stats["all_keys_found"] = list(stats["all_keys_found"])[:20]
+    stats["urls_captured"] = stats["urls_captured"][:5]
     
     return {
         "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts) if ts else None,
         "stats": stats
     }
-
-def _extract_greek_info(data: dict, url: str, stats: dict):
-    """Extract greek-related information from API response data."""
-    if not isinstance(data, dict):
-        return
-    
-    # Check URL for greek type
-    url_lower = url.lower()
-    for greek in ["gamma", "delta", "vanna", "charm", "vega", "theta"]:
-        if greek in url_lower and greek not in stats["greeks_found"]:
-            stats["greeks_found"].append(greek)
-    
-    # Check for greek field in data
-    if data.get("greek"):
-        greek = str(data["greek"]).lower()
-        if greek not in stats["greeks_found"]:
-            stats["greeks_found"].append(greek)
-    
-    # Check for ticker field
-    if data.get("ticker"):
-        ticker = str(data["ticker"]).upper()
-        if "ticker" not in stats:
-            stats["ticker"] = ticker
 
 # ====== Auth ======
 REFRESH_EARLY_SEC = 300
@@ -826,9 +793,8 @@ def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
 @app.get("/api/volland/stats")
 def api_volland_stats():
     """
-    Get SPX statistics extracted from Volland data.
-    Returns current price, exposure points count, greeks found, etc.
-    Data is parsed from captured API responses stored by volland_worker.
+    Get stats/debug info from Volland captured data.
+    Shows what data is being captured by volland_worker.
     """
     try:
         if not engine:
@@ -838,7 +804,8 @@ def api_volland_stats():
             return {"ts": None, "stats": None, "error": "No stats available"}
         return result
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        import traceback
+        return JSONResponse({"error": str(e), "trace": traceback.format_exc()[-500:]}, status_code=500)
 
 # ====== TABLE & DASHBOARD HTML TEMPLATES ======
 
@@ -1009,7 +976,7 @@ DASH_HTML_TEMPLATE = """
       .card { min-height:260px; }
     }
 
-    /* Stats sidebar styles */
+    /* Stats box */
     .stats-box {
       margin-top: 14px;
       padding: 10px;
@@ -1017,7 +984,7 @@ DASH_HTML_TEMPLATE = """
       border-radius: 10px;
       background: #0f1216;
       overflow-y: auto;
-      max-height: 280px;
+      max-height: 300px;
     }
     .stats-box h4 {
       margin: 0 0 8px 0;
@@ -1032,28 +999,12 @@ DASH_HTML_TEMPLATE = """
       padding: 3px 0;
       border-bottom: 1px solid var(--border);
     }
-    .stats-row:last-child {
-      border-bottom: none;
-    }
-    .stats-label {
-      color: var(--muted);
-    }
-    .stats-value {
-      color: var(--text);
-      font-weight: 500;
-    }
+    .stats-row:last-child { border-bottom: none; }
+    .stats-label { color: var(--muted); }
+    .stats-value { color: var(--text); font-weight: 500; }
     .stats-value.positive { color: var(--green); }
-    .stats-value.negative { color: var(--red); }
-    .stats-value.neutral { color: var(--blue); }
-    .stats-loading {
-      color: var(--muted);
-      font-size: 11px;
-      font-style: italic;
-    }
-    .stats-error {
-      color: var(--red);
-      font-size: 11px;
-    }
+    .stats-loading { color: var(--muted); font-size: 11px; font-style: italic; }
+    .stats-error { color: var(--red); font-size: 11px; }
   </style>
 </head>
 <body>
@@ -1075,17 +1026,15 @@ DASH_HTML_TEMPLATE = """
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
       <div class="small" style="margin-top:14px">
-        <a href="/api/snapshot" style="color:var(--muted)">Current JSON</a> ·
-        <a href="/api/history"  style="color:var(--muted)">History</a> ·
-        <a href="/api/volland/latest" style="color:var(--muted)">Latest Exposure</a> ·
-        <a href="/api/volland/stats" style="color:var(--muted)">Stats API</a> ·
-        <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
+        <a href="/api/snapshot" style="color:var(--muted)">JSON</a> |
+        <a href="/api/volland/stats" style="color:var(--muted)">Stats</a> |
+        <a href="/api/volland/latest" style="color:var(--muted)">Raw</a>
       </div>
 
-      <!-- Volland Stats from Postgres -->
+      <!-- Volland Stats -->
       <div class="stats-box" id="statsBox">
-        <h4>Volland Stats</h4>
-        <div id="statsContent" class="stats-loading">Loading stats...</div>
+        <h4>Volland Data</h4>
+        <div id="statsContent" class="stats-loading">Loading...</div>
       </div>
     </aside>
 
@@ -1148,92 +1097,87 @@ DASH_HTML_TEMPLATE = """
         const data = await r.json();
         renderStats(data);
       } catch (err) {
-        statsContent.innerHTML = '<div class="stats-error">Error loading stats</div>';
+        statsContent.innerHTML = '<div class="stats-error">Error: ' + err.message + '</div>';
       }
     }
 
     function renderStats(data) {
-      if (!data || data.error) {
-        statsContent.innerHTML = '<div class="stats-error">' + (data?.error || 'No data') + '</div>';
+      if (!data) {
+        statsContent.innerHTML = '<div class="stats-error">No response</div>';
+        return;
+      }
+      if (data.error) {
+        statsContent.innerHTML = '<div class="stats-error">' + data.error + '</div>';
         return;
       }
 
       const stats = data.stats || {};
       const ts = data.ts ? new Date(data.ts).toLocaleTimeString() : 'N/A';
 
-      // Format a stat value
-      function fmt(val, prefix='', suffix='') {
-        if (val === null || val === undefined) return '<span class="stats-value">—</span>';
-        const numVal = parseFloat(val);
-        let cls = 'stats-value';
-        if (!isNaN(numVal)) {
-          if (numVal > 0) cls += ' positive';
-          else if (numVal < 0) cls += ' negative';
-          const formatted = Math.abs(numVal) >= 1000 ? numVal.toLocaleString(undefined, {maximumFractionDigits: 0}) : numVal.toLocaleString(undefined, {maximumFractionDigits: 2});
-          return '<span class="' + cls + '">' + prefix + formatted + suffix + '</span>';
-        }
-        return '<span class="stats-value neutral">' + String(val) + '</span>';
-      }
-
       let html = '';
 
-      // Current price from Volland
-      if (stats.current_price !== null && stats.current_price !== undefined) {
-        html += '<div class="stats-row"><span class="stats-label">Volland Price</span>' + fmt(stats.current_price) + '</div>';
+      // Show snapshot count
+      if (stats.snapshot_count !== undefined) {
+        html += '<div class="stats-row"><span class="stats-label">Snapshots</span><span class="stats-value">' + stats.snapshot_count + '</span></div>';
       }
 
-      // Total exposure points captured
-      if (stats.total_exposure_points > 0) {
-        html += '<div class="stats-row"><span class="stats-label">Exposure Pts</span>' + fmt(stats.total_exposure_points) + '</div>';
+      // Has captures?
+      html += '<div class="stats-row"><span class="stats-label">Has Data</span><span class="stats-value">' + (stats.has_captures ? 'Yes' : 'No') + '</span></div>';
+
+      // Counts
+      if (stats.fetch_count > 0 || stats.xhr_count > 0) {
+        html += '<div class="stats-row"><span class="stats-label">Fetch/XHR</span><span class="stats-value">' + stats.fetch_count + '/' + stats.xhr_count + '</span></div>';
       }
 
-      // Greeks found
-      if (stats.greeks_found && stats.greeks_found.length > 0) {
-        html += '<div class="stats-row"><span class="stats-label">Greeks</span><span class="stats-value neutral">' + stats.greeks_found.join(', ') + '</span></div>';
+      // Current price if found
+      if (stats.currentPrice) {
+        html += '<div class="stats-row"><span class="stats-label">Price</span><span class="stats-value positive">' + stats.currentPrice + '</span></div>';
       }
 
-      // Ticker
-      if (stats.ticker) {
-        html += '<div class="stats-row"><span class="stats-label">Ticker</span><span class="stats-value neutral">' + stats.ticker + '</span></div>';
+      // Items count if found
+      if (stats.items_count) {
+        html += '<div class="stats-row"><span class="stats-label">Exposure Pts</span><span class="stats-value">' + stats.items_count + '</span></div>';
       }
 
-      // Expirations
-      if (stats.expirations && stats.expirations.length > 0) {
-        html += '<div class="stats-row"><span class="stats-label">Expirations</span><span class="stats-value" style="font-size:10px">' + stats.expirations.slice(0,3).join(', ') + '</span></div>';
+      // Keys found in responses
+      if (stats.all_keys_found && stats.all_keys_found.length > 0) {
+        html += '<div class="stats-row"><span class="stats-label">Keys Found</span></div>';
+        html += '<div style="font-size:9px;color:var(--muted);word-break:break-all;margin-bottom:4px">' + stats.all_keys_found.join(', ') + '</div>';
       }
 
-      // Last modified
-      if (stats.last_modified) {
-        const lm = new Date(stats.last_modified).toLocaleTimeString();
-        html += '<div class="stats-row"><span class="stats-label">Data Modified</span><span class="stats-value" style="font-size:10px">' + lm + '</span></div>';
-      }
-
-      // Data sources (URLs)
-      if (stats.data_sources && stats.data_sources.length > 0) {
-        html += '<div class="stats-row" style="flex-direction:column"><span class="stats-label">Data Sources</span></div>';
-        stats.data_sources.slice(0,2).forEach(src => {
-          const short = src.length > 40 ? '...' + src.slice(-37) : src;
-          html += '<div style="font-size:9px;color:var(--muted);word-break:break-all;margin-bottom:2px">' + short + '</div>';
+      // URLs captured
+      if (stats.urls_captured && stats.urls_captured.length > 0) {
+        html += '<div class="stats-row"><span class="stats-label">URLs (' + stats.urls_captured.length + ')</span></div>';
+        stats.urls_captured.slice(0,3).forEach(function(url) {
+          var short = url.length > 50 ? '...' + url.slice(-47) : url;
+          html += '<div style="font-size:8px;color:var(--muted);word-break:break-all;margin-bottom:2px">' + short + '</div>';
         });
       }
 
-      if (!html) {
-        html = '<div class="stats-loading">No stats found in captured data</div>';
+      // Last error if any
+      if (stats.last_error) {
+        html += '<div class="stats-row"><span class="stats-label">Last Error</span></div>';
+        html += '<div class="stats-error" style="font-size:9px">' + stats.last_error + '</div>';
       }
 
-      html += '<div class="stats-row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;"><span class="stats-label">Updated</span><span class="stats-value" style="font-size:10px">' + ts + '</span></div>';
+      // Page URL
+      if (stats.page_url) {
+        html += '<div class="stats-row"><span class="stats-label">Page</span></div>';
+        html += '<div style="font-size:8px;color:var(--muted);word-break:break-all">' + stats.page_url + '</div>';
+      }
+
+      if (!html) {
+        html = '<div class="stats-loading">No stats data</div>';
+      }
+
+      html += '<div class="stats-row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:4px"><span class="stats-label">Updated</span><span class="stats-value" style="font-size:10px">' + ts + '</span></div>';
 
       statsContent.innerHTML = html;
     }
 
-    function startStats() {
-      fetchStats();
-      if (statsTimer) clearInterval(statsTimer);
-      statsTimer = setInterval(fetchStats, PULL_EVERY);
-    }
-
-    // Start stats polling on page load
-    startStats();
+    // Start stats on load
+    fetchStats();
+    statsTimer = setInterval(fetchStats, PULL_EVERY);
 
     // Tabs
     const tabTable=document.getElementById('tabTable'),

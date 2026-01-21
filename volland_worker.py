@@ -1,150 +1,49 @@
-# volland_worker.py - FIXED VERSION
-# Properly extracts Volland exposure data and stores it in structured format
-#
-# Changes from original:
-# 1. Extracts actual exposure data from /api/v1/data/exposure responses
-# 2. Parses into structured rows (ts, strike, value, greek, ticker, etc.)
-# 3. Saves to volland_exposure_points table (not just raw snapshots)
-# 4. Maintains backward compatibility with volland_snapshots table
-
-import os
-import json
-import time
-import traceback
-import re
+# volland_worker.py
+# Fixed version that captures BOTH charm/exposure data AND statistics
+import os, json, time, traceback, re
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
 
 import psycopg
 from psycopg.rows import dict_row
 from playwright.sync_api import sync_playwright
 
-# ============ CONFIG ============
-DB_URL = os.getenv("DATABASE_URL", "")
-EMAIL = os.getenv("VOLLAND_EMAIL", "")
-PASS = os.getenv("VOLLAND_PASSWORD", "")
-URL = os.getenv("VOLLAND_URL", "")
 
-PULL_EVERY = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "60"))
-WAIT_AFTER_GOTO_SEC = float(os.getenv("VOLLAND_WAIT_AFTER_GOTO_SEC", "8"))
+DB_URL   = os.getenv("DATABASE_URL", "")
+EMAIL    = os.getenv("VOLLAND_EMAIL", "")
+PASS     = os.getenv("VOLLAND_PASSWORD", "")
+URL      = os.getenv("VOLLAND_URL", "")  # Charm workspace
+STATS_URL = os.getenv("VOLLAND_STATS_URL", "https://vol.land/app/workspace/696fcf236547cfa9b4d09267")
 
-# Safety caps
-MAX_CAPTURE_ITEMS = int(os.getenv("VOLLAND_MAX_CAPTURE_ITEMS", "50"))
-MAX_BODY_CHARS = int(os.getenv("VOLLAND_MAX_BODY_CHARS", "50000"))
+PULL_EVERY   = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "60"))
+WAIT_AFTER_GOTO_SEC = float(os.getenv("VOLLAND_WAIT_AFTER_GOTO_SEC", "6"))
 
-# ============ DATABASE ============
+# safety caps (avoid huge DB rows)
+MAX_CAPTURE_ITEMS = int(os.getenv("VOLLAND_MAX_CAPTURE_ITEMS", "40"))
+MAX_BODY_CHARS    = int(os.getenv("VOLLAND_MAX_BODY_CHARS", "20000"))
+
+
 def db():
     return psycopg.connect(DB_URL, autocommit=True, row_factory=dict_row)
 
 
 def ensure_tables():
-    """Create all required tables and views."""
     with db() as conn, conn.cursor() as cur:
-        # Original snapshots table (keep for backward compatibility and debugging)
         cur.execute("""
         CREATE TABLE IF NOT EXISTS volland_snapshots (
-            id BIGSERIAL PRIMARY KEY,
-            ts TIMESTAMPTZ NOT NULL DEFAULT now(),
-            payload JSONB NOT NULL
+          id BIGSERIAL PRIMARY KEY,
+          ts TIMESTAMPTZ NOT NULL DEFAULT now(),
+          payload JSONB NOT NULL
         );
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_snapshots_ts ON volland_snapshots(ts DESC);")
 
-        # NEW: Structured exposure points table
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS volland_exposure_points (
-            id BIGSERIAL PRIMARY KEY,
-            ts_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
-            ticker VARCHAR(20) NOT NULL DEFAULT 'SPX',
-            greek VARCHAR(20) NOT NULL,
-            expiration_option VARCHAR(30),
-            strike NUMERIC NOT NULL,
-            value NUMERIC NOT NULL,
-            current_price NUMERIC,
-            last_modified TIMESTAMPTZ,
-            expirations JSONB
-        );
-        """)
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_exposure_ts ON volland_exposure_points(ts_utc DESC);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_exposure_greek ON volland_exposure_points(greek);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_exposure_strike ON volland_exposure_points(strike);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_exposure_ts_greek ON volland_exposure_points(ts_utc DESC, greek);")
 
-        # NEW: Create the view that main.py expects for vanna data
-        cur.execute("""
-        CREATE OR REPLACE VIEW volland_vanna_points_dedup AS
-        WITH latest AS (
-            SELECT MAX(ts_utc) AS max_ts
-            FROM volland_exposure_points
-            WHERE greek = 'charm'  -- or 'vanna' depending on what you're fetching
-        )
-        SELECT 
-            e.ts_utc,
-            e.strike,
-            e.value AS vanna,
-            e.current_price,
-            e.ticker
-        FROM volland_exposure_points e
-        JOIN latest l ON e.ts_utc = l.max_ts
-        WHERE e.greek = 'charm'  -- match the greek being fetched
-        ORDER BY e.strike;
-        """)
-
-        print("[db] tables and views ready", flush=True)
-
-
-def save_raw_snapshot(payload: dict):
-    """Save raw snapshot for debugging/backup."""
+def save_snapshot(payload: dict):
     with db() as conn, conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO volland_snapshots(payload) VALUES (%s::jsonb)",
-            (json.dumps(payload),)
-        )
+        cur.execute("INSERT INTO volland_snapshots(payload) VALUES (%s::jsonb)", (json.dumps(payload),))
 
 
-def save_exposure_points(
-    points: List[Dict],
-    greek: str,
-    ticker: str = "SPX",
-    expiration_option: str = None,
-    current_price: float = None,
-    last_modified: str = None,
-    expirations: List[str] = None
-):
-    """Save structured exposure points to the database."""
-    if not points:
-        return 0
-
-    ts_utc = datetime.now(timezone.utc)
-    last_mod_dt = None
-    if last_modified:
-        try:
-            last_mod_dt = datetime.fromisoformat(last_modified.replace('Z', '+00:00'))
-        except:
-            pass
-
-    expirations_json = json.dumps(expirations) if expirations else None
-
-    with db() as conn, conn.cursor() as cur:
-        inserted = 0
-        for pt in points:
-            try:
-                strike = float(pt.get("x", 0))
-                value = float(pt.get("y", 0))
-                cur.execute("""
-                    INSERT INTO volland_exposure_points 
-                    (ts_utc, ticker, greek, expiration_option, strike, value, current_price, last_modified, expirations)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-                """, (ts_utc, ticker, greek, expiration_option, strike, value, current_price, last_mod_dt, expirations_json))
-                inserted += 1
-            except Exception as e:
-                print(f"[db] skip point {pt}: {e}", flush=True)
-        return inserted
-
-
-# ============ BROWSER AUTOMATION ============
 def handle_session_limit_modal(page) -> bool:
-    """Handle the 'session limit' modal that sometimes appears."""
     btn = page.locator(
         "button[data-cy='confirmation-modal-confirm-button'], button:has-text('Continue')"
     ).first
@@ -154,14 +53,13 @@ def handle_session_limit_modal(page) -> bool:
         btn.wait_for(state="visible", timeout=3000)
         btn.click()
         page.wait_for_timeout(1200)
-        print("[login] session modal: clicked Continue", flush=True)
+        print("[login] session modal: clicked Continue")
         return True
     except Exception:
         return False
 
 
 def login_if_needed(page):
-    """Login to Volland if needed."""
     page.goto(URL, wait_until="domcontentloaded", timeout=120000)
     page.wait_for_timeout(1500)
 
@@ -169,7 +67,7 @@ def login_if_needed(page):
         return
 
     email_box = page.locator("input[data-cy='sign-in-email-input'], input[name='email']").first
-    pwd_box = page.locator("input[data-cy='sign-in-password-input'], input[name='password'], input[type='password']").first
+    pwd_box   = page.locator("input[data-cy='sign-in-password-input'], input[name='password'], input[type='password']").first
 
     email_box.wait_for(state="visible", timeout=90000)
     pwd_box.wait_for(state="visible", timeout=90000)
@@ -195,11 +93,16 @@ def login_if_needed(page):
     raise RuntimeError(f"Login did not complete. Still on: {page.url}. Body: {body}")
 
 
-# ============ NETWORK CAPTURE ============
+# ---- Install hooks BEFORE any navigation ----
 INIT_CAPTURE_JS = r"""
 (() => {
-  const MAX = 200;
-  const cap = { fetch: [], xhr: [], ws: [], note: [] };
+  const MAX = 200; // in-browser buffer
+  const cap = {
+    fetch: [],
+    xhr: [],
+    ws: [],
+    note: []
+  };
 
   function push(arr, item) {
     try {
@@ -212,11 +115,11 @@ INIT_CAPTURE_JS = r"""
     try {
       if (!t) return "";
       t = String(t);
-      return t.length > 50000 ? t.slice(0, 50000) : t;
+      return t.length > 20000 ? t.slice(0, 20000) : t;
     } catch(e) { return ""; }
   }
 
-  // Fetch hook
+  // --- fetch hook ---
   const _fetch = window.fetch;
   window.fetch = async function(...args) {
     const url = (args && args[0] && args[0].url) ? args[0].url : String(args[0] || "");
@@ -224,6 +127,8 @@ INIT_CAPTURE_JS = r"""
     try {
       const res = await _fetch.apply(this, args);
       const ct = (res.headers.get("content-type") || "").toLowerCase();
+
+      // clone to read body
       let body = "";
       try {
         if (ct.includes("json") || ct.includes("text") || ct.includes("graphql")) {
@@ -231,6 +136,7 @@ INIT_CAPTURE_JS = r"""
           body = safeText(await clone.text());
         }
       } catch(e) {}
+
       push(cap.fetch, { url, status: res.status, ct, ms: Date.now() - t0, body });
       return res;
     } catch(e) {
@@ -239,7 +145,7 @@ INIT_CAPTURE_JS = r"""
     }
   };
 
-  // XHR hook
+  // --- XHR hook ---
   const _open = XMLHttpRequest.prototype.open;
   const _send = XMLHttpRequest.prototype.send;
 
@@ -269,7 +175,7 @@ INIT_CAPTURE_JS = r"""
     return _send.call(this, body);
   };
 
-  // WebSocket hook
+  // --- WebSocket hook (optional) ---
   const _WS = window.WebSocket;
   window.WebSocket = function(url, protocols) {
     const ws = protocols ? new _WS(url, protocols) : new _WS(url);
@@ -307,100 +213,121 @@ def get_captures(page) -> dict:
 
 
 def reset_captures(page):
-    """Reset the capture buffers."""
     try:
         page.evaluate("() => window.__volland_cap_reset && window.__volland_cap_reset()")
     except Exception:
         pass
 
 
-# ============ DATA EXTRACTION ============
-def extract_exposure_data(captures: dict) -> List[Dict]:
+def filter_and_score(items):
+    """Keep likely relevant endpoints and score candidates."""
+    out = []
+    for it in items:
+        url = (it.get("url") or "").lower()
+        if not url:
+            continue
+
+        # drop noisy analytics
+        if any(x in url for x in ("sentry.io", "gleap.io", "googletagmanager", "google-analytics")):
+            continue
+
+        body = it.get("body") or ""
+        s = (url + "\n" + body).lower()
+
+        score = 0
+        for w in ["exposure", "gamma", "vanna", "charm", "dealer", "hedg", "notional", "strike", "expiration", "spx", "spy"]:
+            if w in s:
+                score += 3
+
+        # JSON-ish
+        if "json" in (it.get("ct") or "").lower():
+            score += 2
+        if "graphql" in s:
+            score += 2
+        if len(body) > 200:
+            score += 1
+
+        it2 = dict(it)
+        it2["score"] = score
+        out.append(it2)
+
+    out.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return out[:MAX_CAPTURE_ITEMS]
+
+
+def trim_body(item):
+    it = dict(item)
+    b = it.get("body") or ""
+    if len(b) > MAX_BODY_CHARS:
+        it["body"] = b[:MAX_BODY_CHARS]
+    return it
+
+
+def parse_statistics(page) -> dict:
     """
-    Extract exposure data from captured network requests.
-    Returns list of dicts with: items, greek, ticker, currentPrice, lastModified, expirations, url
+    Parse SPX statistics from the statistics page using text extraction.
     """
-    results = []
+    stats = {
+        "paradigm": None,
+        "target": None,
+        "lines_in_sand": None,
+        "delta_decay_hedging": None,
+        "opt_volume": None
+    }
     
-    all_requests = []
-    for item in captures.get("fetch", []):
-        all_requests.append(item)
-    for item in captures.get("xhr", []):
-        all_requests.append(item)
-
-    for req in all_requests:
-        url = req.get("url", "")
-        body = req.get("body", "")
-        status = req.get("status", 0)
-
-        # Look for exposure data endpoint
-        if "/api/v1/data/exposure" not in url:
-            continue
-        if status != 200:
-            continue
-        if not body:
-            continue
-
-        try:
-            data = json.loads(body)
-            items = data.get("items") or data.get("data") or []
+    try:
+        # Wait for content to load
+        page.wait_for_timeout(3000)
+        
+        # Get all text content
+        all_text = page.inner_text("body")
+        
+        # Parse using simple string matching
+        lines = all_text.split('\n')
+        for i, line in enumerate(lines):
+            line_clean = line.strip()
             
-            if not items:
-                continue
-
-            # Try to determine greek from URL params or data
-            greek = "unknown"
-            if "greek=vanna" in url.lower():
-                greek = "vanna"
-            elif "greek=charm" in url.lower():
-                greek = "charm"
-            elif "greek=gamma" in url.lower():
-                greek = "gamma"
-            elif "greek=delta" in url.lower():
-                greek = "delta"
-            else:
-                # Default based on workspace - we'll use 'charm' as that's what was configured
-                greek = "charm"
-
-            # Try to determine ticker
-            ticker = "SPX"
-            if "ticker=spy" in url.lower() or "SPY" in url.upper():
-                ticker = "SPY"
-            elif "ticker=qqq" in url.lower() or "QQQ" in url.upper():
-                ticker = "QQQ"
-
-            results.append({
-                "items": items,
-                "greek": greek,
-                "ticker": ticker,
-                "currentPrice": data.get("currentPrice"),
-                "lastModified": data.get("lastModified"),
-                "expirations": data.get("expirations"),
-                "url": url
-            })
-
-        except json.JSONDecodeError:
-            continue
-        except Exception as e:
-            print(f"[extract] error parsing exposure: {e}", flush=True)
-            continue
-
-    return results
+            # Paradigm
+            if 'Paradigm' in line_clean and i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if next_line and next_line != 'Target' and len(next_line) < 50:
+                    stats["paradigm"] = next_line
+                    print(f"[stats] Found Paradigm: {stats['paradigm']}", flush=True)
+            
+            # Target
+            if line_clean == 'Target' and i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if next_line and 'Lines' not in next_line and len(next_line) < 50:
+                    stats["target"] = next_line
+                    print(f"[stats] Found Target: {stats['target']}", flush=True)
+            
+            # Lines in the Sand
+            if 'Lines in the Sand' in line_clean and i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if next_line and len(next_line) < 50:
+                    stats["lines_in_sand"] = next_line
+                    print(f"[stats] Found Lines: {stats['lines_in_sand']}", flush=True)
+            
+            # Total 0DTE Delta Decay Hedging
+            if 'Delta Decay Hedging' in line_clean and i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if next_line and len(next_line) < 50:
+                    stats["delta_decay_hedging"] = next_line
+                    print(f"[stats] Found Delta: {stats['delta_decay_hedging']}", flush=True)
+            
+            # Total 0DTE Opt Volume
+            if 'Opt Volume' in line_clean and i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if next_line and len(next_line) < 50:
+                    stats["opt_volume"] = next_line
+                    print(f"[stats] Found Volume: {stats['opt_volume']}", flush=True)
+        
+    except Exception as e:
+        print(f"[stats] Parse error: {e}", flush=True)
+    
+    return stats
 
 
-def infer_greek_from_url_or_workspace(page_url: str, workspace_config: dict = None) -> str:
-    """Try to infer which greek is being displayed from URL or workspace config."""
-    # Check URL for workspace hints
-    if workspace_config:
-        widgets = workspace_config.get("widgets", [])
-        for w in widgets:
-            config = w.get("configuration", {})
-            if config.get("greek"):
-                return config.get("greek")
-    return "charm"  # default
-
-
-# ============ MAIN LOOP ============
 def run():
     if not DB_URL or not EMAIL or not PASS or not URL:
         raise RuntimeError("Missing env vars: DATABASE_URL / VOLLAND_EMAIL / VOLLAND_PASSWORD / VOLLAND_URL")
@@ -412,66 +339,84 @@ def run():
         page = browser.new_page(viewport={"width": 1400, "height": 900})
         page.set_default_timeout(90000)
 
-        # Install hooks before navigation
+        # hooks must be installed before any navigation
         page.add_init_script(INIT_CAPTURE_JS)
 
-        # Login once
+        # login once
         login_if_needed(page)
-        print("[volland] logged in successfully", flush=True)
 
         while True:
             try:
-                reset_captures(page)
+                # ========== STEP 1: Scrape STATISTICS page FIRST ==========
+                # (Do this first so it doesn't interfere with charm captures)
+                stats_data = {}
+                if STATS_URL:
+                    try:
+                        print(f"[volland] Fetching statistics from {STATS_URL}", flush=True)
+                        page.goto(STATS_URL, wait_until="domcontentloaded", timeout=120000)
+                        page.wait_for_timeout(int(WAIT_AFTER_GOTO_SEC * 1000))
+                        
+                        if "/sign-in" in page.url:
+                            login_if_needed(page)
+                            page.goto(STATS_URL, wait_until="domcontentloaded", timeout=120000)
+                            page.wait_for_timeout(int(WAIT_AFTER_GOTO_SEC * 1000))
+                        
+                        stats_data = parse_statistics(page)
+                        print(f"[stats] Paradigm={stats_data.get('paradigm')}, Target={stats_data.get('target')}, Lines={stats_data.get('lines_in_sand')}", flush=True)
+                    except Exception as e:
+                        print(f"[stats] Failed to scrape statistics: {e}", flush=True)
+                        stats_data = {}
 
+                # ========== STEP 2: Reset captures and go to CHARM page ==========
+                reset_captures(page)
+                
+                print(f"[volland] Fetching charm data from {URL}", flush=True)
                 page.goto(URL, wait_until="domcontentloaded", timeout=120000)
                 page.wait_for_timeout(int(WAIT_AFTER_GOTO_SEC * 1000))
 
-                # Handle re-login if needed
                 if "/sign-in" in page.url:
                     login_if_needed(page)
                     reset_captures(page)
                     page.goto(URL, wait_until="domcontentloaded", timeout=120000)
                     page.wait_for_timeout(int(WAIT_AFTER_GOTO_SEC * 1000))
 
+                # ========== STEP 3: Get captures from CHARM page ==========
                 cap = get_captures(page)
 
-                # Extract structured exposure data
-                exposure_results = extract_exposure_data(cap)
+                fetch_scored = filter_and_score(cap.get("fetch", []))
+                xhr_scored   = filter_and_score(cap.get("xhr", []))
 
-                total_points_saved = 0
-                for exp_data in exposure_results:
-                    items = exp_data["items"]
-                    if items:
-                        saved = save_exposure_points(
-                            points=items,
-                            greek=exp_data["greek"],
-                            ticker=exp_data["ticker"],
-                            current_price=exp_data["currentPrice"],
-                            last_modified=exp_data["lastModified"],
-                            expirations=exp_data["expirations"]
-                        )
-                        total_points_saved += saved
-                        print(f"[volland] saved {saved} {exp_data['greek']} points for {exp_data['ticker']}, price={exp_data['currentPrice']}", flush=True)
+                # ws messages can be huge; keep only top few
+                ws = cap.get("ws", [])
+                ws = ws[-10:] if isinstance(ws, list) else []
 
-                # Also save raw snapshot for debugging
-                raw_payload = {
+                # ========== STEP 4: Build and save payload ==========
+                payload = {
                     "ts_utc": datetime.now(timezone.utc).isoformat(),
-                    "page_url": page.url,
-                    "exposure_count": len(exposure_results),
-                    "total_points": total_points_saved,
+                    "page_url": URL,  # Use the charm URL, not whatever page we're on
+                    "statistics": stats_data,  # Statistics from step 1
                     "captures": {
+                        "fetch_top": [trim_body(x) for x in fetch_scored],
+                        "xhr_top":   [trim_body(x) for x in xhr_scored],
+                        "ws_tail":   ws,
                         "counts": {
-                            "fetch": len(cap.get("fetch", [])),
-                            "xhr": len(cap.get("xhr", [])),
-                            "ws": len(cap.get("ws", []))
+                            "fetch": len(cap.get("fetch", []) if isinstance(cap.get("fetch", []), list) else []),
+                            "xhr":   len(cap.get("xhr", []) if isinstance(cap.get("xhr", []), list) else []),
+                            "ws":    len(cap.get("ws", []) if isinstance(cap.get("ws", []), list) else []),
                         }
                     }
                 }
-                save_raw_snapshot(raw_payload)
+
+                save_snapshot(payload)
 
                 print(
-                    f"[volland] cycle complete: {total_points_saved} points saved, "
-                    f"{len(exposure_results)} exposure responses captured",
+                    "[volland] saved",
+                    payload["ts_utc"],
+                    "fetch=", payload["captures"]["counts"]["fetch"],
+                    "xhr=", payload["captures"]["counts"]["xhr"],
+                    "ws=", payload["captures"]["counts"]["ws"],
+                    "top_fetch_score=", (fetch_scored[0]["score"] if fetch_scored else None),
+                    "stats=", bool(stats_data.get("paradigm") or stats_data.get("target")),
                     flush=True
                 )
 
@@ -483,10 +428,10 @@ def run():
                     "trace": traceback.format_exc()[-4000:]
                 }
                 try:
-                    save_raw_snapshot({"error_event": err_payload})
+                    save_snapshot({"error_event": err_payload})
                 except Exception:
                     pass
-                print(f"[volland] error: {e}", flush=True)
+                print("[volland] error:", e)
                 traceback.print_exc()
 
             time.sleep(PULL_EVERY)

@@ -199,116 +199,77 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
 
 def db_volland_stats() -> Optional[dict]:
     """
-    Get Volland stats - checks both volland_snapshots and volland_exposure_points tables.
+    Get Volland statistics from the latest snapshot.
+    Reads the 'statistics' field that volland_worker saves.
     """
     if not engine:
         return None
     
+    # Get the most recent snapshot that has statistics
+    q = text("""
+        SELECT ts, payload 
+        FROM volland_snapshots 
+        WHERE payload->>'error_event' IS NULL
+        ORDER BY ts DESC 
+        LIMIT 5
+    """)
+    
+    with engine.begin() as conn:
+        rows = conn.execute(q).mappings().all()
+    
+    if not rows:
+        return {"ts": None, "stats": None, "error": "No snapshots found"}
+    
     stats = {
-        "source": None,
-        "current_price": None,
-        "total_points": 0,
-        "greeks": [],
-        "latest_ts": None,
+        "paradigm": None,
+        "target": None,
+        "lines_in_sand": None,
+        "delta_decay_hedging": None,
+        "opt_volume": None,
+        "page_url": None,
+        "has_statistics": False,
     }
     
-    # First, check volland_snapshots for metadata
-    try:
-        q = text("""
-            SELECT ts, payload 
-            FROM volland_snapshots 
-            ORDER BY ts DESC 
-            LIMIT 1
-        """)
-        with engine.begin() as conn:
-            row = conn.execute(q).mappings().first()
-        
-        if row:
-            stats["latest_ts"] = row["ts"].isoformat() if hasattr(row["ts"], "isoformat") else str(row["ts"])
-            payload = _json_load_maybe(row["payload"])
-            if payload and isinstance(payload, dict):
-                stats["snapshot_keys"] = list(payload.keys())
-                stats["total_points"] = payload.get("total_points", 0)
-                stats["exposure_count"] = payload.get("exposure_count", 0)
-                stats["page_url"] = str(payload.get("page_url", ""))[-50:]
-    except Exception as e:
-        stats["snapshot_error"] = str(e)[:100]
+    ts = None
     
-    # Check if volland_exposure_points table exists and has data
-    try:
-        q = text("""
-            SELECT 
-                COUNT(*) as total_rows,
-                COUNT(DISTINCT greek) as greek_count,
-                MAX(ts_utc) as latest_ts,
-                MAX(current_price) as current_price
-            FROM volland_exposure_points
-            WHERE ts_utc > NOW() - INTERVAL '1 hour'
-        """)
-        with engine.begin() as conn:
-            row = conn.execute(q).mappings().first()
+    # Search through recent snapshots for statistics data
+    for row in rows:
+        payload = _json_load_maybe(row["payload"])
+        if not payload or not isinstance(payload, dict):
+            continue
         
-        if row and row["total_rows"] > 0:
-            stats["source"] = "volland_exposure_points"
-            stats["exposure_points_count"] = row["total_rows"]
-            stats["current_price"] = float(row["current_price"]) if row["current_price"] else None
-            if row["latest_ts"]:
-                stats["exposure_latest_ts"] = row["latest_ts"].isoformat() if hasattr(row["latest_ts"], "isoformat") else str(row["latest_ts"])
+        if ts is None:
+            ts = row["ts"]
         
-        # Get list of greeks
-        q2 = text("""
-            SELECT DISTINCT greek 
-            FROM volland_exposure_points 
-            WHERE ts_utc > NOW() - INTERVAL '1 hour'
-        """)
-        with engine.begin() as conn:
-            greek_rows = conn.execute(q2).mappings().all()
-        stats["greeks"] = [r["greek"] for r in greek_rows]
+        # Check for statistics field
+        statistics = payload.get("statistics", {})
+        if statistics and isinstance(statistics, dict):
+            # Found statistics!
+            stats["has_statistics"] = True
+            stats["paradigm"] = statistics.get("paradigm")
+            stats["target"] = statistics.get("target")
+            stats["lines_in_sand"] = statistics.get("lines_in_sand")
+            stats["delta_decay_hedging"] = statistics.get("delta_decay_hedging")
+            stats["opt_volume"] = statistics.get("opt_volume")
+            
+            # If we found any actual data, use this snapshot
+            if any(v for k, v in statistics.items() if v):
+                ts = row["ts"]
+                break
         
-        # Get latest exposure data sample
-        q3 = text("""
-            SELECT greek, strike, value, current_price, ticker
-            FROM volland_exposure_points
-            ORDER BY ts_utc DESC
-            LIMIT 5
-        """)
-        with engine.begin() as conn:
-            sample_rows = conn.execute(q3).mappings().all()
-        if sample_rows:
-            stats["sample_data"] = [
-                {"greek": r["greek"], "strike": float(r["strike"]) if r["strike"] else None, 
-                 "value": float(r["value"]) if r["value"] else None, "ticker": r["ticker"]}
-                for r in sample_rows
-            ]
-            # Get price from sample if not already set
-            if not stats["current_price"] and sample_rows[0].get("current_price"):
-                stats["current_price"] = float(sample_rows[0]["current_price"])
-                
-    except Exception as e:
-        error_str = str(e)
-        if "does not exist" in error_str or "relation" in error_str.lower():
-            stats["exposure_points_note"] = "Table does not exist"
-        else:
-            stats["exposure_points_error"] = error_str[:100]
-    
-    # If no exposure_points data, try to get stats from vanna_points view
-    if not stats.get("exposure_points_count"):
-        try:
-            q = text(f"""
-                SELECT COUNT(*) as cnt, MAX(ts_utc) as latest
-                FROM {VOLLAND_VANNA_POINTS}
-                WHERE ts_utc > NOW() - INTERVAL '1 hour'
-            """)
-            with engine.begin() as conn:
-                row = conn.execute(q).mappings().first()
-            if row and row["cnt"] > 0:
-                stats["source"] = "vanna_points_view"
-                stats["vanna_points_count"] = row["cnt"]
-        except Exception as e:
-            stats["vanna_view_error"] = str(e)[:50]
+        # Also capture page URL and capture info
+        if payload.get("page_url"):
+            stats["page_url"] = str(payload.get("page_url", ""))[-60:]
+        
+        # Check captures info
+        captures = payload.get("captures", {})
+        if captures:
+            counts = captures.get("counts", {})
+            stats["fetch_count"] = counts.get("fetch", 0)
+            stats["xhr_count"] = counts.get("xhr", 0)
     
     return {
-        "ts": stats.get("latest_ts") or stats.get("exposure_latest_ts"),
+        "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts) if ts else None,
         "stats": stats
     }
 
@@ -783,7 +744,7 @@ def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
 
 @app.get("/api/volland/stats")
 def api_volland_stats():
-    """Get Volland stats from database."""
+    """Get SPX statistics from Volland snapshots."""
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
@@ -965,11 +926,12 @@ DASH_HTML_TEMPLATE = """
     }
     .stats-box { margin-top:14px; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; max-height:320px; overflow-y:auto; }
     .stats-box h4 { margin:0 0 8px; font-size:12px; font-weight:600; }
-    .stats-row { display:flex; justify-content:space-between; font-size:10px; padding:3px 0; border-bottom:1px solid var(--border); }
+    .stats-row { display:flex; justify-content:space-between; font-size:11px; padding:4px 0; border-bottom:1px solid var(--border); }
     .stats-row:last-child { border-bottom:none; }
     .stats-label { color:var(--muted); }
-    .stats-value { color:var(--text); font-weight:500; }
+    .stats-value { color:var(--text); font-weight:500; text-align:right; max-width:130px; }
     .stats-value.green { color:var(--green); }
+    .stats-value.red { color:var(--red); }
   </style>
 </head>
 <body>
@@ -996,7 +958,7 @@ DASH_HTML_TEMPLATE = """
         <a href="/api/volland/latest" style="color:var(--muted)">Latest Exposure</a> Â·
         <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
       </div>
-    <div class="stats-box"><h4>Volland Stats</h4><div id="statsContent" style="color:var(--muted);font-size:10px">Loading...</div></div>
+    <div class="stats-box"><h4>SPX Statistics</h4><div id="statsContent" style="color:var(--muted);font-size:11px">Loading...</div></div>
     </aside>
 
     <main class="content">
@@ -1048,7 +1010,7 @@ DASH_HTML_TEMPLATE = """
   <script>
     const PULL_EVERY = __PULL_MS__;
 
-    // ===== Stats =====
+    // ===== SPX Statistics =====
     const statsContent = document.getElementById('statsContent');
     async function fetchStats() {
       try {
@@ -1067,64 +1029,46 @@ DASH_HTML_TEMPLATE = """
       const s = data.stats || {};
       let h = '';
       
-      // Source
-      if (s.source) {
-        h += '<div class="stats-row"><span class="stats-label">Source</span><span class="stats-value">' + s.source + '</span></div>';
+      // Paradigm
+      if (s.paradigm) {
+        h += '<div class="stats-row"><span class="stats-label">Paradigm</span><span class="stats-value">' + s.paradigm + '</span></div>';
       }
       
-      // Current price
-      if (s.current_price) {
-        h += '<div class="stats-row"><span class="stats-label">Price</span><span class="stats-value green">' + s.current_price.toFixed(2) + '</span></div>';
+      // Target
+      if (s.target) {
+        h += '<div class="stats-row"><span class="stats-label">Target</span><span class="stats-value">' + s.target + '</span></div>';
       }
       
-      // Exposure points count
-      if (s.exposure_points_count) {
-        h += '<div class="stats-row"><span class="stats-label">Exposure Pts</span><span class="stats-value">' + s.exposure_points_count + '</span></div>';
+      // Lines in the Sand
+      if (s.lines_in_sand) {
+        h += '<div class="stats-row"><span class="stats-label">Lines in Sand</span><span class="stats-value">' + s.lines_in_sand + '</span></div>';
       }
       
-      // Total points from snapshot
-      if (s.total_points) {
-        h += '<div class="stats-row"><span class="stats-label">Total Points</span><span class="stats-value">' + s.total_points + '</span></div>';
+      // Delta Decay Hedging
+      if (s.delta_decay_hedging) {
+        const ddh = s.delta_decay_hedging;
+        const isNeg = ddh.includes('-') || ddh.startsWith('-');
+        h += '<div class="stats-row"><span class="stats-label">DD Hedging</span><span class="stats-value ' + (isNeg ? 'red' : 'green') + '">' + ddh + '</span></div>';
       }
       
-      // Greeks
-      if (s.greeks && s.greeks.length > 0) {
-        h += '<div class="stats-row"><span class="stats-label">Greeks</span><span class="stats-value">' + s.greeks.join(', ') + '</span></div>';
+      // Options Volume
+      if (s.opt_volume) {
+        h += '<div class="stats-row"><span class="stats-label">0DTE Volume</span><span class="stats-value">' + s.opt_volume + '</span></div>';
       }
       
-      // Vanna points
-      if (s.vanna_points_count) {
-        h += '<div class="stats-row"><span class="stats-label">Vanna Pts</span><span class="stats-value">' + s.vanna_points_count + '</span></div>';
-      }
-      
-      // Sample data
-      if (s.sample_data && s.sample_data.length > 0) {
-        h += '<div class="stats-row"><span class="stats-label">Sample</span></div>';
-        s.sample_data.slice(0, 2).forEach(function(d) {
-          h += '<div style="font-size:9px;color:var(--muted)">' + d.greek + ' @ ' + (d.strike||'?') + ': ' + (d.value ? d.value.toFixed(2) : '?') + '</div>';
-        });
-      }
-      
-      // Page URL
-      if (s.page_url) {
-        h += '<div class="stats-row"><span class="stats-label">Page</span><span class="stats-value" style="font-size:8px">' + s.page_url + '</span></div>';
-      }
-      
-      // Notes
-      if (s.exposure_points_note) {
-        h += '<div class="stats-row"><span class="stats-label">Note</span><span class="stats-value" style="font-size:9px">' + s.exposure_points_note + '</span></div>';
-      }
-      
-      // Errors
-      if (s.exposure_points_error) {
-        h += '<div style="color:#ef4444;font-size:9px">' + s.exposure_points_error + '</div>';
+      // If no statistics found
+      if (!s.paradigm && !s.target && !s.lines_in_sand && !s.delta_decay_hedging && !s.opt_volume) {
+        h += '<div style="color:var(--muted);font-size:10px">No statistics captured yet.</div>';
+        if (s.fetch_count !== undefined) {
+          h += '<div style="color:var(--muted);font-size:10px;margin-top:4px">Captures: F:' + s.fetch_count + ' X:' + s.xhr_count + '</div>';
+        }
       }
       
       // Timestamp
       const ts = data.ts ? new Date(data.ts).toLocaleTimeString() : 'N/A';
-      h += '<div class="stats-row" style="margin-top:4px"><span class="stats-label">Updated</span><span class="stats-value">' + ts + '</span></div>';
+      h += '<div class="stats-row" style="margin-top:6px;font-size:10px"><span class="stats-label">Updated</span><span class="stats-value">' + ts + '</span></div>';
       
-      statsContent.innerHTML = h || 'No stats data';
+      statsContent.innerHTML = h;
     }
     fetchStats();
     setInterval(fetchStats, PULL_EVERY);

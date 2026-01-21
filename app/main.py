@@ -197,6 +197,72 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
         "points": pts
     }
 
+def db_volland_stats() -> Optional[dict]:
+    """
+    Get Volland statistics from the latest snapshot.
+    Reads the 'statistics' field that volland_worker saves.
+    Statistics persist even when market is closed.
+    """
+    if not engine:
+        return None
+    
+    # Get the most recent snapshot that has statistics (no time limit - persist after hours)
+    q = text("""
+        SELECT ts, payload 
+        FROM volland_snapshots 
+        WHERE payload->>'error_event' IS NULL
+          AND payload->'statistics' IS NOT NULL
+        ORDER BY ts DESC 
+        LIMIT 10
+    """)
+    
+    with engine.begin() as conn:
+        rows = conn.execute(q).mappings().all()
+    
+    if not rows:
+        return {"ts": None, "stats": None, "error": "No statistics found"}
+    
+    stats = {
+        "paradigm": None,
+        "target": None,
+        "lines_in_sand": None,
+        "delta_decay_hedging": None,
+        "opt_volume": None,
+        "page_url": None,
+        "has_statistics": False,
+    }
+    
+    ts = None
+    
+    # Search through recent snapshots for statistics data
+    for row in rows:
+        payload = _json_load_maybe(row["payload"])
+        if not payload or not isinstance(payload, dict):
+            continue
+        
+        # Check for statistics field
+        statistics = payload.get("statistics", {})
+        if statistics and isinstance(statistics, dict):
+            # Check if we have any actual data
+            has_data = any(v for k, v in statistics.items() if v)
+            if has_data:
+                stats["has_statistics"] = True
+                stats["paradigm"] = statistics.get("paradigm")
+                stats["target"] = statistics.get("target")
+                stats["lines_in_sand"] = statistics.get("lines_in_sand")
+                stats["delta_decay_hedging"] = statistics.get("delta_decay_hedging")
+                stats["opt_volume"] = statistics.get("opt_volume")
+                ts = row["ts"]
+                break
+    
+    if not ts and rows:
+        ts = rows[0]["ts"]
+    
+    return {
+        "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts) if ts else None,
+        "stats": stats
+    }
+
 # ====== Auth ======
 REFRESH_EARLY_SEC = 300
 _access_token = None
@@ -666,6 +732,20 @@ def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
+@app.get("/api/volland/stats")
+def api_volland_stats():
+    """Get SPX statistics from Volland snapshots. Persists after market close."""
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        result = db_volland_stats()
+        if not result:
+            return {"ts": None, "stats": None, "error": "No stats available"}
+        return result
+    except Exception as e:
+        import traceback
+        return JSONResponse({"error": str(e), "trace": traceback.format_exc()[-500:]}, status_code=500)
+
 # ====== TABLE & DASHBOARD HTML TEMPLATES ======
 
 TABLE_HTML_TEMPLATE = """
@@ -834,6 +914,14 @@ DASH_HTML_TEMPLATE = """
       .spot-grid { grid-template-columns:1fr; }
       .card { min-height:260px; }
     }
+    .stats-box { margin-top:14px; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; }
+    .stats-box h4 { margin:0 0 8px; font-size:12px; font-weight:600; }
+    .stats-row { display:flex; justify-content:space-between; font-size:11px; padding:4px 0; border-bottom:1px solid var(--border); }
+    .stats-row:last-child { border-bottom:none; }
+    .stats-label { color:var(--muted); }
+    .stats-value { color:var(--text); font-weight:500; text-align:right; }
+    .stats-value.green { color:var(--green); }
+    .stats-value.red { color:var(--red); }
   </style>
 </head>
 <body>
@@ -845,7 +933,7 @@ DASH_HTML_TEMPLATE = """
         <span class="dot"></span>
         <div>
           <div style="font-weight:600; font-size:12px;">__STATUS_TEXT__</div>
-          <div class="small">Last run: __LAST_TS__ – __LAST_MSG__</div>
+          <div class="small">Last run: __LAST_TS__</div>
         </div>
       </div>
       <div class="nav">
@@ -859,6 +947,10 @@ DASH_HTML_TEMPLATE = """
         <a href="/api/history" style="color:var(--muted)">History</a> |
         <a href="/api/volland/latest" style="color:var(--muted)">Exposure</a> |
         <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
+      </div>
+      <div class="stats-box">
+        <h4>SPX Statistics</h4>
+        <div id="statsContent" style="color:var(--muted);font-size:11px">Loading...</div>
       </div>
     </aside>
 
@@ -910,6 +1002,66 @@ DASH_HTML_TEMPLATE = """
 
   <script>
     const PULL_EVERY = __PULL_MS__;
+
+    // ===== SPX Statistics (persists after market close) =====
+    const statsContent = document.getElementById('statsContent');
+    async function fetchStats() {
+      try {
+        const r = await fetch('/api/volland/stats', {cache: 'no-store'});
+        const data = await r.json();
+        renderStats(data);
+      } catch (err) {
+        statsContent.innerHTML = '<span style="color:#ef4444">Error: ' + err.message + '</span>';
+      }
+    }
+    function renderStats(data) {
+      if (!data || data.error) {
+        statsContent.innerHTML = '<span style="color:#ef4444">' + (data?.error || 'No data') + '</span>';
+        return;
+      }
+      const s = data.stats || {};
+      let h = '';
+      
+      // Paradigm
+      if (s.paradigm) {
+        h += '<div class="stats-row"><span class="stats-label">Paradigm</span><span class="stats-value">' + s.paradigm + '</span></div>';
+      }
+      
+      // Target
+      if (s.target) {
+        h += '<div class="stats-row"><span class="stats-label">Target</span><span class="stats-value">' + s.target + '</span></div>';
+      }
+      
+      // Lines in the Sand
+      if (s.lines_in_sand) {
+        h += '<div class="stats-row"><span class="stats-label">Lines in Sand</span><span class="stats-value">' + s.lines_in_sand + '</span></div>';
+      }
+      
+      // Delta Decay Hedging
+      if (s.delta_decay_hedging) {
+        const ddh = s.delta_decay_hedging;
+        const isNeg = ddh.includes('-') || ddh.startsWith('-');
+        h += '<div class="stats-row"><span class="stats-label">DD Hedging</span><span class="stats-value ' + (isNeg ? 'red' : 'green') + '">' + ddh + '</span></div>';
+      }
+      
+      // Options Volume
+      if (s.opt_volume) {
+        h += '<div class="stats-row"><span class="stats-label">0DTE Volume</span><span class="stats-value">' + s.opt_volume + '</span></div>';
+      }
+      
+      // If no statistics found
+      if (!s.paradigm && !s.target && !s.lines_in_sand && !s.delta_decay_hedging && !s.opt_volume) {
+        h += '<div style="color:var(--muted);font-size:10px">No statistics available</div>';
+      }
+      
+      // Timestamp
+      const ts = data.ts ? new Date(data.ts).toLocaleTimeString() : 'N/A';
+      h += '<div class="stats-row" style="margin-top:6px;font-size:10px"><span class="stats-label">Updated</span><span class="stats-value">' + ts + '</span></div>';
+      
+      statsContent.innerHTML = h;
+    }
+    fetchStats();
+    setInterval(fetchStats, 60000); // Refresh stats every 60 seconds
 
     // Tabs
     const tabTable=document.getElementById('tabTable'),

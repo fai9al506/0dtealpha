@@ -199,7 +199,7 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
 
 def db_volland_stats() -> Optional[dict]:
     """
-    Extract stats from volland_snapshots - debug version that shows all available data.
+    Debug version - shows raw structure of captured data.
     """
     if not engine:
         return None
@@ -209,115 +209,98 @@ def db_volland_stats() -> Optional[dict]:
         SELECT ts, payload 
         FROM volland_snapshots 
         ORDER BY ts DESC 
-        LIMIT 5
+        LIMIT 1
     """)
     
     with engine.begin() as conn:
         rows = conn.execute(q).mappings().all()
     
     if not rows:
-        return {"ts": None, "stats": None, "error": "No snapshots in database", "debug": "volland_snapshots table is empty"}
+        return {"ts": None, "stats": None, "error": "No snapshots in database"}
+    
+    row = rows[0]
+    ts = row["ts"]
+    payload = _json_load_maybe(row["payload"])
+    
+    if not payload or not isinstance(payload, dict):
+        return {"ts": str(ts), "stats": None, "error": "Payload is not a dict", "raw_type": str(type(payload))}
     
     stats = {
-        "snapshot_count": len(rows),
-        "urls_captured": [],
-        "has_captures": False,
-        "fetch_count": 0,
-        "xhr_count": 0,
-        "ws_count": 0,
-        "interesting_bodies": [],
-        "all_keys_found": set(),
+        "payload_keys": list(payload.keys())[:10],
+        "has_captures": "captures" in payload,
+        "page_url": payload.get("page_url", "")[:100] if payload.get("page_url") else None,
     }
     
-    ts = None
-    
-    for row in rows:
-        payload = _json_load_maybe(row["payload"])
-        if not payload or not isinstance(payload, dict):
-            continue
+    captures = payload.get("captures", {})
+    if captures and isinstance(captures, dict):
+        stats["captures_keys"] = list(captures.keys())
         
-        if ts is None:
-            ts = row["ts"]
+        # Check counts
+        counts = captures.get("counts", {})
+        stats["counts"] = counts
         
-        # Check if this is an error event
-        if "error_event" in payload:
-            stats["last_error"] = str(payload.get("error_event", {}).get("error", ""))[:100]
-            continue
-        
-        # Get captures
-        captures = payload.get("captures", {})
-        if captures:
-            stats["has_captures"] = True
+        # Get first fetch_top item structure
+        fetch_top = captures.get("fetch_top", [])
+        if fetch_top and isinstance(fetch_top, list) and len(fetch_top) > 0:
+            first_item = fetch_top[0]
+            stats["fetch_top_count"] = len(fetch_top)
+            stats["fetch_top_first_keys"] = list(first_item.keys()) if isinstance(first_item, dict) else str(type(first_item))
             
-            # Count items
-            counts = captures.get("counts", {})
-            stats["fetch_count"] = max(stats["fetch_count"], counts.get("fetch", 0))
-            stats["xhr_count"] = max(stats["xhr_count"], counts.get("xhr", 0))
-            stats["ws_count"] = max(stats["ws_count"], counts.get("ws", 0))
-            
-            # Check fetch_top
-            for item in captures.get("fetch_top", [])[:10]:
-                url = item.get("url", "")
-                if url and url not in stats["urls_captured"]:
-                    stats["urls_captured"].append(url[:100])
+            # Get URL from first item
+            if isinstance(first_item, dict):
+                stats["fetch_first_url"] = str(first_item.get("url", ""))[:100]
+                stats["fetch_first_score"] = first_item.get("score")
                 
-                body = item.get("body", "")
+                # Check body
+                body = first_item.get("body", "")
+                stats["fetch_first_body_len"] = len(body) if body else 0
+                stats["fetch_first_body_preview"] = str(body)[:200] if body else None
+                
+                # Try to parse body as JSON
                 if body and isinstance(body, str) and body.strip().startswith("{"):
                     try:
-                        data = json.loads(body)
-                        if isinstance(data, dict):
-                            # Collect all top-level keys
-                            for k in data.keys():
-                                stats["all_keys_found"].add(k)
-                            
-                            # Look for specific useful fields
-                            if data.get("currentPrice"):
-                                stats["currentPrice"] = data["currentPrice"]
-                            if data.get("items"):
-                                stats["items_count"] = len(data["items"])
-                            if data.get("lastModified"):
-                                stats["lastModified"] = str(data["lastModified"])[:30]
-                            if data.get("expirations"):
-                                stats["expirations"] = data["expirations"][:3]
-                            
-                            # Store a sample of interesting body
-                            if len(stats["interesting_bodies"]) < 2:
-                                sample = {k: str(v)[:50] for k, v in list(data.items())[:5]}
-                                stats["interesting_bodies"].append(sample)
-                    except:
-                        pass
-            
-            # Check xhr_top too
-            for item in captures.get("xhr_top", [])[:10]:
-                url = item.get("url", "")
-                if url and url not in stats["urls_captured"]:
-                    stats["urls_captured"].append(url[:100])
-                
-                body = item.get("body", "")
-                if body and isinstance(body, str) and body.strip().startswith("{"):
-                    try:
-                        data = json.loads(body)
-                        if isinstance(data, dict):
-                            for k in data.keys():
-                                stats["all_keys_found"].add(k)
-                            
-                            if data.get("currentPrice") and "currentPrice" not in stats:
-                                stats["currentPrice"] = data["currentPrice"]
-                            if data.get("items") and "items_count" not in stats:
-                                stats["items_count"] = len(data["items"])
-                    except:
-                        pass
+                        body_json = json.loads(body)
+                        if isinstance(body_json, dict):
+                            stats["fetch_first_body_keys"] = list(body_json.keys())[:15]
+                            # Look for useful fields
+                            if body_json.get("currentPrice"):
+                                stats["currentPrice"] = body_json["currentPrice"]
+                            if body_json.get("items"):
+                                stats["items_count"] = len(body_json["items"])
+                                # Get first item structure
+                                if len(body_json["items"]) > 0:
+                                    stats["items_first"] = body_json["items"][0]
+                    except Exception as e:
+                        stats["body_parse_error"] = str(e)
+        else:
+            stats["fetch_top_count"] = 0
+            stats["fetch_top_note"] = "Empty or not a list"
         
-        # Also check page_url
-        if payload.get("page_url"):
-            stats["page_url"] = payload["page_url"][:100]
-    
-    # Convert set to list for JSON serialization
-    stats["all_keys_found"] = list(stats["all_keys_found"])[:20]
-    stats["urls_captured"] = stats["urls_captured"][:5]
+        # Check xhr_top too
+        xhr_top = captures.get("xhr_top", [])
+        if xhr_top and isinstance(xhr_top, list) and len(xhr_top) > 0:
+            stats["xhr_top_count"] = len(xhr_top)
+            first_xhr = xhr_top[0]
+            if isinstance(first_xhr, dict):
+                stats["xhr_first_url"] = str(first_xhr.get("url", ""))[:100]
+                xhr_body = first_xhr.get("body", "")
+                stats["xhr_first_body_len"] = len(xhr_body) if xhr_body else 0
+        
+        # Check ws_tail
+        ws_tail = captures.get("ws_tail", [])
+        if ws_tail and isinstance(ws_tail, list) and len(ws_tail) > 0:
+            stats["ws_tail_count"] = len(ws_tail)
+            # Get last ws message
+            last_ws = ws_tail[-1]
+            if isinstance(last_ws, dict):
+                stats["ws_last_event"] = last_ws.get("event")
+                ws_data = last_ws.get("data", "")
+                stats["ws_last_data_len"] = len(ws_data) if ws_data else 0
+                if ws_data and len(ws_data) > 0:
+                    stats["ws_last_data_preview"] = str(ws_data)[:300]
     
     return {
-        "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts) if ts else None,
+        "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
         "stats": stats
     }
 
@@ -792,10 +775,7 @@ def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
 
 @app.get("/api/volland/stats")
 def api_volland_stats():
-    """
-    Get stats/debug info from Volland captured data.
-    Shows what data is being captured by volland_worker.
-    """
+    """Debug endpoint - shows structure of captured Volland data."""
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
@@ -805,7 +785,7 @@ def api_volland_stats():
         return result
     except Exception as e:
         import traceback
-        return JSONResponse({"error": str(e), "trace": traceback.format_exc()[-500:]}, status_code=500)
+        return JSONResponse({"error": str(e), "trace": traceback.format_exc()[-800:]}, status_code=500)
 
 # ====== TABLE & DASHBOARD HTML TEMPLATES ======
 
@@ -975,36 +955,13 @@ DASH_HTML_TEMPLATE = """
       .spot-grid { grid-template-columns:1fr; }
       .card { min-height:260px; }
     }
-
-    /* Stats box */
-    .stats-box {
-      margin-top: 14px;
-      padding: 10px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: #0f1216;
-      overflow-y: auto;
-      max-height: 300px;
-    }
-    .stats-box h4 {
-      margin: 0 0 8px 0;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text);
-    }
-    .stats-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 11px;
-      padding: 3px 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .stats-row:last-child { border-bottom: none; }
-    .stats-label { color: var(--muted); }
-    .stats-value { color: var(--text); font-weight: 500; }
-    .stats-value.positive { color: var(--green); }
-    .stats-loading { color: var(--muted); font-size: 11px; font-style: italic; }
-    .stats-error { color: var(--red); font-size: 11px; }
+    .stats-box { margin-top:14px; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; max-height:350px; overflow-y:auto; }
+    .stats-box h4 { margin:0 0 8px; font-size:12px; font-weight:600; }
+    .stats-row { display:flex; justify-content:space-between; font-size:10px; padding:2px 0; border-bottom:1px solid var(--border); }
+    .stats-row:last-child { border-bottom:none; }
+    .stats-label { color:var(--muted); }
+    .stats-value { color:var(--text); font-weight:500; }
+    .stats-code { font-size:8px; color:var(--muted); word-break:break-all; background:#0a0a0a; padding:4px; border-radius:4px; margin-top:4px; max-height:80px; overflow-y:auto; }
   </style>
 </head>
 <body>
@@ -1024,19 +981,16 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabSpot">Spot</button>
       </div>
-      <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
-      <div class="small" style="margin-top:14px">
-        <a href="/api/snapshot" style="color:var(--muted)">JSON</a> |
-        <a href="/api/volland/stats" style="color:var(--muted)">Stats</a> |
-        <a href="/api/volland/latest" style="color:var(--muted)">Raw</a>
+      <div class="small" style="margin-top:10px">
+        <a href="/api/volland/stats" style="color:var(--muted)" target="_blank">Stats</a> |
+        <a href="/api/volland/latest" style="color:var(--muted)" target="_blank">Raw</a>
       </div>
-
-      <!-- Volland Stats -->
       <div class="stats-box" id="statsBox">
-        <h4>Volland Data</h4>
-        <div id="statsContent" class="stats-loading">Loading...</div>
+        <h4>Volland Debug</h4>
+        <div id="statsContent" style="font-size:10px;color:var(--muted)">Loading...</div>
       </div>
     </aside>
+
 
     <main class="content">
       <div id="viewTable" class="panel">
@@ -1087,97 +1041,71 @@ DASH_HTML_TEMPLATE = """
   <script>
     const PULL_EVERY = __PULL_MS__;
 
-    // ===== Stats sidebar =====
+    // ===== Stats Debug =====
     const statsContent = document.getElementById('statsContent');
-    let statsTimer = null;
-
     async function fetchStats() {
       try {
         const r = await fetch('/api/volland/stats', {cache: 'no-store'});
         const data = await r.json();
         renderStats(data);
       } catch (err) {
-        statsContent.innerHTML = '<div class="stats-error">Error: ' + err.message + '</div>';
+        statsContent.innerHTML = '<div style="color:#ef4444">Error: ' + err.message + '</div>';
       }
     }
-
     function renderStats(data) {
-      if (!data) {
-        statsContent.innerHTML = '<div class="stats-error">No response</div>';
+      if (!data || data.error) {
+        statsContent.innerHTML = '<div style="color:#ef4444">' + (data?.error || 'No data') + '</div>';
         return;
       }
-      if (data.error) {
-        statsContent.innerHTML = '<div class="stats-error">' + data.error + '</div>';
-        return;
+      const s = data.stats || {};
+      let h = '';
+      // Basic info
+      h += '<div class="stats-row"><span class="stats-label">Page</span><span class="stats-value" style="font-size:8px">' + (s.page_url || 'N/A').slice(-40) + '</span></div>';
+      h += '<div class="stats-row"><span class="stats-label">Has Captures</span><span class="stats-value">' + (s.has_captures ? 'Yes' : 'No') + '</span></div>';
+      if (s.counts) {
+        h += '<div class="stats-row"><span class="stats-label">Counts</span><span class="stats-value">F:' + (s.counts.fetch||0) + ' X:' + (s.counts.xhr||0) + ' W:' + (s.counts.ws||0) + '</span></div>';
       }
-
-      const stats = data.stats || {};
+      // fetch_top info
+      if (s.fetch_top_count !== undefined) {
+        h += '<div class="stats-row"><span class="stats-label">Fetch Top</span><span class="stats-value">' + s.fetch_top_count + ' items</span></div>';
+      }
+      if (s.fetch_first_url) {
+        h += '<div class="stats-row"><span class="stats-label">First URL</span></div>';
+        h += '<div class="stats-code">' + s.fetch_first_url + '</div>';
+      }
+      if (s.fetch_first_body_len !== undefined) {
+        h += '<div class="stats-row"><span class="stats-label">Body Len</span><span class="stats-value">' + s.fetch_first_body_len + '</span></div>';
+      }
+      if (s.fetch_first_body_keys) {
+        h += '<div class="stats-row"><span class="stats-label">Body Keys</span></div>';
+        h += '<div class="stats-code">' + s.fetch_first_body_keys.join(', ') + '</div>';
+      }
+      // Useful data found
+      if (s.currentPrice) {
+        h += '<div class="stats-row"><span class="stats-label">Price</span><span class="stats-value" style="color:#22c55e">' + s.currentPrice + '</span></div>';
+      }
+      if (s.items_count) {
+        h += '<div class="stats-row"><span class="stats-label">Items</span><span class="stats-value">' + s.items_count + '</span></div>';
+      }
+      // Body preview
+      if (s.fetch_first_body_preview) {
+        h += '<div class="stats-row"><span class="stats-label">Body Preview</span></div>';
+        h += '<div class="stats-code">' + s.fetch_first_body_preview.slice(0, 300) + '</div>';
+      }
+      // WS info
+      if (s.ws_tail_count) {
+        h += '<div class="stats-row"><span class="stats-label">WS Messages</span><span class="stats-value">' + s.ws_tail_count + '</span></div>';
+        if (s.ws_last_data_preview) {
+          h += '<div class="stats-code">' + s.ws_last_data_preview.slice(0, 200) + '</div>';
+        }
+      }
+      // Timestamp
       const ts = data.ts ? new Date(data.ts).toLocaleTimeString() : 'N/A';
-
-      let html = '';
-
-      // Show snapshot count
-      if (stats.snapshot_count !== undefined) {
-        html += '<div class="stats-row"><span class="stats-label">Snapshots</span><span class="stats-value">' + stats.snapshot_count + '</span></div>';
-      }
-
-      // Has captures?
-      html += '<div class="stats-row"><span class="stats-label">Has Data</span><span class="stats-value">' + (stats.has_captures ? 'Yes' : 'No') + '</span></div>';
-
-      // Counts
-      if (stats.fetch_count > 0 || stats.xhr_count > 0) {
-        html += '<div class="stats-row"><span class="stats-label">Fetch/XHR</span><span class="stats-value">' + stats.fetch_count + '/' + stats.xhr_count + '</span></div>';
-      }
-
-      // Current price if found
-      if (stats.currentPrice) {
-        html += '<div class="stats-row"><span class="stats-label">Price</span><span class="stats-value positive">' + stats.currentPrice + '</span></div>';
-      }
-
-      // Items count if found
-      if (stats.items_count) {
-        html += '<div class="stats-row"><span class="stats-label">Exposure Pts</span><span class="stats-value">' + stats.items_count + '</span></div>';
-      }
-
-      // Keys found in responses
-      if (stats.all_keys_found && stats.all_keys_found.length > 0) {
-        html += '<div class="stats-row"><span class="stats-label">Keys Found</span></div>';
-        html += '<div style="font-size:9px;color:var(--muted);word-break:break-all;margin-bottom:4px">' + stats.all_keys_found.join(', ') + '</div>';
-      }
-
-      // URLs captured
-      if (stats.urls_captured && stats.urls_captured.length > 0) {
-        html += '<div class="stats-row"><span class="stats-label">URLs (' + stats.urls_captured.length + ')</span></div>';
-        stats.urls_captured.slice(0,3).forEach(function(url) {
-          var short = url.length > 50 ? '...' + url.slice(-47) : url;
-          html += '<div style="font-size:8px;color:var(--muted);word-break:break-all;margin-bottom:2px">' + short + '</div>';
-        });
-      }
-
-      // Last error if any
-      if (stats.last_error) {
-        html += '<div class="stats-row"><span class="stats-label">Last Error</span></div>';
-        html += '<div class="stats-error" style="font-size:9px">' + stats.last_error + '</div>';
-      }
-
-      // Page URL
-      if (stats.page_url) {
-        html += '<div class="stats-row"><span class="stats-label">Page</span></div>';
-        html += '<div style="font-size:8px;color:var(--muted);word-break:break-all">' + stats.page_url + '</div>';
-      }
-
-      if (!html) {
-        html = '<div class="stats-loading">No stats data</div>';
-      }
-
-      html += '<div class="stats-row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:4px"><span class="stats-label">Updated</span><span class="stats-value" style="font-size:10px">' + ts + '</span></div>';
-
-      statsContent.innerHTML = html;
+      h += '<div class="stats-row" style="margin-top:6px"><span class="stats-label">Updated</span><span class="stats-value">' + ts + '</span></div>';
+      statsContent.innerHTML = h || 'No data';
     }
-
-    // Start stats on load
     fetchStats();
-    statsTimer = setInterval(fetchStats, PULL_EVERY);
+    setInterval(fetchStats, PULL_EVERY);
 
     // Tabs
     const tabTable=document.getElementById('tabTable'),

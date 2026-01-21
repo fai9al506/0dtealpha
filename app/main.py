@@ -200,20 +200,20 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
 def db_volland_stats() -> Optional[dict]:
     """
     Extract SPX stats from the latest volland_snapshots payload.
-    Parses the captured API responses looking for paradigm, target levels,
-    lines in sand, delta decay hedging, options volume, etc.
+    Parses the captured API responses looking for exposure data,
+    current price, and any available stats from Volland.
     """
     if not engine:
         return None
     
-    # Get the latest snapshot that has captures (not an error)
+    # Get recent snapshots that have captures (not errors)
     q = text("""
         SELECT ts, payload 
         FROM volland_snapshots 
         WHERE payload->>'error_event' IS NULL 
           AND payload->'captures' IS NOT NULL
         ORDER BY ts DESC 
-        LIMIT 10
+        LIMIT 20
     """)
     
     with engine.begin() as conn:
@@ -223,22 +223,17 @@ def db_volland_stats() -> Optional[dict]:
         return {"ts": None, "stats": None, "error": "No valid snapshots found"}
     
     stats = {
-        "paradigm": None,
-        "target_high": None,
-        "target_low": None,
-        "line_in_sand_high": None,
-        "line_in_sand_low": None,
-        "delta_decay_hedging": None,
-        "options_volume": None,
-        "gamma_flip": None,
-        "charm_level": None,
-        "vanna_level": None,
-        "raw_matches": []
+        "current_price": None,
+        "last_modified": None,
+        "total_exposure_points": 0,
+        "greeks_found": [],
+        "expirations": [],
+        "data_sources": [],
     }
     
     ts = None
     
-    # Search through recent snapshots for stats data
+    # Search through recent snapshots for exposure/stats data
     for row in rows:
         payload = _json_load_maybe(row["payload"])
         if not payload or not isinstance(payload, dict):
@@ -247,15 +242,20 @@ def db_volland_stats() -> Optional[dict]:
         ts = row["ts"]
         captures = payload.get("captures", {})
         
-        # Check fetch_top and xhr_top for stats data
+        # Check fetch_top and xhr_top for exposure data
         for source_key in ["fetch_top", "xhr_top"]:
             items = captures.get(source_key, [])
             if not isinstance(items, list):
                 continue
             
             for item in items:
+                url = item.get("url", "")
                 body = item.get("body", "")
                 if not body or not isinstance(body, str):
+                    continue
+                
+                # Skip non-JSON responses
+                if not body.strip().startswith("{") and not body.strip().startswith("["):
                     continue
                 
                 # Try to parse as JSON
@@ -267,83 +267,92 @@ def db_volland_stats() -> Optional[dict]:
                 if not isinstance(data, dict):
                     continue
                 
-                # Look for stats fields in the response
-                _extract_stats_from_data(data, stats)
+                # Look for exposure endpoint data
+                if "exposure" in url.lower() or "api/v1/data" in url.lower():
+                    stats["data_sources"].append(url[:80])
+                    
+                    # Extract currentPrice
+                    if data.get("currentPrice") and stats["current_price"] is None:
+                        try:
+                            stats["current_price"] = float(data["currentPrice"])
+                        except:
+                            pass
+                    
+                    # Extract lastModified
+                    if data.get("lastModified") and stats["last_modified"] is None:
+                        stats["last_modified"] = str(data["lastModified"])
+                    
+                    # Extract expirations
+                    if data.get("expirations") and not stats["expirations"]:
+                        exp_list = data.get("expirations", [])
+                        if isinstance(exp_list, list):
+                            stats["expirations"] = exp_list[:5]  # Keep first 5
+                    
+                    # Count exposure points (items array)
+                    items_arr = data.get("items") or data.get("data") or []
+                    if isinstance(items_arr, list):
+                        stats["total_exposure_points"] += len(items_arr)
+                
+                # Try to extract any greek-related fields
+                _extract_greek_info(data, url, stats)
         
-        # Also check WebSocket messages
+        # Also check WebSocket messages for real-time data
         ws_items = captures.get("ws_tail", [])
         if isinstance(ws_items, list):
             for ws in ws_items:
                 ws_data = ws.get("data", "")
                 if not ws_data or not isinstance(ws_data, str):
                     continue
+                if not ws_data.strip().startswith("{"):
+                    continue
                 try:
                     data = json.loads(ws_data)
                     if isinstance(data, dict):
-                        _extract_stats_from_data(data, stats)
+                        _extract_greek_info(data, "websocket", stats)
+                        # Check for currentPrice in WS data
+                        if data.get("currentPrice") and stats["current_price"] is None:
+                            try:
+                                stats["current_price"] = float(data["currentPrice"])
+                            except:
+                                pass
                 except:
                     pass
         
-        # If we found any stats, stop searching older snapshots
-        if any(v is not None for k, v in stats.items() if k != "raw_matches"):
+        # If we found useful data, stop searching older snapshots
+        if stats["current_price"] is not None or stats["total_exposure_points"] > 0:
             break
+    
+    # Dedupe data sources
+    stats["data_sources"] = list(set(stats["data_sources"]))[:5]
+    stats["greeks_found"] = list(set(stats["greeks_found"]))
     
     return {
         "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts) if ts else None,
         "stats": stats
     }
 
-def _extract_stats_from_data(data: dict, stats: dict):
-    """
-    Extract known stats fields from a parsed JSON response.
-    Updates stats dict in place.
-    """
+def _extract_greek_info(data: dict, url: str, stats: dict):
+    """Extract greek-related information from API response data."""
     if not isinstance(data, dict):
         return
     
-    # Common field name patterns for Volland data
-    field_mappings = {
-        "paradigm": ["paradigm", "regime", "market_paradigm", "marketParadigm"],
-        "target_high": ["target_high", "targetHigh", "upper_target", "upperTarget", "high_target"],
-        "target_low": ["target_low", "targetLow", "lower_target", "lowerTarget", "low_target"],
-        "line_in_sand_high": ["line_in_sand_high", "lineInSandHigh", "lis_high", "lisHigh", "upper_lis"],
-        "line_in_sand_low": ["line_in_sand_low", "lineInSandLow", "lis_low", "lisLow", "lower_lis"],
-        "delta_decay_hedging": ["delta_decay", "deltaDecay", "delta_decay_hedging", "deltaDecayHedging", "dd_hedging"],
-        "options_volume": ["options_volume", "optionsVolume", "total_volume", "totalVolume", "volume"],
-        "gamma_flip": ["gamma_flip", "gammaFlip", "gamma_neutral", "gammaNeutral", "gex_flip"],
-        "charm_level": ["charm", "charm_level", "charmLevel", "total_charm"],
-        "vanna_level": ["vanna", "vanna_level", "vannaLevel", "total_vanna"],
-    }
+    # Check URL for greek type
+    url_lower = url.lower()
+    for greek in ["gamma", "delta", "vanna", "charm", "vega", "theta"]:
+        if greek in url_lower and greek not in stats["greeks_found"]:
+            stats["greeks_found"].append(greek)
     
-    def find_value(d: dict, keys: list):
-        """Recursively search for keys in nested dict"""
-        for key in keys:
-            if key in d:
-                return d[key]
-        # Check nested dicts
-        for v in d.values():
-            if isinstance(v, dict):
-                result = find_value(v, keys)
-                if result is not None:
-                    return result
-        return None
+    # Check for greek field in data
+    if data.get("greek"):
+        greek = str(data["greek"]).lower()
+        if greek not in stats["greeks_found"]:
+            stats["greeks_found"].append(greek)
     
-    for stat_name, possible_keys in field_mappings.items():
-        if stats[stat_name] is None:
-            value = find_value(data, possible_keys)
-            if value is not None:
-                try:
-                    stats[stat_name] = float(value) if isinstance(value, (int, float, str)) and str(value).replace('.', '').replace('-', '').isdigit() else str(value)
-                except:
-                    stats[stat_name] = str(value)
-    
-    # Also capture any interesting looking keys we find
-    interesting_keys = ["exposure", "gex", "dex", "vex", "charm", "vanna", "gamma", "delta", "target", "level", "flip", "paradigm"]
-    for key, value in data.items():
-        key_lower = key.lower()
-        if any(ik in key_lower for ik in interesting_keys):
-            if isinstance(value, (int, float, str)) and len(str(value)) < 50:
-                stats["raw_matches"].append({"key": key, "value": value})
+    # Check for ticker field
+    if data.get("ticker"):
+        ticker = str(data["ticker"]).upper()
+        if "ticker" not in stats:
+            stats["ticker"] = ticker
 
 # ====== Auth ======
 REFRESH_EARLY_SEC = 300
@@ -818,7 +827,7 @@ def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
 def api_volland_stats():
     """
     Get SPX statistics extracted from Volland data.
-    Returns paradigm, target levels, lines in sand, delta decay hedging, etc.
+    Returns current price, exposure points count, greeks found, etc.
     Data is parsed from captured API responses stored by volland_worker.
     """
     try:
@@ -1007,6 +1016,8 @@ DASH_HTML_TEMPLATE = """
       border: 1px solid var(--border);
       border-radius: 10px;
       background: #0f1216;
+      overflow-y: auto;
+      max-height: 280px;
     }
     .stats-box h4 {
       margin: 0 0 8px 0;
@@ -1071,9 +1082,9 @@ DASH_HTML_TEMPLATE = """
         <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
       </div>
 
-      <!-- SPX Stats from Volland -->
+      <!-- Volland Stats from Postgres -->
       <div class="stats-box" id="statsBox">
-        <h4>SPX Statistics</h4>
+        <h4>Volland Stats</h4>
         <div id="statsContent" class="stats-loading">Loading stats...</div>
       </div>
     </aside>
@@ -1166,55 +1177,48 @@ DASH_HTML_TEMPLATE = """
 
       let html = '';
 
-      // Paradigm (regime)
-      if (stats.paradigm !== null) {
-        html += '<div class="stats-row"><span class="stats-label">Paradigm</span>' + fmt(stats.paradigm) + '</div>';
+      // Current price from Volland
+      if (stats.current_price !== null && stats.current_price !== undefined) {
+        html += '<div class="stats-row"><span class="stats-label">Volland Price</span>' + fmt(stats.current_price) + '</div>';
       }
 
-      // Target levels
-      if (stats.target_high !== null || stats.target_low !== null) {
-        html += '<div class="stats-row"><span class="stats-label">Target High</span>' + fmt(stats.target_high) + '</div>';
-        html += '<div class="stats-row"><span class="stats-label">Target Low</span>' + fmt(stats.target_low) + '</div>';
+      // Total exposure points captured
+      if (stats.total_exposure_points > 0) {
+        html += '<div class="stats-row"><span class="stats-label">Exposure Pts</span>' + fmt(stats.total_exposure_points) + '</div>';
       }
 
-      // Lines in sand
-      if (stats.line_in_sand_high !== null || stats.line_in_sand_low !== null) {
-        html += '<div class="stats-row"><span class="stats-label">LIS High</span>' + fmt(stats.line_in_sand_high) + '</div>';
-        html += '<div class="stats-row"><span class="stats-label">LIS Low</span>' + fmt(stats.line_in_sand_low) + '</div>';
+      // Greeks found
+      if (stats.greeks_found && stats.greeks_found.length > 0) {
+        html += '<div class="stats-row"><span class="stats-label">Greeks</span><span class="stats-value neutral">' + stats.greeks_found.join(', ') + '</span></div>';
       }
 
-      // Gamma flip
-      if (stats.gamma_flip !== null) {
-        html += '<div class="stats-row"><span class="stats-label">Gamma Flip</span>' + fmt(stats.gamma_flip) + '</div>';
+      // Ticker
+      if (stats.ticker) {
+        html += '<div class="stats-row"><span class="stats-label">Ticker</span><span class="stats-value neutral">' + stats.ticker + '</span></div>';
       }
 
-      // Delta decay hedging
-      if (stats.delta_decay_hedging !== null) {
-        html += '<div class="stats-row"><span class="stats-label">DD Hedging</span>' + fmt(stats.delta_decay_hedging, '', 'B') + '</div>';
+      // Expirations
+      if (stats.expirations && stats.expirations.length > 0) {
+        html += '<div class="stats-row"><span class="stats-label">Expirations</span><span class="stats-value" style="font-size:10px">' + stats.expirations.slice(0,3).join(', ') + '</span></div>';
       }
 
-      // Greeks levels
-      if (stats.charm_level !== null) {
-        html += '<div class="stats-row"><span class="stats-label">Charm</span>' + fmt(stats.charm_level) + '</div>';
-      }
-      if (stats.vanna_level !== null) {
-        html += '<div class="stats-row"><span class="stats-label">Vanna</span>' + fmt(stats.vanna_level) + '</div>';
+      // Last modified
+      if (stats.last_modified) {
+        const lm = new Date(stats.last_modified).toLocaleTimeString();
+        html += '<div class="stats-row"><span class="stats-label">Data Modified</span><span class="stats-value" style="font-size:10px">' + lm + '</span></div>';
       }
 
-      // Options volume
-      if (stats.options_volume !== null) {
-        html += '<div class="stats-row"><span class="stats-label">Opts Volume</span>' + fmt(stats.options_volume) + '</div>';
-      }
-
-      // Show raw matches if we didn't get structured stats
-      if (!html && stats.raw_matches && stats.raw_matches.length > 0) {
-        stats.raw_matches.slice(0, 8).forEach(m => {
-          html += '<div class="stats-row"><span class="stats-label">' + m.key + '</span>' + fmt(m.value) + '</div>';
+      // Data sources (URLs)
+      if (stats.data_sources && stats.data_sources.length > 0) {
+        html += '<div class="stats-row" style="flex-direction:column"><span class="stats-label">Data Sources</span></div>';
+        stats.data_sources.slice(0,2).forEach(src => {
+          const short = src.length > 40 ? '...' + src.slice(-37) : src;
+          html += '<div style="font-size:9px;color:var(--muted);word-break:break-all;margin-bottom:2px">' + short + '</div>';
         });
       }
 
       if (!html) {
-        html = '<div class="stats-loading">No stats found in data</div>';
+        html = '<div class="stats-loading">No stats found in captured data</div>';
       }
 
       html += '<div class="stats-row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;"><span class="stats-label">Updated</span><span class="stats-value" style="font-size:10px">' + ts + '</span></div>';
@@ -1226,13 +1230,6 @@ DASH_HTML_TEMPLATE = """
       fetchStats();
       if (statsTimer) clearInterval(statsTimer);
       statsTimer = setInterval(fetchStats, PULL_EVERY);
-    }
-
-    function stopStats() {
-      if (statsTimer) {
-        clearInterval(statsTimer);
-        statsTimer = null;
-      }
     }
 
     // Start stats polling on page load

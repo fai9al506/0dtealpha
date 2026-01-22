@@ -1336,7 +1336,7 @@ DASH_HTML_TEMPLATE = """
       script.onload = function() {
         new TradingView.widget({
           "autosize": true,
-          "symbol": "SP:SPX",
+          "symbol": "OANDA:SPX500USD",
           "interval": "15",
           "timezone": "America/New_York",
           "theme": "dark",

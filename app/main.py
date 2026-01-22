@@ -1200,12 +1200,12 @@ DASH_HTML_TEMPLATE = """
       };
 
       Plotly.react(vannaDiv, [trace], {
-        title:{text:'Vanna by Strike (Volland)', font:{size:14}},
+        title:{text:'Charm', font:{size:14}},
         paper_bgcolor:'#121417',
         plot_bgcolor:'#0f1115',
         margin:{l:55,r:10,t:32,b:40},
         xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}, dtick:5},
-        yaxis:{title:'Vanna',  gridcolor:'#20242a', tickfont:{size:10}, range:[yMin,yMax]},
+        yaxis:{title:'Charm',  gridcolor:'#20242a', tickfont:{size:10}, range:[yMin,yMax]},
         shapes: shapes,
         font:{color:'#e6e7e9',size:11}
       }, {displayModeBar:false,responsive:true});

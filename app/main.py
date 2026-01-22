@@ -868,6 +868,46 @@ DASH_HTML_TEMPLATE = """
     }
     #volChart, #oiChart, #gexChart, #vannaChart { width:100%; height:420px; }
 
+    .unified-grid {
+      display:grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap:8px;
+      align-items:stretch;
+      height: calc(100vh - 140px);
+      min-height:500px;
+    }
+    .unified-card {
+      background: var(--panel);
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:8px;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+    .unified-card h3 {
+      margin:0 0 4px;
+      font-size:11px;
+      color:var(--muted);
+      font-weight:600;
+      text-transform:uppercase;
+      letter-spacing:0.5px;
+    }
+    .unified-plot {
+      flex:1;
+      width:100%;
+      min-height:0;
+    }
+    .tv-container {
+      flex:1;
+      width:100%;
+      min-height:0;
+    }
+    .tv-container iframe {
+      width:100%;
+      height:100%;
+      border:0;
+    }
     .spot-grid {
       display:grid;
       grid-template-columns: 2fr 1fr 1fr;
@@ -913,6 +953,8 @@ DASH_HTML_TEMPLATE = """
       #volChart, #oiChart, #gexChart, #vannaChart { height:340px; }
       .spot-grid { grid-template-columns:1fr; }
       .card { min-height:260px; }
+      .unified-grid { grid-template-columns:1fr; height:auto; }
+      .unified-card { min-height:300px; }
     }
     .stats-box { margin-top:14px; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; }
     .stats-box h4 { margin:0 0 8px; font-size:12px; font-weight:600; }
@@ -939,7 +981,7 @@ DASH_HTML_TEMPLATE = """
       <div class="nav">
         <button class="btn active" id="tabTable">Table</button>
         <button class="btn" id="tabCharts">Charts</button>
-        <button class="btn" id="tabSpot">Spot</button>
+        <button class="btn" id="tabSpot">Unified</button>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
       <div class="small" style="margin-top:14px">
@@ -978,21 +1020,31 @@ DASH_HTML_TEMPLATE = """
 
       <div id="viewSpot" class="panel" style="display:none">
         <div class="header">
-          <div><strong>Spot</strong></div>
-          <div class="pill">SPX price + GEX & VOL by strike (shared Y axis)</div>
+          <div><strong>Unified View</strong></div>
+          <div class="pill">SPX candles + GEX / Charm / Volume by strike</div>
         </div>
-        <div class="spot-grid">
-          <div class="card">
-            <h3>SPX Price</h3>
-            <div id="spotPricePlot" class="plot"></div>
+        <div class="unified-grid">
+          <div class="unified-card">
+            <h3>SPX 15m</h3>
+            <div class="tv-container" id="tvContainer">
+              <!-- TradingView Widget BEGIN -->
+              <div class="tradingview-widget-container" style="height:100%;width:100%">
+                <div id="tradingview_spx" style="height:100%;width:100%"></div>
+              </div>
+              <!-- TradingView Widget END -->
+            </div>
           </div>
-          <div class="card">
-            <h3>Net GEX by Strike</h3>
-            <div id="gexSidePlot" class="plot"></div>
+          <div class="unified-card">
+            <h3>Net GEX</h3>
+            <div id="unifiedGexPlot" class="unified-plot"></div>
           </div>
-          <div class="card">
-            <h3>VOL by Strike (Calls vs Puts)</h3>
-            <div id="volSidePlot" class="plot"></div>
+          <div class="unified-card">
+            <h3>Charm</h3>
+            <div id="unifiedCharmPlot" class="unified-plot"></div>
+          </div>
+          <div class="unified-card">
+            <h3>Volume</h3>
+            <div id="unifiedVolPlot" class="unified-plot"></div>
           </div>
         </div>
       </div>
@@ -1267,139 +1319,224 @@ DASH_HTML_TEMPLATE = """
       }
     }
 
-    // ===== Spot: expects /api/spot (keep your existing endpoint) =====
-    const spotPriceDiv=document.getElementById('spotPricePlot'),
-          gexSideDiv=document.getElementById('gexSidePlot'),
-          volSideDiv=document.getElementById('volSidePlot');
-    let spotTimer=null;
+    // ===== Unified View: TradingView + GEX/Charm/Volume bar charts =====
+    const unifiedGexDiv = document.getElementById('unifiedGexPlot'),
+          unifiedCharmDiv = document.getElementById('unifiedCharmPlot'),
+          unifiedVolDiv = document.getElementById('unifiedVolPlot');
+    let unifiedTimer = null;
+    let tvWidgetInitialized = false;
 
-    async function fetchSpot(){
-      const r=await fetch('/api/spot',{cache:'no-store'});
-      return await r.json();
+    // Initialize TradingView widget
+    function initTradingView() {
+      if (tvWidgetInitialized) return;
+      tvWidgetInitialized = true;
+
+      const script = document.createElement('script');
+      script.src = 'https://s3.tradingview.com/tv.js';
+      script.onload = function() {
+        new TradingView.widget({
+          "autosize": true,
+          "symbol": "SP:SPX",
+          "interval": "15",
+          "timezone": "America/New_York",
+          "theme": "dark",
+          "style": "1",
+          "locale": "en",
+          "toolbar_bg": "#121417",
+          "enable_publishing": false,
+          "hide_top_toolbar": false,
+          "hide_legend": true,
+          "save_image": false,
+          "container_id": "tradingview_spx",
+          "backgroundColor": "#0f1115",
+          "gridColor": "#20242a"
+        });
+      };
+      document.head.appendChild(script);
     }
 
-    function computeYRange(strikes, prices){
-      const vals = [];
-      if (Array.isArray(strikes) && strikes.length) vals.push(...strikes);
-      if (Array.isArray(prices) && prices.length) vals.push(...prices.filter(v=>typeof v==='number' && !isNaN(v)));
-      if (!vals.length) return null;
-      let yMin = Math.min(...vals), yMax = Math.max(...vals);
-      if (yMin === yMax){
-        const pad0 = Math.max(1, Math.abs(yMin)*0.001);
-        yMin -= pad0; yMax += pad0;
-      }
+    // Compute shared Y range from strikes
+    function computeStrikeRange(strikes) {
+      if (!strikes || !strikes.length) return null;
+      let yMin = Math.min(...strikes);
+      let yMax = Math.max(...strikes);
       const pad = (yMax - yMin) * 0.02 || 1;
-      return {min: yMin - pad, max: yMax + pad};
+      return { min: yMin - pad, max: yMax + pad };
     }
 
-    function renderSpotPrice(spotData, yRange){
-      if (!spotData || !spotData.time || !spotData.time.length) return;
-      const x = (spotData.time || []).map(t => new Date(t));
-      const closeArr = spotData.close || [];
-      const trace = {
-        type:'scatter',
-        mode:'lines',
-        x:x,
-        y:closeArr,
-        line:{shape:'linear'},
-        hovertemplate:'%{x}<br>Price %{y:.2f}<extra></extra>'
+    // Create horizontal spot line shape
+    function horizontalSpotShape(spot, xMin, xMax) {
+      if (spot == null) return null;
+      return {
+        type: 'line',
+        y0: spot, y1: spot,
+        x0: xMin, x1: xMax,
+        xref: 'x', yref: 'y',
+        line: { color: '#60a5fa', width: 2, dash: 'dot' }
       };
-      let yr = yRange;
-      if (!yr){
-        const tmp = computeYRange([], closeArr);
-        if (tmp) yr = tmp;
-      }
-      const layout = {
-        margin:{l:54,r:12,t:10,b:32},
-        paper_bgcolor:'#121417',
-        plot_bgcolor:'#0f1115',
-        xaxis:{title:'Time', gridcolor:'#20242a', tickfont:{size:10}},
-        yaxis:{title:'Price', gridcolor:'#20242a', range: yr ? [yr.min, yr.max] : undefined, tickfont:{size:10}},
-        font:{color:'#e6e7e9',size:11}
-      };
-      Plotly.react(spotPriceDiv, [trace], layout, {displayModeBar:false,responsive:true});
     }
 
-    function renderSpotFromSeries(data, yRange){
-      const strikes = data.strikes || [];
+    // Render Net GEX horizontal bar chart
+    function renderUnifiedGex(strikes, netGEX, yRange, spot) {
       if (!strikes.length) return;
 
-      let yr = yRange;
-      if (!yr){
-        const tmp = computeYRange(strikes, []);
-        if (tmp) yr = tmp;
+      // Color bars: green for positive, red for negative
+      const colors = netGEX.map(v => v >= 0 ? '#22c55e' : '#ef4444');
+      const gMax = Math.max(1, ...netGEX.map(v => Math.abs(v))) * 1.1;
+
+      const shapes = [];
+      const spotShape = horizontalSpotShape(spot, -gMax, gMax);
+      if (spotShape) shapes.push(spotShape);
+
+      const trace = {
+        type: 'bar',
+        orientation: 'h',
+        x: netGEX,
+        y: strikes,
+        marker: { color: colors },
+        hovertemplate: 'Strike %{y}<br>Net GEX %{x:,.0f}<extra></extra>'
+      };
+
+      Plotly.react(unifiedGexDiv, [trace], {
+        margin: { l: 50, r: 8, t: 4, b: 24 },
+        paper_bgcolor: '#121417',
+        plot_bgcolor: '#0f1115',
+        xaxis: { title: '', gridcolor: '#20242a', tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#333' },
+        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', tickfont: { size: 9 }, dtick: 5 },
+        font: { color: '#e6e7e9', size: 10 },
+        shapes: shapes
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    // Render Charm horizontal bar chart (from vanna_window)
+    function renderUnifiedCharm(vannaData, yRange, spot) {
+      if (!vannaData || vannaData.error || !vannaData.points || !vannaData.points.length) {
+        Plotly.react(unifiedCharmDiv, [], {
+          paper_bgcolor: '#121417', plot_bgcolor: '#0f1115',
+          margin: { l: 50, r: 8, t: 4, b: 24 },
+          annotations: [{ text: vannaData?.error || 'No charm data', x: 0.5, y: 0.5, xref: 'paper', yref: 'paper', showarrow: false, font: { color: '#e6e7e9' } }],
+          font: { color: '#e6e7e9' }
+        }, { displayModeBar: false, responsive: true });
+        return;
       }
-      const yMin = yr ? yr.min : Math.min(...strikes);
-      const yMax = yr ? yr.max : Math.max(...strikes);
 
-      const gexNet = data.netGEX || [];
-      const gMax = Math.max(1, ...gexNet.map(v=>Math.abs(v))) * 1.1;
-      const gex = {
-        type:'bar',
-        orientation:'h',
-        x:gexNet,
-        y:strikes,
-        marker:{color:'#60a5fa'},
-        hovertemplate:'Strike %{y}<br>Net GEX %{x:.0f}<extra></extra>'
+      const pts = vannaData.points;
+      const strikes = pts.map(p => p.strike);
+      const vanna = pts.map(p => p.vanna);
+
+      // Color bars: green for positive, red for negative
+      const colors = vanna.map(v => v >= 0 ? '#22c55e' : '#ef4444');
+      const vMax = Math.max(1, ...vanna.map(v => Math.abs(v))) * 1.1;
+
+      const shapes = [];
+      const spotShape = horizontalSpotShape(spot, -vMax, vMax);
+      if (spotShape) shapes.push(spotShape);
+
+      const trace = {
+        type: 'bar',
+        orientation: 'h',
+        x: vanna,
+        y: strikes,
+        marker: { color: colors },
+        hovertemplate: 'Strike %{y}<br>Charm %{x:,.0f}<extra></extra>'
       };
-      Plotly.react(gexSideDiv, [gex], {
-        margin:{l:54,r:12,t:10,b:28},
-        paper_bgcolor:'#121417',
-        plot_bgcolor:'#0f1115',
-        xaxis:{title:'Net GEX', gridcolor:'#20242a', range:[-gMax, gMax], tickfont:{size:10}},
-        yaxis:{title:'Strike', range:[yMin,yMax], gridcolor:'#20242a', dtick:5, tickfont:{size:10}},
-        font:{color:'#e6e7e9',size:11}
-      }, {displayModeBar:false,responsive:true});
 
-      const callVol = data.callVol || [];
-      const putVol  = data.putVol  || [];
+      Plotly.react(unifiedCharmDiv, [trace], {
+        margin: { l: 50, r: 8, t: 4, b: 24 },
+        paper_bgcolor: '#121417',
+        plot_bgcolor: '#0f1115',
+        xaxis: { title: '', gridcolor: '#20242a', tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#333' },
+        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', tickfont: { size: 9 }, dtick: 5 },
+        font: { color: '#e6e7e9', size: 10 },
+        shapes: shapes
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    // Render Volume horizontal bar chart (mirrored: puts go left, calls go right)
+    function renderUnifiedVolume(strikes, callVol, putVol, yRange, spot) {
+      if (!strikes.length) return;
+
+      // Negate puts so they go left (negative x), calls stay positive (right)
+      const putsNegative = putVol.map(v => -v);
       const vMax = Math.max(1, ...callVol, ...putVol) * 1.1;
-      const volCalls = {
-        type:'bar',
-        orientation:'h',
-        name:'Calls',
-        x:callVol,
-        y:strikes,
-        marker:{color:'#22c55e'},
-        hovertemplate:'Strike %{y}<br>Calls %{x}<extra></extra>'
+
+      const shapes = [];
+      const spotShape = horizontalSpotShape(spot, -vMax, vMax);
+      if (spotShape) shapes.push(spotShape);
+
+      const traceCalls = {
+        type: 'bar',
+        orientation: 'h',
+        name: 'Calls',
+        x: callVol,
+        y: strikes,
+        marker: { color: '#22c55e' },
+        hovertemplate: 'Strike %{y}<br>Calls %{x:,}<extra></extra>'
       };
-      const volPuts = {
-        type:'bar',
-        orientation:'h',
-        name:'Puts',
-        x:putVol,
-        y:strikes,
-        marker:{color:'#ef4444'},
-        hovertemplate:'Strike %{y}<br>Puts %{x}<extra></extra>'
+
+      const tracePuts = {
+        type: 'bar',
+        orientation: 'h',
+        name: 'Puts',
+        x: putsNegative,
+        y: strikes,
+        marker: { color: '#ef4444' },
+        hovertemplate: 'Strike %{y}<br>Puts %{customdata:,}<extra></extra>',
+        customdata: putVol
       };
-      Plotly.react(volSideDiv, [volCalls, volPuts], {
-        margin:{l:54,r:12,t:10,b:28},
-        paper_bgcolor:'#121417',
-        plot_bgcolor:'#0f1115',
-        xaxis:{title:'VOL', gridcolor:'#20242a', range:[0, vMax], tickfont:{size:10}},
-        yaxis:{title:'Strike', range:[yMin,yMax], gridcolor:'#20242a', dtick:5, tickfont:{size:10}},
-        barmode:'group',
-        font:{color:'#e6e7e9',size:11}
-      }, {displayModeBar:false,responsive:true});
+
+      Plotly.react(unifiedVolDiv, [tracePuts, traceCalls], {
+        margin: { l: 50, r: 8, t: 4, b: 24 },
+        paper_bgcolor: '#121417',
+        plot_bgcolor: '#0f1115',
+        xaxis: { title: '', gridcolor: '#20242a', tickfont: { size: 9 }, range: [-vMax, vMax], zeroline: true, zerolinecolor: '#333' },
+        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', tickfont: { size: 9 }, dtick: 5 },
+        barmode: 'overlay',
+        showlegend: false,
+        font: { color: '#e6e7e9', size: 10 },
+        shapes: shapes
+      }, { displayModeBar: false, responsive: true });
     }
 
-    async function tickSpot(){
-      const [opt, spot] = await Promise.all([fetchSeries(), fetchSpot()]);
-      const prices = (spot && Array.isArray(spot.close)) ? spot.close : [];
-      const yRange = computeYRange(opt.strikes || [], prices);
-      renderSpotPrice(spot, yRange);
-      renderSpotFromSeries(opt, yRange);
+    // Main tick function for unified view
+    async function tickUnified() {
+      try {
+        // Fetch series data (strikes, GEX, volume, spot)
+        const data = await fetchSeries();
+        if (!data || !data.strikes || !data.strikes.length) return;
+
+        const strikes = data.strikes;
+        const spot = data.spot;
+        const yRange = computeStrikeRange(strikes);
+        if (!yRange) return;
+
+        // Render GEX
+        renderUnifiedGex(strikes, data.netGEX || [], yRange, spot);
+
+        // Render Volume
+        renderUnifiedVolume(strikes, data.callVol || [], data.putVol || [], yRange, spot);
+
+        // Fetch and render Charm (vanna_window) - async, non-blocking
+        fetchVannaWindow()
+          .then(vannaData => renderUnifiedCharm(vannaData, yRange, spot))
+          .catch(err => renderUnifiedCharm({ error: String(err) }, yRange, spot));
+
+      } catch (err) {
+        console.error('Unified view error:', err);
+      }
     }
 
-    function startSpot(){
-      tickSpot();
-      if (spotTimer) clearInterval(spotTimer);
-      spotTimer = setInterval(tickSpot, PULL_EVERY);
+    function startSpot() {
+      initTradingView();
+      tickUnified();
+      if (unifiedTimer) clearInterval(unifiedTimer);
+      unifiedTimer = setInterval(tickUnified, PULL_EVERY);
     }
-    function stopSpot(){
-      if (spotTimer){
-        clearInterval(spotTimer);
-        spotTimer=null;
+
+    function stopSpot() {
+      if (unifiedTimer) {
+        clearInterval(unifiedTimer);
+        unifiedTimer = null;
       }
     }
 

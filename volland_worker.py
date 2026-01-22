@@ -1,5 +1,5 @@
 # volland_worker.py
-# Fixed version that captures BOTH charm/exposure data AND statistics
+# Fixed version that captures charm/exposure data, statistics, AND populates volland_exposure_points
 import os, json, time, traceback, re
 from datetime import datetime, timezone
 
@@ -36,11 +36,56 @@ def ensure_tables():
         );
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_snapshots_ts ON volland_snapshots(ts DESC);")
+        
+        # Ensure volland_exposure_points table exists
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS volland_exposure_points (
+          id BIGSERIAL PRIMARY KEY,
+          ts_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+          ticker VARCHAR(20),
+          greek VARCHAR(20),
+          expiration_option VARCHAR(30),
+          strike NUMERIC,
+          value NUMERIC,
+          current_price NUMERIC,
+          last_modified TIMESTAMPTZ,
+          source_url TEXT
+        );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_exposure_points_ts ON volland_exposure_points(ts_utc DESC);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_exposure_points_greek ON volland_exposure_points(greek);")
 
 
 def save_snapshot(payload: dict):
     with db() as conn, conn.cursor() as cur:
         cur.execute("INSERT INTO volland_snapshots(payload) VALUES (%s::jsonb)", (json.dumps(payload),))
+
+
+def save_exposure_points(points: list, greek: str = "charm", ticker: str = "SPX", current_price: float = None):
+    """
+    Insert exposure points into volland_exposure_points table.
+    points: list of {"x": strike, "y": value}
+    """
+    if not points:
+        return 0
+    
+    ts_utc = datetime.now(timezone.utc)
+    
+    with db() as conn, conn.cursor() as cur:
+        count = 0
+        for pt in points:
+            try:
+                strike = float(pt.get("x", 0))
+                value = float(pt.get("y", 0))
+                cur.execute("""
+                    INSERT INTO volland_exposure_points 
+                    (ts_utc, ticker, greek, strike, value, current_price)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (ts_utc, ticker, greek, strike, value, current_price))
+                count += 1
+            except Exception as e:
+                print(f"[exposure] Failed to insert point: {e}", flush=True)
+        return count
 
 
 def handle_session_limit_modal(page) -> bool:
@@ -115,7 +160,7 @@ INIT_CAPTURE_JS = r"""
     try {
       if (!t) return "";
       t = String(t);
-      return t.length > 20000 ? t.slice(0, 20000) : t;
+      return t.length > 50000 ? t.slice(0, 50000) : t;
     } catch(e) { return ""; }
   }
 
@@ -263,6 +308,66 @@ def trim_body(item):
     return it
 
 
+def parse_exposure_data(captures: dict) -> tuple:
+    """
+    Parse exposure data from captured network requests.
+    Returns (list of {"x": strike, "y": value} points, current_price).
+    """
+    points = []
+    current_price = None
+    
+    # Check fetch for exposure data
+    for item in captures.get("fetch", []):
+        url = (item.get("url") or "").lower()
+        if "exposure" not in url:
+            continue
+        
+        body = item.get("body") or ""
+        if not body:
+            continue
+        
+        try:
+            data = json.loads(body)
+            if isinstance(data, dict):
+                # Get items array
+                items = data.get("items", [])
+                if items and isinstance(items, list):
+                    points = items
+                    print(f"[exposure] Found {len(points)} points from fetch", flush=True)
+                
+                # Get current price if available
+                if data.get("currentPrice"):
+                    current_price = float(data["currentPrice"])
+        except Exception as e:
+            print(f"[exposure] Failed to parse body: {e}", flush=True)
+    
+    # Also check XHR
+    if not points:
+        for item in captures.get("xhr", []):
+            url = (item.get("url") or "").lower()
+            if "exposure" not in url:
+                continue
+            
+            body = item.get("body") or ""
+            if not body:
+                continue
+            
+            try:
+                data = json.loads(body)
+                if isinstance(data, dict):
+                    items = data.get("items", [])
+                    if items and isinstance(items, list):
+                        points = items
+                        print(f"[exposure] Found {len(points)} points from XHR", flush=True)
+                    
+                    if data.get("currentPrice"):
+                        current_price = float(data["currentPrice"])
+            except Exception as e:
+                print(f"[exposure] Failed to parse XHR body: {e}", flush=True)
+    
+    return points, current_price
+
+
 def parse_statistics(page) -> dict:
     """
     Parse SPX statistics from the statistics page using text extraction.
@@ -348,7 +453,6 @@ def run():
         while True:
             try:
                 # ========== STEP 1: Scrape STATISTICS page FIRST ==========
-                # (Do this first so it doesn't interfere with charm captures)
                 stats_data = {}
                 if STATS_URL:
                     try:
@@ -362,7 +466,7 @@ def run():
                             page.wait_for_timeout(int(WAIT_AFTER_GOTO_SEC * 1000))
                         
                         stats_data = parse_statistics(page)
-                        print(f"[stats] Paradigm={stats_data.get('paradigm')}, Target={stats_data.get('target')}, Lines={stats_data.get('lines_in_sand')}", flush=True)
+                        print(f"[stats] Paradigm={stats_data.get('paradigm')}, Target={stats_data.get('target')}", flush=True)
                     except Exception as e:
                         print(f"[stats] Failed to scrape statistics: {e}", flush=True)
                         stats_data = {}
@@ -383,18 +487,32 @@ def run():
                 # ========== STEP 3: Get captures from CHARM page ==========
                 cap = get_captures(page)
 
+                # ========== STEP 4: Parse and save exposure points ==========
+                exposure_points, current_price = parse_exposure_data(cap)
+                points_saved = 0
+                if exposure_points:
+                    points_saved = save_exposure_points(
+                        exposure_points, 
+                        greek="charm", 
+                        ticker="SPX",
+                        current_price=current_price
+                    )
+                    print(f"[exposure] Saved {points_saved} points to volland_exposure_points", flush=True)
+
+                # ========== STEP 5: Filter and score for snapshot ==========
                 fetch_scored = filter_and_score(cap.get("fetch", []))
                 xhr_scored   = filter_and_score(cap.get("xhr", []))
 
-                # ws messages can be huge; keep only top few
                 ws = cap.get("ws", [])
                 ws = ws[-10:] if isinstance(ws, list) else []
 
-                # ========== STEP 4: Build and save payload ==========
+                # ========== STEP 6: Build and save snapshot ==========
                 payload = {
                     "ts_utc": datetime.now(timezone.utc).isoformat(),
-                    "page_url": URL,  # Use the charm URL, not whatever page we're on
-                    "statistics": stats_data,  # Statistics from step 1
+                    "page_url": URL,
+                    "statistics": stats_data,
+                    "exposure_points_saved": points_saved,
+                    "current_price": current_price,
                     "captures": {
                         "fetch_top": [trim_body(x) for x in fetch_scored],
                         "xhr_top":   [trim_body(x) for x in xhr_scored],
@@ -414,8 +532,7 @@ def run():
                     payload["ts_utc"],
                     "fetch=", payload["captures"]["counts"]["fetch"],
                     "xhr=", payload["captures"]["counts"]["xhr"],
-                    "ws=", payload["captures"]["counts"]["ws"],
-                    "top_fetch_score=", (fetch_scored[0]["score"] if fetch_scored else None),
+                    "exposure_points=", points_saved,
                     "stats=", bool(stats_data.get("paradigm") or stats_data.get("target")),
                     flush=True
                 )

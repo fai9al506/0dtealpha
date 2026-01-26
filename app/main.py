@@ -2529,14 +2529,13 @@ DASH_HTML_TEMPLATE = """
         const curr = snaps[i].spot;
         const prev = i > 0 ? snaps[i - 1].spot : curr;
 
-        // Format time for display
-        const t = new Date(snaps[i].ts);
-        times.push(t.toLocaleTimeString('en-US', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }));
+        // Use actual ISO timestamp for date axis
+        times.push(snaps[i].ts);
 
         opens.push(prev);
         closes.push(curr);
-        highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1); // Small wick
-        lows.push(Math.min(prev, curr) - Math.abs(curr - prev) * 0.1);  // Small wick
+        highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1);
+        lows.push(Math.min(prev, curr) - Math.abs(curr - prev) * 0.1);
       }
 
       const trace = {
@@ -2552,15 +2551,28 @@ DASH_HTML_TEMPLATE = """
       };
 
       Plotly.react(playbackPricePlot, [trace], {
-        margin: { l: 50, r: 8, t: 4, b: 30 },
+        margin: { l: 50, r: 8, t: 4, b: 50 },
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',
-        xaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, type: 'category', nticks: 10, tickangle: -45, rangeslider: { visible: false }, fixedrange: false },
-        yaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, side: 'left', fixedrange: false },
+        xaxis: {
+          type: 'date',
+          gridcolor: '#20242a',
+          tickfont: { size: 8 },
+          tickformat: '%m/%d %H:%M',
+          tickangle: -45,
+          rangeslider: { visible: false }
+        },
+        yaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, side: 'left' },
         font: { color: '#e6e7e9', size: 10 },
         shapes: [],
         dragmode: 'zoom'
-      }, { displayModeBar: false, responsive: true, scrollZoom: true });
+      }, {
+        displayModeBar: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+        responsive: true,
+        scrollZoom: true
+      });
     }
 
     function updatePlaybackSnapshot(idx) {

@@ -2455,13 +2455,9 @@ DASH_HTML_TEMPLATE = """
         <h4>SPX Statistics</h4>
         <div id="statsContent" style="color:var(--muted);font-size:11px">Loading...</div>
       </div>
-      <div style="margin-top:14px;display:flex;gap:8px;align-items:center">
-        <label class="toggle-switch">
-          <input type="checkbox" id="alertMasterToggle" checked>
-          <span class="toggle-slider"></span>
-        </label>
+      <div style="margin-top:14px;display:flex;gap:8px;align-items:center;justify-content:space-between">
         <span style="font-size:11px;color:var(--text)">🔔 Alerts</span>
-        <button id="alertSettingsBtn" class="strike-btn" style="padding:3px 8px;font-size:10px;margin-left:auto">Settings</button>
+        <button id="alertSettingsBtn" class="strike-btn" style="padding:3px 8px;font-size:10px">Settings</button>
       </div>
     </aside>
 
@@ -2473,6 +2469,13 @@ DASH_HTML_TEMPLATE = """
           <button id="alertModalClose" class="modal-close">&times;</button>
         </div>
         <div class="modal-body">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+            <label class="toggle-switch">
+              <input type="checkbox" id="alertMasterToggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            <span style="font-weight:600">Alerts Enabled</span>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
             <div>
               <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Price Alerts</div>

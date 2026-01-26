@@ -2308,6 +2308,12 @@ DASH_HTML_TEMPLATE = """
     let isZoomSyncing = false; // Prevent infinite loop
     let baseYRange = null; // Original range before any zoom
 
+    // Fetch statistics levels (Target, LIS, Max Gamma)
+    async function fetchStatisticsLevels() {
+      const r = await fetch('/api/statistics_levels', { cache: 'no-store' });
+      return await r.json();
+    }
+
     // Fetch SPX 3-minute candles from TradeStation API
     async function fetchSPXCandles() {
       const r = await fetch('/api/spx_candles?bars=60', { cache: 'no-store' });
@@ -2403,7 +2409,8 @@ DASH_HTML_TEMPLATE = """
     }
 
     // Render SPX candlestick chart (Y-axis = price aligned with strikes, on LEFT for shared axis)
-    function renderUnifiedSPX(candleData, yRange) {
+    function renderUnifiedSPX(candleData, yRange, levels) {
+      levels = levels || {};
       if (!candleData || candleData.error || !candleData.candles || !candleData.candles.length) {
         Plotly.react(unifiedSpxDiv, [], {
           paper_bgcolor: '#121417', plot_bgcolor: '#0f1115',
@@ -2426,6 +2433,24 @@ DASH_HTML_TEMPLATE = """
       const highs = candles.map(c => c.high);
       const lows = candles.map(c => c.low);
       const closes = candles.map(c => c.close);
+
+      // Build horizontal lines for key levels
+      const shapes = [];
+      if (levels.target) {
+        shapes.push({ type: 'line', y0: levels.target, y1: levels.target, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#3b82f6', width: 2 } });
+      }
+      if (levels.lis_low) {
+        shapes.push({ type: 'line', y0: levels.lis_low, y1: levels.lis_low, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#f59e0b', width: 2 } });
+      }
+      if (levels.lis_high) {
+        shapes.push({ type: 'line', y0: levels.lis_high, y1: levels.lis_high, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#f59e0b', width: 2 } });
+      }
+      if (levels.max_pos_gamma) {
+        shapes.push({ type: 'line', y0: levels.max_pos_gamma, y1: levels.max_pos_gamma, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#22c55e', width: 2 } });
+      }
+      if (levels.max_neg_gamma) {
+        shapes.push({ type: 'line', y0: levels.max_neg_gamma, y1: levels.max_neg_gamma, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#ef4444', width: 2 } });
+      }
 
       const trace = {
         type: 'candlestick',
@@ -2462,7 +2487,8 @@ DASH_HTML_TEMPLATE = """
           fixedrange: false
         },
         font: { color: '#e6e7e9', size: 10 },
-        showlegend: false
+        showlegend: false,
+        shapes: shapes
       }, { displayModeBar: false, responsive: true, scrollZoom: true });
     }
 
@@ -2604,10 +2630,10 @@ DASH_HTML_TEMPLATE = """
         // Render Volume
         renderUnifiedVolume(strikes, data.callVol || [], data.putVol || [], yRange, spot);
 
-        // Fetch SPX candles and render (async)
-        fetchSPXCandles()
-          .then(candleData => renderUnifiedSPX(candleData, yRange))
-          .catch(err => renderUnifiedSPX({ error: String(err) }, yRange));
+        // Fetch SPX candles and statistics levels, then render
+        Promise.all([fetchSPXCandles(), fetchStatisticsLevels()])
+          .then(([candleData, levels]) => renderUnifiedSPX(candleData, yRange, levels))
+          .catch(err => renderUnifiedSPX({ error: String(err) }, yRange, {}));
 
         // Fetch and render Charm (vanna_window) - async
         fetchVannaWindow()

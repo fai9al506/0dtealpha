@@ -2434,22 +2434,28 @@ DASH_HTML_TEMPLATE = """
       const lows = candles.map(c => c.low);
       const closes = candles.map(c => c.close);
 
-      // Build horizontal lines for key levels
+      // Build horizontal lines and labels for key levels
       const shapes = [];
+      const annotations = [];
       if (levels.target) {
         shapes.push({ type: 'line', y0: levels.target, y1: levels.target, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#3b82f6', width: 2 } });
+        annotations.push({ x: 0.01, y: levels.target, xref: 'paper', yref: 'y', text: 'Target', showarrow: false, font: { color: '#3b82f6', size: 9 }, xanchor: 'left', yanchor: 'bottom' });
       }
       if (levels.lis_low) {
         shapes.push({ type: 'line', y0: levels.lis_low, y1: levels.lis_low, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#f59e0b', width: 2 } });
+        annotations.push({ x: 0.01, y: levels.lis_low, xref: 'paper', yref: 'y', text: 'LIS', showarrow: false, font: { color: '#f59e0b', size: 9 }, xanchor: 'left', yanchor: 'bottom' });
       }
       if (levels.lis_high) {
         shapes.push({ type: 'line', y0: levels.lis_high, y1: levels.lis_high, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#f59e0b', width: 2 } });
+        annotations.push({ x: 0.01, y: levels.lis_high, xref: 'paper', yref: 'y', text: 'LIS', showarrow: false, font: { color: '#f59e0b', size: 9 }, xanchor: 'left', yanchor: 'bottom' });
       }
       if (levels.max_pos_gamma) {
         shapes.push({ type: 'line', y0: levels.max_pos_gamma, y1: levels.max_pos_gamma, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#22c55e', width: 2 } });
+        annotations.push({ x: 0.01, y: levels.max_pos_gamma, xref: 'paper', yref: 'y', text: '+Gamma', showarrow: false, font: { color: '#22c55e', size: 9 }, xanchor: 'left', yanchor: 'bottom' });
       }
       if (levels.max_neg_gamma) {
         shapes.push({ type: 'line', y0: levels.max_neg_gamma, y1: levels.max_neg_gamma, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#ef4444', width: 2 } });
+        annotations.push({ x: 0.01, y: levels.max_neg_gamma, xref: 'paper', yref: 'y', text: '-Gamma', showarrow: false, font: { color: '#ef4444', size: 9 }, xanchor: 'left', yanchor: 'bottom' });
       }
 
       const trace = {
@@ -2488,7 +2494,8 @@ DASH_HTML_TEMPLATE = """
         },
         font: { color: '#e6e7e9', size: 10 },
         showlegend: false,
-        shapes: shapes
+        shapes: shapes,
+        annotations: annotations
       }, { displayModeBar: false, responsive: true, scrollZoom: true });
     }
 

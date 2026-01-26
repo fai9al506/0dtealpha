@@ -3381,9 +3381,18 @@ DASH_HTML_TEMPLATE = """
         }
       }
 
-      // Fixed Y range: 20 strikes (10 above, 10 below) centered on day's opening price
+      // Fixed Y range: 20 strikes (10 above, 10 below) centered on current day's opening price
       // SPX strikes are 5 points apart, so 10 strikes = 50 points
-      const dayOpenPrice = snaps[0].spot;  // First snapshot = day open
+      // Find the first snapshot of the current day
+      const currentDate = ts.toDateString();
+      let dayOpenPrice = currentSnap.spot;
+      for (let i = 0; i < snaps.length; i++) {
+        const snapDate = new Date(snaps[i].ts).toDateString();
+        if (snapDate === currentDate) {
+          dayOpenPrice = snaps[i].spot;
+          break;
+        }
+      }
       const yMin = dayOpenPrice - 50;
       const yMax = dayOpenPrice + 50;
 

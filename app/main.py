@@ -1945,7 +1945,6 @@ DASH_HTML_TEMPLATE = """
             <label style="font-size:11px;color:var(--muted)">Start Date:</label>
             <input type="date" id="playbackDate" style="background:#0f1115;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px">
             <button id="playbackLoad" class="strike-btn" style="padding:4px 12px">Load 3 Days</button>
-            <button id="playbackLoadAll" class="strike-btn" style="padding:4px 12px;background:#1a2634">Load All (Test)</button>
             <button id="playbackExport" class="strike-btn" style="padding:4px 12px">Export CSV</button>
           </div>
         </div>
@@ -2823,7 +2822,6 @@ DASH_HTML_TEMPLATE = """
     // ===== Playback View =====
     const playbackDateInput = document.getElementById('playbackDate'),
           playbackLoadBtn = document.getElementById('playbackLoad'),
-          playbackLoadAllBtn = document.getElementById('playbackLoadAll'),
           playbackExportBtn = document.getElementById('playbackExport'),
           playbackSlider = document.getElementById('playbackSlider'),
           playbackTimestamp = document.getElementById('playbackTimestamp'),
@@ -2847,24 +2845,20 @@ DASH_HTML_TEMPLATE = """
       defaultDate.setDate(defaultDate.getDate() - 3);
       playbackDateInput.value = defaultDate.toISOString().split('T')[0];
 
-      playbackLoadBtn.addEventListener('click', () => loadPlaybackData(false));
-      playbackLoadAllBtn.addEventListener('click', () => loadPlaybackData(true));
+      playbackLoadBtn.addEventListener('click', loadPlaybackData);
       playbackExportBtn.addEventListener('click', exportPlaybackCSV);
       playbackSlider.addEventListener('input', onSliderChange);
     }
 
-    async function loadPlaybackData(loadAll = false) {
+    async function loadPlaybackData() {
       const startDate = playbackDateInput.value;
 
       playbackTimestamp.textContent = 'Loading...';
       playbackLoadBtn.disabled = true;
-      playbackLoadAllBtn.disabled = true;
 
       try {
         let url = '/api/playback/range';
-        if (loadAll) {
-          url += '?load_all=true';
-        } else if (startDate) {
+        if (startDate) {
           url += '?start_date=' + startDate;
         }
         const r = await fetch(url, { cache: 'no-store' });
@@ -2901,7 +2895,6 @@ DASH_HTML_TEMPLATE = """
         playbackTimestamp.textContent = 'Error: ' + err.message;
       } finally {
         playbackLoadBtn.disabled = false;
-        playbackLoadAllBtn.disabled = false;
       }
     }
 

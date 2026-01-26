@@ -1132,31 +1132,43 @@ def api_playback_delete_all():
         return {"error": str(e)}
 
 @app.get("/api/playback/range")
-def api_playback_range(start_date: str = Query(None, description="Start date YYYY-MM-DD, default 3 days ago")):
+def api_playback_range(start_date: str = Query(None, description="Start date YYYY-MM-DD, default 3 days ago"), load_all: bool = Query(False, description="Load all data ignoring date filter")):
     """
     Get 3 days of playback snapshots starting from start_date.
     Returns timestamps, spot prices, and per-snapshot data for visualization.
+    Use load_all=true to get all data regardless of date (for debugging).
     """
     if not engine:
         return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
 
     try:
-        # Default to 3 days ago if no date provided
-        if start_date:
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-            start_dt = NY.localize(start_dt.replace(hour=0, minute=0, second=0))
-        else:
-            start_dt = now_et().replace(hour=0, minute=0, second=0) - pd.Timedelta(days=3)
-
-        end_dt = start_dt + pd.Timedelta(days=3)
-
         with engine.begin() as conn:
-            rows = conn.execute(text("""
-                SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
-                FROM playback_snapshots
-                WHERE ts >= :start_ts AND ts < :end_ts
-                ORDER BY ts ASC
-            """), {"start_ts": start_dt, "end_ts": end_dt}).mappings().all()
+            if load_all:
+                # Load all data for debugging
+                rows = conn.execute(text("""
+                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                    FROM playback_snapshots
+                    ORDER BY ts ASC
+                    LIMIT 1000
+                """)).mappings().all()
+                start_dt = None
+                end_dt = None
+            else:
+                # Default to 3 days ago if no date provided
+                if start_date:
+                    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                    start_dt = NY.localize(start_dt.replace(hour=0, minute=0, second=0))
+                else:
+                    start_dt = now_et().replace(hour=0, minute=0, second=0, microsecond=0) - pd.Timedelta(days=3)
+
+                end_dt = start_dt + pd.Timedelta(days=3)
+
+                rows = conn.execute(text("""
+                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                    FROM playback_snapshots
+                    WHERE ts >= :start_ts AND ts < :end_ts
+                    ORDER BY ts ASC
+                """), {"start_ts": start_dt, "end_ts": end_dt}).mappings().all()
 
         snapshots = []
         for r in rows:
@@ -1172,8 +1184,8 @@ def api_playback_range(start_date: str = Query(None, description="Start date YYY
             })
 
         return {
-            "start_date": start_dt.strftime("%Y-%m-%d"),
-            "end_date": end_dt.strftime("%Y-%m-%d"),
+            "start_date": start_dt.strftime("%Y-%m-%d") if start_dt else "all",
+            "end_date": end_dt.strftime("%Y-%m-%d") if end_dt else "all",
             "count": len(snapshots),
             "snapshots": snapshots
         }
@@ -1182,31 +1194,40 @@ def api_playback_range(start_date: str = Query(None, description="Start date YYY
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/export/playback")
-def api_export_playback(start_date: str = Query(None, description="Start date YYYY-MM-DD, default 3 days ago")):
+def api_export_playback(start_date: str = Query(None, description="Start date YYYY-MM-DD"), load_all: bool = Query(False, description="Export all data")):
     """
-    Export 3 days of playback data as CSV.
+    Export playback data as CSV.
     Each row is a snapshot with flattened strike-level data.
     """
     if not engine:
         return Response("DATABASE_URL not set", media_type="text/plain", status_code=500)
 
     try:
-        # Default to 3 days ago if no date provided
-        if start_date:
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-            start_dt = NY.localize(start_dt.replace(hour=0, minute=0, second=0))
-        else:
-            start_dt = now_et().replace(hour=0, minute=0, second=0) - pd.Timedelta(days=3)
-
-        end_dt = start_dt + pd.Timedelta(days=3)
-
         with engine.begin() as conn:
-            rows = conn.execute(text("""
-                SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
-                FROM playback_snapshots
-                WHERE ts >= :start_ts AND ts < :end_ts
-                ORDER BY ts ASC
-            """), {"start_ts": start_dt, "end_ts": end_dt}).mappings().all()
+            if load_all:
+                rows = conn.execute(text("""
+                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                    FROM playback_snapshots
+                    ORDER BY ts ASC
+                    LIMIT 5000
+                """)).mappings().all()
+                start_dt = None
+                end_dt = None
+            else:
+                if start_date:
+                    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                    start_dt = NY.localize(start_dt.replace(hour=0, minute=0, second=0))
+                else:
+                    start_dt = now_et().replace(hour=0, minute=0, second=0, microsecond=0) - pd.Timedelta(days=3)
+
+                end_dt = start_dt + pd.Timedelta(days=3)
+
+                rows = conn.execute(text("""
+                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                    FROM playback_snapshots
+                    WHERE ts >= :start_ts AND ts < :end_ts
+                    ORDER BY ts ASC
+                """), {"start_ts": start_dt, "end_ts": end_dt}).mappings().all()
 
         # Build CSV with one row per snapshot, strikes as columns
         csv_rows = []
@@ -1240,7 +1261,10 @@ def api_export_playback(start_date: str = Query(None, description="Start date YY
         df = pd.DataFrame(csv_rows)
         csv_content = df.to_csv(index=False)
 
-        filename = f"playback_{start_dt.strftime('%Y%m%d')}_to_{end_dt.strftime('%Y%m%d')}.csv"
+        if start_dt and end_dt:
+            filename = f"playback_{start_dt.strftime('%Y%m%d')}_to_{end_dt.strftime('%Y%m%d')}.csv"
+        else:
+            filename = f"playback_all_{now_et().strftime('%Y%m%d_%H%M')}.csv"
         return Response(
             csv_content,
             media_type="text/csv",
@@ -1697,6 +1721,7 @@ DASH_HTML_TEMPLATE = """
             <label style="font-size:11px;color:var(--muted)">Start Date:</label>
             <input type="date" id="playbackDate" style="background:#0f1115;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px">
             <button id="playbackLoad" class="strike-btn" style="padding:4px 12px">Load 3 Days</button>
+            <button id="playbackLoadAll" class="strike-btn" style="padding:4px 12px;background:#1a2634">Load All (Test)</button>
             <button id="playbackExport" class="strike-btn" style="padding:4px 12px">Export CSV</button>
           </div>
         </div>
@@ -2396,6 +2421,7 @@ DASH_HTML_TEMPLATE = """
     // ===== Playback View =====
     const playbackDateInput = document.getElementById('playbackDate'),
           playbackLoadBtn = document.getElementById('playbackLoad'),
+          playbackLoadAllBtn = document.getElementById('playbackLoadAll'),
           playbackExportBtn = document.getElementById('playbackExport'),
           playbackSlider = document.getElementById('playbackSlider'),
           playbackTimestamp = document.getElementById('playbackTimestamp'),
@@ -2419,23 +2445,27 @@ DASH_HTML_TEMPLATE = """
       defaultDate.setDate(defaultDate.getDate() - 3);
       playbackDateInput.value = defaultDate.toISOString().split('T')[0];
 
-      playbackLoadBtn.addEventListener('click', loadPlaybackData);
+      playbackLoadBtn.addEventListener('click', () => loadPlaybackData(false));
+      playbackLoadAllBtn.addEventListener('click', () => loadPlaybackData(true));
       playbackExportBtn.addEventListener('click', exportPlaybackCSV);
       playbackSlider.addEventListener('input', onSliderChange);
     }
 
-    async function loadPlaybackData() {
+    async function loadPlaybackData(loadAll = false) {
       const startDate = playbackDateInput.value;
-      if (!startDate) {
-        alert('Please select a start date');
-        return;
-      }
 
       playbackTimestamp.textContent = 'Loading...';
       playbackLoadBtn.disabled = true;
+      playbackLoadAllBtn.disabled = true;
 
       try {
-        const r = await fetch('/api/playback/range?start_date=' + startDate, { cache: 'no-store' });
+        let url = '/api/playback/range';
+        if (loadAll) {
+          url += '?load_all=true';
+        } else if (startDate) {
+          url += '?start_date=' + startDate;
+        }
+        const r = await fetch(url, { cache: 'no-store' });
         const data = await r.json();
 
         if (data.error) {
@@ -2469,16 +2499,13 @@ DASH_HTML_TEMPLATE = """
         playbackTimestamp.textContent = 'Error: ' + err.message;
       } finally {
         playbackLoadBtn.disabled = false;
+        playbackLoadAllBtn.disabled = false;
       }
     }
 
     function exportPlaybackCSV() {
-      const startDate = playbackDateInput.value;
-      if (!startDate) {
-        alert('Please select a start date first');
-        return;
-      }
-      window.location.href = '/api/export/playback?start_date=' + startDate;
+      // Export all data
+      window.location.href = '/api/export/playback?load_all=true';
     }
 
     function onSliderChange() {

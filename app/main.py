@@ -950,7 +950,7 @@ def api_spx_candles(bars: int = Query(60, ge=10, le=200)):
 def api_spx_candles_1m(bars: int = Query(120, ge=10, le=400)):
     """
     Fetch SPX 1-minute candlestick data from TradeStation API.
-    Returns OHLC data for building a Plotly candlestick chart.
+    Returns OHLC data with timestamps in NY Eastern time.
     """
     try:
         params = {
@@ -967,8 +967,21 @@ def api_spx_candles_1m(bars: int = Query(120, ge=10, le=400)):
 
         candles = []
         for bar in bars_list:
+            # Convert timestamp to NY Eastern time
+            ts_raw = bar.get("TimeStamp", "")
+            try:
+                # Parse the timestamp and convert to Eastern
+                from datetime import datetime
+                dt = pd.to_datetime(ts_raw)
+                if dt.tzinfo is None:
+                    dt = dt.tz_localize('UTC')
+                dt_et = dt.tz_convert('US/Eastern')
+                time_str = dt_et.strftime('%Y-%m-%dT%H:%M:%S')
+            except:
+                time_str = ts_raw
+
             candles.append({
-                "time": bar.get("TimeStamp"),
+                "time": time_str,
                 "open": bar.get("Open"),
                 "high": bar.get("High"),
                 "low": bar.get("Low"),
@@ -1023,8 +1036,7 @@ def api_statistics_levels():
         with _df_lock:
             if latest_df is not None and not latest_df.empty:
                 df = latest_df.copy()
-                df.columns = DISPLAY_COLS
-                sdf = df
+                sdf = df.sort_values("Strike")
                 strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float).tolist()
                 call_oi = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
                 put_oi = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)

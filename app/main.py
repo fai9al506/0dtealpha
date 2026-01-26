@@ -791,6 +791,43 @@ def api_volland_stats():
         import traceback
         return JSONResponse({"error": str(e), "trace": traceback.format_exc()[-500:]}, status_code=500)
 
+@app.get("/api/spx_candles")
+def api_spx_candles(bars: int = Query(60, ge=10, le=200)):
+    """
+    Fetch SPX 3-minute candlestick data from TradeStation API.
+    Returns OHLC data for building a Plotly candlestick chart.
+    """
+    try:
+        # TradeStation barcharts endpoint for $SPX.X
+        # interval=3 for 3-minute bars, unit=Minute
+        params = {
+            "interval": "3",
+            "unit": "Minute",
+            "barsback": str(bars),
+        }
+        r = api_get("/marketdata/barcharts/$SPX.X", params=params, timeout=15)
+        data = r.json()
+
+        bars_list = data.get("Bars", [])
+        if not bars_list:
+            return {"error": "No bars returned", "candles": []}
+
+        candles = []
+        for bar in bars_list:
+            candles.append({
+                "time": bar.get("TimeStamp"),
+                "open": bar.get("Open"),
+                "high": bar.get("High"),
+                "low": bar.get("Low"),
+                "close": bar.get("Close"),
+                "volume": bar.get("TotalVolume"),
+            })
+
+        return {"candles": candles, "count": len(candles)}
+    except Exception as e:
+        print(f"[spx_candles] error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 @app.get("/api/data_freshness")
 def api_data_freshness():
     """
@@ -1013,16 +1050,6 @@ DASH_HTML_TEMPLATE = """
       width:100%;
       min-height:0;
     }
-    .tv-container {
-      flex:1;
-      width:100%;
-      min-height:0;
-    }
-    .tv-container iframe {
-      width:100%;
-      height:100%;
-      border:0;
-    }
     .spot-grid {
       display:grid;
       grid-template-columns: 2fr 1fr 1fr;
@@ -1097,7 +1124,7 @@ DASH_HTML_TEMPLATE = """
       <div class="nav">
         <button class="btn active" id="tabTable">Table</button>
         <button class="btn" id="tabCharts">Charts</button>
-        <button class="btn" id="tabSpot">Unified</button>
+        <button class="btn" id="tabSpot">Exposure</button>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
       <div class="small" style="margin-top:14px">
@@ -1136,19 +1163,13 @@ DASH_HTML_TEMPLATE = """
 
       <div id="viewSpot" class="panel" style="display:none">
         <div class="header">
-          <div><strong>Unified View</strong></div>
-          <div class="pill">SPX candles + GEX / Charm / Volume by strike</div>
+          <div><strong>Exposure View</strong></div>
+          <div class="pill">SPX 3m candles + GEX / Charm / Volume aligned by strike</div>
         </div>
         <div class="unified-grid">
           <div class="unified-card">
-            <h3>SPX 15m</h3>
-            <div class="tv-container" id="tvContainer">
-              <!-- TradingView Widget BEGIN -->
-              <div class="tradingview-widget-container" style="height:100%;width:100%">
-                <div id="tradingview_spx" style="height:100%;width:100%"></div>
-              </div>
-              <!-- TradingView Widget END -->
-            </div>
+            <h3>SPX 3m</h3>
+            <div id="unifiedSpxPlot" class="unified-plot"></div>
           </div>
           <div class="unified-card">
             <h3>Net GEX</h3>
@@ -1472,43 +1493,20 @@ DASH_HTML_TEMPLATE = """
       }
     }
 
-    // ===== Unified View: TradingView + GEX/Charm/Volume bar charts =====
-    const unifiedGexDiv = document.getElementById('unifiedGexPlot'),
+    // ===== Exposure View: SPX Candles + GEX/Charm/Volume aligned by strike =====
+    const unifiedSpxDiv = document.getElementById('unifiedSpxPlot'),
+          unifiedGexDiv = document.getElementById('unifiedGexPlot'),
           unifiedCharmDiv = document.getElementById('unifiedCharmPlot'),
           unifiedVolDiv = document.getElementById('unifiedVolPlot');
     let unifiedTimer = null;
-    let tvWidgetInitialized = false;
 
-    // Initialize TradingView widget
-    function initTradingView() {
-      if (tvWidgetInitialized) return;
-      tvWidgetInitialized = true;
-
-      const script = document.createElement('script');
-      script.src = 'https://s3.tradingview.com/tv.js';
-      script.onload = function() {
-        new TradingView.widget({
-          "autosize": true,
-          "symbol": "OANDA:SPX500USD",
-          "interval": "15",
-          "timezone": "America/New_York",
-          "theme": "dark",
-          "style": "1",
-          "locale": "en",
-          "toolbar_bg": "#121417",
-          "enable_publishing": false,
-          "hide_top_toolbar": false,
-          "hide_legend": true,
-          "save_image": false,
-          "container_id": "tradingview_spx",
-          "backgroundColor": "#0f1115",
-          "gridColor": "#20242a"
-        });
-      };
-      document.head.appendChild(script);
+    // Fetch SPX 3-minute candles from TradeStation API
+    async function fetchSPXCandles() {
+      const r = await fetch('/api/spx_candles?bars=60', { cache: 'no-store' });
+      return await r.json();
     }
 
-    // Compute shared Y range from strikes
+    // Compute shared Y range from strikes (used by all charts)
     function computeStrikeRange(strikes) {
       if (!strikes || !strikes.length) return null;
       let yMin = Math.min(...strikes);
@@ -1529,11 +1527,67 @@ DASH_HTML_TEMPLATE = """
       };
     }
 
+    // Render SPX candlestick chart (Y-axis = price aligned with strikes)
+    function renderUnifiedSPX(candleData, yRange) {
+      if (!candleData || candleData.error || !candleData.candles || !candleData.candles.length) {
+        Plotly.react(unifiedSpxDiv, [], {
+          paper_bgcolor: '#121417', plot_bgcolor: '#0f1115',
+          margin: { l: 8, r: 50, t: 4, b: 24 },
+          annotations: [{ text: candleData?.error || 'Loading candles...', x: 0.5, y: 0.5, xref: 'paper', yref: 'paper', showarrow: false, font: { color: '#e6e7e9' } }],
+          font: { color: '#e6e7e9' }
+        }, { displayModeBar: false, responsive: true });
+        return;
+      }
+
+      const candles = candleData.candles;
+      const times = candles.map(c => c.time);
+      const opens = candles.map(c => c.open);
+      const highs = candles.map(c => c.high);
+      const lows = candles.map(c => c.low);
+      const closes = candles.map(c => c.close);
+
+      const trace = {
+        type: 'candlestick',
+        x: times,
+        open: opens,
+        high: highs,
+        low: lows,
+        close: closes,
+        increasing: { line: { color: '#22c55e' }, fillcolor: '#22c55e' },
+        decreasing: { line: { color: '#ef4444' }, fillcolor: '#ef4444' },
+        hoverinfo: 'x+y',
+      };
+
+      Plotly.react(unifiedSpxDiv, [trace], {
+        margin: { l: 8, r: 50, t: 4, b: 24 },
+        paper_bgcolor: '#121417',
+        plot_bgcolor: '#0f1115',
+        xaxis: {
+          title: '',
+          gridcolor: '#20242a',
+          tickfont: { size: 9 },
+          rangeslider: { visible: false },
+          type: 'category',
+          nticks: 6,
+          tickformat: '%H:%M'
+        },
+        yaxis: {
+          title: '',
+          side: 'right',
+          range: [yRange.min, yRange.max],
+          gridcolor: '#20242a',
+          tickfont: { size: 9 },
+          dtick: 5
+        },
+        font: { color: '#e6e7e9', size: 10 },
+        showlegend: false
+      }, { displayModeBar: false, responsive: true });
+    }
+
     // Render Net GEX horizontal bar chart
     function renderUnifiedGex(strikes, netGEX, yRange, spot) {
       if (!strikes.length) return;
 
-      // Color bars: green for positive, red for negative
       const colors = netGEX.map(v => v >= 0 ? '#22c55e' : '#ef4444');
       const gMax = Math.max(1, ...netGEX.map(v => Math.abs(v))) * 1.1;
 
@@ -1574,10 +1628,9 @@ DASH_HTML_TEMPLATE = """
       }
 
       const pts = vannaData.points;
-      const strikes = pts.map(p => p.strike);
+      const charmStrikes = pts.map(p => p.strike);
       const vanna = pts.map(p => p.vanna);
 
-      // Color bars: green for positive, red for negative
       const colors = vanna.map(v => v >= 0 ? '#22c55e' : '#ef4444');
       const vMax = Math.max(1, ...vanna.map(v => Math.abs(v))) * 1.1;
 
@@ -1589,7 +1642,7 @@ DASH_HTML_TEMPLATE = """
         type: 'bar',
         orientation: 'h',
         x: vanna,
-        y: strikes,
+        y: charmStrikes,
         marker: { color: colors },
         hovertemplate: 'Strike %{y}<br>Charm %{x:,.0f}<extra></extra>'
       };
@@ -1605,11 +1658,10 @@ DASH_HTML_TEMPLATE = """
       }, { displayModeBar: false, responsive: true });
     }
 
-    // Render Volume horizontal bar chart (mirrored: puts go left, calls go right)
+    // Render Volume horizontal bar chart (mirrored: puts left, calls right)
     function renderUnifiedVolume(strikes, callVol, putVol, yRange, spot) {
       if (!strikes.length) return;
 
-      // Negate puts so they go left (negative x), calls stay positive (right)
       const putsNegative = putVol.map(v => -v);
       const vMax = Math.max(1, ...callVol, ...putVol) * 1.1;
 
@@ -1651,7 +1703,7 @@ DASH_HTML_TEMPLATE = """
       }, { displayModeBar: false, responsive: true });
     }
 
-    // Main tick function for unified view
+    // Main tick function for exposure view
     async function tickUnified() {
       try {
         // Fetch series data (strikes, GEX, volume, spot)
@@ -1669,18 +1721,22 @@ DASH_HTML_TEMPLATE = """
         // Render Volume
         renderUnifiedVolume(strikes, data.callVol || [], data.putVol || [], yRange, spot);
 
-        // Fetch and render Charm (vanna_window) - async, non-blocking
+        // Fetch SPX candles and render (async)
+        fetchSPXCandles()
+          .then(candleData => renderUnifiedSPX(candleData, yRange))
+          .catch(err => renderUnifiedSPX({ error: String(err) }, yRange));
+
+        // Fetch and render Charm (vanna_window) - async
         fetchVannaWindow()
           .then(vannaData => renderUnifiedCharm(vannaData, yRange, spot))
           .catch(err => renderUnifiedCharm({ error: String(err) }, yRange, spot));
 
       } catch (err) {
-        console.error('Unified view error:', err);
+        console.error('Exposure view error:', err);
       }
     }
 
     function startSpot() {
-      initTradingView();
       tickUnified();
       if (unifiedTimer) clearInterval(unifiedTimer);
       unifiedTimer = setInterval(tickUnified, PULL_EVERY);

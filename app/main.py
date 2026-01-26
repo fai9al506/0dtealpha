@@ -1,6 +1,6 @@
 # 0DTE Alpha – live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
 from fastapi import FastAPI, Response, Query, Request, Cookie, Form
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from datetime import datetime, time as dtime
 import os, time, json, re, requests, pandas as pd, pytz, secrets
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -171,7 +171,7 @@ app = FastAPI()
 NY = pytz.timezone("US/Eastern")
 
 # Public paths that don't require authentication
-PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health"}
+PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png"}
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
@@ -2263,6 +2263,7 @@ LOGIN_HTML_TEMPLATE = """
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>0DTE Alpha - Login</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
   <style>
     :root {
       --bg:#0b0c10; --panel:#121417; --muted:#8a8f98; --text:#e6e7e9; --border:#23262b;
@@ -2394,6 +2395,7 @@ REQUEST_ACCESS_HTML = """
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>0DTE Alpha - Request Access</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
   <style>
     :root {
       --bg:#0b0c10; --panel:#121417; --muted:#8a8f98; --text:#e6e7e9; --border:#23262b;
@@ -2534,6 +2536,7 @@ DASH_HTML_TEMPLATE = """
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>SPXW 0DTE - Dashboard</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <style>
     :root {
@@ -4940,6 +4943,16 @@ def logout():
     response = RedirectResponse(url="/", status_code=302)
     response.delete_cookie("session")
     return response
+
+@app.get("/favicon.ico")
+@app.get("/favicon.png")
+def favicon():
+    """Serve favicon."""
+    import pathlib
+    favicon_path = pathlib.Path(__file__).parent.parent / "0dte-alpha-favicon.png"
+    if favicon_path.exists():
+        return FileResponse(favicon_path, media_type="image/png")
+    return Response(status_code=404)
 
 @app.get("/request-access", response_class=HTMLResponse)
 def request_access_page():

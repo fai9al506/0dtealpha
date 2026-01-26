@@ -2031,13 +2031,30 @@ def api_alerts_settings_post(
 def api_alerts_test():
     """Send a test alert to verify Telegram configuration."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return {"status": "error", "message": "Telegram not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID."}
+        return {
+            "status": "error",
+            "message": "Telegram not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID.",
+            "token_set": bool(TELEGRAM_BOT_TOKEN),
+            "chat_id_set": bool(TELEGRAM_CHAT_ID)
+        }
 
     success = send_telegram("🧪 <b>Test Alert</b>\n\nYour 0DTE Alpha alerts are working!")
     if success:
         return {"status": "ok", "message": "Test alert sent successfully!"}
     else:
         return {"status": "error", "message": "Failed to send test alert. Check your token and chat ID."}
+
+@app.get("/api/alerts/status")
+def api_alerts_status():
+    """Check Telegram configuration status (for debugging)."""
+    return {
+        "telegram_configured": bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID),
+        "token_set": bool(TELEGRAM_BOT_TOKEN),
+        "token_preview": TELEGRAM_BOT_TOKEN[:10] + "..." if TELEGRAM_BOT_TOKEN else None,
+        "chat_id_set": bool(TELEGRAM_CHAT_ID),
+        "chat_id_preview": TELEGRAM_CHAT_ID[:5] + "..." if TELEGRAM_CHAT_ID else None,
+        "settings": _alert_settings
+    }
 
 @app.get("/api/data_freshness")
 def api_data_freshness():

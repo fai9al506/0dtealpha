@@ -1337,9 +1337,9 @@ def api_playback_status():
         return {"error": str(e)}
 
 @app.get("/api/playback/range")
-def api_playback_range(start_date: str = Query(None, description="Start date YYYY-MM-DD, default 3 days ago"), load_all: bool = Query(False, description="Load all data ignoring date filter")):
+def api_playback_range(start_date: str = Query(None, description="Start date YYYY-MM-DD, default 7 days ago"), load_all: bool = Query(False, description="Load all data ignoring date filter")):
     """
-    Get 3 days of playback snapshots starting from start_date.
+    Get 7 days of playback snapshots starting from start_date.
     Returns timestamps, spot prices, and per-snapshot data for visualization.
     Use load_all=true to get all data regardless of date (for debugging).
     """
@@ -1359,12 +1359,12 @@ def api_playback_range(start_date: str = Query(None, description="Start date YYY
                 start_dt = None
                 end_dt = None
             else:
-                # Load from start_date (or 3 days ago) until now
+                # Load from start_date (or 7 days ago) until now
                 if start_date:
                     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
                     start_dt = NY.localize(start_dt.replace(hour=0, minute=0, second=0))
                 else:
-                    start_dt = now_et().replace(hour=0, minute=0, second=0, microsecond=0) - pd.Timedelta(days=3)
+                    start_dt = now_et().replace(hour=0, minute=0, second=0, microsecond=0) - pd.Timedelta(days=7)
 
                 # Always end at current time + buffer to include latest data
                 end_dt = now_et() + pd.Timedelta(hours=1)
@@ -1424,7 +1424,7 @@ def api_export_playback(start_date: str = Query(None, description="Start date YY
                     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
                     start_dt = NY.localize(start_dt.replace(hour=0, minute=0, second=0))
                 else:
-                    start_dt = now_et().replace(hour=0, minute=0, second=0, microsecond=0) - pd.Timedelta(days=3)
+                    start_dt = now_et().replace(hour=0, minute=0, second=0, microsecond=0) - pd.Timedelta(days=7)
 
                 end_dt = now_et() + pd.Timedelta(hours=1)
 
@@ -1505,7 +1505,7 @@ def api_export_playback_summary(start_date: str = Query(None, description="Start
                     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
                     start_dt = NY.localize(start_dt.replace(hour=0, minute=0, second=0))
                 else:
-                    start_dt = now_et().replace(hour=0, minute=0, second=0, microsecond=0) - pd.Timedelta(days=3)
+                    start_dt = now_et().replace(hour=0, minute=0, second=0, microsecond=0) - pd.Timedelta(days=7)
 
                 end_dt = now_et() + pd.Timedelta(hours=1)
 
@@ -2038,7 +2038,7 @@ DASH_HTML_TEMPLATE = """
           <div style="display:flex;gap:10px;align-items:center">
             <label style="font-size:11px;color:var(--muted)">Start Date:</label>
             <input type="date" id="playbackDate" style="background:#0f1115;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px">
-            <button id="playbackLoad" class="strike-btn" style="padding:4px 12px">Load 3 Days</button>
+            <button id="playbackLoad" class="strike-btn" style="padding:4px 12px">Load 7 Days</button>
             <button id="playbackExportFull" class="strike-btn" style="padding:4px 12px">Export Full CSV</button>
             <button id="playbackExportSummary" class="strike-btn" style="padding:4px 12px">Export Summary CSV</button>
             <div style="display:flex;gap:4px;margin-left:10px;background:#1a1d21;border-radius:6px;padding:2px">
@@ -2055,7 +2055,7 @@ DASH_HTML_TEMPLATE = """
           <!-- Full View (current layout) -->
           <div id="playbackFullView" class="playback-grid">
             <div class="playback-card playback-price-card">
-              <h3>SPX Price (3 Days)</h3>
+              <h3>SPX Price (7 Days)</h3>
               <div id="playbackPricePlot" class="playback-plot"></div>
             </div>
             <div class="playback-card">
@@ -3001,9 +3001,9 @@ DASH_HTML_TEMPLATE = """
       if (playbackInitialized) return;
       playbackInitialized = true;
 
-      // Default date: 3 days ago
+      // Default date: 7 days ago
       const defaultDate = new Date();
-      defaultDate.setDate(defaultDate.getDate() - 3);
+      defaultDate.setDate(defaultDate.getDate() - 7);
       playbackDateInput.value = defaultDate.toISOString().split('T')[0];
 
       playbackLoadBtn.addEventListener('click', loadPlaybackData);

@@ -2517,27 +2517,49 @@ DASH_HTML_TEMPLATE = """
     function drawPlaybackPriceChart() {
       if (!playbackData || !playbackData.snapshots.length) return;
 
-      const times = playbackData.snapshots.map(s => s.ts);
-      const spots = playbackData.snapshots.map(s => s.spot);
+      const snaps = playbackData.snapshots;
+      const times = [];
+      const opens = [];
+      const highs = [];
+      const lows = [];
+      const closes = [];
+
+      // Create candlesticks from consecutive spot prices
+      for (let i = 0; i < snaps.length; i++) {
+        const curr = snaps[i].spot;
+        const prev = i > 0 ? snaps[i - 1].spot : curr;
+
+        // Format time for display
+        const t = new Date(snaps[i].ts);
+        times.push(t.toLocaleTimeString('en-US', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }));
+
+        opens.push(prev);
+        closes.push(curr);
+        highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1); // Small wick
+        lows.push(Math.min(prev, curr) - Math.abs(curr - prev) * 0.1);  // Small wick
+      }
 
       const trace = {
-        type: 'scatter',
-        mode: 'lines',
+        type: 'candlestick',
         x: times,
-        y: spots,
-        line: { color: '#60a5fa', width: 2 },
-        hovertemplate: '%{x}<br>SPX: %{y:.2f}<extra></extra>'
+        open: opens,
+        high: highs,
+        low: lows,
+        close: closes,
+        increasing: { line: { color: '#22c55e' }, fillcolor: '#22c55e' },
+        decreasing: { line: { color: '#ef4444' }, fillcolor: '#ef4444' },
+        hoverinfo: 'x+y'
       };
 
       Plotly.react(playbackPricePlot, [trace], {
         margin: { l: 50, r: 8, t: 4, b: 30 },
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',
-        xaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, tickformat: '%m/%d %H:%M' },
+        xaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, type: 'category', nticks: 10, tickangle: -45, rangeslider: { visible: false } },
         yaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, side: 'left' },
         font: { color: '#e6e7e9', size: 10 },
         shapes: [] // Will add marker line in updatePlaybackSnapshot
-      }, { displayModeBar: false, responsive: true });
+      }, { displayModeBar: false, responsive: true, scrollZoom: true });
     }
 
     function updatePlaybackSnapshot(idx) {

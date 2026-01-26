@@ -2525,12 +2525,18 @@ DASH_HTML_TEMPLATE = """
       const closes = [];
 
       // Create candlesticks from consecutive spot prices
+      // Use formatted labels as categories to eliminate time gaps
       for (let i = 0; i < snaps.length; i++) {
         const curr = snaps[i].spot;
         const prev = i > 0 ? snaps[i - 1].spot : curr;
 
-        // Use actual ISO timestamp for date axis
-        times.push(snaps[i].ts);
+        // Format timestamp as category label (MM/DD HH:MM)
+        const d = new Date(snaps[i].ts);
+        const label = (d.getMonth()+1).toString().padStart(2,'0') + '/' +
+                      d.getDate().toString().padStart(2,'0') + ' ' +
+                      d.getHours().toString().padStart(2,'0') + ':' +
+                      d.getMinutes().toString().padStart(2,'0');
+        times.push(label);
 
         opens.push(prev);
         closes.push(curr);
@@ -2555,17 +2561,12 @@ DASH_HTML_TEMPLATE = """
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',
         xaxis: {
-          type: 'date',
+          type: 'category',
           gridcolor: '#20242a',
           tickfont: { size: 8 },
-          tickformat: '%m/%d %H:%M',
           tickangle: -45,
-          rangeslider: { visible: false },
           fixedrange: false,
-          rangebreaks: [
-            { bounds: ['sat', 'mon'] },  // Hide weekends
-            { bounds: [16, 9.5], pattern: 'hour' }  // Hide non-market hours (4pm to 9:30am)
-          ]
+          nticks: 20  // Limit number of tick labels to avoid clutter
         },
         yaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, side: 'left', fixedrange: false },
         font: { color: '#e6e7e9', size: 10 },

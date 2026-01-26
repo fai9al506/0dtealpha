@@ -1,12 +1,14 @@
 # 0DTE Alpha – live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
-from fastapi import FastAPI, Response, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Response, Query, Request, Cookie, Form
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from datetime import datetime, time as dtime
-import os, time, json, re, requests, pandas as pd, pytz
+import os, time, json, re, requests, pandas as pd, pytz, secrets
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
 from threading import Lock
 from typing import Any, Optional
+from passlib.hash import bcrypt
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 # ====== CONFIG ======
 USE_LIVE = True
@@ -119,9 +121,77 @@ def record_alert(alert_type: str):
     """Record that an alert was sent."""
     _alert_state["last_alert_times"][alert_type] = time.time()
 
+# ====== AUTHENTICATION ======
+SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_hex(32))
+SESSION_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
+_serializer = URLSafeTimedSerializer(SECRET_KEY)
+
+def hash_password(password: str) -> str:
+    return bcrypt.hash(password)
+
+def verify_password(password: str, hashed: str) -> bool:
+    try:
+        return bcrypt.verify(password, hashed)
+    except Exception:
+        return False
+
+def create_session(user_id: int) -> str:
+    return _serializer.dumps({"user_id": user_id})
+
+def verify_session(token: str) -> Optional[int]:
+    if not token:
+        return None
+    try:
+        data = _serializer.loads(token, max_age=SESSION_MAX_AGE)
+        return data.get("user_id")
+    except (BadSignature, SignatureExpired):
+        return None
+
+def get_current_user(session: str = None) -> Optional[dict]:
+    """Get the current logged-in user from session token."""
+    if not session:
+        return None
+    user_id = verify_session(session)
+    if not user_id or not engine:
+        return None
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT id, email, is_admin FROM users WHERE id = :id"),
+                {"id": user_id}
+            ).mappings().first()
+            if row:
+                return {"id": row["id"], "email": row["email"], "is_admin": row["is_admin"]}
+    except Exception:
+        pass
+    return None
+
 # ====== APP ======
 app = FastAPI()
 NY = pytz.timezone("US/Eastern")
+
+# Public paths that don't require authentication
+PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health"}
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Middleware to check authentication for protected routes."""
+    path = request.url.path
+
+    # Allow public paths
+    if path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    # Check session cookie
+    session = request.cookies.get("session")
+    if not session or not verify_session(session):
+        # For API requests, return JSON error
+        if path.startswith("/api/"):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        # For page requests, redirect to login
+        return RedirectResponse(url="/", status_code=302)
+
+    return await call_next(request)
 
 latest_df: pd.DataFrame | None = None
 last_run_status = {"ts": None, "ok": False, "msg": "boot"}
@@ -205,6 +275,41 @@ def db_init():
         );
         INSERT INTO alert_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
         """))
+
+        # Users table for authentication
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS users (
+            id BIGSERIAL PRIMARY KEY,
+            email VARCHAR(255) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            is_admin BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS ix_users_email ON users (email);
+        """))
+
+        # Contact messages table for access requests
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS contact_messages (
+            id BIGSERIAL PRIMARY KEY,
+            email VARCHAR(255) NOT NULL,
+            subject VARCHAR(500),
+            message TEXT,
+            is_read BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS ix_contact_messages_created ON contact_messages (created_at DESC);
+        """))
+
+        # Create default admin user if no users exist
+        existing = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
+        if existing == 0:
+            admin_hash = hash_password("Mpc1234@@20")
+            conn.execute(text("""
+                INSERT INTO users (email, password_hash, is_admin)
+                VALUES (:email, :hash, TRUE)
+            """), {"email": "faisal.a.d@msn.com", "hash": admin_hash})
+            print("[db] created default admin user", flush=True)
 
     # Load alert settings from database
     load_alert_settings()
@@ -2151,6 +2256,277 @@ TABLE_HTML_TEMPLATE = """
 </body></html>
 """
 
+LOGIN_HTML_TEMPLATE = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>0DTE Alpha - Login</title>
+  <style>
+    :root {
+      --bg:#0b0c10; --panel:#121417; --muted:#8a8f98; --text:#e6e7e9; --border:#23262b;
+      --green:#22c55e; --red:#ef4444; --blue:#60a5fa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin:0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      font-size: 14px;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      width: 100%;
+      max-width: 380px;
+    }
+    .brand {
+      font-size: 24px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 24px;
+      font-size: 13px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+    }
+    .form-group input:focus {
+      outline: none;
+      border-color: var(--blue);
+    }
+    .btn-login {
+      width: 100%;
+      padding: 12px;
+      background: var(--green);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .btn-login:hover {
+      opacity: 0.9;
+    }
+    .error {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid var(--red);
+      color: var(--red);
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      text-align: center;
+    }
+    .request-link {
+      text-align: center;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+    .request-link a {
+      color: var(--blue);
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .request-link a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <div class="brand">0DTE Alpha</div>
+    <div class="subtitle">Real-time SPX Options Dashboard</div>
+    __ERROR__
+    <form method="POST" action="/login">
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" name="email" required autofocus placeholder="your@email.com">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" name="password" required placeholder="Enter password">
+      </div>
+      <button type="submit" class="btn-login">Sign In</button>
+    </form>
+    <div class="request-link">
+      <a href="/request-access">Request Access</a>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
+REQUEST_ACCESS_HTML = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>0DTE Alpha - Request Access</title>
+  <style>
+    :root {
+      --bg:#0b0c10; --panel:#121417; --muted:#8a8f98; --text:#e6e7e9; --border:#23262b;
+      --green:#22c55e; --red:#ef4444; --blue:#60a5fa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin:0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      font-size: 14px;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .request-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      width: 100%;
+      max-width: 420px;
+    }
+    .brand {
+      font-size: 24px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 24px;
+      font-size: 13px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .form-group input, .form-group textarea {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .form-group textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+    .form-group input:focus, .form-group textarea:focus {
+      outline: none;
+      border-color: var(--blue);
+    }
+    .btn-submit {
+      width: 100%;
+      padding: 12px;
+      background: var(--blue);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .btn-submit:hover {
+      opacity: 0.9;
+    }
+    .success {
+      background: rgba(34,197,94,0.1);
+      border: 1px solid var(--green);
+      color: var(--green);
+      padding: 14px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      text-align: center;
+    }
+    .back-link {
+      text-align: center;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+    .back-link a {
+      color: var(--blue);
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .back-link a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="request-box">
+    <div class="brand">Request Access</div>
+    <div class="subtitle">Send a message to request access to 0DTE Alpha</div>
+    __MESSAGE__
+    <form method="POST" action="/request-access">
+      <div class="form-group">
+        <label>Your Email</label>
+        <input type="email" name="email" required placeholder="your@email.com">
+      </div>
+      <div class="form-group">
+        <label>Subject</label>
+        <input type="text" name="subject" required placeholder="Access request">
+      </div>
+      <div class="form-group">
+        <label>Message</label>
+        <textarea name="message" required placeholder="Tell us why you'd like access..."></textarea>
+      </div>
+      <button type="submit" class="btn-submit">Send Request</button>
+    </form>
+    <div class="back-link">
+      <a href="/">Back to Login</a>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
 DASH_HTML_TEMPLATE = """
 <!doctype html>
 <html>
@@ -2428,6 +2804,24 @@ DASH_HTML_TEMPLATE = """
     .modal-close:hover { color:var(--text); }
     .modal-body { padding:20px; font-size:13px; }
     .modal-footer { display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-top:1px solid var(--border); }
+    /* Settings Tabs */
+    .settings-tab { background:none; border:none; color:var(--muted); padding:12px 16px; cursor:pointer; font-size:13px; border-bottom:2px solid transparent; margin-bottom:-1px; }
+    .settings-tab:hover { color:var(--text); }
+    .settings-tab.active { color:var(--text); border-bottom-color:var(--blue); }
+    .settings-panel { display:none; }
+    .settings-panel.active { display:block; }
+    .user-row, .message-row { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:var(--bg); border-radius:6px; margin-bottom:8px; }
+    .user-row .email { font-size:13px; }
+    .user-row .badge { font-size:10px; background:var(--blue); padding:2px 6px; border-radius:4px; margin-left:8px; }
+    .message-row { flex-direction:column; align-items:flex-start; }
+    .message-row .msg-header { display:flex; justify-content:space-between; width:100%; margin-bottom:6px; }
+    .message-row .msg-subject { font-weight:600; }
+    .message-row .msg-email { color:var(--muted); font-size:11px; }
+    .message-row .msg-body { font-size:12px; color:var(--muted); margin-bottom:8px; }
+    .message-row .msg-date { font-size:10px; color:var(--muted); }
+    .message-row.unread { border-left:3px solid var(--blue); }
+    .delete-btn { background:none; border:none; color:var(--red); cursor:pointer; font-size:11px; padding:4px 8px; }
+    .delete-btn:hover { text-decoration:underline; }
   </style>
 </head>
 <body>
@@ -2435,6 +2829,10 @@ DASH_HTML_TEMPLATE = """
     <aside class="sidebar">
       <div class="brand">SPXW 0DTE</div>
       <div class="small">Live chain + charts</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding:6px 8px;background:#0f1216;border-radius:6px;border:1px solid var(--border)">
+        <span style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px" title="__USER_EMAIL__">__USER_EMAIL__</span>
+        <a href="/logout" style="font-size:10px;color:var(--red);text-decoration:none">Logout</a>
+      </div>
       <div class="status">
         <span class="dot"></span>
         <div>
@@ -2460,68 +2858,105 @@ DASH_HTML_TEMPLATE = """
       </div>
     </aside>
 
-    <!-- Alert Settings Modal -->
+    <!-- Settings Modal -->
     <div id="alertModal" class="modal" style="display:none">
-      <div class="modal-content">
+      <div class="modal-content" style="max-width:600px">
         <div class="modal-header">
-          <h3>🔔 Alert Settings</h3>
+          <h3>Settings</h3>
           <button id="alertModalClose" class="modal-close">&times;</button>
         </div>
-        <div class="modal-body">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
-            <label class="toggle-switch">
-              <input type="checkbox" id="alertMasterToggle" checked>
-              <span class="toggle-slider"></span>
-            </label>
-            <span style="font-weight:600">Alerts Enabled</span>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-            <div>
-              <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Price Alerts</div>
-              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertLIS" checked> LIS (Lines in Sand)</label>
-              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertTarget" checked> Target</label>
-              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertPosGamma" checked> Max +Gamma</label>
-              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertNegGamma" checked> Max -Gamma</label>
-            </div>
-            <div>
-              <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Other Alerts</div>
-              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertParadigm" checked> Paradigm Change</label>
-              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertVolSpike" checked> Volume Spike</label>
-              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alert10am" checked> 10 AM Summary</label>
-              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alert2pm" checked> 2 PM Summary</label>
-            </div>
-          </div>
-          <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-            <div>
-              <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Thresholds</div>
-              <div style="display:flex;align-items:center;gap:6px;margin:8px 0">
-                <span>Distance:</span>
-                <input type="number" id="alertThresholdPts" value="5" min="1" max="20" style="width:50px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px">
-                <span>points</span>
-              </div>
-              <div style="display:flex;align-items:center;gap:6px;margin:8px 0">
-                <span>Vol Spike:</span>
-                <input type="number" id="alertThresholdVol" value="500" min="100" max="5000" step="100" style="width:60px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px">
-                <span>contracts</span>
-              </div>
-            </div>
-            <div>
-              <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Cooldown</div>
-              <label style="display:flex;align-items:center;gap:6px;margin:8px 0">
-                <input type="checkbox" id="alertCooldown" checked>
-                <span>Enable cooldown:</span>
-                <input type="number" id="alertCooldownMin" value="10" min="1" max="60" style="width:50px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px">
-                <span>min</span>
+        <!-- Tabs -->
+        <div style="display:flex;border-bottom:1px solid var(--border);padding:0 16px">
+          <button class="settings-tab active" data-tab="alerts">Alerts</button>
+          <button class="settings-tab" data-tab="users">Users</button>
+          <button class="settings-tab" data-tab="messages">Messages</button>
+        </div>
+        <!-- Alerts Tab -->
+        <div class="settings-panel" id="tabPanelAlerts">
+          <div class="modal-body">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+              <label class="toggle-switch">
+                <input type="checkbox" id="alertMasterToggle" checked>
+                <span class="toggle-slider"></span>
               </label>
+              <span style="font-weight:600">Alerts Enabled</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+              <div>
+                <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Price Alerts</div>
+                <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertLIS" checked> LIS (Lines in Sand)</label>
+                <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertTarget" checked> Target</label>
+                <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertPosGamma" checked> Max +Gamma</label>
+                <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertNegGamma" checked> Max -Gamma</label>
+              </div>
+              <div>
+                <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Other Alerts</div>
+                <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertParadigm" checked> Paradigm Change</label>
+                <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertVolSpike" checked> Volume Spike</label>
+                <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alert10am" checked> 10 AM Summary</label>
+                <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alert2pm" checked> 2 PM Summary</label>
+              </div>
+            </div>
+            <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+              <div>
+                <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Thresholds</div>
+                <div style="display:flex;align-items:center;gap:6px;margin:8px 0">
+                  <span>Distance:</span>
+                  <input type="number" id="alertThresholdPts" value="5" min="1" max="20" style="width:50px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px">
+                  <span>points</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;margin:8px 0">
+                  <span>Vol Spike:</span>
+                  <input type="number" id="alertThresholdVol" value="500" min="100" max="5000" step="100" style="width:60px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px">
+                  <span>contracts</span>
+                </div>
+              </div>
+              <div>
+                <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Cooldown</div>
+                <label style="display:flex;align-items:center;gap:6px;margin:8px 0">
+                  <input type="checkbox" id="alertCooldown" checked>
+                  <span>Enable cooldown:</span>
+                  <input type="number" id="alertCooldownMin" value="10" min="1" max="60" style="width:50px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px">
+                  <span>min</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <div id="alertStatus" style="color:var(--muted);font-size:11px"></div>
+            <div style="display:flex;gap:8px">
+              <button id="alertTestBtn" class="strike-btn" style="padding:6px 16px">Test Alert</button>
+              <button id="alertSaveBtn" class="strike-btn" style="padding:6px 16px;background:#22c55e;border-color:#22c55e">Save</button>
             </div>
           </div>
         </div>
-        <div class="modal-footer">
-          <div id="alertStatus" style="color:var(--muted);font-size:11px"></div>
-          <div style="display:flex;gap:8px">
-            <button id="alertTestBtn" class="strike-btn" style="padding:6px 16px">Test Alert</button>
-            <button id="alertSaveBtn" class="strike-btn" style="padding:6px 16px;background:#22c55e;border-color:#22c55e">Save</button>
+        <!-- Users Tab (Admin Only) -->
+        <div class="settings-panel" id="tabPanelUsers" style="display:none">
+          <div class="modal-body">
+            <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+              <div style="color:var(--muted);margin-bottom:12px;font-weight:600">Add New User</div>
+              <div style="display:flex;gap:8px;align-items:flex-end">
+                <div style="flex:1">
+                  <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Email</label>
+                  <input type="email" id="newUserEmail" placeholder="user@email.com" style="width:100%;padding:8px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text)">
+                </div>
+                <div style="flex:1">
+                  <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Password</label>
+                  <input type="text" id="newUserPassword" placeholder="password" style="width:100%;padding:8px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text)">
+                </div>
+                <button id="addUserBtn" class="strike-btn" style="padding:8px 16px;background:#22c55e;border-color:#22c55e">Add</button>
+              </div>
+            </div>
+            <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Current Users</div>
+            <div id="usersList" style="max-height:200px;overflow-y:auto"></div>
+          </div>
+        </div>
+        <!-- Messages Tab (Admin Only) -->
+        <div class="settings-panel" id="tabPanelMessages" style="display:none">
+          <div class="modal-body">
+            <div style="color:var(--muted);margin-bottom:12px;font-weight:600">Access Requests</div>
+            <div id="messagesList" style="max-height:300px;overflow-y:auto"></div>
           </div>
         </div>
       </div>
@@ -4122,7 +4557,8 @@ DASH_HTML_TEMPLATE = """
       playbackSummaryStats.innerHTML = html;
     }
 
-    // ===== Alert Settings =====
+    // ===== Settings Modal =====
+    const isAdmin = __IS_ADMIN__;
     const alertModal = document.getElementById('alertModal');
     const alertSettingsBtn = document.getElementById('alertSettingsBtn');
     const alertModalClose = document.getElementById('alertModalClose');
@@ -4142,6 +4578,36 @@ DASH_HTML_TEMPLATE = """
     const alertTestBtn = document.getElementById('alertTestBtn');
     const alertSaveBtn = document.getElementById('alertSaveBtn');
     const alertStatus = document.getElementById('alertStatus');
+
+    // Settings tabs
+    const settingsTabs = document.querySelectorAll('.settings-tab');
+    const settingsPanels = document.querySelectorAll('.settings-panel');
+
+    // Show/hide admin tabs
+    settingsTabs.forEach(tab => {
+      if ((tab.dataset.tab === 'users' || tab.dataset.tab === 'messages') && !isAdmin) {
+        tab.style.display = 'none';
+      }
+    });
+
+    // Tab switching
+    settingsTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        settingsTabs.forEach(t => t.classList.remove('active'));
+        settingsPanels.forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        const panelId = 'tabPanel' + tab.dataset.tab.charAt(0).toUpperCase() + tab.dataset.tab.slice(1);
+        const panel = document.getElementById(panelId);
+        if (panel) panel.classList.add('active');
+
+        // Load data when switching tabs
+        if (tab.dataset.tab === 'users') loadUsers();
+        if (tab.dataset.tab === 'messages') loadMessages();
+      });
+    });
+
+    // Set first tab active
+    document.getElementById('tabPanelAlerts').classList.add('active');
 
     async function loadAlertSettings() {
       try {
@@ -4218,6 +4684,121 @@ DASH_HTML_TEMPLATE = """
       setTimeout(() => { alertStatus.textContent = ''; }, 3000);
     }
 
+    // ===== User Management (Admin) =====
+    async function loadUsers() {
+      const list = document.getElementById('usersList');
+      if (!list) return;
+      list.innerHTML = '<div style="color:var(--muted)">Loading...</div>';
+      try {
+        const r = await fetch('/api/users', { cache: 'no-store' });
+        const users = await r.json();
+        if (users.error) {
+          list.innerHTML = '<div style="color:var(--red)">' + users.error + '</div>';
+          return;
+        }
+        list.innerHTML = users.map(u => `
+          <div class="user-row">
+            <div>
+              <span class="email">${u.email}</span>
+              ${u.is_admin ? '<span class="badge">Admin</span>' : ''}
+            </div>
+            ${!u.is_admin ? '<button class="delete-btn" onclick="deleteUser('+u.id+')">Delete</button>' : ''}
+          </div>
+        `).join('');
+      } catch (err) {
+        list.innerHTML = '<div style="color:var(--red)">Error loading users</div>';
+      }
+    }
+
+    async function addUser() {
+      const emailInput = document.getElementById('newUserEmail');
+      const passInput = document.getElementById('newUserPassword');
+      const email = emailInput.value.trim();
+      const password = passInput.value;
+      if (!email || !password) {
+        alert('Please enter email and password');
+        return;
+      }
+      try {
+        const r = await fetch('/api/users?email=' + encodeURIComponent(email) + '&password=' + encodeURIComponent(password), { method: 'POST' });
+        const data = await r.json();
+        if (data.error) {
+          alert(data.error);
+        } else {
+          emailInput.value = '';
+          passInput.value = '';
+          loadUsers();
+        }
+      } catch (err) {
+        alert('Error adding user');
+      }
+    }
+
+    window.deleteUser = async function(id) {
+      if (!confirm('Delete this user?')) return;
+      try {
+        const r = await fetch('/api/users/' + id, { method: 'DELETE' });
+        const data = await r.json();
+        if (data.error) {
+          alert(data.error);
+        } else {
+          loadUsers();
+        }
+      } catch (err) {
+        alert('Error deleting user');
+      }
+    };
+
+    const addUserBtn = document.getElementById('addUserBtn');
+    if (addUserBtn) addUserBtn.addEventListener('click', addUser);
+
+    // ===== Messages Management (Admin) =====
+    async function loadMessages() {
+      const list = document.getElementById('messagesList');
+      if (!list) return;
+      list.innerHTML = '<div style="color:var(--muted)">Loading...</div>';
+      try {
+        const r = await fetch('/api/messages', { cache: 'no-store' });
+        const msgs = await r.json();
+        if (msgs.error) {
+          list.innerHTML = '<div style="color:var(--red)">' + msgs.error + '</div>';
+          return;
+        }
+        if (msgs.length === 0) {
+          list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">No messages</div>';
+          return;
+        }
+        list.innerHTML = msgs.map(m => `
+          <div class="message-row ${m.is_read ? '' : 'unread'}">
+            <div class="msg-header">
+              <span class="msg-subject">${m.subject || 'No subject'}</span>
+              <button class="delete-btn" onclick="deleteMessage(${m.id})">Delete</button>
+            </div>
+            <div class="msg-email">From: ${m.email}</div>
+            <div class="msg-body">${m.message || ''}</div>
+            <div class="msg-date">${new Date(m.created_at).toLocaleString()}</div>
+          </div>
+        `).join('');
+      } catch (err) {
+        list.innerHTML = '<div style="color:var(--red)">Error loading messages</div>';
+      }
+    }
+
+    window.deleteMessage = async function(id) {
+      if (!confirm('Delete this message?')) return;
+      try {
+        const r = await fetch('/api/messages/' + id, { method: 'DELETE' });
+        const data = await r.json();
+        if (data.error) {
+          alert(data.error);
+        } else {
+          loadMessages();
+        }
+      } catch (err) {
+        alert('Error deleting message');
+      }
+    };
+
     alertSaveBtn.addEventListener('click', saveAlertSettings);
     alertTestBtn.addEventListener('click', testAlert);
     alertMasterToggle.addEventListener('change', saveAlertSettings);
@@ -4239,7 +4820,12 @@ DASH_HTML_TEMPLATE = """
 
 # ====== TABLE ENDPOINT ======
 @app.get("/table")
-def html_table():
+def html_table(session: str = Cookie(default=None)):
+    # Require authentication
+    user = get_current_user(session)
+    if not user:
+        return HTMLResponse("<html><body style='background:#0b0c10;color:#e6e7e9;font-family:system-ui;padding:20px'>Please <a href='/' style='color:#60a5fa'>login</a> to view data.</body></html>")
+
     ts  = last_run_status.get("ts") or ""
     msg = last_run_status.get("msg") or ""
     parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
@@ -4305,9 +4891,226 @@ def html_table():
             .replace("__PULL_MS__", str(PULL_EVERY * 1000)))
     return Response(content=html, media_type="text/html")
 
-# ====== DASHBOARD ENDPOINT ======
+# ====== AUTHENTICATION ENDPOINTS ======
 @app.get("/", response_class=HTMLResponse)
-def spxw_dashboard():
+def root(request: Request, session: str = Cookie(default=None)):
+    """Show login page or redirect to dashboard if logged in."""
+    user = get_current_user(session)
+    if user:
+        return RedirectResponse(url="/dashboard", status_code=302)
+    html = LOGIN_HTML_TEMPLATE.replace("__ERROR__", "")
+    return HTMLResponse(html)
+
+@app.post("/login")
+def login(request: Request, email: str = Form(...), password: str = Form(...)):
+    """Handle login form submission."""
+    if not engine:
+        html = LOGIN_HTML_TEMPLATE.replace("__ERROR__", '<div class="error">Database not available</div>')
+        return HTMLResponse(html, status_code=500)
+
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT id, password_hash FROM users WHERE email = :email"),
+                {"email": email.lower().strip()}
+            ).mappings().first()
+
+            if row and verify_password(password, row["password_hash"]):
+                session_token = create_session(row["id"])
+                response = RedirectResponse(url="/dashboard", status_code=302)
+                response.set_cookie(
+                    key="session",
+                    value=session_token,
+                    max_age=SESSION_MAX_AGE,
+                    httponly=True,
+                    samesite="lax"
+                )
+                return response
+    except Exception as e:
+        print(f"[auth] login error: {e}", flush=True)
+
+    html = LOGIN_HTML_TEMPLATE.replace("__ERROR__", '<div class="error">Invalid email or password</div>')
+    return HTMLResponse(html, status_code=401)
+
+@app.get("/logout")
+def logout():
+    """Log out and redirect to login page."""
+    response = RedirectResponse(url="/", status_code=302)
+    response.delete_cookie("session")
+    return response
+
+@app.get("/request-access", response_class=HTMLResponse)
+def request_access_page():
+    """Show the request access form."""
+    html = REQUEST_ACCESS_HTML.replace("__MESSAGE__", "")
+    return HTMLResponse(html)
+
+@app.post("/request-access")
+def submit_access_request(email: str = Form(...), subject: str = Form(...), message: str = Form(...)):
+    """Handle access request form submission."""
+    if not engine:
+        html = REQUEST_ACCESS_HTML.replace("__MESSAGE__", '<div class="success">Unable to submit request. Please try again later.</div>')
+        return HTMLResponse(html, status_code=500)
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO contact_messages (email, subject, message)
+                VALUES (:email, :subject, :message)
+            """), {"email": email.strip(), "subject": subject.strip(), "message": message.strip()})
+
+        html = REQUEST_ACCESS_HTML.replace("__MESSAGE__", '<div class="success">Your request has been submitted. We\'ll get back to you soon!</div>')
+        return HTMLResponse(html)
+    except Exception as e:
+        print(f"[auth] request submission error: {e}", flush=True)
+        html = REQUEST_ACCESS_HTML.replace("__MESSAGE__", '<div class="success">Error submitting request. Please try again.</div>')
+        return HTMLResponse(html, status_code=500)
+
+# ====== USER MANAGEMENT API (Admin Only) ======
+@app.get("/api/users")
+def list_users(session: str = Cookie(default=None)):
+    """List all users (admin only)."""
+    user = get_current_user(session)
+    if not user or not user.get("is_admin"):
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
+
+    if not engine:
+        return JSONResponse({"error": "Database not available"}, status_code=500)
+
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text(
+                "SELECT id, email, is_admin, created_at FROM users ORDER BY created_at DESC"
+            )).mappings().all()
+            return [{
+                "id": r["id"],
+                "email": r["email"],
+                "is_admin": r["is_admin"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None
+            } for r in rows]
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.post("/api/users")
+def add_user(email: str = Query(...), password: str = Query(...), session: str = Cookie(default=None)):
+    """Add a new user (admin only)."""
+    user = get_current_user(session)
+    if not user or not user.get("is_admin"):
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
+
+    if not engine:
+        return JSONResponse({"error": "Database not available"}, status_code=500)
+
+    try:
+        with engine.begin() as conn:
+            # Check if user already exists
+            existing = conn.execute(
+                text("SELECT id FROM users WHERE email = :email"),
+                {"email": email.lower().strip()}
+            ).first()
+            if existing:
+                return JSONResponse({"error": "User already exists"}, status_code=400)
+
+            password_hash = hash_password(password)
+            conn.execute(text("""
+                INSERT INTO users (email, password_hash, is_admin)
+                VALUES (:email, :hash, FALSE)
+            """), {"email": email.lower().strip(), "hash": password_hash})
+
+        return {"status": "ok", "message": "User added successfully"}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: int, session: str = Cookie(default=None)):
+    """Delete a user (admin only)."""
+    user = get_current_user(session)
+    if not user or not user.get("is_admin"):
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
+
+    # Prevent self-deletion
+    if user["id"] == user_id:
+        return JSONResponse({"error": "Cannot delete your own account"}, status_code=400)
+
+    if not engine:
+        return JSONResponse({"error": "Database not available"}, status_code=500)
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
+        return {"status": "ok", "message": "User deleted"}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+# ====== CONTACT MESSAGES API (Admin Only) ======
+@app.get("/api/messages")
+def list_messages(session: str = Cookie(default=None)):
+    """List all contact messages (admin only)."""
+    user = get_current_user(session)
+    if not user or not user.get("is_admin"):
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
+
+    if not engine:
+        return JSONResponse({"error": "Database not available"}, status_code=500)
+
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text(
+                "SELECT id, email, subject, message, is_read, created_at FROM contact_messages ORDER BY created_at DESC"
+            )).mappings().all()
+            return [{
+                "id": r["id"],
+                "email": r["email"],
+                "subject": r["subject"],
+                "message": r["message"],
+                "is_read": r["is_read"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None
+            } for r in rows]
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.post("/api/messages/{msg_id}/read")
+def mark_message_read(msg_id: int, session: str = Cookie(default=None)):
+    """Mark a message as read (admin only)."""
+    user = get_current_user(session)
+    if not user or not user.get("is_admin"):
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
+
+    if not engine:
+        return JSONResponse({"error": "Database not available"}, status_code=500)
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE contact_messages SET is_read = TRUE WHERE id = :id"), {"id": msg_id})
+        return {"status": "ok"}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.delete("/api/messages/{msg_id}")
+def delete_message(msg_id: int, session: str = Cookie(default=None)):
+    """Delete a message (admin only)."""
+    user = get_current_user(session)
+    if not user or not user.get("is_admin"):
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
+
+    if not engine:
+        return JSONResponse({"error": "Database not available"}, status_code=500)
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM contact_messages WHERE id = :id"), {"id": msg_id})
+        return {"status": "ok"}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+# ====== DASHBOARD ENDPOINT ======
+@app.get("/dashboard", response_class=HTMLResponse)
+def spxw_dashboard(session: str = Cookie(default=None)):
+    # Check authentication
+    user = get_current_user(session)
+    if not user:
+        return RedirectResponse(url="/", status_code=302)
+
     open_now = market_open_now()
     status_text = "Market OPEN" if open_now else "Market CLOSED"
     status_color = "#10b981" if open_now else "#ef4444"
@@ -4320,5 +5123,7 @@ def spxw_dashboard():
             .replace("__STATUS_TEXT__", status_text)
             .replace("__LAST_TS__", str(last_ts))
             .replace("__LAST_MSG__", str(last_msg))
-            .replace("__PULL_MS__", str(PULL_EVERY * 1000)))
+            .replace("__PULL_MS__", str(PULL_EVERY * 1000))
+            .replace("__USER_EMAIL__", user["email"])
+            .replace("__IS_ADMIN__", "true" if user.get("is_admin") else "false"))
     return HTMLResponse(html)

@@ -1359,14 +1359,15 @@ def api_playback_range(start_date: str = Query(None, description="Start date YYY
                 start_dt = None
                 end_dt = None
             else:
-                # Default to 3 days ago if no date provided
+                # Default to 3 days ago until now
                 if start_date:
                     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
                     start_dt = NY.localize(start_dt.replace(hour=0, minute=0, second=0))
+                    end_dt = start_dt + pd.Timedelta(days=3)
                 else:
+                    # No date specified: load last 3 days until now
                     start_dt = now_et().replace(hour=0, minute=0, second=0, microsecond=0) - pd.Timedelta(days=3)
-
-                end_dt = start_dt + pd.Timedelta(days=3)
+                    end_dt = now_et() + pd.Timedelta(hours=1)  # Include current data + buffer
 
                 rows = conn.execute(text("""
                     SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
@@ -1422,10 +1423,10 @@ def api_export_playback(start_date: str = Query(None, description="Start date YY
                 if start_date:
                     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
                     start_dt = NY.localize(start_dt.replace(hour=0, minute=0, second=0))
+                    end_dt = start_dt + pd.Timedelta(days=3)
                 else:
                     start_dt = now_et().replace(hour=0, minute=0, second=0, microsecond=0) - pd.Timedelta(days=3)
-
-                end_dt = start_dt + pd.Timedelta(days=3)
+                    end_dt = now_et() + pd.Timedelta(hours=1)
 
                 rows = conn.execute(text("""
                     SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats

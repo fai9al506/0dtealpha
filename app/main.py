@@ -1156,18 +1156,21 @@ def api_playback_delete_mock():
     except Exception as e:
         return {"error": str(e)}
 
-@app.post("/api/playback/mark_existing_as_mock")
-def api_playback_mark_existing_as_mock():
-    """Mark all existing data with is_mock=NULL as mock data. Run once to fix legacy data."""
+@app.post("/api/playback/mark_as_mock_before")
+def api_playback_mark_as_mock_before(before_date: str = Query(..., description="Mark data before this date as mock (YYYY-MM-DD)")):
+    """Mark all data before a certain date as mock. Use to separate old mock data from new real data."""
     if not engine:
         return {"error": "DATABASE_URL not set"}
 
     try:
         with engine.begin() as conn:
-            result = conn.execute(text("UPDATE playback_snapshots SET is_mock = TRUE WHERE is_mock IS NULL"))
+            result = conn.execute(
+                text("UPDATE playback_snapshots SET is_mock = TRUE WHERE ts < :before_date"),
+                {"before_date": before_date}
+            )
             updated = result.rowcount
 
-        return {"success": True, "message": f"Marked {updated} snapshots as mock data", "updated_count": updated}
+        return {"success": True, "message": f"Marked {updated} snapshots before {before_date} as mock data", "updated_count": updated}
     except Exception as e:
         return {"error": str(e)}
 

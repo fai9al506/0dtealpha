@@ -2561,7 +2561,11 @@ DASH_HTML_TEMPLATE = """
           tickformat: '%m/%d %H:%M',
           tickangle: -45,
           rangeslider: { visible: false },
-          fixedrange: false
+          fixedrange: false,
+          rangebreaks: [
+            { bounds: ['sat', 'mon'] },  // Hide weekends
+            { bounds: [16, 9.5], pattern: 'hour' }  // Hide non-market hours (4pm to 9:30am)
+          ]
         },
         yaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, side: 'left', fixedrange: false },
         font: { color: '#e6e7e9', size: 10 },

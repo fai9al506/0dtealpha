@@ -81,6 +81,22 @@ def db_init():
         ON {VOLLAND_TABLE} ({VOLLAND_TS_COL} DESC);
         """))
 
+        # Playback snapshots table for historical visualization
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS playback_snapshots (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL,
+            spot DOUBLE PRECISION,
+            strikes JSONB NOT NULL,
+            net_gex JSONB NOT NULL,
+            charm JSONB,
+            call_vol JSONB NOT NULL,
+            put_vol JSONB NOT NULL,
+            stats JSONB
+        );
+        CREATE INDEX IF NOT EXISTS ix_playback_snapshots_ts ON playback_snapshots (ts DESC);
+        """))
+
     print("[db] ready", flush=True)
 
 def _json_load_maybe(v: Any) -> Any:
@@ -623,12 +639,106 @@ def save_history_job():
     except Exception as e:
         print("[save] failed:", e, flush=True)
 
+_last_playback_saved_at = 0.0
+
+def save_playback_snapshot():
+    """Save combined GEX/Charm/Volume/Stats snapshot for historical playback."""
+    global _last_playback_saved_at
+    if not engine:
+        return
+    if not market_open_now():
+        return
+    if time.time() - _last_playback_saved_at < 60:
+        return
+
+    try:
+        # Get current series data (GEX, Volume)
+        with _df_lock:
+            if latest_df is None or latest_df.empty:
+                return
+            df = latest_df.copy()
+
+        # Extract spot price
+        msg = last_run_status.get("msg") or ""
+        spot = None
+        try:
+            parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+            spot = float(parts.get("spot", ""))
+        except:
+            pass
+
+        if not spot:
+            return
+
+        # Calculate series data
+        sdf = df.sort_values("Strike")
+        strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float).tolist()
+        call_vol = pd.to_numeric(sdf["C_Volume"], errors="coerce").fillna(0.0).astype(float).tolist()
+        put_vol = pd.to_numeric(sdf["P_Volume"], errors="coerce").fillna(0.0).astype(float).tolist()
+        call_oi = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+        put_oi = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+        c_gamma = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+        p_gamma = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+        call_gex = (c_gamma * call_oi * 100.0).astype(float)
+        put_gex = (-p_gamma * put_oi * 100.0).astype(float)
+        net_gex = (call_gex + put_gex).astype(float).tolist()
+
+        # Get Charm data from Volland
+        charm_data = None
+        try:
+            vanna_window = db_volland_vanna_window(limit=40)
+            if vanna_window and vanna_window.get("points"):
+                # Create charm dict keyed by strike for alignment
+                charm_by_strike = {p["strike"]: p["vanna"] for p in vanna_window["points"]}
+                charm_data = [charm_by_strike.get(s, 0) for s in strikes]
+        except Exception as e:
+            print(f"[playback] charm fetch error: {e}", flush=True)
+
+        # Get Stats from Volland
+        stats_data = None
+        try:
+            stats_result = db_volland_stats()
+            if stats_result and stats_result.get("stats"):
+                s = stats_result["stats"]
+                stats_data = {
+                    "paradigm": s.get("paradigm"),
+                    "target": s.get("target"),
+                    "lis": s.get("lines_in_sand"),
+                    "dd_hedging": s.get("delta_decay_hedging"),
+                    "opt_volume": s.get("opt_volume"),
+                }
+        except Exception as e:
+            print(f"[playback] stats fetch error: {e}", flush=True)
+
+        # Save to database
+        with engine.begin() as conn:
+            conn.execute(
+                text("""INSERT INTO playback_snapshots
+                        (ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats)
+                        VALUES (:ts, :spot, :strikes, :net_gex, :charm, :call_vol, :put_vol, :stats)"""),
+                {
+                    "ts": now_et(),
+                    "spot": spot,
+                    "strikes": json.dumps(strikes),
+                    "net_gex": json.dumps(net_gex),
+                    "charm": json.dumps(charm_data) if charm_data else None,
+                    "call_vol": json.dumps(call_vol),
+                    "put_vol": json.dumps(put_vol),
+                    "stats": json.dumps(stats_data) if stats_data else None,
+                }
+            )
+        _last_playback_saved_at = time.time()
+        print("[playback] snapshot saved", flush=True)
+    except Exception as e:
+        print(f"[playback] save failed: {e}", flush=True)
+
 def start_scheduler():
     sch = BackgroundScheduler(timezone="US/Eastern")
     sch.add_job(run_market_job, "interval", seconds=PULL_EVERY, id="pull", coalesce=True, max_instances=1)
     sch.add_job(save_history_job, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="save", coalesce=True, max_instances=1)
+    sch.add_job(save_playback_snapshot, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="playback", coalesce=True, max_instances=1)
     sch.start()
-    print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min", flush=True)
+    print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min; playback every", SAVE_EVERY_MIN, "min", flush=True)
     return sch
 
 REQUIRED_ENVS = ["TS_CLIENT_ID", "TS_CLIENT_SECRET", "TS_REFRESH_TOKEN", "DATABASE_URL"]
@@ -827,6 +937,126 @@ def api_spx_candles(bars: int = Query(60, ge=10, le=200)):
     except Exception as e:
         print(f"[spx_candles] error: {e}", flush=True)
         return JSONResponse({"error": str(e)}, status_code=500)
+
+# ===== Playback API =====
+@app.get("/api/playback/range")
+def api_playback_range(start_date: str = Query(None, description="Start date YYYY-MM-DD, default 3 days ago")):
+    """
+    Get 3 days of playback snapshots starting from start_date.
+    Returns timestamps, spot prices, and per-snapshot data for visualization.
+    """
+    if not engine:
+        return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+
+    try:
+        # Default to 3 days ago if no date provided
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            start_dt = NY.localize(start_dt.replace(hour=0, minute=0, second=0))
+        else:
+            start_dt = now_et().replace(hour=0, minute=0, second=0) - pd.Timedelta(days=3)
+
+        end_dt = start_dt + pd.Timedelta(days=3)
+
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                FROM playback_snapshots
+                WHERE ts >= :start_ts AND ts < :end_ts
+                ORDER BY ts ASC
+            """), {"start_ts": start_dt, "end_ts": end_dt}).mappings().all()
+
+        snapshots = []
+        for r in rows:
+            snapshots.append({
+                "ts": r["ts"].isoformat() if hasattr(r["ts"], "isoformat") else str(r["ts"]),
+                "spot": r["spot"],
+                "strikes": _json_load_maybe(r["strikes"]),
+                "net_gex": _json_load_maybe(r["net_gex"]),
+                "charm": _json_load_maybe(r["charm"]),
+                "call_vol": _json_load_maybe(r["call_vol"]),
+                "put_vol": _json_load_maybe(r["put_vol"]),
+                "stats": _json_load_maybe(r["stats"]),
+            })
+
+        return {
+            "start_date": start_dt.strftime("%Y-%m-%d"),
+            "end_date": end_dt.strftime("%Y-%m-%d"),
+            "count": len(snapshots),
+            "snapshots": snapshots
+        }
+    except Exception as e:
+        print(f"[playback/range] error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/export/playback")
+def api_export_playback(start_date: str = Query(None, description="Start date YYYY-MM-DD, default 3 days ago")):
+    """
+    Export 3 days of playback data as CSV.
+    Each row is a snapshot with flattened strike-level data.
+    """
+    if not engine:
+        return Response("DATABASE_URL not set", media_type="text/plain", status_code=500)
+
+    try:
+        # Default to 3 days ago if no date provided
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            start_dt = NY.localize(start_dt.replace(hour=0, minute=0, second=0))
+        else:
+            start_dt = now_et().replace(hour=0, minute=0, second=0) - pd.Timedelta(days=3)
+
+        end_dt = start_dt + pd.Timedelta(days=3)
+
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                FROM playback_snapshots
+                WHERE ts >= :start_ts AND ts < :end_ts
+                ORDER BY ts ASC
+            """), {"start_ts": start_dt, "end_ts": end_dt}).mappings().all()
+
+        # Build CSV with one row per snapshot, strikes as columns
+        csv_rows = []
+        for r in rows:
+            ts = r["ts"].isoformat() if hasattr(r["ts"], "isoformat") else str(r["ts"])
+            spot = r["spot"]
+            strikes = _json_load_maybe(r["strikes"]) or []
+            net_gex = _json_load_maybe(r["net_gex"]) or []
+            charm = _json_load_maybe(r["charm"]) or []
+            call_vol = _json_load_maybe(r["call_vol"]) or []
+            put_vol = _json_load_maybe(r["put_vol"]) or []
+            stats = _json_load_maybe(r["stats"]) or {}
+
+            # Create a row for each strike
+            for i, strike in enumerate(strikes):
+                csv_rows.append({
+                    "timestamp": ts,
+                    "spot": spot,
+                    "strike": strike,
+                    "net_gex": net_gex[i] if i < len(net_gex) else None,
+                    "charm": charm[i] if i < len(charm) else None,
+                    "call_vol": call_vol[i] if i < len(call_vol) else None,
+                    "put_vol": put_vol[i] if i < len(put_vol) else None,
+                    "paradigm": stats.get("paradigm"),
+                    "target": stats.get("target"),
+                    "lis": stats.get("lis"),
+                    "dd_hedging": stats.get("dd_hedging"),
+                    "opt_volume": stats.get("opt_volume"),
+                })
+
+        df = pd.DataFrame(csv_rows)
+        csv_content = df.to_csv(index=False)
+
+        filename = f"playback_{start_dt.strftime('%Y%m%d')}_to_{end_dt.strftime('%Y%m%d')}.csv"
+        return Response(
+            csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        print(f"[export/playback] error: {e}", flush=True)
+        return Response(f"Error: {e}", media_type="text/plain", status_code=500)
 
 @app.get("/api/data_freshness")
 def api_data_freshness():
@@ -1109,6 +1339,71 @@ DASH_HTML_TEMPLATE = """
     }
     .strike-btn:hover { border-color:#444; color:var(--text); }
     .strike-btn.active { background:#1a2634; border-color:#2a3a57; color:var(--text); }
+
+    /* Playback View */
+    .playback-container { display:flex; flex-direction:column; height:calc(100vh - 180px); }
+    .playback-info { padding:8px 0; display:flex; align-items:center; }
+    .playback-grid {
+      display:grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap:8px;
+      flex:1;
+      min-height:0;
+    }
+    .playback-card {
+      background: var(--panel);
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:8px;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+    .playback-card h3 {
+      margin:0 0 4px;
+      font-size:11px;
+      color:var(--muted);
+      font-weight:600;
+      text-transform:uppercase;
+      letter-spacing:0.5px;
+    }
+    .playback-plot { flex:1; width:100%; min-height:0; }
+    .playback-slider-container {
+      padding:12px 8px;
+      background:#0f1115;
+      border-radius:8px;
+      margin-top:8px;
+    }
+    #playbackSlider {
+      -webkit-appearance:none;
+      appearance:none;
+      height:8px;
+      background:#1a1d23;
+      border-radius:4px;
+      outline:none;
+    }
+    #playbackSlider::-webkit-slider-thumb {
+      -webkit-appearance:none;
+      appearance:none;
+      width:16px;
+      height:16px;
+      background:#60a5fa;
+      border-radius:50%;
+      cursor:pointer;
+    }
+    #playbackSlider::-moz-range-thumb {
+      width:16px;
+      height:16px;
+      background:#60a5fa;
+      border-radius:50%;
+      cursor:pointer;
+      border:none;
+    }
+    @media (max-width: 900px) {
+      .playback-grid { grid-template-columns:1fr; }
+      .playback-container { height:auto; }
+    }
+
     .stats-box { margin-top:14px; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; }
     .stats-box h4 { margin:0 0 8px; font-size:12px; font-weight:600; }
     .stats-row { display:flex; justify-content:space-between; font-size:11px; padding:4px 0; border-bottom:1px solid var(--border); }
@@ -1136,6 +1431,7 @@ DASH_HTML_TEMPLATE = """
         <button class="btn active" id="tabTable">Table</button>
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabSpot">Exposure</button>
+        <button class="btn" id="tabPlayback">Playback</button>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
       <div class="small" style="margin-top:14px">
@@ -1198,6 +1494,49 @@ DASH_HTML_TEMPLATE = """
           <div class="unified-card">
             <h3>Volume</h3>
             <div id="unifiedVolPlot" class="unified-plot"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="viewPlayback" class="panel" style="display:none">
+        <div class="header">
+          <div><strong>Historical Playback</strong></div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <label style="font-size:11px;color:var(--muted)">Start Date:</label>
+            <input type="date" id="playbackDate" style="background:#0f1115;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px">
+            <button id="playbackLoad" class="strike-btn" style="padding:4px 12px">Load 3 Days</button>
+            <button id="playbackExport" class="strike-btn" style="padding:4px 12px">Export CSV</button>
+          </div>
+        </div>
+        <div class="playback-container">
+          <div class="playback-info">
+            <span id="playbackTimestamp" style="font-size:12px;color:var(--text)">Select a date and click Load</span>
+            <span id="playbackStats" style="font-size:11px;color:var(--muted);margin-left:20px"></span>
+          </div>
+          <div class="playback-grid">
+            <div class="playback-card playback-price-card">
+              <h3>SPX Price (3 Days)</h3>
+              <div id="playbackPricePlot" class="playback-plot"></div>
+            </div>
+            <div class="playback-card">
+              <h3>Net GEX</h3>
+              <div id="playbackGexPlot" class="playback-plot"></div>
+            </div>
+            <div class="playback-card">
+              <h3>Charm</h3>
+              <div id="playbackCharmPlot" class="playback-plot"></div>
+            </div>
+            <div class="playback-card">
+              <h3>Volume</h3>
+              <div id="playbackVolPlot" class="playback-plot"></div>
+            </div>
+          </div>
+          <div class="playback-slider-container">
+            <input type="range" id="playbackSlider" min="0" max="100" value="0" style="width:100%">
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px">
+              <span id="playbackSliderStart">--</span>
+              <span id="playbackSliderEnd">--</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1308,22 +1647,27 @@ DASH_HTML_TEMPLATE = """
     // Tabs
     const tabTable=document.getElementById('tabTable'),
           tabCharts=document.getElementById('tabCharts'),
-          tabSpot=document.getElementById('tabSpot');
+          tabSpot=document.getElementById('tabSpot'),
+          tabPlayback=document.getElementById('tabPlayback');
 
     const viewTable=document.getElementById('viewTable'),
           viewCharts=document.getElementById('viewCharts'),
-          viewSpot=document.getElementById('viewSpot');
+          viewSpot=document.getElementById('viewSpot'),
+          viewPlayback=document.getElementById('viewPlayback');
 
     function setActive(btn){
-      [tabTable,tabCharts,tabSpot].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabCharts,tabSpot,tabPlayback].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function showTable(){ setActive(tabTable); viewTable.style.display=''; viewCharts.style.display='none'; viewSpot.style.display='none'; stopCharts(); stopSpot(); }
-    function showCharts(){ setActive(tabCharts); viewTable.style.display='none'; viewCharts.style.display=''; viewSpot.style.display='none'; startCharts(); stopSpot(); }
-    function showSpot(){ setActive(tabSpot); viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display=''; startSpot(); stopCharts(); }
+    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewPlayback.style.display='none'; }
+    function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopSpot(); }
+    function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopSpot(); }
+    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); stopCharts(); }
+    function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopSpot(); initPlayback(); }
     tabTable.addEventListener('click', showTable);
     tabCharts.addEventListener('click', showCharts);
     tabSpot.addEventListener('click', showSpot);
+    tabPlayback.addEventListener('click', showPlayback);
 
     // ===== Shared fetch for options series (includes spot) =====
     async function fetchSeries(){
@@ -1855,6 +2199,257 @@ DASH_HTML_TEMPLATE = """
         clearInterval(unifiedTimer);
         unifiedTimer = null;
       }
+    }
+
+    // ===== Playback View =====
+    const playbackDateInput = document.getElementById('playbackDate'),
+          playbackLoadBtn = document.getElementById('playbackLoad'),
+          playbackExportBtn = document.getElementById('playbackExport'),
+          playbackSlider = document.getElementById('playbackSlider'),
+          playbackTimestamp = document.getElementById('playbackTimestamp'),
+          playbackStats = document.getElementById('playbackStats'),
+          playbackSliderStart = document.getElementById('playbackSliderStart'),
+          playbackSliderEnd = document.getElementById('playbackSliderEnd'),
+          playbackPricePlot = document.getElementById('playbackPricePlot'),
+          playbackGexPlot = document.getElementById('playbackGexPlot'),
+          playbackCharmPlot = document.getElementById('playbackCharmPlot'),
+          playbackVolPlot = document.getElementById('playbackVolPlot');
+
+    let playbackData = null;
+    let playbackInitialized = false;
+
+    function initPlayback() {
+      if (playbackInitialized) return;
+      playbackInitialized = true;
+
+      // Default date: 3 days ago
+      const defaultDate = new Date();
+      defaultDate.setDate(defaultDate.getDate() - 3);
+      playbackDateInput.value = defaultDate.toISOString().split('T')[0];
+
+      playbackLoadBtn.addEventListener('click', loadPlaybackData);
+      playbackExportBtn.addEventListener('click', exportPlaybackCSV);
+      playbackSlider.addEventListener('input', onSliderChange);
+    }
+
+    async function loadPlaybackData() {
+      const startDate = playbackDateInput.value;
+      if (!startDate) {
+        alert('Please select a start date');
+        return;
+      }
+
+      playbackTimestamp.textContent = 'Loading...';
+      playbackLoadBtn.disabled = true;
+
+      try {
+        const r = await fetch('/api/playback/range?start_date=' + startDate, { cache: 'no-store' });
+        const data = await r.json();
+
+        if (data.error) {
+          playbackTimestamp.textContent = 'Error: ' + data.error;
+          return;
+        }
+
+        if (!data.snapshots || data.snapshots.length === 0) {
+          playbackTimestamp.textContent = 'No data found for this period. Data collection starts when market is open.';
+          return;
+        }
+
+        playbackData = data;
+        playbackSlider.max = data.snapshots.length - 1;
+        playbackSlider.value = 0;
+
+        // Update slider labels
+        const first = new Date(data.snapshots[0].ts);
+        const last = new Date(data.snapshots[data.snapshots.length - 1].ts);
+        playbackSliderStart.textContent = first.toLocaleDateString() + ' ' + first.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'});
+        playbackSliderEnd.textContent = last.toLocaleDateString() + ' ' + last.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'});
+
+        // Draw price chart (full 3 days)
+        drawPlaybackPriceChart();
+
+        // Draw snapshot at position 0
+        updatePlaybackSnapshot(0);
+
+        playbackTimestamp.textContent = 'Loaded ' + data.count + ' snapshots. Drag slider to scrub through time.';
+      } catch (err) {
+        playbackTimestamp.textContent = 'Error: ' + err.message;
+      } finally {
+        playbackLoadBtn.disabled = false;
+      }
+    }
+
+    function exportPlaybackCSV() {
+      const startDate = playbackDateInput.value;
+      if (!startDate) {
+        alert('Please select a start date first');
+        return;
+      }
+      window.location.href = '/api/export/playback?start_date=' + startDate;
+    }
+
+    function onSliderChange() {
+      if (!playbackData) return;
+      const idx = parseInt(playbackSlider.value);
+      updatePlaybackSnapshot(idx);
+    }
+
+    function drawPlaybackPriceChart() {
+      if (!playbackData || !playbackData.snapshots.length) return;
+
+      const times = playbackData.snapshots.map(s => s.ts);
+      const spots = playbackData.snapshots.map(s => s.spot);
+
+      const trace = {
+        type: 'scatter',
+        mode: 'lines',
+        x: times,
+        y: spots,
+        line: { color: '#60a5fa', width: 2 },
+        hovertemplate: '%{x}<br>SPX: %{y:.2f}<extra></extra>'
+      };
+
+      Plotly.react(playbackPricePlot, [trace], {
+        margin: { l: 50, r: 8, t: 4, b: 30 },
+        paper_bgcolor: '#121417',
+        plot_bgcolor: '#0f1115',
+        xaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, tickformat: '%m/%d %H:%M' },
+        yaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, side: 'left' },
+        font: { color: '#e6e7e9', size: 10 },
+        shapes: [] // Will add marker line in updatePlaybackSnapshot
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    function updatePlaybackSnapshot(idx) {
+      if (!playbackData || idx >= playbackData.snapshots.length) return;
+
+      const snap = playbackData.snapshots[idx];
+      const ts = new Date(snap.ts);
+
+      // Update timestamp display
+      playbackTimestamp.textContent = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString() + ' | SPX: ' + (snap.spot ? snap.spot.toFixed(2) : 'N/A');
+
+      // Update stats display
+      if (snap.stats) {
+        const s = snap.stats;
+        let statsHtml = '';
+        if (s.paradigm) statsHtml += 'Paradigm: ' + s.paradigm + ' | ';
+        if (s.target) statsHtml += 'Target: ' + s.target + ' | ';
+        if (s.lis) statsHtml += 'LIS: ' + s.lis + ' | ';
+        if (s.dd_hedging) statsHtml += 'DD: ' + s.dd_hedging;
+        playbackStats.textContent = statsHtml;
+      } else {
+        playbackStats.textContent = '';
+      }
+
+      // Update price chart marker
+      if (playbackPricePlot._fullLayout) {
+        Plotly.relayout(playbackPricePlot, {
+          shapes: [{
+            type: 'line',
+            x0: snap.ts, x1: snap.ts,
+            y0: 0, y1: 1,
+            xref: 'x', yref: 'paper',
+            line: { color: '#ef4444', width: 2, dash: 'solid' }
+          }]
+        });
+      }
+
+      // Get Y range from strikes
+      const strikes = snap.strikes || [];
+      if (!strikes.length) return;
+
+      const yMin = Math.min(...strikes) - 2;
+      const yMax = Math.max(...strikes) + 2;
+      const yRange = { min: yMin, max: yMax };
+
+      // Draw GEX
+      drawPlaybackBarChart(playbackGexPlot, strikes, snap.net_gex || [], yRange, snap.spot, 'Net GEX');
+
+      // Draw Charm
+      drawPlaybackBarChart(playbackCharmPlot, strikes, snap.charm || [], yRange, snap.spot, 'Charm');
+
+      // Draw Volume (calls vs puts)
+      drawPlaybackVolumeChart(playbackVolPlot, strikes, snap.call_vol || [], snap.put_vol || [], yRange, snap.spot);
+    }
+
+    function drawPlaybackBarChart(div, strikes, values, yRange, spot, label) {
+      if (!strikes.length) return;
+
+      const colors = values.map(v => v >= 0 ? '#22c55e' : '#ef4444');
+      const vMax = Math.max(1, ...values.map(v => Math.abs(v))) * 1.1;
+
+      const shapes = [];
+      if (spot) {
+        shapes.push({
+          type: 'line', y0: spot, y1: spot, x0: -vMax, x1: vMax,
+          xref: 'x', yref: 'y',
+          line: { color: '#60a5fa', width: 2, dash: 'dot' }
+        });
+      }
+
+      const trace = {
+        type: 'bar',
+        orientation: 'h',
+        x: values,
+        y: strikes,
+        marker: { color: colors },
+        hovertemplate: 'Strike %{y}<br>' + label + ': %{x:,.0f}<extra></extra>'
+      };
+
+      Plotly.react(div, [trace], {
+        margin: { l: 8, r: 8, t: 4, b: 24 },
+        paper_bgcolor: '#121417',
+        plot_bgcolor: '#0f1115',
+        xaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#333' },
+        yaxis: { range: [yRange.min, yRange.max], gridcolor: '#20242a', showticklabels: false, dtick: 5 },
+        font: { color: '#e6e7e9', size: 10 },
+        shapes: shapes
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    function drawPlaybackVolumeChart(div, strikes, callVol, putVol, yRange, spot) {
+      if (!strikes.length) return;
+
+      const putsNegative = putVol.map(v => -v);
+      const vMax = Math.max(1, ...callVol, ...putVol) * 1.1;
+
+      const shapes = [];
+      if (spot) {
+        shapes.push({
+          type: 'line', y0: spot, y1: spot, x0: -vMax, x1: vMax,
+          xref: 'x', yref: 'y',
+          line: { color: '#60a5fa', width: 2, dash: 'dot' }
+        });
+      }
+
+      const traceCalls = {
+        type: 'bar', orientation: 'h', name: 'Calls',
+        x: callVol, y: strikes,
+        marker: { color: '#22c55e' },
+        hovertemplate: 'Strike %{y}<br>Calls: %{x:,}<extra></extra>'
+      };
+
+      const tracePuts = {
+        type: 'bar', orientation: 'h', name: 'Puts',
+        x: putsNegative, y: strikes,
+        marker: { color: '#ef4444' },
+        hovertemplate: 'Strike %{y}<br>Puts: %{customdata:,}<extra></extra>',
+        customdata: putVol
+      };
+
+      Plotly.react(div, [tracePuts, traceCalls], {
+        margin: { l: 8, r: 8, t: 4, b: 24 },
+        paper_bgcolor: '#121417',
+        plot_bgcolor: '#0f1115',
+        xaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, range: [-vMax, vMax], zeroline: true, zerolinecolor: '#333' },
+        yaxis: { range: [yRange.min, yRange.max], gridcolor: '#20242a', showticklabels: false, dtick: 5 },
+        barmode: 'overlay',
+        showlegend: false,
+        font: { color: '#e6e7e9', size: 10 },
+        shapes: shapes
+      }, { displayModeBar: false, responsive: true });
     }
 
     // default

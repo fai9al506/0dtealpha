@@ -2418,6 +2418,16 @@ DASH_HTML_TEMPLATE = """
     .toggle-slider:before { position:absolute; content:""; height:14px; width:14px; left:2px; bottom:2px; background:#666; border-radius:50%; transition:.2s; }
     .toggle-switch input:checked + .toggle-slider { background:#22c55e; }
     .toggle-switch input:checked + .toggle-slider:before { transform:translateX(14px); background:#fff; }
+
+    /* Modal */
+    .modal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:flex; align-items:center; justify-content:center; }
+    .modal-content { background:#1a1d21; border:1px solid var(--border); border-radius:12px; width:90%; max-width:500px; max-height:90vh; overflow:auto; }
+    .modal-header { display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); }
+    .modal-header h3 { margin:0; font-size:16px; }
+    .modal-close { background:none; border:none; color:var(--muted); font-size:24px; cursor:pointer; padding:0; line-height:1; }
+    .modal-close:hover { color:var(--text); }
+    .modal-body { padding:20px; font-size:13px; }
+    .modal-footer { display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-top:1px solid var(--border); }
   </style>
 </head>
 <body>
@@ -2445,56 +2455,75 @@ DASH_HTML_TEMPLATE = """
         <h4>SPX Statistics</h4>
         <div id="statsContent" style="color:var(--muted);font-size:11px">Loading...</div>
       </div>
-      <div class="stats-box" style="margin-top:10px">
-        <h4 style="display:flex;justify-content:space-between;align-items:center">
-          <span>🔔 Alerts</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="alertMasterToggle" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </h4>
-        <div id="alertSettingsContent" style="font-size:10px">
-          <div style="margin-bottom:8px">
-            <div style="color:var(--muted);margin-bottom:4px">Price Alerts:</div>
-            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alertLIS" checked> LIS</label>
-            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alertTarget" checked> Target</label>
-            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alertPosGamma" checked> Max +Gamma</label>
-            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alertNegGamma" checked> Max -Gamma</label>
-          </div>
-          <div style="margin-bottom:8px">
-            <div style="color:var(--muted);margin-bottom:4px">Other Alerts:</div>
-            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alertParadigm" checked> Paradigm Change</label>
-            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alertVolSpike" checked> Volume Spike</label>
-            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alert10am" checked> 10 AM Summary</label>
-            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alert2pm" checked> 2 PM Summary</label>
-          </div>
-          <div style="margin-bottom:8px">
-            <div style="color:var(--muted);margin-bottom:4px">Thresholds:</div>
-            <div style="display:flex;align-items:center;gap:4px;margin:2px 0">
-              <span>Distance:</span>
-              <input type="number" id="alertThresholdPts" value="5" min="1" max="20" style="width:40px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:10px">
-              <span>pts</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:4px;margin:2px 0">
-              <span>Vol Spike:</span>
-              <input type="number" id="alertThresholdVol" value="500" min="100" max="5000" step="100" style="width:50px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:10px">
-            </div>
-          </div>
-          <div style="margin-bottom:8px">
-            <label style="display:flex;align-items:center;gap:4px;margin:2px 0">
-              <input type="checkbox" id="alertCooldown" checked> Cooldown
-              <input type="number" id="alertCooldownMin" value="10" min="1" max="60" style="width:35px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:10px">
-              <span>min</span>
-            </label>
-          </div>
-          <div style="display:flex;gap:6px">
-            <button id="alertTestBtn" class="strike-btn" style="flex:1;padding:4px 8px;font-size:10px">Test Alert</button>
-            <button id="alertSaveBtn" class="strike-btn" style="flex:1;padding:4px 8px;font-size:10px">Save</button>
-          </div>
-          <div id="alertStatus" style="margin-top:4px;color:var(--muted);font-size:9px"></div>
-        </div>
+      <div style="margin-top:14px;display:flex;gap:8px;align-items:center">
+        <label class="toggle-switch">
+          <input type="checkbox" id="alertMasterToggle" checked>
+          <span class="toggle-slider"></span>
+        </label>
+        <span style="font-size:11px;color:var(--text)">🔔 Alerts</span>
+        <button id="alertSettingsBtn" class="strike-btn" style="padding:3px 8px;font-size:10px;margin-left:auto">Settings</button>
       </div>
     </aside>
+
+    <!-- Alert Settings Modal -->
+    <div id="alertModal" class="modal" style="display:none">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>🔔 Alert Settings</h3>
+          <button id="alertModalClose" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Price Alerts</div>
+              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertLIS" checked> LIS (Lines in Sand)</label>
+              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertTarget" checked> Target</label>
+              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertPosGamma" checked> Max +Gamma</label>
+              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertNegGamma" checked> Max -Gamma</label>
+            </div>
+            <div>
+              <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Other Alerts</div>
+              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertParadigm" checked> Paradigm Change</label>
+              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alertVolSpike" checked> Volume Spike</label>
+              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alert10am" checked> 10 AM Summary</label>
+              <label style="display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="alert2pm" checked> 2 PM Summary</label>
+            </div>
+          </div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Thresholds</div>
+              <div style="display:flex;align-items:center;gap:6px;margin:8px 0">
+                <span>Distance:</span>
+                <input type="number" id="alertThresholdPts" value="5" min="1" max="20" style="width:50px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px">
+                <span>points</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin:8px 0">
+                <span>Vol Spike:</span>
+                <input type="number" id="alertThresholdVol" value="500" min="100" max="5000" step="100" style="width:60px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px">
+                <span>contracts</span>
+              </div>
+            </div>
+            <div>
+              <div style="color:var(--muted);margin-bottom:8px;font-weight:600">Cooldown</div>
+              <label style="display:flex;align-items:center;gap:6px;margin:8px 0">
+                <input type="checkbox" id="alertCooldown" checked>
+                <span>Enable cooldown:</span>
+                <input type="number" id="alertCooldownMin" value="10" min="1" max="60" style="width:50px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px">
+                <span>min</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <div id="alertStatus" style="color:var(--muted);font-size:11px"></div>
+          <div style="display:flex;gap:8px">
+            <button id="alertTestBtn" class="strike-btn" style="padding:6px 16px">Test Alert</button>
+            <button id="alertSaveBtn" class="strike-btn" style="padding:6px 16px;background:#22c55e;border-color:#22c55e">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <main class="content">
       <div id="viewTable" class="panel">
@@ -4092,6 +4121,9 @@ DASH_HTML_TEMPLATE = """
     }
 
     // ===== Alert Settings =====
+    const alertModal = document.getElementById('alertModal');
+    const alertSettingsBtn = document.getElementById('alertSettingsBtn');
+    const alertModalClose = document.getElementById('alertModalClose');
     const alertMasterToggle = document.getElementById('alertMasterToggle');
     const alertLIS = document.getElementById('alertLIS');
     const alertTarget = document.getElementById('alertTarget');
@@ -4187,6 +4219,11 @@ DASH_HTML_TEMPLATE = """
     alertSaveBtn.addEventListener('click', saveAlertSettings);
     alertTestBtn.addEventListener('click', testAlert);
     alertMasterToggle.addEventListener('change', saveAlertSettings);
+
+    // Modal open/close
+    alertSettingsBtn.addEventListener('click', () => { alertModal.style.display = 'flex'; });
+    alertModalClose.addEventListener('click', () => { alertModal.style.display = 'none'; });
+    alertModal.addEventListener('click', (e) => { if (e.target === alertModal) alertModal.style.display = 'none'; });
 
     // Load alert settings on page load
     loadAlertSettings();

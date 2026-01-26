@@ -1933,7 +1933,6 @@ DASH_HTML_TEMPLATE = """
             <span><span style="color:#3b82f6">■</span> LIS High</span>
             <span><span style="color:#22c55e">■</span> Max +Gamma</span>
             <span><span style="color:#ef4444">■</span> Max -Gamma</span>
-            <span><span style="color:#a855f7">- -</span> Spot</span>
           </div>
         </div>
       </div>
@@ -2684,8 +2683,7 @@ DASH_HTML_TEMPLATE = """
           levels.lis_low,
           levels.lis_high,
           levels.max_pos_gamma,
-          levels.max_neg_gamma,
-          levels.spot
+          levels.max_neg_gamma
         ].filter(v => v !== null && v !== undefined);
 
         // Also include price range from candles
@@ -2757,18 +2755,6 @@ DASH_HTML_TEMPLATE = """
           annotations.push({
             x: 1.01, y: levels.max_neg_gamma, xref: 'paper', yref: 'y', text: '-G ' + levels.max_neg_gamma,
             showarrow: false, font: { color: '#ef4444', size: 10 }, xanchor: 'left'
-          });
-        }
-
-        // Spot line (purple dashed)
-        if (levels.spot) {
-          shapes.push({
-            type: 'line', y0: levels.spot, y1: levels.spot, x0: 0, x1: 1,
-            xref: 'paper', yref: 'y', line: { color: '#a855f7', width: 2, dash: 'dash' }
-          });
-          annotations.push({
-            x: 1.01, y: levels.spot, xref: 'paper', yref: 'y', text: 'Spot ' + Math.round(levels.spot),
-            showarrow: false, font: { color: '#a855f7', size: 10 }, xanchor: 'left'
           });
         }
 

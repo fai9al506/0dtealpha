@@ -7,7 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
 from threading import Lock
 from typing import Any, Optional
-from passlib.hash import bcrypt
+import bcrypt as _bcrypt
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 # ====== CONFIG ======
@@ -127,11 +127,11 @@ SESSION_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
 _serializer = URLSafeTimedSerializer(SECRET_KEY)
 
 def hash_password(password: str) -> str:
-    return bcrypt.hash(password)
+    return _bcrypt.hashpw(password.encode('utf-8'), _bcrypt.gensalt()).decode('utf-8')
 
 def verify_password(password: str, hashed: str) -> bool:
     try:
-        return bcrypt.verify(password, hashed)
+        return _bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
     except Exception:
         return False
 

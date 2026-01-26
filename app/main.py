@@ -1952,7 +1952,7 @@ DASH_HTML_TEMPLATE = """
       <div class="nav">
         <button class="btn active" id="tabTable">Table</button>
         <button class="btn" id="tabCharts">Charts</button>
-        <button class="btn" id="tabSpot">Exposure</button>
+        <button class="btn" id="tabSpot">Spot</button>
         <button class="btn" id="tabStatistics">Statistics</button>
         <button class="btn" id="tabPlayback">Playback</button>
       </div>

@@ -2090,6 +2090,7 @@ DASH_HTML_TEMPLATE = """
               </div>
             </div>
             <div style="margin-top:12px;font-size:11px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap">
+              <span><span style="color:#9ca3af">--</span> Day Open</span>
               <span><span style="color:#3b82f6">■</span> Target</span>
               <span><span style="color:#f59e0b">■</span> LIS</span>
               <span><span style="color:#22c55e">■</span> Max +Gamma</span>
@@ -3380,14 +3381,19 @@ DASH_HTML_TEMPLATE = """
         }
       }
 
-      // Calculate Y range
-      const levelValues = [target, lisLow, lisHigh, maxPosGexStrike, maxNegGexStrike, Math.min(...lows), Math.max(...highs)].filter(v => v);
-      const yMin = Math.min(...levelValues) - 10;
-      const yMax = Math.max(...levelValues) + 10;
+      // Fixed Y range: 20 strikes (10 above, 10 below) centered on day's opening price
+      // SPX strikes are 5 points apart, so 10 strikes = 50 points
+      const dayOpenPrice = snaps[0].spot;  // First snapshot = day open
+      const yMin = dayOpenPrice - 50;
+      const yMax = dayOpenPrice + 50;
 
       // Build shapes and annotations
       const shapes = [];
       const annotations = [];
+
+      // Day Open line (white dashed)
+      shapes.push({ type: 'line', y0: dayOpenPrice, y1: dayOpenPrice, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#9ca3af', width: 1, dash: 'dash' } });
+      annotations.push({ x: 1.01, y: dayOpenPrice, xref: 'paper', yref: 'y', text: 'Open ' + Math.round(dayOpenPrice), showarrow: false, font: { color: '#9ca3af', size: 10 }, xanchor: 'left' });
 
       // Target (blue)
       if (target) {

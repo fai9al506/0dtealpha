@@ -92,9 +92,17 @@ def db_init():
             charm JSONB,
             call_vol JSONB NOT NULL,
             put_vol JSONB NOT NULL,
-            stats JSONB
+            stats JSONB,
+            is_mock BOOLEAN DEFAULT FALSE
         );
         CREATE INDEX IF NOT EXISTS ix_playback_snapshots_ts ON playback_snapshots (ts DESC);
+        """))
+        # Add is_mock column if it doesn't exist (for existing tables)
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE playback_snapshots ADD COLUMN is_mock BOOLEAN DEFAULT FALSE;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
         """))
 
     print("[db] ready", flush=True)
@@ -1040,16 +1048,17 @@ def api_playback_generate_mock(force: bool = Query(False, description="Set to tr
         return {"error": "DATABASE_URL not set"}
 
     try:
-        # Check if existing data exists
+        # Check if existing mock data exists (only delete mock data, never real data)
         with engine.connect() as conn:
-            count = conn.execute(text("SELECT COUNT(*) FROM playback_snapshots")).scalar()
+            mock_count = conn.execute(text("SELECT COUNT(*) FROM playback_snapshots WHERE is_mock = TRUE")).scalar()
+            real_count = conn.execute(text("SELECT COUNT(*) FROM playback_snapshots WHERE is_mock = FALSE OR is_mock IS NULL")).scalar()
 
-        if count > 0 and not force:
-            return {"error": f"Refusing to delete {count} existing snapshots. Use force=true to confirm deletion.", "existing_count": count}
+        if mock_count > 0 and not force:
+            return {"error": f"Refusing to delete {mock_count} existing mock snapshots. Use force=true to confirm.", "mock_count": mock_count, "real_count": real_count}
 
-        # Delete existing data
+        # Delete only mock data (real data is always preserved)
         with engine.begin() as conn:
-            conn.execute(text("DELETE FROM playback_snapshots"))
+            conn.execute(text("DELETE FROM playback_snapshots WHERE is_mock = TRUE"))
 
         # Generate 3 days of mock data, every 5 minutes during "market hours" (9:30-16:00)
         base_spot = 6050.0
@@ -1111,12 +1120,12 @@ def api_playback_generate_mock(force: bool = Query(False, description="Set to tr
                     "stats": stats
                 })
 
-        # Insert all snapshots
+        # Insert all snapshots with is_mock=true
         with engine.begin() as conn:
             for snap in snapshots:
                 conn.execute(
-                    text("""INSERT INTO playback_snapshots (ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats)
-                            VALUES (:ts, :spot, :strikes, :net_gex, :charm, :call_vol, :put_vol, :stats)"""),
+                    text("""INSERT INTO playback_snapshots (ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats, is_mock)
+                            VALUES (:ts, :spot, :strikes, :net_gex, :charm, :call_vol, :put_vol, :stats, TRUE)"""),
                     {"ts": snap["ts"], "spot": snap["spot"], "strikes": json.dumps(snap["strikes"]),
                      "net_gex": json.dumps(snap["net_gex"]), "charm": json.dumps(snap["charm"]),
                      "call_vol": json.dumps(snap["call_vol"]), "put_vol": json.dumps(snap["put_vol"]),
@@ -1146,6 +1155,28 @@ def api_playback_delete_all(force: bool = Query(False, description="Must be true
             deleted = result.rowcount
 
         return {"success": True, "message": f"Deleted {deleted} snapshots", "deleted_count": deleted}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.delete("/api/playback/delete_mock")
+def api_playback_delete_mock():
+    """Delete only MOCK playback snapshots (is_mock=true). Real data is preserved."""
+    if not engine:
+        return {"error": "DATABASE_URL not set"}
+
+    try:
+        with engine.connect() as conn:
+            mock_count = conn.execute(text("SELECT COUNT(*) FROM playback_snapshots WHERE is_mock = TRUE")).scalar()
+            real_count = conn.execute(text("SELECT COUNT(*) FROM playback_snapshots WHERE is_mock = FALSE OR is_mock IS NULL")).scalar()
+
+        if mock_count == 0:
+            return {"message": "No mock data to delete", "mock_count": 0, "real_count": real_count}
+
+        with engine.begin() as conn:
+            result = conn.execute(text("DELETE FROM playback_snapshots WHERE is_mock = TRUE"))
+            deleted = result.rowcount
+
+        return {"success": True, "message": f"Deleted {deleted} mock snapshots. {real_count} real snapshots preserved.", "deleted_count": deleted, "real_count": real_count}
     except Exception as e:
         return {"error": str(e)}
 

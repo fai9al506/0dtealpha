@@ -1034,12 +1034,16 @@ def api_playback_save_now():
 
 @app.post("/api/playback/generate_mock")
 def api_playback_generate_mock():
-    """Generate mock playback data for testing (3 days, ~100 snapshots). Delete with /api/playback/delete_all"""
+    """Generate mock playback data for testing (3 days, ~100 snapshots). Deletes existing data first."""
     import random
     if not engine:
         return {"error": "DATABASE_URL not set"}
 
     try:
+        # Delete existing data first to avoid mixing
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM playback_snapshots"))
+
         # Generate 3 days of mock data, every 5 minutes during "market hours" (9:30-16:00)
         base_spot = 6050.0
         strikes = [base_spot + (i - 20) * 5 for i in range(41)]  # 41 strikes centered around spot

@@ -1957,12 +1957,6 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabPlayback">Playback</button>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
-      <div class="small" style="margin-top:14px">
-        <a href="/api/snapshot" style="color:var(--muted)">JSON</a> |
-        <a href="/api/history" style="color:var(--muted)">History</a> |
-        <a href="/api/volland/latest" style="color:var(--muted)">Exposure</a> |
-        <a href="/download/history.csv" style="color:var(--muted)">CSV</a>
-      </div>
       <div class="stats-box">
         <h4>SPX Statistics</h4>
         <div id="statsContent" style="color:var(--muted);font-size:11px">Loading...</div>

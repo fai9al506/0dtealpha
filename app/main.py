@@ -1017,18 +1017,28 @@ def api_statistics_levels():
         stats = db_volland_stats()
         if stats and stats.get("stats"):
             s = stats["stats"]
-            # Target
+            # Target - parse number from various formats like "$6,050" or "6050" or "N/A"
             try:
-                result["target"] = float(s.get("target")) if s.get("target") else None
+                target_str = str(s.get("target", "")).replace("$", "").replace(",", "").strip()
+                if target_str and target_str.lower() not in ["n/a", "na", "-", ""]:
+                    result["target"] = float(target_str)
             except:
                 pass
-            # LIS (format: "6000/6100")
+            # LIS - parse from formats like "$6,926 - $6,966" or "6000/6100"
             lis = s.get("lines_in_sand")
-            if lis and "/" in str(lis):
+            if lis:
                 try:
-                    parts = str(lis).split("/")
-                    result["lis_low"] = float(parts[0].strip())
-                    result["lis_high"] = float(parts[1].strip())
+                    lis_str = str(lis).replace("$", "").replace(",", "")
+                    # Try " - " separator first, then "/"
+                    if " - " in lis_str:
+                        parts = lis_str.split(" - ")
+                    elif "/" in lis_str:
+                        parts = lis_str.split("/")
+                    else:
+                        parts = []
+                    if len(parts) >= 2:
+                        result["lis_low"] = float(parts[0].strip())
+                        result["lis_high"] = float(parts[1].strip())
                 except:
                     pass
 

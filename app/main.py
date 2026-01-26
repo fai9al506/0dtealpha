@@ -1516,19 +1516,9 @@ DASH_HTML_TEMPLATE = """
           unifiedVolDiv = document.getElementById('unifiedVolPlot');
     let unifiedTimer = null;
     let selectedStrikes = 30; // Default strike count
-    let currentYRange = null; // Shared Y range for sync
+    let currentYRange = null; // Shared Y range for sync (persists across refreshes)
     let isZoomSyncing = false; // Prevent infinite loop
-
-    // Strike button handlers
-    document.querySelectorAll('.strike-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.strike-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        selectedStrikes = parseInt(btn.dataset.strikes);
-        currentYRange = null; // Reset to recalculate
-        tickUnified(); // Refresh immediately
-      });
-    });
+    let baseYRange = null; // Original range before any zoom
 
     // Fetch SPX 3-minute candles from TradeStation API
     async function fetchSPXCandles() {
@@ -1540,7 +1530,7 @@ DASH_HTML_TEMPLATE = """
     function computeStrikeRange(strikes, spot) {
       if (!strikes || !strikes.length) return null;
 
-      // If we have a custom zoom range, use it
+      // If user has zoomed, preserve their zoom level
       if (currentYRange) return currentYRange;
 
       // Center around spot and take selectedStrikes/2 above and below
@@ -1554,7 +1544,9 @@ DASH_HTML_TEMPLATE = """
       let yMin = Math.min(...selectedList);
       let yMax = Math.max(...selectedList);
       const pad = (yMax - yMin) * 0.02 || 1;
-      return { min: yMin - pad, max: yMax + pad };
+      const range = { min: yMin - pad, max: yMax + pad };
+      baseYRange = range; // Store as base for reset
+      return range;
     }
 
     // Sync Y-axis zoom across all exposure charts
@@ -1562,7 +1554,7 @@ DASH_HTML_TEMPLATE = """
       plotDiv.on('plotly_relayout', function(eventData) {
         if (isZoomSyncing) return;
 
-        // Check if Y-axis was changed
+        // Check if Y-axis was changed (drag zoom or scroll zoom)
         const newYMin = eventData['yaxis.range[0]'];
         const newYMax = eventData['yaxis.range[1]'];
 
@@ -1584,7 +1576,29 @@ DASH_HTML_TEMPLATE = """
         // Reset on double-click (autorange)
         if (eventData['yaxis.autorange']) {
           currentYRange = null;
+          isZoomSyncing = true;
+          const allDivs = [unifiedSpxDiv, unifiedGexDiv, unifiedCharmDiv, unifiedVolDiv];
+          allDivs.forEach(div => {
+            if (div !== plotDiv && div._fullLayout && baseYRange) {
+              Plotly.relayout(div, { 'yaxis.range': [baseYRange.min, baseYRange.max] });
+            }
+          });
+          setTimeout(() => { isZoomSyncing = false; }, 100);
         }
+      });
+    }
+
+    // Strike button click handler (set up after DOM ready)
+    function setupStrikeButtons() {
+      document.querySelectorAll('.strike-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.strike-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          selectedStrikes = parseInt(btn.dataset.strikes);
+          currentYRange = null; // Reset zoom to recalculate
+          baseYRange = null;
+          tickUnified(); // Refresh immediately
+        });
       });
     }
 
@@ -1656,7 +1670,8 @@ DASH_HTML_TEMPLATE = """
           range: [yRange.min, yRange.max],
           gridcolor: '#20242a',
           tickfont: { size: 9 },
-          dtick: 5
+          dtick: 5,
+          fixedrange: false
         },
         font: { color: '#e6e7e9', size: 10 },
         showlegend: false
@@ -1688,7 +1703,7 @@ DASH_HTML_TEMPLATE = """
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',
         xaxis: { title: '', gridcolor: '#20242a', tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#333' },
-        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', showticklabels: false, dtick: 5 },
+        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', showticklabels: false, dtick: 5, fixedrange: false },
         font: { color: '#e6e7e9', size: 10 },
         shapes: shapes
       }, { displayModeBar: false, responsive: true, scrollZoom: true });
@@ -1731,7 +1746,7 @@ DASH_HTML_TEMPLATE = """
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',
         xaxis: { title: '', gridcolor: '#20242a', tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#333' },
-        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', showticklabels: false, dtick: 5 },
+        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', showticklabels: false, dtick: 5, fixedrange: false },
         font: { color: '#e6e7e9', size: 10 },
         shapes: shapes
       }, { displayModeBar: false, responsive: true, scrollZoom: true });
@@ -1774,7 +1789,7 @@ DASH_HTML_TEMPLATE = """
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',
         xaxis: { title: '', gridcolor: '#20242a', tickfont: { size: 9 }, range: [-vMax, vMax], zeroline: true, zerolinecolor: '#333' },
-        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', showticklabels: false, dtick: 5 },
+        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', showticklabels: false, dtick: 5, fixedrange: false },
         barmode: 'overlay',
         showlegend: false,
         font: { color: '#e6e7e9', size: 10 },
@@ -1824,7 +1839,12 @@ DASH_HTML_TEMPLATE = """
       }
     }
 
+    let exposureInitialized = false;
     function startSpot() {
+      if (!exposureInitialized) {
+        setupStrikeButtons();
+        exposureInitialized = true;
+      }
       tickUnified();
       if (unifiedTimer) clearInterval(unifiedTimer);
       unifiedTimer = setInterval(tickUnified, PULL_EVERY);

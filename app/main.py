@@ -1928,9 +1928,9 @@ DASH_HTML_TEMPLATE = """
         <div style="padding:12px">
           <div id="statisticsPlot" style="width:100%;height:500px"></div>
           <div id="statisticsLegend" style="margin-top:10px;font-size:11px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap">
-            <span><span style="color:#f59e0b">■</span> Target</span>
-            <span><span style="color:#3b82f6">■</span> LIS Low</span>
-            <span><span style="color:#3b82f6">■</span> LIS High</span>
+            <span><span style="color:#3b82f6">■</span> Target</span>
+            <span><span style="color:#f59e0b">■</span> LIS Low</span>
+            <span><span style="color:#f59e0b">■</span> LIS High</span>
             <span><span style="color:#22c55e">■</span> Max +Gamma</span>
             <span><span style="color:#ef4444">■</span> Max -Gamma</span>
           </div>
@@ -2698,39 +2698,39 @@ DASH_HTML_TEMPLATE = """
         const shapes = [];
         const annotations = [];
 
-        // Target line (amber)
+        // Target line (blue)
         if (levels.target) {
           shapes.push({
             type: 'line', y0: levels.target, y1: levels.target, x0: 0, x1: 1,
-            xref: 'paper', yref: 'y', line: { color: '#f59e0b', width: 2 }
+            xref: 'paper', yref: 'y', line: { color: '#3b82f6', width: 2 }
           });
           annotations.push({
             x: 1.01, y: levels.target, xref: 'paper', yref: 'y', text: 'Target ' + levels.target,
+            showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left'
+          });
+        }
+
+        // LIS Low line (amber)
+        if (levels.lis_low) {
+          shapes.push({
+            type: 'line', y0: levels.lis_low, y1: levels.lis_low, x0: 0, x1: 1,
+            xref: 'paper', yref: 'y', line: { color: '#f59e0b', width: 2 }
+          });
+          annotations.push({
+            x: 1.01, y: levels.lis_low, xref: 'paper', yref: 'y', text: 'LIS ' + levels.lis_low,
             showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left'
           });
         }
 
-        // LIS Low line (blue)
-        if (levels.lis_low) {
-          shapes.push({
-            type: 'line', y0: levels.lis_low, y1: levels.lis_low, x0: 0, x1: 1,
-            xref: 'paper', yref: 'y', line: { color: '#3b82f6', width: 2 }
-          });
-          annotations.push({
-            x: 1.01, y: levels.lis_low, xref: 'paper', yref: 'y', text: 'LIS ' + levels.lis_low,
-            showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left'
-          });
-        }
-
-        // LIS High line (blue)
+        // LIS High line (amber)
         if (levels.lis_high) {
           shapes.push({
             type: 'line', y0: levels.lis_high, y1: levels.lis_high, x0: 0, x1: 1,
-            xref: 'paper', yref: 'y', line: { color: '#3b82f6', width: 2 }
+            xref: 'paper', yref: 'y', line: { color: '#f59e0b', width: 2 }
           });
           annotations.push({
             x: 1.01, y: levels.lis_high, xref: 'paper', yref: 'y', text: 'LIS ' + levels.lis_high,
-            showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left'
+            showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left'
           });
         }
 

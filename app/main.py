@@ -2555,10 +2555,11 @@ DASH_HTML_TEMPLATE = """
         margin: { l: 50, r: 8, t: 4, b: 30 },
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',
-        xaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, type: 'category', nticks: 10, tickangle: -45, rangeslider: { visible: false } },
-        yaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, side: 'left' },
+        xaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, type: 'category', nticks: 10, tickangle: -45, rangeslider: { visible: false }, fixedrange: false },
+        yaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, side: 'left', fixedrange: false },
         font: { color: '#e6e7e9', size: 10 },
-        shapes: [] // Will add marker line in updatePlaybackSnapshot
+        shapes: [],
+        dragmode: 'zoom'
       }, { displayModeBar: false, responsive: true, scrollZoom: true });
     }
 

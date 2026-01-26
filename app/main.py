@@ -1600,12 +1600,12 @@ DASH_HTML_TEMPLATE = """
       };
     }
 
-    // Render SPX candlestick chart (Y-axis = price aligned with strikes)
+    // Render SPX candlestick chart (Y-axis = price aligned with strikes, on LEFT for shared axis)
     function renderUnifiedSPX(candleData, yRange) {
       if (!candleData || candleData.error || !candleData.candles || !candleData.candles.length) {
         Plotly.react(unifiedSpxDiv, [], {
           paper_bgcolor: '#121417', plot_bgcolor: '#0f1115',
-          margin: { l: 8, r: 50, t: 4, b: 24 },
+          margin: { l: 50, r: 8, t: 4, b: 24 },
           annotations: [{ text: candleData?.error || 'Loading candles...', x: 0.5, y: 0.5, xref: 'paper', yref: 'paper', showarrow: false, font: { color: '#e6e7e9' } }],
           font: { color: '#e6e7e9' }
         }, { displayModeBar: false, responsive: true, scrollZoom: true });
@@ -1613,7 +1613,13 @@ DASH_HTML_TEMPLATE = """
       }
 
       const candles = candleData.candles;
-      const times = candles.map(c => c.time);
+      // Format times to show only HH:MM
+      const times = candles.map(c => {
+        try {
+          const d = new Date(c.time);
+          return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+        } catch { return c.time; }
+      });
       const opens = candles.map(c => c.open);
       const highs = candles.map(c => c.high);
       const lows = candles.map(c => c.low);
@@ -1632,7 +1638,7 @@ DASH_HTML_TEMPLATE = """
       };
 
       Plotly.react(unifiedSpxDiv, [trace], {
-        margin: { l: 8, r: 50, t: 4, b: 24 },
+        margin: { l: 50, r: 8, t: 4, b: 24 },
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',
         xaxis: {
@@ -1641,12 +1647,12 @@ DASH_HTML_TEMPLATE = """
           tickfont: { size: 9 },
           rangeslider: { visible: false },
           type: 'category',
-          nticks: 6,
-          tickformat: '%H:%M'
+          nticks: 8,
+          tickangle: -45
         },
         yaxis: {
           title: '',
-          side: 'right',
+          side: 'left',
           range: [yRange.min, yRange.max],
           gridcolor: '#20242a',
           tickfont: { size: 9 },
@@ -1678,11 +1684,11 @@ DASH_HTML_TEMPLATE = """
       };
 
       Plotly.react(unifiedGexDiv, [trace], {
-        margin: { l: 50, r: 8, t: 4, b: 24 },
+        margin: { l: 8, r: 8, t: 4, b: 24 },
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',
         xaxis: { title: '', gridcolor: '#20242a', tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#333' },
-        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', tickfont: { size: 9 }, dtick: 5 },
+        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', showticklabels: false, dtick: 5 },
         font: { color: '#e6e7e9', size: 10 },
         shapes: shapes
       }, { displayModeBar: false, responsive: true, scrollZoom: true });
@@ -1693,7 +1699,7 @@ DASH_HTML_TEMPLATE = """
       if (!vannaData || vannaData.error || !vannaData.points || !vannaData.points.length) {
         Plotly.react(unifiedCharmDiv, [], {
           paper_bgcolor: '#121417', plot_bgcolor: '#0f1115',
-          margin: { l: 50, r: 8, t: 4, b: 24 },
+          margin: { l: 8, r: 8, t: 4, b: 24 },
           annotations: [{ text: vannaData?.error || 'No charm data', x: 0.5, y: 0.5, xref: 'paper', yref: 'paper', showarrow: false, font: { color: '#e6e7e9' } }],
           font: { color: '#e6e7e9' }
         }, { displayModeBar: false, responsive: true, scrollZoom: true });
@@ -1721,11 +1727,11 @@ DASH_HTML_TEMPLATE = """
       };
 
       Plotly.react(unifiedCharmDiv, [trace], {
-        margin: { l: 50, r: 8, t: 4, b: 24 },
+        margin: { l: 8, r: 8, t: 4, b: 24 },
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',
         xaxis: { title: '', gridcolor: '#20242a', tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#333' },
-        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', tickfont: { size: 9 }, dtick: 5 },
+        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', showticklabels: false, dtick: 5 },
         font: { color: '#e6e7e9', size: 10 },
         shapes: shapes
       }, { displayModeBar: false, responsive: true, scrollZoom: true });
@@ -1764,11 +1770,11 @@ DASH_HTML_TEMPLATE = """
       };
 
       Plotly.react(unifiedVolDiv, [tracePuts, traceCalls], {
-        margin: { l: 50, r: 8, t: 4, b: 24 },
+        margin: { l: 8, r: 8, t: 4, b: 24 },
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',
         xaxis: { title: '', gridcolor: '#20242a', tickfont: { size: 9 }, range: [-vMax, vMax], zeroline: true, zerolinecolor: '#333' },
-        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', tickfont: { size: 9 }, dtick: 5 },
+        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', showticklabels: false, dtick: 5 },
         barmode: 'overlay',
         showlegend: false,
         font: { color: '#e6e7e9', size: 10 },

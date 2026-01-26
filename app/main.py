@@ -1180,6 +1180,44 @@ def api_playback_delete_mock():
     except Exception as e:
         return {"error": str(e)}
 
+@app.post("/api/playback/mark_existing_as_mock")
+def api_playback_mark_existing_as_mock():
+    """Mark all existing data with is_mock=NULL as mock data. Run once to fix legacy data."""
+    if not engine:
+        return {"error": "DATABASE_URL not set"}
+
+    try:
+        with engine.begin() as conn:
+            result = conn.execute(text("UPDATE playback_snapshots SET is_mock = TRUE WHERE is_mock IS NULL"))
+            updated = result.rowcount
+
+        return {"success": True, "message": f"Marked {updated} snapshots as mock data", "updated_count": updated}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/playback/status")
+def api_playback_status():
+    """Get playback data status: counts of mock vs real snapshots."""
+    if not engine:
+        return {"error": "DATABASE_URL not set"}
+
+    try:
+        with engine.connect() as conn:
+            mock_count = conn.execute(text("SELECT COUNT(*) FROM playback_snapshots WHERE is_mock = TRUE")).scalar()
+            real_count = conn.execute(text("SELECT COUNT(*) FROM playback_snapshots WHERE is_mock = FALSE")).scalar()
+            null_count = conn.execute(text("SELECT COUNT(*) FROM playback_snapshots WHERE is_mock IS NULL")).scalar()
+            total = mock_count + real_count + null_count
+
+        return {
+            "total": total,
+            "mock_count": mock_count,
+            "real_count": real_count,
+            "unmarked_count": null_count,
+            "note": "Unmarked data was created before is_mock column. Use /api/playback/mark_existing_as_mock to mark as mock."
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/api/playback/range")
 def api_playback_range(start_date: str = Query(None, description="Start date YYYY-MM-DD, default 3 days ago"), load_all: bool = Query(False, description="Load all data ignoring date filter")):
     """

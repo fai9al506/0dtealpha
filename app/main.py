@@ -2603,12 +2603,16 @@ DASH_HTML_TEMPLATE = """
         playbackStats.textContent = '';
       }
 
-      // Update price chart marker
+      // Update price chart marker - use category label format (MM/DD HH:MM)
       if (playbackPricePlot._fullLayout) {
+        const xLabel = (ts.getMonth()+1).toString().padStart(2,'0') + '/' +
+                       ts.getDate().toString().padStart(2,'0') + ' ' +
+                       ts.getHours().toString().padStart(2,'0') + ':' +
+                       ts.getMinutes().toString().padStart(2,'0');
         Plotly.relayout(playbackPricePlot, {
           shapes: [{
             type: 'line',
-            x0: snap.ts, x1: snap.ts,
+            x0: xLabel, x1: xLabel,
             y0: 0, y1: 1,
             xref: 'x', yref: 'paper',
             line: { color: '#ef4444', width: 2, dash: 'solid' }

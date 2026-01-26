@@ -1480,6 +1480,106 @@ def api_export_playback(start_date: str = Query(None, description="Start date YY
         print(f"[export/playback] error: {e}", flush=True)
         return Response(f"Error: {e}", media_type="text/plain", status_code=500)
 
+@app.get("/api/export/playback_summary")
+def api_export_playback_summary(start_date: str = Query(None, description="Start date YYYY-MM-DD"), load_all: bool = Query(False, description="Export all data")):
+    """
+    Export playback data as summary CSV.
+    One row per timestamp with aggregated statistics - easy to review.
+    """
+    if not engine:
+        return Response("DATABASE_URL not set", media_type="text/plain", status_code=500)
+
+    try:
+        with engine.begin() as conn:
+            if load_all:
+                rows = conn.execute(text("""
+                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                    FROM playback_snapshots
+                    ORDER BY ts ASC
+                    LIMIT 5000
+                """)).mappings().all()
+                start_dt = None
+                end_dt = None
+            else:
+                if start_date:
+                    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                    start_dt = NY.localize(start_dt.replace(hour=0, minute=0, second=0))
+                else:
+                    start_dt = now_et().replace(hour=0, minute=0, second=0, microsecond=0) - pd.Timedelta(days=3)
+
+                end_dt = now_et() + pd.Timedelta(hours=1)
+
+                rows = conn.execute(text("""
+                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                    FROM playback_snapshots
+                    WHERE ts >= :start_ts AND ts < :end_ts
+                    ORDER BY ts ASC
+                """), {"start_ts": start_dt, "end_ts": end_dt}).mappings().all()
+
+        # Build summary CSV - one row per timestamp
+        csv_rows = []
+        for r in rows:
+            ts = r["ts"]
+            ts_str = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+            spot = r["spot"]
+            strikes = _json_load_maybe(r["strikes"]) or []
+            net_gex = _json_load_maybe(r["net_gex"]) or []
+            charm = _json_load_maybe(r["charm"]) or []
+            call_vol = _json_load_maybe(r["call_vol"]) or []
+            put_vol = _json_load_maybe(r["put_vol"]) or []
+            stats = _json_load_maybe(r["stats"]) or {}
+
+            # Find max +GEX and -GEX strikes
+            max_pos_gex_strike, max_neg_gex_strike = None, None
+            max_pos_val, max_neg_val = 0, 0
+            for i, gex in enumerate(net_gex):
+                if i < len(strikes):
+                    if gex > max_pos_val:
+                        max_pos_val = gex
+                        max_pos_gex_strike = strikes[i]
+                    if gex < max_neg_val:
+                        max_neg_val = gex
+                        max_neg_gex_strike = strikes[i]
+
+            # Calculate totals
+            total_call_vol = sum(call_vol) if call_vol else 0
+            total_put_vol = sum(put_vol) if put_vol else 0
+            total_vol = total_call_vol + total_put_vol
+            net_gex_total = sum(net_gex) if net_gex else 0
+            net_charm_total = sum(charm) if charm else 0
+
+            csv_rows.append({
+                "timestamp": ts_str,
+                "spot": spot,
+                "paradigm": stats.get("paradigm"),
+                "target": stats.get("target"),
+                "lis": stats.get("lis"),
+                "max_pos_gex_strike": max_pos_gex_strike,
+                "max_neg_gex_strike": max_neg_gex_strike,
+                "dd_hedging": stats.get("dd_hedging"),
+                "total_volume": total_vol,
+                "call_volume": total_call_vol,
+                "put_volume": total_put_vol,
+                "net_gex_total": round(net_gex_total, 2) if net_gex_total else None,
+                "net_charm_total": round(net_charm_total, 2) if net_charm_total else None,
+            })
+
+        df = pd.DataFrame(csv_rows)
+        csv_content = df.to_csv(index=False)
+
+        if start_dt and end_dt:
+            filename = f"playback_summary_{start_dt.strftime('%Y%m%d')}_to_{end_dt.strftime('%Y%m%d')}.csv"
+        else:
+            filename = f"playback_summary_{now_et().strftime('%Y%m%d_%H%M')}.csv"
+        return Response(
+            csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        print(f"[export/playback_summary] error: {e}", flush=True)
+        return Response(f"Error: {e}", media_type="text/plain", status_code=500)
+
 @app.get("/api/data_freshness")
 def api_data_freshness():
     """
@@ -1945,7 +2045,12 @@ DASH_HTML_TEMPLATE = """
             <label style="font-size:11px;color:var(--muted)">Start Date:</label>
             <input type="date" id="playbackDate" style="background:#0f1115;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px">
             <button id="playbackLoad" class="strike-btn" style="padding:4px 12px">Load 3 Days</button>
-            <button id="playbackExport" class="strike-btn" style="padding:4px 12px">Export CSV</button>
+            <button id="playbackExportFull" class="strike-btn" style="padding:4px 12px">Export Full CSV</button>
+            <button id="playbackExportSummary" class="strike-btn" style="padding:4px 12px">Export Summary CSV</button>
+            <div style="display:flex;gap:4px;margin-left:10px;background:#1a1d21;border-radius:6px;padding:2px">
+              <button id="playbackViewFull" class="strike-btn active" style="padding:4px 10px;font-size:10px">Full View</button>
+              <button id="playbackViewSummary" class="strike-btn" style="padding:4px 10px;font-size:10px">Summary</button>
+            </div>
           </div>
         </div>
         <div class="playback-container">
@@ -1953,7 +2058,8 @@ DASH_HTML_TEMPLATE = """
             <span id="playbackTimestamp" style="font-size:12px;color:var(--text)">Select a date and click Load</span>
             <span id="playbackStats" style="font-size:11px;color:var(--muted);margin-left:20px"></span>
           </div>
-          <div class="playback-grid">
+          <!-- Full View (current layout) -->
+          <div id="playbackFullView" class="playback-grid">
             <div class="playback-card playback-price-card">
               <h3>SPX Price (3 Days)</h3>
               <div id="playbackPricePlot" class="playback-plot"></div>
@@ -1969,6 +2075,25 @@ DASH_HTML_TEMPLATE = """
             <div class="playback-card">
               <h3>Volume</h3>
               <div id="playbackVolPlot" class="playback-plot"></div>
+            </div>
+          </div>
+          <!-- Summary View (like Statistics tab) -->
+          <div id="playbackSummaryView" style="display:none">
+            <div style="display:flex;gap:16px;height:calc(100vh - 280px)">
+              <div style="flex:2;background:#121417;border-radius:8px;padding:8px">
+                <h3 style="font-size:12px;color:var(--muted);margin:0 0 8px 0">SPX Price + Key Levels</h3>
+                <div id="playbackSummaryPlot" style="width:100%;height:calc(100% - 30px)"></div>
+              </div>
+              <div style="flex:1;background:#121417;border-radius:8px;padding:12px;overflow-y:auto">
+                <h3 style="font-size:12px;color:var(--muted);margin:0 0 12px 0">Statistics at Selected Time</h3>
+                <div id="playbackSummaryStats" style="font-size:13px"></div>
+              </div>
+            </div>
+            <div style="margin-top:12px;font-size:11px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap">
+              <span><span style="color:#3b82f6">■</span> Target</span>
+              <span><span style="color:#f59e0b">■</span> LIS</span>
+              <span><span style="color:#22c55e">■</span> Max +Gamma</span>
+              <span><span style="color:#ef4444">■</span> Max -Gamma</span>
             </div>
           </div>
           <div class="playback-slider-container">
@@ -2855,7 +2980,8 @@ DASH_HTML_TEMPLATE = """
     // ===== Playback View =====
     const playbackDateInput = document.getElementById('playbackDate'),
           playbackLoadBtn = document.getElementById('playbackLoad'),
-          playbackExportBtn = document.getElementById('playbackExport'),
+          playbackExportFullBtn = document.getElementById('playbackExportFull'),
+          playbackExportSummaryBtn = document.getElementById('playbackExportSummary'),
           playbackSlider = document.getElementById('playbackSlider'),
           playbackTimestamp = document.getElementById('playbackTimestamp'),
           playbackStats = document.getElementById('playbackStats'),
@@ -2864,10 +2990,17 @@ DASH_HTML_TEMPLATE = """
           playbackPricePlot = document.getElementById('playbackPricePlot'),
           playbackGexPlot = document.getElementById('playbackGexPlot'),
           playbackCharmPlot = document.getElementById('playbackCharmPlot'),
-          playbackVolPlot = document.getElementById('playbackVolPlot');
+          playbackVolPlot = document.getElementById('playbackVolPlot'),
+          playbackFullView = document.getElementById('playbackFullView'),
+          playbackSummaryView = document.getElementById('playbackSummaryView'),
+          playbackSummaryPlot = document.getElementById('playbackSummaryPlot'),
+          playbackSummaryStats = document.getElementById('playbackSummaryStats'),
+          playbackViewFullBtn = document.getElementById('playbackViewFull'),
+          playbackViewSummaryBtn = document.getElementById('playbackViewSummary');
 
     let playbackData = null;
     let playbackInitialized = false;
+    let playbackViewMode = 'full'; // 'full' or 'summary'
 
     function initPlayback() {
       if (playbackInitialized) return;
@@ -2879,8 +3012,33 @@ DASH_HTML_TEMPLATE = """
       playbackDateInput.value = defaultDate.toISOString().split('T')[0];
 
       playbackLoadBtn.addEventListener('click', loadPlaybackData);
-      playbackExportBtn.addEventListener('click', exportPlaybackCSV);
+      playbackExportFullBtn.addEventListener('click', exportPlaybackFullCSV);
+      playbackExportSummaryBtn.addEventListener('click', exportPlaybackSummaryCSV);
       playbackSlider.addEventListener('input', onSliderChange);
+
+      // View toggle buttons
+      playbackViewFullBtn.addEventListener('click', () => setPlaybackViewMode('full'));
+      playbackViewSummaryBtn.addEventListener('click', () => setPlaybackViewMode('summary'));
+    }
+
+    function setPlaybackViewMode(mode) {
+      playbackViewMode = mode;
+      playbackViewFullBtn.classList.toggle('active', mode === 'full');
+      playbackViewSummaryBtn.classList.toggle('active', mode === 'summary');
+      playbackFullView.style.display = mode === 'full' ? '' : 'none';
+      playbackSummaryView.style.display = mode === 'summary' ? '' : 'none';
+
+      // Re-render current snapshot in new view mode
+      if (playbackData && playbackData.snapshots.length > 0) {
+        const idx = parseInt(playbackSlider.value);
+        if (mode === 'full') {
+          drawPlaybackPriceChart();
+          updatePlaybackSnapshot(idx);
+        } else {
+          drawPlaybackSummaryChart(idx);
+          updatePlaybackSummaryStats(idx);
+        }
+      }
     }
 
     async function loadPlaybackData() {
@@ -2917,11 +3075,14 @@ DASH_HTML_TEMPLATE = """
         playbackSliderStart.textContent = first.toLocaleDateString() + ' ' + first.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'});
         playbackSliderEnd.textContent = last.toLocaleDateString() + ' ' + last.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'});
 
-        // Draw price chart (full 3 days)
-        drawPlaybackPriceChart();
-
-        // Draw snapshot at position 0
-        updatePlaybackSnapshot(0);
+        // Render based on current view mode
+        if (playbackViewMode === 'full') {
+          drawPlaybackPriceChart();
+          updatePlaybackSnapshot(0);
+        } else {
+          drawPlaybackSummaryChart(0);
+          updatePlaybackSummaryStats(0);
+        }
 
         playbackTimestamp.textContent = 'Loaded ' + data.count + ' snapshots. Drag slider to scrub through time.';
       } catch (err) {
@@ -2931,15 +3092,25 @@ DASH_HTML_TEMPLATE = """
       }
     }
 
-    function exportPlaybackCSV() {
-      // Export all data
+    function exportPlaybackFullCSV() {
+      // Export full data with all strikes
       window.location.href = '/api/export/playback?load_all=true';
+    }
+
+    function exportPlaybackSummaryCSV() {
+      // Export summary data (1 row per timestamp)
+      window.location.href = '/api/export/playback_summary?load_all=true';
     }
 
     function onSliderChange() {
       if (!playbackData) return;
       const idx = parseInt(playbackSlider.value);
-      updatePlaybackSnapshot(idx);
+      if (playbackViewMode === 'full') {
+        updatePlaybackSnapshot(idx);
+      } else {
+        drawPlaybackSummaryChart(idx);
+        updatePlaybackSummaryStats(idx);
+      }
     }
 
     function drawPlaybackPriceChart() {
@@ -3142,6 +3313,240 @@ DASH_HTML_TEMPLATE = """
         font: { color: '#e6e7e9', size: 10 },
         shapes: shapes
       }, { displayModeBar: false, responsive: true });
+    }
+
+    // ===== Playback Summary View Functions =====
+    function drawPlaybackSummaryChart(idx) {
+      if (!playbackData || !playbackData.snapshots.length) return;
+
+      const snaps = playbackData.snapshots;
+      const currentSnap = snaps[idx];
+      const ts = new Date(currentSnap.ts);
+
+      // Build candlestick data
+      const times = [];
+      const opens = [];
+      const highs = [];
+      const lows = [];
+      const closes = [];
+
+      for (let i = 0; i < snaps.length; i++) {
+        const curr = snaps[i].spot;
+        const prev = i > 0 ? snaps[i - 1].spot : curr;
+        times.push(new Date(snaps[i].ts));
+        opens.push(prev);
+        closes.push(curr);
+        highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1);
+        lows.push(Math.min(prev, curr) - Math.abs(curr - prev) * 0.1);
+      }
+
+      // Get levels from current snapshot stats
+      const stats = currentSnap.stats || {};
+      const gexData = currentSnap.net_gex || [];
+      const strikes = currentSnap.strikes || [];
+
+      // Find max +GEX and -GEX strikes
+      let maxPosGexStrike = null, maxNegGexStrike = null;
+      let maxPosVal = 0, maxNegVal = 0;
+      for (let i = 0; i < strikes.length && i < gexData.length; i++) {
+        if (gexData[i] > maxPosVal) { maxPosVal = gexData[i]; maxPosGexStrike = strikes[i]; }
+        if (gexData[i] < maxNegVal) { maxNegVal = gexData[i]; maxNegGexStrike = strikes[i]; }
+      }
+
+      // Parse target from stats
+      let target = null;
+      if (stats.target) {
+        const tMatch = String(stats.target).replace(/[$,]/g, '').match(/([\d.]+)/);
+        if (tMatch) target = parseFloat(tMatch[1]);
+      }
+
+      // Parse LIS from stats
+      let lisLow = null, lisHigh = null;
+      if (stats.lis) {
+        const lisStr = String(stats.lis).replace(/[$,]/g, '');
+        const dashMatch = lisStr.match(/([\d.]+)\s*[-–]\s*([\d.]+)/);
+        if (dashMatch) {
+          lisLow = parseFloat(dashMatch[1]);
+          lisHigh = parseFloat(dashMatch[2]);
+        } else {
+          const slashMatch = lisStr.match(/([\d.]+)\s*\/\s*([\d.]+)/);
+          if (slashMatch) {
+            lisLow = parseFloat(slashMatch[1]);
+            lisHigh = parseFloat(slashMatch[2]);
+          } else {
+            const single = lisStr.match(/([\d.]+)/);
+            if (single) lisLow = parseFloat(single[1]);
+          }
+        }
+      }
+
+      // Calculate Y range
+      const levelValues = [target, lisLow, lisHigh, maxPosGexStrike, maxNegGexStrike, Math.min(...lows), Math.max(...highs)].filter(v => v);
+      const yMin = Math.min(...levelValues) - 10;
+      const yMax = Math.max(...levelValues) + 10;
+
+      // Build shapes and annotations
+      const shapes = [];
+      const annotations = [];
+
+      // Target (blue)
+      if (target) {
+        shapes.push({ type: 'line', y0: target, y1: target, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#3b82f6', width: 2 } });
+        annotations.push({ x: 1.01, y: target, xref: 'paper', yref: 'y', text: 'Tgt ' + Math.round(target), showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left' });
+      }
+
+      // LIS lines (amber)
+      if (lisLow) {
+        shapes.push({ type: 'line', y0: lisLow, y1: lisLow, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#f59e0b', width: 2 } });
+        annotations.push({ x: 1.01, y: lisLow, xref: 'paper', yref: 'y', text: 'LIS ' + Math.round(lisLow), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left' });
+      }
+      if (lisHigh && lisHigh !== lisLow) {
+        shapes.push({ type: 'line', y0: lisHigh, y1: lisHigh, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#f59e0b', width: 2 } });
+        annotations.push({ x: 1.01, y: lisHigh, xref: 'paper', yref: 'y', text: 'LIS ' + Math.round(lisHigh), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left' });
+      }
+
+      // Max +GEX (green)
+      if (maxPosGexStrike) {
+        shapes.push({ type: 'line', y0: maxPosGexStrike, y1: maxPosGexStrike, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#22c55e', width: 2 } });
+        annotations.push({ x: 1.01, y: maxPosGexStrike, xref: 'paper', yref: 'y', text: '+G ' + maxPosGexStrike, showarrow: false, font: { color: '#22c55e', size: 10 }, xanchor: 'left' });
+      }
+
+      // Max -GEX (red)
+      if (maxNegGexStrike) {
+        shapes.push({ type: 'line', y0: maxNegGexStrike, y1: maxNegGexStrike, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#ef4444', width: 2 } });
+        annotations.push({ x: 1.01, y: maxNegGexStrike, xref: 'paper', yref: 'y', text: '-G ' + maxNegGexStrike, showarrow: false, font: { color: '#ef4444', size: 10 }, xanchor: 'left' });
+      }
+
+      // Add current position marker
+      const xLabel = times[idx];
+      shapes.push({
+        type: 'line', x0: xLabel, x1: xLabel, y0: 0, y1: 1,
+        xref: 'x', yref: 'paper',
+        line: { color: '#ef4444', width: 2, dash: 'solid' }
+      });
+
+      const trace = {
+        type: 'candlestick',
+        x: times,
+        open: opens,
+        high: highs,
+        low: lows,
+        close: closes,
+        increasing: { line: { color: '#22c55e' }, fillcolor: '#22c55e' },
+        decreasing: { line: { color: '#ef4444' }, fillcolor: '#ef4444' },
+        hoverinfo: 'x+y'
+      };
+
+      Plotly.react(playbackSummaryPlot, [trace], {
+        margin: { l: 50, r: 80, t: 20, b: 50 },
+        paper_bgcolor: '#121417',
+        plot_bgcolor: '#0f1115',
+        xaxis: {
+          type: 'date',
+          gridcolor: '#20242a',
+          tickfont: { size: 9 },
+          tickformat: '%m/%d %H:%M',
+          rangeslider: { visible: false }
+        },
+        yaxis: {
+          gridcolor: '#20242a',
+          tickfont: { size: 10 },
+          side: 'left',
+          range: [yMin, yMax],
+          dtick: 5
+        },
+        font: { color: '#e6e7e9', size: 10 },
+        shapes: shapes,
+        annotations: annotations,
+        dragmode: 'zoom'
+      }, {
+        displayModeBar: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+        responsive: true,
+        scrollZoom: true
+      });
+
+      // Update timestamp display
+      playbackTimestamp.textContent = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString() + ' | SPX: ' + (currentSnap.spot ? currentSnap.spot.toFixed(2) : 'N/A');
+    }
+
+    function updatePlaybackSummaryStats(idx) {
+      if (!playbackData || idx >= playbackData.snapshots.length) return;
+
+      const snap = playbackData.snapshots[idx];
+      const stats = snap.stats || {};
+      const gexData = snap.net_gex || [];
+      const strikes = snap.strikes || [];
+
+      // Find max +GEX and -GEX
+      let maxPosGexStrike = null, maxNegGexStrike = null;
+      let maxPosVal = 0, maxNegVal = 0;
+      for (let i = 0; i < strikes.length && i < gexData.length; i++) {
+        if (gexData[i] > maxPosVal) { maxPosVal = gexData[i]; maxPosGexStrike = strikes[i]; }
+        if (gexData[i] < maxNegVal) { maxNegVal = gexData[i]; maxNegGexStrike = strikes[i]; }
+      }
+
+      // Calculate total volumes
+      const callVol = (snap.call_vol || []).reduce((a, b) => a + b, 0);
+      const putVol = (snap.put_vol || []).reduce((a, b) => a + b, 0);
+      const totalVol = callVol + putVol;
+
+      let html = '<div style="display:flex;flex-direction:column;gap:12px">';
+
+      // SPX Spot
+      html += '<div style="padding:10px;background:#1a1d21;border-radius:6px">';
+      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">SPX Spot</div>';
+      html += '<div style="font-size:20px;font-weight:600;color:var(--text)">' + (snap.spot ? snap.spot.toFixed(2) : 'N/A') + '</div>';
+      html += '</div>';
+
+      // Paradigm
+      html += '<div style="padding:10px;background:#1a1d21;border-radius:6px">';
+      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Paradigm</div>';
+      html += '<div style="font-size:14px;color:var(--text)">' + (stats.paradigm || 'N/A') + '</div>';
+      html += '</div>';
+
+      // Target
+      html += '<div style="padding:10px;background:#1a1d21;border-radius:6px">';
+      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Target</div>';
+      html += '<div style="font-size:14px;color:#3b82f6">' + (stats.target || 'N/A') + '</div>';
+      html += '</div>';
+
+      // LIS
+      html += '<div style="padding:10px;background:#1a1d21;border-radius:6px">';
+      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Lines in Sand (LIS)</div>';
+      html += '<div style="font-size:14px;color:#f59e0b">' + (stats.lis || 'N/A') + '</div>';
+      html += '</div>';
+
+      // Max +GEX / -GEX
+      html += '<div style="display:flex;gap:8px">';
+      html += '<div style="flex:1;padding:10px;background:#1a1d21;border-radius:6px">';
+      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Max +GEX</div>';
+      html += '<div style="font-size:14px;color:#22c55e">' + (maxPosGexStrike || 'N/A') + '</div>';
+      html += '</div>';
+      html += '<div style="flex:1;padding:10px;background:#1a1d21;border-radius:6px">';
+      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Max -GEX</div>';
+      html += '<div style="font-size:14px;color:#ef4444">' + (maxNegGexStrike || 'N/A') + '</div>';
+      html += '</div>';
+      html += '</div>';
+
+      // DD Hedging
+      html += '<div style="padding:10px;background:#1a1d21;border-radius:6px">';
+      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">DD Hedging</div>';
+      const ddHedging = stats.dd_hedging || 'N/A';
+      const ddColor = ddHedging.includes('-') ? '#ef4444' : '#22c55e';
+      html += '<div style="font-size:14px;color:' + ddColor + '">' + ddHedging + '</div>';
+      html += '</div>';
+
+      // 0DTE Volume
+      html += '<div style="padding:10px;background:#1a1d21;border-radius:6px">';
+      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">0DTE Volume</div>';
+      html += '<div style="font-size:14px;color:var(--text)">' + totalVol.toLocaleString() + '</div>';
+      html += '<div style="font-size:10px;color:var(--muted)">Calls: ' + callVol.toLocaleString() + ' | Puts: ' + putVol.toLocaleString() + '</div>';
+      html += '</div>';
+
+      html += '</div>';
+      playbackSummaryStats.innerHTML = html;
     }
 
     // default

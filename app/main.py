@@ -1032,6 +1032,105 @@ def api_playback_save_now():
     except Exception as e:
         return {"error": str(e)}
 
+@app.post("/api/playback/generate_mock")
+def api_playback_generate_mock():
+    """Generate mock playback data for testing (3 days, ~100 snapshots). Delete with /api/playback/delete_all"""
+    import random
+    if not engine:
+        return {"error": "DATABASE_URL not set"}
+
+    try:
+        # Generate 3 days of mock data, every 5 minutes during "market hours" (9:30-16:00)
+        base_spot = 6050.0
+        strikes = [base_spot + (i - 20) * 5 for i in range(41)]  # 41 strikes centered around spot
+
+        snapshots = []
+        start_time = now_et().replace(hour=9, minute=30, second=0, microsecond=0) - pd.Timedelta(days=3)
+
+        for day in range(3):
+            day_start = start_time + pd.Timedelta(days=day)
+            # Simulate price movement for the day
+            day_spot = base_spot + random.uniform(-30, 30)
+
+            for minute in range(0, 390, 5):  # 9:30 to 16:00 = 390 minutes
+                ts = day_start + pd.Timedelta(minutes=minute)
+
+                # Random walk for spot price
+                day_spot += random.uniform(-2, 2)
+                spot = round(day_spot, 2)
+
+                # Generate mock GEX (higher near spot, random sign)
+                net_gex = []
+                for s in strikes:
+                    dist = abs(s - spot)
+                    magnitude = max(0, 5000 - dist * 100) * random.uniform(0.5, 1.5)
+                    sign = 1 if random.random() > 0.4 else -1
+                    net_gex.append(round(magnitude * sign, 2))
+
+                # Generate mock Charm
+                charm = []
+                for s in strikes:
+                    dist = abs(s - spot)
+                    magnitude = max(0, 3000 - dist * 80) * random.uniform(0.3, 1.2)
+                    sign = 1 if s > spot else -1
+                    charm.append(round(magnitude * sign, 2))
+
+                # Generate mock Volume
+                call_vol = [int(random.uniform(100, 5000) * max(0.1, 1 - abs(s - spot) / 100)) for s in strikes]
+                put_vol = [int(random.uniform(100, 5000) * max(0.1, 1 - abs(s - spot) / 100)) for s in strikes]
+
+                # Mock stats
+                paradigms = ["Positive Charm", "Negative Charm", "Neutral"]
+                stats = {
+                    "paradigm": random.choice(paradigms),
+                    "target": str(int(spot + random.uniform(-20, 20))),
+                    "lis": f"{int(spot - 30)}/{int(spot + 30)}",
+                    "dd_hedging": f"{random.choice(['+', '-'])}{random.randint(1, 50)}M",
+                    "opt_volume": f"{random.randint(500, 2000)}K"
+                }
+
+                snapshots.append({
+                    "ts": ts,
+                    "spot": spot,
+                    "strikes": strikes,
+                    "net_gex": net_gex,
+                    "charm": charm,
+                    "call_vol": call_vol,
+                    "put_vol": put_vol,
+                    "stats": stats
+                })
+
+        # Insert all snapshots
+        with engine.begin() as conn:
+            for snap in snapshots:
+                conn.execute(
+                    text("""INSERT INTO playback_snapshots (ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats)
+                            VALUES (:ts, :spot, :strikes, :net_gex, :charm, :call_vol, :put_vol, :stats)"""),
+                    {"ts": snap["ts"], "spot": snap["spot"], "strikes": json.dumps(snap["strikes"]),
+                     "net_gex": json.dumps(snap["net_gex"]), "charm": json.dumps(snap["charm"]),
+                     "call_vol": json.dumps(snap["call_vol"]), "put_vol": json.dumps(snap["put_vol"]),
+                     "stats": json.dumps(snap["stats"])}
+                )
+
+        return {"success": True, "message": f"Generated {len(snapshots)} mock snapshots", "count": len(snapshots)}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.delete("/api/playback/delete_all")
+def api_playback_delete_all():
+    """Delete ALL playback snapshots. Use with caution!"""
+    if not engine:
+        return {"error": "DATABASE_URL not set"}
+
+    try:
+        with engine.begin() as conn:
+            result = conn.execute(text("DELETE FROM playback_snapshots"))
+            deleted = result.rowcount
+
+        return {"success": True, "message": f"Deleted {deleted} snapshots", "deleted_count": deleted}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/api/playback/range")
 def api_playback_range(start_date: str = Query(None, description="Start date YYYY-MM-DD, default 3 days ago")):
     """

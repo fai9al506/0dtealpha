@@ -2455,9 +2455,8 @@ DASH_HTML_TEMPLATE = """
         <h4>SPX Statistics</h4>
         <div id="statsContent" style="color:var(--muted);font-size:11px">Loading...</div>
       </div>
-      <div style="margin-top:14px;display:flex;gap:8px;align-items:center;justify-content:space-between">
-        <span style="font-size:11px;color:var(--text)">🔔 Alerts</span>
-        <button id="alertSettingsBtn" class="strike-btn" style="padding:3px 8px;font-size:10px">Settings</button>
+      <div style="margin-top:14px">
+        <button id="alertSettingsBtn" class="strike-btn" style="padding:5px 12px;font-size:11px;width:100%">Settings</button>
       </div>
     </aside>
 

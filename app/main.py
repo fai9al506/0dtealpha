@@ -2560,9 +2560,10 @@ DASH_HTML_TEMPLATE = """
           tickfont: { size: 8 },
           tickformat: '%m/%d %H:%M',
           tickangle: -45,
-          rangeslider: { visible: false }
+          rangeslider: { visible: false },
+          fixedrange: false
         },
-        yaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, side: 'left' },
+        yaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, side: 'left', fixedrange: false },
         font: { color: '#e6e7e9', size: 10 },
         shapes: [],
         dragmode: 'zoom'

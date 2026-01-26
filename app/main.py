@@ -2561,6 +2561,8 @@ DASH_HTML_TEMPLATE = """
       position: sticky;
       top:0;
       height:100vh;
+      display: flex;
+      flex-direction: column;
     }
     .brand { font-weight: 700; margin-bottom: 4px; font-size:14px; }
     .small { color: var(--muted); font-size: 11px; margin-bottom: 12px; }
@@ -2808,8 +2810,8 @@ DASH_HTML_TEMPLATE = """
     .settings-tab { background:none; border:none; color:var(--muted); padding:12px 16px; cursor:pointer; font-size:13px; border-bottom:2px solid transparent; margin-bottom:-1px; }
     .settings-tab:hover { color:var(--text); }
     .settings-tab.active { color:var(--text); border-bottom-color:var(--blue); }
-    .settings-panel { display:none; }
-    .settings-panel.active { display:block; }
+    .settings-panel { display:none !important; }
+    .settings-panel.active { display:block !important; }
     .user-row, .message-row { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:var(--bg); border-radius:6px; margin-bottom:8px; }
     .user-row .email { font-size:13px; }
     .user-row .badge { font-size:10px; background:var(--blue); padding:2px 6px; border-radius:4px; margin-left:8px; }
@@ -2829,10 +2831,6 @@ DASH_HTML_TEMPLATE = """
     <aside class="sidebar">
       <div class="brand">SPXW 0DTE</div>
       <div class="small">Live chain + charts</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding:6px 8px;background:#0f1216;border-radius:6px;border:1px solid var(--border)">
-        <span style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px" title="__USER_EMAIL__">__USER_EMAIL__</span>
-        <a href="/logout" style="font-size:10px;color:var(--red);text-decoration:none">Logout</a>
-      </div>
       <div class="status">
         <span class="dot"></span>
         <div>
@@ -2855,6 +2853,10 @@ DASH_HTML_TEMPLATE = """
       </div>
       <div style="margin-top:14px">
         <button id="alertSettingsBtn" class="strike-btn" style="padding:5px 12px;font-size:11px;width:100%">Settings</button>
+      </div>
+      <div style="margin-top:auto;padding-top:16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px" title="__USER_EMAIL__">__USER_EMAIL__</span>
+        <a href="/logout" style="font-size:11px;color:var(--muted);text-decoration:none">Sign out</a>
       </div>
     </aside>
 
@@ -2932,7 +2934,7 @@ DASH_HTML_TEMPLATE = """
           </div>
         </div>
         <!-- Users Tab (Admin Only) -->
-        <div class="settings-panel" id="tabPanelUsers" style="display:none">
+        <div class="settings-panel" id="tabPanelUsers">
           <div class="modal-body">
             <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
               <div style="color:var(--muted);margin-bottom:12px;font-weight:600">Add New User</div>
@@ -2953,7 +2955,7 @@ DASH_HTML_TEMPLATE = """
           </div>
         </div>
         <!-- Messages Tab (Admin Only) -->
-        <div class="settings-panel" id="tabPanelMessages" style="display:none">
+        <div class="settings-panel" id="tabPanelMessages">
           <div class="modal-body">
             <div style="color:var(--muted);margin-bottom:12px;font-weight:600">Access Requests</div>
             <div id="messagesList" style="max-height:300px;overflow-y:auto"></div>

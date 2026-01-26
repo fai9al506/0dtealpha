@@ -797,71 +797,67 @@ def api_data_freshness():
     Returns the last update timestamps for each data source.
     Used to verify data is flowing correctly before making trading decisions.
     """
-    now_utc = datetime.utcnow()
+    now_et = datetime.now(NY)
     result = {
         "ts_api": {"last_update": None, "age_seconds": None, "status": "error"},
-        "volland_charm": {"last_update": None, "age_seconds": None, "status": "error"},
+        "volland": {"last_update": None, "age_seconds": None, "status": "error"},
     }
 
-    if not engine:
-        return result
+    # TS API: use in-memory last_run_status (pulled every 30s, not DB which saves every 5min)
+    ts_str = last_run_status.get("ts")
+    if ts_str and last_run_status.get("ok"):
+        try:
+            # Parse "2026-01-26 11:16 EST" format
+            ts_time = datetime.strptime(ts_str.replace(" EST", "").replace(" EDT", ""), "%Y-%m-%d %H:%M")
+            ts_time = NY.localize(ts_time)
+            age = (now_et - ts_time).total_seconds()
 
-    try:
-        with engine.begin() as conn:
-            # TS API: latest from chain_snapshots
-            ts_row = conn.execute(text(
-                "SELECT ts FROM chain_snapshots ORDER BY ts DESC LIMIT 1"
-            )).mappings().first()
+            # Status: ok <2min, stale 2-5min, error >5min
+            if age < 120:
+                status = "ok"
+            elif age < 300:
+                status = "stale"
+            else:
+                status = "error"
 
-            if ts_row and ts_row["ts"]:
-                ts_time = ts_row["ts"]
-                # Convert to UTC for age calculation
-                if ts_time.tzinfo is not None:
-                    age = (datetime.now(ts_time.tzinfo) - ts_time).total_seconds()
-                else:
-                    age = (now_utc - ts_time).total_seconds()
+            result["ts_api"] = {
+                "last_update": ts_time.isoformat(),
+                "age_seconds": int(age),
+                "status": status
+            }
+        except Exception as e:
+            print(f"[data_freshness] ts parse error: {e}", flush=True)
 
-                # Status: ok <2min, stale 2-5min, error >5min
-                if age < 120:
-                    status = "ok"
-                elif age < 300:
-                    status = "stale"
-                else:
-                    status = "error"
+    # Volland: latest from volland_snapshots (covers both Charm and SPX Statistics)
+    if engine:
+        try:
+            with engine.begin() as conn:
+                volland_row = conn.execute(text(
+                    "SELECT ts FROM volland_snapshots ORDER BY ts DESC LIMIT 1"
+                )).mappings().first()
 
-                result["ts_api"] = {
-                    "last_update": ts_time.isoformat() if hasattr(ts_time, "isoformat") else str(ts_time),
-                    "age_seconds": int(age),
-                    "status": status
-                }
+                if volland_row and volland_row["ts"]:
+                    v_time = volland_row["ts"]
+                    if v_time.tzinfo is not None:
+                        age = (datetime.now(v_time.tzinfo) - v_time).total_seconds()
+                    else:
+                        age = (now_et.replace(tzinfo=None) - v_time).total_seconds()
 
-            # Volland/Charm: latest from volland_snapshots
-            volland_row = conn.execute(text(
-                "SELECT ts FROM volland_snapshots ORDER BY ts DESC LIMIT 1"
-            )).mappings().first()
+                    # Status: ok <2min, stale 2-10min, error >10min (volland runs every 60s)
+                    if age < 120:
+                        status = "ok"
+                    elif age < 600:
+                        status = "stale"
+                    else:
+                        status = "error"
 
-            if volland_row and volland_row["ts"]:
-                v_time = volland_row["ts"]
-                if v_time.tzinfo is not None:
-                    age = (datetime.now(v_time.tzinfo) - v_time).total_seconds()
-                else:
-                    age = (now_utc - v_time).total_seconds()
-
-                # Status: ok <2min, stale 2-10min, error >10min (volland runs every 60s)
-                if age < 120:
-                    status = "ok"
-                elif age < 600:
-                    status = "stale"
-                else:
-                    status = "error"
-
-                result["volland_charm"] = {
-                    "last_update": v_time.isoformat() if hasattr(v_time, "isoformat") else str(v_time),
-                    "age_seconds": int(age),
-                    "status": status
-                }
-    except Exception as e:
-        print(f"[data_freshness] error: {e}", flush=True)
+                    result["volland"] = {
+                        "last_update": v_time.isoformat() if hasattr(v_time, "isoformat") else str(v_time),
+                        "age_seconds": int(age),
+                        "status": status
+                    }
+        except Exception as e:
+            print(f"[data_freshness] volland error: {e}", flush=True)
 
     return result
 
@@ -1199,7 +1195,7 @@ DASH_HTML_TEMPLATE = """
       }
 
       const ts = data.ts_api || {};
-      const vl = data.volland_charm || {};
+      const vl = data.volland || {};
 
       const tsColor = statusColors[ts.status] || statusColors.error;
       const vlColor = statusColors[vl.status] || statusColors.error;
@@ -1207,7 +1203,7 @@ DASH_HTML_TEMPLATE = """
       dataFreshnessEl.innerHTML =
         '<span style="color:' + tsColor + '">TS:' + fmtTime(ts.last_update) + '</span>' +
         '<span style="margin:0 6px;color:#555">|</span>' +
-        '<span style="color:' + vlColor + '">Charm:' + fmtTime(vl.last_update) + '</span>';
+        '<span style="color:' + vlColor + '">Vol:' + fmtTime(vl.last_update) + '</span>';
     }
     fetchDataFreshness();
     setInterval(fetchDataFreshness, PULL_EVERY);

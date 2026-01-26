@@ -2,7 +2,7 @@
 from fastapi import FastAPI, Response, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from datetime import datetime, time as dtime
-import os, time, json, requests, pandas as pd, pytz
+import os, time, json, re, requests, pandas as pd, pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
 from threading import Lock
@@ -39,6 +39,85 @@ SAVE_EVERY_MIN = 5    # minutes
 STREAM_SECONDS = 5.0  # Increased from 2.0 to allow full chain download
 TARGET_STRIKES = 40
 MIN_REQUIRED_STRIKES = 30  # Minimum rows required; reject data below this threshold
+
+# ====== TELEGRAM ALERTS ======
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+# Alert state tracking
+_alert_state = {
+    "last_paradigm": None,
+    "last_volume": {},  # {strike: {"call": vol, "put": vol}}
+    "last_alert_times": {},  # {"lis": timestamp, "target": timestamp, ...}
+    "levels_touched": set(),  # Track which levels have been touched today
+    "sent_10am": False,
+    "sent_2pm": False,
+    "last_trading_day": None,
+}
+
+# Default alert settings (loaded from DB on startup)
+_alert_settings = {
+    "enabled": True,
+    "lis_enabled": True,
+    "target_enabled": True,
+    "max_pos_gamma_enabled": True,
+    "max_neg_gamma_enabled": True,
+    "paradigm_change_enabled": True,
+    "summary_10am_enabled": True,
+    "summary_2pm_enabled": True,
+    "volume_spike_enabled": True,
+    "threshold_points": 5,
+    "threshold_volume": 500,
+    "cooldown_enabled": True,
+    "cooldown_minutes": 10,
+}
+
+def send_telegram(message: str) -> bool:
+    """Send a message via Telegram bot."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("[telegram] missing token or chat_id", flush=True)
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        resp = requests.post(url, json={
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "HTML"
+        }, timeout=10)
+        if resp.status_code == 200:
+            print(f"[telegram] sent: {message[:50]}...", flush=True)
+            return True
+        else:
+            print(f"[telegram] error: {resp.status_code} {resp.text}", flush=True)
+            return False
+    except Exception as e:
+        print(f"[telegram] exception: {e}", flush=True)
+        return False
+
+def is_market_hours() -> bool:
+    """Check if current time is within market hours (9:30 AM - 4:00 PM ET)."""
+    now = datetime.now(NY)
+    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+    return market_open <= now <= market_close
+
+def should_alert(alert_type: str) -> bool:
+    """Check if we should send an alert based on cooldown settings."""
+    if not _alert_settings.get("enabled"):
+        return False
+    if not _alert_settings.get("cooldown_enabled"):
+        return True
+
+    last_time = _alert_state["last_alert_times"].get(alert_type)
+    if last_time is None:
+        return True
+
+    cooldown_sec = _alert_settings.get("cooldown_minutes", 10) * 60
+    return (time.time() - last_time) >= cooldown_sec
+
+def record_alert(alert_type: str):
+    """Record that an alert was sent."""
+    _alert_state["last_alert_times"][alert_type] = time.time()
 
 # ====== APP ======
 app = FastAPI()
@@ -105,7 +184,87 @@ def db_init():
         END $$;
         """))
 
+        # Alert settings table
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS alert_settings (
+            id INTEGER PRIMARY KEY DEFAULT 1,
+            enabled BOOLEAN DEFAULT TRUE,
+            lis_enabled BOOLEAN DEFAULT TRUE,
+            target_enabled BOOLEAN DEFAULT TRUE,
+            max_pos_gamma_enabled BOOLEAN DEFAULT TRUE,
+            max_neg_gamma_enabled BOOLEAN DEFAULT TRUE,
+            paradigm_change_enabled BOOLEAN DEFAULT TRUE,
+            summary_10am_enabled BOOLEAN DEFAULT TRUE,
+            summary_2pm_enabled BOOLEAN DEFAULT TRUE,
+            volume_spike_enabled BOOLEAN DEFAULT TRUE,
+            threshold_points INTEGER DEFAULT 5,
+            threshold_volume INTEGER DEFAULT 500,
+            cooldown_enabled BOOLEAN DEFAULT TRUE,
+            cooldown_minutes INTEGER DEFAULT 10,
+            CHECK (id = 1)
+        );
+        INSERT INTO alert_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+        """))
+
+    # Load alert settings from database
+    load_alert_settings()
     print("[db] ready", flush=True)
+
+def load_alert_settings():
+    """Load alert settings from database into memory."""
+    global _alert_settings
+    if not engine:
+        return
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(text("SELECT * FROM alert_settings WHERE id = 1")).mappings().first()
+            if row:
+                _alert_settings = {
+                    "enabled": row["enabled"],
+                    "lis_enabled": row["lis_enabled"],
+                    "target_enabled": row["target_enabled"],
+                    "max_pos_gamma_enabled": row["max_pos_gamma_enabled"],
+                    "max_neg_gamma_enabled": row["max_neg_gamma_enabled"],
+                    "paradigm_change_enabled": row["paradigm_change_enabled"],
+                    "summary_10am_enabled": row["summary_10am_enabled"],
+                    "summary_2pm_enabled": row["summary_2pm_enabled"],
+                    "volume_spike_enabled": row["volume_spike_enabled"],
+                    "threshold_points": row["threshold_points"],
+                    "threshold_volume": row["threshold_volume"],
+                    "cooldown_enabled": row["cooldown_enabled"],
+                    "cooldown_minutes": row["cooldown_minutes"],
+                }
+                print("[alerts] settings loaded from db", flush=True)
+    except Exception as e:
+        print(f"[alerts] failed to load settings: {e}", flush=True)
+
+def save_alert_settings():
+    """Save current alert settings to database."""
+    if not engine:
+        return False
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                UPDATE alert_settings SET
+                    enabled = :enabled,
+                    lis_enabled = :lis_enabled,
+                    target_enabled = :target_enabled,
+                    max_pos_gamma_enabled = :max_pos_gamma_enabled,
+                    max_neg_gamma_enabled = :max_neg_gamma_enabled,
+                    paradigm_change_enabled = :paradigm_change_enabled,
+                    summary_10am_enabled = :summary_10am_enabled,
+                    summary_2pm_enabled = :summary_2pm_enabled,
+                    volume_spike_enabled = :volume_spike_enabled,
+                    threshold_points = :threshold_points,
+                    threshold_volume = :threshold_volume,
+                    cooldown_enabled = :cooldown_enabled,
+                    cooldown_minutes = :cooldown_minutes
+                WHERE id = 1
+            """), _alert_settings)
+        return True
+    except Exception as e:
+        print(f"[alerts] failed to save settings: {e}", flush=True)
+        return False
 
 def _json_load_maybe(v: Any) -> Any:
     if v is None:
@@ -609,6 +768,13 @@ def run_market_job():
             latest_df = df.copy()
         last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={final_count}"}
         print("[pull] OK", last_run_status["msg"], flush=True)
+
+        # Check alerts after successful data pull
+        try:
+            check_alerts()
+            send_scheduled_summary()
+        except Exception as alert_err:
+            print(f"[alerts] error in check: {alert_err}", flush=True)
     except Exception as e:
         last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}
         print("[pull] ERROR", e, flush=True)
@@ -739,6 +905,231 @@ def save_playback_snapshot():
         print("[playback] snapshot saved", flush=True)
     except Exception as e:
         print(f"[playback] save failed: {e}", flush=True)
+
+# ====== ALERT CHECKING ======
+def check_alerts():
+    """Check all alert conditions and send Telegram notifications."""
+    global _alert_state
+
+    if not _alert_settings.get("enabled"):
+        return
+
+    if not is_market_hours():
+        return
+
+    # Reset daily state at market open
+    today = datetime.now(NY).date()
+    if _alert_state["last_trading_day"] != today:
+        _alert_state["last_trading_day"] = today
+        _alert_state["levels_touched"] = set()
+        _alert_state["sent_10am"] = False
+        _alert_state["sent_2pm"] = False
+        _alert_state["last_paradigm"] = None
+        print("[alerts] reset daily state", flush=True)
+
+    try:
+        # Get current data
+        with _df_lock:
+            if latest_df is None or latest_df.empty:
+                return
+            df = latest_df.copy()
+
+        # Get spot price
+        msg = last_run_status.get("msg") or ""
+        spot = None
+        try:
+            parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+            spot = float(parts.get("spot", ""))
+        except:
+            pass
+
+        if not spot:
+            return
+
+        # Get stats for levels
+        stats_result = db_volland_stats()
+        stats = stats_result.get("stats", {}) if stats_result else {}
+
+        # Calculate GEX for max gamma levels
+        sdf = df.sort_values("Strike")
+        strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
+        call_oi = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+        put_oi = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+        c_gamma = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+        p_gamma = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+        call_gex = (c_gamma * call_oi * 100.0)
+        put_gex = (-p_gamma * put_oi * 100.0)
+        net_gex = (call_gex + put_gex)
+
+        # Find max +GEX and -GEX strikes
+        max_pos_idx = net_gex.idxmax() if not net_gex.empty else None
+        max_neg_idx = net_gex.idxmin() if not net_gex.empty else None
+        max_pos_gamma = strikes.loc[max_pos_idx] if max_pos_idx is not None else None
+        max_neg_gamma = strikes.loc[max_neg_idx] if max_neg_idx is not None else None
+
+        # Parse LIS and Target
+        threshold = _alert_settings.get("threshold_points", 5)
+
+        lis_low, lis_high = None, None
+        if stats.get("lines_in_sand"):
+            lis_str = str(stats["lines_in_sand"]).replace("$", "").replace(",", "")
+            import re
+            lis_match = re.findall(r"[\d.]+", lis_str)
+            if len(lis_match) >= 2:
+                lis_low, lis_high = float(lis_match[0]), float(lis_match[1])
+            elif len(lis_match) == 1:
+                lis_low = float(lis_match[0])
+
+        target = None
+        if stats.get("target"):
+            target_str = str(stats["target"]).replace("$", "").replace(",", "")
+            target_match = re.search(r"[\d.]+", target_str)
+            if target_match:
+                target = float(target_match.group())
+
+        # Check price alerts
+        def check_level(level, name, setting_key):
+            if not level or not _alert_settings.get(setting_key):
+                return
+            distance = abs(spot - level)
+            level_key = f"{name}_{int(level)}"
+
+            # Near alert
+            if distance <= threshold and should_alert(f"{name}_near"):
+                send_telegram(f"🎯 <b>SPX near {name}</b>\nPrice: {spot:.2f}\n{name}: {level:.0f}\nDistance: {distance:.1f} pts")
+                record_alert(f"{name}_near")
+
+            # Touch/Cross alert
+            if distance <= 1 and level_key not in _alert_state["levels_touched"]:
+                send_telegram(f"✅ <b>SPX touched {name}</b>\nPrice: {spot:.2f}\n{name}: {level:.0f}")
+                _alert_state["levels_touched"].add(level_key)
+
+        if _alert_settings.get("lis_enabled"):
+            if lis_low:
+                check_level(lis_low, "LIS", "lis_enabled")
+            if lis_high:
+                check_level(lis_high, "LIS", "lis_enabled")
+
+        if _alert_settings.get("target_enabled") and target:
+            check_level(target, "Target", "target_enabled")
+
+        if _alert_settings.get("max_pos_gamma_enabled") and max_pos_gamma:
+            check_level(max_pos_gamma, "+Gamma", "max_pos_gamma_enabled")
+
+        if _alert_settings.get("max_neg_gamma_enabled") and max_neg_gamma:
+            check_level(max_neg_gamma, "-Gamma", "max_neg_gamma_enabled")
+
+        # Check paradigm change
+        if _alert_settings.get("paradigm_change_enabled"):
+            current_paradigm = stats.get("paradigm")
+            if current_paradigm and _alert_state["last_paradigm"] and current_paradigm != _alert_state["last_paradigm"]:
+                msg = f"🔄 <b>Paradigm Changed</b>\n"
+                msg += f"From: {_alert_state['last_paradigm']}\n"
+                msg += f"To: {current_paradigm}\n"
+                if target:
+                    msg += f"Target: {target:.0f}\n"
+                if lis_low:
+                    msg += f"LIS: {lis_low:.0f}"
+                    if lis_high:
+                        msg += f" - {lis_high:.0f}"
+                send_telegram(msg)
+            _alert_state["last_paradigm"] = current_paradigm
+
+        # Check volume spikes
+        if _alert_settings.get("volume_spike_enabled"):
+            call_vol = pd.to_numeric(sdf["C_Volume"], errors="coerce").fillna(0.0).astype(float)
+            put_vol = pd.to_numeric(sdf["P_Volume"], errors="coerce").fillna(0.0).astype(float)
+            vol_threshold = _alert_settings.get("threshold_volume", 500)
+
+            current_volume = {}
+            for i, strike in enumerate(strikes):
+                current_volume[strike] = {"call": call_vol.iloc[i], "put": put_vol.iloc[i]}
+
+            if _alert_state["last_volume"]:
+                for strike, vols in current_volume.items():
+                    if strike in _alert_state["last_volume"]:
+                        prev = _alert_state["last_volume"][strike]
+                        call_change = vols["call"] - prev["call"]
+                        put_change = vols["put"] - prev["put"]
+
+                        if call_change >= vol_threshold and should_alert(f"vol_call_{int(strike)}"):
+                            send_telegram(f"📈 <b>Call Volume Spike</b>\nStrike: {strike:.0f}\nChange: +{call_change:.0f} contracts\nSPX: {spot:.2f}")
+                            record_alert(f"vol_call_{int(strike)}")
+
+                        if put_change >= vol_threshold and should_alert(f"vol_put_{int(strike)}"):
+                            send_telegram(f"📉 <b>Put Volume Spike</b>\nStrike: {strike:.0f}\nChange: +{put_change:.0f} contracts\nSPX: {spot:.2f}")
+                            record_alert(f"vol_put_{int(strike)}")
+
+            _alert_state["last_volume"] = current_volume
+
+    except Exception as e:
+        print(f"[alerts] check error: {e}", flush=True)
+
+def send_scheduled_summary():
+    """Send scheduled summary at 10 AM and 2 PM."""
+    if not _alert_settings.get("enabled"):
+        return
+
+    now = datetime.now(NY)
+    hour = now.hour
+    minute = now.minute
+
+    # 10 AM summary (10:00-10:01)
+    if hour == 10 and minute == 0 and not _alert_state["sent_10am"] and _alert_settings.get("summary_10am_enabled"):
+        send_summary_alert("10:00 AM")
+        _alert_state["sent_10am"] = True
+
+    # 2 PM summary (14:00-14:01)
+    if hour == 14 and minute == 0 and not _alert_state["sent_2pm"] and _alert_settings.get("summary_2pm_enabled"):
+        send_summary_alert("2:00 PM")
+        _alert_state["sent_2pm"] = True
+
+def send_summary_alert(time_label: str):
+    """Send a full stats summary."""
+    try:
+        # Get spot
+        msg = last_run_status.get("msg") or ""
+        spot = None
+        try:
+            parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+            spot = float(parts.get("spot", ""))
+        except:
+            pass
+
+        # Get stats
+        stats_result = db_volland_stats()
+        stats = stats_result.get("stats", {}) if stats_result else {}
+
+        # Get max gamma
+        with _df_lock:
+            if latest_df is not None and not latest_df.empty:
+                df = latest_df.copy()
+                sdf = df.sort_values("Strike")
+                strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
+                call_oi = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+                put_oi = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+                c_gamma = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+                p_gamma = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+                net_gex = (c_gamma * call_oi * 100.0) + (-p_gamma * put_oi * 100.0)
+                max_pos_idx = net_gex.idxmax() if not net_gex.empty else None
+                max_neg_idx = net_gex.idxmin() if not net_gex.empty else None
+                max_pos_gamma = strikes.loc[max_pos_idx] if max_pos_idx is not None else None
+                max_neg_gamma = strikes.loc[max_neg_idx] if max_neg_idx is not None else None
+            else:
+                max_pos_gamma, max_neg_gamma = None, None
+
+        summary = f"📊 <b>{time_label} Summary</b>\n\n"
+        summary += f"SPX: {spot:.2f}\n" if spot else "SPX: N/A\n"
+        summary += f"Paradigm: {stats.get('paradigm', 'N/A')}\n"
+        summary += f"Target: {stats.get('target', 'N/A')}\n"
+        summary += f"LIS: {stats.get('lines_in_sand', 'N/A')}\n"
+        summary += f"DD Hedging: {stats.get('delta_decay_hedging', 'N/A')}\n"
+        summary += f"Max +Gamma: {max_pos_gamma:.0f}\n" if max_pos_gamma else "Max +Gamma: N/A\n"
+        summary += f"Max -Gamma: {max_neg_gamma:.0f}\n" if max_neg_gamma else "Max -Gamma: N/A\n"
+
+        send_telegram(summary)
+    except Exception as e:
+        print(f"[alerts] summary error: {e}", flush=True)
 
 def start_scheduler():
     sch = BackgroundScheduler(timezone="US/Eastern")
@@ -1580,6 +1971,74 @@ def api_export_playback_summary(start_date: str = Query(None, description="Start
         print(f"[export/playback_summary] error: {e}", flush=True)
         return Response(f"Error: {e}", media_type="text/plain", status_code=500)
 
+# ===== Alert Settings API =====
+@app.get("/api/alerts/settings")
+def api_alerts_settings_get():
+    """Get current alert settings."""
+    return _alert_settings
+
+@app.post("/api/alerts/settings")
+def api_alerts_settings_post(
+    enabled: bool = Query(None),
+    lis_enabled: bool = Query(None),
+    target_enabled: bool = Query(None),
+    max_pos_gamma_enabled: bool = Query(None),
+    max_neg_gamma_enabled: bool = Query(None),
+    paradigm_change_enabled: bool = Query(None),
+    summary_10am_enabled: bool = Query(None),
+    summary_2pm_enabled: bool = Query(None),
+    volume_spike_enabled: bool = Query(None),
+    threshold_points: int = Query(None),
+    threshold_volume: int = Query(None),
+    cooldown_enabled: bool = Query(None),
+    cooldown_minutes: int = Query(None),
+):
+    """Update alert settings."""
+    global _alert_settings
+
+    if enabled is not None:
+        _alert_settings["enabled"] = enabled
+    if lis_enabled is not None:
+        _alert_settings["lis_enabled"] = lis_enabled
+    if target_enabled is not None:
+        _alert_settings["target_enabled"] = target_enabled
+    if max_pos_gamma_enabled is not None:
+        _alert_settings["max_pos_gamma_enabled"] = max_pos_gamma_enabled
+    if max_neg_gamma_enabled is not None:
+        _alert_settings["max_neg_gamma_enabled"] = max_neg_gamma_enabled
+    if paradigm_change_enabled is not None:
+        _alert_settings["paradigm_change_enabled"] = paradigm_change_enabled
+    if summary_10am_enabled is not None:
+        _alert_settings["summary_10am_enabled"] = summary_10am_enabled
+    if summary_2pm_enabled is not None:
+        _alert_settings["summary_2pm_enabled"] = summary_2pm_enabled
+    if volume_spike_enabled is not None:
+        _alert_settings["volume_spike_enabled"] = volume_spike_enabled
+    if threshold_points is not None:
+        _alert_settings["threshold_points"] = threshold_points
+    if threshold_volume is not None:
+        _alert_settings["threshold_volume"] = threshold_volume
+    if cooldown_enabled is not None:
+        _alert_settings["cooldown_enabled"] = cooldown_enabled
+    if cooldown_minutes is not None:
+        _alert_settings["cooldown_minutes"] = cooldown_minutes
+
+    # Save to database
+    save_alert_settings()
+    return {"status": "ok", "settings": _alert_settings}
+
+@app.post("/api/alerts/test")
+def api_alerts_test():
+    """Send a test alert to verify Telegram configuration."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return {"status": "error", "message": "Telegram not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID."}
+
+    success = send_telegram("🧪 <b>Test Alert</b>\n\nYour 0DTE Alpha alerts are working!")
+    if success:
+        return {"status": "ok", "message": "Test alert sent successfully!"}
+    else:
+        return {"status": "error", "message": "Failed to send test alert. Check your token and chat ID."}
+
 @app.get("/api/data_freshness")
 def api_data_freshness():
     """
@@ -1934,6 +2393,14 @@ DASH_HTML_TEMPLATE = """
     .stats-value { color:var(--text); font-weight:500; text-align:right; }
     .stats-value.green { color:var(--green); }
     .stats-value.red { color:var(--red); }
+
+    /* Toggle Switch */
+    .toggle-switch { position:relative; display:inline-block; width:32px; height:18px; }
+    .toggle-switch input { opacity:0; width:0; height:0; }
+    .toggle-slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:#333; border-radius:18px; transition:.2s; }
+    .toggle-slider:before { position:absolute; content:""; height:14px; width:14px; left:2px; bottom:2px; background:#666; border-radius:50%; transition:.2s; }
+    .toggle-switch input:checked + .toggle-slider { background:#22c55e; }
+    .toggle-switch input:checked + .toggle-slider:before { transform:translateX(14px); background:#fff; }
   </style>
 </head>
 <body>
@@ -1960,6 +2427,55 @@ DASH_HTML_TEMPLATE = """
       <div class="stats-box">
         <h4>SPX Statistics</h4>
         <div id="statsContent" style="color:var(--muted);font-size:11px">Loading...</div>
+      </div>
+      <div class="stats-box" style="margin-top:10px">
+        <h4 style="display:flex;justify-content:space-between;align-items:center">
+          <span>🔔 Alerts</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="alertMasterToggle" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </h4>
+        <div id="alertSettingsContent" style="font-size:10px">
+          <div style="margin-bottom:8px">
+            <div style="color:var(--muted);margin-bottom:4px">Price Alerts:</div>
+            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alertLIS" checked> LIS</label>
+            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alertTarget" checked> Target</label>
+            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alertPosGamma" checked> Max +Gamma</label>
+            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alertNegGamma" checked> Max -Gamma</label>
+          </div>
+          <div style="margin-bottom:8px">
+            <div style="color:var(--muted);margin-bottom:4px">Other Alerts:</div>
+            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alertParadigm" checked> Paradigm Change</label>
+            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alertVolSpike" checked> Volume Spike</label>
+            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alert10am" checked> 10 AM Summary</label>
+            <label style="display:flex;align-items:center;gap:4px;margin:2px 0"><input type="checkbox" id="alert2pm" checked> 2 PM Summary</label>
+          </div>
+          <div style="margin-bottom:8px">
+            <div style="color:var(--muted);margin-bottom:4px">Thresholds:</div>
+            <div style="display:flex;align-items:center;gap:4px;margin:2px 0">
+              <span>Distance:</span>
+              <input type="number" id="alertThresholdPts" value="5" min="1" max="20" style="width:40px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:10px">
+              <span>pts</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;margin:2px 0">
+              <span>Vol Spike:</span>
+              <input type="number" id="alertThresholdVol" value="500" min="100" max="5000" step="100" style="width:50px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:10px">
+            </div>
+          </div>
+          <div style="margin-bottom:8px">
+            <label style="display:flex;align-items:center;gap:4px;margin:2px 0">
+              <input type="checkbox" id="alertCooldown" checked> Cooldown
+              <input type="number" id="alertCooldownMin" value="10" min="1" max="60" style="width:35px;background:#1a1d21;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:10px">
+              <span>min</span>
+            </label>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button id="alertTestBtn" class="strike-btn" style="flex:1;padding:4px 8px;font-size:10px">Test Alert</button>
+            <button id="alertSaveBtn" class="strike-btn" style="flex:1;padding:4px 8px;font-size:10px">Save</button>
+          </div>
+          <div id="alertStatus" style="margin-top:4px;color:var(--muted);font-size:9px"></div>
+        </div>
       </div>
     </aside>
 
@@ -3557,6 +4073,106 @@ DASH_HTML_TEMPLATE = """
       html += '</div>';
       playbackSummaryStats.innerHTML = html;
     }
+
+    // ===== Alert Settings =====
+    const alertMasterToggle = document.getElementById('alertMasterToggle');
+    const alertLIS = document.getElementById('alertLIS');
+    const alertTarget = document.getElementById('alertTarget');
+    const alertPosGamma = document.getElementById('alertPosGamma');
+    const alertNegGamma = document.getElementById('alertNegGamma');
+    const alertParadigm = document.getElementById('alertParadigm');
+    const alertVolSpike = document.getElementById('alertVolSpike');
+    const alert10am = document.getElementById('alert10am');
+    const alert2pm = document.getElementById('alert2pm');
+    const alertThresholdPts = document.getElementById('alertThresholdPts');
+    const alertThresholdVol = document.getElementById('alertThresholdVol');
+    const alertCooldown = document.getElementById('alertCooldown');
+    const alertCooldownMin = document.getElementById('alertCooldownMin');
+    const alertTestBtn = document.getElementById('alertTestBtn');
+    const alertSaveBtn = document.getElementById('alertSaveBtn');
+    const alertStatus = document.getElementById('alertStatus');
+
+    async function loadAlertSettings() {
+      try {
+        const r = await fetch('/api/alerts/settings', { cache: 'no-store' });
+        const s = await r.json();
+        alertMasterToggle.checked = s.enabled;
+        alertLIS.checked = s.lis_enabled;
+        alertTarget.checked = s.target_enabled;
+        alertPosGamma.checked = s.max_pos_gamma_enabled;
+        alertNegGamma.checked = s.max_neg_gamma_enabled;
+        alertParadigm.checked = s.paradigm_change_enabled;
+        alertVolSpike.checked = s.volume_spike_enabled;
+        alert10am.checked = s.summary_10am_enabled;
+        alert2pm.checked = s.summary_2pm_enabled;
+        alertThresholdPts.value = s.threshold_points;
+        alertThresholdVol.value = s.threshold_volume;
+        alertCooldown.checked = s.cooldown_enabled;
+        alertCooldownMin.value = s.cooldown_minutes;
+      } catch (err) {
+        console.error('Failed to load alert settings:', err);
+      }
+    }
+
+    async function saveAlertSettings() {
+      alertStatus.textContent = 'Saving...';
+      try {
+        const params = new URLSearchParams({
+          enabled: alertMasterToggle.checked,
+          lis_enabled: alertLIS.checked,
+          target_enabled: alertTarget.checked,
+          max_pos_gamma_enabled: alertPosGamma.checked,
+          max_neg_gamma_enabled: alertNegGamma.checked,
+          paradigm_change_enabled: alertParadigm.checked,
+          volume_spike_enabled: alertVolSpike.checked,
+          summary_10am_enabled: alert10am.checked,
+          summary_2pm_enabled: alert2pm.checked,
+          threshold_points: alertThresholdPts.value,
+          threshold_volume: alertThresholdVol.value,
+          cooldown_enabled: alertCooldown.checked,
+          cooldown_minutes: alertCooldownMin.value,
+        });
+        const r = await fetch('/api/alerts/settings?' + params.toString(), { method: 'POST' });
+        const data = await r.json();
+        if (data.status === 'ok') {
+          alertStatus.textContent = 'Saved ✓';
+          alertStatus.style.color = '#22c55e';
+        } else {
+          alertStatus.textContent = 'Error saving';
+          alertStatus.style.color = '#ef4444';
+        }
+      } catch (err) {
+        alertStatus.textContent = 'Error: ' + err.message;
+        alertStatus.style.color = '#ef4444';
+      }
+      setTimeout(() => { alertStatus.textContent = ''; }, 3000);
+    }
+
+    async function testAlert() {
+      alertStatus.textContent = 'Sending test...';
+      try {
+        const r = await fetch('/api/alerts/test', { method: 'POST' });
+        const data = await r.json();
+        if (data.status === 'ok') {
+          alertStatus.textContent = 'Test sent ✓';
+          alertStatus.style.color = '#22c55e';
+        } else {
+          alertStatus.textContent = data.message;
+          alertStatus.style.color = '#ef4444';
+        }
+      } catch (err) {
+        alertStatus.textContent = 'Error: ' + err.message;
+        alertStatus.style.color = '#ef4444';
+      }
+      setTimeout(() => { alertStatus.textContent = ''; }, 3000);
+    }
+
+    alertSaveBtn.addEventListener('click', saveAlertSettings);
+    alertTestBtn.addEventListener('click', testAlert);
+    alertMasterToggle.addEventListener('change', saveAlertSettings);
+
+    // Load alert settings on page load
+    loadAlertSettings();
 
     // default
     showTable();

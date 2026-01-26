@@ -947,30 +947,6 @@ def api_spx_candles(bars: int = Query(60, ge=10, le=200)):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 # ===== Playback API =====
-@app.get("/api/playback/status")
-def api_playback_status():
-    """Check playback data status - how many snapshots exist."""
-    if not engine:
-        return {"error": "DATABASE_URL not set"}
-
-    try:
-        with engine.begin() as conn:
-            count = conn.execute(text("SELECT COUNT(*) FROM playback_snapshots")).scalar()
-            result = conn.execute(text(
-                "SELECT MIN(ts) as first_ts, MAX(ts) as last_ts FROM playback_snapshots"
-            )).mappings().first()
-
-            first_ts = result["first_ts"].isoformat() if result and result["first_ts"] else None
-            last_ts = result["last_ts"].isoformat() if result and result["last_ts"] else None
-
-        return {
-            "total_snapshots": count,
-            "first_snapshot": first_ts,
-            "last_snapshot": last_ts,
-            "message": "Data saves every 5 min during market hours (9:30-16:00 ET). Use /api/playback/save_now to manually save a test snapshot." if count == 0 else f"{count} snapshots available"
-        }
-    except Exception as e:
-        return {"error": str(e)}
 
 @app.post("/api/playback/save_now")
 def api_playback_save_now():
@@ -1208,12 +1184,21 @@ def api_playback_status():
             null_count = conn.execute(text("SELECT COUNT(*) FROM playback_snapshots WHERE is_mock IS NULL")).scalar()
             total = mock_count + real_count + null_count
 
+            # Get timestamp range
+            result = conn.execute(text(
+                "SELECT MIN(ts) as first_ts, MAX(ts) as last_ts FROM playback_snapshots WHERE is_mock = FALSE OR is_mock IS NULL"
+            )).mappings().first()
+            first_ts = result["first_ts"].isoformat() if result and result["first_ts"] else None
+            last_ts = result["last_ts"].isoformat() if result and result["last_ts"] else None
+
         return {
             "total": total,
             "mock_count": mock_count,
             "real_count": real_count,
             "unmarked_count": null_count,
-            "note": "Unmarked data was created before is_mock column. Use /api/playback/mark_existing_as_mock to mark as mock."
+            "first_real": first_ts,
+            "last_real": last_ts,
+            "note": "Unmarked data was created before is_mock column. Use /api/playback/mark_existing_as_mock to mark as mock." if null_count > 0 else None
         }
     except Exception as e:
         return {"error": str(e)}

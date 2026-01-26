@@ -1098,6 +1098,17 @@ DASH_HTML_TEMPLATE = """
       .unified-grid { grid-template-columns:1fr; height:auto; }
       .unified-card { min-height:300px; }
     }
+    .strike-btn {
+      padding:3px 8px;
+      font-size:11px;
+      border:1px solid var(--border);
+      border-radius:6px;
+      background:transparent;
+      color:var(--muted);
+      cursor:pointer;
+    }
+    .strike-btn:hover { border-color:#444; color:var(--text); }
+    .strike-btn.active { background:#1a2634; border-color:#2a3a57; color:var(--text); }
     .stats-box { margin-top:14px; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; }
     .stats-box h4 { margin:0 0 8px; font-size:12px; font-weight:600; }
     .stats-row { display:flex; justify-content:space-between; font-size:11px; padding:4px 0; border-bottom:1px solid var(--border); }
@@ -1164,7 +1175,12 @@ DASH_HTML_TEMPLATE = """
       <div id="viewSpot" class="panel" style="display:none">
         <div class="header">
           <div><strong>Exposure View</strong></div>
-          <div class="pill">SPX 3m candles + GEX / Charm / Volume aligned by strike</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span class="pill">Strikes:</span>
+            <button class="strike-btn" data-strikes="20">20</button>
+            <button class="strike-btn active" data-strikes="30">30</button>
+            <button class="strike-btn" data-strikes="40">40</button>
+          </div>
         </div>
         <div class="unified-grid">
           <div class="unified-card">
@@ -1499,6 +1515,20 @@ DASH_HTML_TEMPLATE = """
           unifiedCharmDiv = document.getElementById('unifiedCharmPlot'),
           unifiedVolDiv = document.getElementById('unifiedVolPlot');
     let unifiedTimer = null;
+    let selectedStrikes = 30; // Default strike count
+    let currentYRange = null; // Shared Y range for sync
+    let isZoomSyncing = false; // Prevent infinite loop
+
+    // Strike button handlers
+    document.querySelectorAll('.strike-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.strike-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedStrikes = parseInt(btn.dataset.strikes);
+        currentYRange = null; // Reset to recalculate
+        tickUnified(); // Refresh immediately
+      });
+    });
 
     // Fetch SPX 3-minute candles from TradeStation API
     async function fetchSPXCandles() {
@@ -1506,13 +1536,56 @@ DASH_HTML_TEMPLATE = """
       return await r.json();
     }
 
-    // Compute shared Y range from strikes (used by all charts)
-    function computeStrikeRange(strikes) {
+    // Compute shared Y range from strikes centered around spot
+    function computeStrikeRange(strikes, spot) {
       if (!strikes || !strikes.length) return null;
-      let yMin = Math.min(...strikes);
-      let yMax = Math.max(...strikes);
+
+      // If we have a custom zoom range, use it
+      if (currentYRange) return currentYRange;
+
+      // Center around spot and take selectedStrikes/2 above and below
+      const half = Math.floor(selectedStrikes / 2);
+      let above = strikes.filter(s => s >= spot).slice(0, half);
+      let below = strikes.filter(s => s < spot).slice(-half);
+
+      const selectedList = [...below, ...above].sort((a,b) => a-b);
+      if (selectedList.length === 0) return { min: Math.min(...strikes), max: Math.max(...strikes) };
+
+      let yMin = Math.min(...selectedList);
+      let yMax = Math.max(...selectedList);
       const pad = (yMax - yMin) * 0.02 || 1;
       return { min: yMin - pad, max: yMax + pad };
+    }
+
+    // Sync Y-axis zoom across all exposure charts
+    function setupZoomSync(plotDiv) {
+      plotDiv.on('plotly_relayout', function(eventData) {
+        if (isZoomSyncing) return;
+
+        // Check if Y-axis was changed
+        const newYMin = eventData['yaxis.range[0]'];
+        const newYMax = eventData['yaxis.range[1]'];
+
+        if (newYMin !== undefined && newYMax !== undefined) {
+          isZoomSyncing = true;
+          currentYRange = { min: newYMin, max: newYMax };
+
+          // Update all other charts
+          const allDivs = [unifiedSpxDiv, unifiedGexDiv, unifiedCharmDiv, unifiedVolDiv];
+          allDivs.forEach(div => {
+            if (div !== plotDiv && div._fullLayout) {
+              Plotly.relayout(div, { 'yaxis.range': [newYMin, newYMax] });
+            }
+          });
+
+          setTimeout(() => { isZoomSyncing = false; }, 100);
+        }
+
+        // Reset on double-click (autorange)
+        if (eventData['yaxis.autorange']) {
+          currentYRange = null;
+        }
+      });
     }
 
     // Create horizontal spot line shape
@@ -1535,7 +1608,7 @@ DASH_HTML_TEMPLATE = """
           margin: { l: 8, r: 50, t: 4, b: 24 },
           annotations: [{ text: candleData?.error || 'Loading candles...', x: 0.5, y: 0.5, xref: 'paper', yref: 'paper', showarrow: false, font: { color: '#e6e7e9' } }],
           font: { color: '#e6e7e9' }
-        }, { displayModeBar: false, responsive: true });
+        }, { displayModeBar: false, responsive: true, scrollZoom: true });
         return;
       }
 
@@ -1581,7 +1654,7 @@ DASH_HTML_TEMPLATE = """
         },
         font: { color: '#e6e7e9', size: 10 },
         showlegend: false
-      }, { displayModeBar: false, responsive: true });
+      }, { displayModeBar: false, responsive: true, scrollZoom: true });
     }
 
     // Render Net GEX horizontal bar chart
@@ -1612,7 +1685,7 @@ DASH_HTML_TEMPLATE = """
         yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', tickfont: { size: 9 }, dtick: 5 },
         font: { color: '#e6e7e9', size: 10 },
         shapes: shapes
-      }, { displayModeBar: false, responsive: true });
+      }, { displayModeBar: false, responsive: true, scrollZoom: true });
     }
 
     // Render Charm horizontal bar chart (from vanna_window)
@@ -1623,7 +1696,7 @@ DASH_HTML_TEMPLATE = """
           margin: { l: 50, r: 8, t: 4, b: 24 },
           annotations: [{ text: vannaData?.error || 'No charm data', x: 0.5, y: 0.5, xref: 'paper', yref: 'paper', showarrow: false, font: { color: '#e6e7e9' } }],
           font: { color: '#e6e7e9' }
-        }, { displayModeBar: false, responsive: true });
+        }, { displayModeBar: false, responsive: true, scrollZoom: true });
         return;
       }
 
@@ -1655,7 +1728,7 @@ DASH_HTML_TEMPLATE = """
         yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', tickfont: { size: 9 }, dtick: 5 },
         font: { color: '#e6e7e9', size: 10 },
         shapes: shapes
-      }, { displayModeBar: false, responsive: true });
+      }, { displayModeBar: false, responsive: true, scrollZoom: true });
     }
 
     // Render Volume horizontal bar chart (mirrored: puts left, calls right)
@@ -1700,10 +1773,11 @@ DASH_HTML_TEMPLATE = """
         showlegend: false,
         font: { color: '#e6e7e9', size: 10 },
         shapes: shapes
-      }, { displayModeBar: false, responsive: true });
+      }, { displayModeBar: false, responsive: true, scrollZoom: true });
     }
 
     // Main tick function for exposure view
+    let zoomSyncInitialized = false;
     async function tickUnified() {
       try {
         // Fetch series data (strikes, GEX, volume, spot)
@@ -1712,7 +1786,7 @@ DASH_HTML_TEMPLATE = """
 
         const strikes = data.strikes;
         const spot = data.spot;
-        const yRange = computeStrikeRange(strikes);
+        const yRange = computeStrikeRange(strikes, spot);
         if (!yRange) return;
 
         // Render GEX
@@ -1730,6 +1804,14 @@ DASH_HTML_TEMPLATE = """
         fetchVannaWindow()
           .then(vannaData => renderUnifiedCharm(vannaData, yRange, spot))
           .catch(err => renderUnifiedCharm({ error: String(err) }, yRange, spot));
+
+        // Setup zoom sync after first render
+        if (!zoomSyncInitialized) {
+          setTimeout(() => {
+            [unifiedSpxDiv, unifiedGexDiv, unifiedCharmDiv, unifiedVolDiv].forEach(setupZoomSync);
+            zoomSyncInitialized = true;
+          }, 500);
+        }
 
       } catch (err) {
         console.error('Exposure view error:', err);

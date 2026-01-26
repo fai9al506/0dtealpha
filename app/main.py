@@ -946,6 +946,114 @@ def api_spx_candles(bars: int = Query(60, ge=10, le=200)):
         print(f"[spx_candles] error: {e}", flush=True)
         return JSONResponse({"error": str(e)}, status_code=500)
 
+@app.get("/api/spx_candles_1m")
+def api_spx_candles_1m(bars: int = Query(120, ge=10, le=400)):
+    """
+    Fetch SPX 1-minute candlestick data from TradeStation API.
+    Returns OHLC data for building a Plotly candlestick chart.
+    """
+    try:
+        params = {
+            "interval": "1",
+            "unit": "Minute",
+            "barsback": str(bars),
+        }
+        r = api_get("/marketdata/barcharts/$SPX.X", params=params, timeout=15)
+        data = r.json()
+
+        bars_list = data.get("Bars", [])
+        if not bars_list:
+            return {"error": "No bars returned", "candles": []}
+
+        candles = []
+        for bar in bars_list:
+            candles.append({
+                "time": bar.get("TimeStamp"),
+                "open": bar.get("Open"),
+                "high": bar.get("High"),
+                "low": bar.get("Low"),
+                "close": bar.get("Close"),
+                "volume": bar.get("TotalVolume"),
+            })
+
+        return {"candles": candles, "count": len(candles)}
+    except Exception as e:
+        print(f"[spx_candles_1m] error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/statistics_levels")
+def api_statistics_levels():
+    """
+    Get key price levels for Statistics chart:
+    - Target (from stats)
+    - LIS low/high (from stats)
+    - Max positive gamma strike
+    - Max negative gamma strike
+    """
+    try:
+        result = {
+            "target": None,
+            "lis_low": None,
+            "lis_high": None,
+            "max_pos_gamma": None,
+            "max_neg_gamma": None,
+            "spot": None,
+        }
+
+        # Get stats (target, LIS)
+        stats = db_volland_stats()
+        if stats and stats.get("stats"):
+            s = stats["stats"]
+            # Target
+            try:
+                result["target"] = float(s.get("target")) if s.get("target") else None
+            except:
+                pass
+            # LIS (format: "6000/6100")
+            lis = s.get("lines_in_sand")
+            if lis and "/" in str(lis):
+                try:
+                    parts = str(lis).split("/")
+                    result["lis_low"] = float(parts[0].strip())
+                    result["lis_high"] = float(parts[1].strip())
+                except:
+                    pass
+
+        # Get GEX data for max gamma strikes
+        with _df_lock:
+            if latest_df is not None and not latest_df.empty:
+                df = latest_df.copy()
+                df.columns = DISPLAY_COLS
+                sdf = df
+                strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float).tolist()
+                call_oi = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+                put_oi = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+                c_gamma = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+                p_gamma = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+                net_gex = (c_gamma * call_oi * 100.0) + (-p_gamma * put_oi * 100.0)
+
+                # Find max positive and max negative gamma strikes
+                if len(strikes) > 0 and len(net_gex) > 0:
+                    max_pos_idx = net_gex.idxmax() if net_gex.max() > 0 else None
+                    max_neg_idx = net_gex.idxmin() if net_gex.min() < 0 else None
+
+                    if max_pos_idx is not None:
+                        result["max_pos_gamma"] = strikes[max_pos_idx]
+                    if max_neg_idx is not None:
+                        result["max_neg_gamma"] = strikes[max_neg_idx]
+
+        # Get spot price
+        try:
+            parts = dict(s.split("=", 1) for s in (last_run_status.get("msg") or "").split() if "=" in s)
+            result["spot"] = float(parts.get("spot", ""))
+        except:
+            pass
+
+        return result
+    except Exception as e:
+        print(f"[statistics_levels] error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 # ===== Playback API =====
 
 @app.post("/api/playback/save_now")
@@ -1722,6 +1830,7 @@ DASH_HTML_TEMPLATE = """
         <button class="btn active" id="tabTable">Table</button>
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabSpot">Exposure</button>
+        <button class="btn" id="tabStatistics">Statistics</button>
         <button class="btn" id="tabPlayback">Playback</button>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
@@ -1785,6 +1894,24 @@ DASH_HTML_TEMPLATE = """
           <div class="unified-card">
             <h3>Volume</h3>
             <div id="unifiedVolPlot" class="unified-plot"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="viewStatistics" class="panel" style="display:none">
+        <div class="header">
+          <div><strong>Statistics View</strong></div>
+          <div class="pill">1-min candles + key levels</div>
+        </div>
+        <div style="padding:12px">
+          <div id="statisticsPlot" style="width:100%;height:500px"></div>
+          <div id="statisticsLegend" style="margin-top:10px;font-size:11px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap">
+            <span><span style="color:#f59e0b">■</span> Target</span>
+            <span><span style="color:#3b82f6">■</span> LIS Low</span>
+            <span><span style="color:#3b82f6">■</span> LIS High</span>
+            <span><span style="color:#22c55e">■</span> Max +Gamma</span>
+            <span><span style="color:#ef4444">■</span> Max -Gamma</span>
+            <span><span style="color:#a855f7">- -</span> Spot</span>
           </div>
         </div>
       </div>
@@ -1940,25 +2067,29 @@ DASH_HTML_TEMPLATE = """
     const tabTable=document.getElementById('tabTable'),
           tabCharts=document.getElementById('tabCharts'),
           tabSpot=document.getElementById('tabSpot'),
+          tabStatistics=document.getElementById('tabStatistics'),
           tabPlayback=document.getElementById('tabPlayback');
 
     const viewTable=document.getElementById('viewTable'),
           viewCharts=document.getElementById('viewCharts'),
           viewSpot=document.getElementById('viewSpot'),
+          viewStatistics=document.getElementById('viewStatistics'),
           viewPlayback=document.getElementById('viewPlayback');
 
     function setActive(btn){
-      [tabTable,tabCharts,tabSpot,tabPlayback].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabCharts,tabSpot,tabStatistics,tabPlayback].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewPlayback.style.display='none'; }
-    function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopSpot(); }
-    function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopSpot(); }
-    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); stopCharts(); }
-    function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopSpot(); initPlayback(); }
+    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewStatistics.style.display='none'; viewPlayback.style.display='none'; }
+    function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopSpot(); stopStatistics(); }
+    function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopSpot(); stopStatistics(); }
+    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); stopCharts(); stopStatistics(); }
+    function showStatistics(){ setActive(tabStatistics); hideAllViews(); viewStatistics.style.display=''; startStatistics(); stopCharts(); stopSpot(); }
+    function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopSpot(); stopStatistics(); initPlayback(); }
     tabTable.addEventListener('click', showTable);
     tabCharts.addEventListener('click', showCharts);
     tabSpot.addEventListener('click', showSpot);
+    tabStatistics.addEventListener('click', showStatistics);
     tabPlayback.addEventListener('click', showPlayback);
 
     // ===== Shared fetch for options series (includes spot) =====
@@ -2490,6 +2621,193 @@ DASH_HTML_TEMPLATE = """
       if (unifiedTimer) {
         clearInterval(unifiedTimer);
         unifiedTimer = null;
+      }
+    }
+
+    // ===== Statistics View =====
+    const statisticsPlot = document.getElementById('statisticsPlot');
+    let statisticsTimer = null;
+
+    async function fetchStatisticsData() {
+      const [candlesRes, levelsRes] = await Promise.all([
+        fetch('/api/spx_candles_1m?bars=200', {cache: 'no-store'}),
+        fetch('/api/statistics_levels', {cache: 'no-store'})
+      ]);
+      const candles = await candlesRes.json();
+      const levels = await levelsRes.json();
+      return { candles: candles.candles || [], levels };
+    }
+
+    async function drawStatisticsChart() {
+      try {
+        const data = await fetchStatisticsData();
+        const candles = data.candles;
+        const levels = data.levels;
+
+        if (!candles.length) {
+          console.log('No candle data for Statistics');
+          return;
+        }
+
+        // Prepare candlestick data
+        const times = candles.map(c => c.time);
+        const opens = candles.map(c => c.open);
+        const highs = candles.map(c => c.high);
+        const lows = candles.map(c => c.low);
+        const closes = candles.map(c => c.close);
+
+        // Calculate Y-axis range based on levels + margin
+        const levelValues = [
+          levels.target,
+          levels.lis_low,
+          levels.lis_high,
+          levels.max_pos_gamma,
+          levels.max_neg_gamma,
+          levels.spot
+        ].filter(v => v !== null && v !== undefined);
+
+        // Also include price range from candles
+        const priceMin = Math.min(...lows);
+        const priceMax = Math.max(...highs);
+        levelValues.push(priceMin, priceMax);
+
+        const yMin = Math.min(...levelValues) - 10;  // 2 strikes margin (5 each)
+        const yMax = Math.max(...levelValues) + 10;
+
+        // Build horizontal lines for levels
+        const shapes = [];
+        const annotations = [];
+
+        // Target line (amber)
+        if (levels.target) {
+          shapes.push({
+            type: 'line', y0: levels.target, y1: levels.target, x0: 0, x1: 1,
+            xref: 'paper', yref: 'y', line: { color: '#f59e0b', width: 2 }
+          });
+          annotations.push({
+            x: 1.01, y: levels.target, xref: 'paper', yref: 'y', text: 'Target ' + levels.target,
+            showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left'
+          });
+        }
+
+        // LIS Low line (blue)
+        if (levels.lis_low) {
+          shapes.push({
+            type: 'line', y0: levels.lis_low, y1: levels.lis_low, x0: 0, x1: 1,
+            xref: 'paper', yref: 'y', line: { color: '#3b82f6', width: 2 }
+          });
+          annotations.push({
+            x: 1.01, y: levels.lis_low, xref: 'paper', yref: 'y', text: 'LIS ' + levels.lis_low,
+            showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left'
+          });
+        }
+
+        // LIS High line (blue)
+        if (levels.lis_high) {
+          shapes.push({
+            type: 'line', y0: levels.lis_high, y1: levels.lis_high, x0: 0, x1: 1,
+            xref: 'paper', yref: 'y', line: { color: '#3b82f6', width: 2 }
+          });
+          annotations.push({
+            x: 1.01, y: levels.lis_high, xref: 'paper', yref: 'y', text: 'LIS ' + levels.lis_high,
+            showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left'
+          });
+        }
+
+        // Max positive gamma (green)
+        if (levels.max_pos_gamma) {
+          shapes.push({
+            type: 'line', y0: levels.max_pos_gamma, y1: levels.max_pos_gamma, x0: 0, x1: 1,
+            xref: 'paper', yref: 'y', line: { color: '#22c55e', width: 2 }
+          });
+          annotations.push({
+            x: 1.01, y: levels.max_pos_gamma, xref: 'paper', yref: 'y', text: '+G ' + levels.max_pos_gamma,
+            showarrow: false, font: { color: '#22c55e', size: 10 }, xanchor: 'left'
+          });
+        }
+
+        // Max negative gamma (red)
+        if (levels.max_neg_gamma) {
+          shapes.push({
+            type: 'line', y0: levels.max_neg_gamma, y1: levels.max_neg_gamma, x0: 0, x1: 1,
+            xref: 'paper', yref: 'y', line: { color: '#ef4444', width: 2 }
+          });
+          annotations.push({
+            x: 1.01, y: levels.max_neg_gamma, xref: 'paper', yref: 'y', text: '-G ' + levels.max_neg_gamma,
+            showarrow: false, font: { color: '#ef4444', size: 10 }, xanchor: 'left'
+          });
+        }
+
+        // Spot line (purple dashed)
+        if (levels.spot) {
+          shapes.push({
+            type: 'line', y0: levels.spot, y1: levels.spot, x0: 0, x1: 1,
+            xref: 'paper', yref: 'y', line: { color: '#a855f7', width: 2, dash: 'dash' }
+          });
+          annotations.push({
+            x: 1.01, y: levels.spot, xref: 'paper', yref: 'y', text: 'Spot ' + Math.round(levels.spot),
+            showarrow: false, font: { color: '#a855f7', size: 10 }, xanchor: 'left'
+          });
+        }
+
+        const trace = {
+          type: 'candlestick',
+          x: times,
+          open: opens,
+          high: highs,
+          low: lows,
+          close: closes,
+          increasing: { line: { color: '#22c55e' }, fillcolor: '#22c55e' },
+          decreasing: { line: { color: '#ef4444' }, fillcolor: '#ef4444' },
+          hoverinfo: 'x+y'
+        };
+
+        Plotly.react(statisticsPlot, [trace], {
+          margin: { l: 50, r: 80, t: 20, b: 50 },
+          paper_bgcolor: '#121417',
+          plot_bgcolor: '#0f1115',
+          xaxis: {
+            type: 'date',
+            gridcolor: '#20242a',
+            tickfont: { size: 9 },
+            tickformat: '%H:%M',
+            rangeslider: { visible: false }
+          },
+          yaxis: {
+            gridcolor: '#20242a',
+            tickfont: { size: 10 },
+            side: 'left',
+            range: [yMin, yMax],
+            dtick: 5
+          },
+          font: { color: '#e6e7e9', size: 10 },
+          shapes: shapes,
+          annotations: annotations,
+          dragmode: 'zoom'
+        }, {
+          displayModeBar: true,
+          displaylogo: false,
+          modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+          responsive: true,
+          scrollZoom: true
+        });
+
+      } catch (err) {
+        console.error('Statistics view error:', err);
+      }
+    }
+
+    function startStatistics() {
+      drawStatisticsChart();
+      if (!statisticsTimer) {
+        statisticsTimer = setInterval(drawStatisticsChart, 30000);  // Update every 30s
+      }
+    }
+
+    function stopStatistics() {
+      if (statisticsTimer) {
+        clearInterval(statisticsTimer);
+        statisticsTimer = null;
       }
     }
 

@@ -939,6 +939,99 @@ def api_spx_candles(bars: int = Query(60, ge=10, le=200)):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 # ===== Playback API =====
+@app.get("/api/playback/status")
+def api_playback_status():
+    """Check playback data status - how many snapshots exist."""
+    if not engine:
+        return {"error": "DATABASE_URL not set"}
+
+    try:
+        with engine.begin() as conn:
+            count = conn.execute(text("SELECT COUNT(*) FROM playback_snapshots")).scalar()
+            result = conn.execute(text(
+                "SELECT MIN(ts) as first_ts, MAX(ts) as last_ts FROM playback_snapshots"
+            )).mappings().first()
+
+            first_ts = result["first_ts"].isoformat() if result and result["first_ts"] else None
+            last_ts = result["last_ts"].isoformat() if result and result["last_ts"] else None
+
+        return {
+            "total_snapshots": count,
+            "first_snapshot": first_ts,
+            "last_snapshot": last_ts,
+            "message": "Data saves every 5 min during market hours (9:30-16:00 ET). Use /api/playback/save_now to manually save a test snapshot." if count == 0 else f"{count} snapshots available"
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api/playback/save_now")
+def api_playback_save_now():
+    """Manually trigger a playback snapshot save (for testing)."""
+    try:
+        global _last_playback_saved_at
+        if not engine:
+            return {"error": "DATABASE_URL not set"}
+
+        with _df_lock:
+            if latest_df is None or latest_df.empty:
+                return {"error": "No chain data available yet. Wait for market data to load."}
+            df = latest_df.copy()
+
+        msg = last_run_status.get("msg") or ""
+        spot = None
+        try:
+            parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+            spot = float(parts.get("spot", ""))
+        except:
+            pass
+
+        if not spot:
+            return {"error": "No spot price available"}
+
+        sdf = df.sort_values("Strike")
+        strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float).tolist()
+        call_vol = pd.to_numeric(sdf["C_Volume"], errors="coerce").fillna(0.0).astype(float).tolist()
+        put_vol = pd.to_numeric(sdf["P_Volume"], errors="coerce").fillna(0.0).astype(float).tolist()
+        call_oi = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+        put_oi = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+        c_gamma = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+        p_gamma = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+        net_gex = ((c_gamma * call_oi * 100.0) + (-p_gamma * put_oi * 100.0)).astype(float).tolist()
+
+        charm_data = None
+        try:
+            vanna_window = db_volland_vanna_window(limit=40)
+            if vanna_window and vanna_window.get("points"):
+                charm_by_strike = {p["strike"]: p["vanna"] for p in vanna_window["points"]}
+                charm_data = [charm_by_strike.get(s, 0) for s in strikes]
+        except:
+            pass
+
+        stats_data = None
+        try:
+            stats_result = db_volland_stats()
+            if stats_result and stats_result.get("stats"):
+                s = stats_result["stats"]
+                stats_data = {"paradigm": s.get("paradigm"), "target": s.get("target"),
+                              "lis": s.get("lines_in_sand"), "dd_hedging": s.get("delta_decay_hedging"),
+                              "opt_volume": s.get("opt_volume")}
+        except:
+            pass
+
+        with engine.begin() as conn:
+            conn.execute(
+                text("""INSERT INTO playback_snapshots (ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats)
+                        VALUES (:ts, :spot, :strikes, :net_gex, :charm, :call_vol, :put_vol, :stats)"""),
+                {"ts": now_et(), "spot": spot, "strikes": json.dumps(strikes), "net_gex": json.dumps(net_gex),
+                 "charm": json.dumps(charm_data) if charm_data else None, "call_vol": json.dumps(call_vol),
+                 "put_vol": json.dumps(put_vol), "stats": json.dumps(stats_data) if stats_data else None}
+            )
+
+        _last_playback_saved_at = time.time()
+        return {"success": True, "message": "Snapshot saved", "spot": spot, "strikes_count": len(strikes)}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/api/playback/range")
 def api_playback_range(start_date: str = Query(None, description="Start date YYYY-MM-DD, default 3 days ago")):
     """

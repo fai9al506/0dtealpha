@@ -1033,14 +1033,21 @@ def api_playback_save_now():
         return {"error": str(e)}
 
 @app.post("/api/playback/generate_mock")
-def api_playback_generate_mock():
-    """Generate mock playback data for testing (3 days, ~100 snapshots). Deletes existing data first."""
+def api_playback_generate_mock(force: bool = Query(False, description="Set to true to delete existing data")):
+    """Generate mock playback data for testing (3 days, ~100 snapshots). Requires force=true if data exists."""
     import random
     if not engine:
         return {"error": "DATABASE_URL not set"}
 
     try:
-        # Delete existing data first to avoid mixing
+        # Check if existing data exists
+        with engine.connect() as conn:
+            count = conn.execute(text("SELECT COUNT(*) FROM playback_snapshots")).scalar()
+
+        if count > 0 and not force:
+            return {"error": f"Refusing to delete {count} existing snapshots. Use force=true to confirm deletion.", "existing_count": count}
+
+        # Delete existing data
         with engine.begin() as conn:
             conn.execute(text("DELETE FROM playback_snapshots"))
 
@@ -1121,12 +1128,19 @@ def api_playback_generate_mock():
         return {"error": str(e)}
 
 @app.delete("/api/playback/delete_all")
-def api_playback_delete_all():
-    """Delete ALL playback snapshots. Use with caution!"""
+def api_playback_delete_all(force: bool = Query(False, description="Must be true to confirm deletion")):
+    """Delete ALL playback snapshots. Requires force=true to confirm."""
     if not engine:
         return {"error": "DATABASE_URL not set"}
 
     try:
+        # Check count first
+        with engine.connect() as conn:
+            count = conn.execute(text("SELECT COUNT(*) FROM playback_snapshots")).scalar()
+
+        if count > 0 and not force:
+            return {"error": f"Refusing to delete {count} snapshots. Use force=true to confirm deletion.", "existing_count": count}
+
         with engine.begin() as conn:
             result = conn.execute(text("DELETE FROM playback_snapshots"))
             deleted = result.rowcount

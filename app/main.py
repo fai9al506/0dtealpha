@@ -36,8 +36,9 @@ PULL_EVERY     = 30   # seconds
 SAVE_EVERY_MIN = 5    # minutes
 
 # Chain window
-STREAM_SECONDS = 2.0
+STREAM_SECONDS = 5.0  # Increased from 2.0 to allow full chain download
 TARGET_STRIKES = 40
+MIN_REQUIRED_STRIKES = 30  # Minimum rows required; reject data below this threshold
 
 # ====== APP ======
 app = FastAPI()
@@ -376,10 +377,12 @@ def _fnum(x):
 
 def _consume_chain_stream(r, max_seconds: float) -> list[dict]:
     out, start = [], time.time()
+    completed_normally = False
     try:
         for line in r.iter_lines(decode_unicode=True):
             if not line:
                 if time.time() - start > max_seconds:
+                    print(f"[stream] TIMEOUT after {time.time()-start:.1f}s with {len(out)} items (empty line)", flush=True)
                     break
                 continue
             try:
@@ -387,16 +390,20 @@ def _consume_chain_stream(r, max_seconds: float) -> list[dict]:
             except Exception:
                 continue
             if isinstance(obj, dict) and obj.get("StreamStatus") == "EndSnapshot":
+                completed_normally = True
                 break
             if isinstance(obj, dict):
                 out.append(obj)
             if time.time() - start > max_seconds:
+                print(f"[stream] TIMEOUT after {time.time()-start:.1f}s with {len(out)} items", flush=True)
                 break
     finally:
         try:
             r.close()
         except Exception:
             pass
+    if completed_normally:
+        print(f"[stream] completed normally with {len(out)} items in {time.time()-start:.1f}s", flush=True)
     return out
 
 def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
@@ -404,9 +411,9 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
         "spreadType": "Single",
         "enableGreeks": "true",
         "priceCenter": f"{spot:.2f}" if spot else "",
-        "strikeProximity": 50,
+        "strikeProximity": 125,  # Increased: 125/5 = 25 strikes each direction = 50 total
         "optionType": "All",
-        "strikeInterval": 1
+        "strikeInterval": 5  # SPX uses $5 strike intervals
     }
     last_err = None
     for exp in _expiration_variants(exp_ymd):
@@ -445,8 +452,8 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
         "enableGreeks": "true",
         "optionType": "All",
         "priceCenter": f"{spot:.2f}" if spot else "",
-        "strikeProximity": 50,
-        "strikeInterval": 1,
+        "strikeProximity": 125,  # Increased: 125/5 = 25 strikes each direction = 50 total
+        "strikeInterval": 5,  # SPX uses $5 strike intervals
         "spreadType": "Single",
     }
     for exp in _expiration_variants(exp_ymd):
@@ -519,10 +526,34 @@ def to_side_by_side(rows: list[dict]) -> pd.DataFrame:
     return df
 
 def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
+    """
+    Select n strikes centered around spot: n/2 above and n/2 below.
+    Ensures balanced distribution above and below spot price.
+    """
     if df is None or df.empty or not spot:
         return df
-    idx = (df["Strike"] - spot).abs().sort_values().index[:n]
-    return df.loc[sorted(idx)].reset_index(drop=True)
+
+    half = n // 2  # 20 above, 20 below for n=40
+
+    # Split into above and below spot
+    above = df[df["Strike"] >= spot].sort_values("Strike").head(half)
+    below = df[df["Strike"] < spot].sort_values("Strike", ascending=False).head(half)
+
+    # Combine and sort by strike
+    result = pd.concat([below, above]).sort_values("Strike").reset_index(drop=True)
+
+    # If we don't have enough strikes on one side, take more from the other
+    if len(result) < n:
+        # Get strikes we already selected
+        selected_strikes = set(result["Strike"].tolist())
+        # Get remaining strikes sorted by distance from spot
+        remaining = df[~df["Strike"].isin(selected_strikes)]
+        remaining = remaining.iloc[(remaining["Strike"] - spot).abs().argsort()]
+        needed = n - len(result)
+        extra = remaining.head(needed)
+        result = pd.concat([result, extra]).sort_values("Strike").reset_index(drop=True)
+
+    return result
 
 # ====== jobs ======
 def run_market_job():
@@ -535,10 +566,24 @@ def run_market_job():
         spot = get_spx_last()
         exp  = get_0dte_exp()
         rows = get_chain_rows(exp, spot)
+        raw_count = len(rows)
         df   = pick_centered(to_side_by_side(rows), spot, TARGET_STRIKES)
+        final_count = len(df)
+
+        # Validate: reject incomplete data
+        if final_count < MIN_REQUIRED_STRIKES:
+            # Keep previous data if current fetch is incomplete
+            last_run_status = {
+                "ts": fmt_et(now_et()),
+                "ok": False,
+                "msg": f"INCOMPLETE: exp={exp} spot={round(spot or 0,2)} raw={raw_count} final={final_count} (min={MIN_REQUIRED_STRIKES})"
+            }
+            print("[pull] REJECTED - insufficient rows:", last_run_status["msg"], flush=True)
+            return  # Don't update latest_df with bad data
+
         with _df_lock:
             latest_df = df.copy()
-        last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={len(df)}"}
+        last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={final_count}"}
         print("[pull] OK", last_run_status["msg"], flush=True)
     except Exception as e:
         last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}

@@ -3827,8 +3827,8 @@ DASH_HTML_TEMPLATE = """
           return;
         }
 
-        // Prepare candlestick data
-        const times = candles.map(c => c.time);
+        // Prepare candlestick data - format times as HH:MM for category axis (no gaps)
+        const times = candles.map(c => c.time.slice(11, 16));
         const opens = candles.map(c => c.open);
         const highs = candles.map(c => c.high);
         const lows = candles.map(c => c.low);
@@ -3932,11 +3932,11 @@ DASH_HTML_TEMPLATE = """
           paper_bgcolor: '#121417',
           plot_bgcolor: '#0f1115',
           xaxis: {
-            type: 'date',
+            type: 'category',
             gridcolor: '#20242a',
             tickfont: { size: 9 },
-            tickformat: '%H:%M',
-            rangeslider: { visible: false }
+            rangeslider: { visible: false },
+            nticks: 12
           },
           yaxis: {
             gridcolor: '#20242a',

@@ -1520,21 +1520,18 @@ def api_statistics_levels():
                     result["target"] = float(target_str)
             except:
                 pass
-            # LIS - parse from formats like "$6,926 - $6,966" or "6000/6100"
+            # LIS - parse from formats like "$6,926 - $6,966" or "6000/6100" or single "6050"
             lis = s.get("lines_in_sand")
             if lis:
                 try:
                     lis_str = str(lis).replace("$", "").replace(",", "")
-                    # Try " - " separator first, then "/"
-                    if " - " in lis_str:
-                        parts = lis_str.split(" - ")
-                    elif "/" in lis_str:
-                        parts = lis_str.split("/")
-                    else:
-                        parts = []
-                    if len(parts) >= 2:
-                        result["lis_low"] = float(parts[0].strip())
-                        result["lis_high"] = float(parts[1].strip())
+                    # Extract all numbers from the string
+                    lis_numbers = re.findall(r"[\d.]+", lis_str)
+                    if len(lis_numbers) >= 2:
+                        result["lis_low"] = float(lis_numbers[0])
+                        result["lis_high"] = float(lis_numbers[1])
+                    elif len(lis_numbers) == 1:
+                        result["lis_low"] = float(lis_numbers[0])
                 except:
                     pass
 

@@ -4329,7 +4329,9 @@ DASH_HTML_TEMPLATE = """
       for (let i = 0; i < snaps.length; i++) {
         const curr = snaps[i].spot;
         const prev = i > 0 ? snaps[i - 1].spot : curr;
-        times.push(new Date(snaps[i].ts));
+        const snapDate = new Date(snaps[i].ts);
+        const timeLabel = (snapDate.getMonth()+1) + '/' + snapDate.getDate() + ' ' + String(snapDate.getHours()).padStart(2,'0') + ':' + String(snapDate.getMinutes()).padStart(2,'0');
+        times.push(timeLabel);
         opens.push(prev);
         closes.push(curr);
         highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1);
@@ -4452,11 +4454,11 @@ DASH_HTML_TEMPLATE = """
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',
         xaxis: {
-          type: 'date',
+          type: 'category',
           gridcolor: '#20242a',
           tickfont: { size: 9 },
-          tickformat: '%m/%d %H:%M',
-          rangeslider: { visible: false }
+          rangeslider: { visible: false },
+          nticks: 12
         },
         yaxis: {
           gridcolor: '#20242a',

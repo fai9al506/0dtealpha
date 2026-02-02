@@ -25,9 +25,7 @@ VOLLAND_TABLE       = os.getenv("VOLLAND_TABLE", "volland_exposures")
 VOLLAND_TS_COL      = os.getenv("VOLLAND_TS_COL", "ts")
 VOLLAND_PAYLOAD_COL = os.getenv("VOLLAND_PAYLOAD_COL", "payload")
 
-# Volland vanna by-strike view/table (you already have this in Postgres)
-VOLLAND_VANNA_POINTS = os.getenv("VOLLAND_VANNA_POINTS", "public.volland_vanna_points_dedup")
-VOLLAND_VANNA_TS_COL = os.getenv("VOLLAND_VANNA_TS_COL", "ts_utc")
+# Charm exposure points are read directly from volland_exposure_points table
 
 # SQLAlchemy psycopg v3 URI
 if DB_URL.startswith("postgresql://"):
@@ -418,7 +416,8 @@ def db_volland_history(limit: int = 500) -> list[dict]:
 
 def db_volland_vanna_window(limit: int = 40) -> dict:
     """
-    Returns latest 'limit' strikes around the "mid" strike where abs(vanna) is max.
+    Returns latest 'limit' strikes around the "mid" strike where abs(charm) is max.
+    Reads directly from volland_exposure_points (greek='charm').
     (UI draws the vertical line at SPOT; mid info is returned for reference.)
     """
     if not engine:
@@ -428,33 +427,36 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
     if lim < 5: lim = 5
     if lim > 200: lim = 200
 
-    sql = text(f"""
+    sql = text("""
     WITH latest AS (
-      SELECT max({VOLLAND_VANNA_TS_COL}) AS ts_utc
-      FROM {VOLLAND_VANNA_POINTS}
+      SELECT max(ts_utc) AS ts_utc
+      FROM volland_exposure_points
+      WHERE greek = 'charm'
     ),
     mid AS (
       SELECT v.strike::numeric AS mid_strike,
-             v.vanna::numeric  AS mid_vanna
-      FROM {VOLLAND_VANNA_POINTS} v
-      JOIN latest l ON v.{VOLLAND_VANNA_TS_COL} = l.ts_utc
-      ORDER BY abs(v.vanna::numeric) DESC
+             v.value::numeric  AS mid_vanna
+      FROM volland_exposure_points v
+      JOIN latest l ON v.ts_utc = l.ts_utc
+      WHERE v.greek = 'charm'
+      ORDER BY abs(v.value::numeric) DESC
       LIMIT 1
     ),
     ranked AS (
       SELECT
-        v.{VOLLAND_VANNA_TS_COL} AS ts_utc,
+        v.ts_utc,
         v.strike::numeric AS strike,
-        v.vanna::numeric  AS vanna,
+        v.value::numeric  AS vanna,
         m.mid_strike,
         m.mid_vanna,
         (v.strike::numeric - m.mid_strike) AS rel,
         ROW_NUMBER() OVER (
           ORDER BY abs(v.strike::numeric - m.mid_strike), v.strike::numeric
         ) AS rn
-      FROM {VOLLAND_VANNA_POINTS} v
-      JOIN latest l ON v.{VOLLAND_VANNA_TS_COL} = l.ts_utc
+      FROM volland_exposure_points v
+      JOIN latest l ON v.ts_utc = l.ts_utc
       CROSS JOIN mid m
+      WHERE v.greek = 'charm'
     )
     SELECT ts_utc, strike, vanna, mid_strike, mid_vanna, rel
     FROM ranked
@@ -3350,8 +3352,18 @@ DASH_HTML_TEMPLATE = """
         hovertemplate:"Strike %{x}<br>Vanna %{y}<extra></extra>"
       };
 
+      let titleText = 'Charm';
+      if (w.ts_utc) {
+        const dt = new Date(w.ts_utc);
+        const ageMins = Math.round((Date.now() - dt.getTime()) / 60000);
+        const hh = dt.getHours().toString().padStart(2,'0');
+        const mm = dt.getMinutes().toString().padStart(2,'0');
+        const stale = ageMins > 5 ? ' <span style="color:#ef4444">(stale)</span>' : '';
+        titleText = 'Charm  <span style="font-size:11px;color:#9aa0a6">' + hh + ':' + mm + stale + '</span>';
+      }
+
       Plotly.react(vannaDiv, [trace], {
-        title:{text:'Charm', font:{size:14}},
+        title:{text:titleText, font:{size:14}},
         paper_bgcolor:'#121417',
         plot_bgcolor:'#0f1115',
         margin:{l:55,r:10,t:32,b:40},

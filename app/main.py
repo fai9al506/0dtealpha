@@ -9,6 +9,7 @@ from threading import Lock
 from typing import Any, Optional
 import bcrypt as _bcrypt
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from app.setup_detector import check_setups as _check_setups, DEFAULT_SETUP_SETTINGS
 
 # ====== CONFIG ======
 USE_LIVE = True
@@ -43,6 +44,7 @@ MIN_REQUIRED_STRIKES = 30  # Minimum rows required; reject data below this thres
 # ====== TELEGRAM ALERTS ======
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_CHAT_ID_SETUPS = os.getenv("TELEGRAM_CHAT_ID_SETUPS", "")
 
 # Alert state tracking
 _alert_state = {
@@ -298,6 +300,52 @@ def db_init():
         INSERT INTO alert_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
         """))
 
+        # Setup detector settings table
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS setup_settings (
+            id INTEGER PRIMARY KEY DEFAULT 1,
+            gex_long_enabled BOOLEAN DEFAULT TRUE,
+            weight_support INTEGER DEFAULT 20,
+            weight_upside INTEGER DEFAULT 20,
+            weight_floor_cluster INTEGER DEFAULT 20,
+            weight_target_cluster INTEGER DEFAULT 20,
+            weight_rr INTEGER DEFAULT 20,
+            brackets JSONB DEFAULT '{"support":[[5,100],[10,75],[15,50],[20,25]],"upside":[[25,100],[15,75],[10,50]],"floor_cluster":[[3,100],[7,75],[10,50]],"target_cluster":[[3,100],[7,75],[10,50]],"rr":[[3,100],[2,75],[1.5,50],[1,25]]}',
+            grade_thresholds JSONB DEFAULT '{"A+":90,"A":75,"A-Entry":60}',
+            CHECK (id = 1)
+        );
+        INSERT INTO setup_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+        """))
+
+        # Setup detection log table
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS setup_log (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            setup_name TEXT NOT NULL,
+            direction TEXT NOT NULL DEFAULT 'long',
+            grade TEXT NOT NULL,
+            score DOUBLE PRECISION NOT NULL,
+            paradigm TEXT,
+            spot DOUBLE PRECISION,
+            lis DOUBLE PRECISION,
+            target DOUBLE PRECISION,
+            max_plus_gex DOUBLE PRECISION,
+            max_minus_gex DOUBLE PRECISION,
+            gap_to_lis DOUBLE PRECISION,
+            upside DOUBLE PRECISION,
+            rr_ratio DOUBLE PRECISION,
+            first_hour BOOLEAN DEFAULT FALSE,
+            support_score INTEGER,
+            upside_score INTEGER,
+            floor_cluster_score INTEGER,
+            target_cluster_score INTEGER,
+            rr_score INTEGER,
+            notified BOOLEAN DEFAULT FALSE
+        );
+        CREATE INDEX IF NOT EXISTS ix_setup_log_ts ON setup_log (ts DESC);
+        """))
+
         # Users table for authentication
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS users (
@@ -335,6 +383,7 @@ def db_init():
 
     # Load alert settings from database
     load_alert_settings()
+    load_setup_settings()
     print("[db] ready", flush=True)
 
 def load_alert_settings():
@@ -391,6 +440,110 @@ def save_alert_settings():
         return True
     except Exception as e:
         print(f"[alerts] failed to save settings: {e}", flush=True)
+        return False
+
+# ====== SETUP DETECTOR SETTINGS ======
+_setup_settings = dict(DEFAULT_SETUP_SETTINGS)
+
+def load_setup_settings():
+    """Load setup detector settings from database into memory."""
+    global _setup_settings
+    if not engine:
+        return
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(text("SELECT * FROM setup_settings WHERE id = 1")).mappings().first()
+            if row:
+                _setup_settings = {
+                    "gex_long_enabled": row["gex_long_enabled"],
+                    "weight_support": row["weight_support"],
+                    "weight_upside": row["weight_upside"],
+                    "weight_floor_cluster": row["weight_floor_cluster"],
+                    "weight_target_cluster": row["weight_target_cluster"],
+                    "weight_rr": row["weight_rr"],
+                    "brackets": row["brackets"] if isinstance(row["brackets"], dict) else json.loads(row["brackets"]) if row["brackets"] else DEFAULT_SETUP_SETTINGS["brackets"],
+                    "grade_thresholds": row["grade_thresholds"] if isinstance(row["grade_thresholds"], dict) else json.loads(row["grade_thresholds"]) if row["grade_thresholds"] else DEFAULT_SETUP_SETTINGS["grade_thresholds"],
+                }
+                print("[setups] settings loaded from db", flush=True)
+    except Exception as e:
+        print(f"[setups] failed to load settings: {e}", flush=True)
+
+def save_setup_settings():
+    """Save current setup detector settings to database."""
+    if not engine:
+        return False
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                UPDATE setup_settings SET
+                    gex_long_enabled = :gex_long_enabled,
+                    weight_support = :weight_support,
+                    weight_upside = :weight_upside,
+                    weight_floor_cluster = :weight_floor_cluster,
+                    weight_target_cluster = :weight_target_cluster,
+                    weight_rr = :weight_rr,
+                    brackets = :brackets,
+                    grade_thresholds = :grade_thresholds
+                WHERE id = 1
+            """), {
+                "gex_long_enabled": _setup_settings["gex_long_enabled"],
+                "weight_support": _setup_settings["weight_support"],
+                "weight_upside": _setup_settings["weight_upside"],
+                "weight_floor_cluster": _setup_settings["weight_floor_cluster"],
+                "weight_target_cluster": _setup_settings["weight_target_cluster"],
+                "weight_rr": _setup_settings["weight_rr"],
+                "brackets": json.dumps(_setup_settings.get("brackets", DEFAULT_SETUP_SETTINGS["brackets"])),
+                "grade_thresholds": json.dumps(_setup_settings.get("grade_thresholds", DEFAULT_SETUP_SETTINGS["grade_thresholds"])),
+            })
+        return True
+    except Exception as e:
+        print(f"[setups] failed to save settings: {e}", flush=True)
+        return False
+
+def log_setup(result_wrapper):
+    """Insert a detection into setup_log table."""
+    if not engine:
+        return
+    r = result_wrapper["result"]
+    notified = result_wrapper.get("notify", False)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO setup_log
+                    (setup_name, direction, grade, score, paradigm, spot, lis, target,
+                     max_plus_gex, max_minus_gex, gap_to_lis, upside, rr_ratio,
+                     first_hour, support_score, upside_score, floor_cluster_score,
+                     target_cluster_score, rr_score, notified)
+                VALUES
+                    (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
+                     :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
+                     :first_hour, :support_score, :upside_score, :floor_cluster_score,
+                     :target_cluster_score, :rr_score, :notified)
+            """), {**r, "notified": notified})
+    except Exception as e:
+        print(f"[setups] failed to log: {e}", flush=True)
+
+def send_telegram_setups(message: str) -> bool:
+    """Send a message to the setups Telegram channel (falls back to main channel)."""
+    chat_id = TELEGRAM_CHAT_ID_SETUPS or TELEGRAM_CHAT_ID
+    if not TELEGRAM_BOT_TOKEN or not chat_id:
+        print("[setups-tg] missing token or chat_id", flush=True)
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        resp = requests.post(url, json={
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "HTML"
+        }, timeout=10)
+        if resp.status_code == 200:
+            print(f"[setups-tg] sent: {message[:50]}...", flush=True)
+            return True
+        else:
+            print(f"[setups-tg] error: {resp.status_code} {resp.text}", flush=True)
+            return False
+    except Exception as e:
+        print(f"[setups-tg] exception: {e}", flush=True)
         return False
 
 def _json_load_maybe(v: Any) -> Any:
@@ -906,6 +1059,12 @@ def run_market_job():
             send_scheduled_summary()
         except Exception as alert_err:
             print(f"[alerts] error in check: {alert_err}", flush=True)
+
+        # Check trading setups
+        try:
+            _run_setup_check()
+        except Exception as setup_err:
+            print(f"[setups] error in check: {setup_err}", flush=True)
     except Exception as e:
         last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}
         print("[pull] ERROR", e, flush=True)
@@ -1265,6 +1424,69 @@ def send_summary_alert(time_label: str):
         send_telegram(summary)
     except Exception as e:
         print(f"[alerts] summary error: {e}", flush=True)
+
+def _run_setup_check():
+    """Run the GEX Long setup detector after each data pull."""
+    if not _setup_settings.get("gex_long_enabled", True):
+        return
+
+    # Get spot price (same pattern as check_alerts)
+    msg = last_run_status.get("msg") or ""
+    spot = None
+    try:
+        parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+        spot = float(parts.get("spot", ""))
+    except Exception:
+        pass
+    if not spot:
+        return
+
+    # Get Volland stats
+    stats_result = db_volland_stats()
+    stats = stats_result.get("stats", {}) if stats_result else {}
+    paradigm = stats.get("paradigm")
+
+    # Parse LIS (single value)
+    lis = None
+    if stats.get("lines_in_sand"):
+        lis_str = str(stats["lines_in_sand"]).replace("$", "").replace(",", "")
+        lis_match = re.findall(r"[\d.]+", lis_str)
+        if lis_match:
+            lis = float(lis_match[0])
+
+    # Parse target
+    target = None
+    if stats.get("target"):
+        target_str = str(stats["target"]).replace("$", "").replace(",", "")
+        target_match = re.search(r"[\d.]+", target_str)
+        if target_match:
+            target = float(target_match.group())
+
+    # Calculate max +GEX / -GEX strikes from latest_df
+    max_plus_gex, max_minus_gex = None, None
+    with _df_lock:
+        if latest_df is not None and not latest_df.empty:
+            df = latest_df.copy()
+            sdf = df.sort_values("Strike")
+            strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
+            call_oi = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+            put_oi = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+            c_gamma = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+            p_gamma = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+            net_gex = (c_gamma * call_oi * 100.0) + (-p_gamma * put_oi * 100.0)
+            max_pos_idx = net_gex.idxmax() if not net_gex.empty else None
+            max_neg_idx = net_gex.idxmin() if not net_gex.empty else None
+            max_plus_gex = float(strikes.loc[max_pos_idx]) if max_pos_idx is not None else None
+            max_minus_gex = float(strikes.loc[max_neg_idx]) if max_neg_idx is not None else None
+
+    result_wrapper = _check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, _setup_settings)
+    if result_wrapper:
+        log_setup(result_wrapper)
+        grade = result_wrapper["result"]["grade"]
+        score = result_wrapper["result"]["score"]
+        print(f"[setups] GEX Long detected: {grade} ({score}), notify={result_wrapper['notify']}", flush=True)
+        if result_wrapper["notify"]:
+            send_telegram_setups(result_wrapper["message"])
 
 def start_scheduler():
     sch = BackgroundScheduler(timezone="US/Eastern")
@@ -2208,6 +2430,98 @@ def api_alerts_status():
         "settings": _alert_settings
     }
 
+# ====== SETUP DETECTOR ENDPOINTS ======
+
+@app.get("/api/setup/settings")
+def api_setup_settings_get():
+    """Get current setup detector settings."""
+    return _setup_settings
+
+@app.post("/api/setup/settings")
+def api_setup_settings_post(
+    gex_long_enabled: bool = Query(None),
+    weight_support: int = Query(None),
+    weight_upside: int = Query(None),
+    weight_floor_cluster: int = Query(None),
+    weight_target_cluster: int = Query(None),
+    weight_rr: int = Query(None),
+    grade_a_plus: int = Query(None),
+    grade_a: int = Query(None),
+    grade_a_entry: int = Query(None),
+):
+    """Update setup detector settings."""
+    global _setup_settings
+
+    if gex_long_enabled is not None:
+        _setup_settings["gex_long_enabled"] = gex_long_enabled
+    if weight_support is not None:
+        _setup_settings["weight_support"] = weight_support
+    if weight_upside is not None:
+        _setup_settings["weight_upside"] = weight_upside
+    if weight_floor_cluster is not None:
+        _setup_settings["weight_floor_cluster"] = weight_floor_cluster
+    if weight_target_cluster is not None:
+        _setup_settings["weight_target_cluster"] = weight_target_cluster
+    if weight_rr is not None:
+        _setup_settings["weight_rr"] = weight_rr
+    if grade_a_plus is not None or grade_a is not None or grade_a_entry is not None:
+        thresholds = dict(_setup_settings.get("grade_thresholds", DEFAULT_SETUP_SETTINGS["grade_thresholds"]))
+        if grade_a_plus is not None:
+            thresholds["A+"] = grade_a_plus
+        if grade_a is not None:
+            thresholds["A"] = grade_a
+        if grade_a_entry is not None:
+            thresholds["A-Entry"] = grade_a_entry
+        _setup_settings["grade_thresholds"] = thresholds
+
+    save_setup_settings()
+    return {"status": "ok", "settings": _setup_settings}
+
+@app.get("/api/setup/log")
+def api_setup_log(limit: int = Query(50)):
+    """Get recent setup detection log entries."""
+    if not engine:
+        return []
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT id, ts, setup_name, direction, grade, score,
+                       paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
+                       gap_to_lis, upside, rr_ratio, first_hour,
+                       support_score, upside_score, floor_cluster_score,
+                       target_cluster_score, rr_score, notified
+                FROM setup_log
+                ORDER BY ts DESC
+                LIMIT :lim
+            """), {"lim": min(int(limit), 200)}).mappings().all()
+            return [
+                {
+                    **{k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(r).items()}
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        print(f"[setups] log query error: {e}", flush=True)
+        return []
+
+@app.post("/api/setup/test")
+def api_setup_test():
+    """Send a test alert to the setups Telegram channel."""
+    chat_id = TELEGRAM_CHAT_ID_SETUPS or TELEGRAM_CHAT_ID
+    if not TELEGRAM_BOT_TOKEN or not chat_id:
+        return {
+            "status": "error",
+            "message": "Telegram not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID_SETUPS (or TELEGRAM_CHAT_ID).",
+            "token_set": bool(TELEGRAM_BOT_TOKEN),
+            "chat_id_set": bool(chat_id)
+        }
+
+    success = send_telegram_setups("🧪 <b>Test Setup Alert</b>\n\nYour 0DTE Alpha setup detector alerts are working!")
+    if success:
+        return {"status": "ok", "message": "Test setup alert sent successfully!"}
+    else:
+        return {"status": "error", "message": "Failed to send test alert. Check your token and chat ID."}
+
 @app.get("/api/data_freshness")
 def api_data_freshness():
     """
@@ -2924,6 +3238,7 @@ DASH_HTML_TEMPLATE = """
           <button class="settings-tab active" data-tab="alerts">Alerts</button>
           <button class="settings-tab" data-tab="users">Users</button>
           <button class="settings-tab" data-tab="messages">Messages</button>
+          <button class="settings-tab" data-tab="setups">Trading Setups</button>
         </div>
         <!-- Alerts Tab -->
         <div class="settings-panel" id="tabPanelAlerts">
@@ -3011,6 +3326,66 @@ DASH_HTML_TEMPLATE = """
           <div class="modal-body">
             <div style="color:var(--muted);margin-bottom:12px;font-weight:600">Access Requests</div>
             <div id="messagesList" style="max-height:300px;overflow-y:auto"></div>
+          </div>
+        </div>
+        <!-- Trading Setups Tab -->
+        <div class="settings-panel" id="tabPanelSetups">
+          <div class="modal-body">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <div style="font-weight:600;color:var(--muted)">GEX Long Setup Detection</div>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="setupGexLongEnabled" style="width:16px;height:16px">
+                <span style="font-size:12px">Enabled</span>
+              </label>
+            </div>
+
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:14px;font-size:11px;color:var(--muted)">
+              <div style="font-weight:600;margin-bottom:4px">Base Conditions (all must be true):</div>
+              <div>Paradigm contains "GEX" &bull; Spot &ge; LIS &bull; Target-Spot &ge; 10 &bull; +GEX-Spot &ge; 10 &bull; Gap (Spot-LIS) &le; 20</div>
+            </div>
+
+            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">Scoring Weights (0-100, weighted average)</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+              <label style="font-size:11px">Support Proximity
+                <input type="number" id="setupWeightSupport" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Upside Room
+                <input type="number" id="setupWeightUpside" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Floor Clustering
+                <input type="number" id="setupWeightFloorCluster" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Target Clustering
+                <input type="number" id="setupWeightTargetCluster" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Risk / Reward
+                <input type="number" id="setupWeightRR" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+            </div>
+
+            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">Grade Thresholds (minimum composite score)</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+              <label style="font-size:11px">A+
+                <input type="number" id="setupGradeAPlus" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">A
+                <input type="number" id="setupGradeA" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">A-Entry
+                <input type="number" id="setupGradeAEntry" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+            </div>
+
+            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">Recent Detections</div>
+            <div id="setupLogList" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:6px;margin-bottom:14px;font-size:11px;background:var(--surface)">
+              <div style="color:var(--muted);text-align:center;padding:12px">No detections yet</div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
+              <span id="setupStatus" style="font-size:11px;color:var(--muted)"></span>
+              <button id="btnTestSetup" style="padding:6px 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--fg);cursor:pointer;font-size:12px">Test Alert</button>
+              <button id="btnSaveSetups" style="padding:6px 12px;background:var(--accent);border:none;border-radius:6px;color:var(--bg);cursor:pointer;font-weight:600;font-size:12px">Save</button>
+            </div>
           </div>
         </div>
       </div>
@@ -4693,6 +5068,7 @@ DASH_HTML_TEMPLATE = """
         // Load data when switching tabs
         if (tab.dataset.tab === 'users') loadUsers();
         if (tab.dataset.tab === 'messages') loadMessages();
+        if (tab.dataset.tab === 'setups') loadSetupSettings();
       });
     });
 
@@ -4888,6 +5264,99 @@ DASH_HTML_TEMPLATE = """
         alert('Error deleting message');
       }
     };
+
+    // ====== Setup Detector Settings ======
+    async function loadSetupSettings() {
+      try {
+        const r = await fetch('/api/setup/settings', { cache: 'no-store' });
+        const s = await r.json();
+        document.getElementById('setupGexLongEnabled').checked = s.gex_long_enabled !== false;
+        document.getElementById('setupWeightSupport').value = s.weight_support ?? 20;
+        document.getElementById('setupWeightUpside').value = s.weight_upside ?? 20;
+        document.getElementById('setupWeightFloorCluster').value = s.weight_floor_cluster ?? 20;
+        document.getElementById('setupWeightTargetCluster').value = s.weight_target_cluster ?? 20;
+        document.getElementById('setupWeightRR').value = s.weight_rr ?? 20;
+        const gt = s.grade_thresholds || {};
+        document.getElementById('setupGradeAPlus').value = gt['A+'] ?? 90;
+        document.getElementById('setupGradeA').value = gt['A'] ?? 75;
+        document.getElementById('setupGradeAEntry').value = gt['A-Entry'] ?? 60;
+      } catch (err) {
+        console.error('Failed to load setup settings', err);
+      }
+      loadSetupLog();
+    }
+
+    async function saveSetupSettings() {
+      const status = document.getElementById('setupStatus');
+      status.textContent = 'Saving...';
+      try {
+        const params = new URLSearchParams({
+          gex_long_enabled: document.getElementById('setupGexLongEnabled').checked,
+          weight_support: document.getElementById('setupWeightSupport').value,
+          weight_upside: document.getElementById('setupWeightUpside').value,
+          weight_floor_cluster: document.getElementById('setupWeightFloorCluster').value,
+          weight_target_cluster: document.getElementById('setupWeightTargetCluster').value,
+          weight_rr: document.getElementById('setupWeightRR').value,
+          grade_a_plus: document.getElementById('setupGradeAPlus').value,
+          grade_a: document.getElementById('setupGradeA').value,
+          grade_a_entry: document.getElementById('setupGradeAEntry').value,
+        });
+        const r = await fetch('/api/setup/settings?' + params, { method: 'POST' });
+        const data = await r.json();
+        status.textContent = data.status === 'ok' ? 'Saved' : 'Error';
+        setTimeout(() => { status.textContent = ''; }, 2000);
+      } catch (err) {
+        status.textContent = 'Error';
+        setTimeout(() => { status.textContent = ''; }, 2000);
+      }
+    }
+
+    async function loadSetupLog() {
+      const list = document.getElementById('setupLogList');
+      if (!list) return;
+      try {
+        const r = await fetch('/api/setup/log?limit=20', { cache: 'no-store' });
+        const logs = await r.json();
+        if (!logs || logs.length === 0) {
+          list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px">No detections yet</div>';
+          return;
+        }
+        const gradeColor = { 'A+': '#22c55e', 'A': '#3b82f6', 'A-Entry': '#eab308' };
+        list.innerHTML = logs.map(l => {
+          const t = new Date(l.ts);
+          const time = t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+          const date = t.toLocaleDateString([], {month:'short',day:'numeric'});
+          const color = gradeColor[l.grade] || '#888';
+          const bell = l.notified ? '&#128276;' : '';
+          return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border)">
+            <span style="color:${color};font-weight:700;min-width:52px">${l.grade}</span>
+            <span style="min-width:32px">${l.score}</span>
+            <span style="color:var(--muted);flex:1">SPX ${l.spot?.toFixed(0)} | gap ${l.gap_to_lis?.toFixed(1)} | R:R ${l.rr_ratio?.toFixed(1)}x</span>
+            <span style="color:var(--muted);font-size:10px">${date} ${time}</span>
+            <span style="font-size:10px">${bell}</span>
+          </div>`;
+        }).join('');
+      } catch (err) {
+        list.innerHTML = '<div style="color:var(--red)">Error loading log</div>';
+      }
+    }
+
+    async function testSetupAlert() {
+      const status = document.getElementById('setupStatus');
+      status.textContent = 'Sending...';
+      try {
+        const r = await fetch('/api/setup/test', { method: 'POST' });
+        const data = await r.json();
+        status.textContent = data.status === 'ok' ? 'Sent!' : (data.message || 'Error');
+        setTimeout(() => { status.textContent = ''; }, 3000);
+      } catch (err) {
+        status.textContent = 'Error';
+        setTimeout(() => { status.textContent = ''; }, 2000);
+      }
+    }
+
+    document.getElementById('btnSaveSetups').addEventListener('click', saveSetupSettings);
+    document.getElementById('btnTestSetup').addEventListener('click', testSetupAlert);
 
     alertSaveBtn.addEventListener('click', saveAlertSettings);
     alertTestBtn.addEventListener('click', testAlert);

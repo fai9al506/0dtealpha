@@ -2803,27 +2803,29 @@ DASH_HTML_TEMPLATE = """
     #playbackSlider {
       -webkit-appearance:none;
       appearance:none;
-      height:8px;
+      height:12px;
       background:#1a1d23;
-      border-radius:4px;
+      border-radius:6px;
       outline:none;
     }
     #playbackSlider::-webkit-slider-thumb {
       -webkit-appearance:none;
       appearance:none;
-      width:16px;
-      height:16px;
+      width:24px;
+      height:24px;
       background:#60a5fa;
       border-radius:50%;
       cursor:pointer;
+      box-shadow:0 0 6px rgba(96,165,250,0.4);
     }
     #playbackSlider::-moz-range-thumb {
-      width:16px;
-      height:16px;
+      width:24px;
+      height:24px;
       background:#60a5fa;
       border-radius:50%;
       cursor:pointer;
       border:none;
+      box-shadow:0 0 6px rgba(96,165,250,0.4);
     }
     @media (max-width: 900px) {
       .playback-grid { grid-template-columns:1fr; }
@@ -3089,7 +3091,12 @@ DASH_HTML_TEMPLATE = """
           <div style="display:flex;gap:10px;align-items:center">
             <label style="font-size:11px;color:var(--muted)">Start Date:</label>
             <input type="date" id="playbackDate" style="background:#0f1115;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px">
-            <button id="playbackLoad" class="strike-btn" style="padding:4px 12px">Load 7 Days</button>
+            <div style="display:flex;gap:4px;background:#1a1d21;border-radius:6px;padding:2px">
+              <button class="strike-btn playback-range-btn" data-days="1" style="padding:4px 10px;font-size:10px">1D</button>
+              <button class="strike-btn playback-range-btn" data-days="3" style="padding:4px 10px;font-size:10px">3D</button>
+              <button class="strike-btn playback-range-btn active" data-days="7" style="padding:4px 10px;font-size:10px">7D</button>
+            </div>
+            <button id="playbackLoad" class="strike-btn" style="padding:4px 12px">Load</button>
             <button id="playbackExportFull" class="strike-btn" style="padding:4px 12px">Export Full CSV</button>
             <button id="playbackExportSummary" class="strike-btn" style="padding:4px 12px">Export Summary CSV</button>
             <div style="display:flex;gap:4px;margin-left:10px;background:#1a1d21;border-radius:6px;padding:2px">
@@ -3106,7 +3113,7 @@ DASH_HTML_TEMPLATE = """
           <!-- Full View (current layout) -->
           <div id="playbackFullView" class="playback-grid">
             <div class="playback-card playback-price-card">
-              <h3>SPX Price (7 Days)</h3>
+              <h3 id="playbackPriceTitle">SPX Price (7D)</h3>
               <div id="playbackPricePlot" class="playback-plot"></div>
             </div>
             <div class="playback-card">
@@ -4057,24 +4064,43 @@ DASH_HTML_TEMPLATE = """
     let playbackData = null;
     let playbackInitialized = false;
     let playbackViewMode = 'full'; // 'full' or 'summary'
+    let playbackDays = 7;
 
     function initPlayback() {
       if (playbackInitialized) return;
       playbackInitialized = true;
 
       // Default date: 7 days ago
-      const defaultDate = new Date();
-      defaultDate.setDate(defaultDate.getDate() - 7);
-      playbackDateInput.value = defaultDate.toISOString().split('T')[0];
+      setPlaybackDays(7);
 
       playbackLoadBtn.addEventListener('click', loadPlaybackData);
       playbackExportFullBtn.addEventListener('click', exportPlaybackFullCSV);
       playbackExportSummaryBtn.addEventListener('click', exportPlaybackSummaryCSV);
       playbackSlider.addEventListener('input', onSliderChange);
 
+      // Range buttons (1D, 3D, 7D)
+      document.querySelectorAll('.playback-range-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          setPlaybackDays(parseInt(btn.dataset.days));
+          loadPlaybackData();
+        });
+      });
+
       // View toggle buttons
       playbackViewFullBtn.addEventListener('click', () => setPlaybackViewMode('full'));
       playbackViewSummaryBtn.addEventListener('click', () => setPlaybackViewMode('summary'));
+    }
+
+    function setPlaybackDays(days) {
+      playbackDays = days;
+      const d = new Date();
+      d.setDate(d.getDate() - days);
+      playbackDateInput.value = d.toISOString().split('T')[0];
+      document.querySelectorAll('.playback-range-btn').forEach(b => {
+        b.classList.toggle('active', parseInt(b.dataset.days) === days);
+      });
+      const titleEl = document.getElementById('playbackPriceTitle');
+      if (titleEl) titleEl.textContent = 'SPX Price (' + days + 'D)';
     }
 
     function setPlaybackViewMode(mode) {

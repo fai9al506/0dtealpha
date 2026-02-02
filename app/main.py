@@ -309,12 +309,18 @@ def db_init():
             weight_floor_cluster INTEGER DEFAULT 20,
             weight_target_cluster INTEGER DEFAULT 20,
             weight_rr INTEGER DEFAULT 20,
-            brackets JSONB DEFAULT '{"support":[[5,100],[10,75],[15,50],[20,25]],"upside":[[25,100],[15,75],[10,50]],"floor_cluster":[[3,100],[7,75],[10,50]],"target_cluster":[[3,100],[7,75],[10,50]],"rr":[[3,100],[2,75],[1.5,50],[1,25]]}',
-            grade_thresholds JSONB DEFAULT '{"A+":90,"A":75,"A-Entry":60}',
+            brackets JSONB,
+            grade_thresholds JSONB,
             CHECK (id = 1)
         );
-        INSERT INTO setup_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
         """))
+        conn.execute(text(
+            "INSERT INTO setup_settings (id, brackets, grade_thresholds) "
+            "VALUES (1, :brackets, :thresholds) ON CONFLICT (id) DO NOTHING"
+        ), {
+            "brackets": json.dumps(_DEFAULT_SETUP_SETTINGS["brackets"]),
+            "thresholds": json.dumps(_DEFAULT_SETUP_SETTINGS["grade_thresholds"]),
+        })
 
         # Setup detection log table
         conn.execute(text("""

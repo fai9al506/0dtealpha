@@ -251,6 +251,30 @@ def db_init():
         EXCEPTION WHEN duplicate_column THEN NULL;
         END $$;
         """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE playback_snapshots ADD COLUMN call_gex JSONB;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE playback_snapshots ADD COLUMN put_gex JSONB;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE playback_snapshots ADD COLUMN call_oi JSONB;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE playback_snapshots ADD COLUMN put_oi JSONB;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
 
         # Alert settings table
         conn.execute(text("""
@@ -995,8 +1019,8 @@ def save_playback_snapshot():
         with engine.begin() as conn:
             conn.execute(
                 text("""INSERT INTO playback_snapshots
-                        (ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats)
-                        VALUES (:ts, :spot, :strikes, :net_gex, :charm, :call_vol, :put_vol, :stats)"""),
+                        (ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats, call_gex, put_gex, call_oi, put_oi)
+                        VALUES (:ts, :spot, :strikes, :net_gex, :charm, :call_vol, :put_vol, :stats, :call_gex, :put_gex, :call_oi, :put_oi)"""),
                 {
                     "ts": now_et(),
                     "spot": spot,
@@ -1006,6 +1030,10 @@ def save_playback_snapshot():
                     "call_vol": json.dumps(call_vol),
                     "put_vol": json.dumps(put_vol),
                     "stats": json.dumps(stats_data) if stats_data else None,
+                    "call_gex": json.dumps(call_gex.tolist()),
+                    "put_gex": json.dumps(put_gex.tolist()),
+                    "call_oi": json.dumps(call_oi.tolist()),
+                    "put_oi": json.dumps(put_oi.tolist()),
                 }
             )
         _last_playback_saved_at = time.time()
@@ -1907,7 +1935,7 @@ def api_export_playback(start_date: str = Query(None, description="Start date YY
         with engine.begin() as conn:
             if load_all:
                 rows = conn.execute(text("""
-                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats, call_gex, put_gex, call_oi, put_oi
                     FROM playback_snapshots
                     ORDER BY ts ASC
                     LIMIT 5000
@@ -1924,7 +1952,7 @@ def api_export_playback(start_date: str = Query(None, description="Start date YY
                 end_dt = now_et() + pd.Timedelta(hours=1)
 
                 rows = conn.execute(text("""
-                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats, call_gex, put_gex, call_oi, put_oi
                     FROM playback_snapshots
                     WHERE ts >= :start_ts AND ts < :end_ts
                     ORDER BY ts ASC
@@ -1941,6 +1969,10 @@ def api_export_playback(start_date: str = Query(None, description="Start date YY
             call_vol = _json_load_maybe(r["call_vol"]) or []
             put_vol = _json_load_maybe(r["put_vol"]) or []
             stats = _json_load_maybe(r["stats"]) or {}
+            call_gex = _json_load_maybe(r["call_gex"]) or []
+            put_gex = _json_load_maybe(r["put_gex"]) or []
+            call_oi = _json_load_maybe(r["call_oi"]) or []
+            put_oi = _json_load_maybe(r["put_oi"]) or []
 
             # Create a row for each strike
             for i, strike in enumerate(strikes):
@@ -1948,7 +1980,11 @@ def api_export_playback(start_date: str = Query(None, description="Start date YY
                     "timestamp": ts,
                     "spot": spot,
                     "strike": strike,
+                    "call_gex": call_gex[i] if i < len(call_gex) else None,
+                    "put_gex": put_gex[i] if i < len(put_gex) else None,
                     "net_gex": net_gex[i] if i < len(net_gex) else None,
+                    "call_oi": call_oi[i] if i < len(call_oi) else None,
+                    "put_oi": put_oi[i] if i < len(put_oi) else None,
                     "charm": charm[i] if i < len(charm) else None,
                     "call_vol": call_vol[i] if i < len(call_vol) else None,
                     "put_vol": put_vol[i] if i < len(put_vol) else None,
@@ -1988,7 +2024,7 @@ def api_export_playback_summary(start_date: str = Query(None, description="Start
         with engine.begin() as conn:
             if load_all:
                 rows = conn.execute(text("""
-                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats, call_gex, put_gex, call_oi, put_oi
                     FROM playback_snapshots
                     ORDER BY ts ASC
                     LIMIT 5000
@@ -2005,7 +2041,7 @@ def api_export_playback_summary(start_date: str = Query(None, description="Start
                 end_dt = now_et() + pd.Timedelta(hours=1)
 
                 rows = conn.execute(text("""
-                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats, call_gex, put_gex, call_oi, put_oi
                     FROM playback_snapshots
                     WHERE ts >= :start_ts AND ts < :end_ts
                     ORDER BY ts ASC
@@ -2023,6 +2059,10 @@ def api_export_playback_summary(start_date: str = Query(None, description="Start
             call_vol = _json_load_maybe(r["call_vol"]) or []
             put_vol = _json_load_maybe(r["put_vol"]) or []
             stats = _json_load_maybe(r["stats"]) or {}
+            call_gex = _json_load_maybe(r["call_gex"]) or []
+            put_gex = _json_load_maybe(r["put_gex"]) or []
+            call_oi = _json_load_maybe(r["call_oi"]) or []
+            put_oi = _json_load_maybe(r["put_oi"]) or []
 
             # Find max +GEX and -GEX strikes
             max_pos_gex_strike, max_neg_gex_strike = None, None
@@ -2042,6 +2082,10 @@ def api_export_playback_summary(start_date: str = Query(None, description="Start
             total_vol = total_call_vol + total_put_vol
             net_gex_total = sum(net_gex) if net_gex else 0
             net_charm_total = sum(charm) if charm else 0
+            call_gex_total = sum(call_gex) if call_gex else 0
+            put_gex_total = sum(put_gex) if put_gex else 0
+            total_call_oi = sum(call_oi) if call_oi else 0
+            total_put_oi = sum(put_oi) if put_oi else 0
 
             csv_rows.append({
                 "timestamp": ts_str,
@@ -2056,6 +2100,10 @@ def api_export_playback_summary(start_date: str = Query(None, description="Start
                 "call_volume": total_call_vol,
                 "put_volume": total_put_vol,
                 "net_gex_total": round(net_gex_total, 2) if net_gex_total else None,
+                "call_gex_total": round(call_gex_total, 2) if call_gex_total else None,
+                "put_gex_total": round(put_gex_total, 2) if put_gex_total else None,
+                "total_call_oi": round(total_call_oi, 2) if total_call_oi else None,
+                "total_put_oi": round(total_put_oi, 2) if total_put_oi else None,
                 "net_charm_total": round(net_charm_total, 2) if net_charm_total else None,
             })
 

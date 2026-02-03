@@ -43,6 +43,13 @@ _cooldown = {
     "last_date": None,
 }
 
+_cooldown_ag = {
+    "last_grade": None,
+    "last_gap_to_lis": None,
+    "setup_expired": False,
+    "last_date": None,
+}
+
 _GRADE_ORDER = {"A+": 3, "A": 2, "A-Entry": 1}
 
 
@@ -182,6 +189,102 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
     }
 
 
+# ── AG Short evaluation ────────────────────────────────────────────────────
+
+def evaluate_ag_short(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings):
+    """
+    Evaluate AG Short setup.  Returns a result dict or None.
+    Mirror of GEX Long with flipped direction inputs.
+    """
+    if not settings.get("ag_short_enabled", True):
+        return None
+
+    # Base conditions
+    if not paradigm or "AG" not in str(paradigm).upper():
+        return None
+    if spot is None or lis is None or target is None:
+        return None
+    if max_plus_gex is None or max_minus_gex is None:
+        return None
+    if spot >= lis:
+        return None
+
+    gap = lis - spot                   # gap to resistance (above)
+    downside_target = spot - target    # room to downside target
+    downside_gex = spot - max_minus_gex  # room to -GEX magnet
+
+    if downside_target < 10:
+        return None
+    if downside_gex < 10:
+        return None
+    if gap > 20:
+        return None
+
+    # ── Component scores (same brackets, mirrored inputs) ────────────
+    brackets = settings.get("brackets", DEFAULT_SETUP_SETTINGS["brackets"])
+
+    support_score = score_component_max(gap, brackets.get("support", DEFAULT_SETUP_SETTINGS["brackets"]["support"]))
+    downside = min(downside_target, downside_gex)
+    upside_score = score_component_min(downside, brackets.get("upside", DEFAULT_SETUP_SETTINGS["brackets"]["upside"]))
+    floor_cluster_score = score_component_max(abs(lis - max_plus_gex), brackets.get("floor_cluster", DEFAULT_SETUP_SETTINGS["brackets"]["floor_cluster"]))
+    target_cluster_score = score_component_max(abs(target - max_minus_gex), brackets.get("target_cluster", DEFAULT_SETUP_SETTINGS["brackets"]["target_cluster"]))
+
+    rr_ratio = downside / gap if gap > 0 else 99
+    rr_score = score_component_min(rr_ratio, brackets.get("rr", DEFAULT_SETUP_SETTINGS["brackets"]["rr"]))
+
+    # ── Weighted composite ──────────────────────────────────────────────
+    w_support = settings.get("weight_support", 20)
+    w_upside = settings.get("weight_upside", 20)
+    w_floor = settings.get("weight_floor_cluster", 20)
+    w_target = settings.get("weight_target_cluster", 20)
+    w_rr = settings.get("weight_rr", 20)
+    total_weight = w_support + w_upside + w_floor + w_target + w_rr
+
+    if total_weight == 0:
+        return None
+
+    composite = (
+        support_score * w_support
+        + upside_score * w_upside
+        + floor_cluster_score * w_floor
+        + target_cluster_score * w_target
+        + rr_score * w_rr
+    ) / total_weight
+
+    first_hour = is_first_hour()
+    if first_hour:
+        composite = min(composite + 10, 100)
+
+    # ── Grade ───────────────────────────────────────────────────────────
+    thresholds = settings.get("grade_thresholds", DEFAULT_SETUP_SETTINGS["grade_thresholds"])
+    grade = compute_grade(composite, thresholds)
+
+    if grade is None:
+        return None
+
+    return {
+        "setup_name": "AG Short",
+        "direction": "short",
+        "grade": grade,
+        "score": round(composite, 1),
+        "paradigm": str(paradigm),
+        "spot": round(spot, 2),
+        "lis": round(lis, 2),
+        "target": round(target, 2),
+        "max_plus_gex": round(max_plus_gex, 2),
+        "max_minus_gex": round(max_minus_gex, 2),
+        "gap_to_lis": round(gap, 2),
+        "upside": round(downside, 2),
+        "rr_ratio": round(rr_ratio, 2),
+        "first_hour": first_hour,
+        "support_score": support_score,
+        "upside_score": upside_score,
+        "floor_cluster_score": floor_cluster_score,
+        "target_cluster_score": target_cluster_score,
+        "rr_score": rr_score,
+    }
+
+
 # ── Cooldown / notification gate ───────────────────────────────────────────
 
 def should_notify(result):
@@ -231,6 +334,45 @@ def mark_setup_expired():
     _cooldown["last_gap_to_lis"] = None
 
 
+def should_notify_ag(result):
+    """Cooldown gate for AG Short — same logic, separate state."""
+    global _cooldown_ag
+
+    today = datetime.now(NY).date()
+    if _cooldown_ag["last_date"] != today:
+        _cooldown_ag = {"last_grade": None, "last_gap_to_lis": None, "setup_expired": False, "last_date": today}
+
+    grade = result["grade"]
+    gap = result["gap_to_lis"]
+    grade_rank = _GRADE_ORDER.get(grade, 0)
+    last_rank = _GRADE_ORDER.get(_cooldown_ag["last_grade"], 0)
+
+    fire = False
+
+    if _cooldown_ag["last_grade"] is None:
+        fire = True
+    elif grade_rank > last_rank:
+        fire = True
+    elif _cooldown_ag["last_gap_to_lis"] is not None and (_cooldown_ag["last_gap_to_lis"] - gap) > 2:
+        fire = True
+    elif _cooldown_ag["setup_expired"]:
+        fire = True
+
+    if fire:
+        _cooldown_ag["last_grade"] = grade
+        _cooldown_ag["last_gap_to_lis"] = gap
+        _cooldown_ag["setup_expired"] = False
+
+    return fire
+
+
+def mark_ag_expired():
+    """Call when paradigm loses AG or gap > 20."""
+    _cooldown_ag["setup_expired"] = True
+    _cooldown_ag["last_grade"] = None
+    _cooldown_ag["last_gap_to_lis"] = None
+
+
 # ── Message formatting ─────────────────────────────────────────────────────
 
 def format_setup_message(result):
@@ -257,28 +399,66 @@ def format_setup_message(result):
     return msg
 
 
+def format_ag_short_message(result):
+    """Format a Telegram HTML message for AG Short with direction-specific labels."""
+    grade_emoji = {"A+": "🟢", "A": "🔵", "A-Entry": "🟡"}.get(result["grade"], "⚪")
+
+    msg = f"{grade_emoji} <b>AG Short Setup — {result['grade']}</b>\n"
+    msg += f"Score: <b>{result['score']}</b>/100\n\n"
+    msg += f"SPX: {result['spot']:.0f}\n"
+    msg += f"Paradigm: {result['paradigm']}\n"
+    msg += f"LIS (resistance): {result['lis']:.0f}  |  Target: {result['target']:.0f}\n"
+    msg += f"+GEX: {result['max_plus_gex']:.0f}  |  −GEX: {result['max_minus_gex']:.0f}\n\n"
+    msg += f"Gap to LIS: {result['gap_to_lis']:.1f}\n"
+    msg += f"Downside: {result['upside']:.1f}\n"
+    msg += f"R:R: {result['rr_ratio']:.1f}x\n\n"
+    msg += "<b>Scores:</b>\n"
+    msg += f"  Resistance: {result['support_score']}\n"
+    msg += f"  Downside: {result['upside_score']}\n"
+    msg += f"  Ceiling cluster: {result['floor_cluster_score']}\n"
+    msg += f"  Target cluster: {result['target_cluster_score']}\n"
+    msg += f"  R:R: {result['rr_score']}\n"
+    if result["first_hour"]:
+        msg += "\n⏰ First hour bonus applied"
+    return msg
+
+
 # ── Main entry point ───────────────────────────────────────────────────────
 
 def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings):
     """
     Main entry point called from main.py.
-    Returns dict with keys: result, notify, message  — or None.
+    Returns a list of result wrappers (each has keys: result, notify, message).
+    List may be empty.
     """
-    # Check if setup conditions have expired (for cooldown tracking)
+    results = []
+
+    # ── GEX Long cooldown expiry tracking ──
     if paradigm and "GEX" not in str(paradigm).upper():
         mark_setup_expired()
     elif spot is not None and lis is not None and (spot - lis) > 20:
         mark_setup_expired()
 
-    result = evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings)
-    if result is None:
-        return None
+    gex_result = evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings)
+    if gex_result is not None:
+        results.append({
+            "result": gex_result,
+            "notify": should_notify(gex_result),
+            "message": format_setup_message(gex_result),
+        })
 
-    notify = should_notify(result)
-    message = format_setup_message(result)
+    # ── AG Short cooldown expiry tracking ──
+    if paradigm and "AG" not in str(paradigm).upper():
+        mark_ag_expired()
+    elif spot is not None and lis is not None and (lis - spot) > 20:
+        mark_ag_expired()
 
-    return {
-        "result": result,
-        "notify": notify,
-        "message": message,
-    }
+    ag_result = evaluate_ag_short(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings)
+    if ag_result is not None:
+        results.append({
+            "result": ag_result,
+            "notify": should_notify_ag(ag_result),
+            "message": format_ag_short_message(ag_result),
+        })
+
+    return results

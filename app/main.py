@@ -200,6 +200,7 @@ _df_lock = Lock()
 # ====== SETUP DETECTOR DEFAULTS ======
 _DEFAULT_SETUP_SETTINGS = {
     "gex_long_enabled": True,
+    "ag_short_enabled": True,
     "weight_support": 20,
     "weight_upside": 20,
     "weight_floor_cluster": 20,
@@ -339,6 +340,12 @@ def db_init():
             "brackets": json.dumps(_DEFAULT_SETUP_SETTINGS["brackets"]),
             "thresholds": json.dumps(_DEFAULT_SETUP_SETTINGS["grade_thresholds"]),
         })
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_settings ADD COLUMN ag_short_enabled BOOLEAN DEFAULT TRUE;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
 
         # Setup detection log table
         conn.execute(text("""
@@ -479,6 +486,7 @@ def load_setup_settings():
             if row:
                 _setup_settings = {
                     "gex_long_enabled": row["gex_long_enabled"],
+                    "ag_short_enabled": row["ag_short_enabled"] if "ag_short_enabled" in row.keys() else True,
                     "weight_support": row["weight_support"],
                     "weight_upside": row["weight_upside"],
                     "weight_floor_cluster": row["weight_floor_cluster"],
@@ -500,6 +508,7 @@ def save_setup_settings():
             conn.execute(text("""
                 UPDATE setup_settings SET
                     gex_long_enabled = :gex_long_enabled,
+                    ag_short_enabled = :ag_short_enabled,
                     weight_support = :weight_support,
                     weight_upside = :weight_upside,
                     weight_floor_cluster = :weight_floor_cluster,
@@ -510,6 +519,7 @@ def save_setup_settings():
                 WHERE id = 1
             """), {
                 "gex_long_enabled": _setup_settings["gex_long_enabled"],
+                "ag_short_enabled": _setup_settings.get("ag_short_enabled", True),
                 "weight_support": _setup_settings["weight_support"],
                 "weight_upside": _setup_settings["weight_upside"],
                 "weight_floor_cluster": _setup_settings["weight_floor_cluster"],
@@ -1449,10 +1459,7 @@ def send_summary_alert(time_label: str):
         print(f"[alerts] summary error: {e}", flush=True)
 
 def _run_setup_check():
-    """Run the GEX Long setup detector after each data pull."""
-    if not _setup_settings.get("gex_long_enabled", True):
-        return
-
+    """Run setup detectors (GEX Long + AG Short) after each data pull."""
     # Get spot price (same pattern as check_alerts)
     msg = last_run_status.get("msg") or ""
     spot = None
@@ -1503,14 +1510,15 @@ def _run_setup_check():
             max_minus_gex = float(strikes.loc[max_neg_idx]) if max_neg_idx is not None else None
 
     from app.setup_detector import check_setups as _check_setups_fn
-    result_wrapper = _check_setups_fn(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, _setup_settings)
-    if result_wrapper:
-        log_setup(result_wrapper)
-        grade = result_wrapper["result"]["grade"]
-        score = result_wrapper["result"]["score"]
-        print(f"[setups] GEX Long detected: {grade} ({score}), notify={result_wrapper['notify']}", flush=True)
-        if result_wrapper["notify"]:
-            send_telegram_setups(result_wrapper["message"])
+    result_wrappers = _check_setups_fn(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, _setup_settings)
+    for rw in result_wrappers:
+        log_setup(rw)
+        setup_name = rw["result"]["setup_name"]
+        grade = rw["result"]["grade"]
+        score = rw["result"]["score"]
+        print(f"[setups] {setup_name} detected: {grade} ({score}), notify={rw['notify']}", flush=True)
+        if rw["notify"]:
+            send_telegram_setups(rw["message"])
 
 def start_scheduler():
     sch = BackgroundScheduler(timezone="US/Eastern")
@@ -2464,6 +2472,7 @@ def api_setup_settings_get():
 @app.post("/api/setup/settings")
 def api_setup_settings_post(
     gex_long_enabled: bool = Query(None),
+    ag_short_enabled: bool = Query(None),
     weight_support: int = Query(None),
     weight_upside: int = Query(None),
     weight_floor_cluster: int = Query(None),
@@ -2478,6 +2487,8 @@ def api_setup_settings_post(
 
     if gex_long_enabled is not None:
         _setup_settings["gex_long_enabled"] = gex_long_enabled
+    if ag_short_enabled is not None:
+        _setup_settings["ag_short_enabled"] = ag_short_enabled
     if weight_support is not None:
         _setup_settings["weight_support"] = weight_support
     if weight_upside is not None:
@@ -3356,16 +3367,24 @@ DASH_HTML_TEMPLATE = """
         <div class="settings-panel" id="tabPanelSetups">
           <div class="modal-body">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-              <div style="font-weight:600;color:var(--muted)">GEX Long Setup Detection</div>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                <input type="checkbox" id="setupGexLongEnabled" style="width:16px;height:16px">
-                <span style="font-size:12px">Enabled</span>
-              </label>
+              <div style="font-weight:600;color:var(--muted)">Setup Detection</div>
+              <div style="display:flex;gap:14px">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                  <input type="checkbox" id="setupGexLongEnabled" style="width:16px;height:16px">
+                  <span style="font-size:12px">GEX Long</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                  <input type="checkbox" id="setupAgShortEnabled" style="width:16px;height:16px">
+                  <span style="font-size:12px">AG Short</span>
+                </label>
+              </div>
             </div>
 
             <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:14px;font-size:11px;color:var(--muted)">
-              <div style="font-weight:600;margin-bottom:4px">Base Conditions (all must be true):</div>
+              <div style="font-weight:600;margin-bottom:4px">GEX Long — Base Conditions:</div>
               <div>Paradigm contains "GEX" &bull; Spot &ge; LIS &bull; Target-Spot &ge; 10 &bull; +GEX-Spot &ge; 10 &bull; Gap (Spot-LIS) &le; 20</div>
+              <div style="font-weight:600;margin-bottom:4px;margin-top:8px">AG Short — Base Conditions:</div>
+              <div>Paradigm contains "AG" &bull; Spot &lt; LIS &bull; Spot-Target &ge; 10 &bull; Spot-(-GEX) &ge; 10 &bull; Gap (LIS-Spot) &le; 20</div>
             </div>
 
             <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">Scoring Weights (0-100, weighted average)</div>
@@ -5295,6 +5314,7 @@ DASH_HTML_TEMPLATE = """
         const r = await fetch('/api/setup/settings', { cache: 'no-store' });
         const s = await r.json();
         document.getElementById('setupGexLongEnabled').checked = s.gex_long_enabled !== false;
+        document.getElementById('setupAgShortEnabled').checked = s.ag_short_enabled !== false;
         document.getElementById('setupWeightSupport').value = s.weight_support ?? 20;
         document.getElementById('setupWeightUpside').value = s.weight_upside ?? 20;
         document.getElementById('setupWeightFloorCluster').value = s.weight_floor_cluster ?? 20;
@@ -5316,6 +5336,7 @@ DASH_HTML_TEMPLATE = """
       try {
         const params = new URLSearchParams({
           gex_long_enabled: document.getElementById('setupGexLongEnabled').checked,
+          ag_short_enabled: document.getElementById('setupAgShortEnabled').checked,
           weight_support: document.getElementById('setupWeightSupport').value,
           weight_upside: document.getElementById('setupWeightUpside').value,
           weight_floor_cluster: document.getElementById('setupWeightFloorCluster').value,

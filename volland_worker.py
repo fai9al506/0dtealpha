@@ -1,7 +1,8 @@
 # volland_worker.py
 # Fixed version that captures charm/exposure data, statistics, AND populates volland_exposure_points
 import os, json, time, traceback, re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, time as dtime
+import pytz
 
 import psycopg
 from psycopg.rows import dict_row
@@ -20,6 +21,12 @@ WAIT_AFTER_GOTO_SEC = float(os.getenv("VOLLAND_WAIT_AFTER_GOTO_SEC", "6"))
 # safety caps (avoid huge DB rows)
 MAX_CAPTURE_ITEMS = int(os.getenv("VOLLAND_MAX_CAPTURE_ITEMS", "40"))
 MAX_BODY_CHARS    = int(os.getenv("VOLLAND_MAX_BODY_CHARS", "20000"))
+
+NY = pytz.timezone("US/Eastern")
+
+def market_open_now() -> bool:
+    t = datetime.now(NY)
+    return dtime(9, 20) <= t.time() <= dtime(16, 10)
 
 
 def db():
@@ -451,6 +458,10 @@ def run():
         login_if_needed(page)
 
         while True:
+            if not market_open_now():
+                time.sleep(PULL_EVERY)
+                continue
+
             try:
                 # ========== STEP 1: Scrape STATISTICS page FIRST ==========
                 stats_data = {}

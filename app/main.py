@@ -197,6 +197,24 @@ last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
 _df_lock = Lock()
 
+# ====== SETUP DETECTOR DEFAULTS ======
+_DEFAULT_SETUP_SETTINGS = {
+    "gex_long_enabled": True,
+    "weight_support": 20,
+    "weight_upside": 20,
+    "weight_floor_cluster": 20,
+    "weight_target_cluster": 20,
+    "weight_rr": 20,
+    "brackets": {
+        "support": [[5, 100], [10, 75], [15, 50], [20, 25]],
+        "upside": [[25, 100], [15, 75], [10, 50]],
+        "floor_cluster": [[3, 100], [7, 75], [10, 50]],
+        "target_cluster": [[3, 100], [7, 75], [10, 50]],
+        "rr": [[3, 100], [2, 75], [1.5, 50], [1, 25]],
+    },
+    "grade_thresholds": {"A+": 90, "A": 75, "A-Entry": 60},
+}
+
 # ====== DB ======
 engine = create_engine(DB_URL, pool_pre_ping=True) if DB_URL else None
 
@@ -448,23 +466,7 @@ def save_alert_settings():
         return False
 
 # ====== SETUP DETECTOR SETTINGS ======
-__DEFAULT_SETUP_SETTINGS = {
-    "gex_long_enabled": True,
-    "weight_support": 20,
-    "weight_upside": 20,
-    "weight_floor_cluster": 20,
-    "weight_target_cluster": 20,
-    "weight_rr": 20,
-    "brackets": {
-        "support": [[5, 100], [10, 75], [15, 50], [20, 25]],
-        "upside": [[25, 100], [15, 75], [10, 50]],
-        "floor_cluster": [[3, 100], [7, 75], [10, 50]],
-        "target_cluster": [[3, 100], [7, 75], [10, 50]],
-        "rr": [[3, 100], [2, 75], [1.5, 50], [1, 25]],
-    },
-    "grade_thresholds": {"A+": 90, "A": 75, "A-Entry": 60},
-}
-_setup_settings = dict(__DEFAULT_SETUP_SETTINGS)
+_setup_settings = dict(_DEFAULT_SETUP_SETTINGS)
 
 def load_setup_settings():
     """Load setup detector settings from database into memory."""

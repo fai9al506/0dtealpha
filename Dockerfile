@@ -9,4 +9,4 @@ COPY . .
 
 # IMPORTANT: keep YOUR existing web start command
 # If your current Railway start command works, you can also keep it in Railway settings and ignore this CMD.
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

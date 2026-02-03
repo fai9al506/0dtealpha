@@ -2564,9 +2564,10 @@ def api_data_freshness():
     Used to verify data is flowing correctly before making trading decisions.
     """
     now_et = datetime.now(NY)
+    is_open = market_open_now()
     result = {
-        "ts_api": {"last_update": None, "age_seconds": None, "status": "error"},
-        "volland": {"last_update": None, "age_seconds": None, "status": "error"},
+        "ts_api": {"last_update": None, "age_seconds": None, "status": "closed"},
+        "volland": {"last_update": None, "age_seconds": None, "status": "closed"},
     }
 
     # TS API: use in-memory last_run_status (pulled every 30s, not DB which saves every 5min)
@@ -2578,8 +2579,9 @@ def api_data_freshness():
             ts_time = NY.localize(ts_time)
             age = (now_et - ts_time).total_seconds()
 
-            # Status: ok <2min, stale 2-5min, error >5min
-            if age < 120:
+            if not is_open:
+                status = "closed"
+            elif age < 120:
                 status = "ok"
             elif age < 300:
                 status = "stale"
@@ -2609,8 +2611,9 @@ def api_data_freshness():
                     else:
                         age = (now_et.replace(tzinfo=None) - v_time).total_seconds()
 
-                    # Status: ok <2min, stale 2-10min, error >10min (volland runs every 60s)
-                    if age < 120:
+                    if not is_open:
+                        status = "closed"
+                    elif age < 120:
                         status = "ok"
                     elif age < 600:
                         status = "stale"
@@ -3595,7 +3598,7 @@ DASH_HTML_TEMPLATE = """
       }
     }
     function renderDataFreshness(data) {
-      const statusColors = { ok: '#22c55e', stale: '#eab308', error: '#ef4444' };
+      const statusColors = { ok: '#22c55e', stale: '#eab308', error: '#ef4444', closed: '#6b7280' };
 
       // Format time as HH:MM
       function fmtTime(isoStr) {

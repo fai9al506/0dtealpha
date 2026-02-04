@@ -626,9 +626,9 @@ def db_volland_history(limit: int = 500) -> list[dict]:
 
 def db_volland_vanna_window(limit: int = 40) -> dict:
     """
-    Returns latest 'limit' strikes around the "mid" strike where abs(charm) is max.
+    Returns latest 'limit' strikes centered on the current spot price.
     Reads directly from volland_exposure_points (greek='charm').
-    (UI draws the vertical line at SPOT; mid info is returned for reference.)
+    Falls back to max-abs-charm strike if current_price is not available.
     """
     if not engine:
         raise RuntimeError("DATABASE_URL not set")
@@ -643,32 +643,37 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
       FROM volland_exposure_points
       WHERE greek = 'charm'
     ),
-    mid AS (
-      SELECT v.strike::numeric AS mid_strike,
-             v.value::numeric  AS mid_vanna
-      FROM volland_exposure_points v
-      JOIN latest l ON v.ts_utc = l.ts_utc
-      WHERE v.greek = 'charm'
-      ORDER BY abs(v.value::numeric) DESC
-      LIMIT 1
+    center AS (
+      SELECT COALESCE(
+        (SELECT v.current_price::numeric
+         FROM volland_exposure_points v
+         JOIN latest l ON v.ts_utc = l.ts_utc
+         WHERE v.greek = 'charm' AND v.current_price IS NOT NULL
+         LIMIT 1),
+        (SELECT v.strike::numeric
+         FROM volland_exposure_points v
+         JOIN latest l ON v.ts_utc = l.ts_utc
+         WHERE v.greek = 'charm'
+         ORDER BY abs(v.value::numeric) DESC
+         LIMIT 1)
+      ) AS mid_strike
     ),
     ranked AS (
       SELECT
         v.ts_utc,
         v.strike::numeric AS strike,
         v.value::numeric  AS vanna,
-        m.mid_strike,
-        m.mid_vanna,
-        (v.strike::numeric - m.mid_strike) AS rel,
+        c.mid_strike,
+        (v.strike::numeric - c.mid_strike) AS rel,
         ROW_NUMBER() OVER (
-          ORDER BY abs(v.strike::numeric - m.mid_strike), v.strike::numeric
+          ORDER BY abs(v.strike::numeric - c.mid_strike), v.strike::numeric
         ) AS rn
       FROM volland_exposure_points v
       JOIN latest l ON v.ts_utc = l.ts_utc
-      CROSS JOIN mid m
+      CROSS JOIN center c
       WHERE v.greek = 'charm'
     )
-    SELECT ts_utc, strike, vanna, mid_strike, mid_vanna, rel
+    SELECT ts_utc, strike, vanna, mid_strike, rel
     FROM ranked
     WHERE rn <= :lim
     ORDER BY strike;
@@ -681,7 +686,6 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
 
     ts_utc = rows[0]["ts_utc"]
     mid_strike = rows[0]["mid_strike"]
-    mid_vanna  = rows[0]["mid_vanna"]
 
     pts = []
     for r in rows:
@@ -694,7 +698,7 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
     return {
         "ts_utc": ts_utc.isoformat() if hasattr(ts_utc, "isoformat") else str(ts_utc),
         "mid_strike": float(mid_strike) if mid_strike is not None else None,
-        "mid_vanna":  float(mid_vanna)  if mid_vanna  is not None else None,
+        "mid_vanna": None,
         "points": pts
     }
 

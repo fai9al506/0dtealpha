@@ -51,6 +51,7 @@ _alert_state = {
     "last_volume": {},  # {strike: {"call": vol, "put": vol}}
     "last_alert_times": {},  # {"lis": timestamp, "target": timestamp, ...}
     "levels_touched": set(),  # Track which levels have been touched today
+    "near_active": set(),  # Track levels currently in "near" zone (for re-entry alerts)
     "sent_10am": False,
     "sent_2pm": False,
     "last_trading_day": None,
@@ -1253,6 +1254,7 @@ def check_alerts():
     if _alert_state["last_trading_day"] != today:
         _alert_state["last_trading_day"] = today
         _alert_state["levels_touched"] = set()
+        _alert_state["near_active"] = set()
         _alert_state["sent_10am"] = False
         _alert_state["sent_2pm"] = False
         _alert_state["last_paradigm"] = None
@@ -1318,22 +1320,27 @@ def check_alerts():
             if target_match:
                 target = float(target_match.group())
 
-        # Check price alerts
+        # Check price alerts — state-based: fires on zone entry, resets when price leaves
         def check_level(level, name, setting_key):
             if not level or not _alert_settings.get(setting_key):
                 return
             distance = abs(spot - level)
-            level_key = f"{name}_{int(level)}"
+            near_key = f"{name}_{int(level)}_near"
+            touch_key = f"{name}_{int(level)}"
 
-            # Near alert
-            if distance <= threshold and should_alert(f"{name}_near"):
-                send_telegram(f"🎯 <b>SPX near {name}</b>\nPrice: {spot:.2f}\n{name}: {level:.0f}\nDistance: {distance:.1f} pts")
-                record_alert(f"{name}_near")
+            # Near alert: fire once on entry into zone, reset when price moves away
+            if distance <= threshold:
+                if near_key not in _alert_state["near_active"]:
+                    send_telegram(f"🎯 <b>SPX near {name}</b>\nPrice: {spot:.2f}\n{name}: {level:.0f}\nDistance: {distance:.1f} pts")
+                    _alert_state["near_active"].add(near_key)
+            elif distance > threshold + 3:
+                # Price moved away — reset so next approach triggers again
+                _alert_state["near_active"].discard(near_key)
 
             # Touch/Cross alert
-            if distance <= 1 and level_key not in _alert_state["levels_touched"]:
+            if distance <= 1 and touch_key not in _alert_state["levels_touched"]:
                 send_telegram(f"✅ <b>SPX touched {name}</b>\nPrice: {spot:.2f}\n{name}: {level:.0f}")
-                _alert_state["levels_touched"].add(level_key)
+                _alert_state["levels_touched"].add(touch_key)
 
         if _alert_settings.get("lis_enabled"):
             if lis_low:
@@ -1383,12 +1390,14 @@ def check_alerts():
                         call_change = vols["call"] - prev["call"]
                         put_change = vols["put"] - prev["put"]
 
-                        if call_change >= vol_threshold and should_alert(f"vol_call_{int(strike)}"):
-                            send_telegram(f"📈 <b>Call Volume Spike</b>\nStrike: {strike:.0f}\nChange: +{call_change:.0f} contracts\nSPX: {spot:.2f}")
+                        # OTM calls only (strike > spot)
+                        if strike > spot and call_change >= vol_threshold and should_alert(f"vol_call_{int(strike)}"):
+                            send_telegram(f"📈 <b>OTM Call Volume Spike</b>\nStrike: {strike:.0f}\nChange: +{call_change:.0f} contracts\nSPX: {spot:.2f}")
                             record_alert(f"vol_call_{int(strike)}")
 
-                        if put_change >= vol_threshold and should_alert(f"vol_put_{int(strike)}"):
-                            send_telegram(f"📉 <b>Put Volume Spike</b>\nStrike: {strike:.0f}\nChange: +{put_change:.0f} contracts\nSPX: {spot:.2f}")
+                        # OTM puts only (strike < spot)
+                        if strike < spot and put_change >= vol_threshold and should_alert(f"vol_put_{int(strike)}"):
+                            send_telegram(f"📉 <b>OTM Put Volume Spike</b>\nStrike: {strike:.0f}\nChange: +{put_change:.0f} contracts\nSPX: {spot:.2f}")
                             record_alert(f"vol_put_{int(strike)}")
 
             _alert_state["last_volume"] = current_volume

@@ -3272,7 +3272,6 @@ DASH_HTML_TEMPLATE = """
         <button class="btn active" id="tabTable">Table</button>
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabSpot">Spot</button>
-        <button class="btn" id="tabStatistics">Statistics</button>
         <button class="btn" id="tabPlayback">Playback</button>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
@@ -3494,6 +3493,16 @@ DASH_HTML_TEMPLATE = """
             <button class="strike-btn" data-strikes="40">40</button>
           </div>
         </div>
+        <div style="padding:12px">
+          <div id="statisticsPlot" style="width:100%;height:500px"></div>
+          <div id="statisticsLegend" style="margin-top:10px;font-size:11px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap">
+            <span><span style="color:#3b82f6">■</span> Target</span>
+            <span><span style="color:#f59e0b">■</span> LIS Low</span>
+            <span><span style="color:#f59e0b">■</span> LIS High</span>
+            <span><span style="color:#22c55e">■</span> Max +Gamma</span>
+            <span><span style="color:#ef4444">■</span> Max -Gamma</span>
+          </div>
+        </div>
         <div class="unified-grid">
           <div class="unified-card">
             <h3>SPX 3m</h3>
@@ -3510,23 +3519,6 @@ DASH_HTML_TEMPLATE = """
           <div class="unified-card">
             <h3>Volume</h3>
             <div id="unifiedVolPlot" class="unified-plot"></div>
-          </div>
-        </div>
-      </div>
-
-      <div id="viewStatistics" class="panel" style="display:none">
-        <div class="header">
-          <div><strong>Statistics View</strong></div>
-          <div class="pill">1-min candles + key levels</div>
-        </div>
-        <div style="padding:12px">
-          <div id="statisticsPlot" style="width:100%;height:500px"></div>
-          <div id="statisticsLegend" style="margin-top:10px;font-size:11px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap">
-            <span><span style="color:#3b82f6">■</span> Target</span>
-            <span><span style="color:#f59e0b">■</span> LIS Low</span>
-            <span><span style="color:#f59e0b">■</span> LIS High</span>
-            <span><span style="color:#22c55e">■</span> Max +Gamma</span>
-            <span><span style="color:#ef4444">■</span> Max -Gamma</span>
           </div>
         </div>
       </div>
@@ -3714,29 +3706,25 @@ DASH_HTML_TEMPLATE = """
     const tabTable=document.getElementById('tabTable'),
           tabCharts=document.getElementById('tabCharts'),
           tabSpot=document.getElementById('tabSpot'),
-          tabStatistics=document.getElementById('tabStatistics'),
           tabPlayback=document.getElementById('tabPlayback');
 
     const viewTable=document.getElementById('viewTable'),
           viewCharts=document.getElementById('viewCharts'),
           viewSpot=document.getElementById('viewSpot'),
-          viewStatistics=document.getElementById('viewStatistics'),
           viewPlayback=document.getElementById('viewPlayback');
 
     function setActive(btn){
-      [tabTable,tabCharts,tabSpot,tabStatistics,tabPlayback].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabCharts,tabSpot,tabPlayback].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewStatistics.style.display='none'; viewPlayback.style.display='none'; }
+    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewPlayback.style.display='none'; }
     function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopSpot(); stopStatistics(); }
     function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopSpot(); stopStatistics(); }
-    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); stopCharts(); stopStatistics(); }
-    function showStatistics(){ setActive(tabStatistics); hideAllViews(); viewStatistics.style.display=''; startStatistics(); stopCharts(); stopSpot(); }
+    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); startStatistics(); stopCharts(); }
     function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopSpot(); stopStatistics(); initPlayback(); }
     tabTable.addEventListener('click', showTable);
     tabCharts.addEventListener('click', showCharts);
     tabSpot.addEventListener('click', showSpot);
-    tabStatistics.addEventListener('click', showStatistics);
     tabPlayback.addEventListener('click', showPlayback);
 
     // ===== Shared fetch for options series (includes spot) =====
@@ -4312,6 +4300,7 @@ DASH_HTML_TEMPLATE = """
         clearInterval(unifiedTimer);
         unifiedTimer = null;
       }
+      stopStatistics();
     }
 
     // ===== Statistics View =====

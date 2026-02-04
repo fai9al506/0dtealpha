@@ -2569,7 +2569,18 @@ def api_data_freshness():
     """
     now_et = datetime.now(NY)
     is_open = market_open_now()
+
+    # Extract spot from last_run_status msg (e.g. "spot=6045.5 ...")
+    spot = None
+    try:
+        msg = last_run_status.get("msg") or ""
+        parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+        spot = float(parts["spot"])
+    except Exception:
+        pass
+
     result = {
+        "spot": spot,
         "ts_api": {"last_update": None, "age_seconds": None, "status": "closed"},
         "volland": {"last_update": None, "age_seconds": None, "status": "closed"},
     }
@@ -3619,7 +3630,9 @@ DASH_HTML_TEMPLATE = """
       const tsColor = statusColors[ts.status] || statusColors.error;
       const vlColor = statusColors[vl.status] || statusColors.error;
 
-      dataFreshnessEl.innerHTML =
+      const spotStr = data.spot ? '<span style="color:#60a5fa;font-weight:600">SPX ' + data.spot.toFixed(0) + '</span><br>' : '';
+
+      dataFreshnessEl.innerHTML = spotStr +
         '<span style="color:' + tsColor + '">TS:' + fmtTime(ts.last_update) + '</span>' +
         '<span style="margin:0 6px;color:#555">|</span>' +
         '<span style="color:' + vlColor + '">Vol:' + fmtTime(vl.last_update) + '</span>';

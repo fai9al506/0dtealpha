@@ -1334,8 +1334,9 @@ def check_alerts():
                     send_telegram(f"🎯 <b>SPX near {name}</b>\nPrice: {spot:.2f}\n{name}: {level:.0f}\nDistance: {distance:.1f} pts")
                     _alert_state["near_active"].add(near_key)
             elif distance > threshold + 3:
-                # Price moved away — reset so next approach triggers again
+                # Price moved away — reset both so next approach triggers again
                 _alert_state["near_active"].discard(near_key)
+                _alert_state["levels_touched"].discard(touch_key)
 
             # Touch/Cross alert
             if distance <= 1 and touch_key not in _alert_state["levels_touched"]:

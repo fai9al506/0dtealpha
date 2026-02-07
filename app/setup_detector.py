@@ -133,6 +133,13 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
     floor_cluster_score = score_component_max(abs(lis - max_minus_gex), brackets.get("floor_cluster", DEFAULT_SETUP_SETTINGS["brackets"]["floor_cluster"]))
     target_cluster_score = score_component_max(abs(target - max_plus_gex), brackets.get("target_cluster", DEFAULT_SETUP_SETTINGS["brackets"]["target_cluster"]))
 
+    # If minimum upside is excellent (both targets give 15+ pts), target clustering doesn't matter
+    # You'll easily hit your 10pt first target regardless of cluster distance
+    if upside >= 15:
+        target_cluster_score = max(target_cluster_score, 100)  # Override to 100 if upside is great
+    elif upside >= 10:
+        target_cluster_score = max(target_cluster_score, 75)   # At least 75 if 10+ pts upside
+
     rr_ratio = upside / gap if gap > 0 else 99
     rr_score = score_component_min(rr_ratio, brackets.get("rr", DEFAULT_SETUP_SETTINGS["brackets"]["rr"]))
 
@@ -228,6 +235,13 @@ def evaluate_ag_short(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
     upside_score = score_component_min(downside, brackets.get("upside", DEFAULT_SETUP_SETTINGS["brackets"]["upside"]))
     floor_cluster_score = score_component_max(abs(lis - max_plus_gex), brackets.get("floor_cluster", DEFAULT_SETUP_SETTINGS["brackets"]["floor_cluster"]))
     target_cluster_score = score_component_max(abs(target - max_minus_gex), brackets.get("target_cluster", DEFAULT_SETUP_SETTINGS["brackets"]["target_cluster"]))
+
+    # If minimum downside is excellent (both targets give 15+ pts), target clustering doesn't matter
+    # You'll easily hit your 10pt first target regardless of cluster distance
+    if downside >= 15:
+        target_cluster_score = max(target_cluster_score, 100)
+    elif downside >= 10:
+        target_cluster_score = max(target_cluster_score, 75)
 
     rr_ratio = downside / gap if gap > 0 else 99
     rr_score = score_component_min(rr_ratio, brackets.get("rr", DEFAULT_SETUP_SETTINGS["brackets"]["rr"]))

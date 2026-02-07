@@ -2553,6 +2553,248 @@ def api_setup_log(limit: int = Query(50)):
         print(f"[setups] log query error: {e}", flush=True)
         return []
 
+
+def _calculate_setup_outcome(entry: dict) -> dict:
+    """
+    Calculate outcome for a setup alert by querying price history.
+    Returns dict with hit_10pt, hit_target, hit_stop, max_profit, max_loss, etc.
+    """
+    if not engine:
+        return {}
+
+    try:
+        ts = entry.get("ts")
+        if isinstance(ts, str):
+            ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+        spot = entry.get("spot")
+        direction = entry.get("direction", "long")
+        lis = entry.get("lis")
+        target = entry.get("target")
+
+        if not all([ts, spot, lis, target]):
+            return {}
+
+        # Get market close time for that day (4:00 PM ET)
+        alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
+        market_close = NY.localize(datetime.combine(alert_date, dtime(16, 0)))
+
+        # Query playback_snapshots from alert time to market close
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT ts, spot FROM playback_snapshots
+                WHERE ts >= :start_ts AND ts <= :end_ts
+                ORDER BY ts ASC
+            """), {"start_ts": ts, "end_ts": market_close}).mappings().all()
+
+        if not rows:
+            return {"no_data": True}
+
+        prices = [(r["ts"], r["spot"]) for r in rows if r["spot"] is not None]
+        if not prices:
+            return {"no_data": True}
+
+        # Calculate levels
+        is_long = direction.lower() == "long"
+        ten_pt_level = spot + 10 if is_long else spot - 10
+        max_minus_gex = entry.get("max_minus_gex")
+        max_plus_gex = entry.get("max_plus_gex")
+
+        # Stop is 5 points below LIS for longs, 5 above for shorts
+        if is_long:
+            stop_level = lis - 5
+            # Also consider max -GEX as additional stop reference
+            if max_minus_gex is not None and max_minus_gex < stop_level:
+                stop_level = max_minus_gex
+        else:
+            stop_level = lis + 5
+            # For shorts, max +GEX above as stop reference
+            if max_plus_gex is not None and max_plus_gex > stop_level:
+                stop_level = max_plus_gex
+
+        # Track outcomes
+        hit_10pt = False
+        hit_target = False
+        hit_stop = False
+        time_to_10pt = None
+        time_to_target = None
+        time_to_stop = None
+
+        max_profit = 0.0
+        max_profit_ts = None
+        max_loss = 0.0
+        max_loss_ts = None
+
+        first_event = None  # "10pt", "target", or "stop"
+
+        for price_ts, price in prices:
+            if is_long:
+                profit = price - spot
+                # Check 10pt hit
+                if not hit_10pt and price >= ten_pt_level:
+                    hit_10pt = True
+                    time_to_10pt = price_ts
+                    if first_event is None:
+                        first_event = "10pt"
+                # Check target hit
+                if not hit_target and price >= target:
+                    hit_target = True
+                    time_to_target = price_ts
+                    if first_event is None:
+                        first_event = "target"
+                # Check stop hit (price <= stop_level, which is LIS-5 or max-GEX)
+                if not hit_stop and price <= stop_level:
+                    hit_stop = True
+                    time_to_stop = price_ts
+                    if first_event is None:
+                        first_event = "stop"
+                # Track max profit/loss
+                if profit > max_profit:
+                    max_profit = profit
+                    max_profit_ts = price_ts
+                if profit < max_loss:
+                    max_loss = profit
+                    max_loss_ts = price_ts
+            else:  # SHORT
+                profit = spot - price
+                # Check 10pt hit (price dropped 10 pts)
+                if not hit_10pt and price <= ten_pt_level:
+                    hit_10pt = True
+                    time_to_10pt = price_ts
+                    if first_event is None:
+                        first_event = "10pt"
+                # Check target hit (price <= target)
+                if not hit_target and price <= target:
+                    hit_target = True
+                    time_to_target = price_ts
+                    if first_event is None:
+                        first_event = "target"
+                # Check stop hit (price >= stop_level, which is LIS+5 or max+GEX for short)
+                if not hit_stop and price >= stop_level:
+                    hit_stop = True
+                    time_to_stop = price_ts
+                    if first_event is None:
+                        first_event = "stop"
+                # Track max profit/loss (for short, profit = spot - price)
+                if profit > max_profit:
+                    max_profit = profit
+                    max_profit_ts = price_ts
+                if profit < max_loss:
+                    max_loss = profit
+                    max_loss_ts = price_ts
+
+        return {
+            "hit_10pt": hit_10pt,
+            "hit_target": hit_target,
+            "hit_stop": hit_stop,
+            "time_to_10pt": time_to_10pt.isoformat() if time_to_10pt and hasattr(time_to_10pt, "isoformat") else time_to_10pt,
+            "time_to_target": time_to_target.isoformat() if time_to_target and hasattr(time_to_target, "isoformat") else time_to_target,
+            "time_to_stop": time_to_stop.isoformat() if time_to_stop and hasattr(time_to_stop, "isoformat") else time_to_stop,
+            "max_profit": round(max_profit, 2),
+            "max_profit_ts": max_profit_ts.isoformat() if max_profit_ts and hasattr(max_profit_ts, "isoformat") else max_profit_ts,
+            "max_loss": round(max_loss, 2),
+            "max_loss_ts": max_loss_ts.isoformat() if max_loss_ts and hasattr(max_loss_ts, "isoformat") else max_loss_ts,
+            "first_event": first_event,
+            "ten_pt_level": round(ten_pt_level, 2),
+            "stop_level": round(stop_level, 2),
+            "price_count": len(prices),
+        }
+    except Exception as e:
+        print(f"[setups] outcome calculation error: {e}", flush=True)
+        return {"error": str(e)}
+
+
+@app.get("/api/setup/log/{log_id}/outcome")
+def api_setup_log_outcome(log_id: int):
+    """Get detailed outcome data for a single setup alert, including price history for charting."""
+    if not engine:
+        return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+
+    try:
+        # Get the setup entry
+        with engine.begin() as conn:
+            row = conn.execute(text("""
+                SELECT id, ts, setup_name, direction, grade, score,
+                       paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
+                       gap_to_lis, upside, rr_ratio, first_hour, notified
+                FROM setup_log WHERE id = :log_id
+            """), {"log_id": log_id}).mappings().first()
+
+        if not row:
+            return JSONResponse({"error": "Setup not found"}, status_code=404)
+
+        entry = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(row).items()}
+
+        # Get price history from alert time to market close
+        ts = row["ts"]
+        alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
+        market_close = NY.localize(datetime.combine(alert_date, dtime(16, 0)))
+
+        with engine.begin() as conn:
+            price_rows = conn.execute(text("""
+                SELECT ts, spot FROM playback_snapshots
+                WHERE ts >= :start_ts AND ts <= :end_ts
+                ORDER BY ts ASC
+            """), {"start_ts": ts, "end_ts": market_close}).mappings().all()
+
+        prices = [
+            {"ts": r["ts"].isoformat() if hasattr(r["ts"], "isoformat") else r["ts"], "spot": r["spot"]}
+            for r in price_rows if r["spot"] is not None
+        ]
+
+        # Calculate outcome
+        outcome = _calculate_setup_outcome(dict(row))
+
+        return {
+            "entry": entry,
+            "outcome": outcome,
+            "prices": prices,
+            "levels": {
+                "entry": row["spot"],
+                "lis": row["lis"],
+                "target": row["target"],
+                "ten_pt": outcome.get("ten_pt_level"),
+                "stop": outcome.get("stop_level"),
+                "max_plus_gex": row["max_plus_gex"],
+                "max_minus_gex": row["max_minus_gex"],
+            }
+        }
+    except Exception as e:
+        print(f"[setups] outcome query error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/setup/log_with_outcomes")
+def api_setup_log_with_outcomes(limit: int = Query(50)):
+    """Get recent setup detection log entries with basic outcome indicators."""
+    if not engine:
+        return []
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT id, ts, setup_name, direction, grade, score,
+                       paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
+                       gap_to_lis, upside, rr_ratio, first_hour,
+                       support_score, upside_score, floor_cluster_score,
+                       target_cluster_score, rr_score, notified
+                FROM setup_log
+                ORDER BY ts DESC
+                LIMIT :lim
+            """), {"lim": min(int(limit), 200)}).mappings().all()
+
+        results = []
+        for r in rows:
+            entry = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(r).items()}
+            outcome = _calculate_setup_outcome(dict(r))
+            entry["outcome"] = outcome
+            results.append(entry)
+
+        return results
+    except Exception as e:
+        print(f"[setups] log with outcomes query error: {e}", flush=True)
+        return []
+
+
 @app.post("/api/setup/test")
 def api_setup_test():
     """Send a test alert to the setups Telegram channel."""
@@ -3446,8 +3688,8 @@ DASH_HTML_TEMPLATE = """
               </label>
             </div>
 
-            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">Recent Detections</div>
-            <div id="setupLogList" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:6px;margin-bottom:14px;font-size:11px;background:var(--surface)">
+            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">Recent Detections <span style="font-weight:400;font-size:10px">(click for details)</span></div>
+            <div id="setupLogList" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:6px;margin-bottom:14px;font-size:10px;background:var(--surface)">
               <div style="color:var(--muted);text-align:center;padding:12px">No detections yet</div>
             </div>
 
@@ -3456,6 +3698,29 @@ DASH_HTML_TEMPLATE = """
               <button id="btnTestSetup" style="padding:6px 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--fg);cursor:pointer;font-size:12px">Test Alert</button>
               <button id="btnSaveSetups" style="padding:6px 12px;background:var(--accent);border:none;border-radius:6px;color:var(--bg);cursor:pointer;font-weight:600;font-size:12px">Save</button>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Setup Detail Modal -->
+    <div id="setupDetailModal" class="modal" style="display:none">
+      <div class="modal-content" style="max-width:900px;max-height:95vh">
+        <div class="modal-header">
+          <h3 id="setupDetailTitle">Setup Details</h3>
+          <button id="setupDetailClose" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body" style="padding:12px">
+          <!-- Info Row -->
+          <div id="setupDetailInfo" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;font-size:11px">
+          </div>
+          <!-- Outcome Row -->
+          <div id="setupDetailOutcome" style="display:flex;gap:16px;margin-bottom:12px;padding:10px;background:#0f1115;border-radius:8px;font-size:12px">
+          </div>
+          <!-- Chart -->
+          <div id="setupDetailChart" style="height:350px;background:#0f1115;border-radius:8px"></div>
+          <!-- Stats Row -->
+          <div id="setupDetailStats" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;font-size:11px">
           </div>
         </div>
       </div>
@@ -5379,31 +5644,263 @@ DASH_HTML_TEMPLATE = """
       const list = document.getElementById('setupLogList');
       if (!list) return;
       try {
-        const r = await fetch('/api/setup/log?limit=20', { cache: 'no-store' });
+        const r = await fetch('/api/setup/log_with_outcomes?limit=30', { cache: 'no-store' });
         const logs = await r.json();
         if (!logs || logs.length === 0) {
           list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:12px">No detections yet</div>';
           return;
         }
         const gradeColor = { 'A+': '#22c55e', 'A': '#3b82f6', 'A-Entry': '#eab308' };
-        list.innerHTML = logs.map(l => {
+        // Header row
+        const header = `<div style="display:grid;grid-template-columns:28px 50px 28px 55px 60px 70px 50px 1fr;align-items:center;gap:4px;padding:4px 2px;border-bottom:2px solid var(--border);color:var(--muted);font-size:9px;font-weight:600">
+          <span>Dir</span><span>Grade</span><span>Scr</span><span>SPX</span><span>Gap/RR</span><span>10p Tgt Stp</span><span>Result</span><span style="text-align:right">Time</span>
+        </div>`;
+        list.innerHTML = header + logs.map(l => {
           const t = new Date(l.ts);
           const time = t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
           const date = t.toLocaleDateString([], {month:'short',day:'numeric'});
           const color = gradeColor[l.grade] || '#888';
           const bell = l.notified ? '&#128276;' : '';
-          return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border)">
-            <span style="color:${color};font-weight:700;min-width:52px">${l.grade}</span>
-            <span style="min-width:32px">${l.score}</span>
-            <span style="color:var(--muted);flex:1">SPX ${l.spot?.toFixed(0)} | gap ${l.gap_to_lis?.toFixed(1)} | R:R ${l.rr_ratio?.toFixed(1)}x</span>
-            <span style="color:var(--muted);font-size:10px">${date} ${time}</span>
-            <span style="font-size:10px">${bell}</span>
+          const dir = l.direction === 'long' ? '▲' : '▼';
+          const dirColor = l.direction === 'long' ? '#22c55e' : '#ef4444';
+          const o = l.outcome || {};
+          const has10pt = o.hit_10pt === true ? '✓' : (o.hit_10pt === false ? '✗' : '–');
+          const hasTgt = o.hit_target === true ? '✓' : (o.hit_target === false ? '✗' : '–');
+          const hasStop = o.hit_stop === true ? '✗' : (o.hit_stop === false ? '✓' : '–');
+          const c10 = o.hit_10pt ? '#22c55e' : (o.hit_10pt === false ? '#888' : '#555');
+          const cTgt = o.hit_target ? '#22c55e' : (o.hit_target === false ? '#888' : '#555');
+          const cStop = o.hit_stop ? '#ef4444' : (o.hit_stop === false ? '#22c55e' : '#555');
+          // Quick result: green if 10pt hit before stop, red if stop hit first
+          let result = '';
+          if (o.first_event === '10pt' || o.first_event === 'target') {
+            result = '<span style="color:#22c55e;font-weight:700">WIN</span>';
+          } else if (o.first_event === 'stop') {
+            result = '<span style="color:#ef4444;font-weight:700">LOSS</span>';
+          } else if (o.max_profit > 0) {
+            result = '<span style="color:#888">+' + o.max_profit?.toFixed(0) + '</span>';
+          }
+          return `<div class="setup-log-row" data-id="${l.id}" style="display:grid;grid-template-columns:28px 50px 28px 55px 60px 70px 50px 1fr;align-items:center;gap:4px;padding:4px 2px;border-bottom:1px solid var(--border);cursor:pointer" onmouseover="this.style.background='#1a1d21'" onmouseout="this.style.background='transparent'">
+            <span style="color:${dirColor};font-weight:700;text-align:center">${dir}</span>
+            <span style="color:${color};font-weight:600">${l.grade}</span>
+            <span style="color:var(--muted)">${l.score}</span>
+            <span style="color:var(--text)">${l.spot?.toFixed(0)}</span>
+            <span style="color:var(--muted);font-size:9px">${l.gap_to_lis?.toFixed(1)} / ${l.rr_ratio?.toFixed(1)}x</span>
+            <span style="font-size:9px"><span style="color:${c10}">${has10pt}</span> <span style="color:${cTgt}">${hasTgt}</span> <span style="color:${cStop}">${hasStop}</span></span>
+            <span style="font-size:9px">${result}</span>
+            <span style="color:var(--muted);font-size:9px;text-align:right">${date} ${time} ${bell}</span>
           </div>`;
         }).join('');
+        // Add click handlers
+        list.querySelectorAll('.setup-log-row').forEach(row => {
+          row.addEventListener('click', () => showSetupDetail(row.dataset.id));
+        });
       } catch (err) {
         list.innerHTML = '<div style="color:var(--red)">Error loading log</div>';
+        console.error('loadSetupLog error:', err);
       }
     }
+
+    async function showSetupDetail(logId) {
+      const modal = document.getElementById('setupDetailModal');
+      const title = document.getElementById('setupDetailTitle');
+      const info = document.getElementById('setupDetailInfo');
+      const outcome = document.getElementById('setupDetailOutcome');
+      const chart = document.getElementById('setupDetailChart');
+      const stats = document.getElementById('setupDetailStats');
+
+      title.textContent = 'Loading...';
+      info.innerHTML = '';
+      outcome.innerHTML = '';
+      stats.innerHTML = '';
+      modal.style.display = 'flex';
+
+      try {
+        const r = await fetch('/api/setup/log/' + logId + '/outcome', { cache: 'no-store' });
+        const data = await r.json();
+
+        if (data.error) {
+          title.textContent = 'Error: ' + data.error;
+          return;
+        }
+
+        const e = data.entry;
+        const o = data.outcome || {};
+        const lv = data.levels || {};
+
+        // Title
+        const dir = e.direction === 'long' ? 'LONG ▲' : 'SHORT ▼';
+        const dirColor = e.direction === 'long' ? '#22c55e' : '#ef4444';
+        title.innerHTML = '<span style="color:' + dirColor + '">' + dir + '</span> ' + e.grade + ' @ SPX ' + e.spot?.toFixed(0);
+
+        // Info grid
+        const ts = new Date(e.ts);
+        info.innerHTML = [
+          ['Time', ts.toLocaleString()],
+          ['Paradigm', e.paradigm || '–'],
+          ['Entry', e.spot?.toFixed(2)],
+          ['LIS', e.lis?.toFixed(0)],
+          ['Target', e.target?.toFixed(0)],
+          ['10pt Level', lv.ten_pt?.toFixed(0)],
+          ['Stop Level', lv.stop?.toFixed(0)],
+          ['Gap', e.gap_to_lis?.toFixed(1)],
+          ['R:R', e.rr_ratio?.toFixed(1) + 'x'],
+          ['+GEX', lv.max_plus_gex?.toFixed(0)],
+          ['-GEX', lv.max_minus_gex?.toFixed(0)],
+          ['Score', e.score],
+        ].map(([k, v]) => '<div style="background:#1a1d21;padding:6px 8px;border-radius:4px"><div style="color:var(--muted);font-size:9px">' + k + '</div><div style="color:var(--text);font-weight:600">' + (v || '–') + '</div></div>').join('');
+
+        // Outcome row
+        const c10 = o.hit_10pt ? '#22c55e' : '#888';
+        const cTgt = o.hit_target ? '#22c55e' : '#888';
+        const cStop = o.hit_stop ? '#ef4444' : '#22c55e';
+        outcome.innerHTML = `
+          <div style="flex:1;text-align:center">
+            <div style="color:var(--muted);font-size:10px">10pt Target</div>
+            <div style="color:${c10};font-size:18px;font-weight:700">${o.hit_10pt ? '✓ HIT' : '✗ MISS'}</div>
+            ${o.time_to_10pt ? '<div style="color:var(--muted);font-size:9px">' + new Date(o.time_to_10pt).toLocaleTimeString() + '</div>' : ''}
+          </div>
+          <div style="flex:1;text-align:center">
+            <div style="color:var(--muted);font-size:10px">Full Target</div>
+            <div style="color:${cTgt};font-size:18px;font-weight:700">${o.hit_target ? '✓ HIT' : '✗ MISS'}</div>
+            ${o.time_to_target ? '<div style="color:var(--muted);font-size:9px">' + new Date(o.time_to_target).toLocaleTimeString() + '</div>' : ''}
+          </div>
+          <div style="flex:1;text-align:center">
+            <div style="color:var(--muted);font-size:10px">Stop</div>
+            <div style="color:${cStop};font-size:18px;font-weight:700">${o.hit_stop ? '✗ STOPPED' : '✓ SAFE'}</div>
+            ${o.time_to_stop ? '<div style="color:var(--muted);font-size:9px">' + new Date(o.time_to_stop).toLocaleTimeString() + '</div>' : ''}
+          </div>
+          <div style="flex:1;text-align:center">
+            <div style="color:var(--muted);font-size:10px">Max Profit</div>
+            <div style="color:#22c55e;font-size:18px;font-weight:700">+${o.max_profit?.toFixed(1) || 0}</div>
+            ${o.max_profit_ts ? '<div style="color:var(--muted);font-size:9px">' + new Date(o.max_profit_ts).toLocaleTimeString() + '</div>' : ''}
+          </div>
+          <div style="flex:1;text-align:center">
+            <div style="color:var(--muted);font-size:10px">Max Loss</div>
+            <div style="color:#ef4444;font-size:18px;font-weight:700">${o.max_loss?.toFixed(1) || 0}</div>
+            ${o.max_loss_ts ? '<div style="color:var(--muted);font-size:9px">' + new Date(o.max_loss_ts).toLocaleTimeString() + '</div>' : ''}
+          </div>
+        `;
+
+        // Draw chart
+        if (data.prices && data.prices.length > 0) {
+          const times = data.prices.map(p => {
+            const d = new Date(p.ts);
+            return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+          });
+          const spots = data.prices.map(p => p.spot);
+
+          // Price line
+          const trace = {
+            type: 'scatter',
+            mode: 'lines',
+            x: times,
+            y: spots,
+            line: { color: '#60a5fa', width: 2 },
+            name: 'Price'
+          };
+
+          // Horizontal level lines
+          const shapes = [];
+          const annotations = [];
+
+          // Entry level
+          shapes.push({ type:'line', x0:times[0], x1:times[times.length-1], y0:lv.entry, y1:lv.entry, line:{color:'#f59e0b',width:2,dash:'solid'} });
+          annotations.push({ x:times[0], y:lv.entry, text:'Entry ' + lv.entry?.toFixed(0), showarrow:false, font:{color:'#f59e0b',size:10}, xanchor:'left' });
+
+          // 10pt level
+          if (lv.ten_pt) {
+            shapes.push({ type:'line', x0:times[0], x1:times[times.length-1], y0:lv.ten_pt, y1:lv.ten_pt, line:{color:'#22c55e',width:1,dash:'dash'} });
+            annotations.push({ x:times[times.length-1], y:lv.ten_pt, text:'10pt', showarrow:false, font:{color:'#22c55e',size:9}, xanchor:'right' });
+          }
+
+          // Target
+          if (lv.target) {
+            shapes.push({ type:'line', x0:times[0], x1:times[times.length-1], y0:lv.target, y1:lv.target, line:{color:'#10b981',width:1,dash:'dot'} });
+            annotations.push({ x:times[times.length-1], y:lv.target, text:'Target', showarrow:false, font:{color:'#10b981',size:9}, xanchor:'right' });
+          }
+
+          // Stop level
+          if (lv.stop) {
+            shapes.push({ type:'line', x0:times[0], x1:times[times.length-1], y0:lv.stop, y1:lv.stop, line:{color:'#ef4444',width:2,dash:'dash'} });
+            annotations.push({ x:times[times.length-1], y:lv.stop, text:'Stop', showarrow:false, font:{color:'#ef4444',size:9}, xanchor:'right' });
+          }
+
+          // LIS
+          if (lv.lis) {
+            shapes.push({ type:'line', x0:times[0], x1:times[times.length-1], y0:lv.lis, y1:lv.lis, line:{color:'#f97316',width:1,dash:'dot'} });
+            annotations.push({ x:times[0], y:lv.lis, text:'LIS', showarrow:false, font:{color:'#f97316',size:9}, xanchor:'left' });
+          }
+
+          Plotly.react(chart, [trace], {
+            margin: { l:50, r:10, t:10, b:40 },
+            paper_bgcolor: '#0f1115',
+            plot_bgcolor: '#0a0c0f',
+            xaxis: { gridcolor:'#1a1d21', tickfont:{size:9,color:'#888'}, tickangle:-45 },
+            yaxis: { gridcolor:'#1a1d21', tickfont:{size:10,color:'#888'}, side:'left' },
+            font: { color:'#e6e7e9' },
+            shapes: shapes,
+            annotations: annotations,
+            showlegend: false
+          }, { displayModeBar:false, responsive:true });
+
+          // Add markers for max profit/loss points
+          if (o.max_profit_ts) {
+            const mpTime = new Date(o.max_profit_ts);
+            const mpLabel = mpTime.getHours().toString().padStart(2,'0') + ':' + mpTime.getMinutes().toString().padStart(2,'0');
+            const mpPrice = spots[times.indexOf(mpLabel)] || (e.direction === 'long' ? lv.entry + o.max_profit : lv.entry - o.max_profit);
+            Plotly.addTraces(chart, { type:'scatter', mode:'markers', x:[mpLabel], y:[mpPrice], marker:{color:'#22c55e',size:12,symbol:'triangle-up'}, name:'Max Profit', showlegend:false });
+          }
+          if (o.max_loss_ts) {
+            const mlTime = new Date(o.max_loss_ts);
+            const mlLabel = mlTime.getHours().toString().padStart(2,'0') + ':' + mlTime.getMinutes().toString().padStart(2,'0');
+            const mlPrice = spots[times.indexOf(mlLabel)] || (e.direction === 'long' ? lv.entry + o.max_loss : lv.entry - o.max_loss);
+            Plotly.addTraces(chart, { type:'scatter', mode:'markers', x:[mlLabel], y:[mlPrice], marker:{color:'#ef4444',size:12,symbol:'triangle-down'}, name:'Max Loss', showlegend:false });
+          }
+        } else {
+          chart.innerHTML = '<div style="color:var(--muted);text-align:center;padding:100px 20px">No price data available for this period</div>';
+        }
+
+        // Stats
+        stats.innerHTML = `
+          <div style="background:#1a1d21;padding:10px;border-radius:6px">
+            <div style="font-weight:600;margin-bottom:6px;color:var(--muted)">Score Breakdown</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:10px">
+              <div>Support: <span style="color:var(--text)">${e.support_score || '–'}</span></div>
+              <div>Upside: <span style="color:var(--text)">${e.upside_score || '–'}</span></div>
+              <div>Floor Cluster: <span style="color:var(--text)">${e.floor_cluster_score || '–'}</span></div>
+              <div>Target Cluster: <span style="color:var(--text)">${e.target_cluster_score || '–'}</span></div>
+              <div>R:R Score: <span style="color:var(--text)">${e.rr_score || '–'}</span></div>
+              <div>First Hour: <span style="color:var(--text)">${e.first_hour ? 'Yes (+10)' : 'No'}</span></div>
+            </div>
+          </div>
+          <div style="background:#1a1d21;padding:10px;border-radius:6px">
+            <div style="font-weight:600;margin-bottom:6px;color:var(--muted)">Trade Summary</div>
+            <div style="font-size:10px">
+              <div>First Event: <span style="color:${o.first_event === 'stop' ? '#ef4444' : '#22c55e'};font-weight:600">${o.first_event?.toUpperCase() || 'NONE'}</span></div>
+              <div>Data Points: <span style="color:var(--text)">${o.price_count || 0}</span></div>
+              <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+                ${o.first_event === '10pt' || o.first_event === 'target' ? '<span style="color:#22c55e;font-weight:700;font-size:14px">✓ WINNER</span>' : ''}
+                ${o.first_event === 'stop' ? '<span style="color:#ef4444;font-weight:700;font-size:14px">✗ LOSER</span>' : ''}
+                ${!o.first_event ? '<span style="color:#888;font-size:12px">No clear outcome</span>' : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      } catch (err) {
+        title.textContent = 'Error loading details';
+        console.error('showSetupDetail error:', err);
+      }
+    }
+
+    // Setup detail modal close handlers
+    document.getElementById('setupDetailClose').addEventListener('click', () => {
+      document.getElementById('setupDetailModal').style.display = 'none';
+    });
+    document.getElementById('setupDetailModal').addEventListener('click', (e) => {
+      if (e.target.id === 'setupDetailModal') {
+        document.getElementById('setupDetailModal').style.display = 'none';
+      }
+    });
 
     async function testSetupAlert() {
       const status = document.getElementById('setupStatus');

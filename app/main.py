@@ -2859,6 +2859,126 @@ def api_setup_log_with_outcomes(limit: int = Query(50)):
         return []
 
 
+@app.get("/api/setup/export")
+def api_setup_export(
+    start_date: str = Query(None, description="Start date YYYY-MM-DD"),
+    end_date: str = Query(None, description="End date YYYY-MM-DD"),
+):
+    """
+    Export setup log with outcomes to CSV for Excel analysis.
+    Includes: date, time, direction, grade, score, SPX, LIS, target, gap, R:R,
+    hit_10pt, hit_target, hit_stop, max_profit, max_loss, result (WIN/LOSS/BE).
+    """
+    if not engine:
+        return Response("DATABASE_URL not set", status_code=500)
+
+    try:
+        # Build date filter
+        where_clause = ""
+        params = {}
+        if start_date:
+            where_clause += " AND ts >= :start_date"
+            params["start_date"] = start_date
+        if end_date:
+            where_clause += " AND ts <= :end_date::date + interval '1 day'"
+            params["end_date"] = end_date
+
+        with engine.begin() as conn:
+            rows = conn.execute(text(f"""
+                SELECT id, ts, setup_name, direction, grade, score,
+                       paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
+                       gap_to_lis, upside, rr_ratio, first_hour, notified
+                FROM setup_log
+                WHERE 1=1 {where_clause}
+                ORDER BY ts DESC
+                LIMIT 500
+            """), params).mappings().all()
+
+        if not rows:
+            return Response("No data found", status_code=404)
+
+        # Build CSV with outcomes
+        import io
+        output = io.StringIO()
+
+        # Header
+        headers = [
+            "Date", "Time", "Direction", "Grade", "Score", "SPX", "LIS", "Target",
+            "+GEX", "-GEX", "Gap", "Upside", "R:R", "First Hour", "Notified",
+            "10pt Hit", "Target Hit", "Stop Hit", "Max Profit", "Max Loss",
+            "10pt Level", "Stop Level", "Result", "Points P/L"
+        ]
+        output.write(",".join(headers) + "\n")
+
+        for row in rows:
+            r = dict(row)
+            outcome = _calculate_setup_outcome(r)
+
+            # Determine result
+            result = ""
+            points_pl = 0
+            if outcome.get("first_event") == "stop":
+                result = "LOSS"
+                points_pl = outcome.get("max_loss", 0)  # negative value
+            elif outcome.get("first_event") in ("10pt", "target"):
+                result = "WIN"
+                points_pl = 10  # First target = 10 pts
+            elif outcome.get("hit_10pt"):
+                result = "WIN"
+                points_pl = 10
+            elif outcome.get("no_data"):
+                result = "NO DATA"
+            else:
+                result = "OPEN"
+                points_pl = outcome.get("max_profit", 0)
+
+            ts = r["ts"]
+            date_str = ts.strftime("%Y-%m-%d") if hasattr(ts, "strftime") else str(ts)[:10]
+            time_str = ts.strftime("%H:%M:%S") if hasattr(ts, "strftime") else str(ts)[11:19]
+
+            row_data = [
+                date_str,
+                time_str,
+                r.get("direction", "").upper(),
+                r.get("grade", ""),
+                str(r.get("score", "")),
+                f"{r.get('spot', 0):.2f}" if r.get("spot") else "",
+                f"{r.get('lis', 0):.0f}" if r.get("lis") else "",
+                f"{r.get('target', 0):.0f}" if r.get("target") else "",
+                f"{r.get('max_plus_gex', 0):.0f}" if r.get("max_plus_gex") else "",
+                f"{r.get('max_minus_gex', 0):.0f}" if r.get("max_minus_gex") else "",
+                f"{r.get('gap_to_lis', 0):.1f}" if r.get("gap_to_lis") else "",
+                f"{r.get('upside', 0):.1f}" if r.get("upside") else "",
+                f"{r.get('rr_ratio', 0):.1f}" if r.get("rr_ratio") else "",
+                "Yes" if r.get("first_hour") else "No",
+                "Yes" if r.get("notified") else "No",
+                "Yes" if outcome.get("hit_10pt") else "No",
+                "Yes" if outcome.get("hit_target") else "No",
+                "Yes" if outcome.get("hit_stop") else "No",
+                f"{outcome.get('max_profit', 0):.1f}",
+                f"{outcome.get('max_loss', 0):.1f}",
+                f"{outcome.get('ten_pt_level', 0):.0f}" if outcome.get("ten_pt_level") else "",
+                f"{outcome.get('stop_level', 0):.0f}" if outcome.get("stop_level") else "",
+                result,
+                f"{points_pl:.1f}",
+            ]
+            output.write(",".join(row_data) + "\n")
+
+        csv_content = output.getvalue()
+        output.close()
+
+        # Return as downloadable CSV
+        filename = f"setup_alerts_{now_et().strftime('%Y%m%d_%H%M%S')}.csv"
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        print(f"[setups] export error: {e}", flush=True)
+        return Response(f"Export error: {e}", status_code=500)
+
+
 @app.post("/api/setup/test")
 def api_setup_test():
     """Send a test alert to the setups Telegram channel."""
@@ -3752,7 +3872,10 @@ DASH_HTML_TEMPLATE = """
               </label>
             </div>
 
-            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">Recent Detections <span style="font-weight:400;font-size:10px">(click for details)</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div style="font-weight:600;color:var(--muted);font-size:12px">Recent Detections <span style="font-weight:400;font-size:10px">(click for details)</span></div>
+              <button id="btnExportSetups" style="padding:3px 8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-size:10px">📥 Export CSV</button>
+            </div>
             <div id="setupLogList" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:6px;margin-bottom:14px;font-size:10px;background:var(--surface)">
               <div style="color:var(--muted);text-align:center;padding:12px">No detections yet</div>
             </div>
@@ -6025,6 +6148,9 @@ DASH_HTML_TEMPLATE = """
 
     document.getElementById('btnSaveSetups').addEventListener('click', saveSetupSettings);
     document.getElementById('btnTestSetup').addEventListener('click', testSetupAlert);
+    document.getElementById('btnExportSetups').addEventListener('click', () => {
+      window.location.href = '/api/setup/export';
+    });
 
     alertSaveBtn.addEventListener('click', saveAlertSettings);
     alertTestBtn.addEventListener('click', testAlert);

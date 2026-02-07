@@ -2901,10 +2901,10 @@ def api_setup_export(
         import io
         output = io.StringIO()
 
-        # Header
+        # Header (PGEX/NGEX instead of +GEX/-GEX to avoid Excel formula issues)
         headers = [
             "Date", "Time", "Direction", "Grade", "Score", "SPX", "LIS", "Target",
-            "+GEX", "-GEX", "Gap", "Upside", "R:R", "First Hour", "Notified",
+            "PGEX", "NGEX", "Gap", "Upside", "R:R", "First Hour", "Notified",
             "10pt Hit", "Target Hit", "Stop Hit", "Max Profit", "Max Loss",
             "10pt Level", "Stop Level", "Result", "Points P/L"
         ]

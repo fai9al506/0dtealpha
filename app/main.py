@@ -2725,9 +2725,10 @@ def api_setup_log_outcome(log_id: int):
 
         entry = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(row).items()}
 
-        # Get price history from alert time to market close
+        # Get price history from market open to market close (full day context)
         ts = row["ts"]
         alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
+        market_open = NY.localize(datetime.combine(alert_date, dtime(9, 30)))
         market_close = NY.localize(datetime.combine(alert_date, dtime(16, 0)))
 
         with engine.begin() as conn:
@@ -2735,7 +2736,7 @@ def api_setup_log_outcome(log_id: int):
                 SELECT ts, spot FROM playback_snapshots
                 WHERE ts >= :start_ts AND ts <= :end_ts
                 ORDER BY ts ASC
-            """), {"start_ts": ts, "end_ts": market_close}).mappings().all()
+            """), {"start_ts": market_open, "end_ts": market_close}).mappings().all()
 
         prices = [
             {"ts": r["ts"].isoformat() if hasattr(r["ts"], "isoformat") else r["ts"], "spot": r["spot"]}
@@ -5781,7 +5782,7 @@ DASH_HTML_TEMPLATE = """
           </div>
         `;
 
-        // Draw chart
+        // Draw chart (candlestick bars, full day from market open)
         if (data.prices && data.prices.length > 0) {
           const times = data.prices.map(p => {
             const d = new Date(p.ts);
@@ -5789,21 +5790,43 @@ DASH_HTML_TEMPLATE = """
           });
           const spots = data.prices.map(p => p.spot);
 
-          // Price line
+          // Build candlestick data from consecutive prices
+          const opens = [], highs = [], lows = [], closes = [];
+          for (let i = 0; i < spots.length; i++) {
+            const curr = spots[i];
+            const prev = i > 0 ? spots[i - 1] : curr;
+            opens.push(prev);
+            closes.push(curr);
+            highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1);
+            lows.push(Math.min(prev, curr) - Math.abs(curr - prev) * 0.1);
+          }
+
+          // Candlestick trace
           const trace = {
-            type: 'scatter',
-            mode: 'lines',
+            type: 'candlestick',
             x: times,
-            y: spots,
-            line: { color: '#60a5fa', width: 2 },
+            open: opens,
+            high: highs,
+            low: lows,
+            close: closes,
+            increasing: { line: { color: '#22c55e' }, fillcolor: '#22c55e' },
+            decreasing: { line: { color: '#ef4444' }, fillcolor: '#ef4444' },
             name: 'Price'
           };
 
-          // Horizontal level lines
+          // Get entry time label
+          const entryTime = new Date(e.ts);
+          const entryLabel = entryTime.getHours().toString().padStart(2,'0') + ':' + entryTime.getMinutes().toString().padStart(2,'0');
+
+          // Horizontal level lines + vertical entry time line
           const shapes = [];
           const annotations = [];
 
-          // Entry level
+          // Vertical line at entry time
+          shapes.push({ type:'line', x0:entryLabel, x1:entryLabel, y0:0, y1:1, yref:'paper', line:{color:'#f59e0b',width:3,dash:'solid'} });
+          annotations.push({ x:entryLabel, y:1, yref:'paper', text:'▼ ENTRY', showarrow:false, font:{color:'#f59e0b',size:11,weight:'bold'}, yanchor:'bottom' });
+
+          // Entry level (horizontal)
           shapes.push({ type:'line', x0:times[0], x1:times[times.length-1], y0:lv.entry, y1:lv.entry, line:{color:'#f59e0b',width:2,dash:'solid'} });
           annotations.push({ x:times[0], y:lv.entry, text:'Entry ' + lv.entry?.toFixed(0), showarrow:false, font:{color:'#f59e0b',size:10}, xanchor:'left' });
 
@@ -5832,10 +5855,10 @@ DASH_HTML_TEMPLATE = """
           }
 
           Plotly.react(chart, [trace], {
-            margin: { l:50, r:10, t:10, b:40 },
+            margin: { l:50, r:10, t:20, b:40 },
             paper_bgcolor: '#0f1115',
             plot_bgcolor: '#0a0c0f',
-            xaxis: { gridcolor:'#1a1d21', tickfont:{size:9,color:'#888'}, tickangle:-45 },
+            xaxis: { type:'category', gridcolor:'#1a1d21', tickfont:{size:9,color:'#888'}, tickangle:-45, nticks:15 },
             yaxis: { gridcolor:'#1a1d21', tickfont:{size:10,color:'#888'}, side:'left' },
             font: { color:'#e6e7e9' },
             shapes: shapes,
@@ -5847,13 +5870,15 @@ DASH_HTML_TEMPLATE = """
           if (o.max_profit_ts) {
             const mpTime = new Date(o.max_profit_ts);
             const mpLabel = mpTime.getHours().toString().padStart(2,'0') + ':' + mpTime.getMinutes().toString().padStart(2,'0');
-            const mpPrice = spots[times.indexOf(mpLabel)] || (e.direction === 'long' ? lv.entry + o.max_profit : lv.entry - o.max_profit);
+            const mpIdx = times.indexOf(mpLabel);
+            const mpPrice = mpIdx >= 0 ? spots[mpIdx] : (e.direction === 'long' ? lv.entry + o.max_profit : lv.entry - o.max_profit);
             Plotly.addTraces(chart, { type:'scatter', mode:'markers', x:[mpLabel], y:[mpPrice], marker:{color:'#22c55e',size:12,symbol:'triangle-up'}, name:'Max Profit', showlegend:false });
           }
           if (o.max_loss_ts) {
             const mlTime = new Date(o.max_loss_ts);
             const mlLabel = mlTime.getHours().toString().padStart(2,'0') + ':' + mlTime.getMinutes().toString().padStart(2,'0');
-            const mlPrice = spots[times.indexOf(mlLabel)] || (e.direction === 'long' ? lv.entry + o.max_loss : lv.entry - o.max_loss);
+            const mlIdx = times.indexOf(mlLabel);
+            const mlPrice = mlIdx >= 0 ? spots[mlIdx] : (e.direction === 'long' ? lv.entry + o.max_loss : lv.entry - o.max_loss);
             Plotly.addTraces(chart, { type:'scatter', mode:'markers', x:[mlLabel], y:[mlPrice], marker:{color:'#ef4444',size:12,symbol:'triangle-down'}, name:'Max Loss', showlegend:false });
           }
         } else {

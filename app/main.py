@@ -5814,17 +5814,31 @@ DASH_HTML_TEMPLATE = """
             name: 'Price'
           };
 
-          // Get entry time label
+          // Get entry time and find closest matching time in chart data
           const entryTime = new Date(e.ts);
-          const entryLabel = entryTime.getHours().toString().padStart(2,'0') + ':' + entryTime.getMinutes().toString().padStart(2,'0');
+          const entryMinutes = entryTime.getHours() * 60 + entryTime.getMinutes();
+
+          // Find the closest time label in the chart data
+          let entryLabel = times[0];
+          let minDiff = Infinity;
+          for (const t of times) {
+            const [h, m] = t.split(':').map(Number);
+            const tMinutes = h * 60 + m;
+            const diff = Math.abs(tMinutes - entryMinutes);
+            if (diff < minDiff) {
+              minDiff = diff;
+              entryLabel = t;
+            }
+          }
 
           // Horizontal level lines + vertical entry time line
           const shapes = [];
           const annotations = [];
 
-          // Vertical line at entry time
+          // Vertical line at entry time (using closest available time)
           shapes.push({ type:'line', x0:entryLabel, x1:entryLabel, y0:0, y1:1, yref:'paper', line:{color:'#f59e0b',width:3,dash:'solid'} });
-          annotations.push({ x:entryLabel, y:1, yref:'paper', text:'▼ ENTRY', showarrow:false, font:{color:'#f59e0b',size:11,weight:'bold'}, yanchor:'bottom' });
+          const entryTimeStr = entryTime.getHours().toString().padStart(2,'0') + ':' + entryTime.getMinutes().toString().padStart(2,'0');
+          annotations.push({ x:entryLabel, y:1, yref:'paper', text:'▼ ENTRY ' + entryTimeStr, showarrow:false, font:{color:'#f59e0b',size:11,weight:'bold'}, yanchor:'bottom' });
 
           // Entry level (horizontal)
           shapes.push({ type:'line', x0:times[0], x1:times[times.length-1], y0:lv.entry, y1:lv.entry, line:{color:'#f59e0b',width:2,dash:'solid'} });

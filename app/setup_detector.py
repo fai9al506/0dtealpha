@@ -291,7 +291,12 @@ def should_notify(result):
     """
     Decide whether to fire a Telegram notification for this result.
     Fires once per grade, re-fires on improvement or after expiry→re-form.
-    Returns True if notification should be sent.
+    Returns (fire: bool, reason: str) where reason is one of:
+      - "new": First detection of the day
+      - "grade_upgrade": Grade improved
+      - "gap_improvement": Gap improved by >2 pts
+      - "reformed": Setup expired and re-formed
+      - None: No notification
     """
     global _cooldown
 
@@ -305,26 +310,31 @@ def should_notify(result):
     last_rank = _GRADE_ORDER.get(_cooldown["last_grade"], 0)
 
     fire = False
+    reason = None
 
     if _cooldown["last_grade"] is None:
         # First detection of the day
         fire = True
+        reason = "new"
     elif grade_rank > last_rank:
         # Grade improved
         fire = True
+        reason = "grade_upgrade"
     elif _cooldown["last_gap_to_lis"] is not None and (_cooldown["last_gap_to_lis"] - gap) > 2:
         # Gap improved by >2 pts
         fire = True
+        reason = "gap_improvement"
     elif _cooldown["setup_expired"]:
         # Setup had expired and re-formed
         fire = True
+        reason = "reformed"
 
     if fire:
         _cooldown["last_grade"] = grade
         _cooldown["last_gap_to_lis"] = gap
         _cooldown["setup_expired"] = False
 
-    return fire
+    return fire, reason
 
 
 def mark_setup_expired():
@@ -335,7 +345,7 @@ def mark_setup_expired():
 
 
 def should_notify_ag(result):
-    """Cooldown gate for AG Short — same logic, separate state."""
+    """Cooldown gate for AG Short — same logic, separate state. Returns (fire, reason)."""
     global _cooldown_ag
 
     today = datetime.now(NY).date()
@@ -348,22 +358,27 @@ def should_notify_ag(result):
     last_rank = _GRADE_ORDER.get(_cooldown_ag["last_grade"], 0)
 
     fire = False
+    reason = None
 
     if _cooldown_ag["last_grade"] is None:
         fire = True
+        reason = "new"
     elif grade_rank > last_rank:
         fire = True
+        reason = "grade_upgrade"
     elif _cooldown_ag["last_gap_to_lis"] is not None and (_cooldown_ag["last_gap_to_lis"] - gap) > 2:
         fire = True
+        reason = "gap_improvement"
     elif _cooldown_ag["setup_expired"]:
         fire = True
+        reason = "reformed"
 
     if fire:
         _cooldown_ag["last_grade"] = grade
         _cooldown_ag["last_gap_to_lis"] = gap
         _cooldown_ag["setup_expired"] = False
 
-    return fire
+    return fire, reason
 
 
 def mark_ag_expired():
@@ -428,7 +443,7 @@ def format_ag_short_message(result):
 def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings):
     """
     Main entry point called from main.py.
-    Returns a list of result wrappers (each has keys: result, notify, message).
+    Returns a list of result wrappers (each has keys: result, notify, notify_reason, message).
     List may be empty.
     """
     results = []
@@ -441,9 +456,11 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
 
     gex_result = evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings)
     if gex_result is not None:
+        notify, reason = should_notify(gex_result)
         results.append({
             "result": gex_result,
-            "notify": should_notify(gex_result),
+            "notify": notify,
+            "notify_reason": reason,
             "message": format_setup_message(gex_result),
         })
 
@@ -455,9 +472,11 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
 
     ag_result = evaluate_ag_short(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings)
     if ag_result is not None:
+        notify_ag, reason_ag = should_notify_ag(ag_result)
         results.append({
             "result": ag_result,
-            "notify": should_notify_ag(ag_result),
+            "notify": notify_ag,
+            "notify_reason": reason_ag,
             "message": format_ag_short_message(ag_result),
         })
 

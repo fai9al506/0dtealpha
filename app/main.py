@@ -534,26 +534,65 @@ def save_setup_settings():
         print(f"[setups] failed to save settings: {e}", flush=True)
         return False
 
+# Track current setup log ID per setup type (for UPDATE on improvements)
+_current_setup_log = {
+    "GEX Long": None,
+    "AG Short": None,
+    "last_date": None,
+}
+
 def log_setup(result_wrapper):
-    """Insert a detection into setup_log table."""
+    """
+    Insert or update a detection in setup_log table.
+    - new/reformed: INSERT new row, store log ID
+    - grade_upgrade/gap_improvement: UPDATE existing row
+    """
+    global _current_setup_log
     if not engine:
         return
+
     r = result_wrapper["result"]
-    notified = result_wrapper.get("notify", False)
+    reason = result_wrapper.get("notify_reason")
+    setup_name = r["setup_name"]
+
+    # Reset tracking on new day
+    today = now_et().date()
+    if _current_setup_log["last_date"] != today:
+        _current_setup_log = {"GEX Long": None, "AG Short": None, "last_date": today}
+
     try:
         with engine.begin() as conn:
-            conn.execute(text("""
-                INSERT INTO setup_log
-                    (setup_name, direction, grade, score, paradigm, spot, lis, target,
-                     max_plus_gex, max_minus_gex, gap_to_lis, upside, rr_ratio,
-                     first_hour, support_score, upside_score, floor_cluster_score,
-                     target_cluster_score, rr_score, notified)
-                VALUES
-                    (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
-                     :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
-                     :first_hour, :support_score, :upside_score, :floor_cluster_score,
-                     :target_cluster_score, :rr_score, :notified)
-            """), {**r, "notified": notified})
+            if reason in ("new", "reformed") or _current_setup_log.get(setup_name) is None:
+                # INSERT new row
+                result = conn.execute(text("""
+                    INSERT INTO setup_log
+                        (setup_name, direction, grade, score, paradigm, spot, lis, target,
+                         max_plus_gex, max_minus_gex, gap_to_lis, upside, rr_ratio,
+                         first_hour, support_score, upside_score, floor_cluster_score,
+                         target_cluster_score, rr_score, notified)
+                    VALUES
+                        (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
+                         :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
+                         :first_hour, :support_score, :upside_score, :floor_cluster_score,
+                         :target_cluster_score, :rr_score, TRUE)
+                    RETURNING id
+                """), r)
+                log_id = result.fetchone()[0]
+                _current_setup_log[setup_name] = log_id
+                print(f"[setups] logged new setup id={log_id}", flush=True)
+            else:
+                # UPDATE existing row (grade_upgrade or gap_improvement)
+                log_id = _current_setup_log[setup_name]
+                conn.execute(text("""
+                    UPDATE setup_log SET
+                        grade = :grade, score = :score, spot = :spot,
+                        gap_to_lis = :gap_to_lis, upside = :upside, rr_ratio = :rr_ratio,
+                        support_score = :support_score, upside_score = :upside_score,
+                        floor_cluster_score = :floor_cluster_score, target_cluster_score = :target_cluster_score,
+                        rr_score = :rr_score, ts = NOW()
+                    WHERE id = :log_id
+                """), {**r, "log_id": log_id})
+                print(f"[setups] updated setup id={log_id} ({reason})", flush=True)
     except Exception as e:
         print(f"[setups] failed to log: {e}", flush=True)
 
@@ -1526,13 +1565,37 @@ def _run_setup_check():
     from app.setup_detector import check_setups as _check_setups_fn
     result_wrappers = _check_setups_fn(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, _setup_settings)
     for rw in result_wrappers:
-        log_setup(rw)
         setup_name = rw["result"]["setup_name"]
         grade = rw["result"]["grade"]
         score = rw["result"]["score"]
-        print(f"[setups] {setup_name} detected: {grade} ({score}), notify={rw['notify']}", flush=True)
+        reason = rw.get("notify_reason")
+        r = rw["result"]
+
+        # Only log and notify on meaningful events
         if rw["notify"]:
-            send_telegram_setups(rw["message"])
+            log_setup(rw)
+
+            # Different telegram messages based on reason
+            if reason in ("new", "reformed"):
+                # Full setup alert for new/reformed setups
+                send_telegram_setups(rw["message"])
+                print(f"[setups] {setup_name} NEW: {grade} ({score})", flush=True)
+            elif reason == "grade_upgrade":
+                # Short upgrade notice
+                emoji = "⬆️"
+                msg = f"{emoji} <b>{setup_name} upgraded to {grade}</b>\n"
+                msg += f"Score: {score} | SPX: {r['spot']:.0f} | Gap: {r['gap_to_lis']:.1f} | R:R: {r['rr_ratio']:.1f}x"
+                send_telegram_setups(msg)
+                print(f"[setups] {setup_name} UPGRADED: {grade} ({score})", flush=True)
+            elif reason == "gap_improvement":
+                # Short improvement notice
+                emoji = "📈"
+                msg = f"{emoji} <b>{setup_name} improved</b>\n"
+                msg += f"{grade} | SPX: {r['spot']:.0f} | Gap: {r['gap_to_lis']:.1f} | R:R: {r['rr_ratio']:.1f}x"
+                send_telegram_setups(msg)
+                print(f"[setups] {setup_name} GAP IMPROVED: {grade} ({score})", flush=True)
+        else:
+            print(f"[setups] {setup_name} active: {grade} ({score}) - no change", flush=True)
 
 def start_scheduler():
     sch = BackgroundScheduler(timezone="US/Eastern")

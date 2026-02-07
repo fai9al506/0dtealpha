@@ -2292,7 +2292,13 @@ def api_export_playback(start_date: str = Query(None, description="Start date YY
         # Build CSV with one row per snapshot, strikes as columns
         csv_rows = []
         for r in rows:
-            ts = r["ts"].isoformat() if hasattr(r["ts"], "isoformat") else str(r["ts"])
+            # Convert timestamp to ET for readability
+            ts_raw = r["ts"]
+            if hasattr(ts_raw, "astimezone"):
+                ts_et = ts_raw.astimezone(NY)
+                ts = ts_et.strftime("%Y-%m-%d %H:%M:%S ET")
+            else:
+                ts = str(ts_raw)
             spot = r["spot"]
             strikes = _json_load_maybe(r["strikes"]) or []
             net_gex = _json_load_maybe(r["net_gex"]) or []
@@ -2382,7 +2388,12 @@ def api_export_playback_summary(start_date: str = Query(None, description="Start
         csv_rows = []
         for r in rows:
             ts = r["ts"]
-            ts_str = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+            # Convert timestamp to ET for readability
+            if hasattr(ts, "astimezone"):
+                ts_et = ts.astimezone(NY)
+                ts_str = ts_et.strftime("%Y-%m-%d %H:%M:%S ET")
+            else:
+                ts_str = str(ts)
             spot = r["spot"]
             strikes = _json_load_maybe(r["strikes"]) or []
             net_gex = _json_load_maybe(r["net_gex"]) or []
@@ -2933,6 +2944,9 @@ def api_setup_export(
                 points_pl = outcome.get("max_profit", 0)
 
             ts = r["ts"]
+            # Convert to ET for readability
+            if hasattr(ts, "astimezone"):
+                ts = ts.astimezone(NY)
             date_str = ts.strftime("%Y-%m-%d") if hasattr(ts, "strftime") else str(ts)[:10]
             time_str = ts.strftime("%H:%M:%S") if hasattr(ts, "strftime") else str(ts)[11:19]
 

@@ -5670,7 +5670,9 @@ DASH_HTML_TEMPLATE = """
           const hasStop = o.hit_stop === true ? '✗' : (o.hit_stop === false ? '✓' : '–');
           const c10 = o.hit_10pt ? '#22c55e' : (o.hit_10pt === false ? '#888' : '#555');
           const cTgt = o.hit_target ? '#22c55e' : (o.hit_target === false ? '#888' : '#555');
-          const cStop = o.hit_stop ? '#ef4444' : (o.hit_stop === false ? '#22c55e' : '#555');
+          // Stop is only red if it hit BEFORE 10pt (real loss). If 10pt hit first, stop is breakeven (neutral)
+          const stopIsLoss = o.hit_stop && o.first_event === 'stop';
+          const cStop = stopIsLoss ? '#ef4444' : (o.hit_stop === false ? '#22c55e' : '#888');
           // Quick result: green if 10pt hit before stop, red if stop hit first
           let result = '';
           if (o.first_event === '10pt' || o.first_event === 'target') {
@@ -5753,7 +5755,10 @@ DASH_HTML_TEMPLATE = """
         // Outcome row
         const c10 = o.hit_10pt ? '#22c55e' : '#888';
         const cTgt = o.hit_target ? '#22c55e' : '#888';
-        const cStop = o.hit_stop ? '#ef4444' : '#22c55e';
+        // Stop is only red if it hit BEFORE 10pt. If 10pt hit first, stop = breakeven (neutral)
+        const stopIsLoss = o.hit_stop && o.first_event === 'stop';
+        const cStop = stopIsLoss ? '#ef4444' : (o.hit_stop ? '#888' : '#22c55e');
+        const stopLabel = o.hit_stop ? (stopIsLoss ? '✗ STOPPED' : 'STOPPED (BE)') : '✓ SAFE';
         outcome.innerHTML = `
           <div style="flex:1;text-align:center">
             <div style="color:var(--muted);font-size:10px">10pt Target</div>
@@ -5767,7 +5772,7 @@ DASH_HTML_TEMPLATE = """
           </div>
           <div style="flex:1;text-align:center">
             <div style="color:var(--muted);font-size:10px">Stop</div>
-            <div style="color:${cStop};font-size:18px;font-weight:700">${o.hit_stop ? '✗ STOPPED' : '✓ SAFE'}</div>
+            <div style="color:${cStop};font-size:18px;font-weight:700">${stopLabel}</div>
             ${o.time_to_stop ? '<div style="color:var(--muted);font-size:9px">' + new Date(o.time_to_stop).toLocaleTimeString() + '</div>' : ''}
           </div>
           <div style="flex:1;text-align:center">

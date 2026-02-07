@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nFix charm chart to query volland_exposure_points directly\n\nThe chart tab was intermittently showing stale charm data because it\nqueried the volland_vanna_points_dedup view, which was unreliable.\nNow reads directly from volland_exposure_points \\(WHERE greek=''charm''\\),\nthe same table the worker writes to. Also adds a timestamp + staleness\nindicator to the chart title.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git pull:*)",
+      "Bash(git push)",
+      "Bash(git commit:*)",
+      "Bash(railway --version:*)",
+      "Bash(python:*)",
+      "Bash(git push:*)",
+      "Bash(git rm:*)",
+      "Bash(railway status:*)",
+      "Bash(echo:*)",
+      "Bash(~/.bashrc)"
+    ]
+  }
+}

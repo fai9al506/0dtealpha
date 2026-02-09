@@ -4069,6 +4069,65 @@ DASH_HTML_TEMPLATE = """
   <script>
     const PULL_EVERY = __PULL_MS__;
 
+    // ===== US Eastern Time Formatting Helpers =====
+    const ET_TIMEZONE = 'America/New_York';
+
+    // Format time as HH:MM in ET
+    function fmtTimeET(isoStr) {
+      if (!isoStr) return '--:--';
+      try {
+        const d = new Date(isoStr);
+        return d.toLocaleTimeString('en-US', { timeZone: ET_TIMEZONE, hour: '2-digit', minute: '2-digit', hour12: false });
+      } catch { return '--:--'; }
+    }
+
+    // Format time as HH:MM:SS in ET
+    function fmtTimeFullET(isoStr) {
+      if (!isoStr) return '--:--:--';
+      try {
+        const d = new Date(isoStr);
+        return d.toLocaleTimeString('en-US', { timeZone: ET_TIMEZONE, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+      } catch { return '--:--:--'; }
+    }
+
+    // Format date as MMM DD in ET
+    function fmtDateShortET(isoStr) {
+      if (!isoStr) return '--';
+      try {
+        const d = new Date(isoStr);
+        return d.toLocaleDateString('en-US', { timeZone: ET_TIMEZONE, month: 'short', day: 'numeric' });
+      } catch { return '--'; }
+    }
+
+    // Format date as MM/DD/YYYY in ET
+    function fmtDateET(isoStr) {
+      if (!isoStr) return '--';
+      try {
+        const d = new Date(isoStr);
+        return d.toLocaleDateString('en-US', { timeZone: ET_TIMEZONE });
+      } catch { return '--'; }
+    }
+
+    // Format full datetime in ET
+    function fmtDateTimeET(isoStr) {
+      if (!isoStr) return '--';
+      try {
+        const d = new Date(isoStr);
+        return d.toLocaleString('en-US', { timeZone: ET_TIMEZONE });
+      } catch { return '--'; }
+    }
+
+    // Format as MM/DD HH:MM in ET
+    function fmtDateTimeShortET(isoStr) {
+      if (!isoStr) return '--';
+      try {
+        const d = new Date(isoStr);
+        const date = d.toLocaleDateString('en-US', { timeZone: ET_TIMEZONE, month: '2-digit', day: '2-digit' });
+        const time = d.toLocaleTimeString('en-US', { timeZone: ET_TIMEZONE, hour: '2-digit', minute: '2-digit', hour12: false });
+        return date + ' ' + time;
+      } catch { return '--'; }
+    }
+
     // ===== Data Freshness Indicator =====
     const dataFreshnessEl = document.getElementById('dataFreshness');
     async function fetchDataFreshness() {
@@ -4083,15 +4142,6 @@ DASH_HTML_TEMPLATE = """
     function renderDataFreshness(data) {
       const statusColors = { ok: '#22c55e', stale: '#eab308', error: '#ef4444', closed: '#6b7280' };
 
-      // Format time as HH:MM
-      function fmtTime(isoStr) {
-        if (!isoStr) return '--:--';
-        try {
-          const d = new Date(isoStr);
-          return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-        } catch { return '--:--'; }
-      }
-
       const ts = data.ts_api || {};
       const vl = data.volland || {};
 
@@ -4101,9 +4151,9 @@ DASH_HTML_TEMPLATE = """
       const spotStr = data.spot ? '<span style="color:#60a5fa;font-weight:600">SPX ' + data.spot.toFixed(0) + '</span><br>' : '';
 
       dataFreshnessEl.innerHTML = spotStr +
-        '<span style="color:' + tsColor + '">TS:' + fmtTime(ts.last_update) + '</span>' +
+        '<span style="color:' + tsColor + '">TS:' + fmtTimeET(ts.last_update) + '</span>' +
         '<span style="margin:0 6px;color:#555">|</span>' +
-        '<span style="color:' + vlColor + '">Vol:' + fmtTime(vl.last_update) + '</span>';
+        '<span style="color:' + vlColor + '">Vol:' + fmtTimeET(vl.last_update) + '</span>';
     }
     fetchDataFreshness();
     setInterval(fetchDataFreshness, PULL_EVERY);
@@ -4160,8 +4210,7 @@ DASH_HTML_TEMPLATE = """
       }
       
       // Timestamp
-      const ts = data.ts ? new Date(data.ts).toLocaleTimeString() : 'N/A';
-      h += '<div class="stats-row" style="margin-top:6px;font-size:10px"><span class="stats-label">Updated</span><span class="stats-value">' + ts + '</span></div>';
+      h += '<div class="stats-row" style="margin-top:6px;font-size:10px"><span class="stats-label">Updated</span><span class="stats-value">' + fmtTimeET(data.ts) + ' ET</span></div>';
       
       statsContent.innerHTML = h;
     }
@@ -4313,10 +4362,9 @@ DASH_HTML_TEMPLATE = """
       if (w.ts_utc) {
         const dt = new Date(w.ts_utc);
         const ageMins = Math.round((Date.now() - dt.getTime()) / 60000);
-        const hh = dt.getHours().toString().padStart(2,'0');
-        const mm = dt.getMinutes().toString().padStart(2,'0');
+        const timeStr = fmtTimeET(w.ts_utc);
         const stale = ageMins > 5 ? ' <span style="color:#ef4444">(stale)</span>' : '';
-        titleText = 'Charm  <span style="font-size:11px;color:#9aa0a6">' + hh + ':' + mm + stale + '</span>';
+        titleText = 'Charm  <span style="font-size:11px;color:#9aa0a6">' + timeStr + ' ET' + stale + '</span>';
       }
 
       Plotly.react(vannaDiv, [trace], {
@@ -4512,13 +4560,8 @@ DASH_HTML_TEMPLATE = """
       }
 
       const candles = candleData.candles;
-      // Format times to show only HH:MM
-      const times = candles.map(c => {
-        try {
-          const d = new Date(c.time);
-          return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-        } catch { return c.time; }
-      });
+      // Format times to show only HH:MM in ET
+      const times = candles.map(c => fmtTimeET(c.time));
       const opens = candles.map(c => c.open);
       const highs = candles.map(c => c.high);
       const lows = candles.map(c => c.low);
@@ -5054,11 +5097,9 @@ DASH_HTML_TEMPLATE = """
         playbackSlider.max = data.snapshots.length - 1;
         playbackSlider.value = 0;
 
-        // Update slider labels
-        const first = new Date(data.snapshots[0].ts);
-        const last = new Date(data.snapshots[data.snapshots.length - 1].ts);
-        playbackSliderStart.textContent = first.toLocaleDateString() + ' ' + first.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'});
-        playbackSliderEnd.textContent = last.toLocaleDateString() + ' ' + last.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'});
+        // Update slider labels (ET timezone)
+        playbackSliderStart.textContent = fmtDateTimeShortET(data.snapshots[0].ts) + ' ET';
+        playbackSliderEnd.textContent = fmtDateTimeShortET(data.snapshots[data.snapshots.length - 1].ts) + ' ET';
 
         // Render based on current view mode
         if (playbackViewMode === 'full') {
@@ -5114,13 +5155,8 @@ DASH_HTML_TEMPLATE = """
         const curr = snaps[i].spot;
         const prev = i > 0 ? snaps[i - 1].spot : curr;
 
-        // Format timestamp as category label (MM/DD HH:MM)
-        const d = new Date(snaps[i].ts);
-        const label = (d.getMonth()+1).toString().padStart(2,'0') + '/' +
-                      d.getDate().toString().padStart(2,'0') + ' ' +
-                      d.getHours().toString().padStart(2,'0') + ':' +
-                      d.getMinutes().toString().padStart(2,'0');
-        times.push(label);
+        // Format timestamp as category label (MM/DD HH:MM) in ET
+        times.push(fmtDateTimeShortET(snaps[i].ts));
 
         opens.push(prev);
         closes.push(curr);
@@ -5169,10 +5205,9 @@ DASH_HTML_TEMPLATE = """
       if (!playbackData || idx >= playbackData.snapshots.length) return;
 
       const snap = playbackData.snapshots[idx];
-      const ts = new Date(snap.ts);
 
-      // Update timestamp display
-      playbackTimestamp.textContent = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString() + ' | SPX: ' + (snap.spot ? snap.spot.toFixed(2) : 'N/A');
+      // Update timestamp display (ET timezone)
+      playbackTimestamp.textContent = fmtDateET(snap.ts) + ' ' + fmtTimeFullET(snap.ts) + ' ET | SPX: ' + (snap.spot ? snap.spot.toFixed(2) : 'N/A');
 
       // Update stats display
       if (snap.stats) {
@@ -5187,12 +5222,9 @@ DASH_HTML_TEMPLATE = """
         playbackStats.textContent = '';
       }
 
-      // Update price chart marker - use category label format (MM/DD HH:MM)
+      // Update price chart marker - use category label format (MM/DD HH:MM) in ET
       if (playbackPricePlot._fullLayout) {
-        const xLabel = (ts.getMonth()+1).toString().padStart(2,'0') + '/' +
-                       ts.getDate().toString().padStart(2,'0') + ' ' +
-                       ts.getHours().toString().padStart(2,'0') + ':' +
-                       ts.getMinutes().toString().padStart(2,'0');
+        const xLabel = fmtDateTimeShortET(snap.ts);
         Plotly.relayout(playbackPricePlot, {
           shapes: [{
             type: 'line',
@@ -5306,7 +5338,6 @@ DASH_HTML_TEMPLATE = """
 
       const snaps = playbackData.snapshots;
       const currentSnap = snaps[idx];
-      const ts = new Date(currentSnap.ts);
 
       // Build candlestick data
       const times = [];
@@ -5318,9 +5349,8 @@ DASH_HTML_TEMPLATE = """
       for (let i = 0; i < snaps.length; i++) {
         const curr = snaps[i].spot;
         const prev = i > 0 ? snaps[i - 1].spot : curr;
-        const snapDate = new Date(snaps[i].ts);
-        const timeLabel = (snapDate.getMonth()+1) + '/' + snapDate.getDate() + ' ' + String(snapDate.getHours()).padStart(2,'0') + ':' + String(snapDate.getMinutes()).padStart(2,'0');
-        times.push(timeLabel);
+        // Format time in ET timezone
+        times.push(fmtDateTimeShortET(snaps[i].ts));
         opens.push(prev);
         closes.push(curr);
         highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1);
@@ -5369,12 +5399,11 @@ DASH_HTML_TEMPLATE = """
 
       // Fixed Y range: 20 strikes (10 above, 10 below) centered on current day's opening price
       // SPX strikes are 5 points apart, so 10 strikes = 50 points
-      // Find the first snapshot of the current day
-      const currentDate = ts.toDateString();
+      // Find the first snapshot of the current day (using ET date comparison)
+      const currentDateET = fmtDateET(currentSnap.ts);
       let dayOpenPrice = currentSnap.spot;
       for (let i = 0; i < snaps.length; i++) {
-        const snapDate = new Date(snaps[i].ts).toDateString();
-        if (snapDate === currentDate) {
+        if (fmtDateET(snaps[i].ts) === currentDateET) {
           dayOpenPrice = snaps[i].spot;
           break;
         }
@@ -5468,8 +5497,8 @@ DASH_HTML_TEMPLATE = """
         scrollZoom: true
       });
 
-      // Update timestamp display
-      playbackTimestamp.textContent = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString() + ' | SPX: ' + (currentSnap.spot ? currentSnap.spot.toFixed(2) : 'N/A');
+      // Update timestamp display (ET timezone)
+      playbackTimestamp.textContent = fmtDateET(currentSnap.ts) + ' ' + fmtTimeFullET(currentSnap.ts) + ' ET | SPX: ' + (currentSnap.spot ? currentSnap.spot.toFixed(2) : 'N/A');
     }
 
     function updatePlaybackSummaryStats(idx) {
@@ -5770,7 +5799,7 @@ DASH_HTML_TEMPLATE = """
             </div>
             <div class="msg-email">From: ${m.email}</div>
             <div class="msg-body">${m.message || ''}</div>
-            <div class="msg-date">${new Date(m.created_at).toLocaleString()}</div>
+            <div class="msg-date">${fmtDateTimeET(m.created_at)} ET</div>
           </div>
         `).join('');
       } catch (err) {
@@ -5857,9 +5886,8 @@ DASH_HTML_TEMPLATE = """
           <span>Dir</span><span>Grade</span><span>Scr</span><span>SPX</span><span>Gap/RR</span><span>10p Tgt Stp</span><span>Result</span><span style="text-align:right">Time</span>
         </div>`;
         list.innerHTML = header + logs.map(l => {
-          const t = new Date(l.ts);
-          const time = t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-          const date = t.toLocaleDateString([], {month:'short',day:'numeric'});
+          const time = fmtTimeET(l.ts);
+          const date = fmtDateShortET(l.ts);
           const color = gradeColor[l.grade] || '#888';
           const bell = l.notified ? '&#128276;' : '';
           const dir = l.direction === 'long' ? '▲' : '▼';
@@ -5936,9 +5964,8 @@ DASH_HTML_TEMPLATE = """
         title.innerHTML = '<span style="color:' + dirColor + '">' + dir + '</span> ' + e.grade + ' @ SPX ' + e.spot?.toFixed(0);
 
         // Info grid
-        const ts = new Date(e.ts);
         info.innerHTML = [
-          ['Time', ts.toLocaleString()],
+          ['Time', fmtDateTimeET(e.ts) + ' ET'],
           ['Paradigm', e.paradigm || '–'],
           ['Entry', e.spot?.toFixed(2)],
           ['LIS', e.lis?.toFixed(0)],
@@ -5963,36 +5990,33 @@ DASH_HTML_TEMPLATE = """
           <div style="flex:1;text-align:center">
             <div style="color:var(--muted);font-size:10px">10pt Target</div>
             <div style="color:${c10};font-size:18px;font-weight:700">${o.hit_10pt ? '✓ HIT' : '✗ MISS'}</div>
-            ${o.time_to_10pt ? '<div style="color:var(--muted);font-size:9px">' + new Date(o.time_to_10pt).toLocaleTimeString() + '</div>' : ''}
+            ${o.time_to_10pt ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.time_to_10pt) + ' ET</div>' : ''}
           </div>
           <div style="flex:1;text-align:center">
             <div style="color:var(--muted);font-size:10px">Full Target</div>
             <div style="color:${cTgt};font-size:18px;font-weight:700">${o.hit_target ? '✓ HIT' : '✗ MISS'}</div>
-            ${o.time_to_target ? '<div style="color:var(--muted);font-size:9px">' + new Date(o.time_to_target).toLocaleTimeString() + '</div>' : ''}
+            ${o.time_to_target ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.time_to_target) + ' ET</div>' : ''}
           </div>
           <div style="flex:1;text-align:center">
             <div style="color:var(--muted);font-size:10px">Stop</div>
             <div style="color:${cStop};font-size:18px;font-weight:700">${stopLabel}</div>
-            ${o.time_to_stop ? '<div style="color:var(--muted);font-size:9px">' + new Date(o.time_to_stop).toLocaleTimeString() + '</div>' : ''}
+            ${o.time_to_stop ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.time_to_stop) + ' ET</div>' : ''}
           </div>
           <div style="flex:1;text-align:center">
             <div style="color:var(--muted);font-size:10px">Max Profit</div>
             <div style="color:#22c55e;font-size:18px;font-weight:700">+${o.max_profit?.toFixed(1) || 0}</div>
-            ${o.max_profit_ts ? '<div style="color:var(--muted);font-size:9px">' + new Date(o.max_profit_ts).toLocaleTimeString() + '</div>' : ''}
+            ${o.max_profit_ts ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.max_profit_ts) + ' ET</div>' : ''}
           </div>
           <div style="flex:1;text-align:center">
             <div style="color:var(--muted);font-size:10px">Max Loss</div>
             <div style="color:#ef4444;font-size:18px;font-weight:700">${o.max_loss?.toFixed(1) || 0}</div>
-            ${o.max_loss_ts ? '<div style="color:var(--muted);font-size:9px">' + new Date(o.max_loss_ts).toLocaleTimeString() + '</div>' : ''}
+            ${o.max_loss_ts ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.max_loss_ts) + ' ET</div>' : ''}
           </div>
         `;
 
         // Draw chart (candlestick bars, full day from market open)
         if (data.prices && data.prices.length > 0) {
-          const times = data.prices.map(p => {
-            const d = new Date(p.ts);
-            return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
-          });
+          const times = data.prices.map(p => fmtTimeET(p.ts));
           const spots = data.prices.map(p => p.spot);
 
           // Build candlestick data from consecutive prices
@@ -6019,9 +6043,10 @@ DASH_HTML_TEMPLATE = """
             name: 'Price'
           };
 
-          // Get entry time and find closest matching time in chart data
-          const entryTime = new Date(e.ts);
-          const entryMinutes = entryTime.getHours() * 60 + entryTime.getMinutes();
+          // Get entry time in ET and find closest matching time in chart data
+          const entryTimeET = fmtTimeET(e.ts);
+          const [entryH, entryM] = entryTimeET.split(':').map(Number);
+          const entryMinutes = entryH * 60 + entryM;
 
           // Find the closest time label in the chart data
           let entryLabel = times[0];
@@ -6042,8 +6067,7 @@ DASH_HTML_TEMPLATE = """
 
           // Vertical line at entry time (using closest available time)
           shapes.push({ type:'line', x0:entryLabel, x1:entryLabel, y0:0, y1:1, yref:'paper', line:{color:'#f59e0b',width:3,dash:'solid'} });
-          const entryTimeStr = entryTime.getHours().toString().padStart(2,'0') + ':' + entryTime.getMinutes().toString().padStart(2,'0');
-          annotations.push({ x:entryLabel, y:1, yref:'paper', text:'▼ ENTRY ' + entryTimeStr, showarrow:false, font:{color:'#f59e0b',size:11,weight:'bold'}, yanchor:'bottom' });
+          annotations.push({ x:entryLabel, y:1, yref:'paper', text:'▼ ENTRY ' + entryTimeET + ' ET', showarrow:false, font:{color:'#f59e0b',size:11,weight:'bold'}, yanchor:'bottom' });
 
           // Entry level (horizontal)
           shapes.push({ type:'line', x0:times[0], x1:times[times.length-1], y0:lv.entry, y1:lv.entry, line:{color:'#f59e0b',width:2,dash:'solid'} });
@@ -6085,17 +6109,15 @@ DASH_HTML_TEMPLATE = """
             showlegend: false
           }, { displayModeBar:false, responsive:true });
 
-          // Add markers for max profit/loss points
+          // Add markers for max profit/loss points (using ET times)
           if (o.max_profit_ts) {
-            const mpTime = new Date(o.max_profit_ts);
-            const mpLabel = mpTime.getHours().toString().padStart(2,'0') + ':' + mpTime.getMinutes().toString().padStart(2,'0');
+            const mpLabel = fmtTimeET(o.max_profit_ts);
             const mpIdx = times.indexOf(mpLabel);
             const mpPrice = mpIdx >= 0 ? spots[mpIdx] : (e.direction === 'long' ? lv.entry + o.max_profit : lv.entry - o.max_profit);
             Plotly.addTraces(chart, { type:'scatter', mode:'markers', x:[mpLabel], y:[mpPrice], marker:{color:'#22c55e',size:12,symbol:'triangle-up'}, name:'Max Profit', showlegend:false });
           }
           if (o.max_loss_ts) {
-            const mlTime = new Date(o.max_loss_ts);
-            const mlLabel = mlTime.getHours().toString().padStart(2,'0') + ':' + mlTime.getMinutes().toString().padStart(2,'0');
+            const mlLabel = fmtTimeET(o.max_loss_ts);
             const mlIdx = times.indexOf(mlLabel);
             const mlPrice = mlIdx >= 0 ? spots[mlIdx] : (e.direction === 'long' ? lv.entry + o.max_loss : lv.entry - o.max_loss);
             Plotly.addTraces(chart, { type:'scatter', mode:'markers', x:[mlLabel], y:[mlPrice], marker:{color:'#ef4444',size:12,symbol:'triangle-down'}, name:'Max Loss', showlegend:false });

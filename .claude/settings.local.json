@@ -12,7 +12,11 @@
       "Bash(git rm:*)",
       "Bash(railway status:*)",
       "Bash(echo:*)",
-      "Bash(~/.bashrc)"
+      "Bash(~/.bashrc)",
+      "Bash(uvicorn:*)",
+      "Bash(pip install:*)",
+      "Bash(curl:*)",
+      "WebSearch"
     ]
   }
 }

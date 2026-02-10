@@ -4354,10 +4354,10 @@ DASH_HTML_TEMPLATE = """
             <span><span style="display:inline-block;width:16px;height:1.5px;background:#22c55e;vertical-align:middle"></span> +GEX</span>
             <span><span style="display:inline-block;width:16px;height:1.5px;background:#ef4444;vertical-align:middle"></span> -GEX</span>
             <span style="margin-left:6px;font-weight:600">Paradigm:</span>
-            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(34,197,94,0.3);border-radius:2px;vertical-align:middle"></span> Pos Charm</span>
-            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(239,68,68,0.3);border-radius:2px;vertical-align:middle"></span> Neg Charm</span>
-            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(96,165,250,0.3);border-radius:2px;vertical-align:middle"></span> BofA</span>
-            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(168,85,247,0.3);border-radius:2px;vertical-align:middle"></span> Missy</span>
+            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(34,197,94,0.35);border-radius:2px;vertical-align:middle"></span> GEX</span>
+            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(239,68,68,0.35);border-radius:2px;vertical-align:middle"></span> Anti-GEX</span>
+            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(96,165,250,0.35);border-radius:2px;vertical-align:middle"></span> BofA</span>
+            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(168,85,247,0.35);border-radius:2px;vertical-align:middle"></span> Sidial</span>
           </div>
         </div>
       </div>
@@ -5944,12 +5944,10 @@ DASH_HTML_TEMPLATE = """
       const a = opacity || 0.25;
       if (!paradigm) return 'rgba(156,163,175,' + a + ')';
       const p = paradigm.toUpperCase();
-      if (p.includes('BOFA') || p.includes('BOA') || p.includes('SCALP')) return 'rgba(96,165,250,' + a + ')';
-      if (p.includes('MISSY')) return 'rgba(168,85,247,' + a + ')';
-      // Red: Negative Charm, AG Short, Anti-GEX — check BEFORE green to avoid 'GEX' false-positive
-      if (p.includes('NEG') || p.includes('AG') || p.includes('ANTI') || p.includes('SHORT')) return 'rgba(239,68,68,' + a + ')';
-      // Green: Positive Charm, GEX Long
-      if (p.includes('POS') || p.includes('GEX') || p.includes('LONG')) return 'rgba(34,197,94,' + a + ')';
+      if (p.includes('BOFA')) return 'rgba(96,165,250,' + a + ')';
+      if (p.includes('SIDIAL')) return 'rgba(168,85,247,' + a + ')';
+      if (p.includes('ANTI')) return 'rgba(239,68,68,' + a + ')';  // Anti-GEX (check before GEX)
+      if (p.includes('GEX')) return 'rgba(34,197,94,' + a + ')';   // GEX
       return 'rgba(156,163,175,' + a + ')';
     }
 

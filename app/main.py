@@ -5997,79 +5997,74 @@ DASH_HTML_TEMPLATE = """
       return { low: sg ? parseFloat(sg[1]) : null, high: null };
     }
 
-    function buildSteppingLevels(snaps) {
+    // Build level traces as Plotly scatter lines (connected within same paradigm + same value)
+    // and GEX shapes (per-snapshot, these change frequently)
+    function buildLevelTraces(snaps) {
+      const traces = [];
       const shapes = [];
       const annotations = [];
-      if (!snaps.length) return { shapes, annotations };
+      if (!snaps.length) return { traces, shapes, annotations };
 
-      // Helper: emit a merged line shape
-      function emitLine(x0, x1, y, color) {
-        shapes.push({ type: 'line', x0: x0, x1: x1, y0: y, y1: y, xref: 'x', yref: 'y', line: { color: color, width: 1.5, dash: 'dash' }, layer: 'above' });
-      }
+      // Helper: build a stepping scatter trace from snapshot data.
+      // For each snapshot, we emit two points (snap.ts, val) and (next_snap.ts, val)
+      // to create a flat horizontal step. Insert null to break at paradigm or value changes.
+      function buildStepTrace(extractFn, color, name) {
+        const xs = [];
+        const ys = [];
+        let prevVal = null;
+        let prevParadigm = null;
 
-      // --- Merge Target lines across same-value + same-paradigm runs ---
-      let tgtStart = null, tgtVal = null, tgtParadigm = null;
-      for (let i = 0; i < snaps.length; i++) {
-        const stats = snaps[i].stats || {};
-        const paradigm = stats.paradigm || '';
-        const val = parseTarget(stats);
-        const x1 = i < snaps.length - 1 ? snaps[i + 1].ts : snaps[i].ts;
+        for (let i = 0; i < snaps.length; i++) {
+          const stats = snaps[i].stats || {};
+          const paradigm = stats.paradigm || '';
+          const val = extractFn(stats);
+          const ts = snaps[i].ts;
+          const nextTs = i < snaps.length - 1 ? snaps[i + 1].ts : ts;
 
-        if (val !== null && val === tgtVal && paradigm === tgtParadigm) {
-          // continue the run — extend to next boundary
-        } else {
-          // flush previous run
-          if (tgtVal !== null && tgtStart !== null) {
-            const prevX1 = i < snaps.length ? snaps[i].ts : snaps[i - 1].ts;
-            emitLine(tgtStart, prevX1, tgtVal, '#3b82f6');
+          if (val === null) {
+            // No value — break the line
+            if (prevVal !== null) { xs.push(null); ys.push(null); }
+            prevVal = null; prevParadigm = null;
+            continue;
           }
-          if (val !== null) { tgtStart = snaps[i].ts; tgtVal = val; tgtParadigm = paradigm; }
-          else { tgtStart = null; tgtVal = null; tgtParadigm = null; }
+
+          if (prevVal !== null && (val !== prevVal || paradigm !== prevParadigm)) {
+            // Value or paradigm changed — break the line, then start new segment
+            xs.push(null); ys.push(null);
+          }
+
+          // Emit step: horizontal from this snapshot to the next
+          xs.push(ts); ys.push(val);
+          xs.push(nextTs); ys.push(val);
+
+          prevVal = val;
+          prevParadigm = paradigm;
+        }
+
+        if (xs.length > 0) {
+          traces.push({
+            type: 'scatter', mode: 'lines',
+            x: xs, y: ys,
+            line: { color: color, width: 2 },
+            name: name, showlegend: false,
+            hovertemplate: name + ': %{y:.0f}<extra></extra>'
+          });
         }
       }
-      if (tgtVal !== null && tgtStart !== null) emitLine(tgtStart, snaps[snaps.length - 1].ts, tgtVal, '#3b82f6');
 
-      // --- Merge LIS low lines ---
-      let lisLowStart = null, lisLowVal = null, lisLowParadigm = null;
-      for (let i = 0; i < snaps.length; i++) {
-        const stats = snaps[i].stats || {};
-        const paradigm = stats.paradigm || '';
-        const lis = parseLIS(stats);
-        const val = lis.low;
+      // Target trace
+      buildStepTrace(s => parseTarget(s), '#3b82f6', 'Target');
 
-        if (val !== null && val === lisLowVal && paradigm === lisLowParadigm) {
-          // continue
-        } else {
-          if (lisLowVal !== null && lisLowStart !== null) {
-            emitLine(lisLowStart, snaps[i].ts, lisLowVal, '#f59e0b');
-          }
-          if (val !== null) { lisLowStart = snaps[i].ts; lisLowVal = val; lisLowParadigm = paradigm; }
-          else { lisLowStart = null; lisLowVal = null; lisLowParadigm = null; }
-        }
-      }
-      if (lisLowVal !== null && lisLowStart !== null) emitLine(lisLowStart, snaps[snaps.length - 1].ts, lisLowVal, '#f59e0b');
+      // LIS low trace
+      buildStepTrace(s => parseLIS(s).low, '#f59e0b', 'LIS');
 
-      // --- Merge LIS high lines ---
-      let lisHighStart = null, lisHighVal = null, lisHighParadigm = null;
-      for (let i = 0; i < snaps.length; i++) {
-        const stats = snaps[i].stats || {};
-        const paradigm = stats.paradigm || '';
-        const lis = parseLIS(stats);
-        const val = (lis.high && lis.high !== lis.low) ? lis.high : null;
+      // LIS high trace (only when different from low)
+      buildStepTrace(s => {
+        const lis = parseLIS(s);
+        return (lis.high && lis.high !== lis.low) ? lis.high : null;
+      }, '#f59e0b', 'LIS');
 
-        if (val !== null && val === lisHighVal && paradigm === lisHighParadigm) {
-          // continue
-        } else {
-          if (lisHighVal !== null && lisHighStart !== null) {
-            emitLine(lisHighStart, snaps[i].ts, lisHighVal, '#f59e0b');
-          }
-          if (val !== null) { lisHighStart = snaps[i].ts; lisHighVal = val; lisHighParadigm = paradigm; }
-          else { lisHighStart = null; lisHighVal = null; lisHighParadigm = null; }
-        }
-      }
-      if (lisHighVal !== null && lisHighStart !== null) emitLine(lisHighStart, snaps[snaps.length - 1].ts, lisHighVal, '#f59e0b');
-
-      // --- GEX lines: per-snapshot (these change frequently) ---
+      // GEX lines stay as per-snapshot shapes (they change frequently)
       for (let i = 0; i < snaps.length; i++) {
         const snap = snaps[i];
         const x0 = snap.ts;
@@ -6082,11 +6077,11 @@ DASH_HTML_TEMPLATE = """
           if (gexData[j] > maxPosVal) { maxPosVal = gexData[j]; maxPosGexStrike = strikes[j]; }
           if (gexData[j] < maxNegVal) { maxNegVal = gexData[j]; maxNegGexStrike = strikes[j]; }
         }
-        if (maxPosGexStrike) emitLine(x0, x1, maxPosGexStrike, '#22c55e');
-        if (maxNegGexStrike) emitLine(x0, x1, maxNegGexStrike, '#ef4444');
+        if (maxPosGexStrike) shapes.push({ type: 'line', x0: x0, x1: x1, y0: maxPosGexStrike, y1: maxPosGexStrike, xref: 'x', yref: 'y', line: { color: '#22c55e', width: 1.5, dash: 'dash' }, layer: 'above' });
+        if (maxNegGexStrike) shapes.push({ type: 'line', x0: x0, x1: x1, y0: maxNegGexStrike, y1: maxNegGexStrike, xref: 'x', yref: 'y', line: { color: '#ef4444', width: 1.5, dash: 'dash' }, layer: 'above' });
       }
 
-      // --- Right-edge annotations for last snapshot ---
+      // Right-edge annotations
       const lastSnap = snaps[snaps.length - 1];
       const lastStats = lastSnap.stats || {};
       const lastTs = lastSnap.ts;
@@ -6109,7 +6104,7 @@ DASH_HTML_TEMPLATE = """
       if (maxPosGexStrike) annotations.push({ x: lastTs, y: maxPosGexStrike, xref: 'x', yref: 'y', text: '+G ' + maxPosGexStrike, showarrow: false, font: { color: '#22c55e', size: 10 }, xanchor: 'left', xshift: 5 });
       if (maxNegGexStrike) annotations.push({ x: lastTs, y: maxNegGexStrike, xref: 'x', yref: 'y', text: '-G ' + maxNegGexStrike, showarrow: false, font: { color: '#ef4444', size: 10 }, xanchor: 'left', xshift: 5 });
 
-      return { shapes, annotations };
+      return { traces, shapes, annotations };
     }
 
     function drawRegimeMap(snaps) {
@@ -6149,8 +6144,8 @@ DASH_HTML_TEMPLATE = """
       // Build paradigm bands
       const paradigmShapes = buildParadigmBands(snaps);
 
-      // Build stepping level lines
-      const { shapes: levelShapes, annotations } = buildSteppingLevels(snaps);
+      // Build level traces and GEX shapes
+      const { traces: levelTraces, shapes: levelShapes, annotations } = buildLevelTraces(snaps);
 
       // Paradigm change annotations (at top of chart)
       let prevParadigm = '';
@@ -6175,7 +6170,7 @@ DASH_HTML_TEMPLATE = """
 
       const allShapes = [...paradigmShapes, ...levelShapes];
 
-      Plotly.react(regimeMapPlot, [candleTrace], {
+      Plotly.react(regimeMapPlot, [candleTrace, ...levelTraces], {
         margin: { l: 55, r: 80, t: 20, b: 50 },
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',

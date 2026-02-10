@@ -3879,6 +3879,29 @@ DASH_HTML_TEMPLATE = """
       .playback-container { height:auto; }
     }
 
+    /* Regime Map — TradingView Pro */
+    #viewRegimeMap { display:flex; flex-direction:column; height:calc(100vh - 120px); }
+    .rm-toolbar { display:flex; align-items:center; justify-content:space-between; padding:6px 10px; border-bottom:1px solid var(--border); }
+    .rm-toolbar-left { display:flex; align-items:center; gap:8px; }
+    .rm-ticker { font-size:16px; font-weight:700; color:var(--text); letter-spacing:0.5px; }
+    .rm-tf { font-size:10px; padding:2px 6px; background:#1a2634; border-radius:4px; color:#60a5fa; font-weight:600; }
+    .rm-label { font-size:12px; color:var(--muted); }
+    .rm-toolbar-right { display:flex; align-items:center; gap:8px; }
+    .rm-date-input { background:#0f1115; border:1px solid var(--border); border-radius:4px; padding:3px 8px; color:var(--text); font-size:11px; }
+    .rm-load-btn { padding:3px 12px; font-size:11px; border:1px solid var(--border); border-radius:4px; background:transparent; color:var(--muted); cursor:pointer; }
+    .rm-load-btn:hover { border-color:#444; color:var(--text); }
+    .rm-status { font-size:10px; color:var(--muted); }
+
+    .rm-ohlc-line { display:flex; align-items:center; gap:4px; padding:4px 10px; font-size:11px; font-family:'Trebuchet MS',Arial,sans-serif; flex-wrap:wrap; }
+    .rm-ohlc-label { color:#6b7280; font-size:10px; margin-left:6px; }
+    .rm-ohlc-label:first-child { margin-left:0; }
+    .rm-ohlc-val { color:var(--text); font-weight:500; }
+    .rm-ohlc-change { font-weight:600; margin-left:4px; }
+    .rm-ohlc-sep { color:#333; margin:0 6px; }
+    .rm-ind-label { font-size:10px; margin-left:8px; }
+    .rm-ind-val { color:var(--text); font-weight:500; margin-left:2px; }
+    .rm-paradigm-badge { margin-left:10px; padding:1px 8px; border-radius:3px; font-size:10px; font-weight:700; letter-spacing:0.5px; }
+
     .stats-box { margin-top:14px; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; }
     .stats-box h4 { margin:0 0 8px; font-size:12px; font-weight:600; }
     .stats-row { display:flex; justify-content:space-between; font-size:11px; padding:4px 0; border-bottom:1px solid var(--border); }
@@ -4336,30 +4359,35 @@ DASH_HTML_TEMPLATE = """
 
       <!-- Regime Map View -->
       <div id="viewRegimeMap" class="panel" style="display:none">
-        <div class="header">
-          <div><strong>Regime Map</strong></div>
-          <div style="display:flex;gap:10px;align-items:center">
-            <label style="font-size:11px;color:var(--muted)">Date:</label>
-            <input type="date" id="regimeMapDate" style="background:#0f1115;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px">
-            <button id="regimeMapLoad" class="strike-btn" style="padding:4px 12px">Load</button>
-            <span id="regimeMapStatus" style="font-size:11px;color:var(--muted)">Select a date and click Load</span>
+        <!-- TradingView-style toolbar -->
+        <div class="rm-toolbar">
+          <div class="rm-toolbar-left">
+            <span class="rm-ticker">SPX</span>
+            <span class="rm-tf">5m</span>
+            <span class="rm-label">Regime Map</span>
+          </div>
+          <div class="rm-toolbar-right">
+            <input type="date" id="regimeMapDate" class="rm-date-input">
+            <button id="regimeMapLoad" class="rm-load-btn">Load</button>
+            <span id="regimeMapStatus" class="rm-status">Select a date</span>
           </div>
         </div>
-        <div style="display:flex;flex-direction:column;height:calc(100vh - 160px)">
-          <div id="regimeMapPlot" style="flex:1;min-height:0"></div>
-          <div style="margin-top:8px;font-size:11px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap;padding:0 8px 8px;align-items:center">
-            <span><span style="display:inline-block;width:6px;height:12px;background:#22c55e;vertical-align:middle;margin-right:1px"></span><span style="display:inline-block;width:6px;height:12px;background:#ef4444;vertical-align:middle"></span> SPX</span>
-            <span><span style="display:inline-block;width:16px;height:2.5px;background:#3b82f6;vertical-align:middle"></span> Target</span>
-            <span><span style="display:inline-block;width:16px;height:6px;background:rgba(245,158,11,0.15);border-top:1.5px solid #f59e0b;border-bottom:1.5px solid #f59e0b;vertical-align:middle"></span> LIS Zone</span>
-            <span><span style="display:inline-block;width:16px;height:1.5px;background:#22c55e;vertical-align:middle"></span> +GEX</span>
-            <span><span style="display:inline-block;width:16px;height:1.5px;background:#ef4444;vertical-align:middle"></span> -GEX</span>
-            <span style="margin-left:6px;font-weight:600">Paradigm:</span>
-            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(34,197,94,0.35);border-radius:2px;vertical-align:middle"></span> GEX</span>
-            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(239,68,68,0.35);border-radius:2px;vertical-align:middle"></span> Anti-GEX</span>
-            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(96,165,250,0.35);border-radius:2px;vertical-align:middle"></span> BofA</span>
-            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(168,85,247,0.35);border-radius:2px;vertical-align:middle"></span> Sidial</span>
-          </div>
+        <!-- OHLC Status Line (updates on hover) -->
+        <div id="regimeMapOHLC" class="rm-ohlc-line">
+          <span class="rm-ohlc-label">O</span><span id="rmO" class="rm-ohlc-val">&mdash;</span>
+          <span class="rm-ohlc-label">H</span><span id="rmH" class="rm-ohlc-val">&mdash;</span>
+          <span class="rm-ohlc-label">L</span><span id="rmL" class="rm-ohlc-val">&mdash;</span>
+          <span class="rm-ohlc-label">C</span><span id="rmC" class="rm-ohlc-val">&mdash;</span>
+          <span id="rmChange" class="rm-ohlc-change">&mdash;</span>
+          <span class="rm-ohlc-sep">|</span>
+          <span class="rm-ind-label" style="color:#2962ff">Target</span><span id="rmTarget" class="rm-ind-val">&mdash;</span>
+          <span class="rm-ind-label" style="color:#ff9800">LIS</span><span id="rmLIS" class="rm-ind-val">&mdash;</span>
+          <span class="rm-ind-label" style="color:#26a69a">+GEX</span><span id="rmPGex" class="rm-ind-val">&mdash;</span>
+          <span class="rm-ind-label" style="color:#ef5350">-GEX</span><span id="rmNGex" class="rm-ind-val">&mdash;</span>
+          <span id="rmParadigm" class="rm-paradigm-badge">&mdash;</span>
         </div>
+        <!-- Chart fills remaining height -->
+        <div id="regimeMapPlot" style="flex:1;min-height:0"></div>
       </div>
 
     </main>
@@ -5887,6 +5915,16 @@ DASH_HTML_TEMPLATE = """
     const regimeMapLoadBtn = document.getElementById('regimeMapLoad');
     const regimeMapStatus = document.getElementById('regimeMapStatus');
     const regimeMapPlot = document.getElementById('regimeMapPlot');
+    const rmO = document.getElementById('rmO');
+    const rmH = document.getElementById('rmH');
+    const rmL = document.getElementById('rmL');
+    const rmC = document.getElementById('rmC');
+    const rmChange = document.getElementById('rmChange');
+    const rmTarget = document.getElementById('rmTarget');
+    const rmLIS = document.getElementById('rmLIS');
+    const rmPGex = document.getElementById('rmPGex');
+    const rmNGex = document.getElementById('rmNGex');
+    const rmParadigm = document.getElementById('rmParadigm');
     let regimeMapInitialized = false;
 
     function initRegimeMap() {
@@ -5940,8 +5978,61 @@ DASH_HTML_TEMPLATE = """
       }
     }
 
+    function updateRegimeMapOHLC(hoveredX, snaps, opens, highs, lows, closes) {
+      let idx = snaps.length - 1; // default: last snapshot
+      if (hoveredX !== null) {
+        // Find closest snapshot by timestamp
+        const hTime = new Date(hoveredX).getTime();
+        let bestDist = Infinity;
+        for (let i = 0; i < snaps.length; i++) {
+          const dist = Math.abs(new Date(snaps[i].ts).getTime() - hTime);
+          if (dist < bestDist) { bestDist = dist; idx = i; }
+        }
+      }
+      const snap = snaps[idx];
+      const o = opens[idx], h = highs[idx], l = lows[idx], c = closes[idx];
+      const change = idx > 0 ? c - closes[0] : 0;
+      const changePct = closes[0] ? ((change / closes[0]) * 100).toFixed(2) : '0.00';
+      const isUp = c >= (idx > 0 ? opens[idx] : c);
+      const valColor = isUp ? '#26a69a' : '#ef5350';
+
+      rmO.textContent = o.toFixed(2); rmO.style.color = valColor;
+      rmH.textContent = h.toFixed(2); rmH.style.color = valColor;
+      rmL.textContent = l.toFixed(2); rmL.style.color = valColor;
+      rmC.textContent = c.toFixed(2); rmC.style.color = valColor;
+      rmChange.textContent = (change >= 0 ? '+' : '') + change.toFixed(2) + ' (' + changePct + '%)';
+      rmChange.style.color = change >= 0 ? '#26a69a' : '#ef5350';
+
+      const stats = snap.stats || {};
+      const tv = parseTarget(stats);
+      rmTarget.textContent = tv ? tv.toFixed(0) : '\u2014';
+      const lis = parseLIS(stats);
+      rmLIS.textContent = lis.low ? (lis.high && lis.high !== lis.low ? lis.low.toFixed(0) + '-' + lis.high.toFixed(0) : lis.low.toFixed(0)) : '\u2014';
+
+      // +GEX / -GEX
+      const gex = snap.net_gex || [], strikes = snap.strikes || [];
+      let pgStrike = null, ngStrike = null, pgVal = 0, ngVal = 0;
+      for (let j = 0; j < strikes.length && j < gex.length; j++) {
+        if (gex[j] > pgVal) { pgVal = gex[j]; pgStrike = strikes[j]; }
+        if (gex[j] < ngVal) { ngVal = gex[j]; ngStrike = strikes[j]; }
+      }
+      rmPGex.textContent = pgStrike ? pgStrike : '\u2014';
+      rmNGex.textContent = ngStrike ? ngStrike : '\u2014';
+
+      // Paradigm badge
+      const paradigm = stats.paradigm || '';
+      rmParadigm.textContent = paradigm || '\u2014';
+      if (paradigm) {
+        rmParadigm.style.background = getParadigmColor(paradigm, 0.35);
+        rmParadigm.style.color = '#e6e7e9';
+      } else {
+        rmParadigm.style.background = 'transparent';
+        rmParadigm.style.color = '#6b7280';
+      }
+    }
+
     function getParadigmColor(paradigm, opacity) {
-      const a = opacity || 0.25;
+      const a = opacity || 0.10;
       if (!paradigm) return 'rgba(156,163,175,' + a + ')';
       const p = paradigm.toUpperCase();
       if (p.includes('BOFA')) return 'rgba(96,165,250,' + a + ')';
@@ -5973,16 +6064,6 @@ DASH_HTML_TEMPLATE = """
             line: { width: 0 },
             layer: 'below'
           });
-          // Vertical divider at paradigm transitions
-          if (i < snaps.length && bandStart > 0) {
-            shapes.push({
-              type: 'line',
-              x0: x0, x1: x0, y0: 0, y1: 1,
-              xref: 'x', yref: 'paper',
-              line: { color: 'rgba(255,255,255,0.2)', width: 1, dash: 'dot' },
-              layer: 'below'
-            });
-          }
           if (i < snaps.length) {
             bandStart = i;
             currentParadigm = nextParadigm;
@@ -6055,21 +6136,21 @@ DASH_HTML_TEMPLATE = """
       if (lisXs.some(v => v !== null)) {
         traces.push({
           type: 'scatter', mode: 'lines', x: lisXs, y: lisLowYs,
-          line: { color: '#f59e0b', width: 1.5, shape: 'hv' },
+          line: { color: '#ff9800', width: 1.5, shape: 'hv' },
           name: 'LIS Low', showlegend: false,
           hovertemplate: 'LIS: %{y:.0f}<extra></extra>'
         });
         traces.push({
           type: 'scatter', mode: 'lines', x: lisXs, y: lisHighYs,
-          line: { color: '#f59e0b', width: 1.5, shape: 'hv' },
-          fill: 'tonexty', fillcolor: 'rgba(245,158,11,0.08)',
+          line: { color: '#ff9800', width: 1.5, shape: 'hv' },
+          fill: 'tonexty', fillcolor: 'rgba(255,152,0,0.08)',
           name: 'LIS High', showlegend: false,
           hovertemplate: 'LIS: %{y:.0f}<extra></extra>'
         });
       }
 
       // Target (thicker, prominent)
-      makeTrace(s => parseTarget(s.stats || {}), '#3b82f6', 2.5, 'Target');
+      makeTrace(s => parseTarget(s.stats || {}), '#2962ff', 2.5, 'Target');
 
       // +GEX / -GEX (thinner)
       makeTrace(s => {
@@ -6077,31 +6158,30 @@ DASH_HTML_TEMPLATE = """
         let best = null, bv = 0;
         for (let j = 0; j < st.length && j < g.length; j++) if (g[j] > bv) { bv = g[j]; best = st[j]; }
         return best;
-      }, '#22c55e', 1.5, '+GEX');
+      }, '#26a69a', 1.5, '+GEX');
       makeTrace(s => {
         const g = s.net_gex || [], st = s.strikes || [];
         let best = null, bv = 0;
         for (let j = 0; j < st.length && j < g.length; j++) if (g[j] < bv) { bv = g[j]; best = st[j]; }
         return best;
-      }, '#ef4444', 1.5, '-GEX');
+      }, '#ef5350', 1.5, '-GEX');
 
-      // Right-edge labels
+      // Right-edge price tags (TradingView style with bgcolor)
       const last = snaps[snaps.length - 1];
       const ls = last.stats || {};
-      const lt = last.ts;
       const tv = parseTarget(ls);
-      if (tv) annotations.push({ x: lt, y: tv, xref: 'x', yref: 'y', text: 'Tgt ' + Math.round(tv), showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left', xshift: 5 });
+      if (tv) annotations.push({ x: 1.02, y: tv, xref: 'paper', yref: 'y', text: Math.round(tv), showarrow: false, font: { color: '#fff', size: 10 }, bgcolor: '#2962ff', borderpad: 2, xanchor: 'left' });
       const lv = parseLIS(ls);
-      if (lv.low) annotations.push({ x: lt, y: lv.low, xref: 'x', yref: 'y', text: 'LIS ' + Math.round(lv.low), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
-      if (lv.high && lv.high !== lv.low) annotations.push({ x: lt, y: lv.high, xref: 'x', yref: 'y', text: 'LIS ' + Math.round(lv.high), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
+      if (lv.low) annotations.push({ x: 1.02, y: lv.low, xref: 'paper', yref: 'y', text: Math.round(lv.low), showarrow: false, font: { color: '#fff', size: 10 }, bgcolor: '#ff9800', borderpad: 2, xanchor: 'left' });
+      if (lv.high && lv.high !== lv.low) annotations.push({ x: 1.02, y: lv.high, xref: 'paper', yref: 'y', text: Math.round(lv.high), showarrow: false, font: { color: '#fff', size: 10 }, bgcolor: '#ff9800', borderpad: 2, xanchor: 'left' });
       const lg = last.net_gex || [], lst = last.strikes || [];
       let pg = null, ng = null, pv = 0, nv = 0;
       for (let j = 0; j < lst.length && j < lg.length; j++) {
         if (lg[j] > pv) { pv = lg[j]; pg = lst[j]; }
         if (lg[j] < nv) { nv = lg[j]; ng = lst[j]; }
       }
-      if (pg) annotations.push({ x: lt, y: pg, xref: 'x', yref: 'y', text: '+G ' + pg, showarrow: false, font: { color: '#22c55e', size: 10 }, xanchor: 'left', xshift: 5 });
-      if (ng) annotations.push({ x: lt, y: ng, xref: 'x', yref: 'y', text: '-G ' + ng, showarrow: false, font: { color: '#ef4444', size: 10 }, xanchor: 'left', xshift: 5 });
+      if (pg) annotations.push({ x: 1.02, y: pg, xref: 'paper', yref: 'y', text: pg, showarrow: false, font: { color: '#fff', size: 10 }, bgcolor: '#26a69a', borderpad: 2, xanchor: 'left' });
+      if (ng) annotations.push({ x: 1.02, y: ng, xref: 'paper', yref: 'y', text: ng, showarrow: false, font: { color: '#fff', size: 10 }, bgcolor: '#ef5350', borderpad: 2, xanchor: 'left' });
 
       return { traces, annotations };
     }
@@ -6145,8 +6225,8 @@ DASH_HTML_TEMPLATE = """
       const candleTrace = {
         type: 'candlestick',
         x: times, open: opens, high: highs, low: lows, close: closes,
-        increasing: { line: { color: '#22c55e' }, fillcolor: '#22c55e' },
-        decreasing: { line: { color: '#ef4444' }, fillcolor: '#ef4444' },
+        increasing: { line: { color: '#26a69a' }, fillcolor: '#26a69a' },
+        decreasing: { line: { color: '#ef5350' }, fillcolor: '#ef5350' },
         name: 'SPX', showlegend: false,
         hoverinfo: 'x+y'
       };
@@ -6161,64 +6241,80 @@ DASH_HTML_TEMPLATE = """
       // --- Paradigm background bands (subtle) ---
       const paradigmShapes = buildParadigmBands(snaps);
 
-      // --- Paradigm labels centered in each band ---
-      let curPar = (snaps[0].stats || {}).paradigm || '';
-      let bandStart = 0;
-      for (let i = 1; i <= snaps.length; i++) {
-        const par = i < snaps.length ? ((snaps[i].stats || {}).paradigm || '') : '';
-        if (par !== curPar || i === snaps.length) {
-          if (curPar) {
-            const t0 = new Date(snaps[bandStart].ts).getTime();
-            const t1 = i < snaps.length ? new Date(snaps[i].ts).getTime() : new Date(snaps[snaps.length - 1].ts).getTime();
-            annotations.push({
-              x: new Date((t0 + t1) / 2).toISOString(),
-              y: 1.0, xref: 'x', yref: 'paper',
-              text: curPar, showarrow: false,
-              font: { color: '#e6e7e9', size: 9 },
-              bgcolor: 'rgba(0,0,0,0.5)', borderpad: 3,
-              yanchor: 'top', yshift: -4
-            });
-          }
-          bandStart = i;
-          curPar = par;
-        }
-      }
+      // Watermark — large faded SPX centered in chart
+      annotations.push({
+        x: 0.5, y: 0.5, xref: 'paper', yref: 'paper',
+        text: 'SPX', showarrow: false,
+        font: { color: 'rgba(255,255,255,0.03)', size: 80 },
+        xanchor: 'center', yanchor: 'middle'
+      });
 
-      // Traces: levels first (below), candles on top
       // Candles first (bottom), level lines on top (visible over candle bodies)
       const allTraces = [candleTrace, ...levelTraces];
 
       Plotly.react(regimeMapPlot, allTraces, {
-        margin: { l: 55, r: 80, t: 30, b: 50 },
-        paper_bgcolor: '#121417',
-        plot_bgcolor: '#0f1115',
+        margin: { l: 8, r: 60, t: 8, b: 30 },
+        paper_bgcolor: '#131722',
+        plot_bgcolor: '#131722',
         xaxis: {
           type: 'date',
-          gridcolor: '#1a1d21',
-          tickfont: { size: 10 },
+          gridcolor: '#1e222d',
+          tickfont: { size: 10, color: '#787b86' },
           tickformat: '%H:%M',
           dtick: 1800000,
-          rangeslider: { visible: false }
+          rangeslider: { visible: false },
+          showspikes: true,
+          spikemode: 'across',
+          spikethickness: 0.5,
+          spikecolor: '#787b86',
+          spikedash: 'dot'
         },
         yaxis: {
-          gridcolor: '#1a1d21',
-          tickfont: { size: 10 },
-          side: 'left',
+          side: 'right',
+          gridcolor: '#1e222d',
+          tickfont: { size: 10, color: '#787b86' },
           range: [priceMin, priceMax],
-          dtick: 5
+          dtick: 5,
+          showspikes: true,
+          spikemode: 'across',
+          spikethickness: 0.5,
+          spikecolor: '#787b86',
+          spikedash: 'dot'
         },
-        font: { color: '#e6e7e9', size: 10 },
+        font: { color: '#d1d4dc', size: 10 },
         shapes: paradigmShapes,
         annotations: annotations,
-        hovermode: 'closest',
-        dragmode: 'zoom'
+        hovermode: 'x unified',
+        hoverlabel: {
+          bgcolor: '#1e222d',
+          bordercolor: '#363a45',
+          font: { color: '#d1d4dc', size: 11 }
+        },
+        dragmode: 'pan'
       }, {
-        displayModeBar: true,
-        displaylogo: false,
-        modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+        displayModeBar: false,
         responsive: true,
         scrollZoom: true
       });
+
+      // Store snaps for hover lookup
+      window._rmSnaps = snaps;
+      window._rmOpens = opens;
+      window._rmHighs = highs;
+      window._rmLows = lows;
+      window._rmCloses = closes;
+
+      regimeMapPlot.on('plotly_hover', function(evt) {
+        const hx = evt.points[0].x;
+        updateRegimeMapOHLC(hx, snaps, opens, highs, lows, closes);
+      });
+
+      regimeMapPlot.on('plotly_unhover', function() {
+        updateRegimeMapOHLC(null, snaps, opens, highs, lows, closes);
+      });
+
+      // Initialize with last snapshot
+      updateRegimeMapOHLC(null, snaps, opens, highs, lows, closes);
     }
 
     // ===== Settings Modal =====

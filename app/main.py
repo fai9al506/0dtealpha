@@ -5997,94 +5997,71 @@ DASH_HTML_TEMPLATE = """
       return { low: sg ? parseFloat(sg[1]) : null, high: null };
     }
 
-    // Build level traces as Plotly scatter lines (connected within same paradigm + same value)
-    // and GEX shapes (per-snapshot, these change frequently)
     function buildLevelTraces(snaps) {
       const traces = [];
-      const shapes = [];
       const annotations = [];
-      if (!snaps.length) return { traces, shapes, annotations };
+      if (!snaps.length) return { traces, annotations };
 
-      // Helper: build a stepping scatter trace from snapshot data.
-      // For each snapshot, we emit two points (snap.ts, val) and (next_snap.ts, val)
-      // to create a flat horizontal step. Insert null to break at paradigm or value changes.
-      function buildStepTrace(extractFn, color, name) {
+      // One point per snapshot, line.shape 'hv' makes Plotly draw horizontal-then-vertical steps.
+      // Insert null to break the line at paradigm changes.
+      function buildHVTrace(extractFn, color, name) {
         const xs = [];
         const ys = [];
-        let prevVal = null;
         let prevParadigm = null;
 
         for (let i = 0; i < snaps.length; i++) {
           const stats = snaps[i].stats || {};
           const paradigm = stats.paradigm || '';
           const val = extractFn(stats);
-          const ts = snaps[i].ts;
-          const nextTs = i < snaps.length - 1 ? snaps[i + 1].ts : ts;
 
           if (val === null) {
-            // No value — break the line
-            if (prevVal !== null) { xs.push(null); ys.push(null); }
-            prevVal = null; prevParadigm = null;
+            if (prevParadigm !== null) { xs.push(null); ys.push(null); }
+            prevParadigm = null;
             continue;
           }
 
-          if (prevVal !== null && (val !== prevVal || paradigm !== prevParadigm)) {
-            // Value or paradigm changed — break the line, then start new segment
+          if (prevParadigm !== null && paradigm !== prevParadigm) {
             xs.push(null); ys.push(null);
           }
 
-          // Emit step: horizontal from this snapshot to the next
-          xs.push(ts); ys.push(val);
-          xs.push(nextTs); ys.push(val);
-
-          prevVal = val;
+          xs.push(snaps[i].ts);
+          ys.push(val);
           prevParadigm = paradigm;
         }
 
-        if (xs.length > 0) {
+        if (xs.some(v => v !== null)) {
           traces.push({
             type: 'scatter', mode: 'lines',
             x: xs, y: ys,
-            line: { color: color, width: 2 },
+            line: { color: color, width: 2, shape: 'hv' },
             name: name, showlegend: false,
             hovertemplate: name + ': %{y:.0f}<extra></extra>'
           });
         }
       }
 
-      // Target trace
-      buildStepTrace(s => parseTarget(s), '#3b82f6', 'Target');
-
-      // LIS low trace
-      buildStepTrace(s => parseLIS(s).low, '#f59e0b', 'LIS');
-
-      // LIS high trace (only when different from low)
-      buildStepTrace(s => {
+      buildHVTrace(s => parseTarget(s), '#3b82f6', 'Target');
+      buildHVTrace(s => parseLIS(s).low, '#f59e0b', 'LIS');
+      buildHVTrace(s => {
         const lis = parseLIS(s);
         return (lis.high && lis.high !== lis.low) ? lis.high : null;
       }, '#f59e0b', 'LIS');
-
-      // GEX lines stay as per-snapshot shapes (they change frequently)
-      for (let i = 0; i < snaps.length; i++) {
-        const snap = snaps[i];
-        const x0 = snap.ts;
-        const x1 = i < snaps.length - 1 ? snaps[i + 1].ts : snap.ts;
-        const gexData = snap.net_gex || [];
-        const strikes = snap.strikes || [];
-        let maxPosGexStrike = null, maxNegGexStrike = null;
-        let maxPosVal = 0, maxNegVal = 0;
-        for (let j = 0; j < strikes.length && j < gexData.length; j++) {
-          if (gexData[j] > maxPosVal) { maxPosVal = gexData[j]; maxPosGexStrike = strikes[j]; }
-          if (gexData[j] < maxNegVal) { maxNegVal = gexData[j]; maxNegGexStrike = strikes[j]; }
-        }
-        if (maxPosGexStrike) shapes.push({ type: 'line', x0: x0, x1: x1, y0: maxPosGexStrike, y1: maxPosGexStrike, xref: 'x', yref: 'y', line: { color: '#22c55e', width: 1.5, dash: 'dash' }, layer: 'above' });
-        if (maxNegGexStrike) shapes.push({ type: 'line', x0: x0, x1: x1, y0: maxNegGexStrike, y1: maxNegGexStrike, xref: 'x', yref: 'y', line: { color: '#ef4444', width: 1.5, dash: 'dash' }, layer: 'above' });
-      }
+      buildHVTrace(s => {
+        const gex = s.net_gex || []; const st = s.strikes || [];
+        let best = null, bestVal = 0;
+        for (let j = 0; j < st.length && j < gex.length; j++) { if (gex[j] > bestVal) { bestVal = gex[j]; best = st[j]; } }
+        return best;
+      }, '#22c55e', '+GEX');
+      buildHVTrace(s => {
+        const gex = s.net_gex || []; const st = s.strikes || [];
+        let best = null, bestVal = 0;
+        for (let j = 0; j < st.length && j < gex.length; j++) { if (gex[j] < bestVal) { bestVal = gex[j]; best = st[j]; } }
+        return best;
+      }, '#ef4444', '-GEX');
 
       // Right-edge annotations
-      const lastSnap = snaps[snaps.length - 1];
-      const lastStats = lastSnap.stats || {};
-      const lastTs = lastSnap.ts;
+      const lastStats = snaps[snaps.length - 1].stats || {};
+      const lastTs = snaps[snaps.length - 1].ts;
 
       const lastTarget = parseTarget(lastStats);
       if (lastTarget) annotations.push({ x: lastTs, y: lastTarget, xref: 'x', yref: 'y', text: 'Tgt ' + Math.round(lastTarget), showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left', xshift: 5 });
@@ -6093,18 +6070,17 @@ DASH_HTML_TEMPLATE = """
       if (lastLIS.low) annotations.push({ x: lastTs, y: lastLIS.low, xref: 'x', yref: 'y', text: 'LIS ' + Math.round(lastLIS.low), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
       if (lastLIS.high && lastLIS.high !== lastLIS.low) annotations.push({ x: lastTs, y: lastLIS.high, xref: 'x', yref: 'y', text: 'LIS ' + Math.round(lastLIS.high), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
 
-      const gexData = lastSnap.net_gex || [];
-      const strikes = lastSnap.strikes || [];
-      let maxPosGexStrike = null, maxNegGexStrike = null;
-      let maxPosVal = 0, maxNegVal = 0;
-      for (let j = 0; j < strikes.length && j < gexData.length; j++) {
-        if (gexData[j] > maxPosVal) { maxPosVal = gexData[j]; maxPosGexStrike = strikes[j]; }
-        if (gexData[j] < maxNegVal) { maxNegVal = gexData[j]; maxNegGexStrike = strikes[j]; }
+      const lastGex = lastStats.net_gex || snaps[snaps.length - 1].net_gex || [];
+      const lastStrikes = lastStats.strikes || snaps[snaps.length - 1].strikes || [];
+      let maxPosGexStrike = null, maxNegGexStrike = null, maxPosVal = 0, maxNegVal = 0;
+      for (let j = 0; j < lastStrikes.length && j < lastGex.length; j++) {
+        if (lastGex[j] > maxPosVal) { maxPosVal = lastGex[j]; maxPosGexStrike = lastStrikes[j]; }
+        if (lastGex[j] < maxNegVal) { maxNegVal = lastGex[j]; maxNegGexStrike = lastStrikes[j]; }
       }
       if (maxPosGexStrike) annotations.push({ x: lastTs, y: maxPosGexStrike, xref: 'x', yref: 'y', text: '+G ' + maxPosGexStrike, showarrow: false, font: { color: '#22c55e', size: 10 }, xanchor: 'left', xshift: 5 });
       if (maxNegGexStrike) annotations.push({ x: lastTs, y: maxNegGexStrike, xref: 'x', yref: 'y', text: '-G ' + maxNegGexStrike, showarrow: false, font: { color: '#ef4444', size: 10 }, xanchor: 'left', xshift: 5 });
 
-      return { traces, shapes, annotations };
+      return { traces, annotations };
     }
 
     function drawRegimeMap(snaps) {
@@ -6144,8 +6120,8 @@ DASH_HTML_TEMPLATE = """
       // Build paradigm bands
       const paradigmShapes = buildParadigmBands(snaps);
 
-      // Build level traces and GEX shapes
-      const { traces: levelTraces, shapes: levelShapes, annotations } = buildLevelTraces(snaps);
+      // Build level step-line traces
+      const { traces: levelTraces, annotations } = buildLevelTraces(snaps);
 
       // Paradigm change annotations (at top of chart)
       let prevParadigm = '';
@@ -6168,7 +6144,7 @@ DASH_HTML_TEMPLATE = """
         }
       }
 
-      const allShapes = [...paradigmShapes, ...levelShapes];
+      const allShapes = [...paradigmShapes];
 
       Plotly.react(regimeMapPlot, [candleTrace, ...levelTraces], {
         margin: { l: 55, r: 80, t: 20, b: 50 },

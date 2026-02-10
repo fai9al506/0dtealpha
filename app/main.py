@@ -6049,7 +6049,7 @@ DASH_HTML_TEMPLATE = """
           prevPar = null; continue;
         }
         if (prevPar !== null && par !== prevPar) { lisXs.push(null); lisLowYs.push(null); lisHighYs.push(null); }
-        lisXs.push(filledSnaps[i].ts);
+        lisXs.push(snaps[i].ts);
         lisLowYs.push(lis.low);
         lisHighYs.push(lis.high && lis.high !== lis.low ? lis.high : lis.low);
         prevPar = par;

@@ -4347,17 +4347,17 @@ DASH_HTML_TEMPLATE = """
         </div>
         <div style="display:flex;flex-direction:column;height:calc(100vh - 160px)">
           <div id="regimeMapPlot" style="flex:1;min-height:0"></div>
-          <div style="margin-top:8px;font-size:11px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap;padding:0 8px 8px">
-            <span style="font-weight:600">Paradigm:</span>
-            <span><span style="background:rgba(34,197,94,0.3);padding:1px 6px;border-radius:3px">■</span> Pos Charm / GEX</span>
-            <span><span style="background:rgba(239,68,68,0.3);padding:1px 6px;border-radius:3px">■</span> Neg Charm / AG</span>
-            <span><span style="background:rgba(96,165,250,0.3);padding:1px 6px;border-radius:3px">■</span> BofA</span>
-            <span><span style="background:rgba(168,85,247,0.3);padding:1px 6px;border-radius:3px">■</span> Missy</span>
-            <span style="margin-left:10px;font-weight:600">Levels:</span>
-            <span><span style="color:#3b82f6">--</span> Target</span>
-            <span><span style="color:#f59e0b">--</span> LIS</span>
-            <span><span style="color:#22c55e">--</span> +GEX</span>
-            <span><span style="color:#ef4444">--</span> -GEX</span>
+          <div style="margin-top:8px;font-size:11px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap;padding:0 8px 8px;align-items:center">
+            <span><span style="display:inline-block;width:16px;height:2.5px;background:#e2e8f0;vertical-align:middle"></span> SPX</span>
+            <span><span style="display:inline-block;width:16px;height:2.5px;background:#3b82f6;vertical-align:middle"></span> Target</span>
+            <span><span style="display:inline-block;width:16px;height:6px;background:rgba(245,158,11,0.15);border-top:1.5px solid #f59e0b;border-bottom:1.5px solid #f59e0b;vertical-align:middle"></span> LIS Zone</span>
+            <span><span style="display:inline-block;width:16px;height:1.5px;background:#22c55e;vertical-align:middle"></span> +GEX</span>
+            <span><span style="display:inline-block;width:16px;height:1.5px;background:#ef4444;vertical-align:middle"></span> -GEX</span>
+            <span style="margin-left:6px;font-weight:600">Paradigm:</span>
+            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(34,197,94,0.3);border-radius:2px;vertical-align:middle"></span> Pos Charm</span>
+            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(239,68,68,0.3);border-radius:2px;vertical-align:middle"></span> Neg Charm</span>
+            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(96,165,250,0.3);border-radius:2px;vertical-align:middle"></span> BofA</span>
+            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(168,85,247,0.3);border-radius:2px;vertical-align:middle"></span> Missy</span>
           </div>
         </div>
       </div>
@@ -5940,14 +5940,15 @@ DASH_HTML_TEMPLATE = """
       }
     }
 
-    function getParadigmColor(paradigm) {
-      if (!paradigm) return 'rgba(156,163,175,0.15)';
+    function getParadigmColor(paradigm, opacity) {
+      const a = opacity || 0.15;
+      if (!paradigm) return 'rgba(156,163,175,' + a + ')';
       const p = paradigm.toUpperCase();
-      if (p.includes('BOFA') || p.includes('BOA') || p.includes('SCALP')) return 'rgba(96,165,250,0.15)';
-      if (p.includes('MISSY')) return 'rgba(168,85,247,0.15)';
-      if (p.includes('NEG') || p.includes('AG ') || p.includes('AG-') || p.includes('ANTI')) return 'rgba(239,68,68,0.15)';
-      if (p.includes('POS') || p.includes('GEX') || p.includes('LONG')) return 'rgba(34,197,94,0.15)';
-      return 'rgba(156,163,175,0.15)';
+      if (p.includes('BOFA') || p.includes('BOA') || p.includes('SCALP')) return 'rgba(96,165,250,' + a + ')';
+      if (p.includes('MISSY')) return 'rgba(168,85,247,' + a + ')';
+      if (p.includes('NEG') || p.includes('AG ') || p.includes('AG-') || p.includes('ANTI')) return 'rgba(239,68,68,' + a + ')';
+      if (p.includes('POS') || p.includes('GEX') || p.includes('LONG')) return 'rgba(34,197,94,' + a + ')';
+      return 'rgba(156,163,175,' + a + ')';
     }
 
     function buildParadigmBands(snaps) {
@@ -6002,172 +6003,172 @@ DASH_HTML_TEMPLATE = """
       const annotations = [];
       if (!snaps.length) return { traces, annotations };
 
-      // One point per snapshot, line.shape 'hv' makes Plotly draw horizontal-then-vertical steps.
-      // Insert null to break the line at paradigm changes.
-      function buildHVTrace(extractFn, color, name) {
-        const xs = [];
-        const ys = [];
-        let prevParadigm = null;
-
+      // Helper: one point per snapshot, hv step interpolation, null at paradigm breaks
+      function makeTrace(fn, color, width, name) {
+        const xs = [], ys = [];
+        let prevPar = null;
         for (let i = 0; i < snaps.length; i++) {
-          const stats = snaps[i].stats || {};
-          const paradigm = stats.paradigm || '';
-          const val = extractFn(stats);
-
+          const par = (snaps[i].stats || {}).paradigm || '';
+          const val = fn(snaps[i]);
           if (val === null) {
-            if (prevParadigm !== null) { xs.push(null); ys.push(null); }
-            prevParadigm = null;
-            continue;
+            if (prevPar !== null) { xs.push(null); ys.push(null); }
+            prevPar = null; continue;
           }
-
-          if (prevParadigm !== null && paradigm !== prevParadigm) {
-            xs.push(null); ys.push(null);
-          }
-
-          xs.push(snaps[i].ts);
-          ys.push(val);
-          prevParadigm = paradigm;
+          if (prevPar !== null && par !== prevPar) { xs.push(null); ys.push(null); }
+          xs.push(snaps[i].ts); ys.push(val);
+          prevPar = par;
         }
-
         if (xs.some(v => v !== null)) {
           traces.push({
-            type: 'scatter', mode: 'lines',
-            x: xs, y: ys,
-            line: { color: color, width: 2, shape: 'hv' },
+            type: 'scatter', mode: 'lines', x: xs, y: ys,
+            line: { color: color, width: width, shape: 'hv' },
             name: name, showlegend: false,
             hovertemplate: name + ': %{y:.0f}<extra></extra>'
           });
         }
       }
 
-      buildHVTrace(s => parseTarget(s), '#3b82f6', 'Target');
-      buildHVTrace(s => parseLIS(s).low, '#f59e0b', 'LIS');
-      buildHVTrace(s => {
-        const lis = parseLIS(s);
-        return (lis.high && lis.high !== lis.low) ? lis.high : null;
-      }, '#f59e0b', 'LIS');
-      buildHVTrace(s => {
-        const gex = s.net_gex || []; const st = s.strikes || [];
-        let best = null, bestVal = 0;
-        for (let j = 0; j < st.length && j < gex.length; j++) { if (gex[j] > bestVal) { bestVal = gex[j]; best = st[j]; } }
-        return best;
-      }, '#22c55e', '+GEX');
-      buildHVTrace(s => {
-        const gex = s.net_gex || []; const st = s.strikes || [];
-        let best = null, bestVal = 0;
-        for (let j = 0; j < st.length && j < gex.length; j++) { if (gex[j] < bestVal) { bestVal = gex[j]; best = st[j]; } }
-        return best;
-      }, '#ef4444', '-GEX');
-
-      // Right-edge annotations
-      const lastStats = snaps[snaps.length - 1].stats || {};
-      const lastTs = snaps[snaps.length - 1].ts;
-
-      const lastTarget = parseTarget(lastStats);
-      if (lastTarget) annotations.push({ x: lastTs, y: lastTarget, xref: 'x', yref: 'y', text: 'Tgt ' + Math.round(lastTarget), showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left', xshift: 5 });
-
-      const lastLIS = parseLIS(lastStats);
-      if (lastLIS.low) annotations.push({ x: lastTs, y: lastLIS.low, xref: 'x', yref: 'y', text: 'LIS ' + Math.round(lastLIS.low), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
-      if (lastLIS.high && lastLIS.high !== lastLIS.low) annotations.push({ x: lastTs, y: lastLIS.high, xref: 'x', yref: 'y', text: 'LIS ' + Math.round(lastLIS.high), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
-
-      const lastGex = lastStats.net_gex || snaps[snaps.length - 1].net_gex || [];
-      const lastStrikes = lastStats.strikes || snaps[snaps.length - 1].strikes || [];
-      let maxPosGexStrike = null, maxNegGexStrike = null, maxPosVal = 0, maxNegVal = 0;
-      for (let j = 0; j < lastStrikes.length && j < lastGex.length; j++) {
-        if (lastGex[j] > maxPosVal) { maxPosVal = lastGex[j]; maxPosGexStrike = lastStrikes[j]; }
-        if (lastGex[j] < maxNegVal) { maxNegVal = lastGex[j]; maxNegGexStrike = lastStrikes[j]; }
+      // LIS zone: extract low & high together so nulls align for fill
+      const lisXs = [], lisLowYs = [], lisHighYs = [];
+      let prevPar = null;
+      for (let i = 0; i < snaps.length; i++) {
+        const par = (snaps[i].stats || {}).paradigm || '';
+        const lis = parseLIS(snaps[i].stats || {});
+        if (lis.low === null) {
+          if (prevPar !== null) { lisXs.push(null); lisLowYs.push(null); lisHighYs.push(null); }
+          prevPar = null; continue;
+        }
+        if (prevPar !== null && par !== prevPar) { lisXs.push(null); lisLowYs.push(null); lisHighYs.push(null); }
+        lisXs.push(snaps[i].ts);
+        lisLowYs.push(lis.low);
+        lisHighYs.push(lis.high && lis.high !== lis.low ? lis.high : lis.low);
+        prevPar = par;
       }
-      if (maxPosGexStrike) annotations.push({ x: lastTs, y: maxPosGexStrike, xref: 'x', yref: 'y', text: '+G ' + maxPosGexStrike, showarrow: false, font: { color: '#22c55e', size: 10 }, xanchor: 'left', xshift: 5 });
-      if (maxNegGexStrike) annotations.push({ x: lastTs, y: maxNegGexStrike, xref: 'x', yref: 'y', text: '-G ' + maxNegGexStrike, showarrow: false, font: { color: '#ef4444', size: 10 }, xanchor: 'left', xshift: 5 });
+      if (lisXs.some(v => v !== null)) {
+        traces.push({
+          type: 'scatter', mode: 'lines', x: lisXs, y: lisLowYs,
+          line: { color: '#f59e0b', width: 1.5, shape: 'hv' },
+          name: 'LIS Low', showlegend: false,
+          hovertemplate: 'LIS: %{y:.0f}<extra></extra>'
+        });
+        traces.push({
+          type: 'scatter', mode: 'lines', x: lisXs, y: lisHighYs,
+          line: { color: '#f59e0b', width: 1.5, shape: 'hv' },
+          fill: 'tonexty', fillcolor: 'rgba(245,158,11,0.08)',
+          name: 'LIS High', showlegend: false,
+          hovertemplate: 'LIS: %{y:.0f}<extra></extra>'
+        });
+      }
+
+      // Target (thicker, prominent)
+      makeTrace(s => parseTarget(s.stats || {}), '#3b82f6', 2.5, 'Target');
+
+      // +GEX / -GEX (thinner)
+      makeTrace(s => {
+        const g = s.net_gex || [], st = s.strikes || [];
+        let best = null, bv = 0;
+        for (let j = 0; j < st.length && j < g.length; j++) if (g[j] > bv) { bv = g[j]; best = st[j]; }
+        return best;
+      }, '#22c55e', 1.5, '+GEX');
+      makeTrace(s => {
+        const g = s.net_gex || [], st = s.strikes || [];
+        let best = null, bv = 0;
+        for (let j = 0; j < st.length && j < g.length; j++) if (g[j] < bv) { bv = g[j]; best = st[j]; }
+        return best;
+      }, '#ef4444', 1.5, '-GEX');
+
+      // Right-edge labels
+      const last = snaps[snaps.length - 1];
+      const ls = last.stats || {};
+      const lt = last.ts;
+      const tv = parseTarget(ls);
+      if (tv) annotations.push({ x: lt, y: tv, xref: 'x', yref: 'y', text: 'Tgt ' + Math.round(tv), showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left', xshift: 5 });
+      const lv = parseLIS(ls);
+      if (lv.low) annotations.push({ x: lt, y: lv.low, xref: 'x', yref: 'y', text: 'LIS ' + Math.round(lv.low), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
+      if (lv.high && lv.high !== lv.low) annotations.push({ x: lt, y: lv.high, xref: 'x', yref: 'y', text: 'LIS ' + Math.round(lv.high), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
+      const lg = last.net_gex || [], lst = last.strikes || [];
+      let pg = null, ng = null, pv = 0, nv = 0;
+      for (let j = 0; j < lst.length && j < lg.length; j++) {
+        if (lg[j] > pv) { pv = lg[j]; pg = lst[j]; }
+        if (lg[j] < nv) { nv = lg[j]; ng = lst[j]; }
+      }
+      if (pg) annotations.push({ x: lt, y: pg, xref: 'x', yref: 'y', text: '+G ' + pg, showarrow: false, font: { color: '#22c55e', size: 10 }, xanchor: 'left', xshift: 5 });
+      if (ng) annotations.push({ x: lt, y: ng, xref: 'x', yref: 'y', text: '-G ' + ng, showarrow: false, font: { color: '#ef4444', size: 10 }, xanchor: 'left', xshift: 5 });
 
       return { traces, annotations };
     }
 
     function drawRegimeMap(snaps) {
-      // Build candlestick data using actual timestamps
-      const times = [];
-      const opens = [];
-      const highs = [];
-      const lows = [];
-      const closes = [];
-
-      for (let i = 0; i < snaps.length; i++) {
-        const curr = snaps[i].spot;
-        const prev = i > 0 ? snaps[i - 1].spot : curr;
-        times.push(snaps[i].ts);
-        opens.push(prev);
-        closes.push(curr);
-        highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1);
-        lows.push(Math.min(prev, curr) - Math.abs(curr - prev) * 0.1);
-      }
-
-      const candleTrace = {
-        type: 'candlestick',
-        x: times,
-        open: opens,
-        high: highs,
-        low: lows,
-        close: closes,
-        increasing: { line: { color: '#22c55e' }, fillcolor: '#22c55e' },
-        decreasing: { line: { color: '#ef4444' }, fillcolor: '#ef4444' },
-        hovertemplate: '%{x|%H:%M ET}<br>O: %{open:.1f}<br>H: %{high:.1f}<br>L: %{low:.1f}<br>C: %{close:.1f}<extra></extra>'
+      // --- Price line (clean, on top of everything) ---
+      const priceTrace = {
+        type: 'scatter', mode: 'lines',
+        x: snaps.map(s => s.ts),
+        y: snaps.map(s => s.spot),
+        line: { color: '#e2e8f0', width: 2.5 },
+        name: 'SPX', showlegend: false,
+        hovertemplate: 'SPX: %{y:.1f}<extra></extra>'
       };
 
-      const allPrices = [...highs, ...lows];
-      const priceMin = Math.min(...allPrices) - 10;
-      const priceMax = Math.max(...allPrices) + 10;
+      const spots = snaps.map(s => s.spot).filter(v => v != null);
+      const priceMin = Math.min(...spots) - 10;
+      const priceMax = Math.max(...spots) + 10;
 
-      // Build paradigm bands
-      const paradigmShapes = buildParadigmBands(snaps);
-
-      // Build level step-line traces
+      // --- Level traces (LIS zone, Target, GEX) ---
       const { traces: levelTraces, annotations } = buildLevelTraces(snaps);
 
-      // Paradigm change annotations (at top of chart)
-      let prevParadigm = '';
-      for (let i = 0; i < snaps.length; i++) {
-        const p = ((snaps[i].stats || {}).paradigm || '');
-        if (p && p !== prevParadigm) {
-          annotations.push({
-            x: snaps[i].ts, y: 1,
-            xref: 'x', yref: 'paper',
-            text: p,
-            showarrow: true,
-            arrowhead: 0,
-            arrowcolor: 'rgba(255,255,255,0.3)',
-            ax: 0, ay: 20,
-            font: { color: '#e6e7e9', size: 9 },
-            bgcolor: 'rgba(0,0,0,0.6)',
-            borderpad: 2
-          });
-          prevParadigm = p;
+      // --- Paradigm background bands (subtle) ---
+      const paradigmShapes = buildParadigmBands(snaps);
+
+      // --- Paradigm labels centered in each band ---
+      let curPar = (snaps[0].stats || {}).paradigm || '';
+      let bandStart = 0;
+      for (let i = 1; i <= snaps.length; i++) {
+        const par = i < snaps.length ? ((snaps[i].stats || {}).paradigm || '') : '';
+        if (par !== curPar || i === snaps.length) {
+          if (curPar) {
+            const t0 = new Date(snaps[bandStart].ts).getTime();
+            const t1 = new Date(snaps[i - 1].ts).getTime();
+            annotations.push({
+              x: new Date((t0 + t1) / 2).toISOString(),
+              y: 1.0, xref: 'x', yref: 'paper',
+              text: curPar, showarrow: false,
+              font: { color: '#e6e7e9', size: 9 },
+              bgcolor: 'rgba(0,0,0,0.5)', borderpad: 3,
+              yanchor: 'top', yshift: -4
+            });
+          }
+          bandStart = i;
+          curPar = par;
         }
       }
 
-      const allShapes = [...paradigmShapes];
+      // Traces: levels first (below), price on top
+      const allTraces = [...levelTraces, priceTrace];
 
-      Plotly.react(regimeMapPlot, [candleTrace, ...levelTraces], {
-        margin: { l: 55, r: 80, t: 20, b: 50 },
+      Plotly.react(regimeMapPlot, allTraces, {
+        margin: { l: 55, r: 80, t: 30, b: 50 },
         paper_bgcolor: '#121417',
         plot_bgcolor: '#0f1115',
         xaxis: {
           type: 'date',
-          gridcolor: '#20242a',
+          gridcolor: '#1a1d21',
           tickfont: { size: 10 },
           tickformat: '%H:%M',
-          dtick: 1800000, // 30 min ticks
+          dtick: 1800000,
           rangeslider: { visible: false }
         },
         yaxis: {
-          gridcolor: '#20242a',
+          gridcolor: '#1a1d21',
           tickfont: { size: 10 },
           side: 'left',
           range: [priceMin, priceMax],
           dtick: 5
         },
         font: { color: '#e6e7e9', size: 10 },
-        shapes: allShapes,
+        shapes: paradigmShapes,
         annotations: annotations,
+        hovermode: 'x unified',
+        hoverlabel: { bgcolor: '#1a1d21', bordercolor: '#333', font: { size: 11 } },
         dragmode: 'zoom'
       }, {
         displayModeBar: true,

@@ -6049,7 +6049,7 @@ DASH_HTML_TEMPLATE = """
           prevPar = null; continue;
         }
         if (prevPar !== null && par !== prevPar) { lisXs.push(null); lisLowYs.push(null); lisHighYs.push(null); }
-        lisXs.push(snaps[i].ts);
+        lisXs.push(filledSnaps[i].ts);
         lisLowYs.push(lis.low);
         lisHighYs.push(lis.high && lis.high !== lis.low ? lis.high : lis.low);
         prevPar = par;
@@ -6109,6 +6109,17 @@ DASH_HTML_TEMPLATE = """
     }
 
     function drawRegimeMap(snaps) {
+      // Forward-fill stats on snapshots so gaps from missed volland polls don't break levels/paradigm
+      let lastGoodStats = {};
+      for (let i = 0; i < snaps.length; i++) {
+        const s = snaps[i].stats;
+        if (s && (s.paradigm || s.target || s.lis)) {
+          lastGoodStats = s;
+        } else {
+          snaps[i].stats = lastGoodStats;
+        }
+      }
+
       // --- Candlestick trace (synthesized from spot snapshots) ---
       const times = [], opens = [], highs = [], lows = [], closes = [];
       for (let i = 0; i < snaps.length; i++) {

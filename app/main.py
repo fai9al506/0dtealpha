@@ -1,7 +1,7 @@
 # 0DTE Alpha – live chain + 5-min history (FastAPI + APScheduler + Postgres + Plotly front-end)
 from fastapi import FastAPI, Response, Query, Request, Cookie, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
-from datetime import datetime, time as dtime
+from datetime import datetime, time as dtime, timedelta
 import os, time, json, re, requests, pandas as pd, pytz, secrets
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
@@ -202,11 +202,23 @@ _df_lock = Lock()
 _DEFAULT_SETUP_SETTINGS = {
     "gex_long_enabled": True,
     "ag_short_enabled": True,
+    "bofa_scalp_enabled": True,
     "weight_support": 20,
     "weight_upside": 20,
     "weight_floor_cluster": 20,
     "weight_target_cluster": 20,
     "weight_rr": 20,
+    "bofa_weight_stability": 20,
+    "bofa_weight_width": 20,
+    "bofa_weight_charm": 20,
+    "bofa_weight_time": 20,
+    "bofa_weight_midpoint": 20,
+    "bofa_max_proximity": 3,
+    "bofa_min_lis_width": 15,
+    "bofa_stop_distance": 12,
+    "bofa_target_distance": 15,
+    "bofa_max_hold_minutes": 30,
+    "bofa_cooldown_minutes": 40,
     "brackets": {
         "support": [[5, 100], [10, 75], [15, 50], [20, 25]],
         "upside": [[25, 100], [15, 75], [10, 50]],
@@ -344,6 +356,51 @@ def db_init():
         conn.execute(text("""
         DO $$ BEGIN
             ALTER TABLE setup_settings ADD COLUMN ag_short_enabled BOOLEAN DEFAULT TRUE;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        # BofA Scalp columns
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_settings ADD COLUMN bofa_scalp_enabled BOOLEAN DEFAULT TRUE;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_settings ADD COLUMN bofa_settings JSONB;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+
+        # BofA Scalp extra columns on setup_log
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_log ADD COLUMN bofa_stop_level DOUBLE PRECISION;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_log ADD COLUMN bofa_target_level DOUBLE PRECISION;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_log ADD COLUMN bofa_lis_width DOUBLE PRECISION;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_log ADD COLUMN bofa_max_hold_minutes INTEGER;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_log ADD COLUMN lis_upper DOUBLE PRECISION;
         EXCEPTION WHEN duplicate_column THEN NULL;
         END $$;
         """))
@@ -485,14 +542,32 @@ def load_setup_settings():
         with engine.begin() as conn:
             row = conn.execute(text("SELECT * FROM setup_settings WHERE id = 1")).mappings().first()
             if row:
+                rk = row.keys()
+                # Load BofA settings from JSONB column or defaults
+                bofa_db = {}
+                if "bofa_settings" in rk and row["bofa_settings"]:
+                    raw = row["bofa_settings"]
+                    bofa_db = raw if isinstance(raw, dict) else json.loads(raw)
                 _setup_settings = {
                     "gex_long_enabled": row["gex_long_enabled"],
-                    "ag_short_enabled": row["ag_short_enabled"] if "ag_short_enabled" in row.keys() else True,
+                    "ag_short_enabled": row["ag_short_enabled"] if "ag_short_enabled" in rk else True,
+                    "bofa_scalp_enabled": row["bofa_scalp_enabled"] if "bofa_scalp_enabled" in rk else True,
                     "weight_support": row["weight_support"],
                     "weight_upside": row["weight_upside"],
                     "weight_floor_cluster": row["weight_floor_cluster"],
                     "weight_target_cluster": row["weight_target_cluster"],
                     "weight_rr": row["weight_rr"],
+                    "bofa_weight_stability": bofa_db.get("weight_stability", 20),
+                    "bofa_weight_width": bofa_db.get("weight_width", 20),
+                    "bofa_weight_charm": bofa_db.get("weight_charm", 20),
+                    "bofa_weight_time": bofa_db.get("weight_time", 20),
+                    "bofa_weight_midpoint": bofa_db.get("weight_midpoint", 20),
+                    "bofa_max_proximity": bofa_db.get("max_proximity", 3),
+                    "bofa_min_lis_width": bofa_db.get("min_lis_width", 15),
+                    "bofa_stop_distance": bofa_db.get("stop_distance", 12),
+                    "bofa_target_distance": bofa_db.get("target_distance", 15),
+                    "bofa_max_hold_minutes": bofa_db.get("max_hold_minutes", 30),
+                    "bofa_cooldown_minutes": bofa_db.get("cooldown_minutes", 40),
                     "brackets": row["brackets"] if isinstance(row["brackets"], dict) else json.loads(row["brackets"]) if row["brackets"] else _DEFAULT_SETUP_SETTINGS["brackets"],
                     "grade_thresholds": row["grade_thresholds"] if isinstance(row["grade_thresholds"], dict) else json.loads(row["grade_thresholds"]) if row["grade_thresholds"] else _DEFAULT_SETUP_SETTINGS["grade_thresholds"],
                 }
@@ -506,21 +581,37 @@ def save_setup_settings():
         return False
     try:
         with engine.begin() as conn:
+            bofa_json = json.dumps({
+                "weight_stability": _setup_settings.get("bofa_weight_stability", 20),
+                "weight_width": _setup_settings.get("bofa_weight_width", 20),
+                "weight_charm": _setup_settings.get("bofa_weight_charm", 20),
+                "weight_time": _setup_settings.get("bofa_weight_time", 20),
+                "weight_midpoint": _setup_settings.get("bofa_weight_midpoint", 20),
+                "max_proximity": _setup_settings.get("bofa_max_proximity", 3),
+                "min_lis_width": _setup_settings.get("bofa_min_lis_width", 15),
+                "stop_distance": _setup_settings.get("bofa_stop_distance", 12),
+                "target_distance": _setup_settings.get("bofa_target_distance", 15),
+                "max_hold_minutes": _setup_settings.get("bofa_max_hold_minutes", 30),
+                "cooldown_minutes": _setup_settings.get("bofa_cooldown_minutes", 40),
+            })
             conn.execute(text("""
                 UPDATE setup_settings SET
                     gex_long_enabled = :gex_long_enabled,
                     ag_short_enabled = :ag_short_enabled,
+                    bofa_scalp_enabled = :bofa_scalp_enabled,
                     weight_support = :weight_support,
                     weight_upside = :weight_upside,
                     weight_floor_cluster = :weight_floor_cluster,
                     weight_target_cluster = :weight_target_cluster,
                     weight_rr = :weight_rr,
                     brackets = :brackets,
-                    grade_thresholds = :grade_thresholds
+                    grade_thresholds = :grade_thresholds,
+                    bofa_settings = :bofa_settings
                 WHERE id = 1
             """), {
                 "gex_long_enabled": _setup_settings["gex_long_enabled"],
                 "ag_short_enabled": _setup_settings.get("ag_short_enabled", True),
+                "bofa_scalp_enabled": _setup_settings.get("bofa_scalp_enabled", True),
                 "weight_support": _setup_settings["weight_support"],
                 "weight_upside": _setup_settings["weight_upside"],
                 "weight_floor_cluster": _setup_settings["weight_floor_cluster"],
@@ -528,6 +619,7 @@ def save_setup_settings():
                 "weight_rr": _setup_settings["weight_rr"],
                 "brackets": json.dumps(_setup_settings.get("brackets", _DEFAULT_SETUP_SETTINGS["brackets"])),
                 "grade_thresholds": json.dumps(_setup_settings.get("grade_thresholds", _DEFAULT_SETUP_SETTINGS["grade_thresholds"])),
+                "bofa_settings": bofa_json,
             })
         return True
     except Exception as e:
@@ -538,6 +630,7 @@ def save_setup_settings():
 _current_setup_log = {
     "GEX Long": None,
     "AG Short": None,
+    "BofA Scalp": None,
     "last_date": None,
 }
 
@@ -558,25 +651,34 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "AG Short": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
             if reason in ("new", "reformed") or _current_setup_log.get(setup_name) is None:
                 # INSERT new row
+                insert_params = dict(r)
+                # BofA Scalp extra columns (NULL for GEX/AG)
+                insert_params.setdefault("bofa_stop_level", r.get("bofa_stop_level"))
+                insert_params.setdefault("bofa_target_level", r.get("bofa_target_level"))
+                insert_params.setdefault("bofa_lis_width", r.get("bofa_lis_width"))
+                insert_params.setdefault("bofa_max_hold_minutes", r.get("bofa_max_hold_minutes"))
+                insert_params["lis_upper_val"] = r.get("lis_upper")
                 result = conn.execute(text("""
                     INSERT INTO setup_log
                         (setup_name, direction, grade, score, paradigm, spot, lis, target,
                          max_plus_gex, max_minus_gex, gap_to_lis, upside, rr_ratio,
                          first_hour, support_score, upside_score, floor_cluster_score,
-                         target_cluster_score, rr_score, notified)
+                         target_cluster_score, rr_score, notified,
+                         bofa_stop_level, bofa_target_level, bofa_lis_width, bofa_max_hold_minutes, lis_upper)
                     VALUES
                         (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
                          :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
                          :first_hour, :support_score, :upside_score, :floor_cluster_score,
-                         :target_cluster_score, :rr_score, TRUE)
+                         :target_cluster_score, :rr_score, TRUE,
+                         :bofa_stop_level, :bofa_target_level, :bofa_lis_width, :bofa_max_hold_minutes, :lis_upper_val)
                     RETURNING id
-                """), r)
+                """), insert_params)
                 log_id = result.fetchone()[0]
                 _current_setup_log[setup_name] = log_id
                 print(f"[setups] logged new setup id={log_id}", flush=True)
@@ -1512,7 +1614,7 @@ def send_summary_alert(time_label: str):
         print(f"[alerts] summary error: {e}", flush=True)
 
 def _run_setup_check():
-    """Run setup detectors (GEX Long + AG Short) after each data pull."""
+    """Run setup detectors (GEX Long + AG Short + BofA Scalp) after each data pull."""
     # Get spot price (same pattern as check_alerts)
     msg = last_run_status.get("msg") or ""
     spot = None
@@ -1529,13 +1631,18 @@ def _run_setup_check():
     stats = stats_result.get("stats", {}) if stats_result else {}
     paradigm = stats.get("paradigm")
 
-    # Parse LIS (single value)
+    # Parse LIS (single value for GEX/AG, both values for BofA)
     lis = None
+    lis_lower = None
+    lis_upper = None
     if stats.get("lines_in_sand"):
         lis_str = str(stats["lines_in_sand"]).replace("$", "").replace(",", "")
         lis_match = re.findall(r"[\d.]+", lis_str)
         if lis_match:
             lis = float(lis_match[0])
+            lis_lower = float(lis_match[0])
+        if len(lis_match) >= 2:
+            lis_upper = float(lis_match[1])
 
     # Parse target
     target = None
@@ -1544,6 +1651,33 @@ def _run_setup_check():
         target_match = re.search(r"[\d.]+", target_str)
         if target_match:
             target = float(target_match.group())
+
+    # Parse aggregated charm for BofA Scalp
+    aggregated_charm = None
+    statistics_raw = None
+    # Get raw statistics from volland snapshot payload
+    if engine:
+        try:
+            with engine.begin() as conn:
+                snap_row = conn.execute(text("""
+                    SELECT payload FROM volland_snapshots
+                    WHERE payload->>'error_event' IS NULL
+                      AND payload->'statistics' IS NOT NULL
+                    ORDER BY ts DESC LIMIT 1
+                """)).mappings().first()
+            if snap_row:
+                payload = _json_load_maybe(snap_row["payload"])
+                if payload and isinstance(payload, dict):
+                    statistics_raw = payload.get("statistics", {})
+                    if statistics_raw and isinstance(statistics_raw, dict):
+                        charm_val = statistics_raw.get("aggregatedCharm")
+                        if charm_val is not None:
+                            try:
+                                aggregated_charm = float(charm_val)
+                            except (ValueError, TypeError):
+                                pass
+        except Exception:
+            pass
 
     # Calculate max +GEX / -GEX strikes from latest_df
     max_plus_gex, max_minus_gex = None, None
@@ -1563,7 +1697,10 @@ def _run_setup_check():
             max_minus_gex = float(strikes.loc[max_neg_idx]) if max_neg_idx is not None else None
 
     from app.setup_detector import check_setups as _check_setups_fn
-    result_wrappers = _check_setups_fn(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, _setup_settings)
+    result_wrappers = _check_setups_fn(
+        spot, paradigm, lis, target, max_plus_gex, max_minus_gex, _setup_settings,
+        lis_lower=lis_lower, lis_upper=lis_upper, aggregated_charm=aggregated_charm,
+    )
     for rw in result_wrappers:
         setup_name = rw["result"]["setup_name"]
         grade = rw["result"]["grade"]
@@ -2561,6 +2698,7 @@ def api_setup_settings_get():
 def api_setup_settings_post(
     gex_long_enabled: bool = Query(None),
     ag_short_enabled: bool = Query(None),
+    bofa_scalp_enabled: bool = Query(None),
     weight_support: int = Query(None),
     weight_upside: int = Query(None),
     weight_floor_cluster: int = Query(None),
@@ -2569,6 +2707,15 @@ def api_setup_settings_post(
     grade_a_plus: int = Query(None),
     grade_a: int = Query(None),
     grade_a_entry: int = Query(None),
+    bofa_weight_stability: int = Query(None),
+    bofa_weight_width: int = Query(None),
+    bofa_weight_charm: int = Query(None),
+    bofa_weight_time: int = Query(None),
+    bofa_weight_midpoint: int = Query(None),
+    bofa_stop_distance: int = Query(None),
+    bofa_target_distance: int = Query(None),
+    bofa_max_hold_minutes: int = Query(None),
+    bofa_cooldown_minutes: int = Query(None),
 ):
     """Update setup detector settings."""
     global _setup_settings
@@ -2577,6 +2724,8 @@ def api_setup_settings_post(
         _setup_settings["gex_long_enabled"] = gex_long_enabled
     if ag_short_enabled is not None:
         _setup_settings["ag_short_enabled"] = ag_short_enabled
+    if bofa_scalp_enabled is not None:
+        _setup_settings["bofa_scalp_enabled"] = bofa_scalp_enabled
     if weight_support is not None:
         _setup_settings["weight_support"] = weight_support
     if weight_upside is not None:
@@ -2596,6 +2745,25 @@ def api_setup_settings_post(
         if grade_a_entry is not None:
             thresholds["A-Entry"] = grade_a_entry
         _setup_settings["grade_thresholds"] = thresholds
+    # BofA Scalp weights
+    if bofa_weight_stability is not None:
+        _setup_settings["bofa_weight_stability"] = bofa_weight_stability
+    if bofa_weight_width is not None:
+        _setup_settings["bofa_weight_width"] = bofa_weight_width
+    if bofa_weight_charm is not None:
+        _setup_settings["bofa_weight_charm"] = bofa_weight_charm
+    if bofa_weight_time is not None:
+        _setup_settings["bofa_weight_time"] = bofa_weight_time
+    if bofa_weight_midpoint is not None:
+        _setup_settings["bofa_weight_midpoint"] = bofa_weight_midpoint
+    if bofa_stop_distance is not None:
+        _setup_settings["bofa_stop_distance"] = bofa_stop_distance
+    if bofa_target_distance is not None:
+        _setup_settings["bofa_target_distance"] = bofa_target_distance
+    if bofa_max_hold_minutes is not None:
+        _setup_settings["bofa_max_hold_minutes"] = bofa_max_hold_minutes
+    if bofa_cooldown_minutes is not None:
+        _setup_settings["bofa_cooldown_minutes"] = bofa_cooldown_minutes
 
     save_setup_settings()
     return {"status": "ok", "settings": _setup_settings}
@@ -2612,7 +2780,9 @@ def api_setup_log(limit: int = Query(50)):
                        paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
                        gap_to_lis, upside, rr_ratio, first_hour,
                        support_score, upside_score, floor_cluster_score,
-                       target_cluster_score, rr_score, notified
+                       target_cluster_score, rr_score, notified,
+                       bofa_stop_level, bofa_target_level, bofa_lis_width,
+                       bofa_max_hold_minutes, lis_upper
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim
@@ -2632,6 +2802,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
     """
     Calculate outcome for a setup alert by querying price history.
     Returns dict with hit_10pt, hit_target, hit_stop, max_profit, max_loss, etc.
+    BofA Scalp uses different parameters: 15pt target, 12pt stop, 30-min max hold.
     """
     if not engine:
         return {}
@@ -2645,21 +2816,34 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         direction = entry.get("direction", "long")
         lis = entry.get("lis")
         target = entry.get("target")
+        setup_name = entry.get("setup_name", "")
+        is_bofa = setup_name == "BofA Scalp"
 
-        if not all([ts, spot, lis, target]):
+        if not all([ts, spot, lis]):
+            return {}
+        if not is_bofa and target is None:
             return {}
 
         # Get market close time for that day (4:00 PM ET)
         alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
         market_close = NY.localize(datetime.combine(alert_date, dtime(16, 0)))
 
-        # Query playback_snapshots from alert time to market close
+        # BofA Scalp: limit window to max hold time (default 30 min)
+        if is_bofa:
+            max_hold = entry.get("bofa_max_hold_minutes") or 30
+            end_ts = ts + timedelta(minutes=max_hold)
+            if end_ts > market_close:
+                end_ts = market_close
+        else:
+            end_ts = market_close
+
+        # Query playback_snapshots
         with engine.begin() as conn:
             rows = conn.execute(text("""
                 SELECT ts, spot FROM playback_snapshots
                 WHERE ts >= :start_ts AND ts <= :end_ts
                 ORDER BY ts ASC
-            """), {"start_ts": ts, "end_ts": market_close}).mappings().all()
+            """), {"start_ts": ts, "end_ts": end_ts}).mappings().all()
 
         if not rows:
             return {"no_data": True}
@@ -2670,21 +2854,30 @@ def _calculate_setup_outcome(entry: dict) -> dict:
 
         # Calculate levels
         is_long = direction.lower() == "long"
-        ten_pt_level = spot + 10 if is_long else spot - 10
-        max_minus_gex = entry.get("max_minus_gex")
-        max_plus_gex = entry.get("max_plus_gex")
 
-        # Stop is 5 points below LIS for longs, 5 above for shorts
-        if is_long:
-            stop_level = lis - 5
-            # Also consider max -GEX as additional stop reference
-            if max_minus_gex is not None and max_minus_gex < stop_level:
-                stop_level = max_minus_gex
+        if is_bofa:
+            # BofA Scalp: fixed 15pt target, 12pt stop beyond LIS
+            bofa_target_dist = entry.get("bofa_target_level") or (spot + 15 if is_long else spot - 15)
+            bofa_stop = entry.get("bofa_stop_level")
+            if bofa_stop is None:
+                bofa_stop = lis - 12 if is_long else lis + 12
+            ten_pt_level = bofa_target_dist  # For BofA, "10pt" is actually the 15pt target
+            stop_level = bofa_stop
+            target_level = bofa_target_dist
         else:
-            stop_level = lis + 5
-            # For shorts, max +GEX above as stop reference
-            if max_plus_gex is not None and max_plus_gex > stop_level:
-                stop_level = max_plus_gex
+            # GEX Long / AG Short: original logic
+            ten_pt_level = spot + 10 if is_long else spot - 10
+            target_level = target
+            max_minus_gex = entry.get("max_minus_gex")
+            max_plus_gex = entry.get("max_plus_gex")
+            if is_long:
+                stop_level = lis - 5
+                if max_minus_gex is not None and max_minus_gex < stop_level:
+                    stop_level = max_minus_gex
+            else:
+                stop_level = lis + 5
+                if max_plus_gex is not None and max_plus_gex > stop_level:
+                    stop_level = max_plus_gex
 
         # Track outcomes
         hit_10pt = False
@@ -2699,30 +2892,26 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         max_loss = 0.0
         max_loss_ts = None
 
-        first_event = None  # "10pt", "target", or "stop"
+        first_event = None  # "10pt", "target", "stop", or "timeout" (BofA only)
 
         for price_ts, price in prices:
             if is_long:
                 profit = price - spot
-                # Check 10pt hit
                 if not hit_10pt and price >= ten_pt_level:
                     hit_10pt = True
                     time_to_10pt = price_ts
                     if first_event is None:
-                        first_event = "10pt"
-                # Check target hit
-                if not hit_target and price >= target:
+                        first_event = "15pt" if is_bofa else "10pt"
+                if not hit_target and price >= target_level:
                     hit_target = True
                     time_to_target = price_ts
                     if first_event is None:
-                        first_event = "target"
-                # Check stop hit (price <= stop_level, which is LIS-5 or max-GEX)
+                        first_event = "15pt" if is_bofa else "target"
                 if not hit_stop and price <= stop_level:
                     hit_stop = True
                     time_to_stop = price_ts
                     if first_event is None:
                         first_event = "stop"
-                # Track max profit/loss
                 if profit > max_profit:
                     max_profit = profit
                     max_profit_ts = price_ts
@@ -2731,25 +2920,21 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     max_loss_ts = price_ts
             else:  # SHORT
                 profit = spot - price
-                # Check 10pt hit (price dropped 10 pts)
                 if not hit_10pt and price <= ten_pt_level:
                     hit_10pt = True
                     time_to_10pt = price_ts
                     if first_event is None:
-                        first_event = "10pt"
-                # Check target hit (price <= target)
-                if not hit_target and price <= target:
+                        first_event = "15pt" if is_bofa else "10pt"
+                if not hit_target and price <= target_level:
                     hit_target = True
                     time_to_target = price_ts
                     if first_event is None:
-                        first_event = "target"
-                # Check stop hit (price >= stop_level, which is LIS+5 or max+GEX for short)
+                        first_event = "15pt" if is_bofa else "target"
                 if not hit_stop and price >= stop_level:
                     hit_stop = True
                     time_to_stop = price_ts
                     if first_event is None:
                         first_event = "stop"
-                # Track max profit/loss (for short, profit = spot - price)
                 if profit > max_profit:
                     max_profit = profit
                     max_profit_ts = price_ts
@@ -2757,7 +2942,15 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     max_loss = profit
                     max_loss_ts = price_ts
 
-        return {
+        # BofA Scalp: if no event by end of window, it's a timeout
+        timeout_pnl = None
+        if is_bofa and first_event is None:
+            first_event = "timeout"
+            if prices:
+                last_price = prices[-1][1]
+                timeout_pnl = round((last_price - spot) if is_long else (spot - last_price), 2)
+
+        result = {
             "hit_10pt": hit_10pt,
             "hit_target": hit_target,
             "hit_stop": hit_stop,
@@ -2773,6 +2966,12 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             "stop_level": round(stop_level, 2),
             "price_count": len(prices),
         }
+        if is_bofa:
+            result["is_bofa"] = True
+            result["timeout_pnl"] = timeout_pnl
+            result["bofa_target_level"] = round(ten_pt_level, 2)
+            result["bofa_max_hold_minutes"] = entry.get("bofa_max_hold_minutes") or 30
+        return result
     except Exception as e:
         print(f"[setups] outcome calculation error: {e}", flush=True)
         return {"error": str(e)}
@@ -2790,7 +2989,9 @@ def api_setup_log_outcome(log_id: int):
             row = conn.execute(text("""
                 SELECT id, ts, setup_name, direction, grade, score,
                        paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
-                       gap_to_lis, upside, rr_ratio, first_hour, notified
+                       gap_to_lis, upside, rr_ratio, first_hour, notified,
+                       bofa_stop_level, bofa_target_level, bofa_lis_width,
+                       bofa_max_hold_minutes, lis_upper
                 FROM setup_log WHERE id = :log_id
             """), {"log_id": log_id}).mappings().first()
 
@@ -2799,18 +3000,31 @@ def api_setup_log_outcome(log_id: int):
 
         entry = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(row).items()}
 
-        # Get price history from market open to market close (full day context)
+        # Get price history
         ts = row["ts"]
+        is_bofa = row["setup_name"] == "BofA Scalp"
         alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
         market_open = NY.localize(datetime.combine(alert_date, dtime(9, 30)))
         market_close = NY.localize(datetime.combine(alert_date, dtime(16, 0)))
+
+        # BofA Scalp: show entry ± 1hr for context, GEX/AG: full day
+        if is_bofa:
+            chart_start = ts - timedelta(hours=1)
+            if chart_start < market_open:
+                chart_start = market_open
+            chart_end = ts + timedelta(hours=1)
+            if chart_end > market_close:
+                chart_end = market_close
+        else:
+            chart_start = market_open
+            chart_end = market_close
 
         with engine.begin() as conn:
             price_rows = conn.execute(text("""
                 SELECT ts, spot FROM playback_snapshots
                 WHERE ts >= :start_ts AND ts <= :end_ts
                 ORDER BY ts ASC
-            """), {"start_ts": market_open, "end_ts": market_close}).mappings().all()
+            """), {"start_ts": chart_start, "end_ts": chart_end}).mappings().all()
 
         prices = [
             {"ts": r["ts"].isoformat() if hasattr(r["ts"], "isoformat") else r["ts"], "spot": r["spot"]}
@@ -2820,19 +3034,25 @@ def api_setup_log_outcome(log_id: int):
         # Calculate outcome
         outcome = _calculate_setup_outcome(dict(row))
 
+        levels = {
+            "entry": row["spot"],
+            "lis": row["lis"],
+            "target": row["target"],
+            "ten_pt": outcome.get("ten_pt_level"),
+            "stop": outcome.get("stop_level"),
+            "max_plus_gex": row["max_plus_gex"],
+            "max_minus_gex": row["max_minus_gex"],
+        }
+        if is_bofa:
+            levels["lis_upper"] = row.get("lis_upper")
+            levels["bofa_target_level"] = outcome.get("bofa_target_level")
+            levels["bofa_max_hold_minutes"] = row.get("bofa_max_hold_minutes") or 30
+
         return {
             "entry": entry,
             "outcome": outcome,
             "prices": prices,
-            "levels": {
-                "entry": row["spot"],
-                "lis": row["lis"],
-                "target": row["target"],
-                "ten_pt": outcome.get("ten_pt_level"),
-                "stop": outcome.get("stop_level"),
-                "max_plus_gex": row["max_plus_gex"],
-                "max_minus_gex": row["max_minus_gex"],
-            }
+            "levels": levels,
         }
     except Exception as e:
         print(f"[setups] outcome query error: {e}", flush=True)
@@ -2851,7 +3071,9 @@ def api_setup_log_with_outcomes(limit: int = Query(50)):
                        paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
                        gap_to_lis, upside, rr_ratio, first_hour,
                        support_score, upside_score, floor_cluster_score,
-                       target_cluster_score, rr_score, notified
+                       target_cluster_score, rr_score, notified,
+                       bofa_stop_level, bofa_target_level, bofa_lis_width,
+                       bofa_max_hold_minutes, lis_upper
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim
@@ -2898,7 +3120,9 @@ def api_setup_export(
             rows = conn.execute(text(f"""
                 SELECT id, ts, setup_name, direction, grade, score,
                        paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
-                       gap_to_lis, upside, rr_ratio, first_hour, notified
+                       gap_to_lis, upside, rr_ratio, first_hour, notified,
+                       bofa_stop_level, bofa_target_level, bofa_lis_width,
+                       bofa_max_hold_minutes, lis_upper
                 FROM setup_log
                 WHERE 1=1 {where_clause}
                 ORDER BY ts DESC
@@ -2926,17 +3150,23 @@ def api_setup_export(
             outcome = _calculate_setup_outcome(r)
 
             # Determine result
+            is_bofa_row = r.get("setup_name") == "BofA Scalp"
             result = ""
             points_pl = 0
             if outcome.get("first_event") == "stop":
                 result = "LOSS"
-                points_pl = outcome.get("max_loss", 0)  # negative value
-            elif outcome.get("first_event") in ("10pt", "target"):
+                points_pl = outcome.get("max_loss", 0)
+            elif outcome.get("first_event") in ("10pt", "target", "15pt"):
                 result = "WIN"
-                points_pl = 10  # First target = 10 pts
+                points_pl = 15 if is_bofa_row else 10
+            elif outcome.get("first_event") == "timeout":
+                # BofA timeout: result based on P&L at expiry
+                tp = outcome.get("timeout_pnl", 0) or 0
+                result = "WIN" if tp > 0 else "LOSS"
+                points_pl = tp
             elif outcome.get("hit_10pt"):
                 result = "WIN"
-                points_pl = 10
+                points_pl = 15 if is_bofa_row else 10
             elif outcome.get("no_data"):
                 result = "NO DATA"
             else:
@@ -3844,6 +4074,10 @@ DASH_HTML_TEMPLATE = """
                   <input type="checkbox" id="setupAgShortEnabled" style="width:16px;height:16px">
                   <span style="font-size:12px">AG Short</span>
                 </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                  <input type="checkbox" id="setupBofaScalpEnabled" style="width:16px;height:16px">
+                  <span style="font-size:12px">BofA Scalp</span>
+                </label>
               </div>
             </div>
 
@@ -3852,9 +4086,11 @@ DASH_HTML_TEMPLATE = """
               <div>Paradigm contains "GEX" &bull; Spot &ge; LIS &bull; Target-Spot &ge; 10 &bull; +GEX-Spot &ge; 10 &bull; Gap (Spot-LIS) &le; 20</div>
               <div style="font-weight:600;margin-bottom:4px;margin-top:8px">AG Short — Base Conditions:</div>
               <div>Paradigm contains "AG" &bull; Spot &lt; LIS &bull; Spot-Target &ge; 10 &bull; Spot-(-GEX) &ge; 10 &bull; Gap (LIS-Spot) &le; 20</div>
+              <div style="font-weight:600;margin-bottom:4px;margin-top:8px">BofA Scalp — Base Conditions:</div>
+              <div>Paradigm = BofA (not MISSY) &bull; 10:00-15:30 ET &bull; Spot within 3pts of LIS &bull; LIS width &ge; 15 &bull; LIS stable 30min</div>
             </div>
 
-            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">Scoring Weights (0-100, weighted average)</div>
+            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">GEX/AG Scoring Weights (0-100, weighted average)</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
               <label style="font-size:11px">Support Proximity
                 <input type="number" id="setupWeightSupport" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
@@ -3883,6 +4119,40 @@ DASH_HTML_TEMPLATE = """
               </label>
               <label style="font-size:11px">A-Entry
                 <input type="number" id="setupGradeAEntry" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+            </div>
+
+            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">BofA Scalp Weights (0-100)</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+              <label style="font-size:11px">Stability
+                <input type="number" id="bofaWeightStability" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Width
+                <input type="number" id="bofaWeightWidth" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Charm
+                <input type="number" id="bofaWeightCharm" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Time of Day
+                <input type="number" id="bofaWeightTime" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Midpoint
+                <input type="number" id="bofaWeightMidpoint" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+            </div>
+            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">BofA Scalp Parameters</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+              <label style="font-size:11px">Stop (pts)
+                <input type="number" id="bofaStopDistance" min="1" max="50" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Target (pts)
+                <input type="number" id="bofaTargetDistance" min="1" max="50" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Max Hold (min)
+                <input type="number" id="bofaMaxHold" min="5" max="120" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Cooldown (min)
+                <input type="number" id="bofaCooldown" min="5" max="120" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
               </label>
             </div>
 
@@ -5829,6 +6099,7 @@ DASH_HTML_TEMPLATE = """
         const s = await r.json();
         document.getElementById('setupGexLongEnabled').checked = s.gex_long_enabled !== false;
         document.getElementById('setupAgShortEnabled').checked = s.ag_short_enabled !== false;
+        document.getElementById('setupBofaScalpEnabled').checked = s.bofa_scalp_enabled !== false;
         document.getElementById('setupWeightSupport').value = s.weight_support ?? 20;
         document.getElementById('setupWeightUpside').value = s.weight_upside ?? 20;
         document.getElementById('setupWeightFloorCluster').value = s.weight_floor_cluster ?? 20;
@@ -5838,6 +6109,16 @@ DASH_HTML_TEMPLATE = """
         document.getElementById('setupGradeAPlus').value = gt['A+'] ?? 90;
         document.getElementById('setupGradeA').value = gt['A'] ?? 75;
         document.getElementById('setupGradeAEntry').value = gt['A-Entry'] ?? 60;
+        // BofA Scalp
+        document.getElementById('bofaWeightStability').value = s.bofa_weight_stability ?? 20;
+        document.getElementById('bofaWeightWidth').value = s.bofa_weight_width ?? 20;
+        document.getElementById('bofaWeightCharm').value = s.bofa_weight_charm ?? 20;
+        document.getElementById('bofaWeightTime').value = s.bofa_weight_time ?? 20;
+        document.getElementById('bofaWeightMidpoint').value = s.bofa_weight_midpoint ?? 20;
+        document.getElementById('bofaStopDistance').value = s.bofa_stop_distance ?? 12;
+        document.getElementById('bofaTargetDistance').value = s.bofa_target_distance ?? 15;
+        document.getElementById('bofaMaxHold').value = s.bofa_max_hold_minutes ?? 30;
+        document.getElementById('bofaCooldown').value = s.bofa_cooldown_minutes ?? 40;
       } catch (err) {
         console.error('Failed to load setup settings', err);
       }
@@ -5851,6 +6132,7 @@ DASH_HTML_TEMPLATE = """
         const params = new URLSearchParams({
           gex_long_enabled: document.getElementById('setupGexLongEnabled').checked,
           ag_short_enabled: document.getElementById('setupAgShortEnabled').checked,
+          bofa_scalp_enabled: document.getElementById('setupBofaScalpEnabled').checked,
           weight_support: document.getElementById('setupWeightSupport').value,
           weight_upside: document.getElementById('setupWeightUpside').value,
           weight_floor_cluster: document.getElementById('setupWeightFloorCluster').value,
@@ -5859,6 +6141,15 @@ DASH_HTML_TEMPLATE = """
           grade_a_plus: document.getElementById('setupGradeAPlus').value,
           grade_a: document.getElementById('setupGradeA').value,
           grade_a_entry: document.getElementById('setupGradeAEntry').value,
+          bofa_weight_stability: document.getElementById('bofaWeightStability').value,
+          bofa_weight_width: document.getElementById('bofaWeightWidth').value,
+          bofa_weight_charm: document.getElementById('bofaWeightCharm').value,
+          bofa_weight_time: document.getElementById('bofaWeightTime').value,
+          bofa_weight_midpoint: document.getElementById('bofaWeightMidpoint').value,
+          bofa_stop_distance: document.getElementById('bofaStopDistance').value,
+          bofa_target_distance: document.getElementById('bofaTargetDistance').value,
+          bofa_max_hold_minutes: document.getElementById('bofaMaxHold').value,
+          bofa_cooldown_minutes: document.getElementById('bofaCooldown').value,
         });
         const r = await fetch('/api/setup/settings?' + params, { method: 'POST' });
         const data = await r.json();
@@ -5890,28 +6181,34 @@ DASH_HTML_TEMPLATE = """
           const date = fmtDateShortET(l.ts);
           const color = gradeColor[l.grade] || '#888';
           const bell = l.notified ? '&#128276;' : '';
+          const isBofa = l.setup_name === 'BofA Scalp';
           const dir = l.direction === 'long' ? '▲' : '▼';
           const dirColor = l.direction === 'long' ? '#22c55e' : '#ef4444';
           const o = l.outcome || {};
+          const tgtLabel = isBofa ? '15p' : '10p';
           const has10pt = o.hit_10pt === true ? '✓' : (o.hit_10pt === false ? '✗' : '–');
           const hasTgt = o.hit_target === true ? '✓' : (o.hit_target === false ? '✗' : '–');
           const hasStop = o.hit_stop === true ? '✗' : (o.hit_stop === false ? '✓' : '–');
           const c10 = o.hit_10pt ? '#22c55e' : (o.hit_10pt === false ? '#888' : '#555');
           const cTgt = o.hit_target ? '#22c55e' : (o.hit_target === false ? '#888' : '#555');
-          // Stop is only red if it hit BEFORE 10pt (real loss). If 10pt hit first, stop is breakeven (neutral)
           const stopIsLoss = o.hit_stop && o.first_event === 'stop';
           const cStop = stopIsLoss ? '#ef4444' : (o.hit_stop === false ? '#22c55e' : '#888');
-          // Quick result: green if 10pt hit before stop, red if stop hit first
           let result = '';
-          if (o.first_event === '10pt' || o.first_event === 'target') {
+          if (o.first_event === '10pt' || o.first_event === 'target' || o.first_event === '15pt') {
             result = '<span style="color:#22c55e;font-weight:700">WIN</span>';
           } else if (o.first_event === 'stop') {
             result = '<span style="color:#ef4444;font-weight:700">LOSS</span>';
+          } else if (o.first_event === 'timeout') {
+            const tp = o.timeout_pnl || 0;
+            result = tp > 0
+              ? '<span style="color:#22c55e;font-size:8px">TO+' + tp.toFixed(0) + '</span>'
+              : '<span style="color:#ef4444;font-size:8px">TO' + tp.toFixed(0) + '</span>';
           } else if (o.max_profit > 0) {
             result = '<span style="color:#888">+' + o.max_profit?.toFixed(0) + '</span>';
           }
+          const nameTag = isBofa ? '<span style="color:#a78bfa;font-size:7px;font-weight:600">BofA</span>' : '';
           return `<div class="setup-log-row" data-id="${l.id}" style="display:grid;grid-template-columns:28px 50px 28px 55px 60px 70px 50px 1fr;align-items:center;gap:4px;padding:4px 2px;border-bottom:1px solid var(--border);cursor:pointer" onmouseover="this.style.background='#1a1d21'" onmouseout="this.style.background='transparent'">
-            <span style="color:${dirColor};font-weight:700;text-align:center">${dir}</span>
+            <span style="color:${dirColor};font-weight:700;text-align:center">${dir}${nameTag ? '<br>' + nameTag : ''}</span>
             <span style="color:${color};font-weight:600">${l.grade}</span>
             <span style="color:var(--muted)">${l.score}</span>
             <span style="color:var(--text)">${l.spot?.toFixed(0)}</span>
@@ -5959,12 +6256,25 @@ DASH_HTML_TEMPLATE = """
         const lv = data.levels || {};
 
         // Title
+        const isBofa = e.setup_name === 'BofA Scalp';
         const dir = e.direction === 'long' ? 'LONG ▲' : 'SHORT ▼';
         const dirColor = e.direction === 'long' ? '#22c55e' : '#ef4444';
-        title.innerHTML = '<span style="color:' + dirColor + '">' + dir + '</span> ' + e.grade + ' @ SPX ' + e.spot?.toFixed(0);
+        const setupLabel = isBofa ? 'BofA Scalp ' : '';
+        title.innerHTML = setupLabel + '<span style="color:' + dirColor + '">' + dir + '</span> ' + e.grade + ' @ SPX ' + e.spot?.toFixed(0);
 
         // Info grid
-        info.innerHTML = [
+        const infoItems = isBofa ? [
+          ['Time', fmtDateTimeET(e.ts) + ' ET'],
+          ['Paradigm', e.paradigm || '–'],
+          ['Entry', e.spot?.toFixed(2)],
+          ['LIS', e.lis?.toFixed(0) + (lv.lis_upper ? ' – ' + lv.lis_upper?.toFixed(0) : '')],
+          ['Width', e.bofa_lis_width?.toFixed(0) + 'pts'],
+          ['Target (+15)', lv.bofa_target_level?.toFixed(0) || lv.ten_pt?.toFixed(0)],
+          ['Stop (-12)', lv.stop?.toFixed(0)],
+          ['Max Hold', (lv.bofa_max_hold_minutes || 30) + 'min'],
+          ['Gap', e.gap_to_lis?.toFixed(1)],
+          ['Score', e.score],
+        ] : [
           ['Time', fmtDateTimeET(e.ts) + ' ET'],
           ['Paradigm', e.paradigm || '–'],
           ['Entry', e.spot?.toFixed(2)],
@@ -5977,26 +6287,32 @@ DASH_HTML_TEMPLATE = """
           ['+GEX', lv.max_plus_gex?.toFixed(0)],
           ['-GEX', lv.max_minus_gex?.toFixed(0)],
           ['Score', e.score],
-        ].map(([k, v]) => '<div style="background:#1a1d21;padding:6px 8px;border-radius:4px"><div style="color:var(--muted);font-size:9px">' + k + '</div><div style="color:var(--text);font-weight:600">' + (v || '–') + '</div></div>').join('');
+        ];
+        info.innerHTML = infoItems.map(([k, v]) => '<div style="background:#1a1d21;padding:6px 8px;border-radius:4px"><div style="color:var(--muted);font-size:9px">' + k + '</div><div style="color:var(--text);font-weight:600">' + (v || '–') + '</div></div>').join('');
 
         // Outcome row
         const c10 = o.hit_10pt ? '#22c55e' : '#888';
         const cTgt = o.hit_target ? '#22c55e' : '#888';
-        // Stop is only red if it hit BEFORE 10pt. If 10pt hit first, stop = breakeven (neutral)
         const stopIsLoss = o.hit_stop && o.first_event === 'stop';
         const cStop = stopIsLoss ? '#ef4444' : (o.hit_stop ? '#888' : '#22c55e');
         const stopLabel = o.hit_stop ? (stopIsLoss ? '✗ STOPPED' : 'STOPPED (BE)') : '✓ SAFE';
+        const tgtPtLabel = isBofa ? '15pt Target' : '10pt Target';
+        const hasTimeout = o.first_event === 'timeout';
+        const timeoutPnl = o.timeout_pnl || 0;
         outcome.innerHTML = `
           <div style="flex:1;text-align:center">
-            <div style="color:var(--muted);font-size:10px">10pt Target</div>
+            <div style="color:var(--muted);font-size:10px">${tgtPtLabel}</div>
             <div style="color:${c10};font-size:18px;font-weight:700">${o.hit_10pt ? '✓ HIT' : '✗ MISS'}</div>
             ${o.time_to_10pt ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.time_to_10pt) + ' ET</div>' : ''}
           </div>
-          <div style="flex:1;text-align:center">
+          ${isBofa ? `<div style="flex:1;text-align:center">
+            <div style="color:var(--muted);font-size:10px">Timeout</div>
+            <div style="color:${hasTimeout ? (timeoutPnl >= 0 ? '#22c55e' : '#ef4444') : '#888'};font-size:18px;font-weight:700">${hasTimeout ? (timeoutPnl >= 0 ? '+' : '') + timeoutPnl.toFixed(1) : '–'}</div>
+          </div>` : `<div style="flex:1;text-align:center">
             <div style="color:var(--muted);font-size:10px">Full Target</div>
             <div style="color:${cTgt};font-size:18px;font-weight:700">${o.hit_target ? '✓ HIT' : '✗ MISS'}</div>
             ${o.time_to_target ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.time_to_target) + ' ET</div>' : ''}
-          </div>
+          </div>`}
           <div style="flex:1;text-align:center">
             <div style="color:var(--muted);font-size:10px">Stop</div>
             <div style="color:${cStop};font-size:18px;font-weight:700">${stopLabel}</div>
@@ -6094,7 +6410,12 @@ DASH_HTML_TEMPLATE = """
           // LIS
           if (lv.lis) {
             shapes.push({ type:'line', x0:times[0], x1:times[times.length-1], y0:lv.lis, y1:lv.lis, line:{color:'#f97316',width:1,dash:'dot'} });
-            annotations.push({ x:times[0], y:lv.lis, text:'LIS', showarrow:false, font:{color:'#f97316',size:9}, xanchor:'left' });
+            annotations.push({ x:times[0], y:lv.lis, text:isBofa ? 'LIS Low' : 'LIS', showarrow:false, font:{color:'#f97316',size:9}, xanchor:'left' });
+          }
+          // BofA: upper LIS line
+          if (isBofa && lv.lis_upper) {
+            shapes.push({ type:'line', x0:times[0], x1:times[times.length-1], y0:lv.lis_upper, y1:lv.lis_upper, line:{color:'#f97316',width:1,dash:'dot'} });
+            annotations.push({ x:times[0], y:lv.lis_upper, text:'LIS High', showarrow:false, font:{color:'#f97316',size:9}, xanchor:'left' });
           }
 
           Plotly.react(chart, [trace], {
@@ -6127,27 +6448,38 @@ DASH_HTML_TEMPLATE = """
         }
 
         // Stats
+        const scoreLabels = isBofa
+          ? [['Stability', e.support_score], ['Width', e.upside_score], ['Charm', e.floor_cluster_score], ['Time of Day', e.target_cluster_score], ['Midpoint', e.rr_score]]
+          : [['Support', e.support_score], ['Upside', e.upside_score], ['Floor Cluster', e.floor_cluster_score], ['Target Cluster', e.target_cluster_score], ['R:R Score', e.rr_score]];
+        const scoreRows = scoreLabels.map(([k, v]) => '<div>' + k + ': <span style="color:var(--text)">' + (v || '–') + '</span></div>').join('');
+        const bonusRow = isBofa ? '' : '<div>First Hour: <span style="color:var(--text)">' + (e.first_hour ? 'Yes (+10)' : 'No') + '</span></div>';
+        const firstEvt = o.first_event || '';
+        const evtColor = (firstEvt === 'stop' || firstEvt === 'timeout') ? '#ef4444' : '#22c55e';
+        let summaryLabel = '';
+        if (firstEvt === '10pt' || firstEvt === 'target' || firstEvt === '15pt') summaryLabel = '<span style="color:#22c55e;font-weight:700;font-size:14px">✓ WINNER</span>';
+        else if (firstEvt === 'stop') summaryLabel = '<span style="color:#ef4444;font-weight:700;font-size:14px">✗ LOSER</span>';
+        else if (firstEvt === 'timeout') {
+          const tp = o.timeout_pnl || 0;
+          summaryLabel = tp >= 0
+            ? '<span style="color:#22c55e;font-weight:700;font-size:14px">⏱ TIMEOUT +' + tp.toFixed(1) + '</span>'
+            : '<span style="color:#ef4444;font-weight:700;font-size:14px">⏱ TIMEOUT ' + tp.toFixed(1) + '</span>';
+        }
+        else summaryLabel = '<span style="color:#888;font-size:12px">No clear outcome</span>';
         stats.innerHTML = `
           <div style="background:#1a1d21;padding:10px;border-radius:6px">
             <div style="font-weight:600;margin-bottom:6px;color:var(--muted)">Score Breakdown</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:10px">
-              <div>Support: <span style="color:var(--text)">${e.support_score || '–'}</span></div>
-              <div>Upside: <span style="color:var(--text)">${e.upside_score || '–'}</span></div>
-              <div>Floor Cluster: <span style="color:var(--text)">${e.floor_cluster_score || '–'}</span></div>
-              <div>Target Cluster: <span style="color:var(--text)">${e.target_cluster_score || '–'}</span></div>
-              <div>R:R Score: <span style="color:var(--text)">${e.rr_score || '–'}</span></div>
-              <div>First Hour: <span style="color:var(--text)">${e.first_hour ? 'Yes (+10)' : 'No'}</span></div>
+              ${scoreRows}
+              ${bonusRow}
             </div>
           </div>
           <div style="background:#1a1d21;padding:10px;border-radius:6px">
             <div style="font-weight:600;margin-bottom:6px;color:var(--muted)">Trade Summary</div>
             <div style="font-size:10px">
-              <div>First Event: <span style="color:${o.first_event === 'stop' ? '#ef4444' : '#22c55e'};font-weight:600">${o.first_event?.toUpperCase() || 'NONE'}</span></div>
+              <div>First Event: <span style="color:${evtColor};font-weight:600">${firstEvt.toUpperCase() || 'NONE'}</span></div>
               <div>Data Points: <span style="color:var(--text)">${o.price_count || 0}</span></div>
               <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
-                ${o.first_event === '10pt' || o.first_event === 'target' ? '<span style="color:#22c55e;font-weight:700;font-size:14px">✓ WINNER</span>' : ''}
-                ${o.first_event === 'stop' ? '<span style="color:#ef4444;font-weight:700;font-size:14px">✗ LOSER</span>' : ''}
-                ${!o.first_event ? '<span style="color:#888;font-size:12px">No clear outcome</span>' : ''}
+                ${summaryLabel}
               </div>
             </div>
           </div>

@@ -1,8 +1,11 @@
 """
-GEX Long Trading Setup Detector — self-contained scoring module.
+Trading Setup Detector — self-contained scoring module.
+Evaluates GEX Long, AG Short, and BofA Scalp setups.
 Receives all data as parameters; no imports from main.py.
 """
-from datetime import datetime, time as dtime
+from collections import deque
+from datetime import datetime, time as dtime, timedelta
+import re
 import pytz
 
 NY = pytz.timezone("US/Eastern")
@@ -452,13 +455,449 @@ def format_ag_short_message(result):
     return msg
 
 
+# ── BofA Scalp — LIS rolling buffer ───────────────────────────────────────
+
+# Rolling buffers: store last 12 LIS readings (60 min at 5-min intervals)
+# We use 12 so we can check stability over longer windows; minimum 6 for 30 min
+_lis_history_upper = deque(maxlen=12)
+_lis_history_lower = deque(maxlen=12)
+_lis_buffer_last_date = None
+
+
+def update_lis_buffer(lis_lower, lis_upper):
+    """
+    Called from main.py each time new Volland stats arrive.
+    Appends latest LIS values to rolling buffers.
+    Resets daily at market open.
+    """
+    global _lis_buffer_last_date
+    today = datetime.now(NY).date()
+    if _lis_buffer_last_date != today:
+        _lis_history_upper.clear()
+        _lis_history_lower.clear()
+        _lis_buffer_last_date = today
+
+    if lis_lower is not None:
+        _lis_history_lower.append(lis_lower)
+    if lis_upper is not None:
+        _lis_history_upper.append(lis_upper)
+
+
+def get_lis_stability(side):
+    """
+    Check LIS stability for a given side ("lower" or "upper").
+    Returns (is_stable, drift, stable_bars) where:
+      - is_stable: True if drift <= 3 over last 6 readings
+      - drift: max - min over last 6 readings
+      - stable_bars: count of consecutive stable bars going back
+    """
+    buf = _lis_history_lower if side == "lower" else _lis_history_upper
+    if len(buf) < 6:
+        return False, 999, 0
+
+    # Check drift over last 6 readings
+    recent = list(buf)[-6:]
+    drift = max(recent) - min(recent)
+    is_stable = drift <= 3
+
+    # Count consecutive stable bars (all within 3pts of each other) going back
+    stable_bars = 0
+    vals = list(buf)
+    for i in range(len(vals), 0, -1):
+        window = vals[:i]
+        if len(window) < 6:
+            break
+        last_6 = window[-6:]
+        if max(last_6) - min(last_6) <= 3:
+            stable_bars = len(window)
+        else:
+            break
+
+    return is_stable, round(drift, 2), max(stable_bars, 6 if is_stable else 0)
+
+
+# ── BofA Scalp cooldown state ────────────────────────────────────────────
+
+_cooldown_bofa = {
+    "last_grade": None,
+    "last_gap_to_lis": None,
+    "setup_expired": False,
+    "last_date": None,
+    "last_trade_time_long": None,   # timestamp of last LONG trade close/alert
+    "last_trade_time_short": None,  # timestamp of last SHORT trade close/alert
+}
+
+BOFA_SIDE_COOLDOWN_MINUTES = 40
+
+
+# ── BofA Scalp default settings ──────────────────────────────────────────
+
+DEFAULT_BOFA_SCALP_SETTINGS = {
+    "bofa_scalp_enabled": True,
+    "bofa_max_proximity": 3,
+    "bofa_min_lis_width": 15,
+    "bofa_stability_bars": 6,
+    "bofa_stability_threshold": 3,
+    "bofa_time_start": "10:00",
+    "bofa_time_end": "15:30",
+    "bofa_stop_distance": 12,
+    "bofa_target_distance": 15,
+    "bofa_max_hold_minutes": 30,
+    "bofa_cooldown_minutes": 40,
+    "bofa_weight_stability": 20,
+    "bofa_weight_width": 20,
+    "bofa_weight_charm": 20,
+    "bofa_weight_time": 20,
+    "bofa_weight_midpoint": 20,
+}
+
+
+# ── BofA Scalp evaluation ────────────────────────────────────────────────
+
+def evaluate_bofa_scalp(spot, paradigm, lis_lower, lis_upper, aggregated_charm, settings):
+    """
+    Evaluate BofA Scalp setup. Returns a result dict or None.
+
+    Parameters:
+      spot: current SPX price
+      paradigm: current paradigm string
+      lis_lower: lower LIS level
+      lis_upper: upper LIS level
+      aggregated_charm: aggregated charm value from Volland stats
+      settings: setup settings dict (merged with bofa defaults)
+    """
+    if not settings.get("bofa_scalp_enabled", True):
+        return None
+
+    # Base condition 1: Paradigm contains BOFA but not MISSY
+    if not paradigm:
+        return None
+    p_upper = str(paradigm).upper()
+    if "BOFA" not in p_upper and "BOFA" not in p_upper.replace("-", ""):
+        return None
+    if "MISSY" in p_upper:
+        return None
+
+    # Base condition 2: Both LIS values must exist
+    if spot is None or lis_lower is None or lis_upper is None:
+        return None
+
+    # Base condition 3: Time between 10:00 AM and 3:30 PM ET
+    now = datetime.now(NY)
+    t = now.time()
+    if t < dtime(10, 0) or t > dtime(15, 30):
+        return None
+
+    # Base condition 4: LIS width >= min_width
+    min_width = settings.get("bofa_min_lis_width", 15)
+    width = lis_upper - lis_lower
+    if width < min_width:
+        return None
+
+    # Base condition 5: Spot within proximity of either LIS
+    max_prox = settings.get("bofa_max_proximity", 3)
+    near_lower = abs(spot - lis_lower) <= max_prox
+    near_upper = abs(spot - lis_upper) <= max_prox
+
+    if not near_lower and not near_upper:
+        return None
+
+    # Base condition 6: LIS stability check
+    lower_stable, lower_drift, lower_bars = get_lis_stability("lower")
+    upper_stable, upper_drift, upper_bars = get_lis_stability("upper")
+
+    # Determine direction
+    direction = None
+    traded_lis = None
+    stability_bars = 0
+
+    if near_lower and near_upper:
+        # Both near — pick the more stable side
+        if lower_stable and upper_stable:
+            if lower_bars >= upper_bars:
+                direction = "long"
+                traded_lis = lis_lower
+                stability_bars = lower_bars
+            else:
+                direction = "short"
+                traded_lis = lis_upper
+                stability_bars = upper_bars
+        elif lower_stable:
+            direction = "long"
+            traded_lis = lis_lower
+            stability_bars = lower_bars
+        elif upper_stable:
+            direction = "short"
+            traded_lis = lis_upper
+            stability_bars = upper_bars
+        else:
+            return None
+    elif near_lower:
+        if not lower_stable:
+            return None
+        direction = "long"
+        traded_lis = lis_lower
+        stability_bars = lower_bars
+    elif near_upper:
+        if not upper_stable:
+            return None
+        direction = "short"
+        traded_lis = lis_upper
+        stability_bars = upper_bars
+
+    if direction is None:
+        return None
+
+    # Per-side cooldown check (40 min after last alert on same side)
+    side_key = "last_trade_time_long" if direction == "long" else "last_trade_time_short"
+    last_trade = _cooldown_bofa.get(side_key)
+    cooldown_min = settings.get("bofa_cooldown_minutes", BOFA_SIDE_COOLDOWN_MINUTES)
+    if last_trade is not None:
+        elapsed = (datetime.now(NY) - last_trade).total_seconds() / 60
+        if elapsed < cooldown_min:
+            return None
+
+    # ── Component scores ──────────────────────────────────────────────────
+
+    # Component 1: LIS Stability Duration
+    if stability_bars >= 12:
+        stability_score = 100
+    elif stability_bars >= 9:
+        stability_score = 75
+    elif stability_bars >= 6:
+        stability_score = 50
+    else:
+        stability_score = 0
+
+    # Component 2: LIS Width Ratio
+    if width >= 40:
+        width_score = 100
+    elif width >= 30:
+        width_score = 75
+    elif width >= 20:
+        width_score = 50
+    elif width >= 15:
+        width_score = 25
+    else:
+        width_score = 0
+
+    # Component 3: Charm Neutrality
+    charm_abs = abs(aggregated_charm) if aggregated_charm is not None else 999999
+    if charm_abs <= 500:
+        charm_score = 100
+    elif charm_abs <= 2000:
+        charm_score = 75
+    elif charm_abs <= 5000:
+        charm_score = 50
+    elif charm_abs <= 10000:
+        charm_score = 25
+    else:
+        charm_score = 0
+
+    # Component 4: Time of Day
+    time_decimal = t.hour + t.minute / 60
+    if time_decimal >= 14.0:
+        time_score = 100
+    elif time_decimal >= 12.0:
+        time_score = 75
+    elif time_decimal >= 11.0:
+        time_score = 50
+    elif time_decimal >= 10.0:
+        time_score = 25
+    else:
+        time_score = 0
+
+    # Component 5: Distance to Midpoint
+    midpoint = (lis_upper + lis_lower) / 2
+    target_dist = settings.get("bofa_target_distance", 15)
+    if direction == "long":
+        target_price = spot + target_dist
+        target_vs_mid = midpoint - target_price
+    else:
+        target_price = spot - target_dist
+        target_vs_mid = target_price - midpoint
+
+    if target_vs_mid >= 5:
+        midpoint_score = 100
+    elif target_vs_mid >= 0:
+        midpoint_score = 75
+    elif target_vs_mid >= -5:
+        midpoint_score = 50
+    elif target_vs_mid >= -10:
+        midpoint_score = 25
+    else:
+        midpoint_score = 0
+
+    # ── Weighted composite ────────────────────────────────────────────────
+    w_stab = settings.get("bofa_weight_stability", 20)
+    w_width = settings.get("bofa_weight_width", 20)
+    w_charm = settings.get("bofa_weight_charm", 20)
+    w_time = settings.get("bofa_weight_time", 20)
+    w_mid = settings.get("bofa_weight_midpoint", 20)
+    total_weight = w_stab + w_width + w_charm + w_time + w_mid
+
+    if total_weight == 0:
+        return None
+
+    composite = (
+        stability_score * w_stab
+        + width_score * w_width
+        + charm_score * w_charm
+        + time_score * w_time
+        + midpoint_score * w_mid
+    ) / total_weight
+
+    # Dealer O'Clock bonus (2 PM+)
+    if time_decimal >= 14.0:
+        composite = min(composite + 10, 100)
+
+    composite = max(0, min(100, composite))
+
+    # ── Grade ─────────────────────────────────────────────────────────────
+    thresholds = settings.get("grade_thresholds", DEFAULT_SETUP_SETTINGS["grade_thresholds"])
+    grade = compute_grade(composite, thresholds)
+
+    if grade is None:
+        return None
+
+    # Calculate stop and target levels for the result
+    stop_dist = settings.get("bofa_stop_distance", 12)
+    if direction == "long":
+        stop_level = lis_lower - stop_dist
+        target_level = spot + target_dist
+    else:
+        stop_level = lis_upper + stop_dist
+        target_level = spot - target_dist
+
+    gap_to_lis = abs(spot - traded_lis)
+    rr_ratio = target_dist / (gap_to_lis + stop_dist) if (gap_to_lis + stop_dist) > 0 else 99
+
+    return {
+        "setup_name": "BofA Scalp",
+        "direction": direction,
+        "grade": grade,
+        "score": round(composite, 1),
+        "paradigm": str(paradigm),
+        "spot": round(spot, 2),
+        "lis": round(traded_lis, 2),
+        "lis_lower": round(lis_lower, 2),
+        "lis_upper": round(lis_upper, 2),
+        "target": round(target_level, 2),
+        "max_plus_gex": None,
+        "max_minus_gex": None,
+        "gap_to_lis": round(gap_to_lis, 2),
+        "upside": round(target_dist, 2),
+        "rr_ratio": round(rr_ratio, 2),
+        "first_hour": False,
+        "support_score": stability_score,
+        "upside_score": width_score,
+        "floor_cluster_score": charm_score,
+        "target_cluster_score": time_score,
+        "rr_score": midpoint_score,
+        # BofA-specific extras (for display/outcome)
+        "bofa_stop_level": round(stop_level, 2),
+        "bofa_target_level": round(target_level, 2),
+        "bofa_lis_width": round(width, 2),
+        "bofa_stability_bars": stability_bars,
+        "bofa_max_hold_minutes": settings.get("bofa_max_hold_minutes", 30),
+        "bofa_charm": aggregated_charm,
+    }
+
+
+# ── BofA Scalp cooldown / notification ────────────────────────────────────
+
+def should_notify_bofa(result):
+    """Cooldown gate for BofA Scalp. Returns (fire, reason)."""
+    global _cooldown_bofa
+
+    today = datetime.now(NY).date()
+    if _cooldown_bofa["last_date"] != today:
+        _cooldown_bofa = {
+            "last_grade": None, "last_gap_to_lis": None,
+            "setup_expired": False, "last_date": today,
+            "last_trade_time_long": None, "last_trade_time_short": None,
+        }
+
+    grade = result["grade"]
+    gap = result["gap_to_lis"]
+    grade_rank = _GRADE_ORDER.get(grade, 0)
+    last_rank = _GRADE_ORDER.get(_cooldown_bofa["last_grade"], 0)
+
+    fire = False
+    reason = None
+
+    if _cooldown_bofa["last_grade"] is None:
+        fire = True
+        reason = "new"
+    elif grade_rank > last_rank:
+        fire = True
+        reason = "grade_upgrade"
+    elif _cooldown_bofa["setup_expired"]:
+        fire = True
+        reason = "reformed"
+
+    if fire:
+        _cooldown_bofa["last_grade"] = grade
+        _cooldown_bofa["last_gap_to_lis"] = gap
+        _cooldown_bofa["setup_expired"] = False
+        # Record trade time for per-side cooldown
+        side_key = "last_trade_time_long" if result["direction"] == "long" else "last_trade_time_short"
+        _cooldown_bofa[side_key] = datetime.now(NY)
+
+    return fire, reason
+
+
+def mark_bofa_expired():
+    """Call when paradigm loses BofA or LIS becomes unstable."""
+    _cooldown_bofa["setup_expired"] = True
+    _cooldown_bofa["last_grade"] = None
+    _cooldown_bofa["last_gap_to_lis"] = None
+
+
+# ── BofA Scalp message formatting ────────────────────────────────────────
+
+def format_bofa_scalp_message(result):
+    """Format a Telegram HTML message for BofA Scalp setup."""
+    grade_emoji = {"A+": "🟢", "A": "🔵", "A-Entry": "🟡"}.get(result["grade"], "⚪")
+    dir_label = "LONG at Lower LIS" if result["direction"] == "long" else "SHORT at Upper LIS"
+    dir_emoji = "🔵" if result["direction"] == "long" else "🔴"
+
+    lis_lo = result.get("lis_lower", 0)
+    lis_hi = result.get("lis_upper", 0)
+    width = result.get("bofa_lis_width", 0)
+
+    msg = f"{dir_emoji} <b>BofA Scalp — {dir_label}</b>\n"
+    msg += f"Grade: {grade_emoji} {result['grade']} (Score: {result['score']})\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n"
+    msg += f"📍 Spot: {result['spot']:.1f}\n"
+    msg += f"📏 LIS: {lis_lo:.0f} — {lis_hi:.0f} ({width:.0f}pt width)\n"
+    msg += f"🎯 Target: {result.get('bofa_target_level', 0):.1f} (+{result.get('upside', 15):.0f}pts)\n"
+    msg += f"🛡 Stop: {result.get('bofa_stop_level', 0):.1f} (-12pts beyond LIS)\n"
+    msg += f"⏱ Max Hold: {result.get('bofa_max_hold_minutes', 30)} minutes\n\n"
+    msg += "<b>Scoring:</b>\n"
+    msg += f"  🧱 Stability: {result['support_score']} ({result.get('bofa_stability_bars', 0) * 5}min stable)\n"
+    msg += f"  ↔ Width: {result['upside_score']} ({width:.0f}pt range)\n"
+    msg += f"  ⚖ Charm: {result['floor_cluster_score']}\n"
+    msg += f"  🕐 Time: {result['target_cluster_score']}\n"
+    msg += f"  🎯 Midpoint: {result['rr_score']}\n"
+
+    stab_min = result.get("bofa_stability_bars", 6) * 5
+    msg += f"\n⚡ LIS stable for {stab_min} minutes — dealers defending"
+    return msg
+
+
 # ── Main entry point ───────────────────────────────────────────────────────
 
-def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings):
+def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings,
+                 lis_lower=None, lis_upper=None, aggregated_charm=None):
     """
     Main entry point called from main.py.
     Returns a list of result wrappers (each has keys: result, notify, notify_reason, message).
     List may be empty.
+
+    New kwargs for BofA Scalp:
+      lis_lower, lis_upper: parsed LIS low/high values
+      aggregated_charm: aggregated charm from Volland stats
     """
     results = []
 
@@ -492,6 +931,25 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
             "notify": notify_ag,
             "notify_reason": reason_ag,
             "message": format_ag_short_message(ag_result),
+        })
+
+    # ── BofA Scalp ──
+    p_str = str(paradigm).upper() if paradigm else ""
+    if "BOFA" not in p_str:
+        mark_bofa_expired()
+
+    # Update LIS buffer (called here so it happens on every check cycle)
+    if lis_lower is not None and lis_upper is not None:
+        update_lis_buffer(lis_lower, lis_upper)
+
+    bofa_result = evaluate_bofa_scalp(spot, paradigm, lis_lower, lis_upper, aggregated_charm, settings)
+    if bofa_result is not None:
+        notify_bofa, reason_bofa = should_notify_bofa(bofa_result)
+        results.append({
+            "result": bofa_result,
+            "notify": notify_bofa,
+            "notify_reason": reason_bofa,
+            "message": format_bofa_scalp_message(bofa_result),
         })
 
     return results

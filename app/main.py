@@ -6177,7 +6177,8 @@ DASH_HTML_TEMPLATE = """
       }
 
       // Traces: levels first (below), candles on top
-      const allTraces = [...levelTraces, candleTrace];
+      // Candles first (bottom), level lines on top (visible over candle bodies)
+      const allTraces = [candleTrace, ...levelTraces];
 
       Plotly.react(regimeMapPlot, allTraces, {
         margin: { l: 55, r: 80, t: 30, b: 50 },

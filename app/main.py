@@ -4348,7 +4348,7 @@ DASH_HTML_TEMPLATE = """
         <div style="display:flex;flex-direction:column;height:calc(100vh - 160px)">
           <div id="regimeMapPlot" style="flex:1;min-height:0"></div>
           <div style="margin-top:8px;font-size:11px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap;padding:0 8px 8px;align-items:center">
-            <span><span style="display:inline-block;width:16px;height:2.5px;background:#e2e8f0;vertical-align:middle"></span> SPX</span>
+            <span><span style="display:inline-block;width:6px;height:12px;background:#22c55e;vertical-align:middle;margin-right:1px"></span><span style="display:inline-block;width:6px;height:12px;background:#ef4444;vertical-align:middle"></span> SPX</span>
             <span><span style="display:inline-block;width:16px;height:2.5px;background:#3b82f6;vertical-align:middle"></span> Target</span>
             <span><span style="display:inline-block;width:16px;height:6px;background:rgba(245,158,11,0.15);border-top:1.5px solid #f59e0b;border-bottom:1.5px solid #f59e0b;vertical-align:middle"></span> LIS Zone</span>
             <span><span style="display:inline-block;width:16px;height:1.5px;background:#22c55e;vertical-align:middle"></span> +GEX</span>
@@ -5941,12 +5941,14 @@ DASH_HTML_TEMPLATE = """
     }
 
     function getParadigmColor(paradigm, opacity) {
-      const a = opacity || 0.15;
+      const a = opacity || 0.25;
       if (!paradigm) return 'rgba(156,163,175,' + a + ')';
       const p = paradigm.toUpperCase();
       if (p.includes('BOFA') || p.includes('BOA') || p.includes('SCALP')) return 'rgba(96,165,250,' + a + ')';
       if (p.includes('MISSY')) return 'rgba(168,85,247,' + a + ')';
-      if (p.includes('NEG') || p.includes('AG ') || p.includes('AG-') || p.includes('ANTI')) return 'rgba(239,68,68,' + a + ')';
+      // Red: Negative Charm, AG Short, Anti-GEX — check BEFORE green to avoid 'GEX' false-positive
+      if (p.includes('NEG') || p.includes('AG') || p.includes('ANTI') || p.includes('SHORT')) return 'rgba(239,68,68,' + a + ')';
+      // Green: Positive Charm, GEX Long
       if (p.includes('POS') || p.includes('GEX') || p.includes('LONG')) return 'rgba(34,197,94,' + a + ')';
       return 'rgba(156,163,175,' + a + ')';
     }
@@ -5972,6 +5974,16 @@ DASH_HTML_TEMPLATE = """
             line: { width: 0 },
             layer: 'below'
           });
+          // Vertical divider at paradigm transitions
+          if (i < snaps.length && bandStart > 0) {
+            shapes.push({
+              type: 'line',
+              x0: x0, x1: x0, y0: 0, y1: 1,
+              xref: 'x', yref: 'paper',
+              line: { color: 'rgba(255,255,255,0.2)', width: 1, dash: 'dot' },
+              layer: 'below'
+            });
+          }
           if (i < snaps.length) {
             bandStart = i;
             currentParadigm = nextParadigm;
@@ -6099,19 +6111,30 @@ DASH_HTML_TEMPLATE = """
     }
 
     function drawRegimeMap(snaps) {
-      // --- Price line (clean, on top of everything) ---
-      const priceTrace = {
-        type: 'scatter', mode: 'lines',
-        x: snaps.map(s => s.ts),
-        y: snaps.map(s => s.spot),
-        line: { color: '#e2e8f0', width: 2.5 },
+      // --- Candlestick trace (synthesized from spot snapshots) ---
+      const times = [], opens = [], highs = [], lows = [], closes = [];
+      for (let i = 0; i < snaps.length; i++) {
+        const curr = snaps[i].spot;
+        const prev = i > 0 ? snaps[i - 1].spot : curr;
+        times.push(snaps[i].ts);
+        opens.push(prev);
+        closes.push(curr);
+        highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1);
+        lows.push(Math.min(prev, curr) - Math.abs(curr - prev) * 0.1);
+      }
+
+      const candleTrace = {
+        type: 'candlestick',
+        x: times, open: opens, high: highs, low: lows, close: closes,
+        increasing: { line: { color: '#22c55e' }, fillcolor: '#22c55e' },
+        decreasing: { line: { color: '#ef4444' }, fillcolor: '#ef4444' },
         name: 'SPX', showlegend: false,
-        hovertemplate: 'SPX: %{y:.1f}<extra></extra>'
+        hoverinfo: 'x+y'
       };
 
-      const spots = snaps.map(s => s.spot).filter(v => v != null);
-      const priceMin = Math.min(...spots) - 10;
-      const priceMax = Math.max(...spots) + 10;
+      const allPrices = [...highs, ...lows];
+      const priceMin = Math.min(...allPrices) - 10;
+      const priceMax = Math.max(...allPrices) + 10;
 
       // --- Level traces (LIS zone, Target, GEX) ---
       const { traces: levelTraces, annotations } = buildLevelTraces(snaps);
@@ -6142,8 +6165,8 @@ DASH_HTML_TEMPLATE = """
         }
       }
 
-      // Traces: levels first (below), price on top
-      const allTraces = [...levelTraces, priceTrace];
+      // Traces: levels first (below), candles on top
+      const allTraces = [...levelTraces, candleTrace];
 
       Plotly.react(regimeMapPlot, allTraces, {
         margin: { l: 55, r: 80, t: 30, b: 50 },
@@ -6167,8 +6190,7 @@ DASH_HTML_TEMPLATE = """
         font: { color: '#e6e7e9', size: 10 },
         shapes: paradigmShapes,
         annotations: annotations,
-        hovermode: 'x unified',
-        hoverlabel: { bgcolor: '#1a1d21', bordercolor: '#333', font: { size: 11 } },
+        hovermode: 'closest',
         dragmode: 'zoom'
       }, {
         displayModeBar: true,

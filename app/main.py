@@ -4354,7 +4354,6 @@ DASH_HTML_TEMPLATE = """
             <span><span style="background:rgba(96,165,250,0.3);padding:1px 6px;border-radius:3px">■</span> BofA</span>
             <span><span style="background:rgba(168,85,247,0.3);padding:1px 6px;border-radius:3px">■</span> Missy</span>
             <span style="margin-left:10px;font-weight:600">Levels:</span>
-            <span><span style="color:#9ca3af">--</span> Day Open</span>
             <span><span style="color:#3b82f6">--</span> Target</span>
             <span><span style="color:#f59e0b">--</span> LIS</span>
             <span><span style="color:#22c55e">--</span> +GEX</span>
@@ -5981,52 +5980,100 @@ DASH_HTML_TEMPLATE = """
       return shapes;
     }
 
+    function parseTarget(stats) {
+      if (!stats.target) return null;
+      const m = String(stats.target).replace(/[$,]/g, '').match(/([\d.]+)/);
+      return m ? parseFloat(m[1]) : null;
+    }
+
+    function parseLIS(stats) {
+      if (!stats.lis) return { low: null, high: null };
+      const s = String(stats.lis).replace(/[$,]/g, '');
+      const dm = s.match(/([\d.]+)\s*[-–]\s*([\d.]+)/);
+      if (dm) return { low: parseFloat(dm[1]), high: parseFloat(dm[2]) };
+      const sm = s.match(/([\d.]+)\s*\/\s*([\d.]+)/);
+      if (sm) return { low: parseFloat(sm[1]), high: parseFloat(sm[2]) };
+      const sg = s.match(/([\d.]+)/);
+      return { low: sg ? parseFloat(sg[1]) : null, high: null };
+    }
+
     function buildSteppingLevels(snaps) {
       const shapes = [];
       const annotations = [];
+      if (!snaps.length) return { shapes, annotations };
 
+      // Helper: emit a merged line shape
+      function emitLine(x0, x1, y, color) {
+        shapes.push({ type: 'line', x0: x0, x1: x1, y0: y, y1: y, xref: 'x', yref: 'y', line: { color: color, width: 1.5, dash: 'dash' }, layer: 'above' });
+      }
+
+      // --- Merge Target lines across same-value + same-paradigm runs ---
+      let tgtStart = null, tgtVal = null, tgtParadigm = null;
+      for (let i = 0; i < snaps.length; i++) {
+        const stats = snaps[i].stats || {};
+        const paradigm = stats.paradigm || '';
+        const val = parseTarget(stats);
+        const x1 = i < snaps.length - 1 ? snaps[i + 1].ts : snaps[i].ts;
+
+        if (val !== null && val === tgtVal && paradigm === tgtParadigm) {
+          // continue the run — extend to next boundary
+        } else {
+          // flush previous run
+          if (tgtVal !== null && tgtStart !== null) {
+            const prevX1 = i < snaps.length ? snaps[i].ts : snaps[i - 1].ts;
+            emitLine(tgtStart, prevX1, tgtVal, '#3b82f6');
+          }
+          if (val !== null) { tgtStart = snaps[i].ts; tgtVal = val; tgtParadigm = paradigm; }
+          else { tgtStart = null; tgtVal = null; tgtParadigm = null; }
+        }
+      }
+      if (tgtVal !== null && tgtStart !== null) emitLine(tgtStart, snaps[snaps.length - 1].ts, tgtVal, '#3b82f6');
+
+      // --- Merge LIS low lines ---
+      let lisLowStart = null, lisLowVal = null, lisLowParadigm = null;
+      for (let i = 0; i < snaps.length; i++) {
+        const stats = snaps[i].stats || {};
+        const paradigm = stats.paradigm || '';
+        const lis = parseLIS(stats);
+        const val = lis.low;
+
+        if (val !== null && val === lisLowVal && paradigm === lisLowParadigm) {
+          // continue
+        } else {
+          if (lisLowVal !== null && lisLowStart !== null) {
+            emitLine(lisLowStart, snaps[i].ts, lisLowVal, '#f59e0b');
+          }
+          if (val !== null) { lisLowStart = snaps[i].ts; lisLowVal = val; lisLowParadigm = paradigm; }
+          else { lisLowStart = null; lisLowVal = null; lisLowParadigm = null; }
+        }
+      }
+      if (lisLowVal !== null && lisLowStart !== null) emitLine(lisLowStart, snaps[snaps.length - 1].ts, lisLowVal, '#f59e0b');
+
+      // --- Merge LIS high lines ---
+      let lisHighStart = null, lisHighVal = null, lisHighParadigm = null;
+      for (let i = 0; i < snaps.length; i++) {
+        const stats = snaps[i].stats || {};
+        const paradigm = stats.paradigm || '';
+        const lis = parseLIS(stats);
+        const val = (lis.high && lis.high !== lis.low) ? lis.high : null;
+
+        if (val !== null && val === lisHighVal && paradigm === lisHighParadigm) {
+          // continue
+        } else {
+          if (lisHighVal !== null && lisHighStart !== null) {
+            emitLine(lisHighStart, snaps[i].ts, lisHighVal, '#f59e0b');
+          }
+          if (val !== null) { lisHighStart = snaps[i].ts; lisHighVal = val; lisHighParadigm = paradigm; }
+          else { lisHighStart = null; lisHighVal = null; lisHighParadigm = null; }
+        }
+      }
+      if (lisHighVal !== null && lisHighStart !== null) emitLine(lisHighStart, snaps[snaps.length - 1].ts, lisHighVal, '#f59e0b');
+
+      // --- GEX lines: per-snapshot (these change frequently) ---
       for (let i = 0; i < snaps.length; i++) {
         const snap = snaps[i];
-        const stats = snap.stats || {};
         const x0 = snap.ts;
         const x1 = i < snaps.length - 1 ? snaps[i + 1].ts : snap.ts;
-
-        // Target
-        if (stats.target) {
-          const tMatch = String(stats.target).replace(/[$,]/g, '').match(/([\d.]+)/);
-          if (tMatch) {
-            const target = parseFloat(tMatch[1]);
-            shapes.push({ type: 'line', x0: x0, x1: x1, y0: target, y1: target, xref: 'x', yref: 'y', line: { color: '#3b82f6', width: 1.5, dash: 'dash' }, layer: 'above' });
-          }
-        }
-
-        // LIS
-        if (stats.lis) {
-          const lisStr = String(stats.lis).replace(/[$,]/g, '');
-          let lisLow = null, lisHigh = null;
-          const dashMatch = lisStr.match(/([\d.]+)\s*[-–]\s*([\d.]+)/);
-          if (dashMatch) {
-            lisLow = parseFloat(dashMatch[1]);
-            lisHigh = parseFloat(dashMatch[2]);
-          } else {
-            const slashMatch = lisStr.match(/([\d.]+)\s*\/\s*([\d.]+)/);
-            if (slashMatch) {
-              lisLow = parseFloat(slashMatch[1]);
-              lisHigh = parseFloat(slashMatch[2]);
-            } else {
-              const single = lisStr.match(/([\d.]+)/);
-              if (single) lisLow = parseFloat(single[1]);
-            }
-          }
-          if (lisLow) {
-            shapes.push({ type: 'line', x0: x0, x1: x1, y0: lisLow, y1: lisLow, xref: 'x', yref: 'y', line: { color: '#f59e0b', width: 1.5, dash: 'dash' }, layer: 'above' });
-          }
-          if (lisHigh && lisHigh !== lisLow) {
-            shapes.push({ type: 'line', x0: x0, x1: x1, y0: lisHigh, y1: lisHigh, xref: 'x', yref: 'y', line: { color: '#f59e0b', width: 1.5, dash: 'dash' }, layer: 'above' });
-          }
-        }
-
-        // Max +GEX / -GEX strikes
         const gexData = snap.net_gex || [];
         const strikes = snap.strikes || [];
         let maxPosGexStrike = null, maxNegGexStrike = null;
@@ -6035,51 +6082,32 @@ DASH_HTML_TEMPLATE = """
           if (gexData[j] > maxPosVal) { maxPosVal = gexData[j]; maxPosGexStrike = strikes[j]; }
           if (gexData[j] < maxNegVal) { maxNegVal = gexData[j]; maxNegGexStrike = strikes[j]; }
         }
-        if (maxPosGexStrike) {
-          shapes.push({ type: 'line', x0: x0, x1: x1, y0: maxPosGexStrike, y1: maxPosGexStrike, xref: 'x', yref: 'y', line: { color: '#22c55e', width: 1.5, dash: 'dash' }, layer: 'above' });
-        }
-        if (maxNegGexStrike) {
-          shapes.push({ type: 'line', x0: x0, x1: x1, y0: maxNegGexStrike, y1: maxNegGexStrike, xref: 'x', yref: 'y', line: { color: '#ef4444', width: 1.5, dash: 'dash' }, layer: 'above' });
-        }
+        if (maxPosGexStrike) emitLine(x0, x1, maxPosGexStrike, '#22c55e');
+        if (maxNegGexStrike) emitLine(x0, x1, maxNegGexStrike, '#ef4444');
       }
 
-      // Add annotations for the last snapshot's levels (right edge labels)
-      if (snaps.length > 0) {
-        const lastSnap = snaps[snaps.length - 1];
-        const lastStats = lastSnap.stats || {};
-        const lastTs = lastSnap.ts;
+      // --- Right-edge annotations for last snapshot ---
+      const lastSnap = snaps[snaps.length - 1];
+      const lastStats = lastSnap.stats || {};
+      const lastTs = lastSnap.ts;
 
-        if (lastStats.target) {
-          const tMatch = String(lastStats.target).replace(/[$,]/g, '').match(/([\d.]+)/);
-          if (tMatch) annotations.push({ x: lastTs, y: parseFloat(tMatch[1]), xref: 'x', yref: 'y', text: 'Tgt ' + Math.round(parseFloat(tMatch[1])), showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left', xshift: 5 });
-        }
+      const lastTarget = parseTarget(lastStats);
+      if (lastTarget) annotations.push({ x: lastTs, y: lastTarget, xref: 'x', yref: 'y', text: 'Tgt ' + Math.round(lastTarget), showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left', xshift: 5 });
 
-        if (lastStats.lis) {
-          const lisStr = String(lastStats.lis).replace(/[$,]/g, '');
-          const dashMatch = lisStr.match(/([\d.]+)\s*[-–]\s*([\d.]+)/);
-          const slashMatch = lisStr.match(/([\d.]+)\s*\/\s*([\d.]+)/);
-          if (dashMatch) {
-            annotations.push({ x: lastTs, y: parseFloat(dashMatch[1]), xref: 'x', yref: 'y', text: 'LIS ' + Math.round(parseFloat(dashMatch[1])), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
-            if (parseFloat(dashMatch[2]) !== parseFloat(dashMatch[1]))
-              annotations.push({ x: lastTs, y: parseFloat(dashMatch[2]), xref: 'x', yref: 'y', text: 'LIS ' + Math.round(parseFloat(dashMatch[2])), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
-          } else if (slashMatch) {
-            annotations.push({ x: lastTs, y: parseFloat(slashMatch[1]), xref: 'x', yref: 'y', text: 'LIS ' + Math.round(parseFloat(slashMatch[1])), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
-            if (parseFloat(slashMatch[2]) !== parseFloat(slashMatch[1]))
-              annotations.push({ x: lastTs, y: parseFloat(slashMatch[2]), xref: 'x', yref: 'y', text: 'LIS ' + Math.round(parseFloat(slashMatch[2])), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
-          }
-        }
+      const lastLIS = parseLIS(lastStats);
+      if (lastLIS.low) annotations.push({ x: lastTs, y: lastLIS.low, xref: 'x', yref: 'y', text: 'LIS ' + Math.round(lastLIS.low), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
+      if (lastLIS.high && lastLIS.high !== lastLIS.low) annotations.push({ x: lastTs, y: lastLIS.high, xref: 'x', yref: 'y', text: 'LIS ' + Math.round(lastLIS.high), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
 
-        const gexData = lastSnap.net_gex || [];
-        const strikes = lastSnap.strikes || [];
-        let maxPosGexStrike = null, maxNegGexStrike = null;
-        let maxPosVal = 0, maxNegVal = 0;
-        for (let j = 0; j < strikes.length && j < gexData.length; j++) {
-          if (gexData[j] > maxPosVal) { maxPosVal = gexData[j]; maxPosGexStrike = strikes[j]; }
-          if (gexData[j] < maxNegVal) { maxNegVal = gexData[j]; maxNegGexStrike = strikes[j]; }
-        }
-        if (maxPosGexStrike) annotations.push({ x: lastTs, y: maxPosGexStrike, xref: 'x', yref: 'y', text: '+G ' + maxPosGexStrike, showarrow: false, font: { color: '#22c55e', size: 10 }, xanchor: 'left', xshift: 5 });
-        if (maxNegGexStrike) annotations.push({ x: lastTs, y: maxNegGexStrike, xref: 'x', yref: 'y', text: '-G ' + maxNegGexStrike, showarrow: false, font: { color: '#ef4444', size: 10 }, xanchor: 'left', xshift: 5 });
+      const gexData = lastSnap.net_gex || [];
+      const strikes = lastSnap.strikes || [];
+      let maxPosGexStrike = null, maxNegGexStrike = null;
+      let maxPosVal = 0, maxNegVal = 0;
+      for (let j = 0; j < strikes.length && j < gexData.length; j++) {
+        if (gexData[j] > maxPosVal) { maxPosVal = gexData[j]; maxPosGexStrike = strikes[j]; }
+        if (gexData[j] < maxNegVal) { maxNegVal = gexData[j]; maxNegGexStrike = strikes[j]; }
       }
+      if (maxPosGexStrike) annotations.push({ x: lastTs, y: maxPosGexStrike, xref: 'x', yref: 'y', text: '+G ' + maxPosGexStrike, showarrow: false, font: { color: '#22c55e', size: 10 }, xanchor: 'left', xshift: 5 });
+      if (maxNegGexStrike) annotations.push({ x: lastTs, y: maxNegGexStrike, xref: 'x', yref: 'y', text: '-G ' + maxNegGexStrike, showarrow: false, font: { color: '#ef4444', size: 10 }, xanchor: 'left', xshift: 5 });
 
       return { shapes, annotations };
     }
@@ -6114,8 +6142,6 @@ DASH_HTML_TEMPLATE = """
         hovertemplate: '%{x|%H:%M ET}<br>O: %{open:.1f}<br>H: %{high:.1f}<br>L: %{low:.1f}<br>C: %{close:.1f}<extra></extra>'
       };
 
-      // Day open line
-      const dayOpen = snaps[0].spot;
       const allPrices = [...highs, ...lows];
       const priceMin = Math.min(...allPrices) - 10;
       const priceMax = Math.max(...allPrices) + 10;
@@ -6125,26 +6151,6 @@ DASH_HTML_TEMPLATE = """
 
       // Build stepping level lines
       const { shapes: levelShapes, annotations } = buildSteppingLevels(snaps);
-
-      // Day open shape
-      const dayOpenShape = {
-        type: 'line',
-        x0: snaps[0].ts, x1: snaps[snaps.length - 1].ts,
-        y0: dayOpen, y1: dayOpen,
-        xref: 'x', yref: 'y',
-        line: { color: '#9ca3af', width: 1, dash: 'dash' },
-        layer: 'above'
-      };
-
-      // Day open annotation
-      annotations.push({
-        x: snaps[snaps.length - 1].ts, y: dayOpen,
-        xref: 'x', yref: 'y',
-        text: 'Open ' + Math.round(dayOpen),
-        showarrow: false,
-        font: { color: '#9ca3af', size: 10 },
-        xanchor: 'left', xshift: 5
-      });
 
       // Paradigm change annotations (at top of chart)
       let prevParadigm = '';
@@ -6167,7 +6173,7 @@ DASH_HTML_TEMPLATE = """
         }
       }
 
-      const allShapes = [...paradigmShapes, ...levelShapes, dayOpenShape];
+      const allShapes = [...paradigmShapes, ...levelShapes];
 
       Plotly.react(regimeMapPlot, [candleTrace], {
         margin: { l: 55, r: 80, t: 20, b: 50 },

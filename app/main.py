@@ -5998,8 +5998,9 @@ DASH_HTML_TEMPLATE = """
     }
 
     function parseLIS(stats) {
-      if (!stats.lis) return { low: null, high: null };
-      const s = String(stats.lis).replace(/[$,]/g, '');
+      const raw = stats.lis || stats.lines_in_sand;
+      if (!raw) return { low: null, high: null };
+      const s = String(raw).replace(/[$,]/g, '');
       const dm = s.match(/([\d.]+)\s*[-–]\s*([\d.]+)/);
       if (dm) return { low: parseFloat(dm[1]), high: parseFloat(dm[2]) };
       const sm = s.match(/([\d.]+)\s*\/\s*([\d.]+)/);
@@ -6110,14 +6111,14 @@ DASH_HTML_TEMPLATE = """
 
     function drawRegimeMap(snaps) {
       // Per-field forward-fill: each stats field carries forward independently
-      // so a snapshot with paradigm but no target/lis still inherits previous target/lis
+      // Handles both field names: lis (new) and lines_in_sand (old data)
       const ff = {};
       for (let i = 0; i < snaps.length; i++) {
         const s = snaps[i].stats || {};
         if (s.paradigm) ff.paradigm = s.paradigm;
         if (s.target) ff.target = s.target;
-        if (s.lis) ff.lis = s.lis;
-        if (s.dd_hedging) ff.dd_hedging = s.dd_hedging;
+        if (s.lis || s.lines_in_sand) ff.lis = s.lis || s.lines_in_sand;
+        if (s.dd_hedging || s.delta_decay_hedging) ff.dd_hedging = s.dd_hedging || s.delta_decay_hedging;
         snaps[i].stats = Object.assign({}, ff);
       }
 

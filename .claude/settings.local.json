@@ -16,7 +16,15 @@
       "Bash(uvicorn:*)",
       "Bash(pip install:*)",
       "Bash(curl:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(VOLLAND_TEST_URL=\"https://vol.land/app/workspace/698a5560ea3d7b5155f88e67\" python:*)",
+      "Bash(dir:*)",
+      "Bash(railway variables:*)",
+      "Bash(npx railway variables)",
+      "Bash(npx railway:*)",
+      "Bash(npx @railway/cli env:*)",
+      "Bash(npx @railway/cli login:*)",
+      "Bash(DATABASE_URL=\"postgresql://postgres:JwLVqJOvxdzflxJsCZHrPzcdPUYrmVYY@nozomi.proxy.rlwy.net:55417/railway\" python:*)"
     ]
   }
 }

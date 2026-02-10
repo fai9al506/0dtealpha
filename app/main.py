@@ -5962,7 +5962,8 @@ DASH_HTML_TEMPLATE = """
         const nextParadigm = i < snaps.length ? ((snaps[i].stats || {}).paradigm || '') : '';
         if (nextParadigm !== currentParadigm || i === snaps.length) {
           const x0 = snaps[bandStart].ts;
-          const x1 = snaps[i - 1].ts;
+          // Extend band to the NEXT snapshot's time so single-snapshot bands have width
+          const x1 = i < snaps.length ? snaps[i].ts : snaps[i - 1].ts;
           shapes.push({
             type: 'rect',
             x0: x0, x1: x1,
@@ -6014,20 +6015,18 @@ DASH_HTML_TEMPLATE = """
       const annotations = [];
       if (!snaps.length) return { traces, annotations };
 
-      // Helper: one point per snapshot, hv step interpolation, null at paradigm breaks
+      // Helper: one point per snapshot, hv step interpolation, continuous across paradigms
       function makeTrace(fn, color, width, name) {
         const xs = [], ys = [];
-        let prevPar = null;
+        let hasVal = false;
         for (let i = 0; i < snaps.length; i++) {
-          const par = (snaps[i].stats || {}).paradigm || '';
           const val = fn(snaps[i]);
           if (val === null) {
-            if (prevPar !== null) { xs.push(null); ys.push(null); }
-            prevPar = null; continue;
+            if (hasVal) { xs.push(null); ys.push(null); hasVal = false; }
+            continue;
           }
-          if (prevPar !== null && par !== prevPar) { xs.push(null); ys.push(null); }
           xs.push(snaps[i].ts); ys.push(val);
-          prevPar = par;
+          hasVal = true;
         }
         if (xs.some(v => v !== null)) {
           traces.push({
@@ -6041,19 +6040,17 @@ DASH_HTML_TEMPLATE = """
 
       // LIS zone: extract low & high together so nulls align for fill
       const lisXs = [], lisLowYs = [], lisHighYs = [];
-      let prevPar = null;
+      let lisHasVal = false;
       for (let i = 0; i < snaps.length; i++) {
-        const par = (snaps[i].stats || {}).paradigm || '';
         const lis = parseLIS(snaps[i].stats || {});
         if (lis.low === null) {
-          if (prevPar !== null) { lisXs.push(null); lisLowYs.push(null); lisHighYs.push(null); }
-          prevPar = null; continue;
+          if (lisHasVal) { lisXs.push(null); lisLowYs.push(null); lisHighYs.push(null); lisHasVal = false; }
+          continue;
         }
-        if (prevPar !== null && par !== prevPar) { lisXs.push(null); lisLowYs.push(null); lisHighYs.push(null); }
         lisXs.push(snaps[i].ts);
         lisLowYs.push(lis.low);
         lisHighYs.push(lis.high && lis.high !== lis.low ? lis.high : lis.low);
-        prevPar = par;
+        lisHasVal = true;
       }
       if (lisXs.some(v => v !== null)) {
         traces.push({
@@ -6122,6 +6119,17 @@ DASH_HTML_TEMPLATE = """
         snaps[i].stats = Object.assign({}, ff);
       }
 
+      // Debug: log stats summary so we can see what data exists
+      console.log('[RegimeMap] Forward-filled stats summary:');
+      for (let i = 0; i < snaps.length; i++) {
+        const st = snaps[i].stats || {};
+        const ts = snaps[i].ts;
+        const etTime = new Date(ts).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
+        if (i === 0 || i === snaps.length - 1 || i % 10 === 0) {
+          console.log('  [' + i + '] ' + etTime + ' paradigm=' + (st.paradigm || 'NONE') + ' target=' + (st.target || 'NONE') + ' lis=' + (st.lis || 'NONE'));
+        }
+      }
+
       // --- Candlestick trace (synthesized from spot snapshots) ---
       const times = [], opens = [], highs = [], lows = [], closes = [];
       for (let i = 0; i < snaps.length; i++) {
@@ -6161,7 +6169,7 @@ DASH_HTML_TEMPLATE = """
         if (par !== curPar || i === snaps.length) {
           if (curPar) {
             const t0 = new Date(snaps[bandStart].ts).getTime();
-            const t1 = new Date(snaps[i - 1].ts).getTime();
+            const t1 = i < snaps.length ? new Date(snaps[i].ts).getTime() : new Date(snaps[snaps.length - 1].ts).getTime();
             annotations.push({
               x: new Date((t0 + t1) / 2).toISOString(),
               y: 1.0, xref: 'x', yref: 'paper',

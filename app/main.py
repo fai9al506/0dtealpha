@@ -6109,15 +6109,16 @@ DASH_HTML_TEMPLATE = """
     }
 
     function drawRegimeMap(snaps) {
-      // Forward-fill stats on snapshots so gaps from missed volland polls don't break levels/paradigm
-      let lastGoodStats = {};
+      // Per-field forward-fill: each stats field carries forward independently
+      // so a snapshot with paradigm but no target/lis still inherits previous target/lis
+      const ff = {};
       for (let i = 0; i < snaps.length; i++) {
-        const s = snaps[i].stats;
-        if (s && (s.paradigm || s.target || s.lis)) {
-          lastGoodStats = s;
-        } else {
-          snaps[i].stats = lastGoodStats;
-        }
+        const s = snaps[i].stats || {};
+        if (s.paradigm) ff.paradigm = s.paradigm;
+        if (s.target) ff.target = s.target;
+        if (s.lis) ff.lis = s.lis;
+        if (s.dd_hedging) ff.dd_hedging = s.dd_hedging;
+        snaps[i].stats = Object.assign({}, ff);
       }
 
       // --- Candlestick trace (synthesized from spot snapshots) ---

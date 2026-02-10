@@ -3943,6 +3943,7 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabSpot">Spot</button>
         <button class="btn" id="tabPlayback">Playback</button>
+        <button class="btn" id="tabRegimeMap">Regime Map</button>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
       <div class="stats-box">
@@ -4333,6 +4334,35 @@ DASH_HTML_TEMPLATE = """
         </div>
       </div>
 
+      <!-- Regime Map View -->
+      <div id="viewRegimeMap" class="panel" style="display:none">
+        <div class="header">
+          <div><strong>Regime Map</strong></div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <label style="font-size:11px;color:var(--muted)">Date:</label>
+            <input type="date" id="regimeMapDate" style="background:#0f1115;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px">
+            <button id="regimeMapLoad" class="strike-btn" style="padding:4px 12px">Load</button>
+            <span id="regimeMapStatus" style="font-size:11px;color:var(--muted)">Select a date and click Load</span>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;height:calc(100vh - 160px)">
+          <div id="regimeMapPlot" style="flex:1;min-height:0"></div>
+          <div style="margin-top:8px;font-size:11px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap;padding:0 8px 8px">
+            <span style="font-weight:600">Paradigm:</span>
+            <span><span style="background:rgba(34,197,94,0.3);padding:1px 6px;border-radius:3px">■</span> Pos Charm / GEX</span>
+            <span><span style="background:rgba(239,68,68,0.3);padding:1px 6px;border-radius:3px">■</span> Neg Charm / AG</span>
+            <span><span style="background:rgba(96,165,250,0.3);padding:1px 6px;border-radius:3px">■</span> BofA</span>
+            <span><span style="background:rgba(168,85,247,0.3);padding:1px 6px;border-radius:3px">■</span> Missy</span>
+            <span style="margin-left:10px;font-weight:600">Levels:</span>
+            <span><span style="color:#9ca3af">--</span> Day Open</span>
+            <span><span style="color:#3b82f6">--</span> Target</span>
+            <span><span style="color:#f59e0b">--</span> LIS</span>
+            <span><span style="color:#22c55e">--</span> +GEX</span>
+            <span><span style="color:#ef4444">--</span> -GEX</span>
+          </div>
+        </div>
+      </div>
+
     </main>
   </div>
 
@@ -4491,26 +4521,30 @@ DASH_HTML_TEMPLATE = """
     const tabTable=document.getElementById('tabTable'),
           tabCharts=document.getElementById('tabCharts'),
           tabSpot=document.getElementById('tabSpot'),
-          tabPlayback=document.getElementById('tabPlayback');
+          tabPlayback=document.getElementById('tabPlayback'),
+          tabRegimeMap=document.getElementById('tabRegimeMap');
 
     const viewTable=document.getElementById('viewTable'),
           viewCharts=document.getElementById('viewCharts'),
           viewSpot=document.getElementById('viewSpot'),
-          viewPlayback=document.getElementById('viewPlayback');
+          viewPlayback=document.getElementById('viewPlayback'),
+          viewRegimeMap=document.getElementById('viewRegimeMap');
 
     function setActive(btn){
-      [tabTable,tabCharts,tabSpot,tabPlayback].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabCharts,tabSpot,tabPlayback,tabRegimeMap].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewPlayback.style.display='none'; }
+    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewPlayback.style.display='none'; viewRegimeMap.style.display='none'; }
     function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopSpot(); stopStatistics(); }
     function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopSpot(); stopStatistics(); }
     function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); startStatistics(); stopCharts(); }
     function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopSpot(); stopStatistics(); initPlayback(); }
+    function showRegimeMap(){ setActive(tabRegimeMap); hideAllViews(); viewRegimeMap.style.display=''; stopCharts(); stopSpot(); stopStatistics(); initRegimeMap(); }
     tabTable.addEventListener('click', showTable);
     tabCharts.addEventListener('click', showCharts);
     tabSpot.addEventListener('click', showSpot);
     tabPlayback.addEventListener('click', showPlayback);
+    tabRegimeMap.addEventListener('click', showRegimeMap);
 
     // ===== Shared fetch for options series (includes spot) =====
     async function fetchSeries(){
@@ -5847,6 +5881,324 @@ DASH_HTML_TEMPLATE = """
 
       html += '</div>';
       playbackSummaryStats.innerHTML = html;
+    }
+
+    // ===== Regime Map =====
+    const regimeMapDateInput = document.getElementById('regimeMapDate');
+    const regimeMapLoadBtn = document.getElementById('regimeMapLoad');
+    const regimeMapStatus = document.getElementById('regimeMapStatus');
+    const regimeMapPlot = document.getElementById('regimeMapPlot');
+    let regimeMapInitialized = false;
+
+    function initRegimeMap() {
+      if (regimeMapInitialized) return;
+      regimeMapInitialized = true;
+      // Default to today's date
+      const d = new Date();
+      regimeMapDateInput.value = d.toISOString().split('T')[0];
+      regimeMapLoadBtn.addEventListener('click', loadRegimeMapData);
+    }
+
+    async function loadRegimeMapData() {
+      const dateStr = regimeMapDateInput.value;
+      if (!dateStr) {
+        regimeMapStatus.textContent = 'Please select a date.';
+        return;
+      }
+      regimeMapStatus.textContent = 'Loading...';
+
+      try {
+        const r = await fetch('/api/playback/range?start_date=' + dateStr, { cache: 'no-store' });
+        const data = await r.json();
+
+        if (data.error) {
+          regimeMapStatus.textContent = 'Error: ' + data.error;
+          return;
+        }
+
+        if (!data.snapshots || data.snapshots.length === 0) {
+          regimeMapStatus.textContent = 'No data found for this date.';
+          return;
+        }
+
+        // Filter to selected date only (compare ET date strings)
+        const targetDate = dateStr; // YYYY-MM-DD
+        const daySnaps = data.snapshots.filter(s => {
+          const d = new Date(s.ts);
+          const etDate = d.toLocaleDateString('en-CA', { timeZone: ET_TIMEZONE }); // YYYY-MM-DD format
+          return etDate === targetDate;
+        });
+
+        if (daySnaps.length === 0) {
+          regimeMapStatus.textContent = 'No data found for ' + dateStr + '. Try a trading day.';
+          return;
+        }
+
+        regimeMapStatus.textContent = daySnaps.length + ' snapshots loaded for ' + dateStr;
+        drawRegimeMap(daySnaps);
+      } catch (err) {
+        regimeMapStatus.textContent = 'Error: ' + err.message;
+      }
+    }
+
+    function getParadigmColor(paradigm) {
+      if (!paradigm) return 'rgba(156,163,175,0.15)';
+      const p = paradigm.toUpperCase();
+      if (p.includes('BOFA') || p.includes('BOA') || p.includes('SCALP')) return 'rgba(96,165,250,0.15)';
+      if (p.includes('MISSY')) return 'rgba(168,85,247,0.15)';
+      if (p.includes('NEG') || p.includes('AG ') || p.includes('AG-') || p.includes('ANTI')) return 'rgba(239,68,68,0.15)';
+      if (p.includes('POS') || p.includes('GEX') || p.includes('LONG')) return 'rgba(34,197,94,0.15)';
+      return 'rgba(156,163,175,0.15)';
+    }
+
+    function buildParadigmBands(snaps) {
+      const shapes = [];
+      if (!snaps.length) return shapes;
+
+      let bandStart = 0;
+      let currentParadigm = (snaps[0].stats || {}).paradigm || '';
+
+      for (let i = 1; i <= snaps.length; i++) {
+        const nextParadigm = i < snaps.length ? ((snaps[i].stats || {}).paradigm || '') : '';
+        if (nextParadigm !== currentParadigm || i === snaps.length) {
+          const x0 = snaps[bandStart].ts;
+          const x1 = snaps[i - 1].ts;
+          shapes.push({
+            type: 'rect',
+            x0: x0, x1: x1,
+            y0: 0, y1: 1,
+            xref: 'x', yref: 'paper',
+            fillcolor: getParadigmColor(currentParadigm),
+            line: { width: 0 },
+            layer: 'below'
+          });
+          if (i < snaps.length) {
+            bandStart = i;
+            currentParadigm = nextParadigm;
+          }
+        }
+      }
+      return shapes;
+    }
+
+    function buildSteppingLevels(snaps) {
+      const shapes = [];
+      const annotations = [];
+
+      for (let i = 0; i < snaps.length; i++) {
+        const snap = snaps[i];
+        const stats = snap.stats || {};
+        const x0 = snap.ts;
+        const x1 = i < snaps.length - 1 ? snaps[i + 1].ts : snap.ts;
+
+        // Target
+        if (stats.target) {
+          const tMatch = String(stats.target).replace(/[$,]/g, '').match(/([\d.]+)/);
+          if (tMatch) {
+            const target = parseFloat(tMatch[1]);
+            shapes.push({ type: 'line', x0: x0, x1: x1, y0: target, y1: target, xref: 'x', yref: 'y', line: { color: '#3b82f6', width: 1.5, dash: 'dash' }, layer: 'above' });
+          }
+        }
+
+        // LIS
+        if (stats.lis) {
+          const lisStr = String(stats.lis).replace(/[$,]/g, '');
+          let lisLow = null, lisHigh = null;
+          const dashMatch = lisStr.match(/([\d.]+)\s*[-–]\s*([\d.]+)/);
+          if (dashMatch) {
+            lisLow = parseFloat(dashMatch[1]);
+            lisHigh = parseFloat(dashMatch[2]);
+          } else {
+            const slashMatch = lisStr.match(/([\d.]+)\s*\/\s*([\d.]+)/);
+            if (slashMatch) {
+              lisLow = parseFloat(slashMatch[1]);
+              lisHigh = parseFloat(slashMatch[2]);
+            } else {
+              const single = lisStr.match(/([\d.]+)/);
+              if (single) lisLow = parseFloat(single[1]);
+            }
+          }
+          if (lisLow) {
+            shapes.push({ type: 'line', x0: x0, x1: x1, y0: lisLow, y1: lisLow, xref: 'x', yref: 'y', line: { color: '#f59e0b', width: 1.5, dash: 'dash' }, layer: 'above' });
+          }
+          if (lisHigh && lisHigh !== lisLow) {
+            shapes.push({ type: 'line', x0: x0, x1: x1, y0: lisHigh, y1: lisHigh, xref: 'x', yref: 'y', line: { color: '#f59e0b', width: 1.5, dash: 'dash' }, layer: 'above' });
+          }
+        }
+
+        // Max +GEX / -GEX strikes
+        const gexData = snap.net_gex || [];
+        const strikes = snap.strikes || [];
+        let maxPosGexStrike = null, maxNegGexStrike = null;
+        let maxPosVal = 0, maxNegVal = 0;
+        for (let j = 0; j < strikes.length && j < gexData.length; j++) {
+          if (gexData[j] > maxPosVal) { maxPosVal = gexData[j]; maxPosGexStrike = strikes[j]; }
+          if (gexData[j] < maxNegVal) { maxNegVal = gexData[j]; maxNegGexStrike = strikes[j]; }
+        }
+        if (maxPosGexStrike) {
+          shapes.push({ type: 'line', x0: x0, x1: x1, y0: maxPosGexStrike, y1: maxPosGexStrike, xref: 'x', yref: 'y', line: { color: '#22c55e', width: 1.5, dash: 'dash' }, layer: 'above' });
+        }
+        if (maxNegGexStrike) {
+          shapes.push({ type: 'line', x0: x0, x1: x1, y0: maxNegGexStrike, y1: maxNegGexStrike, xref: 'x', yref: 'y', line: { color: '#ef4444', width: 1.5, dash: 'dash' }, layer: 'above' });
+        }
+      }
+
+      // Add annotations for the last snapshot's levels (right edge labels)
+      if (snaps.length > 0) {
+        const lastSnap = snaps[snaps.length - 1];
+        const lastStats = lastSnap.stats || {};
+        const lastTs = lastSnap.ts;
+
+        if (lastStats.target) {
+          const tMatch = String(lastStats.target).replace(/[$,]/g, '').match(/([\d.]+)/);
+          if (tMatch) annotations.push({ x: lastTs, y: parseFloat(tMatch[1]), xref: 'x', yref: 'y', text: 'Tgt ' + Math.round(parseFloat(tMatch[1])), showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left', xshift: 5 });
+        }
+
+        if (lastStats.lis) {
+          const lisStr = String(lastStats.lis).replace(/[$,]/g, '');
+          const dashMatch = lisStr.match(/([\d.]+)\s*[-–]\s*([\d.]+)/);
+          const slashMatch = lisStr.match(/([\d.]+)\s*\/\s*([\d.]+)/);
+          if (dashMatch) {
+            annotations.push({ x: lastTs, y: parseFloat(dashMatch[1]), xref: 'x', yref: 'y', text: 'LIS ' + Math.round(parseFloat(dashMatch[1])), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
+            if (parseFloat(dashMatch[2]) !== parseFloat(dashMatch[1]))
+              annotations.push({ x: lastTs, y: parseFloat(dashMatch[2]), xref: 'x', yref: 'y', text: 'LIS ' + Math.round(parseFloat(dashMatch[2])), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
+          } else if (slashMatch) {
+            annotations.push({ x: lastTs, y: parseFloat(slashMatch[1]), xref: 'x', yref: 'y', text: 'LIS ' + Math.round(parseFloat(slashMatch[1])), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
+            if (parseFloat(slashMatch[2]) !== parseFloat(slashMatch[1]))
+              annotations.push({ x: lastTs, y: parseFloat(slashMatch[2]), xref: 'x', yref: 'y', text: 'LIS ' + Math.round(parseFloat(slashMatch[2])), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left', xshift: 5 });
+          }
+        }
+
+        const gexData = lastSnap.net_gex || [];
+        const strikes = lastSnap.strikes || [];
+        let maxPosGexStrike = null, maxNegGexStrike = null;
+        let maxPosVal = 0, maxNegVal = 0;
+        for (let j = 0; j < strikes.length && j < gexData.length; j++) {
+          if (gexData[j] > maxPosVal) { maxPosVal = gexData[j]; maxPosGexStrike = strikes[j]; }
+          if (gexData[j] < maxNegVal) { maxNegVal = gexData[j]; maxNegGexStrike = strikes[j]; }
+        }
+        if (maxPosGexStrike) annotations.push({ x: lastTs, y: maxPosGexStrike, xref: 'x', yref: 'y', text: '+G ' + maxPosGexStrike, showarrow: false, font: { color: '#22c55e', size: 10 }, xanchor: 'left', xshift: 5 });
+        if (maxNegGexStrike) annotations.push({ x: lastTs, y: maxNegGexStrike, xref: 'x', yref: 'y', text: '-G ' + maxNegGexStrike, showarrow: false, font: { color: '#ef4444', size: 10 }, xanchor: 'left', xshift: 5 });
+      }
+
+      return { shapes, annotations };
+    }
+
+    function drawRegimeMap(snaps) {
+      // Build candlestick data using actual timestamps
+      const times = [];
+      const opens = [];
+      const highs = [];
+      const lows = [];
+      const closes = [];
+
+      for (let i = 0; i < snaps.length; i++) {
+        const curr = snaps[i].spot;
+        const prev = i > 0 ? snaps[i - 1].spot : curr;
+        times.push(snaps[i].ts);
+        opens.push(prev);
+        closes.push(curr);
+        highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1);
+        lows.push(Math.min(prev, curr) - Math.abs(curr - prev) * 0.1);
+      }
+
+      const candleTrace = {
+        type: 'candlestick',
+        x: times,
+        open: opens,
+        high: highs,
+        low: lows,
+        close: closes,
+        increasing: { line: { color: '#22c55e' }, fillcolor: '#22c55e' },
+        decreasing: { line: { color: '#ef4444' }, fillcolor: '#ef4444' },
+        hovertemplate: '%{x|%H:%M ET}<br>O: %{open:.1f}<br>H: %{high:.1f}<br>L: %{low:.1f}<br>C: %{close:.1f}<extra></extra>'
+      };
+
+      // Day open line
+      const dayOpen = snaps[0].spot;
+      const allPrices = [...highs, ...lows];
+      const priceMin = Math.min(...allPrices) - 10;
+      const priceMax = Math.max(...allPrices) + 10;
+
+      // Build paradigm bands
+      const paradigmShapes = buildParadigmBands(snaps);
+
+      // Build stepping level lines
+      const { shapes: levelShapes, annotations } = buildSteppingLevels(snaps);
+
+      // Day open shape
+      const dayOpenShape = {
+        type: 'line',
+        x0: snaps[0].ts, x1: snaps[snaps.length - 1].ts,
+        y0: dayOpen, y1: dayOpen,
+        xref: 'x', yref: 'y',
+        line: { color: '#9ca3af', width: 1, dash: 'dash' },
+        layer: 'above'
+      };
+
+      // Day open annotation
+      annotations.push({
+        x: snaps[snaps.length - 1].ts, y: dayOpen,
+        xref: 'x', yref: 'y',
+        text: 'Open ' + Math.round(dayOpen),
+        showarrow: false,
+        font: { color: '#9ca3af', size: 10 },
+        xanchor: 'left', xshift: 5
+      });
+
+      // Paradigm change annotations (at top of chart)
+      let prevParadigm = '';
+      for (let i = 0; i < snaps.length; i++) {
+        const p = ((snaps[i].stats || {}).paradigm || '');
+        if (p && p !== prevParadigm) {
+          annotations.push({
+            x: snaps[i].ts, y: 1,
+            xref: 'x', yref: 'paper',
+            text: p,
+            showarrow: true,
+            arrowhead: 0,
+            arrowcolor: 'rgba(255,255,255,0.3)',
+            ax: 0, ay: 20,
+            font: { color: '#e6e7e9', size: 9 },
+            bgcolor: 'rgba(0,0,0,0.6)',
+            borderpad: 2
+          });
+          prevParadigm = p;
+        }
+      }
+
+      const allShapes = [...paradigmShapes, ...levelShapes, dayOpenShape];
+
+      Plotly.react(regimeMapPlot, [candleTrace], {
+        margin: { l: 55, r: 80, t: 20, b: 50 },
+        paper_bgcolor: '#121417',
+        plot_bgcolor: '#0f1115',
+        xaxis: {
+          type: 'date',
+          gridcolor: '#20242a',
+          tickfont: { size: 10 },
+          tickformat: '%H:%M',
+          dtick: 1800000, // 30 min ticks
+          rangeslider: { visible: false }
+        },
+        yaxis: {
+          gridcolor: '#20242a',
+          tickfont: { size: 10 },
+          side: 'left',
+          range: [priceMin, priceMax],
+          dtick: 5
+        },
+        font: { color: '#e6e7e9', size: 10 },
+        shapes: allShapes,
+        annotations: annotations,
+        dragmode: 'zoom'
+      }, {
+        displayModeBar: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+        responsive: true,
+        scrollZoom: true
+      });
     }
 
     // ===== Settings Modal =====

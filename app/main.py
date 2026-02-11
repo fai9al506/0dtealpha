@@ -2193,15 +2193,20 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
     if interval not in (1, 5):
         return JSONResponse({"error": "interval must be 1 or 5"}, status_code=400)
     try:
+        barsback = 390 if interval == 1 else 78
         parts = date.split("-")
-        ts_date = f"{parts[1]}-{parts[2]}-{parts[0]}"
 
         params = {
             "interval": str(interval),
             "unit": "Minute",
-            "firstdate": ts_date,
-            "lastdate": ts_date,
+            "barsback": str(barsback),
         }
+
+        # For historical dates: add lastdate with time (TS format: MM-DD-YYYYtHH:MM:SS)
+        # barsback + lastdate works; barsback + firstdate does NOT (TS API restriction)
+        today_str = now_et().strftime("%Y-%m-%d")
+        if date != today_str:
+            params["lastdate"] = f"{parts[1]}-{parts[2]}-{parts[0]}t16:05:00"
 
         print(f"[spx_candles_date] date={date} interval={interval} params={params}", flush=True)
         r = api_get("/marketdata/barcharts/$SPX.X", params=params, timeout=15)
@@ -2221,7 +2226,9 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
                     dt = dt.tz_localize('UTC')
                 # Convert to naive ET string for consistent NY market time display
                 dt_et = dt.tz_convert('US/Eastern')
-                # Filter to market hours only (9:30-16:00 ET)
+                # Filter to selected date + market hours only (9:30-16:00 ET)
+                if dt_et.strftime('%Y-%m-%d') != date:
+                    continue
                 if dt_et.hour < 9 or (dt_et.hour == 9 and dt_et.minute < 30) or dt_et.hour >= 16:
                     continue
                 time_str = dt_et.strftime('%Y-%m-%dT%H:%M:%S')

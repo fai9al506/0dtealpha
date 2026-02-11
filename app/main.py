@@ -2193,14 +2193,12 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
     if interval not in (1, 5):
         return JSONResponse({"error": "interval must be 1 or 5"}, status_code=400)
     try:
-        barsback = 390 if interval == 1 else 78
         parts = date.split("-")
         ts_date = f"{parts[1]}-{parts[2]}-{parts[0]}"
 
         params = {
             "interval": str(interval),
             "unit": "Minute",
-            "barsback": str(barsback),
             "firstdate": ts_date,
             "lastdate": ts_date,
         }
@@ -2223,6 +2221,9 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
                     dt = dt.tz_localize('UTC')
                 # Convert to naive ET string for consistent NY market time display
                 dt_et = dt.tz_convert('US/Eastern')
+                # Filter to market hours only (9:30-16:00 ET)
+                if dt_et.hour < 9 or (dt_et.hour == 9 and dt_et.minute < 30) or dt_et.hour >= 16:
+                    continue
                 time_str = dt_et.strftime('%Y-%m-%dT%H:%M:%S')
             except:
                 time_str = ts_raw

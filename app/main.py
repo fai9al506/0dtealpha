@@ -2202,11 +2202,11 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
             "barsback": str(barsback),
         }
 
-        # For historical dates: add lastdate with time (TS format: MM-DD-YYYYtHH:MM:SS)
-        # barsback + lastdate works; barsback + firstdate does NOT (TS API restriction)
+        # For historical dates: add lastdate (barsback + lastdate works; + firstdate does NOT)
+        # Try ISO format for v3 API: YYYY-MM-DDT16:05:00Z
         today_str = now_et().strftime("%Y-%m-%d")
         if date != today_str:
-            params["lastdate"] = f"{parts[1]}-{parts[2]}-{parts[0]}t16:05:00"
+            params["lastdate"] = f"{date}T16:05:00Z"
 
         print(f"[spx_candles_date] date={date} interval={interval} params={params}", flush=True)
         r = api_get("/marketdata/barcharts/$SPX.X", params=params, timeout=15)
@@ -6592,12 +6592,14 @@ DASH_HTML_TEMPLATE = """
           return;
         }
 
-        // Filter to selected date only (compare ET date strings)
+        // Filter to selected date + market hours only (9:30-16:00 ET)
         const targetDate = dateStr; // YYYY-MM-DD
         const daySnaps = data.snapshots.filter(s => {
           const d = new Date(s.ts);
           const etDate = d.toLocaleDateString('en-CA', { timeZone: ET_TIMEZONE }); // YYYY-MM-DD format
-          return etDate === targetDate;
+          if (etDate !== targetDate) return false;
+          const etTime = d.toLocaleTimeString('en-GB', { timeZone: ET_TIMEZONE, hour12: false });
+          return etTime >= '09:30:00' && etTime <= '16:00:59';
         });
 
         if (daySnaps.length === 0) {

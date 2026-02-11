@@ -33,7 +33,7 @@ if DB_URL.startswith("postgresql://"):
 
 # Cadence
 PULL_EVERY     = 30   # seconds
-SAVE_EVERY_MIN = 5    # minutes
+SAVE_EVERY_MIN = 2    # minutes
 
 # Chain window
 STREAM_SECONDS = 5.0  # Increased from 2.0 to allow full chain download

@@ -921,6 +921,83 @@ def db_volland_delta_decay_window(limit: int = 40) -> dict:
         "points": pts
     }
 
+def db_volland_exposure_window(greek: str, expiration_option: str, limit: int = 40) -> dict:
+    """
+    Generic query: returns latest 'limit' strikes centered on spot for any
+    greek + expiration_option combo stored in volland_exposure_points.
+    """
+    if not engine:
+        raise RuntimeError("DATABASE_URL not set")
+
+    lim = int(limit)
+    if lim < 5: lim = 5
+    if lim > 200: lim = 200
+
+    sql = text("""
+    WITH latest AS (
+      SELECT max(ts_utc) AS ts_utc
+      FROM volland_exposure_points
+      WHERE greek = :greek AND expiration_option = :exp_option
+    ),
+    center AS (
+      SELECT COALESCE(
+        (SELECT v.current_price::numeric
+         FROM volland_exposure_points v
+         JOIN latest l ON v.ts_utc = l.ts_utc
+         WHERE v.greek = :greek AND v.expiration_option = :exp_option
+               AND v.current_price IS NOT NULL
+         LIMIT 1),
+        (SELECT v.strike::numeric
+         FROM volland_exposure_points v
+         JOIN latest l ON v.ts_utc = l.ts_utc
+         WHERE v.greek = :greek AND v.expiration_option = :exp_option
+         ORDER BY abs(v.value::numeric) DESC
+         LIMIT 1)
+      ) AS mid_strike
+    ),
+    ranked AS (
+      SELECT
+        v.ts_utc,
+        v.strike::numeric AS strike,
+        v.value::numeric  AS value,
+        c.mid_strike,
+        (v.strike::numeric - c.mid_strike) AS rel,
+        ROW_NUMBER() OVER (
+          ORDER BY abs(v.strike::numeric - c.mid_strike), v.strike::numeric
+        ) AS rn
+      FROM volland_exposure_points v
+      JOIN latest l ON v.ts_utc = l.ts_utc
+      CROSS JOIN center c
+      WHERE v.greek = :greek AND v.expiration_option = :exp_option
+    )
+    SELECT ts_utc, strike, value, mid_strike, rel
+    FROM ranked
+    WHERE rn <= :lim
+    ORDER BY strike;
+    """)
+    with engine.begin() as conn:
+        rows = conn.execute(sql, {"greek": greek, "exp_option": expiration_option, "lim": lim}).mappings().all()
+
+    if not rows:
+        return {"ts_utc": None, "mid_strike": None, "points": []}
+
+    ts_utc = rows[0]["ts_utc"]
+    mid_strike = rows[0]["mid_strike"]
+
+    pts = []
+    for r in rows:
+        pts.append({
+            "strike": float(r["strike"]) if r["strike"] is not None else None,
+            "value":  float(r["value"])  if r["value"]  is not None else None,
+            "rel":    float(r["rel"])    if r["rel"]    is not None else None,
+        })
+
+    return {
+        "ts_utc": ts_utc.isoformat() if hasattr(ts_utc, "isoformat") else str(ts_utc),
+        "mid_strike": float(mid_strike) if mid_strike is not None else None,
+        "points": pts
+    }
+
 def db_volland_stats() -> Optional[dict]:
     """
     Get Volland statistics from the latest snapshot.
@@ -1975,6 +2052,29 @@ def api_volland_delta_decay_window(limit: int = Query(40, ge=5, le=200)):
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
         return db_volland_delta_decay_window(limit=limit)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/volland/exposure_window")
+def api_volland_exposure_window(
+    greek: str = Query(..., description="Greek name: vanna or gamma"),
+    expiration: str = Query(..., description="Expiration option: THIS_WEEK, THIRTY_NEXT_DAYS, or ALL"),
+    limit: int = Query(40, ge=5, le=200),
+):
+    """
+    Generic exposure window for any greek + expiration_option combo.
+    Used by Charts HT tab for high-tenor vanna & gamma grids.
+    """
+    ALLOWED_GREEKS = {"vanna", "gamma"}
+    ALLOWED_EXPIRATIONS = {"THIS_WEEK", "THIRTY_NEXT_DAYS", "ALL"}
+    if greek not in ALLOWED_GREEKS:
+        return JSONResponse({"error": f"greek must be one of {ALLOWED_GREEKS}"}, status_code=400)
+    if expiration not in ALLOWED_EXPIRATIONS:
+        return JSONResponse({"error": f"expiration must be one of {ALLOWED_EXPIRATIONS}"}, status_code=400)
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        return db_volland_exposure_window(greek=greek, expiration_option=expiration, limit=limit)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -3816,6 +3916,13 @@ DASH_HTML_TEMPLATE = """
     }
     #volChart, #oiChart, #gexChart, #vannaChart, #deltaDecayChart { width:100%; height:420px; }
 
+    .ht-grid {
+      display:grid;
+      grid-template-columns:1fr 1fr 1fr;
+      gap:8px;
+    }
+    .ht-grid > div { width:100%; height:380px; }
+
     .unified-grid {
       display:grid;
       grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
@@ -3889,6 +3996,8 @@ DASH_HTML_TEMPLATE = """
       .panel { padding:8px; border-radius:10px; }
       iframe { height:60vh; }
       #volChart, #oiChart, #gexChart, #vannaChart, #deltaDecayChart { height:340px; }
+      .ht-grid { grid-template-columns:1fr; }
+      .ht-grid > div { height:320px; }
       .spot-grid { grid-template-columns:1fr; }
       .card { min-height:260px; }
       .unified-grid { grid-template-columns:1fr; height:auto; }
@@ -4034,6 +4143,7 @@ DASH_HTML_TEMPLATE = """
       <div class="nav">
         <button class="btn active" id="tabTable">Table</button>
         <button class="btn" id="tabCharts">Charts</button>
+        <button class="btn" id="tabChartsHT">Charts HT</button>
         <button class="btn" id="tabSpot">Spot</button>
         <button class="btn" id="tabPlayback">Playback</button>
         <button class="btn" id="tabRegimeMap">Regime Map</button>
@@ -4311,6 +4421,21 @@ DASH_HTML_TEMPLATE = """
           <div id="oiChart"></div>
           <div id="vannaChart"></div>
           <div id="deltaDecayChart"></div>
+        </div>
+      </div>
+
+      <div id="viewChartsHT" class="panel" style="display:none">
+        <div class="header">
+          <div><strong>Volland High-Tenor Vanna &amp; Gamma</strong></div>
+          <div class="pill">spot line = dotted</div>
+        </div>
+        <div class="ht-grid">
+          <div id="weeklyVannaChart"></div>
+          <div id="monthlyVannaChart"></div>
+          <div id="allVannaChart"></div>
+          <div id="weeklyGammaChart"></div>
+          <div id="monthlyGammaChart"></div>
+          <div id="allGammaChart"></div>
         </div>
       </div>
 
@@ -4624,28 +4749,32 @@ DASH_HTML_TEMPLATE = """
     // Tabs
     const tabTable=document.getElementById('tabTable'),
           tabCharts=document.getElementById('tabCharts'),
+          tabChartsHT=document.getElementById('tabChartsHT'),
           tabSpot=document.getElementById('tabSpot'),
           tabPlayback=document.getElementById('tabPlayback'),
           tabRegimeMap=document.getElementById('tabRegimeMap');
 
     const viewTable=document.getElementById('viewTable'),
           viewCharts=document.getElementById('viewCharts'),
+          viewChartsHT=document.getElementById('viewChartsHT'),
           viewSpot=document.getElementById('viewSpot'),
           viewPlayback=document.getElementById('viewPlayback'),
           viewRegimeMap=document.getElementById('viewRegimeMap');
 
     function setActive(btn){
-      [tabTable,tabCharts,tabSpot,tabPlayback,tabRegimeMap].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabCharts,tabChartsHT,tabSpot,tabPlayback,tabRegimeMap].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewPlayback.style.display='none'; viewRegimeMap.style.display='none'; }
-    function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopSpot(); stopStatistics(); }
-    function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopSpot(); stopStatistics(); }
-    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); startStatistics(); stopCharts(); }
-    function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopSpot(); stopStatistics(); initPlayback(); }
-    function showRegimeMap(){ setActive(tabRegimeMap); hideAllViews(); viewRegimeMap.style.display=''; stopCharts(); stopSpot(); stopStatistics(); initRegimeMap(); }
+    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewChartsHT.style.display='none'; viewSpot.style.display='none'; viewPlayback.style.display='none'; viewRegimeMap.style.display='none'; }
+    function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); }
+    function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopChartsHT(); stopSpot(); stopStatistics(); }
+    function showChartsHT(){ setActive(tabChartsHT); hideAllViews(); viewChartsHT.style.display=''; startChartsHT(); stopCharts(); stopSpot(); stopStatistics(); }
+    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); startStatistics(); stopCharts(); stopChartsHT(); }
+    function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); initPlayback(); }
+    function showRegimeMap(){ setActive(tabRegimeMap); hideAllViews(); viewRegimeMap.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); initRegimeMap(); }
     tabTable.addEventListener('click', showTable);
     tabCharts.addEventListener('click', showCharts);
+    tabChartsHT.addEventListener('click', showChartsHT);
     tabSpot.addEventListener('click', showSpot);
     tabPlayback.addEventListener('click', showPlayback);
     tabRegimeMap.addEventListener('click', showRegimeMap);
@@ -4929,6 +5058,125 @@ DASH_HTML_TEMPLATE = """
       if (chartsTimer){
         clearInterval(chartsTimer);
         chartsTimer=null;
+      }
+    }
+
+    // ===== Charts HT (High-Tenor Vanna & Gamma) =====
+    const htDivs = {
+      weeklyVanna:  document.getElementById('weeklyVannaChart'),
+      monthlyVanna: document.getElementById('monthlyVannaChart'),
+      allVanna:     document.getElementById('allVannaChart'),
+      weeklyGamma:  document.getElementById('weeklyGammaChart'),
+      monthlyGamma: document.getElementById('monthlyGammaChart'),
+      allGamma:     document.getElementById('allGammaChart'),
+    };
+    let chartsHTTimer = null;
+
+    function drawHTChart(divEl, data, spot, label){
+      if (!data || data.error) {
+        const msg = data && data.error ? data.error : "no data";
+        Plotly.react(divEl, [], {
+          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          margin:{l:40,r:10,t:30,b:30},
+          annotations:[{text:label+": "+msg, x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9',size:11}}],
+          font:{color:'#e6e7e9'}
+        }, {displayModeBar:false,responsive:true});
+        return;
+      }
+      const pts = data.points || [];
+      if (!pts.length) {
+        Plotly.react(divEl, [], {
+          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          margin:{l:40,r:10,t:30,b:30},
+          annotations:[{text:label+": no points yet", x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9',size:11}}],
+          font:{color:'#e6e7e9'}
+        }, {displayModeBar:false,responsive:true});
+        return;
+      }
+      const strikes = pts.map(p=>p.strike);
+      const vals    = pts.map(p=>p.value);
+      const colors  = vals.map(v => (v >= 0 ? '#22c55e' : '#ef4444'));
+
+      let yMin = Math.min(...vals);
+      let yMax = Math.max(...vals);
+      if (yMin === yMax){
+        const pad0 = Math.max(1, Math.abs(yMin)*0.05);
+        yMin -= pad0; yMax += pad0;
+      } else {
+        const pad = (yMax - yMin) * 0.05;
+        yMin -= pad; yMax += pad;
+      }
+
+      const shapes = [];
+      if (spot != null) {
+        shapes.push({
+          type:'line', x0:spot, x1:spot, y0:yMin, y1:yMax,
+          xref:'x', yref:'y',
+          line:{color:'#9aa0a6', width:2, dash:'dot'}
+        });
+      }
+
+      let titleText = label;
+      if (data.ts_utc) {
+        const dt = new Date(data.ts_utc);
+        const ageMins = Math.round((Date.now() - dt.getTime()) / 60000);
+        const timeStr = fmtTimeET(data.ts_utc);
+        const stale = ageMins > 5 ? ' <span style="color:#ef4444">(stale)</span>' : '';
+        titleText = label + '  <span style="font-size:10px;color:#9aa0a6">' + timeStr + ' ET' + stale + '</span>';
+      }
+
+      Plotly.react(divEl, [{
+        type:'bar', x:strikes, y:vals,
+        marker:{color:colors},
+        hovertemplate:"Strike %{x}<br>"+label+" %{y}<extra></extra>"
+      }], {
+        title:{text:titleText, font:{size:13}},
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        margin:{l:50,r:10,t:32,b:36},
+        xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:9}, dtick:5},
+        yaxis:{gridcolor:'#20242a', tickfont:{size:9}, range:[yMin,yMax]},
+        shapes: shapes,
+        font:{color:'#e6e7e9',size:10}
+      }, {displayModeBar:false,responsive:true});
+    }
+
+    const HT_COMBOS = [
+      {key:'weeklyVanna',  greek:'vanna', exp:'THIS_WEEK',       label:'Weekly Vanna'},
+      {key:'monthlyVanna', greek:'vanna', exp:'THIRTY_NEXT_DAYS', label:'Monthly Vanna'},
+      {key:'allVanna',     greek:'vanna', exp:'ALL',              label:'All-exp Vanna'},
+      {key:'weeklyGamma',  greek:'gamma', exp:'THIS_WEEK',       label:'Weekly Gamma'},
+      {key:'monthlyGamma', greek:'gamma', exp:'THIRTY_NEXT_DAYS', label:'Monthly Gamma'},
+      {key:'allGamma',     greek:'gamma', exp:'ALL',              label:'All-exp Gamma'},
+    ];
+
+    async function drawOrUpdateHT(){
+      let spot = null;
+      try {
+        const series = await fetchSeries();
+        if (series && series.spot) spot = series.spot;
+      } catch(e){}
+
+      const fetches = HT_COMBOS.map(c =>
+        fetch('/api/volland/exposure_window?greek='+c.greek+'&expiration='+c.exp+'&limit=40', {cache:'no-store'})
+          .then(r=>r.json())
+          .catch(err=>({error:String(err)}))
+      );
+      const results = await Promise.all(fetches);
+      HT_COMBOS.forEach((c,i) => {
+        drawHTChart(htDivs[c.key], results[i], spot, c.label);
+      });
+    }
+
+    function startChartsHT(){
+      drawOrUpdateHT();
+      if (chartsHTTimer) clearInterval(chartsHTTimer);
+      chartsHTTimer = setInterval(drawOrUpdateHT, PULL_EVERY);
+    }
+    function stopChartsHT(){
+      if (chartsHTTimer){
+        clearInterval(chartsHTTimer);
+        chartsHTTimer=null;
       }
     }
 

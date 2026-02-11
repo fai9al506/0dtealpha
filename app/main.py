@@ -2194,22 +2194,18 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
         return JSONResponse({"error": "interval must be 1 or 5"}, status_code=400)
     try:
         barsback = 390 if interval == 1 else 78
+        parts = date.split("-")
+        ts_date = f"{parts[1]}-{parts[2]}-{parts[0]}"
 
         params = {
             "interval": str(interval),
             "unit": "Minute",
             "barsback": str(barsback),
+            "firstdate": ts_date,
+            "lastdate": ts_date,
         }
 
-        # For today: skip lastdate (proven approach matching /api/spx_candles_1m)
-        # For historical dates: add lastdate in MM-DD-YYYY format
-        today_str = now_et().strftime("%Y-%m-%d")
-        if date != today_str:
-            parts = date.split("-")
-            lastdate = f"{parts[1]}-{parts[2]}-{parts[0]}"
-            params["lastdate"] = lastdate
-
-        print(f"[spx_candles_date] date={date} interval={interval} barsback={barsback} params={params}", flush=True)
+        print(f"[spx_candles_date] date={date} interval={interval} params={params}", flush=True)
         r = api_get("/marketdata/barcharts/$SPX.X", params=params, timeout=15)
         data = r.json()
 
@@ -2225,8 +2221,9 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
                 dt = pd.to_datetime(ts_raw)
                 if dt.tzinfo is None:
                     dt = dt.tz_localize('UTC')
-                # Return UTC ISO string to match playback_snapshots TIMESTAMPTZ format
-                time_str = dt.isoformat()
+                # Convert to naive ET string for consistent NY market time display
+                dt_et = dt.tz_convert('US/Eastern')
+                time_str = dt_et.strftime('%Y-%m-%dT%H:%M:%S')
             except:
                 time_str = ts_raw
 
@@ -6775,6 +6772,14 @@ DASH_HTML_TEMPLATE = """
     }
 
     function drawRegimeMap(snaps, candles) {
+      // Convert snapshot timestamps from UTC ISO to naive ET strings
+      // so they align with candle timestamps (also naive ET)
+      for (let i = 0; i < snaps.length; i++) {
+        const d = new Date(snaps[i].ts);
+        const etStr = d.toLocaleString('sv-SE', { timeZone: 'America/New_York' }).replace(' ', 'T');
+        snaps[i].ts = etStr;
+      }
+
       // Per-field forward-fill: each stats field carries forward independently
       // Handles both field names: lis (new) and lines_in_sand (old data)
       const ff = {};

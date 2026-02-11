@@ -2072,7 +2072,7 @@ def api_volland_exposure_window(
     Omit expiration for 0DTE data (no expiration filter).
     """
     ALLOWED_GREEKS = {"vanna", "gamma"}
-    ALLOWED_EXPIRATIONS = {"THIS_WEEK", "THIRTY_NEXT_DAYS", "ALL"}
+    ALLOWED_EXPIRATIONS = {"TODAY", "THIS_WEEK", "THIRTY_NEXT_DAYS", "ALL"}
     if greek not in ALLOWED_GREEKS:
         return JSONResponse({"error": f"greek must be one of {ALLOWED_GREEKS}"}, status_code=400)
     if expiration is not None and expiration not in ALLOWED_EXPIRATIONS:
@@ -5120,12 +5120,12 @@ DASH_HTML_TEMPLATE = """
     .then(w => drawDeltaDecay(w, spot))
     .catch(err => drawDeltaDecay({ error: String(err) }, spot));
 
-  fetch('/api/volland/exposure_window?greek=vanna&limit=40',{cache:'no-store'})
+  fetch('/api/volland/exposure_window?greek=vanna&expiration=TODAY&limit=40',{cache:'no-store'})
     .then(r=>r.json())
     .then(w => drawExposureChart(vannaOdteDiv, w, spot, 'Vanna 0DTE'))
     .catch(err => drawExposureChart(vannaOdteDiv, {error:String(err)}, spot, 'Vanna 0DTE'));
 
-  fetch('/api/volland/exposure_window?greek=gamma&limit=40',{cache:'no-store'})
+  fetch('/api/volland/exposure_window?greek=gamma&expiration=TODAY&limit=40',{cache:'no-store'})
     .then(r=>r.json())
     .then(w => drawExposureChart(gammaOdteDiv, w, spot, 'Gamma 0DTE'))
     .catch(err => drawExposureChart(gammaOdteDiv, {error:String(err)}, spot, 'Gamma 0DTE'));

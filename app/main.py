@@ -5134,7 +5134,7 @@ DASH_HTML_TEMPLATE = """
         paper_bgcolor:'#121417',
         plot_bgcolor:'#0f1115',
         margin:{l:50,r:10,t:32,b:36},
-        xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:9}, dtick:5},
+        xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:9}, dtick:10},
         yaxis:{gridcolor:'#20242a', tickfont:{size:9}, range:[yMin,yMax]},
         shapes: shapes,
         font:{color:'#e6e7e9',size:10}

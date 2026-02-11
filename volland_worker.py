@@ -562,6 +562,20 @@ def run():
                 print("[volland] error:", e)
                 traceback.print_exc()
 
+                # If the browser/page died, recreate them
+                if "closed" in str(e).lower() or "Target" in str(e):
+                    print("[volland] Browser/page crashed — recreating...", flush=True)
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
+                    browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+                    page = browser.new_page(viewport={"width": 1400, "height": 900})
+                    page.set_default_timeout(90000)
+                    page.add_init_script(INIT_CAPTURE_JS)
+                    login_if_needed(page)
+                    print("[volland] Browser recreated successfully", flush=True)
+
             time.sleep(PULL_EVERY)
 
 

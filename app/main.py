@@ -6914,6 +6914,7 @@ DASH_HTML_TEMPLATE = """
           tickfont: { size: 10 },
           tickformat: '%H:%M',
           dtick: 1800000,
+          range: [times[0].substring(0, 11) + '09:25:00', times[0].substring(0, 11) + '16:05:00'],
           rangeslider: { visible: false }
         },
         yaxis: {

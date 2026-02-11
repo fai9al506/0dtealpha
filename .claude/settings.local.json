@@ -47,7 +47,12 @@
       "WebFetch(domain:station.railway.com)",
       "WebFetch(domain:railway.com)",
       "Bash(railway --help:*)",
-      "Bash(railway open:*)"
+      "Bash(railway open:*)",
+      "Bash(railway domain:*)",
+      "WebFetch(domain:api.tradestation.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:tradestation.github.io)"
     ]
   }
 }

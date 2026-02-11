@@ -6607,8 +6607,10 @@ DASH_HTML_TEMPLATE = """
           const d = new Date(s.ts);
           const etDate = d.toLocaleDateString('en-CA', { timeZone: ET_TIMEZONE }); // YYYY-MM-DD format
           if (etDate !== targetDate) return false;
-          const etTime = d.toLocaleTimeString('en-GB', { timeZone: ET_TIMEZONE, hour12: false });
-          return etTime >= '09:30:00' && etTime <= '16:00:59';
+          const h = parseInt(d.toLocaleString('en-US', { timeZone: ET_TIMEZONE, hour: 'numeric', hour12: false }));
+          const m = parseInt(d.toLocaleString('en-US', { timeZone: ET_TIMEZONE, minute: 'numeric' }));
+          const mins = h * 60 + m;
+          return mins >= 570 && mins <= 960; // 9:30=570, 16:00=960
         });
 
         if (daySnaps.length === 0) {

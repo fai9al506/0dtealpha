@@ -3291,13 +3291,17 @@ def api_data_freshness():
         except Exception as e:
             print(f"[data_freshness] ts parse error: {e}", flush=True)
 
-    # Volland: latest from volland_snapshots (covers both Charm and SPX Statistics)
+    # Volland: latest REAL snapshot (exclude errors, require actual data)
     if engine:
         try:
             with engine.begin() as conn:
-                volland_row = conn.execute(text(
-                    "SELECT ts FROM volland_snapshots ORDER BY ts DESC LIMIT 1"
-                )).mappings().first()
+                volland_row = conn.execute(text("""
+                    SELECT ts FROM volland_snapshots
+                    WHERE payload->>'error_event' IS NULL
+                      AND (payload->'statistics' IS NOT NULL
+                           OR (payload->>'exposure_points_saved')::int > 0)
+                    ORDER BY ts DESC LIMIT 1
+                """)).mappings().first()
 
                 if volland_row and volland_row["ts"]:
                     v_time = volland_row["ts"]
@@ -4508,8 +4512,15 @@ DASH_HTML_TEMPLATE = """
         h += '<div style="color:var(--muted);font-size:10px">No statistics available</div>';
       }
       
-      // Timestamp
-      h += '<div class="stats-row" style="margin-top:6px;font-size:10px"><span class="stats-label">Updated</span><span class="stats-value">' + fmtTimeET(data.ts) + ' ET</span></div>';
+      // Timestamp with staleness check (same logic as charm chart)
+      let updatedLabel = fmtTimeET(data.ts) + ' ET';
+      if (data.ts) {
+        const ageMins = Math.round((Date.now() - new Date(data.ts).getTime()) / 60000);
+        if (ageMins > 5) {
+          updatedLabel += ' <span style="color:#ef4444">(stale)</span>';
+        }
+      }
+      h += '<div class="stats-row" style="margin-top:6px;font-size:10px"><span class="stats-label">Updated</span><span class="stats-value">' + updatedLabel + '</span></div>';
       
       statsContent.innerHTML = h;
     }

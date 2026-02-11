@@ -2183,6 +2183,60 @@ def api_spx_candles_1m(bars: int = Query(120, ge=10, le=400)):
         print(f"[spx_candles_1m] error: {e}", flush=True)
         return JSONResponse({"error": str(e)}, status_code=500)
 
+@app.get("/api/spx_candles_date")
+def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), interval: int = Query(5, ge=1, le=5)):
+    """
+    Fetch SPX OHLC candles for a specific historical date from TradeStation API.
+    Uses lastdate param to query any past trading day (up to ~1 year back).
+    interval: 1 for 1-min bars, 5 for 5-min bars.
+    """
+    if interval not in (1, 5):
+        return JSONResponse({"error": "interval must be 1 or 5"}, status_code=400)
+    try:
+        # Convert YYYY-MM-DD to TS lastdate format: MM-DD-YYYYt16:05:00
+        parts = date.split("-")
+        lastdate = f"{parts[1]}-{parts[2]}-{parts[0]}t16:05:00"
+        barsback = 390 if interval == 1 else 78
+
+        params = {
+            "interval": str(interval),
+            "unit": "Minute",
+            "barsback": str(barsback),
+            "lastdate": lastdate,
+        }
+        r = api_get("/marketdata/barcharts/$SPX.X", params=params, timeout=15)
+        data = r.json()
+
+        bars_list = data.get("Bars", [])
+        if not bars_list:
+            return {"error": "No bars returned", "candles": []}
+
+        candles = []
+        for bar in bars_list:
+            ts_raw = bar.get("TimeStamp", "")
+            try:
+                dt = pd.to_datetime(ts_raw)
+                if dt.tzinfo is None:
+                    dt = dt.tz_localize('UTC')
+                dt_et = dt.tz_convert('US/Eastern')
+                time_str = dt_et.strftime('%Y-%m-%dT%H:%M:%S')
+            except:
+                time_str = ts_raw
+
+            candles.append({
+                "time": time_str,
+                "open": bar.get("Open"),
+                "high": bar.get("High"),
+                "low": bar.get("Low"),
+                "close": bar.get("Close"),
+                "volume": bar.get("TotalVolume"),
+            })
+
+        return {"candles": candles, "count": len(candles)}
+    except Exception as e:
+        print(f"[spx_candles_date] error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 @app.get("/api/statistics_levels")
 def api_statistics_levels():
     """
@@ -4583,6 +4637,9 @@ DASH_HTML_TEMPLATE = """
             <label style="font-size:11px;color:var(--muted)">Date:</label>
             <input type="date" id="regimeMapDate" style="background:#0f1115;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px">
             <button id="regimeMapLoad" class="strike-btn" style="padding:4px 12px">Load</button>
+            <span style="margin-left:8px;font-size:10px;color:var(--muted)">TF:</span>
+            <button id="regimeMapTF5" class="strike-btn active" style="padding:2px 8px;font-size:10px">5m</button>
+            <button id="regimeMapTF1" class="strike-btn" style="padding:2px 8px;font-size:10px">1m</button>
             <span id="regimeMapStatus" style="font-size:11px;color:var(--muted)">Select a date and click Load</span>
           </div>
         </div>
@@ -6462,6 +6519,9 @@ DASH_HTML_TEMPLATE = """
     const regimeMapStatus = document.getElementById('regimeMapStatus');
     const regimeMapPlot = document.getElementById('regimeMapPlot');
     let regimeMapInitialized = false;
+    let regimeMapInterval = 5;
+    const regimeMapTF5 = document.getElementById('regimeMapTF5');
+    const regimeMapTF1 = document.getElementById('regimeMapTF1');
 
     function initRegimeMap() {
       if (regimeMapInitialized) return;
@@ -6470,6 +6530,20 @@ DASH_HTML_TEMPLATE = """
       const d = new Date();
       regimeMapDateInput.value = d.toISOString().split('T')[0];
       regimeMapLoadBtn.addEventListener('click', loadRegimeMapData);
+      regimeMapTF5.addEventListener('click', () => {
+        if (regimeMapInterval === 5) return;
+        regimeMapInterval = 5;
+        regimeMapTF5.classList.add('active');
+        regimeMapTF1.classList.remove('active');
+        loadRegimeMapData();
+      });
+      regimeMapTF1.addEventListener('click', () => {
+        if (regimeMapInterval === 1) return;
+        regimeMapInterval = 1;
+        regimeMapTF1.classList.add('active');
+        regimeMapTF5.classList.remove('active');
+        loadRegimeMapData();
+      });
     }
 
     async function loadRegimeMapData() {
@@ -6481,8 +6555,18 @@ DASH_HTML_TEMPLATE = """
       regimeMapStatus.textContent = 'Loading...';
 
       try {
-        const r = await fetch('/api/playback/range?start_date=' + dateStr, { cache: 'no-store' });
-        const data = await r.json();
+        const [snapRes, candleRes] = await Promise.all([
+          fetch('/api/playback/range?start_date=' + dateStr, { cache: 'no-store' }),
+          fetch('/api/spx_candles_date?date=' + dateStr + '&interval=' + regimeMapInterval, { cache: 'no-store' })
+        ]);
+        const data = await snapRes.json();
+        let candles = [];
+        try {
+          const cData = await candleRes.json();
+          if (cData.candles && cData.candles.length > 0) candles = cData.candles;
+        } catch (e) {
+          console.warn('[RegimeMap] Candle fetch failed, using synthesized:', e);
+        }
 
         if (data.error) {
           regimeMapStatus.textContent = 'Error: ' + data.error;
@@ -6507,8 +6591,9 @@ DASH_HTML_TEMPLATE = """
           return;
         }
 
-        regimeMapStatus.textContent = daySnaps.length + ' snapshots loaded for ' + dateStr;
-        drawRegimeMap(daySnaps);
+        const candleLabel = candles.length > 0 ? ' | ' + candles.length + ' candles (' + regimeMapInterval + 'm)' : ' | synth candles';
+        regimeMapStatus.textContent = daySnaps.length + ' snapshots' + candleLabel + ' for ' + dateStr;
+        drawRegimeMap(daySnaps, candles);
       } catch (err) {
         regimeMapStatus.textContent = 'Error: ' + err.message;
       }
@@ -6680,7 +6765,7 @@ DASH_HTML_TEMPLATE = """
       return { traces, annotations };
     }
 
-    function drawRegimeMap(snaps) {
+    function drawRegimeMap(snaps, candles) {
       // Per-field forward-fill: each stats field carries forward independently
       // Handles both field names: lis (new) and lines_in_sand (old data)
       const ff = {};
@@ -6704,16 +6789,30 @@ DASH_HTML_TEMPLATE = """
         }
       }
 
-      // --- Candlestick trace (synthesized from spot snapshots) ---
-      const times = [], opens = [], highs = [], lows = [], closes = [];
-      for (let i = 0; i < snaps.length; i++) {
-        const curr = snaps[i].spot;
-        const prev = i > 0 ? snaps[i - 1].spot : curr;
-        times.push(snaps[i].ts);
-        opens.push(prev);
-        closes.push(curr);
-        highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1);
-        lows.push(Math.min(prev, curr) - Math.abs(curr - prev) * 0.1);
+      // --- Candlestick trace ---
+      let times, opens, highs, lows, closes;
+
+      if (candles && candles.length > 0) {
+        // Real OHLC candles from TradeStation API
+        times = candles.map(c => c.time);
+        opens = candles.map(c => c.open);
+        highs = candles.map(c => c.high);
+        lows = candles.map(c => c.low);
+        closes = candles.map(c => c.close);
+        console.log('[RegimeMap] Using ' + candles.length + ' real candles');
+      } else {
+        // Fallback: synthesized from spot snapshots
+        times = []; opens = []; highs = []; lows = []; closes = [];
+        for (let i = 0; i < snaps.length; i++) {
+          const curr = snaps[i].spot;
+          const prev = i > 0 ? snaps[i - 1].spot : curr;
+          times.push(snaps[i].ts);
+          opens.push(prev);
+          closes.push(curr);
+          highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1);
+          lows.push(Math.min(prev, curr) - Math.abs(curr - prev) * 0.1);
+        }
+        console.log('[RegimeMap] Using synthesized candles (API unavailable)');
       }
 
       const candleTrace = {

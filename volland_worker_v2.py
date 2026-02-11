@@ -164,30 +164,6 @@ def login_if_needed(page, url):
     raise RuntimeError(f"Login did not complete. Still on: {page.url}. Body: {body}")
 
 
-# ── Lightweight paradigm check ────────────────────────────────────────
-def check_paradigm_lastmodified(page) -> str:
-    """
-    Lightweight check: single fetch to paradigm endpoint using browser auth.
-    Returns lastModified string or "" on failure.
-    """
-    try:
-        result = page.evaluate("""
-            async () => {
-                try {
-                    const r = await fetch(
-                        'https://api.vol.land/api/v1/data/paradigms/0dte?ticker=SPX'
-                    );
-                    if (!r.ok) return "";
-                    const d = await r.json();
-                    return d.lastModified || "";
-                } catch(e) { return ""; }
-            }
-        """)
-        return result or ""
-    except Exception:
-        return ""
-
-
 # ── Statistics formatting ─────────────────────────────────────────────
 def format_statistics(paradigm_data: dict, spot_vol_data: dict) -> dict:
     """
@@ -415,6 +391,14 @@ def run():
         # Track Volland's lastModified to detect refreshes
         last_known_modified = ""
 
+        def get_exposure_lastmodified():
+            """Get lastModified from the most recent exposure capture."""
+            for exp in reversed(cycle["exposures"]):
+                lm = exp.get("last_modified")
+                if lm:
+                    return lm
+            return ""
+
         while True:
             if not market_open_now():
                 # Reset sync state so we re-sync at next market open
@@ -425,21 +409,26 @@ def run():
             try:
                 # ══════════════════════════════════════════════════════
                 # SYNC PHASE: wait for Volland to refresh before first
-                # capture of the day, so we grab fresh data immediately
+                # capture of the day. We sit on the workspace page and
+                # let widgets auto-refresh (they have their own timer).
+                # The route handler captures each refresh — we just
+                # watch lastModified for a change.
                 # ══════════════════════════════════════════════════════
                 if not last_known_modified:
-                    # Get baseline lastModified
-                    baseline = check_paradigm_lastmodified(page)
+                    # Baseline from data already captured during login
+                    baseline = get_exposure_lastmodified()
                     print(
                         f"[sync] Waiting for Volland refresh... "
                         f"baseline lastModified={baseline!r}",
                         flush=True,
                     )
 
-                    # Poll until lastModified changes (= fresh data)
+                    # Wait for widgets to auto-refresh on the page.
+                    # page.wait_for_timeout keeps the event loop alive
+                    # so route/response handlers fire on widget refreshes.
                     while market_open_now():
-                        time.sleep(SYNC_POLL_SEC)
-                        current = check_paradigm_lastmodified(page)
+                        page.wait_for_timeout(SYNC_POLL_SEC * 1000)
+                        current = get_exposure_lastmodified()
                         if current and current != baseline:
                             print(
                                 f"[sync] Volland refreshed! "
@@ -468,8 +457,11 @@ def run():
                 exposures, paradigm, spot_vol = do_full_capture()
 
                 # Update lastModified from captured data
-                if paradigm and paradigm.get("lastModified"):
-                    last_known_modified = paradigm["lastModified"]
+                for exp in reversed(exposures):
+                    lm = exp.get("last_modified")
+                    if lm:
+                        last_known_modified = lm
+                        break
 
                 save_cycle(exposures, paradigm, spot_vol)
 

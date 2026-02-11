@@ -4688,7 +4688,7 @@ DASH_HTML_TEMPLATE = """
       const tsColor = statusColors[ts.status] || statusColors.error;
       const vlColor = statusColors[vl.status] || statusColors.error;
 
-      const spotStr = data.spot ? '<span style="color:#60a5fa;font-weight:600">SPX ' + data.spot.toFixed(0) + '</span><br>' : '';
+      const spotStr = data.spot ? '<span style="color:#60a5fa;font-weight:600">SPX ' + data.spot.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + '</span><br>' : '';
 
       dataFreshnessEl.innerHTML = spotStr +
         '<span style="color:' + tsColor + '">TS:' + fmtTimeET(ts.last_update) + '</span>' +

@@ -6790,15 +6790,19 @@ DASH_HTML_TEMPLATE = """
 
     function drawRegimeMap(snaps, candles) {
       // Convert snapshot timestamps from UTC ISO to naive ET strings
-      // so they align with candle timestamps (also naive ET)
+      // Uses formatToParts for guaranteed zero-padded output across all browsers
+      const _etFmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+      });
       for (let i = 0; i < snaps.length; i++) {
-        const d = new Date(snaps[i].ts);
-        const etStr = d.toLocaleString('sv-SE', { timeZone: 'America/New_York' }).replace(' ', 'T');
-        snaps[i].ts = etStr;
+        const p = {};
+        for (const {type, value} of _etFmt.formatToParts(new Date(snaps[i].ts))) p[type] = value;
+        snaps[i].ts = p.year + '-' + p.month + '-' + p.day + 'T' + p.hour + ':' + p.minute + ':' + p.second;
       }
 
-      // Filter to market hours using the converted naive ET timestamps
-      // Format is YYYY-MM-DDTHH:MM:SS so substring(11,16) gives "HH:MM"
+      // Filter to market hours (9:30-16:00 ET) using guaranteed HH:MM format
       snaps = snaps.filter(s => {
         const hhmm = s.ts.substring(11, 16);
         return hhmm >= '09:30' && hhmm <= '16:00';

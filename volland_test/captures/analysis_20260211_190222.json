@@ -1,0 +1,1081 @@
+{
+  "total_responses": 25,
+  "widget_labels": [
+    {
+      "index": 0,
+      "label": "Charm",
+      "position": {
+        "x": 285.59375,
+        "y": 155
+      }
+    },
+    {
+      "index": 1,
+      "label": "Vanna",
+      "position": {
+        "x": 1028.59375,
+        "y": 155
+      }
+    },
+    {
+      "index": 2,
+      "label": "Vanna",
+      "position": {
+        "x": 285.59375,
+        "y": 755
+      }
+    },
+    {
+      "index": 3,
+      "label": "Vanna",
+      "position": {
+        "x": 1028.59375,
+        "y": 755
+      }
+    },
+    {
+      "index": 4,
+      "label": "Vanna",
+      "position": {
+        "x": 285.59375,
+        "y": 1355
+      }
+    },
+    {
+      "index": 5,
+      "label": "Spot Vol Beta",
+      "position": {
+        "x": 1029.65625,
+        "y": 1355
+      }
+    },
+    {
+      "index": 6,
+      "label": "Gamma",
+      "position": {
+        "x": 285.59375,
+        "y": 1955
+      }
+    },
+    {
+      "index": 7,
+      "label": "Gamma",
+      "position": {
+        "x": 1028.59375,
+        "y": 1955
+      }
+    },
+    {
+      "index": 8,
+      "label": "Gamma",
+      "position": {
+        "x": 285.59375,
+        "y": 2555
+      }
+    },
+    {
+      "index": 9,
+      "label": "Gamma",
+      "position": {
+        "x": 1028.59375,
+        "y": 2555
+      }
+    },
+    {
+      "index": 10,
+      "label": "0DTE Delta-Decay",
+      "position": {
+        "x": 285.59375,
+        "y": 3155
+      }
+    },
+    {
+      "index": 1,
+      "label": "Charm",
+      "className": "css-1yon14q",
+      "position": {
+        "x": 285.59375,
+        "y": 155,
+        "width": 55.953125,
+        "height": 24
+      },
+      "parentId": null,
+      "siblingText": [],
+      "parentData": {
+        "cy": "widget-top-bar"
+      }
+    },
+    {
+      "index": 3,
+      "label": "Vanna",
+      "className": "css-1yon14q",
+      "position": {
+        "x": 1028.59375,
+        "y": 155,
+        "width": 53.046875,
+        "height": 24
+      },
+      "parentId": null,
+      "siblingText": [],
+      "parentData": {
+        "cy": "widget-top-bar"
+      }
+    },
+    {
+      "index": 5,
+      "label": "Vanna",
+      "className": "css-1yon14q",
+      "position": {
+        "x": 285.59375,
+        "y": 755,
+        "width": 53.046875,
+        "height": 24
+      },
+      "parentId": null,
+      "siblingText": [],
+      "parentData": {
+        "cy": "widget-top-bar"
+      }
+    },
+    {
+      "index": 7,
+      "label": "Vanna",
+      "className": "css-1yon14q",
+      "position": {
+        "x": 1028.59375,
+        "y": 755,
+        "width": 53.046875,
+        "height": 24
+      },
+      "parentId": null,
+      "siblingText": [],
+      "parentData": {
+        "cy": "widget-top-bar"
+      }
+    },
+    {
+      "index": 9,
+      "label": "Vanna",
+      "className": "css-1yon14q",
+      "position": {
+        "x": 285.59375,
+        "y": 1355,
+        "width": 53.046875,
+        "height": 24
+      },
+      "parentId": null,
+      "siblingText": [],
+      "parentData": {
+        "cy": "widget-top-bar"
+      }
+    },
+    {
+      "index": 13,
+      "label": "Gamma",
+      "className": "css-1yon14q",
+      "position": {
+        "x": 285.59375,
+        "y": 1955,
+        "width": 65.421875,
+        "height": 24
+      },
+      "parentId": null,
+      "siblingText": [],
+      "parentData": {
+        "cy": "widget-top-bar"
+      }
+    },
+    {
+      "index": 15,
+      "label": "Gamma",
+      "className": "css-1yon14q",
+      "position": {
+        "x": 1028.59375,
+        "y": 1955,
+        "width": 65.421875,
+        "height": 24
+      },
+      "parentId": null,
+      "siblingText": [],
+      "parentData": {
+        "cy": "widget-top-bar"
+      }
+    },
+    {
+      "index": 17,
+      "label": "Gamma",
+      "className": "css-1yon14q",
+      "position": {
+        "x": 285.59375,
+        "y": 2555,
+        "width": 65.421875,
+        "height": 24
+      },
+      "parentId": null,
+      "siblingText": [],
+      "parentData": {
+        "cy": "widget-top-bar"
+      }
+    },
+    {
+      "index": 19,
+      "label": "Gamma",
+      "className": "css-1yon14q",
+      "position": {
+        "x": 1028.59375,
+        "y": 2555,
+        "width": 65.421875,
+        "height": 24
+      },
+      "parentId": null,
+      "siblingText": [],
+      "parentData": {
+        "cy": "widget-top-bar"
+      }
+    },
+    {
+      "index": 21,
+      "label": "0DTE Delta-Decay",
+      "className": "css-1yon14q",
+      "position": {
+        "x": 285.59375,
+        "y": 3155,
+        "width": 151.46875,
+        "height": 24
+      },
+      "parentId": null,
+      "siblingText": [],
+      "parentData": {
+        "cy": "widget-top-bar"
+      }
+    }
+  ],
+  "exposure_endpoints": [
+    {
+      "url": "https://api.vol.land/api/v1/data/exposure",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 10715,
+      "has_items": true,
+      "has_currentPrice": true,
+      "timestamp": "2026-02-11T19:01:41.627256",
+      "request_method": "POST",
+      "request_post_data": "{\"ticker\":\"SPX\",\"greek\":\"charm\",\"kind\":\"both\",\"expirations\":{\"from\":null,\"to\":null,\"dates\":[],\"option\":\"TODAY\"},\"isCumulative\":false}",
+      "greek_from_request": "charm",
+      "expirations_from_request": {
+        "from": null,
+        "to": null,
+        "dates": [],
+        "option": "TODAY"
+      },
+      "top_keys": [
+        "items",
+        "data",
+        "lastModified",
+        "currentPrice",
+        "expirations"
+      ],
+      "items_count": 235,
+      "sample_item": "{'x': '2800', 'y': 0}",
+      "current_price": 6944.7,
+      "expirations": [
+        "2026-02-11"
+      ],
+      "expirations_count": 1
+    },
+    {
+      "url": "https://api.vol.land/api/v1/data/exposure",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 12091,
+      "has_items": true,
+      "has_currentPrice": true,
+      "timestamp": "2026-02-11T19:01:41.627493",
+      "request_method": "POST",
+      "request_post_data": "{\"ticker\":\"SPX\",\"greek\":\"gamma\",\"kind\":\"both\",\"expirations\":{\"from\":null,\"to\":null,\"dates\":[],\"option\":\"TODAY\"},\"isCumulative\":false}",
+      "greek_from_request": "gamma",
+      "expirations_from_request": {
+        "from": null,
+        "to": null,
+        "dates": [],
+        "option": "TODAY"
+      },
+      "top_keys": [
+        "items",
+        "data",
+        "lastModified",
+        "currentPrice",
+        "expirations"
+      ],
+      "items_count": 235,
+      "sample_item": "{'x': '2800', 'y': 0}",
+      "current_price": 6944.7,
+      "expirations": [
+        "2026-02-11"
+      ],
+      "expirations_count": 1
+    },
+    {
+      "url": "https://api.vol.land/api/v1/data/exposure",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 12311,
+      "has_items": true,
+      "has_currentPrice": true,
+      "timestamp": "2026-02-11T19:01:41.648339",
+      "request_method": "POST",
+      "request_post_data": "{\"ticker\":\"SPX\",\"greek\":\"vanna\",\"kind\":\"both\",\"expirations\":{\"from\":null,\"to\":null,\"dates\":[],\"option\":\"TODAY\"},\"isCumulative\":false}",
+      "greek_from_request": "vanna",
+      "expirations_from_request": {
+        "from": null,
+        "to": null,
+        "dates": [],
+        "option": "TODAY"
+      },
+      "top_keys": [
+        "items",
+        "data",
+        "lastModified",
+        "currentPrice",
+        "expirations"
+      ],
+      "items_count": 235,
+      "sample_item": "{'x': '2800', 'y': 0}",
+      "current_price": 6944.7,
+      "expirations": [
+        "2026-02-11"
+      ],
+      "expirations_count": 1
+    },
+    {
+      "url": "https://api.vol.land/api/v1/data/exposure",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 28856,
+      "has_items": true,
+      "has_currentPrice": true,
+      "timestamp": "2026-02-11T19:01:41.648651",
+      "request_method": "POST",
+      "request_post_data": "{\"ticker\":\"SPX\",\"greek\":\"vanna\",\"kind\":\"both\",\"expirations\":{\"from\":null,\"to\":null,\"dates\":[],\"option\":\"THIRTY_NEXT_DAYS\"},\"isCumulative\":false}",
+      "greek_from_request": "vanna",
+      "expirations_from_request": {
+        "from": null,
+        "to": null,
+        "dates": [],
+        "option": "THIRTY_NEXT_DAYS"
+      },
+      "top_keys": [
+        "items",
+        "data",
+        "lastModified",
+        "currentPrice",
+        "expirations"
+      ],
+      "items_count": 519,
+      "sample_item": "{'x': '200', 'y': 0.05}",
+      "current_price": 6944.4,
+      "expirations": [
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13",
+        "2026-02-17",
+        "2026-02-18",
+        "2026-02-19",
+        "2026-02-20",
+        "2026-02-23",
+        "2026-02-24",
+        "2026-02-25",
+        "2026-02-26",
+        "2026-02-27",
+        "2026-03-02",
+        "2026-03-03",
+        "2026-03-04",
+        "2026-03-05",
+        "2026-03-06",
+        "2026-03-09",
+        "2026-03-10",
+        "2026-03-11",
+        "2026-03-12",
+        "2026-03-13"
+      ],
+      "expirations_count": 22
+    },
+    {
+      "url": "https://api.vol.land/api/v1/data/exposure",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 14765,
+      "has_items": true,
+      "has_currentPrice": true,
+      "timestamp": "2026-02-11T19:01:41.648917",
+      "request_method": "POST",
+      "request_post_data": "{\"ticker\":\"SPX\",\"greek\":\"gamma\",\"kind\":\"both\",\"expirations\":{\"from\":null,\"to\":null,\"dates\":[],\"option\":\"THIS_WEEK\"},\"isCumulative\":false}",
+      "greek_from_request": "gamma",
+      "expirations_from_request": {
+        "from": null,
+        "to": null,
+        "dates": [],
+        "option": "THIS_WEEK"
+      },
+      "top_keys": [
+        "items",
+        "data",
+        "lastModified",
+        "currentPrice",
+        "expirations"
+      ],
+      "items_count": 280,
+      "sample_item": "{'x': '2200', 'y': -0.01}",
+      "current_price": 6944.7,
+      "expirations": [
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13"
+      ],
+      "expirations_count": 3
+    },
+    {
+      "url": "https://api.vol.land/api/v1/data/exposure",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 14857,
+      "has_items": true,
+      "has_currentPrice": true,
+      "timestamp": "2026-02-11T19:01:41.649090",
+      "request_method": "POST",
+      "request_post_data": "{\"ticker\":\"SPX\",\"greek\":\"vanna\",\"kind\":\"both\",\"expirations\":{\"from\":null,\"to\":null,\"dates\":[],\"option\":\"THIS_WEEK\"},\"isCumulative\":false}",
+      "greek_from_request": "vanna",
+      "expirations_from_request": {
+        "from": null,
+        "to": null,
+        "dates": [],
+        "option": "THIS_WEEK"
+      },
+      "top_keys": [
+        "items",
+        "data",
+        "lastModified",
+        "currentPrice",
+        "expirations"
+      ],
+      "items_count": 280,
+      "sample_item": "{'x': '2200', 'y': 0}",
+      "current_price": 6944.7,
+      "expirations": [
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13"
+      ],
+      "expirations_count": 3
+    },
+    {
+      "url": "https://api.vol.land/api/v1/data/exposure",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 39450,
+      "has_items": true,
+      "has_currentPrice": true,
+      "timestamp": "2026-02-11T19:01:41.691425",
+      "request_method": "POST",
+      "request_post_data": "{\"ticker\":\"SPX\",\"greek\":\"vanna\",\"kind\":\"both\",\"expirations\":{\"from\":null,\"to\":null,\"dates\":[],\"option\":\"ALL\"},\"isCumulative\":false}",
+      "greek_from_request": "vanna",
+      "expirations_from_request": {
+        "from": null,
+        "to": null,
+        "dates": [],
+        "option": "ALL"
+      },
+      "top_keys": [
+        "items",
+        "data",
+        "lastModified",
+        "currentPrice",
+        "expirations"
+      ],
+      "items_count": 702,
+      "sample_item": "{'x': '200', 'y': -70816.02}",
+      "current_price": 6944.4,
+      "expirations": [
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13",
+        "2026-02-17",
+        "2026-02-18",
+        "2026-02-19",
+        "2026-02-20",
+        "2026-02-23",
+        "2026-02-24",
+        "2026-02-25",
+        "2026-02-26",
+        "2026-02-27",
+        "2026-03-02",
+        "2026-03-03",
+        "2026-03-04",
+        "2026-03-05",
+        "2026-03-06",
+        "2026-03-09",
+        "2026-03-10",
+        "2026-03-11",
+        "2026-03-12",
+        "2026-03-13",
+        "2026-03-16",
+        "2026-03-17",
+        "2026-03-18",
+        "2026-03-19",
+        "2026-03-20",
+        "2026-03-23",
+        "2026-03-27",
+        "2026-03-31",
+        "2026-04-10",
+        "2026-04-17",
+        "2026-04-24",
+        "2026-04-30",
+        "2026-05-15",
+        "2026-05-29",
+        "2026-06-18",
+        "2026-06-30",
+        "2026-07-17",
+        "2026-07-31",
+        "2026-08-21",
+        "2026-09-18",
+        "2026-09-30",
+        "2026-10-16",
+        "2026-11-20",
+        "2026-12-18",
+        "2026-12-31",
+        "2027-01-15",
+        "2027-02-19",
+        "2027-03-19",
+        "2027-06-17",
+        "2027-12-17",
+        "2028-12-15",
+        "2029-12-21",
+        "2030-12-20",
+        "2031-12-19"
+      ],
+      "expirations_count": 56
+    },
+    {
+      "url": "https://api.vol.land/api/v1/data/exposure",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 27618,
+      "has_items": true,
+      "has_currentPrice": true,
+      "timestamp": "2026-02-11T19:01:41.917672",
+      "request_method": "POST",
+      "request_post_data": "{\"ticker\":\"SPX\",\"greek\":\"gamma\",\"kind\":\"both\",\"expirations\":{\"from\":null,\"to\":null,\"dates\":[],\"option\":\"THIRTY_NEXT_DAYS\"},\"isCumulative\":false}",
+      "greek_from_request": "gamma",
+      "expirations_from_request": {
+        "from": null,
+        "to": null,
+        "dates": [],
+        "option": "THIRTY_NEXT_DAYS"
+      },
+      "top_keys": [
+        "items",
+        "data",
+        "lastModified",
+        "currentPrice",
+        "expirations"
+      ],
+      "items_count": 519,
+      "sample_item": "{'x': '200', 'y': 0}",
+      "current_price": 6944.4,
+      "expirations": [
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13",
+        "2026-02-17",
+        "2026-02-18",
+        "2026-02-19",
+        "2026-02-20",
+        "2026-02-23",
+        "2026-02-24",
+        "2026-02-25",
+        "2026-02-26",
+        "2026-02-27",
+        "2026-03-02",
+        "2026-03-03",
+        "2026-03-04",
+        "2026-03-05",
+        "2026-03-06",
+        "2026-03-09",
+        "2026-03-10",
+        "2026-03-11",
+        "2026-03-12",
+        "2026-03-13"
+      ],
+      "expirations_count": 22
+    },
+    {
+      "url": "https://api.vol.land/api/v1/data/exposure",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 12719,
+      "has_items": true,
+      "has_currentPrice": true,
+      "timestamp": "2026-02-11T19:01:41.980286",
+      "request_method": "POST",
+      "request_post_data": "{\"ticker\":\"SPX\",\"greek\":\"deltaDecay\",\"kind\":\"both\",\"expirations\":{\"from\":null,\"to\":null,\"dates\":[],\"option\":\"TODAY\"},\"isCumulative\":false}",
+      "greek_from_request": "deltaDecay",
+      "expirations_from_request": {
+        "from": null,
+        "to": null,
+        "dates": [],
+        "option": "TODAY"
+      },
+      "top_keys": [
+        "items",
+        "data",
+        "lastModified",
+        "currentPrice",
+        "expirations"
+      ],
+      "items_count": 235,
+      "sample_item": "{'x': '2800', 'y': 0}",
+      "current_price": 6944.7,
+      "expirations": [
+        "2026-02-11"
+      ],
+      "expirations_count": 1
+    },
+    {
+      "url": "https://api.vol.land/api/v1/data/exposure",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 37508,
+      "has_items": true,
+      "has_currentPrice": true,
+      "timestamp": "2026-02-11T19:01:42.025685",
+      "request_method": "POST",
+      "request_post_data": "{\"ticker\":\"SPX\",\"greek\":\"gamma\",\"kind\":\"both\",\"expirations\":{\"from\":null,\"to\":null,\"dates\":[],\"option\":\"ALL\"},\"isCumulative\":false}",
+      "greek_from_request": "gamma",
+      "expirations_from_request": {
+        "from": null,
+        "to": null,
+        "dates": [],
+        "option": "ALL"
+      },
+      "top_keys": [
+        "items",
+        "data",
+        "lastModified",
+        "currentPrice",
+        "expirations"
+      ],
+      "items_count": 702,
+      "sample_item": "{'x': '200', 'y': 478.36}",
+      "current_price": 6944.4,
+      "expirations": [
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13",
+        "2026-02-17",
+        "2026-02-18",
+        "2026-02-19",
+        "2026-02-20",
+        "2026-02-23",
+        "2026-02-24",
+        "2026-02-25",
+        "2026-02-26",
+        "2026-02-27",
+        "2026-03-02",
+        "2026-03-03",
+        "2026-03-04",
+        "2026-03-05",
+        "2026-03-06",
+        "2026-03-09",
+        "2026-03-10",
+        "2026-03-11",
+        "2026-03-12",
+        "2026-03-13",
+        "2026-03-16",
+        "2026-03-17",
+        "2026-03-18",
+        "2026-03-19",
+        "2026-03-20",
+        "2026-03-23",
+        "2026-03-27",
+        "2026-03-31",
+        "2026-04-10",
+        "2026-04-17",
+        "2026-04-24",
+        "2026-04-30",
+        "2026-05-15",
+        "2026-05-29",
+        "2026-06-18",
+        "2026-06-30",
+        "2026-07-17",
+        "2026-07-31",
+        "2026-08-21",
+        "2026-09-18",
+        "2026-09-30",
+        "2026-10-16",
+        "2026-11-20",
+        "2026-12-18",
+        "2026-12-31",
+        "2027-01-15",
+        "2027-02-19",
+        "2027-03-19",
+        "2027-06-17",
+        "2027-12-17",
+        "2028-12-15",
+        "2029-12-21",
+        "2030-12-20",
+        "2031-12-19"
+      ],
+      "expirations_count": 56
+    }
+  ],
+  "exposure_with_greek": [
+    {
+      "order": 1,
+      "greek": "charm",
+      "expiration_type": "0DTE",
+      "expirations_count": 1,
+      "items_count": 235,
+      "current_price": 6944.7,
+      "timestamp": "2026-02-11T19:01:41.627256",
+      "expirations": [
+        "2026-02-11"
+      ]
+    },
+    {
+      "order": 2,
+      "greek": "gamma",
+      "expiration_type": "0DTE",
+      "expirations_count": 1,
+      "items_count": 235,
+      "current_price": 6944.7,
+      "timestamp": "2026-02-11T19:01:41.627493",
+      "expirations": [
+        "2026-02-11"
+      ]
+    },
+    {
+      "order": 3,
+      "greek": "vanna",
+      "expiration_type": "0DTE",
+      "expirations_count": 1,
+      "items_count": 235,
+      "current_price": 6944.7,
+      "timestamp": "2026-02-11T19:01:41.648339",
+      "expirations": [
+        "2026-02-11"
+      ]
+    },
+    {
+      "order": 4,
+      "greek": "vanna",
+      "expiration_type": "Monthly",
+      "expirations_count": 22,
+      "items_count": 519,
+      "current_price": 6944.4,
+      "timestamp": "2026-02-11T19:01:41.648651",
+      "expirations": [
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13",
+        "2026-02-17",
+        "2026-02-18"
+      ]
+    },
+    {
+      "order": 5,
+      "greek": "gamma",
+      "expiration_type": "Weekly",
+      "expirations_count": 3,
+      "items_count": 280,
+      "current_price": 6944.7,
+      "timestamp": "2026-02-11T19:01:41.648917",
+      "expirations": [
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13"
+      ]
+    },
+    {
+      "order": 6,
+      "greek": "vanna",
+      "expiration_type": "Weekly",
+      "expirations_count": 3,
+      "items_count": 280,
+      "current_price": 6944.7,
+      "timestamp": "2026-02-11T19:01:41.649090",
+      "expirations": [
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13"
+      ]
+    },
+    {
+      "order": 7,
+      "greek": "vanna",
+      "expiration_type": "All",
+      "expirations_count": 56,
+      "items_count": 702,
+      "current_price": 6944.4,
+      "timestamp": "2026-02-11T19:01:41.691425",
+      "expirations": [
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13",
+        "2026-02-17",
+        "2026-02-18"
+      ]
+    },
+    {
+      "order": 8,
+      "greek": "gamma",
+      "expiration_type": "Monthly",
+      "expirations_count": 22,
+      "items_count": 519,
+      "current_price": 6944.4,
+      "timestamp": "2026-02-11T19:01:41.917672",
+      "expirations": [
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13",
+        "2026-02-17",
+        "2026-02-18"
+      ]
+    },
+    {
+      "order": 9,
+      "greek": "deltaDecay",
+      "expiration_type": "0DTE",
+      "expirations_count": 1,
+      "items_count": 235,
+      "current_price": 6944.7,
+      "timestamp": "2026-02-11T19:01:41.980286",
+      "expirations": [
+        "2026-02-11"
+      ]
+    },
+    {
+      "order": 10,
+      "greek": "gamma",
+      "expiration_type": "All",
+      "expirations_count": 56,
+      "items_count": 702,
+      "current_price": 6944.4,
+      "timestamp": "2026-02-11T19:01:42.025685",
+      "expirations": [
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13",
+        "2026-02-17",
+        "2026-02-18"
+      ]
+    }
+  ],
+  "vanna_endpoints": [],
+  "charm_endpoints": [
+    {
+      "url": "https://api.vol.land/api/v1/workspaces",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 24239,
+      "has_items": false,
+      "has_currentPrice": false,
+      "timestamp": "2026-02-11T19:01:40.680156",
+      "request_method": "GET",
+      "request_post_data": null
+    },
+    {
+      "url": "https://api.vol.land/api/v1/workspaces",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 24239,
+      "has_items": false,
+      "has_currentPrice": false,
+      "timestamp": "2026-02-11T19:01:41.205427",
+      "request_method": "GET",
+      "request_post_data": null
+    },
+    {
+      "url": "https://api.vol.land/api/v1/data/paradigms/0dte?ticker=SPX",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 181,
+      "has_items": false,
+      "has_currentPrice": false,
+      "timestamp": "2026-02-11T19:01:41.981282",
+      "request_method": "GET",
+      "request_post_data": null,
+      "top_keys": [
+        "paradigm",
+        "lastModified",
+        "lis",
+        "target",
+        "totalZeroDteOptionVolume",
+        "aggregatedCharm",
+        "aggregatedDeltaDecay"
+      ]
+    }
+  ],
+  "spot_vol_endpoints": [
+    {
+      "url": "https://vol.land/app/workspace/698a5560ea3d7b5155f88e67",
+      "status": 404,
+      "content_type": "text/html",
+      "body_length": 4599,
+      "has_items": false,
+      "has_currentPrice": false,
+      "timestamp": "2026-02-11T19:01:35.437454",
+      "request_method": "GET",
+      "request_post_data": null
+    },
+    {
+      "url": "https://vol.land/cdn-cgi/rum?",
+      "status": 204,
+      "content_type": "text/plain",
+      "body_length": 0,
+      "has_items": false,
+      "has_currentPrice": false,
+      "timestamp": "2026-02-11T19:01:37.361000",
+      "request_method": "POST",
+      "request_post_data": "{\"resources\":[],\"referrer\":\"\",\"eventType\":1,\"firstPaint\":0,\"firstContentfulPaint\":0,\"startTime\":1770825694295.9,\"versions\":{\"fl\":\"2024.11.0\",\"js\":\"2024.6.1\",\"timings\":1},\"pageloadId\":\"e09ff5ea-ad12-44d4-825d-65382b5de7c4\",\"location\":\"https://vol.land/app/workspace/698a5560ea3d7b5155f88e67\",\"timingsV2\":{\"nextHopProtocol\":\"h2\",\"transferSize\":2239,\"decodedBodySize\":4599},\"dt\":\"\",\"siteToken\":\"c9372001773544bb916dd4a86bab82a2\",\"st\":2}"
+    },
+    {
+      "url": "https://vol.land/cdn-cgi/challenge-platform/h/g/jsd/oneshot/60138c04e6b2/0.96240341719716:1770822543:GEjv6OocbHFyeJZzQPRejF5-Hogd_PYm1ss6xax24zY/9cc510cfaf05a5c9",
+      "status": 200,
+      "content_type": "text/plain; charset=UTF-8",
+      "body_length": 0,
+      "has_items": false,
+      "has_currentPrice": false,
+      "timestamp": "2026-02-11T19:01:37.552721",
+      "request_method": "POST",
+      "request_post_data": "xKWUOB14yCQtt5D545T5g5xUun1D5JW5xU1D1GAW5pUPDQ+5gTuxD8zMDQZW165QUu8z58HAW1m5RDP53tx9lyVlUPNyslU1CLL1X5QSoyZnQTDDs3Qb+dySzQIkQZDsZdH51WeE3Kp5uFHA6HyzU5xycrFyry5-lPplebz5RyzUPJWcBBJfWluuW5r5XP5Zz5X9W565PXRFWW+5QL5ZJL5QnR9SZWc+BtnCo55hzuLjo5xyz5vjT0uCVK+BAuRcF1EZUtcLtI58z1uh-R5GzROQAdfk0WxWtWu8ICn59P9xBlOLL58AIOeUMwFFP5yuX4ixDP38K5roRjnRknI1nRE3B3vEnCGYYo3cRY+RnG911zKnfwzR1AIEn5zsQBLyzZyy17WeyKzy0jtAZFP8AbArC445GuP05586uFZRLzozx1LHn0f-n2uwhEfY3v2o4I8PnpAxpbCoCZoI2o5QPD6bVFP$2spSRJuOKrcJVbE-S7mNm0A9"
+    },
+    {
+      "url": "https://vol.land/cdn-cgi/rum?",
+      "status": 204,
+      "content_type": "text/plain",
+      "body_length": 0,
+      "has_items": false,
+      "has_currentPrice": false,
+      "timestamp": "2026-02-11T19:01:38.468809",
+      "request_method": "POST",
+      "request_post_data": "{\"resources\":[],\"referrer\":\"\",\"eventType\":1,\"firstPaint\":3032,\"firstContentfulPaint\":3148,\"startTime\":1770825694295.9,\"versions\":{\"fl\":\"2024.11.0\",\"js\":\"2024.6.1\",\"timings\":1},\"pageloadId\":\"1e069c0b-65a9-48a5-9fe8-e268c4db82eb\",\"location\":\"https://vol.land/sign-in\",\"nt\":\"navigate\",\"timingsV2\":{\"nextHopProtocol\":\"h2\",\"transferSize\":2239,\"decodedBodySize\":4599},\"dt\":\"\",\"siteToken\":\"c9372001773544bb916dd4a86bab82a2\",\"st\":2}"
+    },
+    {
+      "url": "https://api.vol.land/api/v1/auth/login",
+      "status": 409,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 156,
+      "has_items": false,
+      "has_currentPrice": false,
+      "timestamp": "2026-02-11T19:01:39.636912",
+      "request_method": "POST",
+      "request_post_data": "{\"email\":\"faisal.a.d@msn.com\",\"password\":\"Fad2024506!\"}",
+      "top_keys": [
+        "ipAddress",
+        "geoIpCountryCode",
+        "browserInfo",
+        "osInfo"
+      ]
+    },
+    {
+      "url": "https://api.vol.land/api/v1/auth/login",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 980,
+      "has_items": false,
+      "has_currentPrice": false,
+      "timestamp": "2026-02-11T19:01:40.326522",
+      "request_method": "POST",
+      "request_post_data": "{\"email\":\"faisal.a.d@msn.com\",\"password\":\"Fad2024506!\"}",
+      "top_keys": [
+        "accessToken",
+        "refreshToken"
+      ]
+    },
+    {
+      "url": "https://api.vol.land/api/v1/users/lms/progress",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 19715,
+      "has_items": false,
+      "has_currentPrice": false,
+      "timestamp": "2026-02-11T19:01:40.531644",
+      "request_method": "GET",
+      "request_post_data": null,
+      "top_keys": [
+        "id",
+        "userId",
+        "lastSectionId",
+        "lastLessonId",
+        "lessonsProgress",
+        "totalLmsPoints",
+        "userLmsPoints"
+      ]
+    },
+    {
+      "url": "https://api.vol.land/api/v1/users",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 370,
+      "has_items": false,
+      "has_currentPrice": false,
+      "timestamp": "2026-02-11T19:01:40.623789",
+      "request_method": "GET",
+      "request_post_data": null,
+      "top_keys": [
+        "id",
+        "email",
+        "firstName",
+        "lastName",
+        "picture",
+        "subscriptions",
+        "apiSubscriptions",
+        "settings",
+        "roles",
+        "authenticationMethod",
+        "apiBilling",
+        "isApiUser"
+      ]
+    },
+    {
+      "url": "https://api.vol.land/api/v1/data/volhacks/spot-vol-beta?ticker=SPX",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "body_length": 35,
+      "has_items": false,
+      "has_currentPrice": false,
+      "timestamp": "2026-02-11T19:01:41.575455",
+      "request_method": "GET",
+      "request_post_data": null,
+      "top_keys": [
+        "correlation",
+        "vixEvents"
+      ]
+    }
+  ],
+  "graphql_endpoints": [],
+  "other_interesting": [],
+  "widget_order": [
+    "Charm",
+    "Charm",
+    "Vanna",
+    "Vanna",
+    "Vanna",
+    "Vanna",
+    "Vanna",
+    "Vanna",
+    "Vanna",
+    "Vanna",
+    "Spot Vol Beta",
+    "Gamma",
+    "Gamma",
+    "Gamma",
+    "Gamma",
+    "Gamma",
+    "Gamma",
+    "Gamma",
+    "Gamma",
+    "0DTE Delta-Decay",
+    "0DTE Delta-Decay"
+  ]
+}

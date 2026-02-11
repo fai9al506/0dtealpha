@@ -94,6 +94,17 @@ Deployed on Railway using Docker. The Dockerfile uses the official Playwright im
 web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
+## Full Backups
+
+When the user says **"make full backup"**:
+1. `git add -A` all files
+2. Commit with message `BACKUP: <description>`
+3. Create a tag: `stable-YYYYMMDD-HHMMSS`
+4. Add the tag to the list in `Backup_tags.md` (with sequence number, date/time, tag name, and notes)
+5. Show the tag name when done
+
+See `Backup_tags.md` for the full list of backup tags.
+
 ## Key Technical Details
 
 - Market hours check: `dtime(9, 30) <= t.time() <= dtime(16, 0)` in US/Eastern timezone

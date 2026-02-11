@@ -1,0 +1,219 @@
+{
+  "test": "v2_capture",
+  "timestamp": "2026-02-11T19:59:11.235834",
+  "workspace_url": "https://vol.land/app/workspace/698a5560ea3d7b5155f88e67",
+  "exposure_count": 10,
+  "exposures_summary": [
+    {
+      "greek": "deltaDecay",
+      "expiration_option": "TODAY",
+      "items_count": 235,
+      "current_price": 6947.48,
+      "expirations_count": 1,
+      "sample_item": {
+        "x": "2800",
+        "y": 0
+      }
+    },
+    {
+      "greek": "gamma",
+      "expiration_option": "ALL",
+      "items_count": 702,
+      "current_price": 6947.48,
+      "expirations_count": 56,
+      "sample_item": {
+        "x": "200",
+        "y": 412.42
+      }
+    },
+    {
+      "greek": "vanna",
+      "expiration_option": "THIRTY_NEXT_DAYS",
+      "items_count": 519,
+      "current_price": 6947.48,
+      "expirations_count": 22,
+      "sample_item": {
+        "x": "200",
+        "y": 0.04
+      }
+    },
+    {
+      "greek": "gamma",
+      "expiration_option": "THIRTY_NEXT_DAYS",
+      "items_count": 519,
+      "current_price": 6947.48,
+      "expirations_count": 22,
+      "sample_item": {
+        "x": "200",
+        "y": 0
+      }
+    },
+    {
+      "greek": "vanna",
+      "expiration_option": "ALL",
+      "items_count": 702,
+      "current_price": 6947.48,
+      "expirations_count": 56,
+      "sample_item": {
+        "x": "200",
+        "y": -63416.36
+      }
+    },
+    {
+      "greek": "vanna",
+      "expiration_option": "THIS_WEEK",
+      "items_count": 280,
+      "current_price": 6947.48,
+      "expirations_count": 3,
+      "sample_item": {
+        "x": "2200",
+        "y": 0
+      }
+    },
+    {
+      "greek": "gamma",
+      "expiration_option": "THIS_WEEK",
+      "items_count": 280,
+      "current_price": 6947.48,
+      "expirations_count": 3,
+      "sample_item": {
+        "x": "2200",
+        "y": -0.01
+      }
+    },
+    {
+      "greek": "vanna",
+      "expiration_option": "TODAY",
+      "items_count": 235,
+      "current_price": 6947.48,
+      "expirations_count": 1,
+      "sample_item": {
+        "x": "2800",
+        "y": 0
+      }
+    },
+    {
+      "greek": "charm",
+      "expiration_option": "TODAY",
+      "items_count": 235,
+      "current_price": 6947.48,
+      "expirations_count": 1,
+      "sample_item": {
+        "x": "2800",
+        "y": 0
+      }
+    },
+    {
+      "greek": "gamma",
+      "expiration_option": "TODAY",
+      "items_count": 235,
+      "current_price": 6947.48,
+      "expirations_count": 1,
+      "sample_item": {
+        "x": "2800",
+        "y": 0
+      }
+    }
+  ],
+  "paradigm_raw": {
+    "paradigm": "BofA-LIS",
+    "lastModified": "2026-02-11",
+    "lis": [
+      6947,
+      6963
+    ],
+    "target": null,
+    "totalZeroDteOptionVolume": 1646180,
+    "aggregatedCharm": -155295843,
+    "aggregatedDeltaDecay": 7997633741
+  },
+  "spot_vol_raw": {
+    "correlation": -0.04,
+    "vixEvents": []
+  },
+  "formatted_statistics": {
+    "paradigm": "BofA-LIS",
+    "target": null,
+    "lines_in_sand": "$6,947 - $6,963",
+    "delta_decay_hedging": "$7,997,633,741",
+    "opt_volume": "1,646,180",
+    "aggregatedCharm": -155295843,
+    "spot_vol_beta": {
+      "correlation": -0.04,
+      "vixEvents": []
+    }
+  },
+  "v1_snapshot_format": {
+    "ts_utc": "2026-02-11T16:59:11.235891",
+    "page_url": "https://vol.land/app/workspace/698a5560ea3d7b5155f88e67",
+    "statistics": {
+      "paradigm": "BofA-LIS",
+      "target": null,
+      "lines_in_sand": "$6,947 - $6,963",
+      "delta_decay_hedging": "$7,997,633,741",
+      "opt_volume": "1,646,180",
+      "aggregatedCharm": -155295843,
+      "spot_vol_beta": {
+        "correlation": -0.04,
+        "vixEvents": []
+      }
+    },
+    "exposure_points_saved": 3942,
+    "current_price": 6947.48,
+    "captures": {
+      "exposure_count": 10,
+      "exposures_summary": [
+        {
+          "greek": "deltaDecay",
+          "option": "TODAY",
+          "items": 235
+        },
+        {
+          "greek": "gamma",
+          "option": "ALL",
+          "items": 702
+        },
+        {
+          "greek": "vanna",
+          "option": "THIRTY_NEXT_DAYS",
+          "items": 519
+        },
+        {
+          "greek": "gamma",
+          "option": "THIRTY_NEXT_DAYS",
+          "items": 519
+        },
+        {
+          "greek": "vanna",
+          "option": "ALL",
+          "items": 702
+        },
+        {
+          "greek": "vanna",
+          "option": "THIS_WEEK",
+          "items": 280
+        },
+        {
+          "greek": "gamma",
+          "option": "THIS_WEEK",
+          "items": 280
+        },
+        {
+          "greek": "vanna",
+          "option": "TODAY",
+          "items": 235
+        },
+        {
+          "greek": "charm",
+          "option": "TODAY",
+          "items": 235
+        },
+        {
+          "greek": "gamma",
+          "option": "TODAY",
+          "items": 235
+        }
+      ]
+    }
+  }
+}

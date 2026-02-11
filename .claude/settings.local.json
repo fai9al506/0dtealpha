@@ -24,7 +24,23 @@
       "Bash(npx railway:*)",
       "Bash(npx @railway/cli env:*)",
       "Bash(npx @railway/cli login:*)",
-      "Bash(DATABASE_URL=\"postgresql://postgres:JwLVqJOvxdzflxJsCZHrPzcdPUYrmVYY@nozomi.proxy.rlwy.net:55417/railway\" python:*)"
+      "Bash(DATABASE_URL=\"postgresql://postgres:JwLVqJOvxdzflxJsCZHrPzcdPUYrmVYY@nozomi.proxy.rlwy.net:55417/railway\" python:*)",
+      "Bash(git revert:*)",
+      "Bash(railway link:*)",
+      "Bash(railway whoami)",
+      "Bash(railway list)",
+      "Bash(railway service list)",
+      "Bash(railway service:*)",
+      "Bash(railway help)",
+      "Bash(railway logs --service Volland)",
+      "Bash(railway restart:*)",
+      "Bash(railway logs:*)",
+      "Bash(railway variable:*)",
+      "Bash(playwright install:*)",
+      "Bash(set:*)",
+      "Bash(where:*)",
+      "Bash(railway run:*)",
+      "Bash(git status:*)"
     ]
   }
 }

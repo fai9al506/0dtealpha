@@ -22,6 +22,9 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # Store captured responses at browser level (not JS hooks)
 CAPTURED_RESPONSES = []
 
+# Store request POST bodies in order for matching with responses
+REQUEST_POST_BODIES = []
+
 # Store widget labels extracted from DOM
 WIDGET_LABELS = []
 
@@ -226,12 +229,19 @@ def on_response(response):
             except:
                 pass
 
-            # Try to get request info (POST body for exposure requests)
+            # Get request info including POST body from route interception
             request_info = {}
             try:
                 req = response.request
                 request_info["method"] = req.method
-                request_info["post_data"] = req.post_data[:5000] if req.post_data else None
+                post_data = req.post_data
+                # For exposure calls, match by order with intercepted POST bodies
+                if not post_data and "exposure" in url and REQUEST_POST_BODIES:
+                    # Count how many exposure responses we've seen so far
+                    exposure_idx = sum(1 for r in CAPTURED_RESPONSES if "exposure" in r.get("url", ""))
+                    if exposure_idx < len(REQUEST_POST_BODIES):
+                        post_data = REQUEST_POST_BODIES[exposure_idx]
+                request_info["post_data"] = post_data[:5000] if post_data else None
             except:
                 pass
 
@@ -421,13 +431,21 @@ def run_test():
     print("=" * 60)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, args=["--no-sandbox"])
+        browser = p.chromium.launch(headless=False, channel="chrome", args=["--no-sandbox"])
         page = browser.new_page(viewport={"width": 1600, "height": 1000})
         page.set_default_timeout(90000)
 
-        # Set up browser-level response capture BEFORE any navigation
+        # Intercept exposure POST requests to capture the greek from the body
+        def intercept_exposure(route, request):
+            post = request.post_data
+            if post:
+                REQUEST_POST_BODIES.append(post)
+                print(f"[intercept] Exposure POST: {post[:200]}")
+            route.continue_()
+
+        page.route("**/api/v1/data/exposure", intercept_exposure)
         page.on("response", on_response)
-        print("[test] Network capture enabled (browser-level)")
+        print("[test] Network capture enabled (with route interception for POST bodies)")
 
         # Login
         login(page, TEST_URL)

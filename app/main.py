@@ -2211,8 +2211,11 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
         }
 
         # For historical dates: add lastdate (barsback + lastdate works; + firstdate does NOT)
+        # Convert 16:05 ET to UTC (handles DST: EST=21:05Z, EDT=20:05Z)
         if not is_today:
-            params["lastdate"] = f"{date}T16:05:00Z"
+            dt_et = NY.localize(datetime(int(parts[0]), int(parts[1]), int(parts[2]), 16, 5))
+            dt_utc = dt_et.astimezone(pytz.utc)
+            params["lastdate"] = dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         print(f"[spx_candles_date] date={date} interval={interval} params={params}", flush=True)
         r = api_get("/marketdata/barcharts/$SPX.X", params=params, timeout=15)

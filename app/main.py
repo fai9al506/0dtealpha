@@ -6601,16 +6601,12 @@ DASH_HTML_TEMPLATE = """
           return;
         }
 
-        // Filter to selected date + market hours only (9:30-16:00 ET)
+        // Filter to selected date only (market hours filter applied in drawRegimeMap after ET conversion)
         const targetDate = dateStr; // YYYY-MM-DD
         const daySnaps = data.snapshots.filter(s => {
           const d = new Date(s.ts);
           const etDate = d.toLocaleDateString('en-CA', { timeZone: ET_TIMEZONE }); // YYYY-MM-DD format
-          if (etDate !== targetDate) return false;
-          const h = parseInt(d.toLocaleString('en-US', { timeZone: ET_TIMEZONE, hour: 'numeric', hour12: false }));
-          const m = parseInt(d.toLocaleString('en-US', { timeZone: ET_TIMEZONE, minute: 'numeric' }));
-          const mins = h * 60 + m;
-          return mins >= 570 && mins <= 960; // 9:30=570, 16:00=960
+          return etDate === targetDate;
         });
 
         if (daySnaps.length === 0) {
@@ -6800,6 +6796,14 @@ DASH_HTML_TEMPLATE = """
         const etStr = d.toLocaleString('sv-SE', { timeZone: 'America/New_York' }).replace(' ', 'T');
         snaps[i].ts = etStr;
       }
+
+      // Filter to market hours using the converted naive ET timestamps
+      // Format is YYYY-MM-DDTHH:MM:SS so substring(11,16) gives "HH:MM"
+      snaps = snaps.filter(s => {
+        const hhmm = s.ts.substring(11, 16);
+        return hhmm >= '09:30' && hhmm <= '16:00';
+      });
+      if (!snaps.length) return;
 
       // Per-field forward-fill: each stats field carries forward independently
       // Handles both field names: lis (new) and lines_in_sand (old data)

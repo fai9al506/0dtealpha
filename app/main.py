@@ -844,6 +844,83 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
         "points": pts
     }
 
+def db_volland_delta_decay_window(limit: int = 40) -> dict:
+    """
+    Returns latest 'limit' strikes centered on the current spot price.
+    Reads directly from volland_exposure_points (greek='deltaDecay', expiration_option='TODAY').
+    Falls back to max-abs-value strike if current_price is not available.
+    """
+    if not engine:
+        raise RuntimeError("DATABASE_URL not set")
+
+    lim = int(limit)
+    if lim < 5: lim = 5
+    if lim > 200: lim = 200
+
+    sql = text("""
+    WITH latest AS (
+      SELECT max(ts_utc) AS ts_utc
+      FROM volland_exposure_points
+      WHERE greek = 'deltaDecay' AND expiration_option = 'TODAY'
+    ),
+    center AS (
+      SELECT COALESCE(
+        (SELECT v.current_price::numeric
+         FROM volland_exposure_points v
+         JOIN latest l ON v.ts_utc = l.ts_utc
+         WHERE v.greek = 'deltaDecay' AND v.expiration_option = 'TODAY' AND v.current_price IS NOT NULL
+         LIMIT 1),
+        (SELECT v.strike::numeric
+         FROM volland_exposure_points v
+         JOIN latest l ON v.ts_utc = l.ts_utc
+         WHERE v.greek = 'deltaDecay' AND v.expiration_option = 'TODAY'
+         ORDER BY abs(v.value::numeric) DESC
+         LIMIT 1)
+      ) AS mid_strike
+    ),
+    ranked AS (
+      SELECT
+        v.ts_utc,
+        v.strike::numeric AS strike,
+        v.value::numeric  AS delta_decay,
+        c.mid_strike,
+        (v.strike::numeric - c.mid_strike) AS rel,
+        ROW_NUMBER() OVER (
+          ORDER BY abs(v.strike::numeric - c.mid_strike), v.strike::numeric
+        ) AS rn
+      FROM volland_exposure_points v
+      JOIN latest l ON v.ts_utc = l.ts_utc
+      CROSS JOIN center c
+      WHERE v.greek = 'deltaDecay' AND v.expiration_option = 'TODAY'
+    )
+    SELECT ts_utc, strike, delta_decay, mid_strike, rel
+    FROM ranked
+    WHERE rn <= :lim
+    ORDER BY strike;
+    """)
+    with engine.begin() as conn:
+        rows = conn.execute(sql, {"lim": lim}).mappings().all()
+
+    if not rows:
+        return {"ts_utc": None, "mid_strike": None, "points": []}
+
+    ts_utc = rows[0]["ts_utc"]
+    mid_strike = rows[0]["mid_strike"]
+
+    pts = []
+    for r in rows:
+        pts.append({
+            "strike":      float(r["strike"])      if r["strike"]      is not None else None,
+            "delta_decay": float(r["delta_decay"])  if r["delta_decay"] is not None else None,
+            "rel":         float(r["rel"])          if r["rel"]         is not None else None,
+        })
+
+    return {
+        "ts_utc": ts_utc.isoformat() if hasattr(ts_utc, "isoformat") else str(ts_utc),
+        "mid_strike": float(mid_strike) if mid_strike is not None else None,
+        "points": pts
+    }
+
 def db_volland_stats() -> Optional[dict]:
     """
     Get Volland statistics from the latest snapshot.
@@ -1886,6 +1963,18 @@ def api_volland_vanna_window(limit: int = Query(40, ge=5, le=200)):
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
         return db_volland_vanna_window(limit=limit)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/volland/delta_decay_window")
+def api_volland_delta_decay_window(limit: int = Query(40, ge=5, le=200)):
+    """
+    Latest deltaDecay strikes around mid_strike (TODAY expiration only).
+    """
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        return db_volland_delta_decay_window(limit=limit)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -3725,11 +3814,11 @@ DASH_HTML_TEMPLATE = """
       border:0;
       background:#0f1115;
     }
-    #volChart, #oiChart, #gexChart, #vannaChart { width:100%; height:420px; }
+    #volChart, #oiChart, #gexChart, #vannaChart, #deltaDecayChart { width:100%; height:420px; }
 
     .unified-grid {
       display:grid;
-      grid-template-columns: 2fr 1fr 1fr 1fr;
+      grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
       gap:8px;
       align-items:stretch;
       height: calc(100vh - 140px);
@@ -3799,7 +3888,7 @@ DASH_HTML_TEMPLATE = """
       .content { padding:10px; }
       .panel { padding:8px; border-radius:10px; }
       iframe { height:60vh; }
-      #volChart, #oiChart, #gexChart, #vannaChart { height:340px; }
+      #volChart, #oiChart, #gexChart, #vannaChart, #deltaDecayChart { height:340px; }
       .spot-grid { grid-template-columns:1fr; }
       .card { min-height:260px; }
       .unified-grid { grid-template-columns:1fr; height:auto; }
@@ -4213,7 +4302,7 @@ DASH_HTML_TEMPLATE = """
 
       <div id="viewCharts" class="panel" style="display:none">
         <div class="header">
-          <div><strong>GEX, Volume, Open Interest + Volland Vanna</strong></div>
+          <div><strong>GEX, Volume, Open Interest + Volland Charm &amp; Delta Decay</strong></div>
           <div class="pill">spot line = dotted</div>
         </div>
         <div class="charts">
@@ -4221,6 +4310,7 @@ DASH_HTML_TEMPLATE = """
           <div id="volChart"></div>
           <div id="oiChart"></div>
           <div id="vannaChart"></div>
+          <div id="deltaDecayChart"></div>
         </div>
       </div>
 
@@ -4256,6 +4346,10 @@ DASH_HTML_TEMPLATE = """
           <div class="unified-card">
             <h3>Charm</h3>
             <div id="unifiedCharmPlot" class="unified-plot"></div>
+          </div>
+          <div class="unified-card">
+            <h3>Delta Decay</h3>
+            <div id="unifiedDeltaDecayPlot" class="unified-plot"></div>
           </div>
           <div class="unified-card">
             <h3>Volume</h3>
@@ -4568,11 +4662,18 @@ DASH_HTML_TEMPLATE = """
       return await r.json();
     }
 
-    // ===== Main charts (GEX / VOL / OI / VANNA) =====
+    // ===== Volland delta decay window =====
+    async function fetchDeltaDecayWindow(){
+      const r = await fetch('/api/volland/delta_decay_window?limit=40', {cache:'no-store'});
+      return await r.json();
+    }
+
+    // ===== Main charts (GEX / VOL / OI / VANNA / DELTA DECAY) =====
     const volDiv=document.getElementById('volChart'),
           oiDiv=document.getElementById('oiChart'),
           gexDiv=document.getElementById('gexChart'),
-          vannaDiv=document.getElementById('vannaChart');
+          vannaDiv=document.getElementById('vannaChart'),
+          deltaDecayDiv=document.getElementById('deltaDecayChart');
 
     let chartsTimer=null, firstDraw=true;
 
@@ -4693,6 +4794,82 @@ DASH_HTML_TEMPLATE = """
       }, {displayModeBar:false,responsive:true});
     }
 
+    function drawDeltaDecay(w, spot){
+      if (!w || w.error) {
+        const msg = w && w.error ? w.error : "no data";
+        Plotly.react(deltaDecayDiv, [], {
+          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          margin:{l:40,r:10,t:10,b:30},
+          annotations:[{text:"Delta Decay error: "+msg, x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
+          font:{color:'#e6e7e9'}
+        }, {displayModeBar:false,responsive:true});
+        return;
+      }
+
+      const pts = w.points || [];
+      if (!pts.length) {
+        Plotly.react(deltaDecayDiv, [], {
+          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          margin:{l:40,r:10,t:10,b:30},
+          annotations:[{text:"No delta decay points returned yet", x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9'}}],
+          font:{color:'#e6e7e9'}
+        }, {displayModeBar:false,responsive:true});
+        return;
+      }
+
+      const strikes = pts.map(p=>p.strike);
+      const vals    = pts.map(p=>p.delta_decay);
+
+      const colors = vals.map(v => (v >= 0 ? '#22c55e' : '#ef4444'));
+
+      let yMin = Math.min(...vals);
+      let yMax = Math.max(...vals);
+      if (yMin === yMax){
+        const pad0 = Math.max(1, Math.abs(yMin)*0.05);
+        yMin -= pad0; yMax += pad0;
+      } else {
+        const pad = (yMax - yMin) * 0.05;
+        yMin -= pad; yMax += pad;
+      }
+
+      const shapes = [];
+      if (spot != null) {
+        shapes.push({
+          type:'line', x0:spot, x1:spot, y0:yMin, y1:yMax,
+          xref:'x', yref:'y',
+          line:{color:'#9aa0a6', width:2, dash:'dot'}
+        });
+      }
+
+      const trace = {
+        type:'bar',
+        x: strikes,
+        y: vals,
+        marker:{color: colors},
+        hovertemplate:"Strike %{x}<br>Delta Decay %{y}<extra></extra>"
+      };
+
+      let titleText = 'Delta Decay';
+      if (w.ts_utc) {
+        const dt = new Date(w.ts_utc);
+        const ageMins = Math.round((Date.now() - dt.getTime()) / 60000);
+        const timeStr = fmtTimeET(w.ts_utc);
+        const stale = ageMins > 5 ? ' <span style="color:#ef4444">(stale)</span>' : '';
+        titleText = 'Delta Decay  <span style="font-size:11px;color:#9aa0a6">' + timeStr + ' ET' + stale + '</span>';
+      }
+
+      Plotly.react(deltaDecayDiv, [trace], {
+        title:{text:titleText, font:{size:14}},
+        paper_bgcolor:'#121417',
+        plot_bgcolor:'#0f1115',
+        margin:{l:55,r:10,t:32,b:40},
+        xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}, dtick:5},
+        yaxis:{title:'Delta Decay',  gridcolor:'#20242a', tickfont:{size:10}, range:[yMin,yMax]},
+        shapes: shapes,
+        font:{color:'#e6e7e9',size:11}
+      }, {displayModeBar:false,responsive:true});
+    }
+
     async function drawOrUpdate(){
   // 1) Fetch the fast data first (DO NOT wait for vanna)
   const data = await fetchSeries();
@@ -4724,16 +4901,22 @@ DASH_HTML_TEMPLATE = """
     Plotly.react(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
   }
 
-  // 2) Show a quick "loading" state for vanna (optional but recommended)
+  // 2) Show a quick "loading" state for vanna and delta decay (optional but recommended)
   if (!window.__vannaLoadingShown) {
     window.__vannaLoadingShown = true;
-    drawVannaWindow({ error: "Loading Vanna..." }, spot); // your function will render the message
+    drawVannaWindow({ error: "Loading Charm..." }, spot);
+    drawDeltaDecay({ error: "Loading Delta Decay..." }, spot);
   }
 
   // 3) Fetch vanna in the background (doesn't block charts)
   fetchVannaWindow()
     .then(vannaW => drawVannaWindow(vannaW, spot))
     .catch(err => drawVannaWindow({ error: String(err) }, spot));
+
+  // 4) Fetch delta decay in the background
+  fetchDeltaDecayWindow()
+    .then(ddW => drawDeltaDecay(ddW, spot))
+    .catch(err => drawDeltaDecay({ error: String(err) }, spot));
 }
 
 
@@ -4753,6 +4936,7 @@ DASH_HTML_TEMPLATE = """
     const unifiedSpxDiv = document.getElementById('unifiedSpxPlot'),
           unifiedGexDiv = document.getElementById('unifiedGexPlot'),
           unifiedCharmDiv = document.getElementById('unifiedCharmPlot'),
+          unifiedDeltaDecayDiv = document.getElementById('unifiedDeltaDecayPlot'),
           unifiedVolDiv = document.getElementById('unifiedVolPlot');
     let unifiedTimer = null;
     let selectedStrikes = 30; // Default strike count
@@ -4809,7 +4993,7 @@ DASH_HTML_TEMPLATE = """
           currentYRange = { min: newYMin, max: newYMax };
 
           // Update all other charts
-          const allDivs = [unifiedSpxDiv, unifiedGexDiv, unifiedCharmDiv, unifiedVolDiv];
+          const allDivs = [unifiedSpxDiv, unifiedGexDiv, unifiedCharmDiv, unifiedDeltaDecayDiv, unifiedVolDiv];
           allDivs.forEach(div => {
             if (div !== plotDiv && div._fullLayout) {
               Plotly.relayout(div, { 'yaxis.range': [newYMin, newYMax] });
@@ -4823,7 +5007,7 @@ DASH_HTML_TEMPLATE = """
         if (eventData['yaxis.autorange']) {
           currentYRange = null;
           isZoomSyncing = true;
-          const allDivs = [unifiedSpxDiv, unifiedGexDiv, unifiedCharmDiv, unifiedVolDiv];
+          const allDivs = [unifiedSpxDiv, unifiedGexDiv, unifiedCharmDiv, unifiedDeltaDecayDiv, unifiedVolDiv];
           allDivs.forEach(div => {
             if (div !== plotDiv && div._fullLayout && baseYRange) {
               Plotly.relayout(div, { 'yaxis.range': [baseYRange.min, baseYRange.max] });
@@ -5020,6 +5204,49 @@ DASH_HTML_TEMPLATE = """
       }, { displayModeBar: false, responsive: true, scrollZoom: true });
     }
 
+    // Render Delta Decay horizontal bar chart (from delta_decay_window)
+    function renderUnifiedDeltaDecay(ddData, yRange, spot) {
+      if (!ddData || ddData.error || !ddData.points || !ddData.points.length) {
+        Plotly.react(unifiedDeltaDecayDiv, [], {
+          paper_bgcolor: '#121417', plot_bgcolor: '#0f1115',
+          margin: { l: 8, r: 8, t: 4, b: 24 },
+          annotations: [{ text: ddData?.error || 'No delta decay data', x: 0.5, y: 0.5, xref: 'paper', yref: 'paper', showarrow: false, font: { color: '#e6e7e9' } }],
+          font: { color: '#e6e7e9' }
+        }, { displayModeBar: false, responsive: true, scrollZoom: true });
+        return;
+      }
+
+      const pts = ddData.points;
+      const ddStrikes = pts.map(p => p.strike);
+      const ddVals = pts.map(p => p.delta_decay);
+
+      const colors = ddVals.map(v => v >= 0 ? '#22c55e' : '#ef4444');
+      const vMax = Math.max(1, ...ddVals.map(v => Math.abs(v))) * 1.1;
+
+      const shapes = [];
+      const spotShape = horizontalSpotShape(spot, -vMax, vMax);
+      if (spotShape) shapes.push(spotShape);
+
+      const trace = {
+        type: 'bar',
+        orientation: 'h',
+        x: ddVals,
+        y: ddStrikes,
+        marker: { color: colors },
+        hovertemplate: 'Strike %{y}<br>Delta Decay %{x:,.0f}<extra></extra>'
+      };
+
+      Plotly.react(unifiedDeltaDecayDiv, [trace], {
+        margin: { l: 8, r: 8, t: 4, b: 24 },
+        paper_bgcolor: '#121417',
+        plot_bgcolor: '#0f1115',
+        xaxis: { title: '', gridcolor: '#20242a', tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#333' },
+        yaxis: { title: '', range: [yRange.min, yRange.max], gridcolor: '#20242a', showticklabels: false, dtick: 5, fixedrange: false },
+        font: { color: '#e6e7e9', size: 10 },
+        shapes: shapes
+      }, { displayModeBar: false, responsive: true, scrollZoom: true });
+    }
+
     // Render Volume horizontal bar chart (mirrored: puts left, calls right)
     function renderUnifiedVolume(strikes, callVol, putVol, yRange, spot) {
       if (!strikes.length) return;
@@ -5094,10 +5321,15 @@ DASH_HTML_TEMPLATE = """
           .then(vannaData => renderUnifiedCharm(vannaData, yRange, spot))
           .catch(err => renderUnifiedCharm({ error: String(err) }, yRange, spot));
 
+        // Fetch and render Delta Decay - async
+        fetchDeltaDecayWindow()
+          .then(ddData => renderUnifiedDeltaDecay(ddData, yRange, spot))
+          .catch(err => renderUnifiedDeltaDecay({ error: String(err) }, yRange, spot));
+
         // Setup zoom sync after first render
         if (!zoomSyncInitialized) {
           setTimeout(() => {
-            [unifiedSpxDiv, unifiedGexDiv, unifiedCharmDiv, unifiedVolDiv].forEach(setupZoomSync);
+            [unifiedSpxDiv, unifiedGexDiv, unifiedCharmDiv, unifiedDeltaDecayDiv, unifiedVolDiv].forEach(setupZoomSync);
             zoomSyncInitialized = true;
           }, 500);
         }

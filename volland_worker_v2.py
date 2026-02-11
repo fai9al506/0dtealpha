@@ -336,9 +336,17 @@ def run():
                 handle_session_limit_modal(page)
 
                 # ── Process captured data ──
-                exposures = cycle["exposures"]
                 paradigm  = cycle["paradigm"]
                 spot_vol  = cycle["spot_vol"]
+
+                # Deduplicate: widgets auto-refresh during wait, so we may
+                # capture the same (greek, option) multiple times. Keep only
+                # the last capture per combo (freshest data).
+                seen = {}
+                for exp in cycle["exposures"]:
+                    key = (exp["greek"], exp["expiration_option"])
+                    seen[key] = exp  # last one wins
+                exposures = list(seen.values())
 
                 # Format statistics (backward compatible with V1)
                 stats = format_statistics(paradigm, spot_vol)

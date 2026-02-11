@@ -10,6 +10,7 @@ Key differences from V1:
   - Captures all 10 exposure types (charm, vanna x4, gamma x4, deltaDecay)
   - Statistics from API response (paradigm endpoint) instead of DOM scraping
   - Spot-vol-beta and aggregatedCharm data (new)
+  - Synced to Volland's 120s refresh cycle (no duplicate data)
 """
 
 import os, json, time, traceback
@@ -27,8 +28,9 @@ PASS     = os.getenv("VOLLAND_PASSWORD", "")
 # Falls back to VOLLAND_URL for gradual migration
 WORKSPACE_URL = os.getenv("VOLLAND_WORKSPACE_URL", "") or os.getenv("VOLLAND_URL", "")
 
-PULL_EVERY = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "60"))
+PULL_EVERY = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "120"))
 WAIT_SEC   = float(os.getenv("VOLLAND_WAIT_SEC", "15"))
+SYNC_POLL_SEC = int(os.getenv("VOLLAND_SYNC_POLL_SEC", "20"))
 
 NY = pytz.timezone("US/Eastern")
 
@@ -162,6 +164,30 @@ def login_if_needed(page, url):
     raise RuntimeError(f"Login did not complete. Still on: {page.url}. Body: {body}")
 
 
+# ── Lightweight paradigm check ────────────────────────────────────────
+def check_paradigm_lastmodified(page) -> str:
+    """
+    Lightweight check: single fetch to paradigm endpoint using browser auth.
+    Returns lastModified string or "" on failure.
+    """
+    try:
+        result = page.evaluate("""
+            async () => {
+                try {
+                    const r = await fetch(
+                        'https://api.vol.land/api/v1/data/paradigms/0dte?ticker=SPX'
+                    );
+                    if (!r.ok) return "";
+                    const d = await r.json();
+                    return d.lastModified || "";
+                } catch(e) { return ""; }
+            }
+        """)
+        return result or ""
+    except Exception:
+        return ""
+
+
 # ── Statistics formatting ─────────────────────────────────────────────
 def format_statistics(paradigm_data: dict, spot_vol_data: dict) -> dict:
     """
@@ -224,7 +250,7 @@ def run():
 
     ensure_tables()
     print(f"[volland-v2] Starting. Workspace: {WORKSPACE_URL}", flush=True)
-    print(f"[volland-v2] Pull every {PULL_EVERY}s, wait {WAIT_SEC}s per cycle", flush=True)
+    print(f"[volland-v2] Capture every {PULL_EVERY}s, wait {WAIT_SEC}s, sync poll {SYNC_POLL_SEC}s", flush=True)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -300,110 +326,152 @@ def run():
             pg.route("**/api/v1/data/exposure", handle_exposure)
             pg.on("response", handle_response)
 
+        def do_full_capture():
+            """Navigate to workspace, wait, return deduped (exposures, paradigm, spot_vol)."""
+            cycle["exposures"] = []
+            cycle["paradigm"] = None
+            cycle["spot_vol"] = None
+
+            page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
+
+            if "/sign-in" in page.url:
+                login_if_needed(page, WORKSPACE_URL)
+                cycle["exposures"] = []
+                cycle["paradigm"] = None
+                cycle["spot_vol"] = None
+                page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
+
+            page.wait_for_timeout(int(WAIT_SEC * 1000))
+            handle_session_limit_modal(page)
+
+            # Deduplicate: widgets auto-refresh during wait, keep last per combo
+            seen = {}
+            for exp in cycle["exposures"]:
+                key = (exp["greek"], exp["expiration_option"])
+                seen[key] = exp
+            return list(seen.values()), cycle["paradigm"], cycle["spot_vol"]
+
+        def save_cycle(exposures, paradigm, spot_vol):
+            """Format, save to DB, log."""
+            stats = format_statistics(paradigm, spot_vol)
+
+            total_points = 0
+            for exp in exposures:
+                greek      = exp["greek"]
+                exp_option = exp["expiration_option"]
+                items      = exp["items"]
+                cur_price  = exp["current_price"]
+
+                db_exp_option = (
+                    None if (greek == "charm" and exp_option == "TODAY")
+                    else exp_option
+                )
+
+                count = save_exposure_points(
+                    items, greek=greek, ticker="SPX",
+                    current_price=cur_price, expiration_option=db_exp_option,
+                )
+                total_points += count
+
+            payload = {
+                "ts_utc": datetime.now(timezone.utc).isoformat(),
+                "page_url": WORKSPACE_URL,
+                "statistics": stats,
+                "exposure_points_saved": total_points,
+                "current_price": (
+                    exposures[0]["current_price"] if exposures else None
+                ),
+                "captures": {
+                    "exposure_count": len(exposures),
+                    "exposures_summary": [
+                        {
+                            "greek": e["greek"],
+                            "option": e["expiration_option"],
+                            "items": len(e["items"]),
+                        }
+                        for e in exposures
+                    ],
+                },
+            }
+
+            save_snapshot(payload)
+
+            print(
+                f"[volland-v2] saved {payload['ts_utc']} "
+                f"exposures={len(exposures)} points={total_points} "
+                f"paradigm={stats.get('paradigm', 'N/A')} "
+                f"lis={stats.get('lines_in_sand', 'N/A')} "
+                f"charm={stats.get('aggregatedCharm', 'N/A')}",
+                flush=True,
+            )
+            return stats
+
         # Register handlers once (persist across navigations)
         setup_handlers(page)
 
         # Login once
         login_if_needed(page, WORKSPACE_URL)
 
+        # Track Volland's lastModified to detect refreshes
+        last_known_modified = ""
+
         while True:
             if not market_open_now():
-                time.sleep(PULL_EVERY)
+                # Reset sync state so we re-sync at next market open
+                last_known_modified = ""
+                time.sleep(30)
                 continue
 
             try:
-                # ── Reset capture state ──
-                cycle["exposures"] = []
-                cycle["paradigm"] = None
-                cycle["spot_vol"] = None
+                # ══════════════════════════════════════════════════════
+                # SYNC PHASE: wait for Volland to refresh before first
+                # capture of the day, so we grab fresh data immediately
+                # ══════════════════════════════════════════════════════
+                if not last_known_modified:
+                    # Get baseline lastModified
+                    baseline = check_paradigm_lastmodified(page)
+                    print(
+                        f"[sync] Waiting for Volland refresh... "
+                        f"baseline lastModified={baseline!r}",
+                        flush=True,
+                    )
 
-                # ── Navigate to workspace (triggers all widget API calls) ──
+                    # Poll until lastModified changes (= fresh data)
+                    while market_open_now():
+                        time.sleep(SYNC_POLL_SEC)
+                        current = check_paradigm_lastmodified(page)
+                        if current and current != baseline:
+                            print(
+                                f"[sync] Volland refreshed! "
+                                f"lastModified={current!r} (was {baseline!r})",
+                                flush=True,
+                            )
+                            last_known_modified = current
+                            break
+                        # Also break if baseline was empty and we now have data
+                        if current and not baseline:
+                            print(
+                                f"[sync] First data available: "
+                                f"lastModified={current!r}",
+                                flush=True,
+                            )
+                            last_known_modified = current
+                            break
+                    else:
+                        # Market closed while waiting
+                        continue
+
+                # ══════════════════════════════════════════════════════
+                # CAPTURE PHASE: full workspace load + save
+                # ══════════════════════════════════════════════════════
                 print("[volland-v2] Fetching workspace...", flush=True)
-                page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
+                exposures, paradigm, spot_vol = do_full_capture()
 
-                if "/sign-in" in page.url:
-                    login_if_needed(page, WORKSPACE_URL)
-                    # Reset — login navigation may have triggered stale captures
-                    cycle["exposures"] = []
-                    cycle["paradigm"] = None
-                    cycle["spot_vol"] = None
-                    page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
+                # Update lastModified from captured data
+                if paradigm and paradigm.get("lastModified"):
+                    last_known_modified = paradigm["lastModified"]
 
-                # ── Wait for all widgets to load and fire API calls ──
-                page.wait_for_timeout(int(WAIT_SEC * 1000))
-
-                # Dismiss session-limit modal if it appeared late
-                handle_session_limit_modal(page)
-
-                # ── Process captured data ──
-                paradigm  = cycle["paradigm"]
-                spot_vol  = cycle["spot_vol"]
-
-                # Deduplicate: widgets auto-refresh during wait, so we may
-                # capture the same (greek, option) multiple times. Keep only
-                # the last capture per combo (freshest data).
-                seen = {}
-                for exp in cycle["exposures"]:
-                    key = (exp["greek"], exp["expiration_option"])
-                    seen[key] = exp  # last one wins
-                exposures = list(seen.values())
-
-                # Format statistics (backward compatible with V1)
-                stats = format_statistics(paradigm, spot_vol)
-
-                # Save exposure points to DB
-                total_points = 0
-                for exp in exposures:
-                    greek      = exp["greek"]
-                    exp_option = exp["expiration_option"]
-                    items      = exp["items"]
-                    cur_price  = exp["current_price"]
-
-                    # Backward compat: 0DTE charm keeps expiration_option=None
-                    # so existing queries (WHERE greek='charm') still work
-                    db_exp_option = (
-                        None if (greek == "charm" and exp_option == "TODAY")
-                        else exp_option
-                    )
-
-                    count = save_exposure_points(
-                        items, greek=greek, ticker="SPX",
-                        current_price=cur_price, expiration_option=db_exp_option,
-                    )
-                    total_points += count
-
-                # Build snapshot payload
-                payload = {
-                    "ts_utc": datetime.now(timezone.utc).isoformat(),
-                    "page_url": WORKSPACE_URL,
-                    "statistics": stats,
-                    "exposure_points_saved": total_points,
-                    "current_price": (
-                        exposures[0]["current_price"] if exposures else None
-                    ),
-                    "captures": {
-                        "exposure_count": len(exposures),
-                        "exposures_summary": [
-                            {
-                                "greek": e["greek"],
-                                "option": e["expiration_option"],
-                                "items": len(e["items"]),
-                            }
-                            for e in exposures
-                        ],
-                    },
-                }
-
-                save_snapshot(payload)
-
-                print(
-                    f"[volland-v2] saved {payload['ts_utc']} "
-                    f"exposures={len(exposures)} points={total_points} "
-                    f"paradigm={stats.get('paradigm', 'N/A')} "
-                    f"lis={stats.get('lines_in_sand', 'N/A')} "
-                    f"charm={stats.get('aggregatedCharm', 'N/A')}",
-                    flush=True,
-                )
+                save_cycle(exposures, paradigm, spot_vol)
 
             except Exception as e:
                 err_payload = {

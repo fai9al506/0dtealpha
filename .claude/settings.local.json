@@ -40,7 +40,14 @@
       "Bash(set:*)",
       "Bash(where:*)",
       "Bash(railway run:*)",
-      "Bash(git status:*)"
+      "Bash(git status:*)",
+      "WebFetch(domain:docs.railway.com)",
+      "WebFetch(domain:blog.railway.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:station.railway.com)",
+      "WebFetch(domain:railway.com)",
+      "Bash(railway --help:*)",
+      "Bash(railway open:*)"
     ]
   }
 }

@@ -2225,8 +2225,8 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
                 dt = pd.to_datetime(ts_raw)
                 if dt.tzinfo is None:
                     dt = dt.tz_localize('UTC')
-                dt_et = dt.tz_convert('US/Eastern')
-                time_str = dt_et.strftime('%Y-%m-%dT%H:%M:%S')
+                # Return UTC ISO string to match playback_snapshots TIMESTAMPTZ format
+                time_str = dt.isoformat()
             except:
                 time_str = ts_raw
 
@@ -2239,6 +2239,8 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
                 "volume": bar.get("TotalVolume"),
             })
 
+        if candles:
+            print(f"[spx_candles_date] first={candles[0]['time']} last={candles[-1]['time']}", flush=True)
         return {"candles": candles, "count": len(candles)}
     except Exception as e:
         print(f"[spx_candles_date] error: {e}", flush=True)

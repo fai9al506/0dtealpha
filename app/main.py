@@ -2193,8 +2193,16 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
     if interval not in (1, 5):
         return JSONResponse({"error": "interval must be 1 or 5"}, status_code=400)
     try:
-        barsback = 390 if interval == 1 else 78
         parts = date.split("-")
+        today_str = now_et().strftime("%Y-%m-%d")
+        is_today = (date == today_str)
+
+        # For today: 390/78 bars is enough (recent data, mostly market hours)
+        # For historical: need ~800/160 bars because TS includes pre-market in count
+        if is_today:
+            barsback = 390 if interval == 1 else 78
+        else:
+            barsback = 800 if interval == 1 else 160
 
         params = {
             "interval": str(interval),
@@ -2203,9 +2211,7 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
         }
 
         # For historical dates: add lastdate (barsback + lastdate works; + firstdate does NOT)
-        # Try ISO format for v3 API: YYYY-MM-DDT16:05:00Z
-        today_str = now_et().strftime("%Y-%m-%d")
-        if date != today_str:
+        if not is_today:
             params["lastdate"] = f"{date}T16:05:00Z"
 
         print(f"[spx_candles_date] date={date} interval={interval} params={params}", flush=True)

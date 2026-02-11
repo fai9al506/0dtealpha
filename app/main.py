@@ -847,7 +847,7 @@ def db_volland_vanna_window(limit: int = 40) -> dict:
 def db_volland_delta_decay_window(limit: int = 40) -> dict:
     """
     Returns latest 'limit' strikes centered on the current spot price.
-    Reads directly from volland_exposure_points (greek='deltaDecay', expiration_option='TODAY').
+    Reads directly from volland_exposure_points (greek='deltaDecay').
     Falls back to max-abs-value strike if current_price is not available.
     """
     if not engine:
@@ -861,19 +861,19 @@ def db_volland_delta_decay_window(limit: int = 40) -> dict:
     WITH latest AS (
       SELECT max(ts_utc) AS ts_utc
       FROM volland_exposure_points
-      WHERE greek = 'deltaDecay' AND expiration_option = 'TODAY'
+      WHERE greek = 'deltaDecay'
     ),
     center AS (
       SELECT COALESCE(
         (SELECT v.current_price::numeric
          FROM volland_exposure_points v
          JOIN latest l ON v.ts_utc = l.ts_utc
-         WHERE v.greek = 'deltaDecay' AND v.expiration_option = 'TODAY' AND v.current_price IS NOT NULL
+         WHERE v.greek = 'deltaDecay' AND v.current_price IS NOT NULL
          LIMIT 1),
         (SELECT v.strike::numeric
          FROM volland_exposure_points v
          JOIN latest l ON v.ts_utc = l.ts_utc
-         WHERE v.greek = 'deltaDecay' AND v.expiration_option = 'TODAY'
+         WHERE v.greek = 'deltaDecay'
          ORDER BY abs(v.value::numeric) DESC
          LIMIT 1)
       ) AS mid_strike
@@ -891,7 +891,7 @@ def db_volland_delta_decay_window(limit: int = 40) -> dict:
       FROM volland_exposure_points v
       JOIN latest l ON v.ts_utc = l.ts_utc
       CROSS JOIN center c
-      WHERE v.greek = 'deltaDecay' AND v.expiration_option = 'TODAY'
+      WHERE v.greek = 'deltaDecay'
     )
     SELECT ts_utc, strike, delta_decay, mid_strike, rel
     FROM ranked

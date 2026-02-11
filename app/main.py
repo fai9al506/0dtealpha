@@ -2193,21 +2193,28 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
     if interval not in (1, 5):
         return JSONResponse({"error": "interval must be 1 or 5"}, status_code=400)
     try:
-        # Convert YYYY-MM-DD to TS lastdate format: MM-DD-YYYYt16:05:00
-        parts = date.split("-")
-        lastdate = f"{parts[1]}-{parts[2]}-{parts[0]}t16:05:00"
         barsback = 390 if interval == 1 else 78
 
         params = {
             "interval": str(interval),
             "unit": "Minute",
             "barsback": str(barsback),
-            "lastdate": lastdate,
         }
+
+        # For today: skip lastdate (proven approach matching /api/spx_candles_1m)
+        # For historical dates: add lastdate in MM-DD-YYYY format
+        today_str = now_et().strftime("%Y-%m-%d")
+        if date != today_str:
+            parts = date.split("-")
+            lastdate = f"{parts[1]}-{parts[2]}-{parts[0]}"
+            params["lastdate"] = lastdate
+
+        print(f"[spx_candles_date] date={date} interval={interval} barsback={barsback} params={params}", flush=True)
         r = api_get("/marketdata/barcharts/$SPX.X", params=params, timeout=15)
         data = r.json()
 
         bars_list = data.get("Bars", [])
+        print(f"[spx_candles_date] got {len(bars_list)} bars from TS API", flush=True)
         if not bars_list:
             return {"error": "No bars returned", "candles": []}
 

@@ -3312,7 +3312,7 @@ def api_data_freshness():
 
                     if not is_open:
                         status = "closed"
-                    elif age < 120:
+                    elif age < 180:
                         status = "ok"
                     elif age < 600:
                         status = "stale"

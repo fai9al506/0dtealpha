@@ -921,10 +921,11 @@ def db_volland_delta_decay_window(limit: int = 40) -> dict:
         "points": pts
     }
 
-def db_volland_exposure_window(greek: str, expiration_option: str, limit: int = 40) -> dict:
+def db_volland_exposure_window(greek: str, expiration_option: str = None, limit: int = 40) -> dict:
     """
     Generic query: returns latest 'limit' strikes centered on spot for any
     greek + expiration_option combo stored in volland_exposure_points.
+    When expiration_option is None, does not filter by it (useful for 0DTE greeks).
     """
     if not engine:
         raise RuntimeError("DATABASE_URL not set")
@@ -933,24 +934,26 @@ def db_volland_exposure_window(greek: str, expiration_option: str, limit: int = 
     if lim < 5: lim = 5
     if lim > 200: lim = 200
 
-    sql = text("""
+    exp_filter = "AND expiration_option = :exp_option" if expiration_option else ""
+
+    sql = text(f"""
     WITH latest AS (
       SELECT max(ts_utc) AS ts_utc
       FROM volland_exposure_points
-      WHERE greek = :greek AND expiration_option = :exp_option
+      WHERE greek = :greek {exp_filter}
     ),
     center AS (
       SELECT COALESCE(
         (SELECT v.current_price::numeric
          FROM volland_exposure_points v
          JOIN latest l ON v.ts_utc = l.ts_utc
-         WHERE v.greek = :greek AND v.expiration_option = :exp_option
+         WHERE v.greek = :greek {exp_filter}
                AND v.current_price IS NOT NULL
          LIMIT 1),
         (SELECT v.strike::numeric
          FROM volland_exposure_points v
          JOIN latest l ON v.ts_utc = l.ts_utc
-         WHERE v.greek = :greek AND v.expiration_option = :exp_option
+         WHERE v.greek = :greek {exp_filter}
          ORDER BY abs(v.value::numeric) DESC
          LIMIT 1)
       ) AS mid_strike
@@ -968,15 +971,18 @@ def db_volland_exposure_window(greek: str, expiration_option: str, limit: int = 
       FROM volland_exposure_points v
       JOIN latest l ON v.ts_utc = l.ts_utc
       CROSS JOIN center c
-      WHERE v.greek = :greek AND v.expiration_option = :exp_option
+      WHERE v.greek = :greek {exp_filter}
     )
     SELECT ts_utc, strike, value, mid_strike, rel
     FROM ranked
     WHERE rn <= :lim
     ORDER BY strike;
     """)
+    params = {"greek": greek, "lim": lim}
+    if expiration_option:
+        params["exp_option"] = expiration_option
     with engine.begin() as conn:
-        rows = conn.execute(sql, {"greek": greek, "exp_option": expiration_option, "lim": lim}).mappings().all()
+        rows = conn.execute(sql, params).mappings().all()
 
     if not rows:
         return {"ts_utc": None, "mid_strike": None, "points": []}
@@ -2058,18 +2064,18 @@ def api_volland_delta_decay_window(limit: int = Query(40, ge=5, le=200)):
 @app.get("/api/volland/exposure_window")
 def api_volland_exposure_window(
     greek: str = Query(..., description="Greek name: vanna or gamma"),
-    expiration: str = Query(..., description="Expiration option: THIS_WEEK, THIRTY_NEXT_DAYS, or ALL"),
+    expiration: str = Query(None, description="Expiration option: THIS_WEEK, THIRTY_NEXT_DAYS, ALL (omit for 0DTE)"),
     limit: int = Query(40, ge=5, le=200),
 ):
     """
     Generic exposure window for any greek + expiration_option combo.
-    Used by Charts HT tab for high-tenor vanna & gamma grids.
+    Omit expiration for 0DTE data (no expiration filter).
     """
     ALLOWED_GREEKS = {"vanna", "gamma"}
     ALLOWED_EXPIRATIONS = {"THIS_WEEK", "THIRTY_NEXT_DAYS", "ALL"}
     if greek not in ALLOWED_GREEKS:
         return JSONResponse({"error": f"greek must be one of {ALLOWED_GREEKS}"}, status_code=400)
-    if expiration not in ALLOWED_EXPIRATIONS:
+    if expiration is not None and expiration not in ALLOWED_EXPIRATIONS:
         return JSONResponse({"error": f"expiration must be one of {ALLOWED_EXPIRATIONS}"}, status_code=400)
     try:
         if not engine:
@@ -3908,6 +3914,12 @@ DASH_HTML_TEMPLATE = """
     }
 
     .charts { display:flex; flex-direction:column; gap:18px; }
+    .charts-grid {
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:8px;
+    }
+    .charts-grid > div { width:100%; height:380px; }
     iframe {
       width:100%;
       height: calc(100vh - 190px);
@@ -3915,6 +3927,7 @@ DASH_HTML_TEMPLATE = """
       background:#0f1115;
     }
     #volChart, #oiChart, #gexChart, #vannaChart, #deltaDecayChart { width:100%; height:420px; }
+    #gexNetChart, #gexCallPutChart, #vannaOdteChart, #gammaOdteChart { width:100%; height:380px; }
 
     .ht-grid {
       display:grid;
@@ -3996,6 +4009,8 @@ DASH_HTML_TEMPLATE = """
       .panel { padding:8px; border-radius:10px; }
       iframe { height:60vh; }
       #volChart, #oiChart, #gexChart, #vannaChart, #deltaDecayChart { height:340px; }
+      .charts-grid { grid-template-columns:1fr; }
+      .charts-grid > div { height:320px; }
       .ht-grid { grid-template-columns:1fr; }
       .ht-grid > div { height:320px; }
       .spot-grid { grid-template-columns:1fr; }
@@ -4412,15 +4427,18 @@ DASH_HTML_TEMPLATE = """
 
       <div id="viewCharts" class="panel" style="display:none">
         <div class="header">
-          <div><strong>GEX, Volume, Open Interest + Volland Charm &amp; Delta Decay</strong></div>
+          <div><strong>0DTE Charts: GEX, Greeks, Volume &amp; OI</strong></div>
           <div class="pill">spot line = dotted</div>
         </div>
-        <div class="charts">
-          <div id="gexChart"></div>
-          <div id="volChart"></div>
-          <div id="oiChart"></div>
+        <div class="charts-grid">
+          <div id="gexNetChart"></div>
+          <div id="gexCallPutChart"></div>
           <div id="vannaChart"></div>
+          <div id="vannaOdteChart"></div>
           <div id="deltaDecayChart"></div>
+          <div id="gammaOdteChart"></div>
+          <div id="oiChart"></div>
+          <div id="volChart"></div>
         </div>
       </div>
 
@@ -4797,21 +4815,24 @@ DASH_HTML_TEMPLATE = """
       return await r.json();
     }
 
-    // ===== Main charts (GEX / VOL / OI / VANNA / DELTA DECAY) =====
-    const volDiv=document.getElementById('volChart'),
-          oiDiv=document.getElementById('oiChart'),
-          gexDiv=document.getElementById('gexChart'),
+    // ===== Main charts (2x4 grid) =====
+    const gexNetDiv=document.getElementById('gexNetChart'),
+          gexCallPutDiv=document.getElementById('gexCallPutChart'),
           vannaDiv=document.getElementById('vannaChart'),
-          deltaDecayDiv=document.getElementById('deltaDecayChart');
+          vannaOdteDiv=document.getElementById('vannaOdteChart'),
+          deltaDecayDiv=document.getElementById('deltaDecayChart'),
+          gammaOdteDiv=document.getElementById('gammaOdteChart'),
+          oiDiv=document.getElementById('oiChart'),
+          volDiv=document.getElementById('volChart');
 
-    let chartsTimer=null, firstDraw=true;
+    let chartsTimer=null;
 
     function verticalSpotShape(spot,yMin,yMax){
       if(spot==null) return null;
       return {type:'line', x0:spot, x1:spot, y0:yMin, y1:yMax, line:{color:'#9aa0a6', width:2, dash:'dot'}, xref:'x', yref:'y'};
     }
 
-    function buildLayout(title,xTitle,yTitle,spot,yMin,yMax,dtick=5){
+    function buildLayout(title,xTitle,yTitle,spot,yMin,yMax,dtick=10){
       const shape=verticalSpotShape(spot,yMin,yMax);
       return {
         title:{text:title,font:{size:14}},
@@ -4835,14 +4856,20 @@ DASH_HTML_TEMPLATE = """
       ];
     }
 
-    function tracesForGEX(strikes,callGEX,putGEX,netGEX){
+    function tracesForGEXNet(strikes,netGEX){
+      const colors = netGEX.map(v => (v >= 0 ? '#22c55e' : '#ef4444'));
+      return [
+        {type:'bar', name:'Net GEX', x:strikes, y:netGEX, marker:{color:colors},
+         hovertemplate:"Strike %{x}<br>Net GEX: %{y:.2f}<extra></extra>"}
+      ];
+    }
+
+    function tracesForGEXCallPut(strikes,callGEX,putGEX){
       return [
         {type:'bar', name:'Call GEX', x:strikes, y:callGEX, marker:{color:'#22c55e'}, offsetgroup:'call_gex',
          hovertemplate:"Strike %{x}<br>Call GEX: %{y:.2f}<extra></extra>"},
         {type:'bar', name:'Put GEX',  x:strikes, y:putGEX,  marker:{color:'#ef4444'}, offsetgroup:'put_gex',
-         hovertemplate:"Strike %{x}<br>Put GEX: %{y:.2f}<extra></extra>"},
-        {type:'bar', name:'Net GEX',  x:strikes, y:netGEX, marker:{color:'#60a5fa'}, offsetgroup:'net_gex', opacity:0.85,
-         hovertemplate:"Strike %{x}<br>Net GEX: %{y:.2f}<extra></extra>"}
+         hovertemplate:"Strike %{x}<br>Put GEX: %{y:.2f}<extra></extra>"}
       ];
     }
 
@@ -4916,7 +4943,7 @@ DASH_HTML_TEMPLATE = """
         paper_bgcolor:'#121417',
         plot_bgcolor:'#0f1115',
         margin:{l:55,r:10,t:32,b:40},
-        xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}, dtick:5},
+        xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}, dtick:10},
         yaxis:{title:'Charm',  gridcolor:'#20242a', tickfont:{size:10}, range:[yMin,yMax]},
         shapes: shapes,
         font:{color:'#e6e7e9',size:11}
@@ -4992,15 +5019,60 @@ DASH_HTML_TEMPLATE = """
         paper_bgcolor:'#121417',
         plot_bgcolor:'#0f1115',
         margin:{l:55,r:10,t:32,b:40},
-        xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}, dtick:5},
+        xaxis:{title:'Strike', gridcolor:'#20242a', tickfont:{size:10}, dtick:10},
         yaxis:{title:'Delta Decay',  gridcolor:'#20242a', tickfont:{size:10}, range:[yMin,yMax]},
         shapes: shapes,
         font:{color:'#e6e7e9',size:11}
       }, {displayModeBar:false,responsive:true});
     }
 
+    // Generic bar chart for exposure_window data (Vanna 0DTE, Gamma 0DTE)
+    function drawExposureChart(divEl, data, spot, label){
+      if (!data || data.error) {
+        const msg = data && data.error ? data.error : "no data";
+        Plotly.react(divEl, [], {
+          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          margin:{l:40,r:10,t:30,b:30},
+          annotations:[{text:label+": "+msg, x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9',size:11}}],
+          font:{color:'#e6e7e9'}
+        }, {displayModeBar:false,responsive:true});
+        return;
+      }
+      const pts = data.points || [];
+      if (!pts.length) {
+        Plotly.react(divEl, [], {
+          paper_bgcolor:'#121417', plot_bgcolor:'#0f1115',
+          margin:{l:40,r:10,t:30,b:30},
+          annotations:[{text:label+": no points yet", x:0.5, y:0.5, xref:'paper', yref:'paper', showarrow:false, font:{color:'#e6e7e9',size:11}}],
+          font:{color:'#e6e7e9'}
+        }, {displayModeBar:false,responsive:true});
+        return;
+      }
+      const strikes = pts.map(p=>p.strike);
+      const vals    = pts.map(p=>p.value);
+      const colors  = vals.map(v => (v >= 0 ? '#22c55e' : '#ef4444'));
+      let yMin = Math.min(...vals), yMax = Math.max(...vals);
+      if (yMin === yMax){ const p0=Math.max(1,Math.abs(yMin)*0.05); yMin-=p0; yMax+=p0; }
+      else { const p=(yMax-yMin)*0.05; yMin-=p; yMax+=p; }
+      const shapes = [];
+      if (spot != null) shapes.push({type:'line',x0:spot,x1:spot,y0:yMin,y1:yMax,xref:'x',yref:'y',line:{color:'#9aa0a6',width:2,dash:'dot'}});
+      let titleText = label;
+      if (data.ts_utc) {
+        const dt=new Date(data.ts_utc), ageMins=Math.round((Date.now()-dt.getTime())/60000), timeStr=fmtTimeET(data.ts_utc);
+        const stale = ageMins>5?' <span style="color:#ef4444">(stale)</span>':'';
+        titleText = label+'  <span style="font-size:11px;color:#9aa0a6">'+timeStr+' ET'+stale+'</span>';
+      }
+      Plotly.react(divEl, [{type:'bar',x:strikes,y:vals,marker:{color:colors},hovertemplate:"Strike %{x}<br>"+label+" %{y}<extra></extra>"}], {
+        title:{text:titleText,font:{size:14}},paper_bgcolor:'#121417',plot_bgcolor:'#0f1115',
+        margin:{l:55,r:10,t:32,b:40},
+        xaxis:{title:'Strike',gridcolor:'#20242a',tickfont:{size:10},dtick:10},
+        yaxis:{gridcolor:'#20242a',tickfont:{size:10},range:[yMin,yMax]},
+        shapes:shapes,font:{color:'#e6e7e9',size:11}
+      }, {displayModeBar:false,responsive:true});
+    }
+
     async function drawOrUpdate(){
-  // 1) Fetch the fast data first (DO NOT wait for vanna)
+  // 1) Fetch the fast data first (DO NOT wait for volland)
   const data = await fetchSeries();
   if (!data || !data.strikes || data.strikes.length === 0) return;
 
@@ -5008,44 +5080,55 @@ DASH_HTML_TEMPLATE = """
 
   const vMax = Math.max(0, ...data.callVol, ...data.putVol) * 1.05;
   const oiMax= Math.max(0, ...data.callOI,  ...data.putOI ) * 1.05;
-  const gAbs = [...data.callGEX, ...data.putGEX, ...data.netGEX].map(v=>Math.abs(v));
-  const gMax = (gAbs.length ? Math.max(...gAbs) : 0) * 1.05;
+  const gNetAbs = data.netGEX.map(v=>Math.abs(v));
+  const gNetMax = (gNetAbs.length ? Math.max(...gNetAbs) : 0) * 1.05;
+  const gCPAbs = [...data.callGEX, ...data.putGEX].map(v=>Math.abs(v));
+  const gCPMax = (gCPAbs.length ? Math.max(...gCPAbs) : 0) * 1.05;
 
-  const gexLayout = buildLayout('Gamma Exposure (GEX)','Strike','GEX',spot,-gMax,gMax,5);
-  const volLayout = buildLayout('Volume','Strike','Volume',spot,0,vMax,5);
-  const oiLayout  = buildLayout('Open Interest','Strike','Open Interest',spot,0,oiMax,5);
+  const gexNetLayout = buildLayout('GEX (Net)','Strike','Net GEX',spot,-gNetMax,gNetMax);
+  const gexCPLayout  = buildLayout('GEX (Call & Put)','Strike','GEX',spot,-gCPMax,gCPMax);
+  const volLayout = buildLayout('Volume','Strike','Volume',spot,0,vMax);
+  const oiLayout  = buildLayout('Open Interest','Strike','Open Interest',spot,0,oiMax);
+  gexCPLayout.barmode = 'group';
 
-  const gexTraces = tracesForGEX(strikes, data.callGEX, data.putGEX, data.netGEX);
+  const gexNetTraces = tracesForGEXNet(strikes, data.netGEX);
+  const gexCPTraces  = tracesForGEXCallPut(strikes, data.callGEX, data.putGEX);
   const volTraces = tracesForBars(strikes, data.callVol, data.putVol, 'Vol');
   const oiTraces  = tracesForBars(strikes, data.callOI,  data.putOI,  'OI');
 
-  if (firstDraw){
-    Plotly.newPlot(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
-    Plotly.newPlot(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
-    Plotly.newPlot(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
-    firstDraw=false;
-  } else {
-    Plotly.react(gexDiv, gexTraces, gexLayout, {displayModeBar:false,responsive:true});
-    Plotly.react(volDiv, volTraces, volLayout, {displayModeBar:false,responsive:true});
-    Plotly.react(oiDiv,  oiTraces,  oiLayout,  {displayModeBar:false,responsive:true});
-  }
+  const opts = {displayModeBar:false,responsive:true};
+  Plotly.react(gexNetDiv,     gexNetTraces, gexNetLayout, opts);
+  Plotly.react(gexCallPutDiv, gexCPTraces,  gexCPLayout,  opts);
+  Plotly.react(volDiv,        volTraces,    volLayout,     opts);
+  Plotly.react(oiDiv,         oiTraces,     oiLayout,      opts);
 
-  // 2) Show a quick "loading" state for vanna and delta decay (optional but recommended)
+  // 2) Show loading states on first draw
   if (!window.__vannaLoadingShown) {
     window.__vannaLoadingShown = true;
     drawVannaWindow({ error: "Loading Charm..." }, spot);
     drawDeltaDecay({ error: "Loading Delta Decay..." }, spot);
+    drawExposureChart(vannaOdteDiv, { error: "Loading Vanna 0DTE..." }, spot, 'Vanna 0DTE');
+    drawExposureChart(gammaOdteDiv, { error: "Loading Gamma 0DTE..." }, spot, 'Gamma 0DTE');
   }
 
-  // 3) Fetch vanna in the background (doesn't block charts)
+  // 3) Fetch volland charts in the background
   fetchVannaWindow()
-    .then(vannaW => drawVannaWindow(vannaW, spot))
+    .then(w => drawVannaWindow(w, spot))
     .catch(err => drawVannaWindow({ error: String(err) }, spot));
 
-  // 4) Fetch delta decay in the background
   fetchDeltaDecayWindow()
-    .then(ddW => drawDeltaDecay(ddW, spot))
+    .then(w => drawDeltaDecay(w, spot))
     .catch(err => drawDeltaDecay({ error: String(err) }, spot));
+
+  fetch('/api/volland/exposure_window?greek=vanna&limit=40',{cache:'no-store'})
+    .then(r=>r.json())
+    .then(w => drawExposureChart(vannaOdteDiv, w, spot, 'Vanna 0DTE'))
+    .catch(err => drawExposureChart(vannaOdteDiv, {error:String(err)}, spot, 'Vanna 0DTE'));
+
+  fetch('/api/volland/exposure_window?greek=gamma&limit=40',{cache:'no-store'})
+    .then(r=>r.json())
+    .then(w => drawExposureChart(gammaOdteDiv, w, spot, 'Gamma 0DTE'))
+    .catch(err => drawExposureChart(gammaOdteDiv, {error:String(err)}, spot, 'Gamma 0DTE'));
 }
 
 

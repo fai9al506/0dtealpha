@@ -265,8 +265,6 @@ def run():
                     })
                     n = len(data.get("items", []))
                     print(f"[capture] exposure: {greek}/{exp_option} ({n} pts)", flush=True)
-                    if n == 0:
-                        print(f"[debug] response keys: {list(data.keys())}  body[:500]: {body[:500]}", flush=True)
                 except json.JSONDecodeError:
                     pass
                 route.fulfill(response=response)

@@ -404,6 +404,12 @@ def db_init():
         EXCEPTION WHEN duplicate_column THEN NULL;
         END $$;
         """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_log ADD COLUMN comments TEXT;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
 
         # Setup detection log table
         conn.execute(text("""
@@ -3263,7 +3269,7 @@ def api_setup_log_outcome(log_id: int):
                        paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
                        gap_to_lis, upside, rr_ratio, first_hour, notified,
                        bofa_stop_level, bofa_target_level, bofa_lis_width,
-                       bofa_max_hold_minutes, lis_upper
+                       bofa_max_hold_minutes, lis_upper, comments
                 FROM setup_log WHERE id = :log_id
             """), {"log_id": log_id}).mappings().first()
 
@@ -3331,6 +3337,24 @@ def api_setup_log_outcome(log_id: int):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.post("/api/setup/log/{log_id}/comment")
+async def api_setup_log_comment(log_id: int, request: Request):
+    """Save a comment/remark on a setup log entry."""
+    if not engine:
+        return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+    try:
+        body = await request.json()
+        comments = body.get("comments", "")
+        with engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE setup_log SET comments = :comments WHERE id = :log_id"
+            ), {"comments": comments, "log_id": log_id})
+        return {"ok": True}
+    except Exception as e:
+        print(f"[setups] comment save error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.get("/api/setup/log_with_outcomes")
 def api_setup_log_with_outcomes(limit: int = Query(50)):
     """Get recent setup detection log entries with basic outcome indicators."""
@@ -3394,7 +3418,7 @@ def api_setup_export(
                        paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
                        gap_to_lis, upside, rr_ratio, first_hour, notified,
                        bofa_stop_level, bofa_target_level, bofa_lis_width,
-                       bofa_max_hold_minutes, lis_upper
+                       bofa_max_hold_minutes, lis_upper, comments
                 FROM setup_log
                 WHERE 1=1 {where_clause}
                 ORDER BY ts DESC
@@ -3413,7 +3437,7 @@ def api_setup_export(
             "Date", "Time", "Direction", "Grade", "Score", "SPX", "LIS", "Target",
             "PGEX", "NGEX", "Gap", "Upside", "R:R", "First Hour", "Notified",
             "10pt Hit", "Target Hit", "Stop Hit", "Max Profit", "Max Loss",
-            "10pt Level", "Stop Level", "Result", "Points P/L"
+            "10pt Level", "Stop Level", "Result", "Points P/L", "Comments"
         ]
         output.write(",".join(headers) + "\n")
 
@@ -3477,6 +3501,7 @@ def api_setup_export(
                 f"{outcome.get('stop_level', 0):.0f}" if outcome.get("stop_level") else "",
                 result,
                 f"{points_pl:.1f}",
+                '"' + (r.get("comments") or "").replace('"', '""') + '"',
             ]
             output.write(",".join(row_data) + "\n")
 
@@ -4488,6 +4513,15 @@ DASH_HTML_TEMPLATE = """
           <div id="setupDetailChart" style="height:350px;background:#0f1115;border-radius:8px"></div>
           <!-- Stats Row -->
           <div id="setupDetailStats" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;font-size:11px">
+          </div>
+          <!-- Comments -->
+          <div style="margin-top:12px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <span style="color:var(--muted);font-size:11px;font-weight:600">Notes / Remarks</span>
+              <button id="setupDetailSaveComment" style="font-size:10px;padding:2px 10px;background:#3b82f6;color:#fff;border:none;border-radius:4px;cursor:pointer;display:none">Save</button>
+              <span id="setupDetailCommentStatus" style="font-size:10px;color:#22c55e;display:none">Saved</span>
+            </div>
+            <textarea id="setupDetailComments" placeholder="Add your notes about this trade setup..." style="width:100%;min-height:60px;background:#1a1d21;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:12px;font-family:inherit;resize:vertical;box-sizing:border-box"></textarea>
           </div>
         </div>
       </div>
@@ -7325,10 +7359,17 @@ DASH_HTML_TEMPLATE = """
       const chart = document.getElementById('setupDetailChart');
       const stats = document.getElementById('setupDetailStats');
 
+      const commentsBox = document.getElementById('setupDetailComments');
+      const saveBtn = document.getElementById('setupDetailSaveComment');
+      const statusSpan = document.getElementById('setupDetailCommentStatus');
+
       title.textContent = 'Loading...';
       info.innerHTML = '';
       outcome.innerHTML = '';
       stats.innerHTML = '';
+      commentsBox.value = '';
+      saveBtn.style.display = 'none';
+      statusSpan.style.display = 'none';
       modal.style.display = 'flex';
 
       try {
@@ -7573,6 +7614,30 @@ DASH_HTML_TEMPLATE = """
             </div>
           </div>
         `;
+        // Comments
+        commentsBox.value = e.comments || '';
+        saveBtn.style.display = 'inline-block';
+        saveBtn.onclick = async () => {
+          saveBtn.disabled = true;
+          saveBtn.textContent = 'Saving...';
+          try {
+            await fetch('/api/setup/log/' + logId + '/comment', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ comments: commentsBox.value })
+            });
+            statusSpan.style.display = 'inline';
+            statusSpan.textContent = 'Saved';
+            statusSpan.style.color = '#22c55e';
+            setTimeout(() => { statusSpan.style.display = 'none'; }, 2000);
+          } catch (err) {
+            statusSpan.style.display = 'inline';
+            statusSpan.textContent = 'Error saving';
+            statusSpan.style.color = '#ef4444';
+          }
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save';
+        };
       } catch (err) {
         title.textContent = 'Error loading details';
         console.error('showSetupDetail error:', err);

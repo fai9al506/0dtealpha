@@ -25,6 +25,12 @@ This file is extremely fragile. It scrapes a third-party website using Playwrigh
 - If changes to the worker are unavoidable, test extensively in isolation first
 - Monitor the volland_snapshots table after deployment to verify data is still flowing
 
+## Repo Structure
+
+- `app/` — production code (main.py, setup_detector.py) — **this is the main codebase**
+- `volland_worker.py` — Playwright scraper (see warning above)
+- `0dtealpha/` — git submodule (separate repo, NOT the main codebase)
+
 ## Architecture
 
 ### Data Flow

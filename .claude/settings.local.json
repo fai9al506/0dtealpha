@@ -52,7 +52,9 @@
       "WebFetch(domain:api.tradestation.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:medium.com)",
-      "WebFetch(domain:tradestation.github.io)"
+      "WebFetch(domain:tradestation.github.io)",
+      "Bash(railway up:*)",
+      "Bash(ls:*)"
     ]
   }
 }

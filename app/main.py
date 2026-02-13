@@ -57,6 +57,17 @@ _alert_state = {
     "last_trading_day": None,
 }
 
+# Pipeline health state tracking
+_pipeline_status = {
+    "ts_status": "ok",
+    "vol_status": "ok",
+    "ts_last_alert": 0,
+    "vol_last_alert": 0,
+    "ts_error_since": 0,
+    "vol_error_since": 0,
+    "reminder_minutes": 15,
+}
+
 # Default alert settings (loaded from DB on startup)
 _alert_settings = {
     "enabled": True,
@@ -1413,6 +1424,13 @@ def run_market_job():
     except Exception as e:
         last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}
         print("[pull] ERROR", e, flush=True)
+    finally:
+        # Check pipeline health every cycle during market hours
+        if market_open_now():
+            try:
+                check_pipeline_health()
+            except Exception as health_err:
+                print(f"[pipeline] health check error: {health_err}", flush=True)
 
 def save_history_job():
     global _last_saved_at
@@ -3625,6 +3643,51 @@ def api_data_freshness():
             print(f"[data_freshness] volland error: {e}", flush=True)
 
     return result
+
+def check_pipeline_health():
+    """Check data pipeline freshness and send Telegram alerts on error/recovery."""
+    freshness = api_data_freshness()
+    now = time.time()
+    reminder_sec = _pipeline_status["reminder_minutes"] * 60
+
+    for source, key_prefix, label in [
+        ("ts_api", "ts", "TS API"),
+        ("volland", "vol", "Volland"),
+    ]:
+        current = freshness[source]["status"]
+        prev = _pipeline_status[f"{key_prefix}_status"]
+        age_sec = freshness[source].get("age_seconds")
+        age_min = round(age_sec / 60) if age_sec else 0
+
+        # Skip if market is closed
+        if current == "closed":
+            _pipeline_status[f"{key_prefix}_status"] = current
+            continue
+
+        # Transition to error
+        if current == "error" and prev != "error":
+            _pipeline_status[f"{key_prefix}_error_since"] = now
+            _pipeline_status[f"{key_prefix}_last_alert"] = now
+            _pipeline_status[f"{key_prefix}_status"] = current
+            send_telegram(f"\U0001f534 DATA PIPELINE ERROR: {label} data is {age_min} minutes old — not updating")
+            continue
+
+        # Still in error — send reminder
+        if current == "error" and prev == "error":
+            if (now - _pipeline_status[f"{key_prefix}_last_alert"]) >= reminder_sec:
+                down_min = round((now - _pipeline_status[f"{key_prefix}_error_since"]) / 60)
+                _pipeline_status[f"{key_prefix}_last_alert"] = now
+                send_telegram(f"\U0001f534 STILL DOWN: {label} data has been stale for {down_min} minutes")
+            continue
+
+        # Recovery from error
+        if prev == "error" and current in ("ok", "stale"):
+            down_min = round((now - _pipeline_status[f"{key_prefix}_error_since"]) / 60)
+            _pipeline_status[f"{key_prefix}_status"] = current
+            send_telegram(f"\U0001f7e2 DATA RECOVERED: {label} is updating again (was down {down_min} minutes)")
+            continue
+
+        _pipeline_status[f"{key_prefix}_status"] = current
 
 # ====== TABLE & DASHBOARD HTML TEMPLATES ======
 

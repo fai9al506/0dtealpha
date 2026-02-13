@@ -54,7 +54,16 @@
       "WebFetch(domain:medium.com)",
       "WebFetch(domain:tradestation.github.io)",
       "Bash(railway up:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(env:*)",
+      "Bash(pip show:*)",
+      "Bash(npm i:*)",
+      "Bash(railway version:*)",
+      "Bash(railway login:*)",
+      "Bash(railway vars:*)",
+      "WebFetch(domain:async-rithmic.readthedocs.io)",
+      "WebFetch(domain:www.rithmic.com)",
+      "WebFetch(domain:pypi.org)"
     ]
   }
 }

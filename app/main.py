@@ -5432,6 +5432,7 @@ DASH_HTML_TEMPLATE = """
         <div class="header">
           <div><strong>ES Delta</strong></div>
           <div style="display:flex;gap:10px;align-items:center">
+            <button id="esDeltaLive" class="strike-btn" style="padding:3px 10px;font-size:10px;background:#22c55e;color:#000;font-weight:600">LIVE</button>
             <label style="font-size:11px;display:flex;align-items:center;gap:4px;color:var(--muted);cursor:pointer">
               <input type="checkbox" id="esDeltaMock"> Mock
             </label>
@@ -7300,20 +7301,69 @@ DASH_HTML_TEMPLATE = """
 
     // ===== ES Delta (Range Bars) =====
     let esDeltaInterval = null;
+    let esDeltaLiveMode = true;       // true = auto-scale to latest, false = user has zoomed/panned
+    let esDeltaUserRanges = null;     // saved axis ranges when user interacts
     const esDeltaPlot = document.getElementById('esDeltaPlot');
     const esDeltaStatus = document.getElementById('esDeltaStatus');
     const esDeltaMockCb = document.getElementById('esDeltaMock');
+    const esDeltaLiveBtn = document.getElementById('esDeltaLive');
+
+    function _esDeltaSetLive(live) {
+      esDeltaLiveMode = live;
+      if (live) {
+        esDeltaUserRanges = null;
+        esDeltaLiveBtn.style.background = '#22c55e';
+        esDeltaLiveBtn.style.color = '#000';
+        esDeltaLiveBtn.textContent = 'LIVE';
+      } else {
+        esDeltaLiveBtn.style.background = '#333';
+        esDeltaLiveBtn.style.color = '#aaa';
+        esDeltaLiveBtn.textContent = 'PAUSED';
+      }
+    }
+
+    // Click Live button to re-enable auto-scale
+    esDeltaLiveBtn.addEventListener('click', () => { _esDeltaSetLive(true); drawEsDelta(); });
+
+    // Detect user zoom/pan via plotly_relayout
+    let esDeltaPlotReady = false;
+    function _esDeltaAttachRelayout() {
+      if (esDeltaPlotReady) return;
+      esDeltaPlotReady = true;
+      esDeltaPlot.on('plotly_relayout', (ev) => {
+        if (!ev) return;
+        // Ignore relayout events triggered by our own Plotly.react
+        if (ev['_fromDraw']) return;
+        // Check if user changed any axis range
+        const keys = Object.keys(ev);
+        const userChanged = keys.some(k => k.match(/^[xy]axis\d*\.range/) || k === 'xaxis.range[0]' || k === 'xaxis.range[1]');
+        if (userChanged) {
+          _esDeltaSetLive(false);
+          // Save current ranges from the plot
+          const la = esDeltaPlot.layout;
+          esDeltaUserRanges = {
+            x: la.xaxis && la.xaxis.range ? [...la.xaxis.range] : null,
+            y: la.yaxis && la.yaxis.range ? [...la.yaxis.range] : null,
+            y2: la.yaxis2 && la.yaxis2.range ? [...la.yaxis2.range] : null,
+            y3: la.yaxis3 && la.yaxis3.range ? [...la.yaxis3.range] : null,
+            y4: la.yaxis4 && la.yaxis4.range ? [...la.yaxis4.range] : null,
+          };
+        }
+      });
+    }
 
     function stopEsDelta() {
       if (esDeltaInterval) { clearInterval(esDeltaInterval); esDeltaInterval = null; }
     }
     function startEsDelta() {
       stopEsDelta();
+      _esDeltaSetLive(true);
+      esDeltaPlotReady = false;
       drawEsDelta();
       esDeltaInterval = setInterval(drawEsDelta, 5000);
     }
     // Redraw when mock checkbox changes
-    esDeltaMockCb.addEventListener('change', () => { if (esDeltaInterval) drawEsDelta(); });
+    esDeltaMockCb.addEventListener('change', () => { _esDeltaSetLive(true); if (esDeltaInterval) drawEsDelta(); });
 
     async function drawEsDelta() {
       try {
@@ -7391,6 +7441,9 @@ DASH_HTML_TEMPLATE = """
         const xPad = 8;
         const xRangeMax = n - 1 + xPad;
 
+        // If user has zoomed/panned, preserve their view; otherwise auto-scale
+        const useUserRange = !esDeltaLiveMode && esDeltaUserRanges;
+
         const layout = {
           paper_bgcolor: '#121417', plot_bgcolor: '#0f1115',
           font: { color: '#e6e7e9', size: 10 },
@@ -7399,7 +7452,7 @@ DASH_HTML_TEMPLATE = """
             gridcolor: '#1a1d21', tickfont: { size: 9 },
             rangeslider: { visible: false },
             tickvals: tickVals, ticktext: tickLabels,
-            range: [-0.5, xRangeMax],
+            range: useUserRange && esDeltaUserRanges.x ? esDeltaUserRanges.x : [-0.5, xRangeMax],
             fixedrange: false,
           },
           yaxis:  { domain: [0.42, 1.0],  side: 'right', gridcolor: '#1a1d21', tickformat: '.2f', fixedrange: false },
@@ -7410,6 +7463,14 @@ DASH_HTML_TEMPLATE = """
           dragmode: 'pan',
           showlegend: false,
         };
+
+        // Preserve y-axis ranges if user has zoomed
+        if (useUserRange) {
+          if (esDeltaUserRanges.y) layout.yaxis.range = esDeltaUserRanges.y;
+          if (esDeltaUserRanges.y2) layout.yaxis2.range = esDeltaUserRanges.y2;
+          if (esDeltaUserRanges.y3) layout.yaxis3.range = esDeltaUserRanges.y3;
+          if (esDeltaUserRanges.y4) layout.yaxis4.range = esDeltaUserRanges.y4;
+        }
 
         // Panel label annotations
         layout.annotations = [
@@ -7436,6 +7497,7 @@ DASH_HTML_TEMPLATE = """
         });
 
         Plotly.react(esDeltaPlot, [traceCandle, traceVol, traceDelta, traceCVD], layout, {responsive:true, displayModeBar:false, scrollZoom:true});
+        _esDeltaAttachRelayout();
 
         // Status text
         const sessionDelta = lastBar.cvd;

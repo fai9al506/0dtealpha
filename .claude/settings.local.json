@@ -89,7 +89,10 @@
       "WebFetch(domain:blog.pickmytrade.io)",
       "WebFetch(domain:tradestation.readthedocs.io)",
       "WebFetch(domain:www.prnewswire.com)",
-      "WebFetch(domain:unpkg.com)"
+      "WebFetch(domain:unpkg.com)",
+      "Bash(pip uninstall:*)",
+      "Bash(railway redeploy:*)",
+      "Bash(DATABASE_URL=\"postgresql://postgres:JwLVqJOvxdzflxJsCZHrPzcdPUYrmVYY@nozomi.proxy.rlwy.net:55417/railway\" uvicorn:*)"
     ]
   }
 }

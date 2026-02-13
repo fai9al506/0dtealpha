@@ -2,10 +2,10 @@
 from fastapi import FastAPI, Response, Query, Request, Cookie, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from datetime import datetime, time as dtime, timedelta
-import os, time, json, re, requests, pandas as pd, pytz, secrets
+import os, time, json, re, random, requests, pandas as pd, pytz, secrets
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
-from threading import Lock
+from threading import Lock, Thread
 from typing import Any, Optional
 import bcrypt as _bcrypt
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -476,40 +476,35 @@ def db_init():
         CREATE INDEX IF NOT EXISTS ix_contact_messages_created ON contact_messages (created_at DESC);
         """))
 
-        # Rithmic ES cumulative delta snapshots (written by rithmic_delta_worker.py)
+        # ES cumulative delta snapshots (written by pull_es_delta scheduler job)
         conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS rithmic_delta_snapshots (
+        CREATE TABLE IF NOT EXISTS es_delta_snapshots (
             id BIGSERIAL PRIMARY KEY,
             ts TIMESTAMPTZ NOT NULL DEFAULT now(),
             trade_date DATE NOT NULL,
             symbol VARCHAR(20) NOT NULL,
-            security_code VARCHAR(20),
             cumulative_delta BIGINT NOT NULL DEFAULT 0,
             total_volume BIGINT NOT NULL DEFAULT 0,
             buy_volume BIGINT NOT NULL DEFAULT 0,
             sell_volume BIGINT NOT NULL DEFAULT 0,
             last_price DOUBLE PRECISION,
-            bid_price DOUBLE PRECISION,
-            ask_price DOUBLE PRECISION,
             tick_count BIGINT NOT NULL DEFAULT 0,
             bar_high DOUBLE PRECISION,
             bar_low DOUBLE PRECISION
         );
-        CREATE INDEX IF NOT EXISTS idx_rithmic_delta_snap_ts ON rithmic_delta_snapshots(ts DESC);
-        CREATE INDEX IF NOT EXISTS idx_rithmic_delta_snap_date ON rithmic_delta_snapshots(trade_date DESC);
+        CREATE INDEX IF NOT EXISTS idx_es_delta_snap_ts ON es_delta_snapshots(ts DESC);
+        CREATE INDEX IF NOT EXISTS idx_es_delta_snap_date ON es_delta_snapshots(trade_date DESC);
         """))
 
-        # Rithmic ES 1-minute delta OHLC bars (written by rithmic_delta_worker.py)
+        # ES 1-minute delta bars from TradeStation barcharts (UpVolume/DownVolume)
         conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS rithmic_delta_bars (
+        CREATE TABLE IF NOT EXISTS es_delta_bars (
             id BIGSERIAL PRIMARY KEY,
             ts TIMESTAMPTZ NOT NULL,
             trade_date DATE NOT NULL,
             symbol VARCHAR(20) NOT NULL,
-            bar_open_delta BIGINT,
-            bar_close_delta BIGINT,
-            bar_high_delta BIGINT,
-            bar_low_delta BIGINT,
+            bar_delta BIGINT NOT NULL DEFAULT 0,
+            cumulative_delta BIGINT NOT NULL DEFAULT 0,
             bar_volume BIGINT NOT NULL DEFAULT 0,
             bar_buy_volume BIGINT NOT NULL DEFAULT 0,
             bar_sell_volume BIGINT NOT NULL DEFAULT 0,
@@ -517,9 +512,12 @@ def db_init():
             bar_close_price DOUBLE PRECISION,
             bar_high_price DOUBLE PRECISION,
             bar_low_price DOUBLE PRECISION,
+            up_ticks INTEGER NOT NULL DEFAULT 0,
+            down_ticks INTEGER NOT NULL DEFAULT 0,
+            total_ticks INTEGER NOT NULL DEFAULT 0,
             UNIQUE(ts, symbol)
         );
-        CREATE INDEX IF NOT EXISTS idx_rithmic_delta_bars_ts ON rithmic_delta_bars(ts DESC);
+        CREATE INDEX IF NOT EXISTS idx_es_delta_bars_ts ON es_delta_bars(ts DESC);
         """))
 
         # Create default admin user if no users exist
@@ -1964,13 +1962,272 @@ def _run_setup_check():
         else:
             print(f"[setups] {setup_name} active: {grade} ({score}) - no change", flush=True)
 
+# ====== ES CUMULATIVE DELTA (TradeStation streaming barcharts — real-time) ======
+ES_DELTA_SYMBOL = "@ES"
+_es_delta = {
+    "cumulative_delta": 0,
+    "total_volume": 0,
+    "buy_volume": 0,       # UpVolume (uptick trades)
+    "sell_volume": 0,      # DownVolume (downtick trades)
+    "tick_count": 0,
+    "last_price": None,
+    "session_high": None,
+    "session_low": None,
+    "trade_date": None,
+    "stream_ok": False,
+    # Internal: separate completed vs open bar tracking
+    "_completed_delta": 0,
+    "_completed_volume": 0,
+    "_completed_buy_vol": 0,
+    "_completed_sell_vol": 0,
+    "_completed_ticks": 0,
+    "_open_epoch": 0,
+    "_open_delta": 0,
+    "_open_volume": 0,
+    "_open_buy_vol": 0,
+    "_open_sell_vol": 0,
+    "_open_ticks": 0,
+    "_bars_buffer": [],    # completed bars queued for DB flush
+}
+
+def _es_delta_reset(today: str):
+    """Reset ES delta state for a new trading day."""
+    _es_delta.update({
+        "cumulative_delta": 0, "total_volume": 0, "buy_volume": 0, "sell_volume": 0,
+        "tick_count": 0, "last_price": None, "session_high": None, "session_low": None,
+        "trade_date": today, "stream_ok": False,
+        "_completed_delta": 0, "_completed_volume": 0, "_completed_buy_vol": 0,
+        "_completed_sell_vol": 0, "_completed_ticks": 0,
+        "_open_epoch": 0, "_open_delta": 0, "_open_volume": 0,
+        "_open_buy_vol": 0, "_open_sell_vol": 0, "_open_ticks": 0,
+        "_bars_buffer": [],
+    })
+    print(f"[es-delta] daily reset for {today}", flush=True)
+
+def _es_delta_process_bar(bar: dict):
+    """Process a single bar from the streaming barchart feed."""
+    epoch = bar.get("Epoch", 0)
+    up_vol = int(bar.get("UpVolume") or 0)
+    down_vol = int(bar.get("DownVolume") or 0)
+    total_vol = int(bar.get("TotalVolume") or 0)
+    up_ticks = int(bar.get("UpTicks") or 0)
+    down_ticks = int(bar.get("DownTicks") or 0)
+    total_ticks = int(bar.get("TotalTicks") or 0)
+    bar_delta = up_vol - down_vol
+    bar_status = bar.get("BarStatus", "Closed")
+
+    close_p = float(bar.get("Close") or 0)
+    high_p = float(bar.get("High") or 0)
+    low_p = float(bar.get("Low") or 0)
+    open_p = float(bar.get("Open") or 0)
+
+    # Update price
+    if close_p:
+        _es_delta["last_price"] = close_p
+    if high_p and (_es_delta["session_high"] is None or high_p > _es_delta["session_high"]):
+        _es_delta["session_high"] = high_p
+    if low_p and (_es_delta["session_low"] is None or low_p < _es_delta["session_low"]):
+        _es_delta["session_low"] = low_p
+
+    if bar_status == "Open":
+        # Current bar being formed — update in-place (replaces previous open bar state)
+        _es_delta["_open_epoch"] = epoch
+        _es_delta["_open_delta"] = bar_delta
+        _es_delta["_open_volume"] = total_vol
+        _es_delta["_open_buy_vol"] = up_vol
+        _es_delta["_open_sell_vol"] = down_vol
+        _es_delta["_open_ticks"] = total_ticks
+    else:
+        # Closed bar (historical backfill or the open bar just completed)
+        if epoch == _es_delta["_open_epoch"]:
+            # Open bar just closed — clear open state
+            _es_delta["_open_epoch"] = 0
+            _es_delta["_open_delta"] = 0
+            _es_delta["_open_volume"] = 0
+            _es_delta["_open_buy_vol"] = 0
+            _es_delta["_open_sell_vol"] = 0
+            _es_delta["_open_ticks"] = 0
+
+        _es_delta["_completed_delta"] += bar_delta
+        _es_delta["_completed_volume"] += total_vol
+        _es_delta["_completed_buy_vol"] += up_vol
+        _es_delta["_completed_sell_vol"] += down_vol
+        _es_delta["_completed_ticks"] += total_ticks
+
+        # Buffer completed bar for DB flush
+        _es_delta["_bars_buffer"].append({
+            "ts": bar.get("TimeStamp"), "epoch": epoch,
+            "bar_delta": bar_delta,
+            "cumulative_delta": _es_delta["_completed_delta"],
+            "bar_volume": total_vol, "bar_buy_volume": up_vol, "bar_sell_volume": down_vol,
+            "bar_open_price": open_p, "bar_close_price": close_p,
+            "bar_high_price": high_p, "bar_low_price": low_p,
+            "up_ticks": up_ticks, "down_ticks": down_ticks, "total_ticks": total_ticks,
+        })
+
+    # Update combined totals (completed + current open bar)
+    _es_delta["cumulative_delta"] = _es_delta["_completed_delta"] + _es_delta["_open_delta"]
+    _es_delta["total_volume"] = _es_delta["_completed_volume"] + _es_delta["_open_volume"]
+    _es_delta["buy_volume"] = _es_delta["_completed_buy_vol"] + _es_delta["_open_buy_vol"]
+    _es_delta["sell_volume"] = _es_delta["_completed_sell_vol"] + _es_delta["_open_sell_vol"]
+    _es_delta["tick_count"] = _es_delta["_completed_ticks"] + _es_delta["_open_ticks"]
+
+def _es_delta_stream_loop():
+    """Background thread: streams @ES 1-min barcharts for real-time delta updates."""
+    while True:
+        try:
+            # Wait for market hours
+            if not market_open_now():
+                time.sleep(30)
+                continue
+
+            today = now_et().strftime("%Y-%m-%d")
+            if _es_delta["trade_date"] != today:
+                _es_delta_reset(today)
+
+            # Open streaming connection with backfill
+            token = ts_access_token()
+            headers = {"Authorization": f"Bearer {token}"}
+            params = {"interval": "1", "unit": "Minute", "barsback": "390"}
+            r = requests.get(
+                f"{BASE}/marketdata/stream/barcharts/%40ES",
+                headers=headers, params=params, stream=True, timeout=30,
+            )
+            # Retry on 401
+            if r.status_code == 401:
+                token = ts_access_token()
+                headers["Authorization"] = f"Bearer {token}"
+                r = requests.get(
+                    f"{BASE}/marketdata/stream/barcharts/%40ES",
+                    headers=headers, params=params, stream=True, timeout=30,
+                )
+            if r.status_code != 200:
+                print(f"[es-delta] stream error [{r.status_code}] {r.text[:200]}", flush=True)
+                time.sleep(10)
+                continue
+
+            _es_delta["stream_ok"] = True
+            print("[es-delta] stream connected (backfilling 390 bars)", flush=True)
+
+            for line in r.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except Exception:
+                    continue
+
+                # Stream control messages
+                if "Heartbeat" in data:
+                    continue
+                if "Error" in data:
+                    print(f"[es-delta] stream error msg: {data}", flush=True)
+                    break
+                if data.get("StreamStatus") == "GoAway":
+                    print("[es-delta] GoAway received, reconnecting", flush=True)
+                    break
+                if data.get("StreamStatus") == "EndSnapshot":
+                    print(f"[es-delta] backfill done: delta={_es_delta['cumulative_delta']:+d} "
+                          f"vol={_es_delta['total_volume']} price={_es_delta['last_price']}", flush=True)
+                    continue
+
+                # Daily reset check
+                today_check = now_et().strftime("%Y-%m-%d")
+                if _es_delta["trade_date"] != today_check:
+                    _es_delta_reset(today_check)
+
+                # Process bar update
+                if "Epoch" in data:
+                    _es_delta_process_bar(data)
+
+            try:
+                r.close()
+            except Exception:
+                pass
+
+        except Exception as e:
+            print(f"[es-delta] stream error: {e}", flush=True)
+
+        _es_delta["stream_ok"] = False
+        time.sleep(5)  # brief delay before reconnect
+
+def save_es_delta():
+    """Scheduler job: flush buffered bars + write snapshot to DB (every 2 min)."""
+    try:
+        if not market_open_now():
+            return
+        if not engine:
+            return
+        if _es_delta["total_volume"] == 0:
+            return
+
+        today = _es_delta["trade_date"] or now_et().strftime("%Y-%m-%d")
+
+        # Flush buffered completed bars to DB
+        bars = _es_delta["_bars_buffer"]
+        _es_delta["_bars_buffer"] = []
+        if bars:
+            with engine.begin() as conn:
+                for b in bars:
+                    conn.execute(text("""
+                        INSERT INTO es_delta_bars
+                            (ts, trade_date, symbol, bar_delta, cumulative_delta,
+                             bar_volume, bar_buy_volume, bar_sell_volume,
+                             bar_open_price, bar_close_price, bar_high_price, bar_low_price,
+                             up_ticks, down_ticks, total_ticks)
+                        VALUES (:ts, :td, :sym, :bd, :cd, :v, :bv, :sv, :op, :cp, :hp, :lp, :ut, :dt, :tt)
+                        ON CONFLICT (ts, symbol) DO UPDATE SET
+                            bar_delta = EXCLUDED.bar_delta,
+                            cumulative_delta = EXCLUDED.cumulative_delta,
+                            bar_volume = EXCLUDED.bar_volume,
+                            bar_buy_volume = EXCLUDED.bar_buy_volume,
+                            bar_sell_volume = EXCLUDED.bar_sell_volume,
+                            bar_close_price = EXCLUDED.bar_close_price,
+                            bar_high_price = EXCLUDED.bar_high_price,
+                            bar_low_price = EXCLUDED.bar_low_price,
+                            up_ticks = EXCLUDED.up_ticks,
+                            down_ticks = EXCLUDED.down_ticks,
+                            total_ticks = EXCLUDED.total_ticks
+                    """), {
+                        "ts": b["ts"], "td": today, "sym": ES_DELTA_SYMBOL,
+                        "bd": b["bar_delta"], "cd": b["cumulative_delta"],
+                        "v": b["bar_volume"], "bv": b["bar_buy_volume"], "sv": b["bar_sell_volume"],
+                        "op": b["bar_open_price"], "cp": b["bar_close_price"],
+                        "hp": b["bar_high_price"], "lp": b["bar_low_price"],
+                        "ut": b["up_ticks"], "dt": b["down_ticks"], "tt": b["total_ticks"],
+                    })
+            print(f"[es-delta] flushed {len(bars)} bars to DB", flush=True)
+
+        # Write snapshot from current in-memory state
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO es_delta_snapshots
+                    (trade_date, symbol, cumulative_delta, total_volume,
+                     buy_volume, sell_volume, last_price, tick_count,
+                     bar_high, bar_low)
+                VALUES (:td, :sym, :cd, :tv, :bv, :sv, :lp, :tc, :bh, :bl)
+            """), {
+                "td": today, "sym": ES_DELTA_SYMBOL,
+                "cd": _es_delta["cumulative_delta"],
+                "tv": _es_delta["total_volume"],
+                "bv": _es_delta["buy_volume"],
+                "sv": _es_delta["sell_volume"],
+                "lp": _es_delta["last_price"],
+                "tc": _es_delta["tick_count"],
+                "bh": _es_delta["session_high"],
+                "bl": _es_delta["session_low"],
+            })
+    except Exception as e:
+        print(f"[es-delta] save error: {e}", flush=True)
+
 def start_scheduler():
     sch = BackgroundScheduler(timezone="US/Eastern")
     sch.add_job(run_market_job, "interval", seconds=PULL_EVERY, id="pull", coalesce=True, max_instances=1)
     sch.add_job(save_history_job, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="save", coalesce=True, max_instances=1)
     sch.add_job(save_playback_snapshot, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="playback", coalesce=True, max_instances=1)
+    sch.add_job(save_es_delta, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="es_delta_save", coalesce=True, max_instances=1)
     sch.start()
-    print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min; playback every", SAVE_EVERY_MIN, "min", flush=True)
+    print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min; ES delta save every", SAVE_EVERY_MIN, "min", flush=True)
     return sch
 
 REQUIRED_ENVS = ["TS_CLIENT_ID", "TS_CLIENT_SECRET", "TS_REFRESH_TOKEN", "DATABASE_URL"]
@@ -1990,6 +2247,9 @@ def on_startup():
         print("[db] engine not created (no DATABASE_URL)", flush=True)
     global scheduler
     scheduler = start_scheduler()
+    # Start ES delta streaming thread (real-time barchart feed)
+    Thread(target=_es_delta_stream_loop, daemon=True).start()
+    print("[es-delta] streaming thread started", flush=True)
 
 @app.on_event("shutdown")
 def on_shutdown():
@@ -2168,17 +2428,17 @@ def api_volland_stats():
         import traceback
         return JSONResponse({"error": str(e), "trace": traceback.format_exc()[-500:]}, status_code=500)
 
-# ====== RITHMIC DELTA ENDPOINTS ======
+# ====== ES DELTA ENDPOINTS ======
 
-def db_rithmic_delta_latest():
-    """Get the most recent cumulative delta snapshot."""
+def db_es_delta_latest():
+    """Get the most recent ES cumulative delta snapshot."""
     with engine.begin() as conn:
         row = conn.execute(text("""
-            SELECT ts, trade_date, symbol, security_code,
+            SELECT ts, trade_date, symbol,
                    cumulative_delta, total_volume, buy_volume, sell_volume,
-                   last_price, bid_price, ask_price, tick_count,
+                   last_price, tick_count,
                    bar_high AS session_high, bar_low AS session_low
-            FROM rithmic_delta_snapshots
+            FROM es_delta_snapshots
             ORDER BY ts DESC LIMIT 1
         """)).mappings().first()
         if not row:
@@ -2188,16 +2448,16 @@ def db_rithmic_delta_latest():
         r["trade_date"] = str(r["trade_date"]) if r["trade_date"] else None
         return r
 
-def db_rithmic_delta_history(limit: int = 500):
-    """Get today's cumulative delta snapshots as a time-series."""
+def db_es_delta_history(limit: int = 500):
+    """Get today's ES cumulative delta snapshots as a time-series."""
     today = datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d")
     with engine.begin() as conn:
         rows = conn.execute(text("""
             SELECT ts, trade_date, symbol,
                    cumulative_delta, total_volume, buy_volume, sell_volume,
-                   last_price, bid_price, ask_price, tick_count,
+                   last_price, tick_count,
                    bar_high AS session_high, bar_low AS session_low
-            FROM rithmic_delta_snapshots
+            FROM es_delta_snapshots
             WHERE trade_date = :today
             ORDER BY ts ASC
             LIMIT :lim
@@ -2210,16 +2470,17 @@ def db_rithmic_delta_history(limit: int = 500):
             result.append(r)
         return result
 
-def db_rithmic_delta_bars(limit: int = 390):
-    """Get today's 1-minute delta OHLC bars."""
+def db_es_delta_bars(limit: int = 390):
+    """Get today's ES 1-minute delta bars."""
     today = datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d")
     with engine.begin() as conn:
         rows = conn.execute(text("""
             SELECT ts, trade_date, symbol,
-                   bar_open_delta, bar_close_delta, bar_high_delta, bar_low_delta,
+                   bar_delta, cumulative_delta,
                    bar_volume, bar_buy_volume, bar_sell_volume,
-                   bar_open_price, bar_close_price, bar_high_price, bar_low_price
-            FROM rithmic_delta_bars
+                   bar_open_price, bar_close_price, bar_high_price, bar_low_price,
+                   up_ticks, down_ticks, total_ticks
+            FROM es_delta_bars
             WHERE trade_date = :today
             ORDER BY ts ASC
             LIMIT :lim
@@ -2232,38 +2493,189 @@ def db_rithmic_delta_bars(limit: int = 390):
             result.append(r)
         return result
 
-@app.get("/api/rithmic/delta/latest")
-def api_rithmic_delta_latest():
-    """Get latest ES cumulative delta snapshot from Rithmic."""
-    try:
-        if not engine:
-            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        result = db_rithmic_delta_latest()
-        if not result:
-            return {"error": "No delta data available", "ts": None}
-        return result
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+@app.get("/api/es/delta/latest")
+def api_es_delta_latest():
+    """Get latest ES cumulative delta — reads from live in-memory state (real-time)."""
+    if _es_delta["total_volume"] == 0:
+        return {"error": "No delta data available", "ts": None}
+    return {
+        "ts": fmt_et(now_et()),
+        "trade_date": _es_delta["trade_date"],
+        "symbol": ES_DELTA_SYMBOL,
+        "cumulative_delta": _es_delta["cumulative_delta"],
+        "total_volume": _es_delta["total_volume"],
+        "buy_volume": _es_delta["buy_volume"],
+        "sell_volume": _es_delta["sell_volume"],
+        "last_price": _es_delta["last_price"],
+        "tick_count": _es_delta["tick_count"],
+        "session_high": _es_delta["session_high"],
+        "session_low": _es_delta["session_low"],
+        "stream_ok": _es_delta["stream_ok"],
+    }
 
-@app.get("/api/rithmic/delta/history")
-def api_rithmic_delta_history(limit: int = Query(500, ge=1, le=2000)):
+@app.get("/api/es/delta/history")
+def api_es_delta_history(limit: int = Query(500, ge=1, le=2000)):
     """Get today's ES cumulative delta snapshots (time-series)."""
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        return db_rithmic_delta_history(limit=limit)
+        return db_es_delta_history(limit=limit)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
-@app.get("/api/rithmic/delta/bars")
-def api_rithmic_delta_bars(limit: int = Query(390, ge=1, le=1000)):
-    """Get today's ES 1-minute cumulative delta OHLC bars."""
+@app.get("/api/es/delta/bars")
+def api_es_delta_bars(limit: int = Query(390, ge=1, le=1000)):
+    """Get today's ES 1-minute delta bars."""
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        return db_rithmic_delta_bars(limit=limit)
+        return db_es_delta_bars(limit=limit)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/es/delta/rangebars")
+def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, le=50.0),
+                           mock: bool = Query(False)):
+    """Build range bars from 1-min ES delta bars. Each bar spans `range` price points."""
+    if mock:
+        return _generate_mock_range_bars(range_pts)
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        # Fetch today's 1-min bars from DB
+        one_min_bars = db_es_delta_bars(limit=1000)
+        # Append any unflushed bars from memory buffer
+        for buf in _es_delta["_bars_buffer"]:
+            one_min_bars.append({
+                "ts": buf["ts"], "bar_open_price": buf["bar_open_price"],
+                "bar_high_price": buf["bar_high_price"], "bar_low_price": buf["bar_low_price"],
+                "bar_close_price": buf["bar_close_price"], "bar_volume": buf["bar_volume"],
+                "bar_buy_volume": buf["bar_buy_volume"], "bar_sell_volume": buf["bar_sell_volume"],
+                "bar_delta": buf["bar_delta"],
+            })
+        if not one_min_bars:
+            return []
+        return _build_range_bars(one_min_bars, range_pts)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+def _build_range_bars(bars_1m: list, range_pts: float) -> list:
+    """Convert 1-minute bars into range bars of `range_pts` points each."""
+    result = []
+    cur = None
+    cvd = 0  # running cumulative delta across all bars
+    for b in bars_1m:
+        o = float(b.get("bar_open_price") or 0)
+        h = float(b.get("bar_high_price") or 0)
+        l = float(b.get("bar_low_price") or 0)
+        c = float(b.get("bar_close_price") or 0)
+        vol = int(b.get("bar_volume") or 0)
+        buy = int(b.get("bar_buy_volume") or 0)
+        sell = int(b.get("bar_sell_volume") or 0)
+        delta = int(b.get("bar_delta") or 0)
+        ts = b.get("ts", "")
+        if o == 0 and c == 0:
+            continue
+        if cur is None:
+            cvd_open = cvd
+            cur = {"open": o, "high": h, "low": l, "close": c,
+                   "volume": vol, "buy_volume": buy, "sell_volume": sell,
+                   "delta": delta, "ts_start": ts, "ts_end": ts,
+                   "cvd_open": cvd_open, "cvd_running": cvd_open + delta}
+            cur["cvd_high"] = max(cvd_open, cur["cvd_running"])
+            cur["cvd_low"] = min(cvd_open, cur["cvd_running"])
+        else:
+            cur["high"] = max(cur["high"], h)
+            cur["low"] = min(cur["low"], l)
+            cur["close"] = c
+            cur["volume"] += vol
+            cur["buy_volume"] += buy
+            cur["sell_volume"] += sell
+            cur["delta"] += delta
+            cur["ts_end"] = ts
+            cur["cvd_running"] = cur["cvd_open"] + cur["delta"]
+            cur["cvd_high"] = max(cur["cvd_high"], cur["cvd_running"])
+            cur["cvd_low"] = min(cur["cvd_low"], cur["cvd_running"])
+        # Check if range bar is complete
+        if cur["high"] - cur["low"] >= range_pts:
+            cvd += cur["delta"]
+            result.append({
+                "idx": len(result), "open": cur["open"], "high": cur["high"],
+                "low": cur["low"], "close": cur["close"], "volume": cur["volume"],
+                "delta": cur["delta"], "buy_volume": cur["buy_volume"],
+                "sell_volume": cur["sell_volume"], "cvd": cvd,
+                "cvd_open": cur["cvd_open"], "cvd_high": cur["cvd_high"],
+                "cvd_low": cur["cvd_low"], "cvd_close": cvd,
+                "ts_start": cur["ts_start"], "ts_end": cur["ts_end"], "status": "closed",
+            })
+            cur = None
+    # Append open (forming) range bar
+    if cur:
+        cvd += cur["delta"]
+        result.append({
+            "idx": len(result), "open": cur["open"], "high": cur["high"],
+            "low": cur["low"], "close": cur["close"], "volume": cur["volume"],
+            "delta": cur["delta"], "buy_volume": cur["buy_volume"],
+            "sell_volume": cur["sell_volume"], "cvd": cvd,
+            "cvd_open": cur["cvd_open"], "cvd_high": cur["cvd_high"],
+            "cvd_low": cur["cvd_low"], "cvd_close": cvd,
+            "ts_start": cur["ts_start"], "ts_end": cur["ts_end"], "status": "open",
+        })
+    return result
+
+def _generate_mock_range_bars(range_pts: float) -> list:
+    """Generate ~80 realistic mock ES range bars for UI testing."""
+    bars = []
+    price = 6100.0
+    cvd = 0
+    t = datetime(2026, 2, 13, 9, 30, 0)
+    for i in range(80):
+        # Random direction with slight upward bias
+        direction = random.choice([1, 1, 1, -1, -1])
+        bar_range = range_pts
+        if direction > 0:
+            o = price
+            l = o - random.uniform(0, 1.5)
+            h = l + bar_range
+            c = o + random.uniform(1.0, bar_range - 0.5)
+        else:
+            o = price
+            h = o + random.uniform(0, 1.5)
+            l = h - bar_range
+            c = o - random.uniform(1.0, bar_range - 0.5)
+        # Round to nearest 0.25 (ES tick)
+        o = round(o * 4) / 4
+        h = round(h * 4) / 4
+        l = round(l * 4) / 4
+        c = round(c * 4) / 4
+        vol = random.randint(5000, 25000)
+        delta = random.randint(-3000, 3000)
+        if direction > 0:
+            delta = abs(delta)
+        else:
+            delta = -abs(delta)
+        buy = (vol + delta) // 2
+        sell = vol - buy
+        cvd_open = cvd
+        cvd += delta
+        # CVD OHLC: simulate intermediate swings within the bar
+        cvd_mid = cvd_open + delta // 2
+        cvd_high = max(cvd_open, cvd, cvd_mid + abs(random.randint(0, 500)))
+        cvd_low = min(cvd_open, cvd, cvd_mid - abs(random.randint(0, 500)))
+        ts_start = t.strftime("%Y-%m-%dT%H:%M:%S")
+        gap = random.randint(120, 300)
+        t += timedelta(seconds=gap)
+        ts_end = t.strftime("%Y-%m-%dT%H:%M:%S")
+        bars.append({
+            "idx": i, "open": o, "high": h, "low": l, "close": c,
+            "volume": vol, "delta": delta, "buy_volume": buy, "sell_volume": sell,
+            "cvd": cvd, "cvd_open": cvd_open, "cvd_high": cvd_high,
+            "cvd_low": cvd_low, "cvd_close": cvd,
+            "ts_start": ts_start, "ts_end": ts_end,
+            "status": "open" if i == 79 else "closed",
+        })
+        price = c
+    return bars
 
 @app.get("/api/spx_candles")
 def api_spx_candles(bars: int = Query(60, ge=10, le=200)):
@@ -4481,6 +4893,7 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabSpot">Spot</button>
         <button class="btn" id="tabPlayback">Playback</button>
         <button class="btn" id="tabRegimeMap">Regime Map</button>
+        <button class="btn" id="tabEsDelta">ES Delta</button>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
       <div class="stats-box">
@@ -4934,6 +5347,20 @@ DASH_HTML_TEMPLATE = """
         </div>
       </div>
 
+      <!-- ES Delta View -->
+      <div id="viewEsDelta" class="panel" style="display:none">
+        <div class="header">
+          <div><strong>ES Delta</strong></div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <label style="font-size:11px;display:flex;align-items:center;gap:4px;color:var(--muted);cursor:pointer">
+              <input type="checkbox" id="esDeltaMock"> Mock
+            </label>
+            <span id="esDeltaStatus" style="font-size:11px;color:var(--muted)">Loading...</span>
+          </div>
+        </div>
+        <div id="esDeltaPlot" style="height:calc(100vh - 140px)"></div>
+      </div>
+
     </main>
   </div>
 
@@ -5101,32 +5528,36 @@ DASH_HTML_TEMPLATE = """
           tabChartsHT=document.getElementById('tabChartsHT'),
           tabSpot=document.getElementById('tabSpot'),
           tabPlayback=document.getElementById('tabPlayback'),
-          tabRegimeMap=document.getElementById('tabRegimeMap');
+          tabRegimeMap=document.getElementById('tabRegimeMap'),
+          tabEsDelta=document.getElementById('tabEsDelta');
 
     const viewTable=document.getElementById('viewTable'),
           viewCharts=document.getElementById('viewCharts'),
           viewChartsHT=document.getElementById('viewChartsHT'),
           viewSpot=document.getElementById('viewSpot'),
           viewPlayback=document.getElementById('viewPlayback'),
-          viewRegimeMap=document.getElementById('viewRegimeMap');
+          viewRegimeMap=document.getElementById('viewRegimeMap'),
+          viewEsDelta=document.getElementById('viewEsDelta');
 
     function setActive(btn){
-      [tabTable,tabCharts,tabChartsHT,tabSpot,tabPlayback,tabRegimeMap].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabCharts,tabChartsHT,tabSpot,tabPlayback,tabRegimeMap,tabEsDelta].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewChartsHT.style.display='none'; viewSpot.style.display='none'; viewPlayback.style.display='none'; viewRegimeMap.style.display='none'; }
-    function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); }
-    function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopChartsHT(); stopSpot(); stopStatistics(); }
-    function showChartsHT(){ setActive(tabChartsHT); hideAllViews(); viewChartsHT.style.display=''; startChartsHT(); stopCharts(); stopSpot(); stopStatistics(); }
-    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); startStatistics(); stopCharts(); stopChartsHT(); }
-    function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); initPlayback(); }
-    function showRegimeMap(){ setActive(tabRegimeMap); hideAllViews(); viewRegimeMap.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); initRegimeMap(); }
+    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewChartsHT.style.display='none'; viewSpot.style.display='none'; viewPlayback.style.display='none'; viewRegimeMap.style.display='none'; viewEsDelta.style.display='none'; }
+    function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); }
+    function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); }
+    function showChartsHT(){ setActive(tabChartsHT); hideAllViews(); viewChartsHT.style.display=''; startChartsHT(); stopCharts(); stopSpot(); stopStatistics(); stopEsDelta(); }
+    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); startStatistics(); stopCharts(); stopChartsHT(); stopEsDelta(); }
+    function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); initPlayback(); }
+    function showRegimeMap(){ setActive(tabRegimeMap); hideAllViews(); viewRegimeMap.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); initRegimeMap(); }
+    function showEsDelta(){ setActive(tabEsDelta); hideAllViews(); viewEsDelta.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); startEsDelta(); }
     tabTable.addEventListener('click', showTable);
     tabCharts.addEventListener('click', showCharts);
     tabChartsHT.addEventListener('click', showChartsHT);
     tabSpot.addEventListener('click', showSpot);
     tabPlayback.addEventListener('click', showPlayback);
     tabRegimeMap.addEventListener('click', showRegimeMap);
+    tabEsDelta.addEventListener('click', showEsDelta);
 
     // ===== Shared fetch for options series (includes spot) =====
     async function fetchSeries(){
@@ -6785,6 +7216,150 @@ DASH_HTML_TEMPLATE = """
 
       html += '</div>';
       playbackSummaryStats.innerHTML = html;
+    }
+
+    // ===== ES Delta (Range Bars) =====
+    let esDeltaInterval = null;
+    const esDeltaPlot = document.getElementById('esDeltaPlot');
+    const esDeltaStatus = document.getElementById('esDeltaStatus');
+    const esDeltaMockCb = document.getElementById('esDeltaMock');
+
+    function stopEsDelta() {
+      if (esDeltaInterval) { clearInterval(esDeltaInterval); esDeltaInterval = null; }
+    }
+    function startEsDelta() {
+      stopEsDelta();
+      drawEsDelta();
+      esDeltaInterval = setInterval(drawEsDelta, 5000);
+    }
+    // Redraw when mock checkbox changes
+    esDeltaMockCb.addEventListener('change', () => { if (esDeltaInterval) drawEsDelta(); });
+
+    async function drawEsDelta() {
+      try {
+        const useMock = esDeltaMockCb.checked;
+        const url = '/api/es/delta/rangebars?range=5' + (useMock ? '&mock=true' : '');
+        const r = await fetch(url, {cache:'no-store'});
+        const bars = await r.json();
+        if (bars.error) { esDeltaStatus.textContent = bars.error; return; }
+        if (!bars.length) { esDeltaStatus.textContent = 'No data'; return; }
+
+        const n = bars.length;
+        const xs = bars.map(b => b.idx);
+        // Tick labels: show time of bar start
+        const tickTexts = bars.map(b => {
+          if (!b.ts_start) return '';
+          const p = b.ts_start.split('T');
+          return p.length > 1 ? p[1].substring(0,5) : '';
+        });
+        const opens = bars.map(b => b.open);
+        const highs = bars.map(b => b.high);
+        const lows = bars.map(b => b.low);
+        const closes = bars.map(b => b.close);
+
+        // Colors per bar
+        const candleColors = bars.map(b => b.close >= b.open ? '#22c55e' : '#ef4444');
+        const volColors = bars.map(b => b.close >= b.open ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)');
+        const deltaColors = bars.map(b => b.delta >= 0 ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.7)');
+
+        // Build hover text for candles
+        const candleHover = bars.map(b => {
+          const dir = b.close >= b.open ? 'UP' : 'DN';
+          return 'O:'+b.open.toFixed(2)+' H:'+b.high.toFixed(2)+
+                 ' L:'+b.low.toFixed(2)+' C:'+b.close.toFixed(2)+
+                 '<br>Vol:'+b.volume.toLocaleString()+' Delta:'+b.delta.toLocaleString()+
+                 '<br>CVD:'+b.cvd.toLocaleString()+' ('+dir+')';
+        });
+
+        // Trace 1: Candlestick (price)
+        const traceCandle = {
+          x: xs, open: opens, high: highs, low: lows, close: closes,
+          type: 'candlestick', yaxis: 'y',
+          increasing: { line: { color: '#22c55e' }, fillcolor: '#22c55e' },
+          decreasing: { line: { color: '#ef4444' }, fillcolor: '#ef4444' },
+          text: candleHover, hoverinfo: 'text',
+          name: 'Price',
+        };
+
+        // Trace 2: Volume bars
+        const traceVol = {
+          x: xs, y: bars.map(b => b.volume), type: 'bar', yaxis: 'y2',
+          marker: { color: volColors }, name: 'Volume',
+          text: bars.map(b => 'Vol: '+b.volume.toLocaleString()), hoverinfo: 'text',
+        };
+
+        // Trace 3: Delta bars
+        const traceDelta = {
+          x: xs, y: bars.map(b => b.delta), type: 'bar', yaxis: 'y3',
+          marker: { color: deltaColors }, name: 'Delta',
+          text: bars.map(b => 'Delta: '+b.delta.toLocaleString()), hoverinfo: 'text',
+        };
+
+        // Trace 4: CVD candles
+        const traceCVD = {
+          x: xs,
+          open: bars.map(b => b.cvd_open), high: bars.map(b => b.cvd_high),
+          low: bars.map(b => b.cvd_low), close: bars.map(b => b.cvd_close),
+          type: 'candlestick', yaxis: 'y4', name: 'CVD',
+          increasing: { line: { color: '#06b6d4' }, fillcolor: '#06b6d4' },
+          decreasing: { line: { color: '#f97316' }, fillcolor: '#f97316' },
+          text: bars.map(b => 'CVD: '+b.cvd.toLocaleString()), hoverinfo: 'text',
+        };
+
+        // Show every ~10th tick label to avoid overlap
+        const tickStep = Math.max(1, Math.floor(n / 15));
+        const tickVals = xs.filter((_, i) => i % tickStep === 0);
+        const tickLabels = tickTexts.filter((_, i) => i % tickStep === 0);
+
+        const layout = {
+          paper_bgcolor: '#121417', plot_bgcolor: '#0f1115',
+          font: { color: '#e6e7e9', size: 10 },
+          margin: { l: 10, r: 60, t: 20, b: 30 },
+          xaxis: {
+            type: 'category', gridcolor: '#1a1d21', tickfont: { size: 9 },
+            rangeslider: { visible: false },
+            tickvals: tickVals, ticktext: tickLabels,
+          },
+          yaxis:  { domain: [0.45, 1.0],  side: 'right', gridcolor: '#1a1d21', tickformat: '.2f' },
+          yaxis2: { domain: [0.30, 0.43], side: 'right', gridcolor: '#1a1d21', title: '', showticklabels: true, tickfont: {size:9} },
+          yaxis3: { domain: [0.15, 0.28], side: 'right', gridcolor: '#1a1d21', zeroline: true, zerolinecolor: '#555', showticklabels: true, tickfont: {size:9} },
+          yaxis4: { domain: [0.0, 0.13],  side: 'right', gridcolor: '#1a1d21', showticklabels: true, tickfont: {size:9} },
+          hovermode: 'x unified',
+          dragmode: 'zoom',
+          showlegend: false,
+        };
+
+        // Panel label annotations
+        layout.annotations = [
+          { text: 'Price', xref: 'paper', yref: 'paper', x: 0.01, y: 0.99, showarrow: false, font: {size:10, color:'#888'} },
+          { text: 'Volume', xref: 'paper', yref: 'paper', x: 0.01, y: 0.42, showarrow: false, font: {size:10, color:'#888'} },
+          { text: 'Delta', xref: 'paper', yref: 'paper', x: 0.01, y: 0.27, showarrow: false, font: {size:10, color:'#888'} },
+          { text: 'CVD', xref: 'paper', yref: 'paper', x: 0.01, y: 0.12, showarrow: false, font: {size:10, color:'#888'} },
+        ];
+
+        // Last price annotation
+        const lastBar = bars[n-1];
+        layout.annotations.push({
+          text: lastBar.close.toFixed(2),
+          xref: 'paper', yref: 'y', x: 1.0, y: lastBar.close,
+          showarrow: false, font: {size:10, color: lastBar.close >= lastBar.open ? '#22c55e' : '#ef4444'},
+          bgcolor: '#1a1d21', borderpad: 2,
+        });
+
+        Plotly.react(esDeltaPlot, [traceCandle, traceVol, traceDelta, traceCVD], layout, {responsive:true, displayModeBar:false});
+
+        // Status text
+        const sessionDelta = lastBar.cvd;
+        const statusParts = [
+          'Last: ' + lastBar.close.toFixed(2),
+          'CVD: ' + (sessionDelta >= 0 ? '+' : '') + sessionDelta.toLocaleString(),
+          'Bars: ' + n,
+        ];
+        if (useMock) statusParts.push('(MOCK)');
+        esDeltaStatus.textContent = statusParts.join(' | ');
+      } catch(e) {
+        esDeltaStatus.textContent = 'Error: ' + e.message;
+      }
     }
 
     // ===== Regime Map =====

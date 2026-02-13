@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 0DTE Alpha is a real-time options trading dashboard for SPX/SPXW 0DTE (zero days to expiration) options. It combines:
 - **FastAPI web service** (`app/main.py`) - serves live options chain data, charts, and a dashboard
 - **Volland scraper worker** (`volland_worker_v2.py`) - Playwright route-based scraper for charm/vanna/gamma exposure data from vol.land
-- **Rithmic delta worker** (`rithmic_delta_worker.py`) - ES cumulative delta via Rithmic WebSocket API
+- **ES cumulative delta** (integrated in `app/main.py`) - scheduler job pulls ES 1-min bars from TradeStation API
 
 ## IMPORTANT: Volland Worker Versions (v1 vs v2)
 
@@ -55,7 +55,6 @@ This file scrapes a third-party website using Playwright with carefully tuned:
 - `app/` — production code (main.py, setup_detector.py) — **this is the main codebase**
 - `volland_worker_v2.py` — **ACTIVE** Playwright scraper (see warning above)
 - `volland_worker.py` — **LEGACY/SUSPENDED** v1 scraper (do NOT run)
-- `rithmic_delta_worker.py` — ES cumulative delta worker (Rithmic WebSocket)
 - `0dtealpha/` — git submodule (separate repo, NOT the main codebase)
 - `trade-analyses.md` — running log of trade performance analysis and tuning decisions
 
@@ -74,7 +73,7 @@ Append new analysis sections to this file after each review session.
 ### Data Flow
 1. TradeStation API → FastAPI app → PostgreSQL (chain_snapshots table)
 2. Volland website → `volland_worker_v2.py` (Playwright) → PostgreSQL (volland_snapshots, volland_exposure_points tables)
-3. Rithmic WebSocket → `rithmic_delta_worker.py` → PostgreSQL (rithmic_delta_snapshots, rithmic_delta_bars tables)
+3. TradeStation API → `pull_es_delta()` scheduler job → PostgreSQL (es_delta_snapshots, es_delta_bars tables)
 4. PostgreSQL → FastAPI endpoints → Plotly.js dashboard
 
 ### Key Components
@@ -85,7 +84,8 @@ Append new analysis sections to this file after each review session.
 - Calculates GEX (Gamma Exposure) from options chain data
 - Serves dashboard with embedded Plotly.js charts at `/`
 - Pipeline health monitoring: sends Telegram alerts when data sources go stale
-- API endpoints: `/api/series`, `/api/snapshot`, `/api/history`, `/api/volland/*`, `/api/rithmic/delta/*`
+- ES cumulative delta: `pull_es_delta()` runs every 30s, fetches @ES 1-min bars, calculates delta from UpVolume/DownVolume
+- API endpoints: `/api/series`, `/api/snapshot`, `/api/history`, `/api/volland/*`, `/api/es/delta/*`
 
 **volland_worker_v2.py** (Playwright scraper — ACTIVE):
 - Logs into vol.land, intercepts network requests via Playwright route handlers
@@ -94,20 +94,12 @@ Append new analysis sections to this file after each review session.
 - Runs on 120-second cycle synced to Volland's refresh interval
 - Sync phase at market open: reloads page to avoid stale overnight state, 2-min timeout
 
-**rithmic_delta_worker.py** (Rithmic WebSocket):
-- Connects to Rithmic via `async-rithmic` library, resolves ES front-month contract
-- Subscribes to LAST_TRADE + BBO (best bid/offer) data
-- Classifies trades using aggressor field (fallback: bid/ask comparison)
-- Accumulates cumulative delta in memory, flushes snapshots to DB every 30 seconds
-- Builds 1-minute delta OHLC bars; resets daily when trading date changes
-- Reconnects automatically on errors (30s backoff + library auto-reconnect)
-
 ### Database Tables
 - `chain_snapshots` - options chain data with Greeks
 - `volland_snapshots` - raw scraped data with statistics (paradigm, LIS, charm, etc.)
 - `volland_exposure_points` - parsed exposure points by strike (charm, vanna, gamma, deltaDecay)
-- `rithmic_delta_snapshots` - ES cumulative delta state (every 30s)
-- `rithmic_delta_bars` - ES 1-minute delta OHLC bars
+- `es_delta_snapshots` - ES cumulative delta state (every 30s, from TradeStation @ES bars)
+- `es_delta_bars` - ES 1-minute delta bars (UpVolume - DownVolume per bar)
 
 ## Railway Deployment
 
@@ -115,12 +107,11 @@ Deployed on Railway using Docker. The Dockerfile uses the official Playwright im
 
 ### Railway Services
 
-There are **3 separate Railway services** in the `0dte` project:
+There are **2 separate Railway services** in the `0dte` project:
 
 | Service Name | Start Command | Notes |
 |-------------|---------------|-------|
-| `0dtealpha` | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` | Web service (via Procfile `web`) |
-| `0dtealpha` | `python rithmic_delta_worker.py` | Delta worker (via Procfile `delta`) |
+| `0dtealpha` | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` | Web service + ES delta scheduler (via Procfile `web`) |
 | `Volland` | `python volland_worker_v2.py` | **Separate Railway service** (NOT in Procfile) |
 
 **Important:** The Volland worker runs as its own Railway service named `Volland` (capital V). It is NOT in the Procfile. To manage it:
@@ -140,10 +131,10 @@ railway logs -s 0dtealpha --lines 30
 
 ```bash
 web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-delta: python rithmic_delta_worker.py
 ```
 
 The Volland worker is **not** in the Procfile — it is a separate Railway service.
+ES cumulative delta runs as a scheduler job inside the web process (no separate worker).
 
 ## Development Commands
 
@@ -160,8 +151,6 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080
 # Run the Volland v2 scraper worker
 python volland_worker_v2.py
 
-# Run the Rithmic ES delta worker
-python rithmic_delta_worker.py
 ```
 
 ## Required Environment Variables
@@ -180,14 +169,6 @@ VOLLAND_EMAIL
 VOLLAND_PASSWORD
 VOLLAND_URL              # Charm workspace URL (v2 uses VOLLAND_WORKSPACE_URL with fallback to this)
 VOLLAND_WORKSPACE_URL    # v2 all-in-one workspace URL (preferred)
-
-# Rithmic ES delta worker
-RITHMIC_USER
-RITHMIC_PASSWORD
-RITHMIC_SYSTEM       # e.g. "Rithmic Paper Trading"
-RITHMIC_URL          # e.g. "rituz00100.rithmic.com:443"
-RITHMIC_APP_NAME     # optional, defaults to "0dte_alpha"
-RITHMIC_APP_VERSION  # optional, defaults to "1.0"
 
 # Telegram alerts
 TELEGRAM_BOT_TOKEN

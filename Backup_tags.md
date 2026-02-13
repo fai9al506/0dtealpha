@@ -11,3 +11,5 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 5 | 2026-02-12 01:00 | `stable-20260212-010000` | Regime Map with real candles and 1m/5m toggle before 2-min interval change |
 | 6 | 2026-02-13 16:44 | `stable-20260213-164448` | Pre-Rithmic ES cumulative delta integration |
 | 7 | 2026-02-13 15:24 | `stable-20260213-152400` | Rithmic delta worker + Volland v2 sync fix + pipeline alert fix |
+| 8 | 2026-02-13 18:27 | `stable-20260213-182718` | Pre-TradeStation ES cumulative delta refactor (replacing Rithmic) |
+| 9 | 2026-02-13 20:08 | `stable-20260213-200831` | ES Delta dashboard tab with 5-pt range bars, volume, delta, CVD candles |

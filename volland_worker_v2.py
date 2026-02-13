@@ -415,7 +415,20 @@ def run():
                 # watch lastModified for a change.
                 # ══════════════════════════════════════════════════════
                 if not last_known_modified:
-                    # Baseline from data already captured during login
+                    # Reload workspace so widgets are fresh (page goes stale overnight)
+                    print("[sync] Refreshing workspace page...", flush=True)
+                    cycle["exposures"] = []
+                    cycle["paradigm"] = None
+                    cycle["spot_vol"] = None
+                    page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
+                    if "/sign-in" in page.url:
+                        login_if_needed(page, WORKSPACE_URL)
+                        cycle["exposures"] = []
+                        cycle["paradigm"] = None
+                        cycle["spot_vol"] = None
+                        page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
+                    page.wait_for_timeout(int(WAIT_SEC * 1000))
+
                     baseline = get_exposure_lastmodified()
                     print(
                         f"[sync] Waiting for Volland refresh... "
@@ -426,7 +439,14 @@ def run():
                     # Wait for widgets to auto-refresh on the page.
                     # page.wait_for_timeout keeps the event loop alive
                     # so route/response handlers fire on widget refreshes.
+                    sync_deadline = time.time() + 120  # 2 min max
+                    synced = False
                     while market_open_now():
+                        if time.time() >= sync_deadline:
+                            print("[sync] Timed out after 2m, proceeding to capture", flush=True)
+                            last_known_modified = "timeout"
+                            synced = True
+                            break
                         page.wait_for_timeout(SYNC_POLL_SEC * 1000)
                         current = get_exposure_lastmodified()
                         if current and current != baseline:
@@ -436,6 +456,7 @@ def run():
                                 flush=True,
                             )
                             last_known_modified = current
+                            synced = True
                             break
                         # Also break if baseline was empty and we now have data
                         if current and not baseline:
@@ -445,8 +466,9 @@ def run():
                                 flush=True,
                             )
                             last_known_modified = current
+                            synced = True
                             break
-                    else:
+                    if not synced:
                         # Market closed while waiting
                         continue
 

@@ -476,6 +476,52 @@ def db_init():
         CREATE INDEX IF NOT EXISTS ix_contact_messages_created ON contact_messages (created_at DESC);
         """))
 
+        # Rithmic ES cumulative delta snapshots (written by rithmic_delta_worker.py)
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS rithmic_delta_snapshots (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL DEFAULT now(),
+            trade_date DATE NOT NULL,
+            symbol VARCHAR(20) NOT NULL,
+            security_code VARCHAR(20),
+            cumulative_delta BIGINT NOT NULL DEFAULT 0,
+            total_volume BIGINT NOT NULL DEFAULT 0,
+            buy_volume BIGINT NOT NULL DEFAULT 0,
+            sell_volume BIGINT NOT NULL DEFAULT 0,
+            last_price DOUBLE PRECISION,
+            bid_price DOUBLE PRECISION,
+            ask_price DOUBLE PRECISION,
+            tick_count BIGINT NOT NULL DEFAULT 0,
+            bar_high DOUBLE PRECISION,
+            bar_low DOUBLE PRECISION
+        );
+        CREATE INDEX IF NOT EXISTS idx_rithmic_delta_snap_ts ON rithmic_delta_snapshots(ts DESC);
+        CREATE INDEX IF NOT EXISTS idx_rithmic_delta_snap_date ON rithmic_delta_snapshots(trade_date DESC);
+        """))
+
+        # Rithmic ES 1-minute delta OHLC bars (written by rithmic_delta_worker.py)
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS rithmic_delta_bars (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL,
+            trade_date DATE NOT NULL,
+            symbol VARCHAR(20) NOT NULL,
+            bar_open_delta BIGINT,
+            bar_close_delta BIGINT,
+            bar_high_delta BIGINT,
+            bar_low_delta BIGINT,
+            bar_volume BIGINT NOT NULL DEFAULT 0,
+            bar_buy_volume BIGINT NOT NULL DEFAULT 0,
+            bar_sell_volume BIGINT NOT NULL DEFAULT 0,
+            bar_open_price DOUBLE PRECISION,
+            bar_close_price DOUBLE PRECISION,
+            bar_high_price DOUBLE PRECISION,
+            bar_low_price DOUBLE PRECISION,
+            UNIQUE(ts, symbol)
+        );
+        CREATE INDEX IF NOT EXISTS idx_rithmic_delta_bars_ts ON rithmic_delta_bars(ts DESC);
+        """))
+
         # Create default admin user if no users exist
         existing = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
         if existing == 0:
@@ -2122,6 +2168,103 @@ def api_volland_stats():
         import traceback
         return JSONResponse({"error": str(e), "trace": traceback.format_exc()[-500:]}, status_code=500)
 
+# ====== RITHMIC DELTA ENDPOINTS ======
+
+def db_rithmic_delta_latest():
+    """Get the most recent cumulative delta snapshot."""
+    with engine.begin() as conn:
+        row = conn.execute(text("""
+            SELECT ts, trade_date, symbol, security_code,
+                   cumulative_delta, total_volume, buy_volume, sell_volume,
+                   last_price, bid_price, ask_price, tick_count,
+                   bar_high AS session_high, bar_low AS session_low
+            FROM rithmic_delta_snapshots
+            ORDER BY ts DESC LIMIT 1
+        """)).mappings().first()
+        if not row:
+            return None
+        r = dict(row)
+        r["ts"] = r["ts"].isoformat() if r["ts"] else None
+        r["trade_date"] = str(r["trade_date"]) if r["trade_date"] else None
+        return r
+
+def db_rithmic_delta_history(limit: int = 500):
+    """Get today's cumulative delta snapshots as a time-series."""
+    today = datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d")
+    with engine.begin() as conn:
+        rows = conn.execute(text("""
+            SELECT ts, trade_date, symbol,
+                   cumulative_delta, total_volume, buy_volume, sell_volume,
+                   last_price, bid_price, ask_price, tick_count,
+                   bar_high AS session_high, bar_low AS session_low
+            FROM rithmic_delta_snapshots
+            WHERE trade_date = :today
+            ORDER BY ts ASC
+            LIMIT :lim
+        """), {"today": today, "lim": limit}).mappings().all()
+        result = []
+        for row in rows:
+            r = dict(row)
+            r["ts"] = r["ts"].isoformat() if r["ts"] else None
+            r["trade_date"] = str(r["trade_date"]) if r["trade_date"] else None
+            result.append(r)
+        return result
+
+def db_rithmic_delta_bars(limit: int = 390):
+    """Get today's 1-minute delta OHLC bars."""
+    today = datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d")
+    with engine.begin() as conn:
+        rows = conn.execute(text("""
+            SELECT ts, trade_date, symbol,
+                   bar_open_delta, bar_close_delta, bar_high_delta, bar_low_delta,
+                   bar_volume, bar_buy_volume, bar_sell_volume,
+                   bar_open_price, bar_close_price, bar_high_price, bar_low_price
+            FROM rithmic_delta_bars
+            WHERE trade_date = :today
+            ORDER BY ts ASC
+            LIMIT :lim
+        """), {"today": today, "lim": limit}).mappings().all()
+        result = []
+        for row in rows:
+            r = dict(row)
+            r["ts"] = r["ts"].isoformat() if r["ts"] else None
+            r["trade_date"] = str(r["trade_date"]) if r["trade_date"] else None
+            result.append(r)
+        return result
+
+@app.get("/api/rithmic/delta/latest")
+def api_rithmic_delta_latest():
+    """Get latest ES cumulative delta snapshot from Rithmic."""
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        result = db_rithmic_delta_latest()
+        if not result:
+            return {"error": "No delta data available", "ts": None}
+        return result
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/rithmic/delta/history")
+def api_rithmic_delta_history(limit: int = Query(500, ge=1, le=2000)):
+    """Get today's ES cumulative delta snapshots (time-series)."""
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        return db_rithmic_delta_history(limit=limit)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/rithmic/delta/bars")
+def api_rithmic_delta_bars(limit: int = Query(390, ge=1, le=1000)):
+    """Get today's ES 1-minute cumulative delta OHLC bars."""
+    try:
+        if not engine:
+            return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+        return db_rithmic_delta_bars(limit=limit)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 @app.get("/api/spx_candles")
 def api_spx_candles(bars: int = Query(60, ge=10, le=200)):
     """
@@ -3614,7 +3757,9 @@ def api_data_freshness():
                     SELECT ts FROM volland_snapshots
                     WHERE payload->>'error_event' IS NULL
                       AND (payload->'statistics' IS NOT NULL
-                           OR (payload->>'exposure_points_saved')::int > 0)
+                           OR CASE WHEN payload->>'exposure_points_saved' ~ '^\d+$'
+                                   THEN (payload->>'exposure_points_saved')::int > 0
+                                   ELSE false END)
                     ORDER BY ts DESC LIMIT 1
                 """)).mappings().first()
 
@@ -3649,6 +3794,7 @@ def check_pipeline_health():
     freshness = api_data_freshness()
     now = time.time()
     reminder_sec = _pipeline_status["reminder_minutes"] * 60
+    is_open = market_open_now()
 
     for source, key_prefix, label in [
         ("ts_api", "ts", "TS API"),
@@ -3659,13 +3805,21 @@ def check_pipeline_health():
         age_sec = freshness[source].get("age_seconds")
         age_min = round(age_sec / 60) if age_sec else 0
 
-        # Skip if market is closed
+        # If market is open but freshness returned "closed" (query failed/no data),
+        # treat as error — don't silently skip
+        if current == "closed" and is_open:
+            print(f"[pipeline] {label}: status='closed' during market hours (query issue or no data), treating as error", flush=True)
+            current = "error"
+            age_min = 0
+
+        # Skip if market is actually closed
         if current == "closed":
             _pipeline_status[f"{key_prefix}_status"] = current
             continue
 
         # Transition to error
         if current == "error" and prev != "error":
+            print(f"[pipeline] {label}: {prev} → error (age={age_min}m), sending alert", flush=True)
             _pipeline_status[f"{key_prefix}_error_since"] = now
             _pipeline_status[f"{key_prefix}_last_alert"] = now
             _pipeline_status[f"{key_prefix}_status"] = current

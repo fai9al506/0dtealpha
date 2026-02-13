@@ -2510,9 +2510,20 @@ def db_es_delta_history(limit: int = 500):
             result.append(r)
         return result
 
+def _es_session_start_utc() -> str:
+    """Return the UTC timestamp of when the current ES session opened (6 PM ET prior day)."""
+    t = now_et()
+    if t.hour >= 18:
+        # After 6 PM — session started today at 6 PM ET
+        session_open_et = t.replace(hour=18, minute=0, second=0, microsecond=0)
+    else:
+        # Before 6 PM — session started yesterday at 6 PM ET
+        session_open_et = (t - timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
+    return session_open_et.astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
 def db_es_delta_bars(limit: int = 1400):
-    """Get current ES session's 1-minute delta bars (uses futures session date)."""
-    session_date = _es_session_date()
+    """Get current ES session's 1-minute delta bars (from 6 PM ET session open)."""
+    session_start = _es_session_start_utc()
     with engine.begin() as conn:
         rows = conn.execute(text("""
             SELECT ts, trade_date, symbol,
@@ -2521,10 +2532,10 @@ def db_es_delta_bars(limit: int = 1400):
                    bar_open_price, bar_close_price, bar_high_price, bar_low_price,
                    up_ticks, down_ticks, total_ticks
             FROM es_delta_bars
-            WHERE trade_date = :session_date
+            WHERE ts >= :session_start
             ORDER BY ts ASC
             LIMIT :lim
-        """), {"session_date": session_date, "lim": limit}).mappings().all()
+        """), {"session_start": session_start, "lim": limit}).mappings().all()
         result = []
         for row in rows:
             r = dict(row)

@@ -2975,14 +2975,11 @@ def api_es_delta_bars(limit: int = Query(1400, ge=1, le=2000)):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/es/delta/rangebars")
-def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, le=50.0),
-                           mock: bool = Query(False)):
+def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, le=50.0)):
     """Build range bars for ES delta chart.
 
     Priority: live quote-stream bars (bid/ask delta) → fallback to 1-min approximation.
     """
-    if mock:
-        return _generate_mock_range_bars(range_pts)
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
@@ -3185,60 +3182,6 @@ def _build_range_bars(bars_1m: list, range_pts: float) -> list:
         _emit(status="open")
 
     return result
-
-def _generate_mock_range_bars(range_pts: float) -> list:
-    """Generate ~80 realistic mock ES range bars for UI testing."""
-    bars = []
-    price = 6100.0
-    cvd = 0
-    t = datetime(2026, 2, 13, 9, 30, 0)
-    for i in range(80):
-        # Random direction with slight upward bias
-        direction = random.choice([1, 1, 1, -1, -1])
-        bar_range = range_pts
-        if direction > 0:
-            o = price
-            l = o - random.uniform(0, 1.5)
-            h = l + bar_range
-            c = o + random.uniform(1.0, bar_range - 0.5)
-        else:
-            o = price
-            h = o + random.uniform(0, 1.5)
-            l = h - bar_range
-            c = o - random.uniform(1.0, bar_range - 0.5)
-        # Round to nearest 0.25 (ES tick)
-        o = round(o * 4) / 4
-        h = round(h * 4) / 4
-        l = round(l * 4) / 4
-        c = round(c * 4) / 4
-        vol = random.randint(5000, 25000)
-        delta = random.randint(-3000, 3000)
-        if direction > 0:
-            delta = abs(delta)
-        else:
-            delta = -abs(delta)
-        buy = (vol + delta) // 2
-        sell = vol - buy
-        cvd_open = cvd
-        cvd += delta
-        # CVD OHLC: simulate intermediate swings within the bar
-        cvd_mid = cvd_open + delta // 2
-        cvd_high = max(cvd_open, cvd, cvd_mid + abs(random.randint(0, 500)))
-        cvd_low = min(cvd_open, cvd, cvd_mid - abs(random.randint(0, 500)))
-        ts_start = t.strftime("%Y-%m-%dT%H:%M:%S")
-        gap = random.randint(120, 300)
-        t += timedelta(seconds=gap)
-        ts_end = t.strftime("%Y-%m-%dT%H:%M:%S")
-        bars.append({
-            "idx": i, "open": o, "high": h, "low": l, "close": c,
-            "volume": vol, "delta": delta, "buy_volume": buy, "sell_volume": sell,
-            "cvd": cvd, "cvd_open": cvd_open, "cvd_high": cvd_high,
-            "cvd_low": cvd_low, "cvd_close": cvd,
-            "ts_start": ts_start, "ts_end": ts_end,
-            "status": "open" if i == 79 else "closed",
-        })
-        price = c
-    return bars
 
 @app.get("/api/spx_candles")
 def api_spx_candles(bars: int = Query(60, ge=10, le=200)):
@@ -5916,9 +5859,6 @@ DASH_HTML_TEMPLATE = """
           <div><strong>ES Delta</strong></div>
           <div style="display:flex;gap:10px;align-items:center">
             <button id="esDeltaLive" class="strike-btn" style="padding:3px 10px;font-size:10px;background:#22c55e;color:#000;font-weight:600">LIVE</button>
-            <label style="font-size:11px;display:flex;align-items:center;gap:4px;color:var(--muted);cursor:pointer">
-              <input type="checkbox" id="esDeltaMock"> Mock
-            </label>
             <span id="esDeltaStatus" style="font-size:11px;color:var(--muted)">Loading...</span>
           </div>
         </div>
@@ -7788,7 +7728,6 @@ DASH_HTML_TEMPLATE = """
     let esDeltaUserRanges = null;     // saved axis ranges when user interacts
     const esDeltaPlot = document.getElementById('esDeltaPlot');
     const esDeltaStatus = document.getElementById('esDeltaStatus');
-    const esDeltaMockCb = document.getElementById('esDeltaMock');
     const esDeltaLiveBtn = document.getElementById('esDeltaLive');
 
     function _esDeltaSetLive(live) {
@@ -7845,13 +7784,9 @@ DASH_HTML_TEMPLATE = """
       drawEsDelta();
       esDeltaInterval = setInterval(drawEsDelta, 5000);
     }
-    // Redraw when mock checkbox changes
-    esDeltaMockCb.addEventListener('change', () => { _esDeltaSetLive(true); if (esDeltaInterval) drawEsDelta(); });
-
     async function drawEsDelta() {
       try {
-        const useMock = esDeltaMockCb.checked;
-        const url = '/api/es/delta/rangebars?range=5' + (useMock ? '&mock=true' : '');
+        const url = '/api/es/delta/rangebars?range=5';
         const r = await fetch(url, {cache:'no-store'});
         const bars = await r.json();
         if (bars.error) { esDeltaStatus.textContent = bars.error; return; }
@@ -7923,6 +7858,8 @@ DASH_HTML_TEMPLATE = """
         // Right padding: extend x range 8 bars beyond last data point
         const xPad = 8;
         const xRangeMax = n - 1 + xPad;
+        // Default view: last 50% of bars for better readability
+        const xRangeMin = Math.max(-0.5, Math.floor(n / 2) - 0.5);
 
         // If user has zoomed/panned, preserve their view; otherwise auto-scale
         const useUserRange = !esDeltaLiveMode && esDeltaUserRanges;
@@ -7935,7 +7872,7 @@ DASH_HTML_TEMPLATE = """
             gridcolor: '#1a1d21', tickfont: { size: 9 },
             rangeslider: { visible: false },
             tickvals: tickVals, ticktext: tickLabels,
-            range: useUserRange && esDeltaUserRanges.x ? esDeltaUserRanges.x : [-0.5, xRangeMax],
+            range: useUserRange && esDeltaUserRanges.x ? esDeltaUserRanges.x : [xRangeMin, xRangeMax],
             fixedrange: false,
           },
           yaxis:  { domain: [0.42, 1.0],  side: 'right', gridcolor: '#1a1d21', tickformat: '.2f', fixedrange: false },
@@ -7989,7 +7926,6 @@ DASH_HTML_TEMPLATE = """
           'CVD: ' + (sessionDelta >= 0 ? '+' : '') + sessionDelta.toLocaleString(),
           'Bars: ' + n,
         ];
-        if (useMock) statusParts.push('(MOCK)');
         esDeltaStatus.textContent = statusParts.join(' | ');
       } catch(e) {
         esDeltaStatus.textContent = 'Error: ' + e.message;

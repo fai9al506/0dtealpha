@@ -2610,35 +2610,84 @@ def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
-def _build_range_bars(bars_1m: list, range_pts: float) -> list:
-    """Convert 1-minute bars into range bars of exactly `range_pts` points each.
+def _es_price_path(o: float, h: float, l: float, c: float) -> list:
+    """Simulate tick-by-tick ES price path from OHLC at 0.25 increments.
 
-    When a 1-min bar pushes the accumulated high-low beyond range_pts,
-    the range bar is closed at exactly the boundary and a new bar begins.
+    Estimates intra-bar price movement:
+      Bullish (close >= open): O → L → H → C
+      Bearish (close < open):  O → H → L → C
+
+    Returns list of prices where consecutive pairs are tick transitions.
+    """
+    tick = 0.25
+    o, h, l, c = (round(v * 4) / 4 for v in (o, h, l, c))
+    path = [o]
+
+    def _walk_to(target):
+        start = path[-1]
+        if abs(target - start) < 0.001:
+            return
+        step = tick if target > start else -tick
+        p = start + step
+        limit = 10000
+        while abs(p - target) > 0.001 and limit > 0:
+            path.append(round(p * 4) / 4)
+            p += step
+            limit -= 1
+        path.append(round(target * 4) / 4)
+
+    if c >= o:
+        _walk_to(l); _walk_to(h); _walk_to(c)
+    else:
+        _walk_to(h); _walk_to(l); _walk_to(c)
+
+    return path if path else [o]
+
+
+def _build_range_bars(bars_1m: list, range_pts: float) -> list:
+    """Convert 1-minute bars into range bars using tick-by-tick price simulation.
+
+    Instead of proportional volume splitting (inaccurate when 1-min bars span
+    multiple range bar boundaries), this simulates the price path within each
+    1-min bar at 0.25 ES tick increments and distributes volume evenly across
+    tick transitions.  Range bars close precisely when high-low reaches
+    range_pts, giving much more accurate volume/delta attribution per bar.
     """
     result = []
-    cvd = 0
+    cvd = 0.0
+    cur = None  # current forming range bar
 
-    # Current forming range bar
-    r_open = r_high = r_low = r_close = 0.0
-    r_vol = r_buy = r_sell = r_delta = 0
-    r_ts0 = r_ts1 = ""
-    r_cvd0 = 0
-    has_bar = False
-
-    def _close_bar(close_p, high_p, low_p, ts_e, status="closed"):
-        nonlocal cvd, has_bar
-        cvd += r_delta
+    def _emit(status="closed"):
+        nonlocal cvd, cur
+        if cur is None:
+            return
+        d = int(round(cur["delta"]))
+        cvd += d
         result.append({
             "idx": len(result),
-            "open": r_open, "high": high_p, "low": low_p, "close": close_p,
-            "volume": r_vol, "delta": r_delta,
-            "buy_volume": r_buy, "sell_volume": r_sell, "cvd": cvd,
-            "cvd_open": r_cvd0, "cvd_high": max(r_cvd0, cvd),
-            "cvd_low": min(r_cvd0, cvd), "cvd_close": cvd,
-            "ts_start": r_ts0, "ts_end": ts_e, "status": status,
+            "open": cur["open"], "high": cur["high"],
+            "low": cur["low"], "close": cur["close"],
+            "volume": max(int(round(cur["vol"])), 0),
+            "delta": d,
+            "buy_volume": max(int(round(cur["buy"])), 0),
+            "sell_volume": max(int(round(cur["sell"])), 0),
+            "cvd": int(cvd),
+            "cvd_open": int(round(cur["cvd0"])),
+            "cvd_high": int(round(max(cur["cvd_hi"], cvd))),
+            "cvd_low": int(round(min(cur["cvd_lo"], cvd))),
+            "cvd_close": int(cvd),
+            "ts_start": cur["ts0"], "ts_end": cur["ts1"],
+            "status": status,
         })
-        has_bar = False
+        cur = None
+
+    def _new_bar(price, ts):
+        return {
+            "open": price, "high": price, "low": price, "close": price,
+            "vol": 0.0, "delta": 0.0, "buy": 0.0, "sell": 0.0,
+            "ts0": ts, "ts1": ts,
+            "cvd0": cvd, "cvd_run": cvd, "cvd_hi": cvd, "cvd_lo": cvd,
+        }
 
     for b in bars_1m:
         o = float(b.get("bar_open_price") or 0)
@@ -2653,72 +2702,66 @@ def _build_range_bars(bars_1m: list, range_pts: float) -> list:
         if o == 0 and c == 0:
             continue
 
-        if not has_bar:
-            r_open = o; r_high = h; r_low = l; r_close = c
-            r_vol = vol; r_buy = buy; r_sell = sell; r_delta = delta
-            r_ts0 = ts; r_ts1 = ts; r_cvd0 = cvd
-            has_bar = True
+        path = _es_price_path(o, h, l, c)
+        n_trans = len(path) - 1
+
+        if n_trans <= 0:
+            # No price movement — add all volume at single price
+            if cur is None:
+                cur = _new_bar(path[0], ts)
+            cur["close"] = path[0]
+            cur["high"] = max(cur["high"], path[0])
+            cur["low"] = min(cur["low"], path[0])
+            cur["vol"] += vol; cur["buy"] += buy
+            cur["sell"] += sell; cur["delta"] += delta
+            cur["ts1"] = ts
+            cur["cvd_run"] += delta
+            cur["cvd_hi"] = max(cur["cvd_hi"], cur["cvd_run"])
+            cur["cvd_lo"] = min(cur["cvd_lo"], cur["cvd_run"])
+            if cur["high"] - cur["low"] >= range_pts - 0.001:
+                _emit()
+            continue
+
+        v_s = vol / n_trans
+        b_s = buy / n_trans
+        s_s = sell / n_trans
+        d_s = delta / n_trans
+
+        # Opening price: position update only, no volume
+        p0 = path[0]
+        if cur is None:
+            cur = _new_bar(p0, ts)
         else:
-            r_high = max(r_high, h); r_low = min(r_low, l); r_close = c
-            r_vol += vol; r_buy += buy; r_sell += sell; r_delta += delta
-            r_ts1 = ts
+            cur["close"] = p0
+            cur["high"] = max(cur["high"], p0)
+            cur["low"] = min(cur["low"], p0)
+            cur["ts1"] = ts
+            if cur["high"] - cur["low"] >= range_pts - 0.001:
+                _emit()
+                cur = _new_bar(p0, ts)
 
-        # Keep splitting while range exceeds range_pts
-        while has_bar and r_high - r_low >= range_pts:
-            going_up = r_close >= r_open
-            if going_up:
-                bar_low = r_low
-                bar_high = bar_low + range_pts
-                close_at = bar_high
-            else:
-                bar_high = r_high
-                bar_low = bar_high - range_pts
-                close_at = bar_low
+        # Tick transitions: add volume first, then check for range completion
+        for i in range(1, len(path)):
+            price = path[i]
+            if cur is None:
+                cur = _new_bar(price, ts)
+                continue
+            cur["close"] = price
+            cur["high"] = max(cur["high"], price)
+            cur["low"] = min(cur["low"], price)
+            cur["vol"] += v_s; cur["buy"] += b_s
+            cur["sell"] += s_s; cur["delta"] += d_s
+            cur["ts1"] = ts
+            cur["cvd_run"] += d_s
+            cur["cvd_hi"] = max(cur["cvd_hi"], cur["cvd_run"])
+            cur["cvd_lo"] = min(cur["cvd_lo"], cur["cvd_run"])
+            if cur["high"] - cur["low"] >= range_pts - 0.001:
+                _emit()
+                cur = _new_bar(price, ts)
 
-            # Round to nearest ES tick (0.25)
-            close_at = round(close_at * 4) / 4
-            bar_high = round(bar_high * 4) / 4
-            bar_low = round(bar_low * 4) / 4
-
-            saved_high = r_high; saved_low = r_low
-            saved_close = r_close; saved_ts1 = r_ts1
-
-            # Split volume/delta proportionally by range consumed
-            total_range = r_high - r_low
-            if total_range > 0:
-                frac = range_pts / total_range
-            else:
-                frac = 1.0
-            frac = min(frac, 1.0)
-            split_vol = int(r_vol * frac)
-            split_buy = int(r_buy * frac)
-            split_sell = int(r_sell * frac)
-            split_delta = int(r_delta * frac)
-
-            # Assign split portion to the closing bar
-            saved_vol = r_vol - split_vol
-            saved_buy = r_buy - split_buy
-            saved_sell = r_sell - split_sell
-            saved_delta = r_delta - split_delta
-            r_vol = split_vol; r_buy = split_buy; r_sell = split_sell; r_delta = split_delta
-
-            _close_bar(close_at, bar_high, bar_low, r_ts1)
-
-            # Start new bar from the close boundary with remainder
-            r_open = close_at
-            r_close = saved_close
-            r_vol = saved_vol; r_buy = saved_buy; r_sell = saved_sell; r_delta = saved_delta
-            r_ts0 = saved_ts1; r_ts1 = saved_ts1; r_cvd0 = cvd
-            has_bar = True
-
-            # New bar's high/low: price continues from close_at
-            if going_up:
-                r_low = close_at; r_high = saved_high
-            else:
-                r_high = close_at; r_low = saved_low
-
-    if has_bar:
-        _close_bar(r_close, r_high, r_low, r_ts1, status="open")
+    # Emit last forming bar
+    if cur is not None and (cur["vol"] > 0.5 or abs(cur["open"] - cur["close"]) > 0.001):
+        _emit(status="open")
 
     return result
 

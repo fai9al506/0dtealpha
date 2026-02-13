@@ -2072,23 +2072,62 @@ def _es_delta_process_bar(bar: dict):
     _es_delta["sell_volume"] = _es_delta["_completed_sell_vol"] + _es_delta["_open_sell_vol"]
     _es_delta["tick_count"] = _es_delta["_completed_ticks"] + _es_delta["_open_ticks"]
 
+def _es_session_date() -> str:
+    """Return the ES futures session date.
+
+    ES sessions run 6 PM ET → 5 PM ET next day. The session date is the
+    NEXT calendar date once the clock passes 6 PM (matching pro platforms
+    like Sierra Chart, NinjaTrader, ATAS). Before 6 PM = today's date.
+    """
+    t = now_et()
+    if t.hour >= 18:  # 6 PM or later → next day's session
+        return (t + timedelta(days=1)).strftime("%Y-%m-%d")
+    return t.strftime("%Y-%m-%d")
+
+def _es_futures_open() -> bool:
+    """Check if ES futures are currently trading.
+
+    ES futures: Sunday 6 PM ET → Friday 5 PM ET
+    Daily maintenance break: 5 PM – 6 PM ET (Mon–Thu)
+    Closed: Friday 5 PM → Sunday 6 PM
+    """
+    t = now_et()
+    wd = t.weekday()  # Mon=0 … Sun=6
+    hour = t.hour
+
+    # Saturday: always closed
+    if wd == 5:
+        return False
+    # Sunday: open only from 6 PM onward
+    if wd == 6:
+        return hour >= 18
+    # Friday: open until 5 PM only
+    if wd == 4:
+        return hour < 17
+    # Mon-Thu: closed during 5 PM – 6 PM maintenance window
+    return not (hour == 17)
+
 def _es_delta_stream_loop():
-    """Background thread: streams @ES 1-min barcharts for real-time delta updates."""
+    """Background thread: streams @ES 1-min barcharts for real-time delta updates.
+
+    Covers the full futures session (6 PM ET → 5 PM ET next day) with
+    1380 bars backfill (~23 hours) to match pro platforms.
+    """
     while True:
         try:
-            # Wait for market hours
-            if not market_open_now():
+            # Wait for ES futures session
+            if not _es_futures_open():
                 time.sleep(30)
                 continue
 
-            today = now_et().strftime("%Y-%m-%d")
-            if _es_delta["trade_date"] != today:
-                _es_delta_reset(today)
+            session_date = _es_session_date()
+            if _es_delta["trade_date"] != session_date:
+                _es_delta_reset(session_date)
 
-            # Open streaming connection with backfill
+            # Open streaming connection with full session backfill
             token = ts_access_token()
             headers = {"Authorization": f"Bearer {token}"}
-            params = {"interval": "1", "unit": "Minute", "barsback": "390"}
+            params = {"interval": "1", "unit": "Minute", "barsback": "1380"}
             r = requests.get(
                 f"{BASE}/marketdata/stream/barcharts/%40ES",
                 headers=headers, params=params, stream=True, timeout=30,
@@ -2107,7 +2146,7 @@ def _es_delta_stream_loop():
                 continue
 
             _es_delta["stream_ok"] = True
-            print("[es-delta] stream connected (backfilling 390 bars)", flush=True)
+            print(f"[es-delta] stream connected (session {session_date}, backfilling 1380 bars)", flush=True)
 
             for line in r.iter_lines(decode_unicode=True):
                 if not line:
@@ -2131,10 +2170,11 @@ def _es_delta_stream_loop():
                           f"vol={_es_delta['total_volume']} price={_es_delta['last_price']}", flush=True)
                     continue
 
-                # Daily reset check
-                today_check = now_et().strftime("%Y-%m-%d")
-                if _es_delta["trade_date"] != today_check:
-                    _es_delta_reset(today_check)
+                # Session date rollover check (6 PM ET = new session)
+                new_session = _es_session_date()
+                if _es_delta["trade_date"] != new_session:
+                    print(f"[es-delta] session rollover → {new_session}", flush=True)
+                    _es_delta_reset(new_session)
 
                 # Process bar update
                 if "Epoch" in data:
@@ -2154,7 +2194,7 @@ def _es_delta_stream_loop():
 def save_es_delta():
     """Scheduler job: flush buffered bars + write snapshot to DB (every 2 min)."""
     try:
-        if not market_open_now():
+        if not _es_futures_open():
             return
         if not engine:
             return
@@ -2470,9 +2510,9 @@ def db_es_delta_history(limit: int = 500):
             result.append(r)
         return result
 
-def db_es_delta_bars(limit: int = 390):
-    """Get today's ES 1-minute delta bars."""
-    today = datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d")
+def db_es_delta_bars(limit: int = 1400):
+    """Get current ES session's 1-minute delta bars (uses futures session date)."""
+    session_date = _es_session_date()
     with engine.begin() as conn:
         rows = conn.execute(text("""
             SELECT ts, trade_date, symbol,
@@ -2481,10 +2521,10 @@ def db_es_delta_bars(limit: int = 390):
                    bar_open_price, bar_close_price, bar_high_price, bar_low_price,
                    up_ticks, down_ticks, total_ticks
             FROM es_delta_bars
-            WHERE trade_date = :today
+            WHERE trade_date = :session_date
             ORDER BY ts ASC
             LIMIT :lim
-        """), {"today": today, "lim": limit}).mappings().all()
+        """), {"session_date": session_date, "lim": limit}).mappings().all()
         result = []
         for row in rows:
             r = dict(row)
@@ -2524,8 +2564,8 @@ def api_es_delta_history(limit: int = Query(500, ge=1, le=2000)):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/es/delta/bars")
-def api_es_delta_bars(limit: int = Query(390, ge=1, le=1000)):
-    """Get today's ES 1-minute delta bars."""
+def api_es_delta_bars(limit: int = Query(1400, ge=1, le=2000)):
+    """Get current ES session's 1-minute delta bars."""
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)

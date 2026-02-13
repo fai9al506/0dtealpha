@@ -2560,10 +2560,35 @@ def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, 
         return JSONResponse({"error": str(e)}, status_code=500)
 
 def _build_range_bars(bars_1m: list, range_pts: float) -> list:
-    """Convert 1-minute bars into range bars of `range_pts` points each."""
+    """Convert 1-minute bars into range bars of exactly `range_pts` points each.
+
+    When a 1-min bar pushes the accumulated high-low beyond range_pts,
+    the range bar is closed at exactly the boundary and a new bar begins.
+    """
     result = []
-    cur = None
-    cvd = 0  # running cumulative delta across all bars
+    cvd = 0
+
+    # Current forming range bar
+    r_open = r_high = r_low = r_close = 0.0
+    r_vol = r_buy = r_sell = r_delta = 0
+    r_ts0 = r_ts1 = ""
+    r_cvd0 = 0
+    has_bar = False
+
+    def _close_bar(close_p, high_p, low_p, ts_e, status="closed"):
+        nonlocal cvd, has_bar
+        cvd += r_delta
+        result.append({
+            "idx": len(result),
+            "open": r_open, "high": high_p, "low": low_p, "close": close_p,
+            "volume": r_vol, "delta": r_delta,
+            "buy_volume": r_buy, "sell_volume": r_sell, "cvd": cvd,
+            "cvd_open": r_cvd0, "cvd_high": max(r_cvd0, cvd),
+            "cvd_low": min(r_cvd0, cvd), "cvd_close": cvd,
+            "ts_start": r_ts0, "ts_end": ts_e, "status": status,
+        })
+        has_bar = False
+
     for b in bars_1m:
         o = float(b.get("bar_open_price") or 0)
         h = float(b.get("bar_high_price") or 0)
@@ -2576,51 +2601,55 @@ def _build_range_bars(bars_1m: list, range_pts: float) -> list:
         ts = b.get("ts", "")
         if o == 0 and c == 0:
             continue
-        if cur is None:
-            cvd_open = cvd
-            cur = {"open": o, "high": h, "low": l, "close": c,
-                   "volume": vol, "buy_volume": buy, "sell_volume": sell,
-                   "delta": delta, "ts_start": ts, "ts_end": ts,
-                   "cvd_open": cvd_open, "cvd_running": cvd_open + delta}
-            cur["cvd_high"] = max(cvd_open, cur["cvd_running"])
-            cur["cvd_low"] = min(cvd_open, cur["cvd_running"])
+
+        if not has_bar:
+            r_open = o; r_high = h; r_low = l; r_close = c
+            r_vol = vol; r_buy = buy; r_sell = sell; r_delta = delta
+            r_ts0 = ts; r_ts1 = ts; r_cvd0 = cvd
+            has_bar = True
         else:
-            cur["high"] = max(cur["high"], h)
-            cur["low"] = min(cur["low"], l)
-            cur["close"] = c
-            cur["volume"] += vol
-            cur["buy_volume"] += buy
-            cur["sell_volume"] += sell
-            cur["delta"] += delta
-            cur["ts_end"] = ts
-            cur["cvd_running"] = cur["cvd_open"] + cur["delta"]
-            cur["cvd_high"] = max(cur["cvd_high"], cur["cvd_running"])
-            cur["cvd_low"] = min(cur["cvd_low"], cur["cvd_running"])
-        # Check if range bar is complete
-        if cur["high"] - cur["low"] >= range_pts:
-            cvd += cur["delta"]
-            result.append({
-                "idx": len(result), "open": cur["open"], "high": cur["high"],
-                "low": cur["low"], "close": cur["close"], "volume": cur["volume"],
-                "delta": cur["delta"], "buy_volume": cur["buy_volume"],
-                "sell_volume": cur["sell_volume"], "cvd": cvd,
-                "cvd_open": cur["cvd_open"], "cvd_high": cur["cvd_high"],
-                "cvd_low": cur["cvd_low"], "cvd_close": cvd,
-                "ts_start": cur["ts_start"], "ts_end": cur["ts_end"], "status": "closed",
-            })
-            cur = None
-    # Append open (forming) range bar
-    if cur:
-        cvd += cur["delta"]
-        result.append({
-            "idx": len(result), "open": cur["open"], "high": cur["high"],
-            "low": cur["low"], "close": cur["close"], "volume": cur["volume"],
-            "delta": cur["delta"], "buy_volume": cur["buy_volume"],
-            "sell_volume": cur["sell_volume"], "cvd": cvd,
-            "cvd_open": cur["cvd_open"], "cvd_high": cur["cvd_high"],
-            "cvd_low": cur["cvd_low"], "cvd_close": cvd,
-            "ts_start": cur["ts_start"], "ts_end": cur["ts_end"], "status": "open",
-        })
+            r_high = max(r_high, h); r_low = min(r_low, l); r_close = c
+            r_vol += vol; r_buy += buy; r_sell += sell; r_delta += delta
+            r_ts1 = ts
+
+        # Keep splitting while range exceeds range_pts
+        while has_bar and r_high - r_low >= range_pts:
+            going_up = r_close >= r_open
+            if going_up:
+                bar_low = r_low
+                bar_high = bar_low + range_pts
+                close_at = bar_high
+            else:
+                bar_high = r_high
+                bar_low = bar_high - range_pts
+                close_at = bar_low
+
+            # Round to nearest ES tick (0.25)
+            close_at = round(close_at * 4) / 4
+            bar_high = round(bar_high * 4) / 4
+            bar_low = round(bar_low * 4) / 4
+
+            saved_high = r_high; saved_low = r_low
+            saved_close = r_close; saved_ts1 = r_ts1
+
+            _close_bar(close_at, bar_high, bar_low, r_ts1)
+
+            # Start new bar from the close boundary
+            r_open = close_at
+            r_close = saved_close
+            r_vol = 0; r_buy = 0; r_sell = 0; r_delta = 0
+            r_ts0 = saved_ts1; r_ts1 = saved_ts1; r_cvd0 = cvd
+            has_bar = True
+
+            # New bar's high/low: price continues from close_at
+            if going_up:
+                r_low = close_at; r_high = saved_high
+            else:
+                r_high = close_at; r_low = saved_low
+
+    if has_bar:
+        _close_bar(r_close, r_high, r_low, r_ts1, status="open")
+
     return result
 
 def _generate_mock_range_bars(range_pts: float) -> list:

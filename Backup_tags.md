@@ -14,3 +14,4 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 8 | 2026-02-13 18:27 | `stable-20260213-182718` | Pre-TradeStation ES cumulative delta refactor (replacing Rithmic) |
 | 9 | 2026-02-13 20:08 | `stable-20260213-200831` | ES Delta dashboard tab with 5-pt range bars, volume, delta, CVD candles |
 | 10 | 2026-02-13 22:07 | `stable-20260213-220739` | Pre-ES quote stream (bid/ask delta range bars) |
+| 11 | 2026-02-13 23:48 | `stable-20260213-234842` | ES quote stream, absorption detector, SPX key levels on ES Delta chart |

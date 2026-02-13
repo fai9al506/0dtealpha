@@ -195,3 +195,47 @@ Test factor combinations for stronger signals:
 ### Prerequisite
 
 Keep the data pipeline running uninterrupted. Every gap day is lost signal. The system is currently collecting everything needed — no code changes required until analysis time.
+
+---
+
+## Feature Log — Feb 13, 2026 (Evening Session)
+
+### Changes Since Backup #10 (stable-20260213-220739)
+
+#### 1. Real-Time ES Quote Stream with Bid/Ask Delta Range Bars
+- TradeStation streaming quotes endpoint feeds live ES bid/ask prices
+- Delta calculated from bid/ask trade classification (tick rule)
+- 5-point range bars built from streaming data (same as existing 1-min bar approach but higher fidelity)
+- Falls back to 1-min bars if quote stream has <10 bars (requires minimum data before switching)
+- Stored in `es_delta_bars` table alongside 1-min bar data
+
+#### 2. ES Absorption Detector (Price vs CVD Divergence + Volland Confluence)
+- Detects absorption signals: price makes new high/low but CVD diverges (institutional absorption)
+- Grades signals A+/A/B/C based on divergence strength, volume confirmation, and Volland confluence
+- Volland confluence: checks if DD hedging, charm direction, and paradigm align with the signal
+- A/A+ signals displayed as chart markers on the ES Delta price panel
+- Signal data included in `/api/es/delta/rangebars` response
+
+#### 3. SPX Key Levels on ES Delta Chart
+- Fetches `/api/statistics_levels` in parallel with range bar data (no extra latency)
+- Converts SPX levels to ES prices using live spread: `offset = ES_last - SPX_spot`
+- Draws 5 dashed horizontal lines on the price panel:
+  - Target (blue #3b82f6) — Volland target price
+  - LIS Low/High (amber #f59e0b) — Volland LIS bounds
+  - Max +Gamma (green #22c55e) — largest positive GEX strike
+  - Max -Gamma (red #ef4444) — largest negative GEX strike
+- Labels show rounded ES-converted prices (e.g., "Tgt 6064")
+- Graceful degradation: no lines if SPX spot unavailable (pre-market)
+- Lines refresh every 5s with the chart auto-update cycle
+
+#### 4. Minor Fixes
+- Removed mock/test button from ES Delta tab
+- Default ES Delta view zoomed to last 50% of bars for better readability
+- Quote stream priority fix: require 10+ bars before switching from 1-min fallback
+
+### Trading Relevance
+
+The SPX key levels on the ES Delta chart are significant for execution:
+- Traders watching ES futures can now see the same Volland-derived levels without switching tabs
+- The SPX→ES offset auto-adjusts as the spread changes intraday
+- Combined with absorption signals, this creates a complete ES execution view: price action + delta flow + key levels + institutional absorption markers

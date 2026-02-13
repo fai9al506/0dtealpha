@@ -7247,11 +7247,7 @@ DASH_HTML_TEMPLATE = """
         const n = bars.length;
         const xs = bars.map(b => b.idx);
         // Tick labels: show time of bar start
-        const tickTexts = bars.map(b => {
-          if (!b.ts_start) return '';
-          const p = b.ts_start.split('T');
-          return p.length > 1 ? p[1].substring(0,5) : '';
-        });
+        const tickTexts = bars.map(b => fmtTimeET(b.ts_start));
         const opens = bars.map(b => b.open);
         const highs = bars.map(b => b.high);
         const lows = bars.map(b => b.low);

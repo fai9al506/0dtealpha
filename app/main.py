@@ -520,6 +520,35 @@ def db_init():
         CREATE INDEX IF NOT EXISTS idx_es_delta_bars_ts ON es_delta_bars(ts DESC);
         """))
 
+        # ES range bars from streaming quotes (bid/ask delta classification)
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS es_range_bars (
+            id BIGSERIAL PRIMARY KEY,
+            trade_date DATE NOT NULL,
+            symbol VARCHAR(20) NOT NULL DEFAULT '@ES',
+            bar_idx INTEGER NOT NULL,
+            range_pts DOUBLE PRECISION NOT NULL DEFAULT 5.0,
+            bar_open DOUBLE PRECISION NOT NULL,
+            bar_high DOUBLE PRECISION NOT NULL,
+            bar_low DOUBLE PRECISION NOT NULL,
+            bar_close DOUBLE PRECISION NOT NULL,
+            bar_volume BIGINT NOT NULL DEFAULT 0,
+            bar_buy_volume BIGINT NOT NULL DEFAULT 0,
+            bar_sell_volume BIGINT NOT NULL DEFAULT 0,
+            bar_delta BIGINT NOT NULL DEFAULT 0,
+            cumulative_delta BIGINT NOT NULL DEFAULT 0,
+            cvd_open BIGINT NOT NULL DEFAULT 0,
+            cvd_high BIGINT NOT NULL DEFAULT 0,
+            cvd_low BIGINT NOT NULL DEFAULT 0,
+            cvd_close BIGINT NOT NULL DEFAULT 0,
+            ts_start TIMESTAMPTZ NOT NULL,
+            ts_end TIMESTAMPTZ NOT NULL,
+            status VARCHAR(10) NOT NULL DEFAULT 'closed',
+            source VARCHAR(10) NOT NULL DEFAULT 'live',
+            UNIQUE(trade_date, symbol, bar_idx, range_pts)
+        );
+        """))
+
         # Create default admin user if no users exist
         existing = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
         if existing == 0:
@@ -2072,6 +2101,178 @@ def _es_delta_process_bar(bar: dict):
     _es_delta["sell_volume"] = _es_delta["_completed_sell_vol"] + _es_delta["_open_sell_vol"]
     _es_delta["tick_count"] = _es_delta["_completed_ticks"] + _es_delta["_open_ticks"]
 
+# ====== ES QUOTE STREAM (bid/ask delta classification — ATAS-style range bars) ======
+_es_quote_lock = Lock()
+_es_quote = {
+    "stream_ok": False,
+    "trade_date": None,
+    "last_price": None,
+    "last_bid": None,
+    "last_ask": None,
+    "cumulative_delta": 0,
+    "total_volume": 0,
+    "buy_volume": 0,
+    "sell_volume": 0,
+    "trade_count": 0,
+    "_range_pts": 5.0,
+    "_forming_bar": None,
+    "_completed_bars": [],
+    "_completed_bars_flushed": 0,
+    "_cvd": 0,
+    "_bar_idx": 0,
+    "_flush_buffer": [],
+    "_last_trade_time": None,
+}
+
+def _classify_trade_delta(last: float, bid: float, ask: float, volume: int):
+    """ATAS-style bid/ask classification.
+    Last >= Ask → buy (hit the ask) | Last <= Bid → sell (hit the bid)
+    Between → classify by proximity to mid
+    Returns (buy_vol, sell_vol, delta)
+    """
+    if last >= ask:
+        return volume, 0, volume
+    if last <= bid:
+        return 0, volume, -volume
+    mid = (bid + ask) / 2.0
+    if last >= mid:
+        return volume, 0, volume
+    return 0, volume, -volume
+
+def _new_quote_range_bar(price: float, ts: str):
+    """Create a new forming range bar starting at the given price."""
+    return {
+        "open": price, "high": price, "low": price, "close": price,
+        "volume": 0, "buy": 0, "sell": 0, "delta": 0,
+        "ts_start": ts, "ts_end": ts,
+        "cvd_open": _es_quote["_cvd"],
+        "cvd_high": _es_quote["_cvd"],
+        "cvd_low": _es_quote["_cvd"],
+    }
+
+def _es_quote_process_trade(last: float, bid: float, ask: float, volume: int, ts: str):
+    """Process a single trade tick into the forming range bar.
+    Must be called under _es_quote_lock.
+    """
+    q = _es_quote
+    buy_vol, sell_vol, delta = _classify_trade_delta(last, bid, ask, volume)
+
+    q["last_price"] = last
+    q["last_bid"] = bid
+    q["last_ask"] = ask
+    q["total_volume"] += volume
+    q["buy_volume"] += buy_vol
+    q["sell_volume"] += sell_vol
+    q["cumulative_delta"] += delta
+    q["trade_count"] += 1
+    q["_last_trade_time"] = ts
+
+    # Ensure we have a forming bar
+    if q["_forming_bar"] is None:
+        q["_forming_bar"] = _new_quote_range_bar(last, ts)
+
+    bar = q["_forming_bar"]
+    bar["close"] = last
+    bar["high"] = max(bar["high"], last)
+    bar["low"] = min(bar["low"], last)
+    bar["volume"] += volume
+    bar["buy"] += buy_vol
+    bar["sell"] += sell_vol
+    bar["delta"] += delta
+    bar["ts_end"] = ts
+
+    # Track CVD within bar
+    q["_cvd"] += delta
+    bar["cvd_high"] = max(bar["cvd_high"], q["_cvd"])
+    bar["cvd_low"] = min(bar["cvd_low"], q["_cvd"])
+
+    # Check if range bar is complete
+    range_pts = q["_range_pts"]
+    if bar["high"] - bar["low"] >= range_pts - 0.001:
+        # Close this bar
+        completed = {
+            "idx": q["_bar_idx"],
+            "open": bar["open"], "high": bar["high"],
+            "low": bar["low"], "close": bar["close"],
+            "volume": bar["volume"], "delta": bar["delta"],
+            "buy_volume": bar["buy"], "sell_volume": bar["sell"],
+            "cvd": q["_cvd"],
+            "cvd_open": bar["cvd_open"],
+            "cvd_high": bar["cvd_high"],
+            "cvd_low": bar["cvd_low"],
+            "cvd_close": q["_cvd"],
+            "ts_start": bar["ts_start"], "ts_end": bar["ts_end"],
+            "status": "closed",
+        }
+        q["_completed_bars"].append(completed)
+        q["_flush_buffer"].append(completed)
+        q["_bar_idx"] += 1
+        # Start new bar at the close price of the completed bar
+        q["_forming_bar"] = _new_quote_range_bar(last, ts)
+
+def _es_quote_reset():
+    """Reset quote stream state for new session or process restart.
+    Reloads previously-flushed bars from DB to survive restarts.
+    Must NOT be called under lock (acquires lock internally).
+    """
+    session_date = _es_session_date()
+    # Load existing bars from DB
+    db_bars = []
+    if engine:
+        try:
+            with engine.begin() as conn:
+                rows = conn.execute(text("""
+                    SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
+                           bar_volume, bar_buy_volume, bar_sell_volume, bar_delta,
+                           cumulative_delta, cvd_open, cvd_high, cvd_low, cvd_close,
+                           ts_start, ts_end, status
+                    FROM es_range_bars
+                    WHERE trade_date = :td AND symbol = :sym AND range_pts = :rp
+                    ORDER BY bar_idx ASC
+                """), {"td": session_date, "sym": ES_DELTA_SYMBOL, "rp": 5.0}).mappings().all()
+                for r in rows:
+                    db_bars.append({
+                        "idx": r["bar_idx"],
+                        "open": r["bar_open"], "high": r["bar_high"],
+                        "low": r["bar_low"], "close": r["bar_close"],
+                        "volume": r["bar_volume"], "delta": r["bar_delta"],
+                        "buy_volume": r["bar_buy_volume"], "sell_volume": r["bar_sell_volume"],
+                        "cvd": r["cvd_close"],
+                        "cvd_open": r["cvd_open"], "cvd_high": r["cvd_high"],
+                        "cvd_low": r["cvd_low"], "cvd_close": r["cvd_close"],
+                        "ts_start": r["ts_start"].isoformat() if r["ts_start"] else "",
+                        "ts_end": r["ts_end"].isoformat() if r["ts_end"] else "",
+                        "status": r["status"],
+                    })
+        except Exception as e:
+            print(f"[es-quote] DB reload error: {e}", flush=True)
+
+    with _es_quote_lock:
+        _es_quote.update({
+            "stream_ok": False,
+            "trade_date": session_date,
+            "last_price": None,
+            "last_bid": None,
+            "last_ask": None,
+            "cumulative_delta": 0,
+            "total_volume": 0,
+            "buy_volume": 0,
+            "sell_volume": 0,
+            "trade_count": 0,
+            "_forming_bar": None,
+            "_completed_bars": db_bars,
+            "_completed_bars_flushed": len(db_bars),
+            "_cvd": db_bars[-1]["cvd_close"] if db_bars else 0,
+            "_bar_idx": (db_bars[-1]["idx"] + 1) if db_bars else 0,
+            "_flush_buffer": [],
+            "_last_trade_time": None,
+        })
+    if db_bars:
+        print(f"[es-quote] restored {len(db_bars)} bars from DB (session {session_date}, "
+              f"cvd={_es_quote['_cvd']:+d})", flush=True)
+    else:
+        print(f"[es-quote] fresh session {session_date} (no prior bars)", flush=True)
+
 def _es_session_date() -> str:
     """Return the ES futures session date.
 
@@ -2191,6 +2392,139 @@ def _es_delta_stream_loop():
         _es_delta["stream_ok"] = False
         time.sleep(5)  # brief delay before reconnect
 
+def _es_quote_stream_loop():
+    """Background thread: streams @ES quotes for bid/ask delta classification.
+
+    Tracks DailyVolume to detect trades. Each trade is classified as buy/sell
+    based on whether Last >= Ask (buy) or Last <= Bid (sell), then fed into
+    tick-perfect range bar construction.
+    """
+    backoff = 1.0
+    prev_daily_vol = None
+    last_vals = {}  # persistent NBBO: Last, Bid, Ask
+
+    while True:
+        try:
+            # Wait for ES futures session
+            if not _es_futures_open():
+                backoff = 1.0
+                time.sleep(30)
+                continue
+
+            session_date = _es_session_date()
+            if _es_quote["trade_date"] != session_date:
+                _es_quote_reset()
+                prev_daily_vol = None
+                last_vals = {}
+
+            token = ts_access_token()
+            headers = {"Authorization": f"Bearer {token}"}
+            r = requests.get(
+                f"{BASE}/marketdata/stream/quotes/%40ES",
+                headers=headers, stream=True, timeout=30,
+            )
+            if r.status_code == 401:
+                token = ts_access_token()
+                headers["Authorization"] = f"Bearer {token}"
+                r = requests.get(
+                    f"{BASE}/marketdata/stream/quotes/%40ES",
+                    headers=headers, stream=True, timeout=30,
+                )
+            if r.status_code != 200:
+                print(f"[es-quote] stream error [{r.status_code}] {r.text[:200]}", flush=True)
+                time.sleep(min(backoff, 60))
+                backoff *= 2
+                continue
+
+            # Connected successfully — reset backoff
+            backoff = 1.0
+            with _es_quote_lock:
+                _es_quote["stream_ok"] = True
+            print(f"[es-quote] stream connected (session {session_date})", flush=True)
+
+            for line in r.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except Exception:
+                    continue
+
+                # Stream control messages
+                if "Heartbeat" in data:
+                    continue
+                if "Error" in data:
+                    print(f"[es-quote] stream error msg: {data}", flush=True)
+                    break
+                if data.get("StreamStatus") == "GoAway":
+                    print("[es-quote] GoAway received, reconnecting", flush=True)
+                    break
+
+                # Session date rollover
+                new_session = _es_session_date()
+                if _es_quote["trade_date"] != new_session:
+                    print(f"[es-quote] session rollover → {new_session}", flush=True)
+                    _es_quote_reset()
+                    prev_daily_vol = None
+                    last_vals = {}
+
+                # Merge partial updates into persistent NBBO
+                for key in ("Last", "Bid", "Ask", "DailyVolume"):
+                    if key in data:
+                        last_vals[key] = data[key]
+
+                # Detect trade: DailyVolume increased
+                daily_vol_str = last_vals.get("DailyVolume")
+                if daily_vol_str is None:
+                    continue
+                try:
+                    daily_vol = int(daily_vol_str)
+                except (ValueError, TypeError):
+                    continue
+
+                if prev_daily_vol is None:
+                    # First snapshot — set baseline, no trade to process
+                    prev_daily_vol = daily_vol
+                    continue
+
+                if daily_vol <= prev_daily_vol:
+                    continue  # No new trade
+
+                trade_vol = daily_vol - prev_daily_vol
+                prev_daily_vol = daily_vol
+
+                # Need Last, Bid, Ask to classify
+                last_p = last_vals.get("Last")
+                bid_p = last_vals.get("Bid")
+                ask_p = last_vals.get("Ask")
+                if last_p is None or bid_p is None or ask_p is None:
+                    continue
+                try:
+                    last_f = float(last_p)
+                    bid_f = float(bid_p)
+                    ask_f = float(ask_p)
+                except (ValueError, TypeError):
+                    continue
+
+                ts_now = now_et().isoformat()
+                with _es_quote_lock:
+                    _es_quote_process_trade(last_f, bid_f, ask_f, trade_vol, ts_now)
+
+            try:
+                r.close()
+            except Exception:
+                pass
+
+        except Exception as e:
+            print(f"[es-quote] stream error: {e}", flush=True)
+
+        with _es_quote_lock:
+            _es_quote["stream_ok"] = False
+        reconnect_wait = min(backoff, 60)
+        print(f"[es-quote] reconnecting in {reconnect_wait:.0f}s", flush=True)
+        time.sleep(reconnect_wait)
+        backoff *= 2
+
 def save_es_delta():
     """Scheduler job: flush buffered bars + write snapshot to DB (every 2 min)."""
     try:
@@ -2260,12 +2594,65 @@ def save_es_delta():
     except Exception as e:
         print(f"[es-delta] save error: {e}", flush=True)
 
+def save_es_range_bars():
+    """Scheduler job: flush quote-stream range bars to DB (every 2 min)."""
+    try:
+        if not _es_futures_open():
+            return
+        if not engine:
+            return
+
+        with _es_quote_lock:
+            bars = _es_quote["_flush_buffer"]
+            _es_quote["_flush_buffer"] = []
+
+        if not bars:
+            return
+
+        today = _es_quote["trade_date"] or _es_session_date()
+        with engine.begin() as conn:
+            for b in bars:
+                conn.execute(text("""
+                    INSERT INTO es_range_bars
+                        (trade_date, symbol, bar_idx, range_pts,
+                         bar_open, bar_high, bar_low, bar_close,
+                         bar_volume, bar_buy_volume, bar_sell_volume, bar_delta,
+                         cumulative_delta, cvd_open, cvd_high, cvd_low, cvd_close,
+                         ts_start, ts_end, status, source)
+                    VALUES (:td, :sym, :idx, :rp,
+                            :bo, :bh, :bl, :bc,
+                            :bv, :bbv, :bsv, :bd,
+                            :cd, :co, :ch, :cl, :cc,
+                            :ts0, :ts1, :st, 'live')
+                    ON CONFLICT (trade_date, symbol, bar_idx, range_pts) DO UPDATE SET
+                        bar_open = EXCLUDED.bar_open, bar_high = EXCLUDED.bar_high,
+                        bar_low = EXCLUDED.bar_low, bar_close = EXCLUDED.bar_close,
+                        bar_volume = EXCLUDED.bar_volume, bar_buy_volume = EXCLUDED.bar_buy_volume,
+                        bar_sell_volume = EXCLUDED.bar_sell_volume, bar_delta = EXCLUDED.bar_delta,
+                        cumulative_delta = EXCLUDED.cumulative_delta,
+                        cvd_open = EXCLUDED.cvd_open, cvd_high = EXCLUDED.cvd_high,
+                        cvd_low = EXCLUDED.cvd_low, cvd_close = EXCLUDED.cvd_close,
+                        ts_start = EXCLUDED.ts_start, ts_end = EXCLUDED.ts_end,
+                        status = EXCLUDED.status
+                """), {
+                    "td": today, "sym": ES_DELTA_SYMBOL, "idx": b["idx"], "rp": 5.0,
+                    "bo": b["open"], "bh": b["high"], "bl": b["low"], "bc": b["close"],
+                    "bv": b["volume"], "bbv": b["buy_volume"], "bsv": b["sell_volume"], "bd": b["delta"],
+                    "cd": b["cvd"], "co": b["cvd_open"], "ch": b["cvd_high"],
+                    "cl": b["cvd_low"], "cc": b["cvd_close"],
+                    "ts0": b["ts_start"], "ts1": b["ts_end"], "st": b["status"],
+                })
+        print(f"[es-quote] flushed {len(bars)} range bars to DB", flush=True)
+    except Exception as e:
+        print(f"[es-quote] save error: {e}", flush=True)
+
 def start_scheduler():
     sch = BackgroundScheduler(timezone="US/Eastern")
     sch.add_job(run_market_job, "interval", seconds=PULL_EVERY, id="pull", coalesce=True, max_instances=1)
     sch.add_job(save_history_job, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="save", coalesce=True, max_instances=1)
     sch.add_job(save_playback_snapshot, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="playback", coalesce=True, max_instances=1)
     sch.add_job(save_es_delta, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="es_delta_save", coalesce=True, max_instances=1)
+    sch.add_job(save_es_range_bars, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="es_range_save", coalesce=True, max_instances=1)
     sch.start()
     print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min; ES delta save every", SAVE_EVERY_MIN, "min", flush=True)
     return sch
@@ -2290,6 +2677,9 @@ def on_startup():
     # Start ES delta streaming thread (real-time barchart feed)
     Thread(target=_es_delta_stream_loop, daemon=True).start()
     print("[es-delta] streaming thread started", flush=True)
+    # Start ES quote streaming thread (bid/ask delta classification)
+    Thread(target=_es_quote_stream_loop, daemon=True).start()
+    print("[es-quote] streaming thread started", flush=True)
 
 @app.on_event("shutdown")
 def on_shutdown():
@@ -2587,15 +2977,44 @@ def api_es_delta_bars(limit: int = Query(1400, ge=1, le=2000)):
 @app.get("/api/es/delta/rangebars")
 def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, le=50.0),
                            mock: bool = Query(False)):
-    """Build range bars from 1-min ES delta bars. Each bar spans `range` price points."""
+    """Build range bars for ES delta chart.
+
+    Priority: live quote-stream bars (bid/ask delta) → fallback to 1-min approximation.
+    """
     if mock:
         return _generate_mock_range_bars(range_pts)
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        # Fetch current session's 1-min bars from DB (full futures session)
+
+        # Priority 1: Live quote-stream range bars (accurate bid/ask delta)
+        with _es_quote_lock:
+            completed = list(_es_quote["_completed_bars"])
+            forming = _es_quote["_forming_bar"]
+            cvd_now = _es_quote["_cvd"]
+
+        if completed or forming:
+            result = list(completed)
+            # Add forming bar as "open" status
+            if forming and (forming["volume"] > 0 or abs(forming["open"] - forming["close"]) > 0.001):
+                result.append({
+                    "idx": len(completed),
+                    "open": forming["open"], "high": forming["high"],
+                    "low": forming["low"], "close": forming["close"],
+                    "volume": forming["volume"], "delta": forming["delta"],
+                    "buy_volume": forming["buy"], "sell_volume": forming["sell"],
+                    "cvd": cvd_now,
+                    "cvd_open": forming["cvd_open"],
+                    "cvd_high": forming["cvd_high"],
+                    "cvd_low": forming["cvd_low"],
+                    "cvd_close": cvd_now,
+                    "ts_start": forming["ts_start"], "ts_end": forming["ts_end"],
+                    "status": "open",
+                })
+            return result
+
+        # Priority 2: Fallback to 1-min bar reconstruction (approximate)
         one_min_bars = db_es_delta_bars(limit=1400)
-        # Append any unflushed bars from memory buffer
         for buf in _es_delta["_bars_buffer"]:
             one_min_bars.append({
                 "ts": buf["ts"], "bar_open_price": buf["bar_open_price"],

@@ -5387,7 +5387,7 @@ DASH_HTML_TEMPLATE = """
             <span id="esDeltaStatus" style="font-size:11px;color:var(--muted)">Loading...</span>
           </div>
         </div>
-        <div id="esDeltaPlot" style="height:calc(100vh - 140px)"></div>
+        <div id="esDeltaPlot" style="height:calc(100vh - 80px)"></div>
       </div>
 
     </main>
@@ -7287,13 +7287,13 @@ DASH_HTML_TEMPLATE = """
         const volColors = bars.map(b => b.close >= b.open ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)');
         const deltaColors = bars.map(b => b.delta >= 0 ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.7)');
 
-        // Build hover text for candles
-        const candleHover = bars.map(b => {
-          const dir = b.close >= b.open ? 'UP' : 'DN';
-          return 'O:'+b.open.toFixed(2)+' H:'+b.high.toFixed(2)+
+        // Build hover text with timestamp for all traces
+        const hoverTexts = bars.map(b => {
+          const t = fmtTimeET(b.ts_start);
+          return t+' | O:'+b.open.toFixed(2)+' H:'+b.high.toFixed(2)+
                  ' L:'+b.low.toFixed(2)+' C:'+b.close.toFixed(2)+
                  '<br>Vol:'+b.volume.toLocaleString()+' Delta:'+b.delta.toLocaleString()+
-                 '<br>CVD:'+b.cvd.toLocaleString()+' ('+dir+')';
+                 ' CVD:'+b.cvd.toLocaleString();
         });
 
         // Trace 1: Candlestick (price)
@@ -7302,7 +7302,7 @@ DASH_HTML_TEMPLATE = """
           type: 'candlestick', yaxis: 'y',
           increasing: { line: { color: '#22c55e' }, fillcolor: '#22c55e' },
           decreasing: { line: { color: '#ef4444' }, fillcolor: '#ef4444' },
-          text: candleHover, hoverinfo: 'text',
+          text: hoverTexts, hoverinfo: 'text',
           name: 'Price',
         };
 
@@ -7310,14 +7310,14 @@ DASH_HTML_TEMPLATE = """
         const traceVol = {
           x: xs, y: bars.map(b => b.volume), type: 'bar', yaxis: 'y2',
           marker: { color: volColors }, name: 'Volume',
-          text: bars.map(b => 'Vol: '+b.volume.toLocaleString()), hoverinfo: 'text',
+          text: bars.map((b,i) => fmtTimeET(b.ts_start)+' | Vol: '+b.volume.toLocaleString()), hoverinfo: 'text',
         };
 
         // Trace 3: Delta bars
         const traceDelta = {
           x: xs, y: bars.map(b => b.delta), type: 'bar', yaxis: 'y3',
           marker: { color: deltaColors }, name: 'Delta',
-          text: bars.map(b => 'Delta: '+b.delta.toLocaleString()), hoverinfo: 'text',
+          text: bars.map((b,i) => fmtTimeET(b.ts_start)+' | Delta: '+b.delta.toLocaleString()), hoverinfo: 'text',
         };
 
         // Trace 4: CVD candles
@@ -7328,7 +7328,7 @@ DASH_HTML_TEMPLATE = """
           type: 'candlestick', yaxis: 'y4', name: 'CVD',
           increasing: { line: { color: '#06b6d4' }, fillcolor: '#06b6d4' },
           decreasing: { line: { color: '#f97316' }, fillcolor: '#f97316' },
-          text: bars.map(b => 'CVD: '+b.cvd.toLocaleString()), hoverinfo: 'text',
+          text: bars.map((b,i) => fmtTimeET(b.ts_start)+' | CVD: '+b.cvd.toLocaleString()), hoverinfo: 'text',
         };
 
         // Show every ~10th tick label to avoid overlap
@@ -7336,30 +7336,36 @@ DASH_HTML_TEMPLATE = """
         const tickVals = xs.filter((_, i) => i % tickStep === 0);
         const tickLabels = tickTexts.filter((_, i) => i % tickStep === 0);
 
+        // Right padding: extend x range 8 bars beyond last data point
+        const xPad = 8;
+        const xRangeMax = n - 1 + xPad;
+
         const layout = {
           paper_bgcolor: '#121417', plot_bgcolor: '#0f1115',
           font: { color: '#e6e7e9', size: 10 },
           margin: { l: 10, r: 60, t: 20, b: 30 },
           xaxis: {
-            type: 'category', gridcolor: '#1a1d21', tickfont: { size: 9 },
+            gridcolor: '#1a1d21', tickfont: { size: 9 },
             rangeslider: { visible: false },
             tickvals: tickVals, ticktext: tickLabels,
+            range: [-0.5, xRangeMax],
+            fixedrange: false,
           },
-          yaxis:  { domain: [0.45, 1.0],  side: 'right', gridcolor: '#1a1d21', tickformat: '.2f' },
-          yaxis2: { domain: [0.30, 0.43], side: 'right', gridcolor: '#1a1d21', title: '', showticklabels: true, tickfont: {size:9} },
-          yaxis3: { domain: [0.15, 0.28], side: 'right', gridcolor: '#1a1d21', zeroline: true, zerolinecolor: '#555', showticklabels: true, tickfont: {size:9} },
-          yaxis4: { domain: [0.0, 0.13],  side: 'right', gridcolor: '#1a1d21', showticklabels: true, tickfont: {size:9} },
+          yaxis:  { domain: [0.42, 1.0],  side: 'right', gridcolor: '#1a1d21', tickformat: '.2f', fixedrange: false },
+          yaxis2: { domain: [0.28, 0.40], side: 'right', gridcolor: '#1a1d21', title: '', showticklabels: true, tickfont: {size:9}, fixedrange: false },
+          yaxis3: { domain: [0.14, 0.26], side: 'right', gridcolor: '#1a1d21', zeroline: true, zerolinecolor: '#555', showticklabels: true, tickfont: {size:9}, fixedrange: false },
+          yaxis4: { domain: [0.0, 0.12],  side: 'right', gridcolor: '#1a1d21', showticklabels: true, tickfont: {size:9}, fixedrange: false },
           hovermode: 'x unified',
-          dragmode: 'zoom',
+          dragmode: 'pan',
           showlegend: false,
         };
 
         // Panel label annotations
         layout.annotations = [
           { text: 'Price', xref: 'paper', yref: 'paper', x: 0.01, y: 0.99, showarrow: false, font: {size:10, color:'#888'} },
-          { text: 'Volume', xref: 'paper', yref: 'paper', x: 0.01, y: 0.42, showarrow: false, font: {size:10, color:'#888'} },
-          { text: 'Delta', xref: 'paper', yref: 'paper', x: 0.01, y: 0.27, showarrow: false, font: {size:10, color:'#888'} },
-          { text: 'CVD', xref: 'paper', yref: 'paper', x: 0.01, y: 0.12, showarrow: false, font: {size:10, color:'#888'} },
+          { text: 'Volume', xref: 'paper', yref: 'paper', x: 0.01, y: 0.39, showarrow: false, font: {size:10, color:'#888'} },
+          { text: 'Delta', xref: 'paper', yref: 'paper', x: 0.01, y: 0.25, showarrow: false, font: {size:10, color:'#888'} },
+          { text: 'CVD', xref: 'paper', yref: 'paper', x: 0.01, y: 0.115, showarrow: false, font: {size:10, color:'#888'} },
         ];
 
         // Last price annotation
@@ -7371,7 +7377,7 @@ DASH_HTML_TEMPLATE = """
           bgcolor: '#1a1d21', borderpad: 2,
         });
 
-        Plotly.react(esDeltaPlot, [traceCandle, traceVol, traceDelta, traceCVD], layout, {responsive:true, displayModeBar:false});
+        Plotly.react(esDeltaPlot, [traceCandle, traceVol, traceDelta, traceCVD], layout, {responsive:true, displayModeBar:false, scrollZoom:true});
 
         // Status text
         const sessionDelta = lastBar.cvd;

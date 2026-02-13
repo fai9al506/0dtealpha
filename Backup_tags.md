@@ -10,4 +10,3 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 4 | 2026-02-11 22:05 | `stable-20260211-220557` | Charts HT tab with high-tenor Vanna & Gamma 3x2 grid |
 | 5 | 2026-02-12 01:00 | `stable-20260212-010000` | Regime Map with real candles and 1m/5m toggle before 2-min interval change |
 | 6 | 2026-02-13 16:44 | `stable-20260213-164448` | Pre-Rithmic ES cumulative delta integration |
-| 7 | 2026-02-13 15:24 | `stable-20260213-152400` | Rithmic delta worker + Volland v2 sync fix + pipeline alert fix |

@@ -190,10 +190,11 @@ def format_statistics(paradigm_data: dict, spot_vol_data: dict) -> dict:
         t = paradigm_data.get("target")
         stats["target"] = f"${t:,.0f}" if t is not None else None
 
-        # LIS: [6923, 6943] → "$6,923 - $6,943"  or [6859] → "$6,859"
+        # LIS: [6923, 6943] → "$6,923 - $6,943" | [6859] → "$6,859" | 6859 → "$6,859"
+        # Paradigm types: BofA/SIDIAL → 2 LIS no target, GEX → LIS + target, AG/Anti-GEX → 1 LIS + target
         lis = paradigm_data.get("lis")
-        if isinstance(lis, list) and len(lis) == 2:
-            stats["lines_in_sand"] = f"${lis[0]:,} - ${lis[1]:,}"
+        if isinstance(lis, list) and len(lis) >= 2:
+            stats["lines_in_sand"] = f"${lis[0]:,} - ${lis[-1]:,}"
         elif isinstance(lis, list) and len(lis) == 1:
             stats["lines_in_sand"] = f"${lis[0]:,}"
         elif isinstance(lis, (int, float)):
@@ -285,9 +286,11 @@ def run():
             try:
                 if "/data/paradigms/0dte" in url and response.status == 200:
                     cycle["paradigm"] = json.loads(response.text())
+                    tgt = cycle['paradigm'].get('target')
                     print(
                         f"[capture] paradigm: {cycle['paradigm'].get('paradigm')} "
-                        f"lis={cycle['paradigm'].get('lis')}",
+                        f"lis={cycle['paradigm'].get('lis')}"
+                        f"{f' target={tgt}' if tgt is not None else ''}",
                         flush=True,
                     )
                 elif "/data/volhacks/spot-vol-beta" in url and response.status == 200:

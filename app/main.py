@@ -2593,8 +2593,8 @@ def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, 
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        # Fetch today's 1-min bars from DB
-        one_min_bars = db_es_delta_bars(limit=1000)
+        # Fetch current session's 1-min bars from DB (full futures session)
+        one_min_bars = db_es_delta_bars(limit=1400)
         # Append any unflushed bars from memory buffer
         for buf in _es_delta["_bars_buffer"]:
             one_min_bars.append({

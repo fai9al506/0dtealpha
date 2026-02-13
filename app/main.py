@@ -2988,12 +2988,14 @@ def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, 
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
 
         # Priority 1: Live quote-stream range bars (accurate bid/ask delta)
+        # Require at least 10 completed bars before switching — avoids showing
+        # a tiny window of data on mid-session deploy when no backfill exists
         with _es_quote_lock:
             completed = list(_es_quote["_completed_bars"])
             forming = _es_quote["_forming_bar"]
             cvd_now = _es_quote["_cvd"]
 
-        if completed or forming:
+        if len(completed) >= 10:
             result = list(completed)
             # Add forming bar as "open" status
             if forming and (forming["volume"] > 0 or abs(forming["open"] - forming["close"]) > 0.001):

@@ -2683,12 +2683,31 @@ def _build_range_bars(bars_1m: list, range_pts: float) -> list:
             saved_high = r_high; saved_low = r_low
             saved_close = r_close; saved_ts1 = r_ts1
 
+            # Split volume/delta proportionally by range consumed
+            total_range = r_high - r_low
+            if total_range > 0:
+                frac = range_pts / total_range
+            else:
+                frac = 1.0
+            frac = min(frac, 1.0)
+            split_vol = int(r_vol * frac)
+            split_buy = int(r_buy * frac)
+            split_sell = int(r_sell * frac)
+            split_delta = int(r_delta * frac)
+
+            # Assign split portion to the closing bar
+            saved_vol = r_vol - split_vol
+            saved_buy = r_buy - split_buy
+            saved_sell = r_sell - split_sell
+            saved_delta = r_delta - split_delta
+            r_vol = split_vol; r_buy = split_buy; r_sell = split_sell; r_delta = split_delta
+
             _close_bar(close_at, bar_high, bar_low, r_ts1)
 
-            # Start new bar from the close boundary
+            # Start new bar from the close boundary with remainder
             r_open = close_at
             r_close = saved_close
-            r_vol = 0; r_buy = 0; r_sell = 0; r_delta = 0
+            r_vol = saved_vol; r_buy = saved_buy; r_sell = saved_sell; r_delta = saved_delta
             r_ts0 = saved_ts1; r_ts1 = saved_ts1; r_cvd0 = cvd
             has_bar = True
 

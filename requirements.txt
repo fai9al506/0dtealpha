@@ -12,3 +12,4 @@ playwright==1.54.0
 bcrypt==4.1.2
 itsdangerous==2.1.2
 python-multipart==0.0.9
+async-rithmic

@@ -117,3 +117,81 @@ Re-run this analysis after accumulating 20+ more trades (target: ~2 weeks). Chec
 2. Do the DD hedging filter observations hold on new data?
 3. What is the actual distribution of charm values? (for threshold calibration)
 4. Are there new patterns emerging?
+
+---
+
+## Milestone: Deep Volland Factor Analysis (Target: May 2026)
+
+### Objective
+
+After 3 months of continuous data collection (~90 trading days), run a comprehensive quantitative analysis across all Volland metrics to discover new edges and validate existing ones.
+
+### Available Data (collecting since ~Feb 2026)
+
+- **Playback snapshots** every 2 minutes: spot, net_gex by strike, charm by strike, call/put volume, stats (paradigm, LIS, target, DD hedging, opt volume)
+- **Volland snapshots** every ~60 seconds: raw payloads with statistics, exposure captures
+- **Volland exposure points**: charm, vanna, gamma broken down by strike AND expiration
+- **Chain snapshots**: full options chain with Greeks (gamma, delta, OI, volume)
+
+At 2-min intervals over 90 days: ~19,500 playback snapshots + millions of strike-level exposure points.
+
+### Analysis Plan
+
+#### Phase 1: Single-Factor Predictive Power
+Test each factor independently against future price movement (T+10min, T+30min, T+1hr, T+close):
+- Aggregate charm (sum across strikes)
+- Aggregate vanna
+- Aggregate gamma
+- DD hedging (sign and magnitude)
+- Net GEX (sum)
+- Max +GEX strike location relative to spot
+- Max -GEX strike location relative to spot
+- Vol / Beta from Volland stats
+- Options volume (total, put/call ratio)
+
+#### Phase 2: Expiration Breakdown
+- Does 0DTE charm predict differently than weekly/monthly charm?
+- Which expiration's Greeks have the strongest price correlation?
+- Does the mix of expirations signal anything (e.g., heavy 0DTE gamma = pinning)?
+
+#### Phase 3: Cross-Factor Interactions
+Test factor combinations for stronger signals:
+- Charm direction + vanna sign + gamma profile
+- DD hedging sign + charm direction
+- Charm concentrated at strike X + spot distance from X
+- Vanna exposure + VIX/vol regime
+- GEX profile shape (clustered vs distributed) + price behavior
+
+#### Phase 4: Level Gravity & Strike Magnetism
+- When charm/gamma concentrates at a strike, does price gravitate to it?
+- How reliably? How fast? Does it depend on distance?
+- Can we predict intraday support/resistance from exposure concentration?
+
+#### Phase 5: Regime Fingerprinting
+- What do early-day (9:30-10:30) factor profiles look like on trending vs. range-bound days?
+- Can we classify the day's regime within the first hour using Volland data?
+- Which paradigm transitions predict directional moves?
+
+#### Phase 6: Time-of-Day Effects
+- Charm predictive power by hour (morning vs. afternoon vs. Dealer O'Clock)
+- Vanna impact during high-vol vs. low-vol periods
+- Does gamma's influence change as 0DTE options decay?
+
+### Methodology
+
+- **Split data**: 60 days training / 30 days out-of-sample validation
+- **Statistical rigor**: require significance (p < 0.05), not just backtested P&L
+- **Multiple comparison correction**: adjust for testing many factors (Bonferroni or similar)
+- **Regime awareness**: test whether findings hold across different market conditions
+- **Microstructure logic**: only pursue correlations that have a theoretical reason to exist (avoid data mining artifacts)
+
+### Output
+
+- Ranked factor list by predictive power (with confidence intervals)
+- Top 3-5 factor combinations for potential new setups
+- New scored setup definitions (same architecture as GEX Long / AG Short / BofA Scalp)
+- Calibrated thresholds based on actual data distributions (fixes current charm threshold issue)
+
+### Prerequisite
+
+Keep the data pipeline running uninterrupted. Every gap day is lost signal. The system is currently collecting everything needed — no code changes required until analysis time.

@@ -2273,6 +2273,267 @@ def _es_quote_reset():
     else:
         print(f"[es-quote] fresh session {session_date} (no prior bars)", flush=True)
 
+    # Reset absorption detector for new session
+    _absorption_state["last_bullish_bar"] = -100
+    _absorption_state["last_bearish_bar"] = -100
+    _absorption_state["signals"] = []
+    _absorption_state["last_checked_idx"] = -1
+
+# ====== ES ABSORPTION DETECTOR (Price vs CVD Divergence) ======
+_absorption_state = {
+    "last_bullish_bar": -100,  # bar idx of last bullish signal (cooldown)
+    "last_bearish_bar": -100,  # bar idx of last bearish signal (cooldown)
+    "signals": [],             # detected signals for chart markers
+    "last_checked_idx": -1,    # avoid re-checking same bar
+}
+
+def _detect_absorption(bars: list) -> dict | None:
+    """Check the last completed bar for an absorption setup.
+
+    Absorption = aggressive volume (CVD) diverges from price action,
+    indicating passive absorption. Combined with volume spike gate
+    and Volland confluence scoring.
+
+    Returns signal dict or None.
+    """
+    LOOKBACK = 8       # bars for divergence measurement
+    VOL_AVG_WINDOW = 20  # bars for volume average
+    MIN_BARS = VOL_AVG_WINDOW + LOOKBACK  # need at least 28 bars
+    COOLDOWN_BARS = 10
+
+    if len(bars) < MIN_BARS:
+        return None
+
+    # Only look at completed bars
+    closed = [b for b in bars if b.get("status") == "closed"]
+    if len(closed) < MIN_BARS:
+        return None
+
+    trigger = closed[-1]
+    trigger_idx = trigger["idx"]
+
+    # Skip if already checked this bar
+    if trigger_idx <= _absorption_state["last_checked_idx"]:
+        return None
+    _absorption_state["last_checked_idx"] = trigger_idx
+
+    # --- Volume gate: trigger bar volume >= 1.5x avg of last 20 bars ---
+    recent_vols = [b["volume"] for b in closed[-(VOL_AVG_WINDOW + 1):-1]]
+    if not recent_vols:
+        return None
+    vol_avg = sum(recent_vols) / len(recent_vols)
+    if vol_avg <= 0:
+        return None
+    vol_ratio = trigger["volume"] / vol_avg
+    if vol_ratio < 1.5:
+        return None
+
+    # --- Divergence over lookback window ---
+    window = closed[-(LOOKBACK + 1):]  # last 8+1 bars (trigger included)
+    lows = [b["low"] for b in window]
+    highs = [b["high"] for b in window]
+    cvds = [b["cvd"] for b in window]
+
+    # Simple slope: end - start (normalized to range)
+    cvd_start, cvd_end = cvds[0], cvds[-1]
+    cvd_slope = cvd_end - cvd_start
+    cvd_range = max(cvds) - min(cvds)
+    if cvd_range == 0:
+        return None
+
+    price_low_start, price_low_end = lows[0], lows[-1]
+    price_high_start, price_high_end = highs[0], highs[-1]
+    price_range = max(highs) - min(lows)
+    if price_range == 0:
+        return None
+
+    # Normalize slopes to their ranges (-1 to +1 scale)
+    cvd_norm = cvd_slope / cvd_range
+    price_low_norm = (price_low_end - price_low_start) / price_range
+    price_high_norm = (price_high_end - price_high_start) / price_range
+
+    # Detect direction
+    direction = None
+    div_score = 0
+
+    if cvd_norm < -0.15:  # CVD trending down
+        # Bullish absorption: price lows flat or rising while CVD drops
+        gap = price_low_norm - cvd_norm  # positive = divergence
+        if gap > 0.2:
+            direction = "bullish"
+            if gap > 1.2:
+                div_score = 4
+            elif gap > 0.8:
+                div_score = 3
+            elif gap > 0.4:
+                div_score = 2
+            else:
+                div_score = 1
+
+    if cvd_norm > 0.15 and direction is None:  # CVD trending up
+        # Bearish absorption: price highs flat or falling while CVD rises
+        gap = cvd_norm - price_high_norm  # positive = divergence
+        if gap > 0.2:
+            direction = "bearish"
+            if gap > 1.2:
+                div_score = 4
+            elif gap > 0.8:
+                div_score = 3
+            elif gap > 0.4:
+                div_score = 2
+            else:
+                div_score = 1
+
+    if direction is None:
+        return None
+
+    # --- Cooldown check ---
+    if direction == "bullish":
+        if trigger_idx - _absorption_state["last_bullish_bar"] < COOLDOWN_BARS:
+            return None
+    else:
+        if trigger_idx - _absorption_state["last_bearish_bar"] < COOLDOWN_BARS:
+            return None
+
+    # --- Volume spike score (1-3 pts) ---
+    if vol_ratio >= 3.0:
+        vol_score = 3
+    elif vol_ratio >= 2.0:
+        vol_score = 2
+    else:
+        vol_score = 1
+
+    # --- Volland confluence (0-4 pts: DD 0-1, paradigm 0-1, LIS 0-2) ---
+    dd_score = 0
+    para_score = 0
+    lis_score = 0
+    lis_val = None
+    lis_dist = None
+    paradigm_str = ""
+    dd_str = ""
+
+    try:
+        vstat = db_volland_stats()
+        if vstat and vstat.get("stats") and vstat["stats"].get("has_statistics"):
+            st = vstat["stats"]
+            paradigm_str = (st.get("paradigm") or "").upper()
+            dd_str = (st.get("delta_decay_hedging") or "")
+            lis_raw = st.get("lines_in_sand") or ""
+
+            # DD hedging alignment
+            if direction == "bullish" and "long" in dd_str.lower():
+                dd_score = 1
+            elif direction == "bearish" and "short" in dd_str.lower():
+                dd_score = 1
+
+            # Paradigm alignment
+            if direction == "bullish" and "GEX" in paradigm_str:
+                para_score = 1
+            elif direction == "bearish" and "AG" in paradigm_str:
+                para_score = 1
+
+            # LIS proximity
+            lis_match = re.search(r'[\d,]+\.?\d*', lis_raw.replace(',', ''))
+            if lis_match:
+                lis_val = float(lis_match.group())
+                lis_dist = abs(trigger["close"] - lis_val)
+                if lis_dist <= 5:
+                    lis_score = 2
+                elif lis_dist <= 15:
+                    lis_score = 1
+    except Exception as e:
+        print(f"[absorption] volland lookup error: {e}", flush=True)
+
+    # --- Total score ---
+    total = div_score + vol_score + dd_score + para_score + lis_score
+    max_score = 11
+
+    if total < 2:
+        return None
+
+    # Grade
+    if total >= 8:
+        grade = "A+"
+    elif total >= 6:
+        grade = "A"
+    elif total >= 4:
+        grade = "B"
+    else:
+        grade = "C"
+
+    # Update cooldown
+    if direction == "bullish":
+        _absorption_state["last_bullish_bar"] = trigger_idx
+    else:
+        _absorption_state["last_bearish_bar"] = trigger_idx
+
+    signal = {
+        "bar_idx": trigger_idx,
+        "direction": direction,
+        "grade": grade,
+        "score": total,
+        "max_score": max_score,
+        "price": trigger["close"],
+        "cvd": trigger["cvd"],
+        "high": trigger["high"],
+        "low": trigger["low"],
+        "vol_ratio": round(vol_ratio, 1),
+        "vol_trigger": trigger["volume"],
+        "div_score": div_score,
+        "vol_score": vol_score,
+        "dd_score": dd_score,
+        "para_score": para_score,
+        "lis_score": lis_score,
+        "paradigm": paradigm_str,
+        "dd_hedging": dd_str,
+        "lis_val": lis_val,
+        "lis_dist": round(lis_dist, 1) if lis_dist is not None else None,
+        "ts": trigger.get("ts_end", ""),
+    }
+
+    _absorption_state["signals"].append(signal)
+
+    # Log
+    emoji = "\u2b06" if direction == "bullish" else "\u2b07"
+    print(f"[absorption] {direction.upper()} {grade} ({total}/{max_score}) "
+          f"price={trigger['close']:.2f} cvd={trigger['cvd']:+d} "
+          f"vol={trigger['volume']}({vol_ratio:.1f}x) "
+          f"div={div_score} vol={vol_score} dd={dd_score} para={para_score} lis={lis_score}",
+          flush=True)
+
+    # Telegram alert (grade B and above)
+    if grade != "C":
+        try:
+            side_emoji = "\U0001f7e2" if direction == "bullish" else "\U0001f534"
+            side_label = "BUY" if direction == "bullish" else "SELL"
+            strong_tag = " STRONG" if grade == "A+" else ""
+
+            parts = [
+                f"<b>ES ABSORPTION {side_emoji} {side_label} [{grade}] ({total}/{max_score}){strong_tag}</b>",
+                "",
+                f"Price: {trigger['close']:.2f} | CVD: {trigger['cvd']:+,}",
+                f"Vol spike: {trigger['volume']:,} ({vol_ratio:.1f}x avg)",
+                f"Divergence: {'Price HL \u2191 / CVD \u2193' if direction == 'bullish' else 'Price LH \u2193 / CVD \u2191'} ({LOOKBACK} bars)",
+            ]
+
+            # Confluence details
+            if dd_score:
+                parts.append(f"DD Hedging: {dd_str} \u2713")
+            if para_score:
+                parts.append(f"Paradigm: {paradigm_str} \u2713")
+            if lis_score and lis_val is not None:
+                parts.append(f"Near LIS: {lis_val:.0f} ({lis_dist:.1f} pts) \u2713")
+
+            parts.append("")
+            parts.append(f"Score: Div {div_score} + Vol {vol_score} + DD {dd_score} + Para {para_score} + LIS {lis_score}")
+
+            send_telegram_setups("\n".join(parts))
+        except Exception as e:
+            print(f"[absorption] telegram error: {e}", flush=True)
+
+    return signal
+
+
 def _es_session_date() -> str:
     """Return the ES futures session date.
 
@@ -3010,7 +3271,9 @@ def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, 
                     "ts_start": forming["ts_start"], "ts_end": forming["ts_end"],
                     "status": "open",
                 })
-            return result
+            # Run absorption detection on completed bars
+            _detect_absorption(result)
+            return {"bars": result, "signals": _absorption_state["signals"]}
 
         # Priority 2: Fallback to 1-min bar reconstruction (approximate)
         one_min_bars = db_es_delta_bars(limit=1400)
@@ -3023,8 +3286,8 @@ def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, 
                 "bar_delta": buf["bar_delta"],
             })
         if not one_min_bars:
-            return []
-        return _build_range_bars(one_min_bars, range_pts)
+            return {"bars": [], "signals": []}
+        return {"bars": _build_range_bars(one_min_bars, range_pts), "signals": []}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -7788,8 +8051,11 @@ DASH_HTML_TEMPLATE = """
       try {
         const url = '/api/es/delta/rangebars?range=5';
         const r = await fetch(url, {cache:'no-store'});
-        const bars = await r.json();
-        if (bars.error) { esDeltaStatus.textContent = bars.error; return; }
+        const raw = await r.json();
+        if (raw.error) { esDeltaStatus.textContent = raw.error; return; }
+        // Handle both {bars, signals} and legacy array responses
+        const bars = raw.bars || raw;
+        const signals = raw.signals || [];
         if (!bars.length) { esDeltaStatus.textContent = 'No data'; return; }
 
         const n = bars.length;
@@ -7916,6 +8182,27 @@ DASH_HTML_TEMPLATE = """
           line: { color: lastColor, width: 1, dash: 'dot' },
         });
 
+        // Absorption signal markers (grade A and A+ get chart markers)
+        if (signals && signals.length) {
+          signals.forEach(sig => {
+            if (sig.grade === 'C' || sig.grade === 'B') return;
+            const isBull = sig.direction === 'bullish';
+            const color = isBull ? '#22c55e' : '#ef4444';
+            const yPos = isBull ? sig.low - 2 : sig.high + 2;
+            const arrow = isBull ? '\u25b2' : '\u25bc';
+            const label = (sig.grade === 'A+' ? '\u2b50' : '') + sig.grade + ' ' + sig.score;
+            layout.annotations.push({
+              x: sig.bar_idx, y: yPos,
+              xref: 'x', yref: 'y',
+              text: '<b>' + arrow + ' ' + label + '</b>',
+              showarrow: true, arrowhead: 2, arrowsize: 1, arrowcolor: color,
+              ay: isBull ? 25 : -25, ax: 0,
+              font: { size: 10, color: color },
+              bgcolor: 'rgba(0,0,0,0.8)', bordercolor: color, borderpad: 3,
+            });
+          });
+        }
+
         Plotly.react(esDeltaPlot, [traceCandle, traceVol, traceDelta, traceCVD], layout, {responsive:true, displayModeBar:false, scrollZoom:true});
         _esDeltaAttachRelayout();
 
@@ -7926,6 +8213,11 @@ DASH_HTML_TEMPLATE = """
           'CVD: ' + (sessionDelta >= 0 ? '+' : '') + sessionDelta.toLocaleString(),
           'Bars: ' + n,
         ];
+        if (signals.length) {
+          const last = signals[signals.length - 1];
+          const dir = last.direction === 'bullish' ? '\u25b2' : '\u25bc';
+          statusParts.push(dir + ' ' + last.grade + '(' + last.score + '/' + last.max_score + ')');
+        }
         esDeltaStatus.textContent = statusParts.join(' | ');
       } catch(e) {
         esDeltaStatus.textContent = 'Error: ' + e.message;

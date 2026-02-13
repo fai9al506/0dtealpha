@@ -190,10 +190,12 @@ def format_statistics(paradigm_data: dict, spot_vol_data: dict) -> dict:
         t = paradigm_data.get("target")
         stats["target"] = f"${t:,.0f}" if t is not None else None
 
-        # LIS: [6923, 6943] → "$6,923 - $6,943"
+        # LIS: [6923, 6943] → "$6,923 - $6,943"  or [6859] → "$6,859"
         lis = paradigm_data.get("lis")
         if isinstance(lis, list) and len(lis) == 2:
             stats["lines_in_sand"] = f"${lis[0]:,} - ${lis[1]:,}"
+        elif isinstance(lis, list) and len(lis) == 1:
+            stats["lines_in_sand"] = f"${lis[0]:,}"
         elif isinstance(lis, (int, float)):
             stats["lines_in_sand"] = f"${lis:,}"
         else:

@@ -30,6 +30,17 @@ This file is extremely fragile. It scrapes a third-party website using Playwrigh
 - `app/` — production code (main.py, setup_detector.py) — **this is the main codebase**
 - `volland_worker.py` — Playwright scraper (see warning above)
 - `0dtealpha/` — git submodule (separate repo, NOT the main codebase)
+- `trade-analyses.md` — running log of trade performance analysis and tuning decisions
+
+## Trade Analysis
+
+When analysing trading setups or reviewing outcomes, **always refer to `trade-analyses.md`**. This file contains:
+- Historical performance data and win/loss breakdowns
+- Volland metric observations (DD hedging, charm, paradigm shifts)
+- Proposed and implemented tuning changes with before/after comparisons
+- Pending improvements waiting for more data validation
+
+Append new analysis sections to this file after each review session.
 
 ## Architecture
 

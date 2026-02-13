@@ -541,7 +541,7 @@ DEFAULT_BOFA_SCALP_SETTINGS = {
     "bofa_time_start": "10:00",
     "bofa_time_end": "15:30",
     "bofa_stop_distance": 12,
-    "bofa_target_distance": 15,
+    "bofa_target_distance": 10,
     "bofa_max_hold_minutes": 30,
     "bofa_cooldown_minutes": 40,
     "bofa_weight_stability": 20,
@@ -709,7 +709,7 @@ def evaluate_bofa_scalp(spot, paradigm, lis_lower, lis_upper, aggregated_charm, 
 
     # Component 5: Distance to Midpoint
     midpoint = (lis_upper + lis_lower) / 2
-    target_dist = settings.get("bofa_target_distance", 15)
+    target_dist = settings.get("bofa_target_distance", 10)
     if direction == "long":
         target_price = spot + target_dist
         target_vs_mid = midpoint - target_price

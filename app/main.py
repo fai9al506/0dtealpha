@@ -216,7 +216,7 @@ _DEFAULT_SETUP_SETTINGS = {
     "bofa_max_proximity": 3,
     "bofa_min_lis_width": 15,
     "bofa_stop_distance": 12,
-    "bofa_target_distance": 15,
+    "bofa_target_distance": 10,
     "bofa_max_hold_minutes": 30,
     "bofa_cooldown_minutes": 40,
     "brackets": {
@@ -571,7 +571,7 @@ def load_setup_settings():
                     "bofa_max_proximity": bofa_db.get("max_proximity", 3),
                     "bofa_min_lis_width": bofa_db.get("min_lis_width", 15),
                     "bofa_stop_distance": bofa_db.get("stop_distance", 12),
-                    "bofa_target_distance": bofa_db.get("target_distance", 15),
+                    "bofa_target_distance": bofa_db.get("target_distance", 10),
                     "bofa_max_hold_minutes": bofa_db.get("max_hold_minutes", 30),
                     "bofa_cooldown_minutes": bofa_db.get("cooldown_minutes", 40),
                     "brackets": row["brackets"] if isinstance(row["brackets"], dict) else json.loads(row["brackets"]) if row["brackets"] else _DEFAULT_SETUP_SETTINGS["brackets"],
@@ -596,7 +596,7 @@ def save_setup_settings():
                 "max_proximity": _setup_settings.get("bofa_max_proximity", 3),
                 "min_lis_width": _setup_settings.get("bofa_min_lis_width", 15),
                 "stop_distance": _setup_settings.get("bofa_stop_distance", 12),
-                "target_distance": _setup_settings.get("bofa_target_distance", 15),
+                "target_distance": _setup_settings.get("bofa_target_distance", 10),
                 "max_hold_minutes": _setup_settings.get("bofa_max_hold_minutes", 30),
                 "cooldown_minutes": _setup_settings.get("bofa_cooldown_minutes", 40),
             })
@@ -3080,7 +3080,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
     """
     Calculate outcome for a setup alert by querying price history.
     Returns dict with hit_10pt, hit_target, hit_stop, max_profit, max_loss, etc.
-    BofA Scalp uses different parameters: 15pt target, 12pt stop, 30-min max hold.
+    BofA Scalp uses different parameters: 10pt target, 12pt stop, 30-min max hold.
     """
     if not engine:
         return {}
@@ -3134,12 +3134,12 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         is_long = direction.lower() == "long"
 
         if is_bofa:
-            # BofA Scalp: fixed 15pt target, 12pt stop beyond LIS
-            bofa_target_dist = entry.get("bofa_target_level") or (spot + 15 if is_long else spot - 15)
+            # BofA Scalp: fixed 10pt target, 12pt stop beyond LIS
+            bofa_target_dist = entry.get("bofa_target_level") or (spot + 10 if is_long else spot - 10)
             bofa_stop = entry.get("bofa_stop_level")
             if bofa_stop is None:
                 bofa_stop = lis - 12 if is_long else lis + 12
-            ten_pt_level = bofa_target_dist  # For BofA, "10pt" is actually the 15pt target
+            ten_pt_level = bofa_target_dist  # For BofA, this is the 10pt target
             stop_level = bofa_stop
             target_level = bofa_target_dist
         else:
@@ -3179,12 +3179,12 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     hit_10pt = True
                     time_to_10pt = price_ts
                     if first_event is None:
-                        first_event = "15pt" if is_bofa else "10pt"
+                        first_event = "10pt"
                 if not hit_target and price >= target_level:
                     hit_target = True
                     time_to_target = price_ts
                     if first_event is None:
-                        first_event = "15pt" if is_bofa else "target"
+                        first_event = "target"
                 if not hit_stop and price <= stop_level:
                     hit_stop = True
                     time_to_stop = price_ts
@@ -3202,12 +3202,12 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     hit_10pt = True
                     time_to_10pt = price_ts
                     if first_event is None:
-                        first_event = "15pt" if is_bofa else "10pt"
+                        first_event = "10pt"
                 if not hit_target and price <= target_level:
                     hit_target = True
                     time_to_target = price_ts
                     if first_event is None:
-                        first_event = "15pt" if is_bofa else "target"
+                        first_event = "target"
                 if not hit_stop and price >= stop_level:
                     hit_stop = True
                     time_to_stop = price_ts
@@ -3454,7 +3454,7 @@ def api_setup_export(
                 points_pl = outcome.get("max_loss", 0)
             elif outcome.get("first_event") in ("10pt", "target", "15pt"):
                 result = "WIN"
-                points_pl = 15 if is_bofa_row else 10
+                points_pl = 10
             elif outcome.get("first_event") == "timeout":
                 # BofA timeout: result based on P&L at expiry
                 tp = outcome.get("timeout_pnl", 0) or 0
@@ -7239,7 +7239,7 @@ DASH_HTML_TEMPLATE = """
         document.getElementById('bofaWeightTime').value = s.bofa_weight_time ?? 20;
         document.getElementById('bofaWeightMidpoint').value = s.bofa_weight_midpoint ?? 20;
         document.getElementById('bofaStopDistance').value = s.bofa_stop_distance ?? 12;
-        document.getElementById('bofaTargetDistance').value = s.bofa_target_distance ?? 15;
+        document.getElementById('bofaTargetDistance').value = s.bofa_target_distance ?? 10;
         document.getElementById('bofaMaxHold').value = s.bofa_max_hold_minutes ?? 30;
         document.getElementById('bofaCooldown').value = s.bofa_cooldown_minutes ?? 40;
       } catch (err) {
@@ -7399,7 +7399,7 @@ DASH_HTML_TEMPLATE = """
           ['Entry', e.spot?.toFixed(2)],
           ['LIS', e.lis?.toFixed(0) + (lv.lis_upper ? ' – ' + lv.lis_upper?.toFixed(0) : '')],
           ['Width', e.bofa_lis_width?.toFixed(0) + 'pts'],
-          ['Target (+15)', lv.bofa_target_level?.toFixed(0) || lv.ten_pt?.toFixed(0)],
+          ['Target (+10)', lv.bofa_target_level?.toFixed(0) || lv.ten_pt?.toFixed(0)],
           ['Stop (-12)', lv.stop?.toFixed(0)],
           ['Max Hold', (lv.bofa_max_hold_minutes || 30) + 'min'],
           ['Gap', e.gap_to_lis?.toFixed(1)],
@@ -7426,7 +7426,7 @@ DASH_HTML_TEMPLATE = """
         const stopIsLoss = o.hit_stop && o.first_event === 'stop';
         const cStop = stopIsLoss ? '#ef4444' : (o.hit_stop ? '#888' : '#22c55e');
         const stopLabel = o.hit_stop ? (stopIsLoss ? '✗ STOPPED' : 'STOPPED (BE)') : '✓ SAFE';
-        const tgtPtLabel = isBofa ? '15pt Target' : '10pt Target';
+        const tgtPtLabel = isBofa ? '10pt Target' : '10pt Target';
         const hasTimeout = o.first_event === 'timeout';
         const timeoutPnl = o.timeout_pnl || 0;
         outcome.innerHTML = `

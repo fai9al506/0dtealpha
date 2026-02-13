@@ -7368,13 +7368,20 @@ DASH_HTML_TEMPLATE = """
           { text: 'CVD', xref: 'paper', yref: 'paper', x: 0.01, y: 0.115, showarrow: false, font: {size:10, color:'#888'} },
         ];
 
-        // Last price annotation
+        // Last price label on the y-axis (outside plot area)
         const lastBar = bars[n-1];
+        const lastColor = lastBar.close >= lastBar.open ? '#22c55e' : '#ef4444';
         layout.annotations.push({
-          text: lastBar.close.toFixed(2),
-          xref: 'paper', yref: 'y', x: 1.0, y: lastBar.close,
-          showarrow: false, font: {size:10, color: lastBar.close >= lastBar.open ? '#22c55e' : '#ef4444'},
-          bgcolor: '#1a1d21', borderpad: 2,
+          text: ' '+lastBar.close.toFixed(2)+' ',
+          xref: 'paper', yref: 'y', x: 1.005, y: lastBar.close, xanchor: 'left',
+          showarrow: false, font: {size:10, color: '#fff'},
+          bgcolor: lastColor, borderpad: 3, bordercolor: lastColor,
+        });
+        // Dashed horizontal line at last price
+        layout.shapes = (layout.shapes || []).concat({
+          type: 'line', xref: 'paper', yref: 'y',
+          x0: 0, x1: 1, y0: lastBar.close, y1: lastBar.close,
+          line: { color: lastColor, width: 1, dash: 'dot' },
         });
 
         Plotly.react(esDeltaPlot, [traceCandle, traceVol, traceDelta, traceCVD], layout, {responsive:true, displayModeBar:false, scrollZoom:true});

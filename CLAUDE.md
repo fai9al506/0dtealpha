@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 0DTE Alpha is a real-time options trading dashboard for SPX/SPXW 0DTE (zero days to expiration) options. It combines:
 - **FastAPI web service** (`app/main.py`) - serves live options chain data, charts, and a dashboard
 - **Volland scraper worker** (`volland_worker.py`) - headless browser scraper for charm/vanna exposure data from vol.land
+- **Rithmic delta worker** (`rithmic_delta_worker.py`) - ES cumulative delta via Rithmic WebSocket API
 
 ## CRITICAL WARNING: volland_worker.py
 
@@ -29,6 +30,7 @@ This file is extremely fragile. It scrapes a third-party website using Playwrigh
 
 - `app/` — production code (main.py, setup_detector.py) — **this is the main codebase**
 - `volland_worker.py` — Playwright scraper (see warning above)
+- `rithmic_delta_worker.py` — ES cumulative delta worker (Rithmic WebSocket)
 - `0dtealpha/` — git submodule (separate repo, NOT the main codebase)
 - `trade-analyses.md` — running log of trade performance analysis and tuning decisions
 
@@ -47,7 +49,8 @@ Append new analysis sections to this file after each review session.
 ### Data Flow
 1. TradeStation API → FastAPI app → PostgreSQL (chain_snapshots table)
 2. Volland website → Playwright scraper → PostgreSQL (volland_snapshots, volland_exposure_points tables)
-3. PostgreSQL → FastAPI endpoints → Plotly.js dashboard
+3. Rithmic WebSocket → rithmic_delta_worker.py → PostgreSQL (rithmic_delta_snapshots, rithmic_delta_bars tables)
+4. PostgreSQL → FastAPI endpoints → Plotly.js dashboard
 
 ### Key Components
 
@@ -56,17 +59,27 @@ Append new analysis sections to this file after each review session.
 - Saves snapshots to PostgreSQL every 5 minutes
 - Calculates GEX (Gamma Exposure) from options chain data
 - Serves dashboard with embedded Plotly.js charts at `/`
-- API endpoints: `/api/series`, `/api/snapshot`, `/api/history`, `/api/volland/*`
+- API endpoints: `/api/series`, `/api/snapshot`, `/api/history`, `/api/volland/*`, `/api/rithmic/delta/*`
 
 **volland_worker.py** (Playwright scraper):
 - Logs into vol.land, captures network requests via injected JavaScript hooks
 - Parses charm/vanna exposure data from intercepted API responses
 - Runs on configurable interval (default 60 seconds)
 
+**rithmic_delta_worker.py** (Rithmic WebSocket):
+- Connects to Rithmic via `async-rithmic` library, resolves ES front-month contract
+- Subscribes to LAST_TRADE + BBO (best bid/offer) data
+- Classifies trades using aggressor field (fallback: bid/ask comparison)
+- Accumulates cumulative delta in memory, flushes snapshots to DB every 30 seconds
+- Builds 1-minute delta OHLC bars; resets daily when trading date changes
+- Reconnects automatically on errors (30s backoff + library auto-reconnect)
+
 ### Database Tables
 - `chain_snapshots` - options chain data with Greeks
 - `volland_snapshots` - raw scraped data with statistics
 - `volland_exposure_points` - parsed exposure points by strike
+- `rithmic_delta_snapshots` - ES cumulative delta state (every 30s)
+- `rithmic_delta_bars` - ES 1-minute delta OHLC bars
 
 ## Development Commands
 
@@ -82,6 +95,9 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080
 
 # Run the Volland scraper worker
 python volland_worker.py
+
+# Run the Rithmic ES delta worker
+python rithmic_delta_worker.py
 ```
 
 ## Required Environment Variables
@@ -100,6 +116,14 @@ VOLLAND_EMAIL
 VOLLAND_PASSWORD
 VOLLAND_URL          # Charm workspace URL
 VOLLAND_STATS_URL    # Statistics page URL (optional)
+
+# Rithmic ES delta worker
+RITHMIC_USER
+RITHMIC_PASSWORD
+RITHMIC_SYSTEM       # e.g. "Rithmic Paper Trading"
+RITHMIC_URL          # e.g. "rituz00100.rithmic.com:443"
+RITHMIC_APP_NAME     # optional, defaults to "0dte_alpha"
+RITHMIC_APP_VERSION  # optional, defaults to "1.0"
 ```
 
 ## Deployment
@@ -109,6 +133,7 @@ Deployed on Railway using Docker. The Dockerfile uses the official Playwright im
 ```bash
 # Procfile runs:
 web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+delta: python rithmic_delta_worker.py
 ```
 
 ## Full Backups

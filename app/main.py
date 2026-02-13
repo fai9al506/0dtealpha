@@ -8049,13 +8049,16 @@ DASH_HTML_TEMPLATE = """
     }
     async function drawEsDelta() {
       try {
-        const url = '/api/es/delta/rangebars?range=5';
-        const r = await fetch(url, {cache:'no-store'});
+        const [r, levelsR] = await Promise.all([
+          fetch('/api/es/delta/rangebars?range=5', {cache:'no-store'}),
+          fetch('/api/statistics_levels', {cache:'no-store'}).catch(() => null),
+        ]);
         const raw = await r.json();
         if (raw.error) { esDeltaStatus.textContent = raw.error; return; }
         // Handle both {bars, signals} and legacy array responses
         const bars = raw.bars || raw;
         const signals = raw.signals || [];
+        const levels = levelsR ? await levelsR.json().catch(() => null) : null;
         if (!bars.length) { esDeltaStatus.textContent = 'No data'; return; }
 
         const n = bars.length;
@@ -8181,6 +8184,33 @@ DASH_HTML_TEMPLATE = """
           x0: 0, x1: 1, y0: lastBar.close, y1: lastBar.close,
           line: { color: lastColor, width: 1, dash: 'dot' },
         });
+
+        // SPX key levels converted to ES prices
+        if (levels && levels.spot) {
+          const offset = lastBar.close - levels.spot;
+          const lvlDefs = [
+            ['target',        '#3b82f6', 'Tgt'],
+            ['lis_low',       '#f59e0b', 'LIS'],
+            ['lis_high',      '#f59e0b', 'LIS'],
+            ['max_pos_gamma', '#22c55e', '+G'],
+            ['max_neg_gamma', '#ef4444', '-G'],
+          ];
+          lvlDefs.forEach(([key, color, label]) => {
+            if (!levels[key]) return;
+            const esLvl = levels[key] + offset;
+            layout.shapes.push({
+              type: 'line', y0: esLvl, y1: esLvl, x0: 0, x1: 1,
+              xref: 'paper', yref: 'y',
+              line: { color: color, width: 1.5, dash: 'dash' },
+            });
+            layout.annotations.push({
+              x: 0.01, y: esLvl, xref: 'paper', yref: 'y',
+              text: label + ' ' + Math.round(esLvl),
+              showarrow: false, font: { color: color, size: 9 },
+              xanchor: 'left', yanchor: 'bottom',
+            });
+          });
+        }
 
         // Absorption signal markers (grade A and A+ get chart markers)
         if (signals && signals.length) {

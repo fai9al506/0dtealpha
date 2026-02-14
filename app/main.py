@@ -589,7 +589,7 @@ def db_init():
         # Create default admin user if no users exist
         existing = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
         if existing == 0:
-            admin_hash = hash_password("Mpc1234@@20")
+            admin_hash = hash_password(os.getenv("ADMIN_PASSWORD", "changeme"))
             conn.execute(text("""
                 INSERT INTO users (email, password_hash, is_admin)
                 VALUES (:email, :hash, TRUE)

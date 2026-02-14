@@ -682,14 +682,16 @@ def evaluate_bofa_scalp(spot, paradigm, lis_lower, lis_upper, aggregated_charm, 
         width_score = 0
 
     # Component 3: Charm Neutrality
-    charm_abs = abs(aggregated_charm) if aggregated_charm is not None else 999999
-    if charm_abs <= 500:
+    # Real aggregatedCharm values range ~10M-6B (median ~80M).
+    # Lower abs = more neutral = better for scalping.
+    charm_abs = abs(aggregated_charm) if aggregated_charm is not None else 999_999_999_999
+    if charm_abs <= 50_000_000:
         charm_score = 100
-    elif charm_abs <= 2000:
+    elif charm_abs <= 100_000_000:
         charm_score = 75
-    elif charm_abs <= 5000:
+    elif charm_abs <= 250_000_000:
         charm_score = 50
-    elif charm_abs <= 10000:
+    elif charm_abs <= 500_000_000:
         charm_score = 25
     else:
         charm_score = 0

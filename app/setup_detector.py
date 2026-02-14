@@ -1266,3 +1266,48 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
         })
 
     return results
+
+
+# ── Cooldown persistence helpers ──────────────────────────────────────────
+
+def export_cooldowns() -> dict:
+    """Export all cooldown state as a serializable dict."""
+    import copy
+    def _serialize(d):
+        out = {}
+        for k, v in d.items():
+            if isinstance(v, datetime):
+                out[k] = v.isoformat()
+            else:
+                out[k] = v
+        return out
+    return {
+        "gex": _serialize(_cooldown),
+        "ag": _serialize(_cooldown_ag),
+        "bofa": _serialize(_cooldown_bofa),
+        "absorption": _serialize(_cooldown_absorption),
+    }
+
+def import_cooldowns(data: dict):
+    """Restore cooldown state from a dict (loaded from DB)."""
+    global _cooldown, _cooldown_ag, _cooldown_bofa, _cooldown_absorption
+    if not data:
+        return
+    def _deserialize(d, has_datetimes=False):
+        out = dict(d)
+        if has_datetimes:
+            for k in ("last_trade_time_long", "last_trade_time_short"):
+                if out.get(k) and isinstance(out[k], str):
+                    try:
+                        out[k] = datetime.fromisoformat(out[k])
+                    except Exception:
+                        out[k] = None
+        return out
+    if "gex" in data:
+        _cooldown.update(_deserialize(data["gex"]))
+    if "ag" in data:
+        _cooldown_ag.update(_deserialize(data["ag"]))
+    if "bofa" in data:
+        _cooldown_bofa.update(_deserialize(data["bofa"], has_datetimes=True))
+    if "absorption" in data:
+        _cooldown_absorption.update(_deserialize(data["absorption"]))

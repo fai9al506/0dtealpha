@@ -557,6 +557,22 @@ def run():
                 print(f"[volland-v2] error: {e}", flush=True)
                 traceback.print_exc()
 
+                # Session expiry recovery: try re-login if we're on sign-in page
+                try:
+                    if "/sign-in" in (page.url or ""):
+                        print("[volland-v2] Session expired — attempting re-login...", flush=True)
+                        login_if_needed(page, WORKSPACE_URL)
+                        last_known_modified = ""  # force re-sync
+                        print("[volland-v2] Re-login successful", flush=True)
+                except Exception as login_err:
+                    print(f"[volland-v2] Re-login failed: {login_err}", flush=True)
+                    if is_market_hours():
+                        send_telegram(
+                            "🔑 <b>Volland Login Failed</b>\n\n"
+                            f"Error: <code>{str(login_err)[:200]}</code>\n"
+                            "Session may have expired. Check credentials."
+                        )
+
                 # Browser crash recovery
                 if "closed" in str(e).lower() or "Target" in str(e):
                     print("[volland-v2] Browser/page crashed — recreating...", flush=True)

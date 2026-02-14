@@ -586,6 +586,13 @@ def db_init():
         );
         """))
 
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS setup_cooldowns (
+            trade_date DATE PRIMARY KEY,
+            state JSONB NOT NULL DEFAULT '{}'
+        );
+        """))
+
         # Create default admin user if no users exist
         existing = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
         if existing == 0:
@@ -599,6 +606,7 @@ def db_init():
     # Load alert settings from database
     load_alert_settings()
     load_setup_settings()
+    _load_cooldowns()
     print("[db] ready", flush=True)
 
 def load_alert_settings():
@@ -784,6 +792,40 @@ def save_setup_settings():
     except Exception as e:
         print(f"[setups] failed to save settings: {e}", flush=True)
         return False
+
+def _load_cooldowns():
+    """Load today's setup cooldown state from DB."""
+    if not engine:
+        return
+    try:
+        from app.setup_detector import import_cooldowns
+        today = datetime.now(NY).strftime("%Y-%m-%d")
+        with engine.begin() as conn:
+            row = conn.execute(text(
+                "SELECT state FROM setup_cooldowns WHERE trade_date = :d"
+            ), {"d": today}).mappings().first()
+        if row and row["state"]:
+            import_cooldowns(row["state"])
+            print(f"[setups] cooldowns restored for {today}", flush=True)
+    except Exception as e:
+        print(f"[setups] cooldown load error (non-fatal): {e}", flush=True)
+
+def _save_cooldowns():
+    """Persist current cooldown state to DB."""
+    if not engine:
+        return
+    try:
+        from app.setup_detector import export_cooldowns
+        today = datetime.now(NY).strftime("%Y-%m-%d")
+        state = export_cooldowns()
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO setup_cooldowns (trade_date, state)
+                VALUES (:d, :s)
+                ON CONFLICT (trade_date) DO UPDATE SET state = :s
+            """), {"d": today, "s": json.dumps(state)})
+    except Exception as e:
+        print(f"[setups] cooldown save error (non-fatal): {e}", flush=True)
 
 # Track current setup log ID per setup type (for UPDATE on improvements)
 _current_setup_log = {
@@ -2084,8 +2126,13 @@ def _run_setup_check():
         else:
             print(f"[setups] {setup_name} active: {grade} ({score}) - no change", flush=True)
 
+    # Persist cooldown state after each evaluation cycle
+    if result_wrappers:
+        _save_cooldowns()
+
 # ====== ES CUMULATIVE DELTA (TradeStation streaming barcharts — real-time) ======
 ES_DELTA_SYMBOL = "@ES"
+_es_delta_lock = Lock()
 _es_delta = {
     "cumulative_delta": 0,
     "total_volume": 0,
@@ -2114,16 +2161,17 @@ _es_delta = {
 
 def _es_delta_reset(today: str):
     """Reset ES delta state for a new trading day."""
-    _es_delta.update({
-        "cumulative_delta": 0, "total_volume": 0, "buy_volume": 0, "sell_volume": 0,
-        "tick_count": 0, "last_price": None, "session_high": None, "session_low": None,
-        "trade_date": today, "stream_ok": False,
-        "_completed_delta": 0, "_completed_volume": 0, "_completed_buy_vol": 0,
-        "_completed_sell_vol": 0, "_completed_ticks": 0,
-        "_open_epoch": 0, "_open_delta": 0, "_open_volume": 0,
-        "_open_buy_vol": 0, "_open_sell_vol": 0, "_open_ticks": 0,
-        "_bars_buffer": [],
-    })
+    with _es_delta_lock:
+        _es_delta.update({
+            "cumulative_delta": 0, "total_volume": 0, "buy_volume": 0, "sell_volume": 0,
+            "tick_count": 0, "last_price": None, "session_high": None, "session_low": None,
+            "trade_date": today, "stream_ok": False,
+            "_completed_delta": 0, "_completed_volume": 0, "_completed_buy_vol": 0,
+            "_completed_sell_vol": 0, "_completed_ticks": 0,
+            "_open_epoch": 0, "_open_delta": 0, "_open_volume": 0,
+            "_open_buy_vol": 0, "_open_sell_vol": 0, "_open_ticks": 0,
+            "_bars_buffer": [],
+        })
     print(f"[es-delta] daily reset for {today}", flush=True)
 
 def _es_delta_process_bar(bar: dict):
@@ -2143,56 +2191,57 @@ def _es_delta_process_bar(bar: dict):
     low_p = float(bar.get("Low") or 0)
     open_p = float(bar.get("Open") or 0)
 
-    # Update price
-    if close_p:
-        _es_delta["last_price"] = close_p
-    if high_p and (_es_delta["session_high"] is None or high_p > _es_delta["session_high"]):
-        _es_delta["session_high"] = high_p
-    if low_p and (_es_delta["session_low"] is None or low_p < _es_delta["session_low"]):
-        _es_delta["session_low"] = low_p
+    with _es_delta_lock:
+        # Update price
+        if close_p:
+            _es_delta["last_price"] = close_p
+        if high_p and (_es_delta["session_high"] is None or high_p > _es_delta["session_high"]):
+            _es_delta["session_high"] = high_p
+        if low_p and (_es_delta["session_low"] is None or low_p < _es_delta["session_low"]):
+            _es_delta["session_low"] = low_p
 
-    if bar_status == "Open":
-        # Current bar being formed — update in-place (replaces previous open bar state)
-        _es_delta["_open_epoch"] = epoch
-        _es_delta["_open_delta"] = bar_delta
-        _es_delta["_open_volume"] = total_vol
-        _es_delta["_open_buy_vol"] = up_vol
-        _es_delta["_open_sell_vol"] = down_vol
-        _es_delta["_open_ticks"] = total_ticks
-    else:
-        # Closed bar (historical backfill or the open bar just completed)
-        if epoch == _es_delta["_open_epoch"]:
-            # Open bar just closed — clear open state
-            _es_delta["_open_epoch"] = 0
-            _es_delta["_open_delta"] = 0
-            _es_delta["_open_volume"] = 0
-            _es_delta["_open_buy_vol"] = 0
-            _es_delta["_open_sell_vol"] = 0
-            _es_delta["_open_ticks"] = 0
+        if bar_status == "Open":
+            # Current bar being formed — update in-place (replaces previous open bar state)
+            _es_delta["_open_epoch"] = epoch
+            _es_delta["_open_delta"] = bar_delta
+            _es_delta["_open_volume"] = total_vol
+            _es_delta["_open_buy_vol"] = up_vol
+            _es_delta["_open_sell_vol"] = down_vol
+            _es_delta["_open_ticks"] = total_ticks
+        else:
+            # Closed bar (historical backfill or the open bar just completed)
+            if epoch == _es_delta["_open_epoch"]:
+                # Open bar just closed — clear open state
+                _es_delta["_open_epoch"] = 0
+                _es_delta["_open_delta"] = 0
+                _es_delta["_open_volume"] = 0
+                _es_delta["_open_buy_vol"] = 0
+                _es_delta["_open_sell_vol"] = 0
+                _es_delta["_open_ticks"] = 0
 
-        _es_delta["_completed_delta"] += bar_delta
-        _es_delta["_completed_volume"] += total_vol
-        _es_delta["_completed_buy_vol"] += up_vol
-        _es_delta["_completed_sell_vol"] += down_vol
-        _es_delta["_completed_ticks"] += total_ticks
+            _es_delta["_completed_delta"] += bar_delta
+            _es_delta["_completed_volume"] += total_vol
+            _es_delta["_completed_buy_vol"] += up_vol
+            _es_delta["_completed_sell_vol"] += down_vol
+            _es_delta["_completed_ticks"] += total_ticks
 
-        # Buffer completed bar for DB flush
-        _es_delta["_bars_buffer"].append({
-            "ts": bar.get("TimeStamp"), "epoch": epoch,
-            "bar_delta": bar_delta,
-            "cumulative_delta": _es_delta["_completed_delta"],
-            "bar_volume": total_vol, "bar_buy_volume": up_vol, "bar_sell_volume": down_vol,
-            "bar_open_price": open_p, "bar_close_price": close_p,
-            "bar_high_price": high_p, "bar_low_price": low_p,
-            "up_ticks": up_ticks, "down_ticks": down_ticks, "total_ticks": total_ticks,
-        })
+            # Buffer completed bar for DB flush
+            _es_delta["_bars_buffer"].append({
+                "ts": bar.get("TimeStamp"), "epoch": epoch,
+                "bar_delta": bar_delta,
+                "cumulative_delta": _es_delta["_completed_delta"],
+                "bar_volume": total_vol, "bar_buy_volume": up_vol, "bar_sell_volume": down_vol,
+                "bar_open_price": open_p, "bar_close_price": close_p,
+                "bar_high_price": high_p, "bar_low_price": low_p,
+                "up_ticks": up_ticks, "down_ticks": down_ticks, "total_ticks": total_ticks,
+            })
 
-    # Update combined totals (completed + current open bar)
-    _es_delta["cumulative_delta"] = _es_delta["_completed_delta"] + _es_delta["_open_delta"]
-    _es_delta["total_volume"] = _es_delta["_completed_volume"] + _es_delta["_open_volume"]
-    _es_delta["buy_volume"] = _es_delta["_completed_buy_vol"] + _es_delta["_open_buy_vol"]
-    _es_delta["sell_volume"] = _es_delta["_completed_sell_vol"] + _es_delta["_open_sell_vol"]
-    _es_delta["tick_count"] = _es_delta["_completed_ticks"] + _es_delta["_open_ticks"]
+        # Update combined totals (completed + current open bar)
+        _es_delta["cumulative_delta"] = _es_delta["_completed_delta"] + _es_delta["_open_delta"]
+        _es_delta["total_volume"] = _es_delta["_completed_volume"] + _es_delta["_open_volume"]
+        _es_delta["buy_volume"] = _es_delta["_completed_buy_vol"] + _es_delta["_open_buy_vol"]
+        _es_delta["sell_volume"] = _es_delta["_completed_sell_vol"] + _es_delta["_open_sell_vol"]
+        _es_delta["tick_count"] = _es_delta["_completed_ticks"] + _es_delta["_open_ticks"]
 
 # ====== ES QUOTE STREAM (bid/ask delta classification — ATAS-style range bars) ======
 _es_quote_lock = Lock()
@@ -2571,7 +2620,8 @@ def _es_delta_stream_loop():
                 time.sleep(10)
                 continue
 
-            _es_delta["stream_ok"] = True
+            with _es_delta_lock:
+                _es_delta["stream_ok"] = True
             print(f"[es-delta] stream connected (session {session_date}, backfilling 1380 bars)", flush=True)
 
             for line in r.iter_lines(decode_unicode=True):
@@ -2614,7 +2664,8 @@ def _es_delta_stream_loop():
         except Exception as e:
             print(f"[es-delta] stream error: {e}", flush=True)
 
-        _es_delta["stream_ok"] = False
+        with _es_delta_lock:
+            _es_delta["stream_ok"] = False
         time.sleep(5)  # brief delay before reconnect
 
 def _es_quote_stream_loop():
@@ -2759,14 +2810,23 @@ def save_es_delta():
             return
         if not engine:
             return
-        if _es_delta["total_volume"] == 0:
-            return
-
-        today = _es_delta["trade_date"] or now_et().strftime("%Y-%m-%d")
-
-        # Flush buffered completed bars to DB
-        bars = _es_delta["_bars_buffer"]
-        _es_delta["_bars_buffer"] = []
+        with _es_delta_lock:
+            if _es_delta["total_volume"] == 0:
+                return
+            today = _es_delta["trade_date"] or now_et().strftime("%Y-%m-%d")
+            # Snapshot buffered bars and current state under lock
+            bars = _es_delta["_bars_buffer"]
+            _es_delta["_bars_buffer"] = []
+            snap = {
+                "cd": _es_delta["cumulative_delta"],
+                "tv": _es_delta["total_volume"],
+                "bv": _es_delta["buy_volume"],
+                "sv": _es_delta["sell_volume"],
+                "lp": _es_delta["last_price"],
+                "tc": _es_delta["tick_count"],
+                "bh": _es_delta["session_high"],
+                "bl": _es_delta["session_low"],
+            }
         if bars:
             with engine.begin() as conn:
                 for b in bars:
@@ -2799,7 +2859,7 @@ def save_es_delta():
                     })
             print(f"[es-delta] flushed {len(bars)} bars to DB", flush=True)
 
-        # Write snapshot from current in-memory state
+        # Write snapshot from snapshotted state (lock already released)
         with engine.begin() as conn:
             conn.execute(text("""
                 INSERT INTO es_delta_snapshots
@@ -2809,14 +2869,7 @@ def save_es_delta():
                 VALUES (:td, :sym, :cd, :tv, :bv, :sv, :lp, :tc, :bh, :bl)
             """), {
                 "td": today, "sym": ES_DELTA_SYMBOL,
-                "cd": _es_delta["cumulative_delta"],
-                "tv": _es_delta["total_volume"],
-                "bv": _es_delta["buy_volume"],
-                "sv": _es_delta["sell_volume"],
-                "lp": _es_delta["last_price"],
-                "tc": _es_delta["tick_count"],
-                "bh": _es_delta["session_high"],
-                "bl": _es_delta["session_low"],
+                **snap,
             })
     except Exception as e:
         print(f"[es-delta] save error: {e}", flush=True)
@@ -2967,7 +3020,8 @@ def api_health():
     vol_stale = is_open and vol_age is not None and vol_age > 600  # >10min
 
     # ES delta stream
-    es_delta_ok = _es_delta.get("stream_ok", False)
+    with _es_delta_lock:
+        es_delta_ok = _es_delta.get("stream_ok", False)
     # ES quote stream
     with _es_quote_lock:
         es_quote_ok = _es_quote.get("stream_ok", False)
@@ -3212,22 +3266,23 @@ def db_es_delta_bars(limit: int = 1400):
 @app.get("/api/es/delta/latest")
 def api_es_delta_latest():
     """Get latest ES cumulative delta — reads from live in-memory state (real-time)."""
-    if _es_delta["total_volume"] == 0:
-        return {"error": "No delta data available", "ts": None}
-    return {
-        "ts": fmt_et(now_et()),
-        "trade_date": _es_delta["trade_date"],
-        "symbol": ES_DELTA_SYMBOL,
-        "cumulative_delta": _es_delta["cumulative_delta"],
-        "total_volume": _es_delta["total_volume"],
-        "buy_volume": _es_delta["buy_volume"],
-        "sell_volume": _es_delta["sell_volume"],
-        "last_price": _es_delta["last_price"],
-        "tick_count": _es_delta["tick_count"],
-        "session_high": _es_delta["session_high"],
-        "session_low": _es_delta["session_low"],
-        "stream_ok": _es_delta["stream_ok"],
-    }
+    with _es_delta_lock:
+        if _es_delta["total_volume"] == 0:
+            return {"error": "No delta data available", "ts": None}
+        return {
+            "ts": fmt_et(now_et()),
+            "trade_date": _es_delta["trade_date"],
+            "symbol": ES_DELTA_SYMBOL,
+            "cumulative_delta": _es_delta["cumulative_delta"],
+            "total_volume": _es_delta["total_volume"],
+            "buy_volume": _es_delta["buy_volume"],
+            "sell_volume": _es_delta["sell_volume"],
+            "last_price": _es_delta["last_price"],
+            "tick_count": _es_delta["tick_count"],
+            "session_high": _es_delta["session_high"],
+            "session_low": _es_delta["session_low"],
+            "stream_ok": _es_delta["stream_ok"],
+        }
 
 @app.get("/api/es/delta/history")
 def api_es_delta_history(limit: int = Query(500, ge=1, le=2000)):
@@ -3291,7 +3346,9 @@ def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, 
 
         # Priority 2: Fallback to 1-min bar reconstruction (approximate)
         one_min_bars = db_es_delta_bars(limit=1400)
-        for buf in _es_delta["_bars_buffer"]:
+        with _es_delta_lock:
+            buffered_bars = list(_es_delta["_bars_buffer"])
+        for buf in buffered_bars:
             one_min_bars.append({
                 "ts": buf["ts"], "bar_open_price": buf["bar_open_price"],
                 "bar_high_price": buf["bar_high_price"], "bar_low_price": buf["bar_low_price"],
@@ -5328,7 +5385,31 @@ TABLE_HTML_TEMPLATE = """
     Last run: __TS__<br>exp=__EXP__<br>spot=__SPOT__<br>rows=__ROWS__
   </div>
   __BODY__
-  <script>setTimeout(()=>location.reload(), __PULL_MS__);</script>
+  <script>
+  // Auto-refresh: update data in-place without page reload.
+  // Each tab already has its own polling timer (startCharts, startEsDelta, etc.)
+  // We just need to refresh the Table iframe and the footer status line.
+  (function(){
+    const REFRESH_MS = __PULL_MS__;
+    // Refresh table iframe when Table tab is visible
+    setInterval(()=>{
+      const tf = document.getElementById('tableFrame');
+      if(tf && tf.offsetParent !== null) tf.src = tf.src;
+    }, REFRESH_MS);
+    // Update footer status line
+    setInterval(async ()=>{
+      try {
+        const r = await fetch('/api/health', {cache:'no-store'});
+        const h = await r.json();
+        const el = document.querySelector('.last');
+        if(el && h.last){
+          const l = h.last;
+          el.innerHTML = 'Last run: '+(l.ts||'')+'<br>exp='+(l.msg?l.msg.match(/exp=([^ ]*)/)?.[1]||'':'')+'<br>spot='+(l.msg?l.msg.match(/spot=([^ ]*)/)?.[1]||'':'');
+        }
+      } catch(e){}
+    }, REFRESH_MS);
+  })();
+  </script>
 </body></html>
 """
 
@@ -6634,13 +6715,14 @@ DASH_HTML_TEMPLATE = """
       btn.classList.add('active');
     }
     function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewChartsHT.style.display='none'; viewSpot.style.display='none'; viewPlayback.style.display='none'; viewRegimeMap.style.display='none'; viewEsDelta.style.display='none'; }
-    function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); }
-    function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); }
-    function showChartsHT(){ setActive(tabChartsHT); hideAllViews(); viewChartsHT.style.display=''; startChartsHT(); stopCharts(); stopSpot(); stopStatistics(); stopEsDelta(); }
-    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); startStatistics(); stopCharts(); stopChartsHT(); stopEsDelta(); }
-    function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); initPlayback(); }
-    function showRegimeMap(){ setActive(tabRegimeMap); hideAllViews(); viewRegimeMap.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); initRegimeMap(); }
-    function showEsDelta(){ setActive(tabEsDelta); hideAllViews(); viewEsDelta.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); startEsDelta(); }
+    function saveTab(name){ try{sessionStorage.setItem('activeTab',name);}catch(e){} }
+    function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); saveTab('table'); }
+    function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); saveTab('charts'); }
+    function showChartsHT(){ setActive(tabChartsHT); hideAllViews(); viewChartsHT.style.display=''; startChartsHT(); stopCharts(); stopSpot(); stopStatistics(); stopEsDelta(); saveTab('chartsHT'); }
+    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); startStatistics(); stopCharts(); stopChartsHT(); stopEsDelta(); saveTab('spot'); }
+    function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); initPlayback(); saveTab('playback'); }
+    function showRegimeMap(){ setActive(tabRegimeMap); hideAllViews(); viewRegimeMap.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); initRegimeMap(); saveTab('regimeMap'); }
+    function showEsDelta(){ setActive(tabEsDelta); hideAllViews(); viewEsDelta.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); startEsDelta(); saveTab('esDelta'); }
     tabTable.addEventListener('click', showTable);
     tabCharts.addEventListener('click', showCharts);
     tabChartsHT.addEventListener('click', showChartsHT);
@@ -6648,6 +6730,13 @@ DASH_HTML_TEMPLATE = """
     tabPlayback.addEventListener('click', showPlayback);
     tabRegimeMap.addEventListener('click', showRegimeMap);
     tabEsDelta.addEventListener('click', showEsDelta);
+
+    // Restore last active tab on page load
+    try {
+      const saved = sessionStorage.getItem('activeTab');
+      const tabMap = {charts:showCharts, chartsHT:showChartsHT, spot:showSpot, playback:showPlayback, regimeMap:showRegimeMap, esDelta:showEsDelta};
+      if(saved && tabMap[saved]) tabMap[saved]();
+    } catch(e){}
 
     // ===== Shared fetch for options series (includes spot) =====
     async function fetchSeries(){

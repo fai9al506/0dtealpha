@@ -231,9 +231,12 @@ _DEFAULT_SETUP_SETTINGS = {
     "bofa_target_distance": 10,
     "bofa_max_hold_minutes": 30,
     "bofa_cooldown_minutes": 40,
-    "abs_lookback": 8,
-    "abs_vol_window": 20,
-    "abs_min_vol_ratio": 1.5,
+    "abs_pivot_left": 2,
+    "abs_pivot_right": 2,
+    "abs_vol_window": 10,
+    "abs_min_vol_ratio": 1.4,
+    "abs_cvd_z_min": 0.5,
+    "abs_cvd_std_window": 20,
     "abs_cooldown_bars": 10,
     "abs_weight_divergence": 25,
     "abs_weight_volume": 25,
@@ -709,9 +712,12 @@ def load_setup_settings():
                     "bofa_target_distance": bofa_db.get("target_distance", 10),
                     "bofa_max_hold_minutes": bofa_db.get("max_hold_minutes", 30),
                     "bofa_cooldown_minutes": bofa_db.get("cooldown_minutes", 40),
-                    "abs_lookback": abs_db.get("lookback", 8),
-                    "abs_vol_window": abs_db.get("vol_window", 20),
-                    "abs_min_vol_ratio": abs_db.get("min_vol_ratio", 1.5),
+                    "abs_pivot_left": abs_db.get("pivot_left", 2),
+                    "abs_pivot_right": abs_db.get("pivot_right", 2),
+                    "abs_vol_window": abs_db.get("vol_window", 10),
+                    "abs_min_vol_ratio": abs_db.get("min_vol_ratio", 1.4),
+                    "abs_cvd_z_min": abs_db.get("cvd_z_min", 0.5),
+                    "abs_cvd_std_window": abs_db.get("cvd_std_window", 20),
                     "abs_cooldown_bars": abs_db.get("cooldown_bars", 10),
                     "abs_weight_divergence": abs_db.get("weight_divergence", 25),
                     "abs_weight_volume": abs_db.get("weight_volume", 25),
@@ -746,9 +752,12 @@ def save_setup_settings():
                 "cooldown_minutes": _setup_settings.get("bofa_cooldown_minutes", 40),
             })
             abs_json = json.dumps({
-                "lookback": _setup_settings.get("abs_lookback", 8),
-                "vol_window": _setup_settings.get("abs_vol_window", 20),
-                "min_vol_ratio": _setup_settings.get("abs_min_vol_ratio", 1.5),
+                "pivot_left": _setup_settings.get("abs_pivot_left", 2),
+                "pivot_right": _setup_settings.get("abs_pivot_right", 2),
+                "vol_window": _setup_settings.get("abs_vol_window", 10),
+                "min_vol_ratio": _setup_settings.get("abs_min_vol_ratio", 1.4),
+                "cvd_z_min": _setup_settings.get("abs_cvd_z_min", 0.5),
+                "cvd_std_window": _setup_settings.get("abs_cvd_std_window", 20),
                 "cooldown_bars": _setup_settings.get("abs_cooldown_bars", 10),
                 "weight_divergence": _setup_settings.get("abs_weight_divergence", 25),
                 "weight_volume": _setup_settings.get("abs_weight_volume", 25),
@@ -2491,7 +2500,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
     result["max_plus_gex"] = gex_plus
     result["max_minus_gex"] = gex_minus
 
-    # Build signal dict for chart markers (backward-compatible format)
+    # Build signal dict for chart markers
     signal = {
         "bar_idx": result["bar_idx"],
         "direction": result["direction"],
@@ -2514,18 +2523,31 @@ def _run_absorption_detection(bars: list) -> dict | None:
         "lis_val": result["lis_val"],
         "lis_dist": result.get("lis_dist"),
         "ts": result.get("ts", ""),
+        "best_swing": result.get("best_swing"),
+        "all_divergences": result.get("all_divergences"),
+        "swing_count": result.get("swing_count", 0),
     }
 
     _absorption_signals.append(signal)
 
-    # Console log
+    # Console log — primary swing
+    best = result.get("best_swing", {})
+    best_sw = best.get("swing", {}) if best else {}
+    all_divs = result.get("all_divergences", [])
     print(f"[absorption] {result['direction'].upper()} {result['grade']} ({result['score']:.0f}/100) "
           f"price={result['abs_es_price']:.2f} cvd={result['cvd']:+d} "
           f"vol={result['vol_trigger']}({result['abs_vol_ratio']:.1f}x) "
-          f"div={result['support_score']:.0f} vol={result['upside_score']:.0f} "
-          f"dd={result['floor_cluster_score']:.0f} para={result['target_cluster_score']:.0f} "
-          f"lis={result['rr_score']:.0f}",
+          f"best_swing: {best_sw.get('type','?')}@{best_sw.get('price',0):.2f} "
+          f"cvd_z={best.get('cvd_z',0):.2f} price_atr={best.get('price_atr',0):.1f}x "
+          f"swings={result.get('swing_count',0)}",
           flush=True)
+    # Log all confirming divergences
+    for i, div in enumerate(all_divs):
+        sw = div["swing"]
+        print(f"  div#{i+1}: {sw['type']}@{sw['price']:.2f} idx={sw['bar_idx']} "
+              f"cvd={sw['cvd']:+d} -> z={div['cvd_z']:.2f} atr={div['price_atr']:.1f}x "
+              f"score={div['score']:.0f}",
+              flush=True)
 
     # Notification gate and logging
     fire, reason = should_notify_absorption(result)
@@ -4408,9 +4430,12 @@ def api_setup_settings_post(
     bofa_target_distance: int = Query(None),
     bofa_max_hold_minutes: int = Query(None),
     bofa_cooldown_minutes: int = Query(None),
-    abs_lookback: int = Query(None),
+    abs_pivot_left: int = Query(None),
+    abs_pivot_right: int = Query(None),
     abs_vol_window: int = Query(None),
     abs_min_vol_ratio: float = Query(None),
+    abs_cvd_z_min: float = Query(None),
+    abs_cvd_std_window: int = Query(None),
     abs_cooldown_bars: int = Query(None),
     abs_weight_divergence: int = Query(None),
     abs_weight_volume: int = Query(None),
@@ -4468,12 +4493,18 @@ def api_setup_settings_post(
     if bofa_cooldown_minutes is not None:
         _setup_settings["bofa_cooldown_minutes"] = bofa_cooldown_minutes
     # Absorption weights/params
-    if abs_lookback is not None:
-        _setup_settings["abs_lookback"] = abs_lookback
+    if abs_pivot_left is not None:
+        _setup_settings["abs_pivot_left"] = abs_pivot_left
+    if abs_pivot_right is not None:
+        _setup_settings["abs_pivot_right"] = abs_pivot_right
     if abs_vol_window is not None:
         _setup_settings["abs_vol_window"] = abs_vol_window
     if abs_min_vol_ratio is not None:
         _setup_settings["abs_min_vol_ratio"] = abs_min_vol_ratio
+    if abs_cvd_z_min is not None:
+        _setup_settings["abs_cvd_z_min"] = abs_cvd_z_min
+    if abs_cvd_std_window is not None:
+        _setup_settings["abs_cvd_std_window"] = abs_cvd_std_window
     if abs_cooldown_bars is not None:
         _setup_settings["abs_cooldown_bars"] = abs_cooldown_bars
     if abs_weight_divergence is not None:
@@ -6265,15 +6296,26 @@ DASH_HTML_TEMPLATE = """
               </label>
             </div>
             <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">ES Absorption Parameters</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px">
-              <label style="font-size:11px">Lookback (bars)
-                <input type="number" id="absLookback" min="3" max="30" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+              <label style="font-size:11px">Pivot Left
+                <input type="number" id="absPivotLeft" min="1" max="5" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
               </label>
-              <label style="font-size:11px">Vol Window
-                <input type="number" id="absVolWindow" min="5" max="50" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              <label style="font-size:11px">Pivot Right
+                <input type="number" id="absPivotRight" min="1" max="5" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
               </label>
               <label style="font-size:11px">Min Vol Ratio
                 <input type="number" id="absMinVolRatio" min="1" max="5" step="0.1" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+              <label style="font-size:11px">CVD Z Min
+                <input type="number" id="absCvdZMin" min="0.1" max="5" step="0.1" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">CVD Std Window
+                <input type="number" id="absCvdStdWindow" min="5" max="50" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Vol Window
+                <input type="number" id="absVolWindow" min="5" max="50" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
               </label>
               <label style="font-size:11px">Cooldown (bars)
                 <input type="number" id="absCooldownBars" min="1" max="50" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
@@ -9345,9 +9387,12 @@ DASH_HTML_TEMPLATE = """
         document.getElementById('absWeightDD').value = s.abs_weight_dd ?? 15;
         document.getElementById('absWeightParadigm').value = s.abs_weight_paradigm ?? 15;
         document.getElementById('absWeightLIS').value = s.abs_weight_lis ?? 20;
-        document.getElementById('absLookback').value = s.abs_lookback ?? 8;
-        document.getElementById('absVolWindow').value = s.abs_vol_window ?? 20;
-        document.getElementById('absMinVolRatio').value = s.abs_min_vol_ratio ?? 1.5;
+        document.getElementById('absPivotLeft').value = s.abs_pivot_left ?? 2;
+        document.getElementById('absPivotRight').value = s.abs_pivot_right ?? 2;
+        document.getElementById('absMinVolRatio').value = s.abs_min_vol_ratio ?? 1.4;
+        document.getElementById('absCvdZMin').value = s.abs_cvd_z_min ?? 0.5;
+        document.getElementById('absCvdStdWindow').value = s.abs_cvd_std_window ?? 20;
+        document.getElementById('absVolWindow').value = s.abs_vol_window ?? 10;
         document.getElementById('absCooldownBars').value = s.abs_cooldown_bars ?? 10;
       } catch (err) {
         console.error('Failed to load setup settings', err);
@@ -9386,9 +9431,12 @@ DASH_HTML_TEMPLATE = """
           abs_weight_dd: document.getElementById('absWeightDD').value,
           abs_weight_paradigm: document.getElementById('absWeightParadigm').value,
           abs_weight_lis: document.getElementById('absWeightLIS').value,
-          abs_lookback: document.getElementById('absLookback').value,
+          abs_pivot_left: document.getElementById('absPivotLeft').value,
+          abs_pivot_right: document.getElementById('absPivotRight').value,
           abs_vol_window: document.getElementById('absVolWindow').value,
           abs_min_vol_ratio: document.getElementById('absMinVolRatio').value,
+          abs_cvd_z_min: document.getElementById('absCvdZMin').value,
+          abs_cvd_std_window: document.getElementById('absCvdStdWindow').value,
           abs_cooldown_bars: document.getElementById('absCooldownBars').value,
         });
         const r = await fetch('/api/setup/settings?' + params, { method: 'POST' });

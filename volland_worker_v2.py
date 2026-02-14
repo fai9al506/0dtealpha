@@ -16,6 +16,7 @@ Key differences from V1:
 import os, json, time, traceback
 from datetime import datetime, timezone, time as dtime
 import pytz
+import requests as _requests
 
 import psycopg
 from psycopg.rows import dict_row
@@ -32,7 +33,27 @@ PULL_EVERY = int(os.getenv("VOLLAND_PULL_EVERY_SEC", "120"))
 WAIT_SEC   = float(os.getenv("VOLLAND_WAIT_SEC", "15"))
 SYNC_POLL_SEC = int(os.getenv("VOLLAND_SYNC_POLL_SEC", "20"))
 
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
+ZERO_POINTS_THRESHOLD = 3  # consecutive zero-point cycles before alerting
+
 NY = pytz.timezone("US/Eastern")
+
+def send_telegram(message: str) -> bool:
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+    try:
+        resp = _requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            print(f"[volland-telegram] sent: {message[:60]}...", flush=True)
+        return resp.status_code == 200
+    except Exception as e:
+        print(f"[volland-telegram] error: {e}", flush=True)
+        return False
 
 
 def market_open_now() -> bool:
@@ -385,7 +406,7 @@ def run():
                 f"charm={stats.get('aggregatedCharm', 'N/A')}",
                 flush=True,
             )
-            return stats
+            return stats, total_points
 
         # Register handlers once (persist across navigations)
         setup_handlers(page)
@@ -395,6 +416,8 @@ def run():
 
         # Track Volland's lastModified to detect refreshes
         last_known_modified = ""
+        consecutive_zero_pts = 0
+        zero_pts_alerted = False
 
         def get_exposure_lastmodified():
             """Get lastModified from the most recent exposure capture."""
@@ -490,7 +513,24 @@ def run():
                         last_known_modified = lm
                         break
 
-                save_cycle(exposures, paradigm, spot_vol)
+                _stats, _total_pts = save_cycle(exposures, paradigm, spot_vol)
+
+                # Track consecutive zero-point cycles during market hours
+                if _total_pts == 0 and market_open_now():
+                    consecutive_zero_pts += 1
+                    print(f"[volland-v2] WARNING: 0 points captured ({consecutive_zero_pts}/{ZERO_POINTS_THRESHOLD} consecutive)", flush=True)
+                    if consecutive_zero_pts >= ZERO_POINTS_THRESHOLD and not zero_pts_alerted:
+                        zero_pts_alerted = True
+                        send_telegram(
+                            "⚠️ <b>Volland 0 Points</b>\n\n"
+                            f"{consecutive_zero_pts} consecutive cycles with 0 exposure points.\n"
+                            "Data pipeline may be broken. Check Volland service."
+                        )
+                else:
+                    if consecutive_zero_pts > 0:
+                        print(f"[volland-v2] points recovered ({_total_pts} pts), streak reset", flush=True)
+                    consecutive_zero_pts = 0
+                    zero_pts_alerted = False
 
             except Exception as e:
                 err_payload = {

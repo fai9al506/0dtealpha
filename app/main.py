@@ -1240,6 +1240,22 @@ REFRESH_EARLY_SEC = 300
 _access_token = None
 _access_exp_at = 0.0
 _refresh_token = RTOKEN or ""
+_last_401_alert = 0.0  # timestamp of last 401 Telegram alert (cooldown)
+
+def _alert_401(source: str):
+    """Send Telegram alert on persistent 401 (dead refresh token). Max once per 5 min."""
+    global _last_401_alert
+    now = time.time()
+    if now - _last_401_alert < 300:
+        return
+    _last_401_alert = now
+    msg = (
+        "🚨 <b>TS API 401 — Token Dead</b>\n\n"
+        f"Source: <code>{source}</code>\n"
+        "Refresh token may be expired. Manual re-auth required."
+    )
+    print(f"[auth] ALERT: persistent 401 from {source}", flush=True)
+    send_telegram(msg)
 
 def _stamp_token(exp_in: int):
     global _access_exp_at
@@ -1285,6 +1301,8 @@ def api_get(path, params=None, stream=False, timeout=10):
             r = do_req(headers)
         except Exception:
             pass
+        if r.status_code == 401:
+            _alert_401(f"api_get({path})")
     if stream:
         if r.status_code != 200:
             raise RuntimeError(f"STREAM {path} [{r.status_code}] {r.text[:300]}")
@@ -2546,6 +2564,8 @@ def _es_delta_stream_loop():
                     f"{BASE}/marketdata/stream/barcharts/%40ES",
                     headers=headers, params=params, stream=True, timeout=30,
                 )
+                if r.status_code == 401:
+                    _alert_401("es-delta stream")
             if r.status_code != 200:
                 print(f"[es-delta] stream error [{r.status_code}] {r.text[:200]}", flush=True)
                 time.sleep(10)
@@ -2635,6 +2655,8 @@ def _es_quote_stream_loop():
                     f"{BASE}/marketdata/stream/quotes/%40ES",
                     headers=headers, stream=True, timeout=30,
                 )
+                if r.status_code == 401:
+                    _alert_401("es-quote stream")
             if r.status_code != 200:
                 print(f"[es-quote] stream error [{r.status_code}] {r.text[:200]}", flush=True)
                 time.sleep(min(backoff, 60))
@@ -2930,7 +2952,55 @@ def api_series():
 
 @app.get("/api/health")
 def api_health():
-    return {"status": "ok", "last": last_run_status}
+    """Component-level health with freshness, stale flags, and overall status."""
+    freshness = api_data_freshness()
+    is_open = market_open_now()
+
+    # Chain (TS API) freshness
+    chain_age = freshness["ts_api"].get("age_seconds")
+    chain_status = freshness["ts_api"]["status"]
+    chain_stale = is_open and chain_age is not None and chain_age > 300  # >5min
+
+    # Volland freshness
+    vol_age = freshness["volland"].get("age_seconds")
+    vol_status = freshness["volland"]["status"]
+    vol_stale = is_open and vol_age is not None and vol_age > 600  # >10min
+
+    # ES delta stream
+    es_delta_ok = _es_delta.get("stream_ok", False)
+    # ES quote stream
+    with _es_quote_lock:
+        es_quote_ok = _es_quote.get("stream_ok", False)
+
+    # Overall status
+    if not is_open:
+        overall = "closed"
+    elif chain_status == "error" or vol_status == "error":
+        overall = "down"
+    elif chain_stale or vol_stale or (not es_delta_ok and is_open) or (not es_quote_ok and is_open):
+        overall = "degraded"
+    else:
+        overall = "healthy"
+
+    return {
+        "status": overall,
+        "market_open": is_open,
+        "components": {
+            "chain": {
+                "age_seconds": chain_age,
+                "status": chain_status,
+                "stale": chain_stale,
+            },
+            "volland": {
+                "age_seconds": vol_age,
+                "status": vol_status,
+                "stale": vol_stale,
+            },
+            "es_delta_stream": {"connected": es_delta_ok},
+            "es_quote_stream": {"connected": es_quote_ok},
+        },
+        "last": last_run_status,
+    }
 
 @app.get("/status")
 def status():

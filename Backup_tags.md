@@ -15,3 +15,4 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 9 | 2026-02-13 20:08 | `stable-20260213-200831` | ES Delta dashboard tab with 5-pt range bars, volume, delta, CVD candles |
 | 10 | 2026-02-13 22:07 | `stable-20260213-220739` | Pre-ES quote stream (bid/ask delta range bars) |
 | 11 | 2026-02-13 23:48 | `stable-20260213-234842` | ES quote stream, absorption detector, SPX key levels on ES Delta chart |
+| 12 | 2026-02-14 19:00 | `stable-20260214-190010` | 401 Telegram alert, /api/health upgrade, Volland 0-pts per-exposure alert |

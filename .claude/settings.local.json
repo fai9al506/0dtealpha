@@ -92,7 +92,8 @@
       "WebFetch(domain:unpkg.com)",
       "Bash(pip uninstall:*)",
       "Bash(railway redeploy:*)",
-      "Bash(DATABASE_URL=\"postgresql://postgres:JwLVqJOvxdzflxJsCZHrPzcdPUYrmVYY@nozomi.proxy.rlwy.net:55417/railway\" uvicorn:*)"
+      "Bash(DATABASE_URL=\"postgresql://postgres:JwLVqJOvxdzflxJsCZHrPzcdPUYrmVYY@nozomi.proxy.rlwy.net:55417/railway\" uvicorn:*)",
+      "Bash(PGPASSWORD=JwLVqJOvxdzflxJsCZHrPzcdPUYrmVYY psql:*)"
     ]
   }
 }

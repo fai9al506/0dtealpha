@@ -214,6 +214,7 @@ _DEFAULT_SETUP_SETTINGS = {
     "gex_long_enabled": True,
     "ag_short_enabled": True,
     "bofa_scalp_enabled": True,
+    "absorption_enabled": True,
     "weight_support": 20,
     "weight_upside": 20,
     "weight_floor_cluster": 20,
@@ -230,6 +231,16 @@ _DEFAULT_SETUP_SETTINGS = {
     "bofa_target_distance": 10,
     "bofa_max_hold_minutes": 30,
     "bofa_cooldown_minutes": 40,
+    "abs_lookback": 8,
+    "abs_vol_window": 20,
+    "abs_min_vol_ratio": 1.5,
+    "abs_cooldown_bars": 10,
+    "abs_weight_divergence": 25,
+    "abs_weight_volume": 25,
+    "abs_weight_dd": 15,
+    "abs_weight_paradigm": 15,
+    "abs_weight_lis": 20,
+    "abs_grade_thresholds": {"A+": 75, "A": 55, "B": 35},
     "brackets": {
         "support": [[5, 100], [10, 75], [15, 50], [20, 25]],
         "upside": [[25, 100], [15, 75], [10, 50]],
@@ -418,6 +429,32 @@ def db_init():
         conn.execute(text("""
         DO $$ BEGIN
             ALTER TABLE setup_log ADD COLUMN comments TEXT;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        # Absorption columns on setup_settings
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_settings ADD COLUMN absorption_enabled BOOLEAN DEFAULT TRUE;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_settings ADD COLUMN absorption_settings JSONB;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        # Absorption extra columns on setup_log
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_log ADD COLUMN abs_vol_ratio DOUBLE PRECISION;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_log ADD COLUMN abs_es_price DOUBLE PRECISION;
         EXCEPTION WHEN duplicate_column THEN NULL;
         END $$;
         """))
@@ -638,10 +675,16 @@ def load_setup_settings():
                 if "bofa_settings" in rk and row["bofa_settings"]:
                     raw = row["bofa_settings"]
                     bofa_db = raw if isinstance(raw, dict) else json.loads(raw)
+                # Load Absorption settings from JSONB column or defaults
+                abs_db = {}
+                if "absorption_settings" in rk and row["absorption_settings"]:
+                    raw = row["absorption_settings"]
+                    abs_db = raw if isinstance(raw, dict) else json.loads(raw)
                 _setup_settings = {
                     "gex_long_enabled": row["gex_long_enabled"],
                     "ag_short_enabled": row["ag_short_enabled"] if "ag_short_enabled" in rk else True,
                     "bofa_scalp_enabled": row["bofa_scalp_enabled"] if "bofa_scalp_enabled" in rk else True,
+                    "absorption_enabled": row["absorption_enabled"] if "absorption_enabled" in rk else True,
                     "weight_support": row["weight_support"],
                     "weight_upside": row["weight_upside"],
                     "weight_floor_cluster": row["weight_floor_cluster"],
@@ -658,6 +701,16 @@ def load_setup_settings():
                     "bofa_target_distance": bofa_db.get("target_distance", 10),
                     "bofa_max_hold_minutes": bofa_db.get("max_hold_minutes", 30),
                     "bofa_cooldown_minutes": bofa_db.get("cooldown_minutes", 40),
+                    "abs_lookback": abs_db.get("lookback", 8),
+                    "abs_vol_window": abs_db.get("vol_window", 20),
+                    "abs_min_vol_ratio": abs_db.get("min_vol_ratio", 1.5),
+                    "abs_cooldown_bars": abs_db.get("cooldown_bars", 10),
+                    "abs_weight_divergence": abs_db.get("weight_divergence", 25),
+                    "abs_weight_volume": abs_db.get("weight_volume", 25),
+                    "abs_weight_dd": abs_db.get("weight_dd", 15),
+                    "abs_weight_paradigm": abs_db.get("weight_paradigm", 15),
+                    "abs_weight_lis": abs_db.get("weight_lis", 20),
+                    "abs_grade_thresholds": abs_db.get("grade_thresholds", {"A+": 75, "A": 55, "B": 35}),
                     "brackets": row["brackets"] if isinstance(row["brackets"], dict) else json.loads(row["brackets"]) if row["brackets"] else _DEFAULT_SETUP_SETTINGS["brackets"],
                     "grade_thresholds": row["grade_thresholds"] if isinstance(row["grade_thresholds"], dict) else json.loads(row["grade_thresholds"]) if row["grade_thresholds"] else _DEFAULT_SETUP_SETTINGS["grade_thresholds"],
                 }
@@ -684,11 +737,24 @@ def save_setup_settings():
                 "max_hold_minutes": _setup_settings.get("bofa_max_hold_minutes", 30),
                 "cooldown_minutes": _setup_settings.get("bofa_cooldown_minutes", 40),
             })
+            abs_json = json.dumps({
+                "lookback": _setup_settings.get("abs_lookback", 8),
+                "vol_window": _setup_settings.get("abs_vol_window", 20),
+                "min_vol_ratio": _setup_settings.get("abs_min_vol_ratio", 1.5),
+                "cooldown_bars": _setup_settings.get("abs_cooldown_bars", 10),
+                "weight_divergence": _setup_settings.get("abs_weight_divergence", 25),
+                "weight_volume": _setup_settings.get("abs_weight_volume", 25),
+                "weight_dd": _setup_settings.get("abs_weight_dd", 15),
+                "weight_paradigm": _setup_settings.get("abs_weight_paradigm", 15),
+                "weight_lis": _setup_settings.get("abs_weight_lis", 20),
+                "grade_thresholds": _setup_settings.get("abs_grade_thresholds", {"A+": 75, "A": 55, "B": 35}),
+            })
             conn.execute(text("""
                 UPDATE setup_settings SET
                     gex_long_enabled = :gex_long_enabled,
                     ag_short_enabled = :ag_short_enabled,
                     bofa_scalp_enabled = :bofa_scalp_enabled,
+                    absorption_enabled = :absorption_enabled,
                     weight_support = :weight_support,
                     weight_upside = :weight_upside,
                     weight_floor_cluster = :weight_floor_cluster,
@@ -696,12 +762,14 @@ def save_setup_settings():
                     weight_rr = :weight_rr,
                     brackets = :brackets,
                     grade_thresholds = :grade_thresholds,
-                    bofa_settings = :bofa_settings
+                    bofa_settings = :bofa_settings,
+                    absorption_settings = :absorption_settings
                 WHERE id = 1
             """), {
                 "gex_long_enabled": _setup_settings["gex_long_enabled"],
                 "ag_short_enabled": _setup_settings.get("ag_short_enabled", True),
                 "bofa_scalp_enabled": _setup_settings.get("bofa_scalp_enabled", True),
+                "absorption_enabled": _setup_settings.get("absorption_enabled", True),
                 "weight_support": _setup_settings["weight_support"],
                 "weight_upside": _setup_settings["weight_upside"],
                 "weight_floor_cluster": _setup_settings["weight_floor_cluster"],
@@ -710,6 +778,7 @@ def save_setup_settings():
                 "brackets": json.dumps(_setup_settings.get("brackets", _DEFAULT_SETUP_SETTINGS["brackets"])),
                 "grade_thresholds": json.dumps(_setup_settings.get("grade_thresholds", _DEFAULT_SETUP_SETTINGS["grade_thresholds"])),
                 "bofa_settings": bofa_json,
+                "absorption_settings": abs_json,
             })
         return True
     except Exception as e:
@@ -721,6 +790,7 @@ _current_setup_log = {
     "GEX Long": None,
     "AG Short": None,
     "BofA Scalp": None,
+    "ES Absorption": None,
     "last_date": None,
 }
 
@@ -741,32 +811,37 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
             if reason in ("new", "reformed") or _current_setup_log.get(setup_name) is None:
                 # INSERT new row
                 insert_params = dict(r)
-                # BofA Scalp extra columns (NULL for GEX/AG)
+                # BofA Scalp extra columns (NULL for GEX/AG/Absorption)
                 insert_params.setdefault("bofa_stop_level", r.get("bofa_stop_level"))
                 insert_params.setdefault("bofa_target_level", r.get("bofa_target_level"))
                 insert_params.setdefault("bofa_lis_width", r.get("bofa_lis_width"))
                 insert_params.setdefault("bofa_max_hold_minutes", r.get("bofa_max_hold_minutes"))
                 insert_params["lis_upper_val"] = r.get("lis_upper")
+                # Absorption extra columns (NULL for other setups)
+                insert_params.setdefault("abs_vol_ratio", r.get("abs_vol_ratio"))
+                insert_params.setdefault("abs_es_price", r.get("abs_es_price"))
                 result = conn.execute(text("""
                     INSERT INTO setup_log
                         (setup_name, direction, grade, score, paradigm, spot, lis, target,
                          max_plus_gex, max_minus_gex, gap_to_lis, upside, rr_ratio,
                          first_hour, support_score, upside_score, floor_cluster_score,
                          target_cluster_score, rr_score, notified,
-                         bofa_stop_level, bofa_target_level, bofa_lis_width, bofa_max_hold_minutes, lis_upper)
+                         bofa_stop_level, bofa_target_level, bofa_lis_width, bofa_max_hold_minutes, lis_upper,
+                         abs_vol_ratio, abs_es_price)
                     VALUES
                         (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
                          :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
                          :first_hour, :support_score, :upside_score, :floor_cluster_score,
                          :target_cluster_score, :rr_score, TRUE,
-                         :bofa_stop_level, :bofa_target_level, :bofa_lis_width, :bofa_max_hold_minutes, :lis_upper_val)
+                         :bofa_stop_level, :bofa_target_level, :bofa_lis_width, :bofa_max_hold_minutes, :lis_upper_val,
+                         :abs_vol_ratio, :abs_es_price)
                     RETURNING id
                 """), insert_params)
                 log_id = result.fetchone()[0]
@@ -2210,6 +2285,9 @@ def _es_quote_process_trade(last: float, bid: float, ask: float, volume: int, ts
         # Start new bar at the close price of the completed bar
         q["_forming_bar"] = _new_quote_range_bar(last, ts)
 
+# ====== ES ABSORPTION DETECTOR (via setup_detector) ======
+_absorption_signals = []  # detected signals for chart markers
+
 def _es_quote_reset():
     """Reset quote stream state for new session or process restart.
     Reloads previously-flushed bars from DB to survive restarts.
@@ -2274,260 +2352,126 @@ def _es_quote_reset():
         print(f"[es-quote] fresh session {session_date} (no prior bars)", flush=True)
 
     # Reset absorption detector for new session
-    _absorption_state["last_bullish_bar"] = -100
-    _absorption_state["last_bearish_bar"] = -100
-    _absorption_state["signals"] = []
-    _absorption_state["last_checked_idx"] = -1
+    from app.setup_detector import reset_absorption_session
+    reset_absorption_session()
+    _absorption_signals.clear()
 
-# ====== ES ABSORPTION DETECTOR (Price vs CVD Divergence) ======
-_absorption_state = {
-    "last_bullish_bar": -100,  # bar idx of last bullish signal (cooldown)
-    "last_bearish_bar": -100,  # bar idx of last bearish signal (cooldown)
-    "signals": [],             # detected signals for chart markers
-    "last_checked_idx": -1,    # avoid re-checking same bar
-}
+def _run_absorption_detection(bars: list) -> dict | None:
+    """Thin wrapper: evaluates absorption via setup_detector, logs, and notifies.
 
-def _detect_absorption(bars: list) -> dict | None:
-    """Check the last completed bar for an absorption setup.
-
-    Absorption = aggressive volume (CVD) diverges from price action,
-    indicating passive absorption. Combined with volume spike gate
-    and Volland confluence scoring.
-
-    Returns signal dict or None.
+    Returns signal dict (for chart markers) or None.
     """
-    LOOKBACK = 8       # bars for divergence measurement
-    VOL_AVG_WINDOW = 20  # bars for volume average
-    MIN_BARS = VOL_AVG_WINDOW + LOOKBACK  # need at least 28 bars
-    COOLDOWN_BARS = 10
+    from app.setup_detector import (
+        evaluate_absorption, should_notify_absorption, format_absorption_message,
+    )
 
-    if len(bars) < MIN_BARS:
-        return None
-
-    # Only look at completed bars
-    closed = [b for b in bars if b.get("status") == "closed"]
-    if len(closed) < MIN_BARS:
-        return None
-
-    trigger = closed[-1]
-    trigger_idx = trigger["idx"]
-
-    # Skip if already checked this bar
-    if trigger_idx <= _absorption_state["last_checked_idx"]:
-        return None
-    _absorption_state["last_checked_idx"] = trigger_idx
-
-    # --- Volume gate: trigger bar volume >= 1.5x avg of last 20 bars ---
-    recent_vols = [b["volume"] for b in closed[-(VOL_AVG_WINDOW + 1):-1]]
-    if not recent_vols:
-        return None
-    vol_avg = sum(recent_vols) / len(recent_vols)
-    if vol_avg <= 0:
-        return None
-    vol_ratio = trigger["volume"] / vol_avg
-    if vol_ratio < 1.5:
-        return None
-
-    # --- Divergence over lookback window ---
-    window = closed[-(LOOKBACK + 1):]  # last 8+1 bars (trigger included)
-    lows = [b["low"] for b in window]
-    highs = [b["high"] for b in window]
-    cvds = [b["cvd"] for b in window]
-
-    # Simple slope: end - start (normalized to range)
-    cvd_start, cvd_end = cvds[0], cvds[-1]
-    cvd_slope = cvd_end - cvd_start
-    cvd_range = max(cvds) - min(cvds)
-    if cvd_range == 0:
-        return None
-
-    price_low_start, price_low_end = lows[0], lows[-1]
-    price_high_start, price_high_end = highs[0], highs[-1]
-    price_range = max(highs) - min(lows)
-    if price_range == 0:
-        return None
-
-    # Normalize slopes to their ranges (-1 to +1 scale)
-    cvd_norm = cvd_slope / cvd_range
-    price_low_norm = (price_low_end - price_low_start) / price_range
-    price_high_norm = (price_high_end - price_high_start) / price_range
-
-    # Detect direction
-    direction = None
-    div_score = 0
-
-    if cvd_norm < -0.15:  # CVD trending down
-        # Bullish absorption: price lows flat or rising while CVD drops
-        gap = price_low_norm - cvd_norm  # positive = divergence
-        if gap > 0.2:
-            direction = "bullish"
-            if gap > 1.2:
-                div_score = 4
-            elif gap > 0.8:
-                div_score = 3
-            elif gap > 0.4:
-                div_score = 2
-            else:
-                div_score = 1
-
-    if cvd_norm > 0.15 and direction is None:  # CVD trending up
-        # Bearish absorption: price highs flat or falling while CVD rises
-        gap = cvd_norm - price_high_norm  # positive = divergence
-        if gap > 0.2:
-            direction = "bearish"
-            if gap > 1.2:
-                div_score = 4
-            elif gap > 0.8:
-                div_score = 3
-            elif gap > 0.4:
-                div_score = 2
-            else:
-                div_score = 1
-
-    if direction is None:
-        return None
-
-    # --- Cooldown check ---
-    if direction == "bullish":
-        if trigger_idx - _absorption_state["last_bullish_bar"] < COOLDOWN_BARS:
-            return None
-    else:
-        if trigger_idx - _absorption_state["last_bearish_bar"] < COOLDOWN_BARS:
-            return None
-
-    # --- Volume spike score (1-3 pts) ---
-    if vol_ratio >= 3.0:
-        vol_score = 3
-    elif vol_ratio >= 2.0:
-        vol_score = 2
-    else:
-        vol_score = 1
-
-    # --- Volland confluence (0-4 pts: DD 0-1, paradigm 0-1, LIS 0-2) ---
-    dd_score = 0
-    para_score = 0
-    lis_score = 0
-    lis_val = None
-    lis_dist = None
-    paradigm_str = ""
-    dd_str = ""
-
+    # Build volland stats dict for setup_detector
+    volland_stats = None
     try:
         vstat = db_volland_stats()
         if vstat and vstat.get("stats") and vstat["stats"].get("has_statistics"):
-            st = vstat["stats"]
-            paradigm_str = (st.get("paradigm") or "").upper()
-            dd_str = (st.get("delta_decay_hedging") or "")
-            lis_raw = st.get("lines_in_sand") or ""
-
-            # DD hedging alignment
-            if direction == "bullish" and "long" in dd_str.lower():
-                dd_score = 1
-            elif direction == "bearish" and "short" in dd_str.lower():
-                dd_score = 1
-
-            # Paradigm alignment
-            if direction == "bullish" and "GEX" in paradigm_str:
-                para_score = 1
-            elif direction == "bearish" and "AG" in paradigm_str:
-                para_score = 1
-
-            # LIS proximity
-            lis_match = re.search(r'[\d,]+\.?\d*', lis_raw.replace(',', ''))
-            if lis_match:
-                lis_val = float(lis_match.group())
-                lis_dist = abs(trigger["close"] - lis_val)
-                if lis_dist <= 5:
-                    lis_score = 2
-                elif lis_dist <= 15:
-                    lis_score = 1
+            volland_stats = vstat["stats"]
     except Exception as e:
         print(f"[absorption] volland lookup error: {e}", flush=True)
 
-    # --- Total score ---
-    total = div_score + vol_score + dd_score + para_score + lis_score
-    max_score = 11
-
-    if total < 2:
+    result = evaluate_absorption(bars, volland_stats, _setup_settings)
+    if result is None:
         return None
 
-    # Grade
-    if total >= 8:
-        grade = "A+"
-    elif total >= 6:
-        grade = "A"
-    elif total >= 4:
-        grade = "B"
-    else:
-        grade = "C"
+    # Enrich result with SPX context for setup_log storage & SPX→ES conversion
+    # SPX spot from latest chain pull
+    spx_spot = None
+    try:
+        msg = last_run_status.get("msg") or ""
+        parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+        spx_spot = float(parts.get("spot", ""))
+    except Exception:
+        pass
 
-    # Update cooldown
-    if direction == "bullish":
-        _absorption_state["last_bullish_bar"] = trigger_idx
-    else:
-        _absorption_state["last_bearish_bar"] = trigger_idx
+    # Parse SPX target from Volland stats
+    target_spx = None
+    if volland_stats and volland_stats.get("target"):
+        target_str = str(volland_stats["target"]).replace("$", "").replace(",", "")
+        target_match = re.search(r"[\d.]+", target_str)
+        if target_match:
+            target_spx = float(target_match.group())
 
+    # Get +GEX/-GEX from latest options chain
+    gex_plus, gex_minus = None, None
+    with _df_lock:
+        if latest_df is not None and not latest_df.empty:
+            try:
+                df = latest_df.copy()
+                sdf = df.sort_values("Strike")
+                strikes = pd.to_numeric(sdf["Strike"], errors="coerce").fillna(0.0).astype(float)
+                call_oi = pd.to_numeric(sdf["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+                put_oi = pd.to_numeric(sdf["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+                c_gamma = pd.to_numeric(sdf["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+                p_gamma = pd.to_numeric(sdf["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+                net_gex = (c_gamma * call_oi * 100.0) + (-p_gamma * put_oi * 100.0)
+                max_pos_idx = net_gex.idxmax() if not net_gex.empty else None
+                max_neg_idx = net_gex.idxmin() if not net_gex.empty else None
+                gex_plus = float(strikes.loc[max_pos_idx]) if max_pos_idx is not None else None
+                gex_minus = float(strikes.loc[max_neg_idx]) if max_neg_idx is not None else None
+            except Exception:
+                pass
+
+    # Override result fields with SPX context for setup_log
+    # spot = SPX spot (for conversion offset), abs_es_price = ES entry price
+    if spx_spot:
+        result["spot"] = round(spx_spot, 2)
+    result["target"] = target_spx
+    result["max_plus_gex"] = gex_plus
+    result["max_minus_gex"] = gex_minus
+
+    # Build signal dict for chart markers (backward-compatible format)
     signal = {
-        "bar_idx": trigger_idx,
-        "direction": direction,
-        "grade": grade,
-        "score": total,
-        "max_score": max_score,
-        "price": trigger["close"],
-        "cvd": trigger["cvd"],
-        "high": trigger["high"],
-        "low": trigger["low"],
-        "vol_ratio": round(vol_ratio, 1),
-        "vol_trigger": trigger["volume"],
-        "div_score": div_score,
-        "vol_score": vol_score,
-        "dd_score": dd_score,
-        "para_score": para_score,
-        "lis_score": lis_score,
-        "paradigm": paradigm_str,
-        "dd_hedging": dd_str,
-        "lis_val": lis_val,
-        "lis_dist": round(lis_dist, 1) if lis_dist is not None else None,
-        "ts": trigger.get("ts_end", ""),
+        "bar_idx": result["bar_idx"],
+        "direction": result["direction"],
+        "grade": result["grade"],
+        "score": result["score"],
+        "max_score": 100,
+        "price": result["abs_es_price"],
+        "cvd": result["cvd"],
+        "high": result["high"],
+        "low": result["low"],
+        "vol_ratio": result["abs_vol_ratio"],
+        "vol_trigger": result["vol_trigger"],
+        "div_score": result["div_raw"],
+        "vol_score": result["vol_raw"],
+        "dd_score": result["dd_raw"],
+        "para_score": result["para_raw"],
+        "lis_score": result["lis_raw"],
+        "paradigm": result["paradigm"],
+        "dd_hedging": result["dd_hedging"],
+        "lis_val": result["lis_val"],
+        "lis_dist": result.get("lis_dist"),
+        "ts": result.get("ts", ""),
     }
 
-    _absorption_state["signals"].append(signal)
+    _absorption_signals.append(signal)
 
-    # Log
-    emoji = "\u2b06" if direction == "bullish" else "\u2b07"
-    print(f"[absorption] {direction.upper()} {grade} ({total}/{max_score}) "
-          f"price={trigger['close']:.2f} cvd={trigger['cvd']:+d} "
-          f"vol={trigger['volume']}({vol_ratio:.1f}x) "
-          f"div={div_score} vol={vol_score} dd={dd_score} para={para_score} lis={lis_score}",
+    # Console log
+    print(f"[absorption] {result['direction'].upper()} {result['grade']} ({result['score']:.0f}/100) "
+          f"price={result['abs_es_price']:.2f} cvd={result['cvd']:+d} "
+          f"vol={result['vol_trigger']}({result['abs_vol_ratio']:.1f}x) "
+          f"div={result['support_score']:.0f} vol={result['upside_score']:.0f} "
+          f"dd={result['floor_cluster_score']:.0f} para={result['target_cluster_score']:.0f} "
+          f"lis={result['rr_score']:.0f}",
           flush=True)
 
-    # Telegram alert (grade B and above)
-    if grade != "C":
+    # Notification gate and logging
+    fire, reason = should_notify_absorption(result)
+    if fire:
+        rw = {
+            "result": result,
+            "notify": True,
+            "notify_reason": reason,
+            "message": format_absorption_message(result),
+        }
+        log_setup(rw)
         try:
-            side_emoji = "\U0001f7e2" if direction == "bullish" else "\U0001f534"
-            side_label = "BUY" if direction == "bullish" else "SELL"
-            strong_tag = " STRONG" if grade == "A+" else ""
-
-            parts = [
-                f"<b>ES ABSORPTION {side_emoji} {side_label} [{grade}] ({total}/{max_score}){strong_tag}</b>",
-                "",
-                f"Price: {trigger['close']:.2f} | CVD: {trigger['cvd']:+,}",
-                f"Vol spike: {trigger['volume']:,} ({vol_ratio:.1f}x avg)",
-                f"Divergence: {'Price HL \u2191 / CVD \u2193' if direction == 'bullish' else 'Price LH \u2193 / CVD \u2191'} ({LOOKBACK} bars)",
-            ]
-
-            # Confluence details
-            if dd_score:
-                parts.append(f"DD Hedging: {dd_str} \u2713")
-            if para_score:
-                parts.append(f"Paradigm: {paradigm_str} \u2713")
-            if lis_score and lis_val is not None:
-                parts.append(f"Near LIS: {lis_val:.0f} ({lis_dist:.1f} pts) \u2713")
-
-            parts.append("")
-            parts.append(f"Score: Div {div_score} + Vol {vol_score} + DD {dd_score} + Para {para_score} + LIS {lis_score}")
-
-            send_telegram_setups("\n".join(parts))
+            send_telegram_setups(rw["message"])
         except Exception as e:
             print(f"[absorption] telegram error: {e}", flush=True)
 
@@ -3272,8 +3216,8 @@ def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, 
                     "status": "open",
                 })
             # Run absorption detection on completed bars
-            _detect_absorption(result)
-            return {"bars": result, "signals": _absorption_state["signals"]}
+            _run_absorption_detection(result)
+            return {"bars": result, "signals": _absorption_signals}
 
         # Priority 2: Fallback to 1-min bar reconstruction (approximate)
         one_min_bars = db_es_delta_bars(limit=1400)
@@ -4319,6 +4263,7 @@ def api_setup_settings_post(
     gex_long_enabled: bool = Query(None),
     ag_short_enabled: bool = Query(None),
     bofa_scalp_enabled: bool = Query(None),
+    absorption_enabled: bool = Query(None),
     weight_support: int = Query(None),
     weight_upside: int = Query(None),
     weight_floor_cluster: int = Query(None),
@@ -4336,6 +4281,15 @@ def api_setup_settings_post(
     bofa_target_distance: int = Query(None),
     bofa_max_hold_minutes: int = Query(None),
     bofa_cooldown_minutes: int = Query(None),
+    abs_lookback: int = Query(None),
+    abs_vol_window: int = Query(None),
+    abs_min_vol_ratio: float = Query(None),
+    abs_cooldown_bars: int = Query(None),
+    abs_weight_divergence: int = Query(None),
+    abs_weight_volume: int = Query(None),
+    abs_weight_dd: int = Query(None),
+    abs_weight_paradigm: int = Query(None),
+    abs_weight_lis: int = Query(None),
 ):
     """Update setup detector settings."""
     global _setup_settings
@@ -4346,6 +4300,8 @@ def api_setup_settings_post(
         _setup_settings["ag_short_enabled"] = ag_short_enabled
     if bofa_scalp_enabled is not None:
         _setup_settings["bofa_scalp_enabled"] = bofa_scalp_enabled
+    if absorption_enabled is not None:
+        _setup_settings["absorption_enabled"] = absorption_enabled
     if weight_support is not None:
         _setup_settings["weight_support"] = weight_support
     if weight_upside is not None:
@@ -4384,6 +4340,25 @@ def api_setup_settings_post(
         _setup_settings["bofa_max_hold_minutes"] = bofa_max_hold_minutes
     if bofa_cooldown_minutes is not None:
         _setup_settings["bofa_cooldown_minutes"] = bofa_cooldown_minutes
+    # Absorption weights/params
+    if abs_lookback is not None:
+        _setup_settings["abs_lookback"] = abs_lookback
+    if abs_vol_window is not None:
+        _setup_settings["abs_vol_window"] = abs_vol_window
+    if abs_min_vol_ratio is not None:
+        _setup_settings["abs_min_vol_ratio"] = abs_min_vol_ratio
+    if abs_cooldown_bars is not None:
+        _setup_settings["abs_cooldown_bars"] = abs_cooldown_bars
+    if abs_weight_divergence is not None:
+        _setup_settings["abs_weight_divergence"] = abs_weight_divergence
+    if abs_weight_volume is not None:
+        _setup_settings["abs_weight_volume"] = abs_weight_volume
+    if abs_weight_dd is not None:
+        _setup_settings["abs_weight_dd"] = abs_weight_dd
+    if abs_weight_paradigm is not None:
+        _setup_settings["abs_weight_paradigm"] = abs_weight_paradigm
+    if abs_weight_lis is not None:
+        _setup_settings["abs_weight_lis"] = abs_weight_lis
 
     save_setup_settings()
     return {"status": "ok", "settings": _setup_settings}
@@ -4402,7 +4377,8 @@ def api_setup_log(limit: int = Query(50)):
                        support_score, upside_score, floor_cluster_score,
                        target_cluster_score, rr_score, notified,
                        bofa_stop_level, bofa_target_level, bofa_lis_width,
-                       bofa_max_hold_minutes, lis_upper
+                       bofa_max_hold_minutes, lis_upper,
+                       abs_vol_ratio, abs_es_price
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim
@@ -4418,14 +4394,187 @@ def api_setup_log(limit: int = Query(50)):
         return []
 
 
+def _calculate_absorption_outcome(entry: dict) -> dict:
+    """Calculate outcome for ES Absorption using ES range bars.
+
+    10pt first target, Volland target (converted SPX→ES) as second target
+    (or 10pt only for BofA paradigm), 12pt fixed stop.
+    """
+    try:
+        ts = entry.get("ts")
+        if isinstance(ts, str):
+            ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if not ts:
+            return {"no_data": True}
+
+        es_entry = entry.get("abs_es_price")
+        if not es_entry:
+            return {"no_data": True}
+
+        direction = entry.get("direction", "bullish")
+        is_long = direction.lower() in ("long", "bullish")
+        paradigm = (entry.get("paradigm") or "").upper()
+        is_bofa_paradigm = "BOFA" in paradigm
+
+        # Determine levels
+        ten_pt_level = es_entry + 10 if is_long else es_entry - 10
+        stop_level = es_entry - 12 if is_long else es_entry + 12
+
+        # Volland target converted to ES
+        target_level = None
+        spx_spot = entry.get("spot")
+        spx_target = entry.get("target")
+        if not is_bofa_paradigm and spx_target and spx_spot and spx_spot != es_entry:
+            offset = es_entry - spx_spot
+            target_level = spx_target + offset
+        if target_level is None:
+            target_level = ten_pt_level  # fallback: same as 10pt
+
+        # Get ES range bars for that session date
+        alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
+        with engine.begin() as conn:
+            bar_rows = conn.execute(text("""
+                SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
+                       ts_start, ts_end, status
+                FROM es_range_bars
+                WHERE trade_date = :td AND symbol = '@ES' AND status = 'closed'
+                ORDER BY bar_idx ASC
+            """), {"td": alert_date.isoformat()}).mappings().all()
+
+        if not bar_rows:
+            return {"no_data": True}
+
+        # Find the signal bar by timestamp
+        signal_bar_idx = None
+        ts_str = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+        for r in bar_rows:
+            r_ts = r["ts_end"].isoformat() if hasattr(r["ts_end"], "isoformat") else str(r["ts_end"])
+            if r_ts[:19] == ts_str[:19]:
+                signal_bar_idx = r["bar_idx"]
+                break
+        if signal_bar_idx is None:
+            # Fallback: find bar closest to signal time
+            for r in bar_rows:
+                if r["bar_idx"] == entry.get("bar_idx"):
+                    signal_bar_idx = r["bar_idx"]
+                    break
+        if signal_bar_idx is None:
+            return {"no_data": True}
+
+        # Walk bars after the signal bar
+        hit_10pt = False
+        hit_target = False
+        hit_stop = False
+        time_to_10pt = None
+        time_to_target = None
+        time_to_stop = None
+        max_profit = 0.0
+        max_profit_ts = None
+        max_loss = 0.0
+        max_loss_ts = None
+        first_event = None
+        bars_after = 0
+
+        for r in bar_rows:
+            if r["bar_idx"] <= signal_bar_idx:
+                continue
+            bars_after += 1
+            bar_high = r["bar_high"]
+            bar_low = r["bar_low"]
+            bar_ts = r["ts_end"]
+
+            if is_long:
+                profit_high = bar_high - es_entry
+                profit_low = bar_low - es_entry
+                if not hit_10pt and bar_high >= ten_pt_level:
+                    hit_10pt = True
+                    time_to_10pt = bar_ts
+                    if first_event is None:
+                        first_event = "10pt"
+                if not hit_target and bar_high >= target_level:
+                    hit_target = True
+                    time_to_target = bar_ts
+                    if first_event is None:
+                        first_event = "target"
+                if not hit_stop and bar_low <= stop_level:
+                    hit_stop = True
+                    time_to_stop = bar_ts
+                    if first_event is None:
+                        first_event = "stop"
+                if profit_high > max_profit:
+                    max_profit = profit_high
+                    max_profit_ts = bar_ts
+                if profit_low < max_loss:
+                    max_loss = profit_low
+                    max_loss_ts = bar_ts
+            else:
+                profit_high = es_entry - bar_low
+                profit_low = es_entry - bar_high
+                if not hit_10pt and bar_low <= ten_pt_level:
+                    hit_10pt = True
+                    time_to_10pt = bar_ts
+                    if first_event is None:
+                        first_event = "10pt"
+                if not hit_target and bar_low <= target_level:
+                    hit_target = True
+                    time_to_target = bar_ts
+                    if first_event is None:
+                        first_event = "target"
+                if not hit_stop and bar_high >= stop_level:
+                    hit_stop = True
+                    time_to_stop = bar_ts
+                    if first_event is None:
+                        first_event = "stop"
+                if profit_high > max_profit:
+                    max_profit = profit_high
+                    max_profit_ts = bar_ts
+                if profit_low < max_loss:
+                    max_loss = profit_low
+                    max_loss_ts = bar_ts
+
+        if first_event is None:
+            first_event = "pending" if bars_after < 20 else "miss"
+
+        def _iso(v):
+            return v.isoformat() if v and hasattr(v, "isoformat") else v
+
+        return {
+            "is_absorption": True,
+            "hit_10pt": hit_10pt,
+            "hit_target": hit_target,
+            "hit_stop": hit_stop,
+            "time_to_10pt": _iso(time_to_10pt),
+            "time_to_target": _iso(time_to_target),
+            "time_to_stop": _iso(time_to_stop),
+            "max_profit": round(max_profit, 2),
+            "max_profit_ts": _iso(max_profit_ts),
+            "max_loss": round(max_loss, 2),
+            "max_loss_ts": _iso(max_loss_ts),
+            "first_event": first_event,
+            "ten_pt_level": round(ten_pt_level, 2),
+            "target_level": round(target_level, 2),
+            "stop_level": round(stop_level, 2),
+            "bars_after": bars_after,
+            "is_bofa_paradigm": is_bofa_paradigm,
+        }
+    except Exception as e:
+        print(f"[setups] absorption outcome error: {e}", flush=True)
+        return {"error": str(e)}
+
+
 def _calculate_setup_outcome(entry: dict) -> dict:
     """
     Calculate outcome for a setup alert by querying price history.
     Returns dict with hit_10pt, hit_target, hit_stop, max_profit, max_loss, etc.
     BofA Scalp uses different parameters: 10pt target, 12pt stop, 30-min max hold.
+    ES Absorption uses ES range bars: 10pt first target, converted Volland target, 12pt stop.
     """
     if not engine:
         return {}
+
+    # ES Absorption: outcome tracking using ES range bars
+    if entry.get("setup_name") == "ES Absorption":
+        return _calculate_absorption_outcome(entry)
 
     try:
         ts = entry.get("ts")
@@ -4611,7 +4760,8 @@ def api_setup_log_outcome(log_id: int):
                        paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
                        gap_to_lis, upside, rr_ratio, first_hour, notified,
                        bofa_stop_level, bofa_target_level, bofa_lis_width,
-                       bofa_max_hold_minutes, lis_upper, comments
+                       bofa_max_hold_minutes, lis_upper, comments,
+                       abs_vol_ratio, abs_es_price
                 FROM setup_log WHERE id = :log_id
             """), {"log_id": log_id}).mappings().first()
 
@@ -4623,9 +4773,64 @@ def api_setup_log_outcome(log_id: int):
         # Get price history
         ts = row["ts"]
         is_bofa = row["setup_name"] == "BofA Scalp"
+        is_abs = row["setup_name"] == "ES Absorption"
         alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
         market_open = NY.localize(datetime.combine(alert_date, dtime(9, 30)))
         market_close = NY.localize(datetime.combine(alert_date, dtime(16, 0)))
+
+        if is_abs:
+            # ES Absorption: fetch ES range bars from es_range_bars table
+            with engine.begin() as conn:
+                es_rows = conn.execute(text("""
+                    SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
+                           bar_volume, bar_delta, cumulative_delta,
+                           ts_start, ts_end, status
+                    FROM es_range_bars
+                    WHERE trade_date = :td AND symbol = '@ES'
+                    ORDER BY bar_idx ASC
+                """), {"td": alert_date.isoformat()}).mappings().all()
+
+            es_bars = [
+                {
+                    "idx": r["bar_idx"],
+                    "open": r["bar_open"], "high": r["bar_high"],
+                    "low": r["bar_low"], "close": r["bar_close"],
+                    "volume": r["bar_volume"], "delta": r["bar_delta"],
+                    "cvd": r["cumulative_delta"],
+                    "ts_start": r["ts_start"].isoformat() if hasattr(r["ts_start"], "isoformat") else r["ts_start"],
+                    "ts_end": r["ts_end"].isoformat() if hasattr(r["ts_end"], "isoformat") else r["ts_end"],
+                    "status": r["status"],
+                }
+                for r in es_rows
+            ]
+
+            outcome = _calculate_setup_outcome(dict(row))
+            # ES entry price for chart, SPX spot for conversion offset
+            es_entry = row.get("abs_es_price") or row["spot"]
+            spx_spot = row["spot"]
+            offset = (es_entry - spx_spot) if (es_entry and spx_spot and es_entry != spx_spot) else 0
+            levels = {
+                "entry": es_entry,
+                "spot_spx": spx_spot,
+                "offset": round(offset, 2),
+                "lis": row["lis"],
+                "target": row["target"],
+                "max_plus_gex": row["max_plus_gex"],
+                "max_minus_gex": row["max_minus_gex"],
+                "abs_es_price": row.get("abs_es_price"),
+                "abs_vol_ratio": row.get("abs_vol_ratio"),
+                # Outcome levels (ES prices)
+                "ten_pt": outcome.get("ten_pt_level"),
+                "target_es": outcome.get("target_level"),
+                "stop": outcome.get("stop_level"),
+            }
+            return {
+                "entry": entry,
+                "outcome": outcome,
+                "prices": [],
+                "es_bars": es_bars,
+                "levels": levels,
+            }
 
         # BofA Scalp: show entry ± 1hr for context, GEX/AG: full day
         if is_bofa:
@@ -4711,7 +4916,8 @@ def api_setup_log_with_outcomes(limit: int = Query(50)):
                        support_score, upside_score, floor_cluster_score,
                        target_cluster_score, rr_score, notified,
                        bofa_stop_level, bofa_target_level, bofa_lis_width,
-                       bofa_max_hold_minutes, lis_upper
+                       bofa_max_hold_minutes, lis_upper,
+                       abs_vol_ratio, abs_es_price
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim
@@ -4760,7 +4966,8 @@ def api_setup_export(
                        paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
                        gap_to_lis, upside, rr_ratio, first_hour, notified,
                        bofa_stop_level, bofa_target_level, bofa_lis_width,
-                       bofa_max_hold_minutes, lis_upper, comments
+                       bofa_max_hold_minutes, lis_upper, comments,
+                       abs_vol_ratio, abs_es_price
                 FROM setup_log
                 WHERE 1=1 {where_clause}
                 ORDER BY ts DESC
@@ -4805,6 +5012,12 @@ def api_setup_export(
             elif outcome.get("hit_10pt"):
                 result = "WIN"
                 points_pl = 15 if is_bofa_row else 10
+            elif outcome.get("first_event") == "pending":
+                result = "PENDING"
+                points_pl = outcome.get("max_profit", 0)
+            elif outcome.get("first_event") == "miss":
+                result = "MISS"
+                points_pl = outcome.get("max_profit", 0)
             elif outcome.get("no_data"):
                 result = "NO DATA"
             else:
@@ -5798,6 +6011,10 @@ DASH_HTML_TEMPLATE = """
                   <input type="checkbox" id="setupBofaScalpEnabled" style="width:16px;height:16px">
                   <span style="font-size:12px">BofA Scalp</span>
                 </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                  <input type="checkbox" id="setupAbsorptionEnabled" style="width:16px;height:16px">
+                  <span style="font-size:12px">ES Absorption</span>
+                </label>
               </div>
             </div>
 
@@ -5808,6 +6025,8 @@ DASH_HTML_TEMPLATE = """
               <div>Paradigm contains "AG" &bull; Spot &lt; LIS &bull; Spot-Target &ge; 10 &bull; Spot-(-GEX) &ge; 10 &bull; Gap (LIS-Spot) &le; 20</div>
               <div style="font-weight:600;margin-bottom:4px;margin-top:8px">BofA Scalp — Base Conditions:</div>
               <div>Paradigm = BofA (not MISSY) &bull; 10:00-15:30 ET &bull; Spot within 3pts of LIS &bull; LIS width &ge; 15 &bull; LIS stable 30min</div>
+              <div style="font-weight:600;margin-bottom:4px;margin-top:8px">ES Absorption — Base Conditions:</div>
+              <div>Volume spike &ge; 1.5x avg &bull; Price vs CVD divergence over lookback &bull; Volland confluence (DD, paradigm, LIS)</div>
             </div>
 
             <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">GEX/AG Scoring Weights (0-100, weighted average)</div>
@@ -5873,6 +6092,40 @@ DASH_HTML_TEMPLATE = """
               </label>
               <label style="font-size:11px">Cooldown (min)
                 <input type="number" id="bofaCooldown" min="5" max="120" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+            </div>
+
+            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">ES Absorption Weights (0-100)</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+              <label style="font-size:11px">Divergence
+                <input type="number" id="absWeightDivergence" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Volume
+                <input type="number" id="absWeightVolume" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">DD Hedging
+                <input type="number" id="absWeightDD" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Paradigm
+                <input type="number" id="absWeightParadigm" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">LIS Proximity
+                <input type="number" id="absWeightLIS" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+            </div>
+            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">ES Absorption Parameters</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+              <label style="font-size:11px">Lookback (bars)
+                <input type="number" id="absLookback" min="3" max="30" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Vol Window
+                <input type="number" id="absVolWindow" min="5" max="50" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Min Vol Ratio
+                <input type="number" id="absMinVolRatio" min="1" max="5" step="0.1" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Cooldown (bars)
+                <input type="number" id="absCooldownBars" min="1" max="50" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
               </label>
             </div>
 
@@ -8907,6 +9160,7 @@ DASH_HTML_TEMPLATE = """
         document.getElementById('setupGexLongEnabled').checked = s.gex_long_enabled !== false;
         document.getElementById('setupAgShortEnabled').checked = s.ag_short_enabled !== false;
         document.getElementById('setupBofaScalpEnabled').checked = s.bofa_scalp_enabled !== false;
+        document.getElementById('setupAbsorptionEnabled').checked = s.absorption_enabled !== false;
         document.getElementById('setupWeightSupport').value = s.weight_support ?? 20;
         document.getElementById('setupWeightUpside').value = s.weight_upside ?? 20;
         document.getElementById('setupWeightFloorCluster').value = s.weight_floor_cluster ?? 20;
@@ -8926,6 +9180,16 @@ DASH_HTML_TEMPLATE = """
         document.getElementById('bofaTargetDistance').value = s.bofa_target_distance ?? 10;
         document.getElementById('bofaMaxHold').value = s.bofa_max_hold_minutes ?? 30;
         document.getElementById('bofaCooldown').value = s.bofa_cooldown_minutes ?? 40;
+        // ES Absorption
+        document.getElementById('absWeightDivergence').value = s.abs_weight_divergence ?? 25;
+        document.getElementById('absWeightVolume').value = s.abs_weight_volume ?? 25;
+        document.getElementById('absWeightDD').value = s.abs_weight_dd ?? 15;
+        document.getElementById('absWeightParadigm').value = s.abs_weight_paradigm ?? 15;
+        document.getElementById('absWeightLIS').value = s.abs_weight_lis ?? 20;
+        document.getElementById('absLookback').value = s.abs_lookback ?? 8;
+        document.getElementById('absVolWindow').value = s.abs_vol_window ?? 20;
+        document.getElementById('absMinVolRatio').value = s.abs_min_vol_ratio ?? 1.5;
+        document.getElementById('absCooldownBars').value = s.abs_cooldown_bars ?? 10;
       } catch (err) {
         console.error('Failed to load setup settings', err);
       }
@@ -8940,6 +9204,7 @@ DASH_HTML_TEMPLATE = """
           gex_long_enabled: document.getElementById('setupGexLongEnabled').checked,
           ag_short_enabled: document.getElementById('setupAgShortEnabled').checked,
           bofa_scalp_enabled: document.getElementById('setupBofaScalpEnabled').checked,
+          absorption_enabled: document.getElementById('setupAbsorptionEnabled').checked,
           weight_support: document.getElementById('setupWeightSupport').value,
           weight_upside: document.getElementById('setupWeightUpside').value,
           weight_floor_cluster: document.getElementById('setupWeightFloorCluster').value,
@@ -8957,6 +9222,15 @@ DASH_HTML_TEMPLATE = """
           bofa_target_distance: document.getElementById('bofaTargetDistance').value,
           bofa_max_hold_minutes: document.getElementById('bofaMaxHold').value,
           bofa_cooldown_minutes: document.getElementById('bofaCooldown').value,
+          abs_weight_divergence: document.getElementById('absWeightDivergence').value,
+          abs_weight_volume: document.getElementById('absWeightVolume').value,
+          abs_weight_dd: document.getElementById('absWeightDD').value,
+          abs_weight_paradigm: document.getElementById('absWeightParadigm').value,
+          abs_weight_lis: document.getElementById('absWeightLIS').value,
+          abs_lookback: document.getElementById('absLookback').value,
+          abs_vol_window: document.getElementById('absVolWindow').value,
+          abs_min_vol_ratio: document.getElementById('absMinVolRatio').value,
+          abs_cooldown_bars: document.getElementById('absCooldownBars').value,
         });
         const r = await fetch('/api/setup/settings?' + params, { method: 'POST' });
         const data = await r.json();
@@ -8989,8 +9263,9 @@ DASH_HTML_TEMPLATE = """
           const color = gradeColor[l.grade] || '#888';
           const bell = l.notified ? '&#128276;' : '';
           const isBofa = l.setup_name === 'BofA Scalp';
-          const dir = l.direction === 'long' ? '▲' : '▼';
-          const dirColor = l.direction === 'long' ? '#22c55e' : '#ef4444';
+          const isAbs = l.setup_name === 'ES Absorption';
+          const dir = isAbs ? (l.direction === 'bullish' ? '▲' : '▼') : (l.direction === 'long' ? '▲' : '▼');
+          const dirColor = (l.direction === 'long' || l.direction === 'bullish') ? '#22c55e' : '#ef4444';
           const o = l.outcome || {};
           const tgtLabel = isBofa ? '15p' : '10p';
           const has10pt = o.hit_10pt === true ? '✓' : (o.hit_10pt === false ? '✗' : '–');
@@ -9001,10 +9276,14 @@ DASH_HTML_TEMPLATE = """
           const stopIsLoss = o.hit_stop && o.first_event === 'stop';
           const cStop = stopIsLoss ? '#ef4444' : (o.hit_stop === false ? '#22c55e' : '#888');
           let result = '';
-          if (o.first_event === '10pt' || o.first_event === 'target' || o.first_event === '15pt') {
+          if (o.first_event === 'pending') {
+            result = '<span style="color:#888;font-size:8px">⏳</span>';
+          } else if (o.first_event === '10pt' || o.first_event === 'target' || o.first_event === '15pt') {
             result = '<span style="color:#22c55e;font-weight:700">WIN</span>';
           } else if (o.first_event === 'stop') {
             result = '<span style="color:#ef4444;font-weight:700">LOSS</span>';
+          } else if (o.first_event === 'miss') {
+            result = '<span style="color:#888;font-size:8px">MISS</span>';
           } else if (o.first_event === 'timeout') {
             const tp = o.timeout_pnl || 0;
             result = tp > 0
@@ -9013,13 +9292,13 @@ DASH_HTML_TEMPLATE = """
           } else if (o.max_profit > 0) {
             result = '<span style="color:#888">+' + o.max_profit?.toFixed(0) + '</span>';
           }
-          const nameTag = isBofa ? '<span style="color:#a78bfa;font-size:7px;font-weight:600">BofA</span>' : '';
+          const nameTag = isBofa ? '<span style="color:#a78bfa;font-size:7px;font-weight:600">BofA</span>' : isAbs ? '<span style="color:#f59e0b;font-size:7px;font-weight:600">Abs</span>' : '';
           return `<div class="setup-log-row" data-id="${l.id}" style="display:grid;grid-template-columns:28px 50px 28px 55px 60px 70px 50px 1fr;align-items:center;gap:4px;padding:4px 2px;border-bottom:1px solid var(--border);cursor:pointer" onmouseover="this.style.background='#1a1d21'" onmouseout="this.style.background='transparent'">
             <span style="color:${dirColor};font-weight:700;text-align:center">${dir}${nameTag ? '<br>' + nameTag : ''}</span>
             <span style="color:${color};font-weight:600">${l.grade}</span>
             <span style="color:var(--muted)">${l.score}</span>
-            <span style="color:var(--text)">${l.spot?.toFixed(0)}</span>
-            <span style="color:var(--muted);font-size:9px">${l.gap_to_lis?.toFixed(1)} / ${l.rr_ratio?.toFixed(1)}x</span>
+            <span style="color:var(--text)">${isAbs ? (l.abs_es_price || l.spot)?.toFixed(2) : l.spot?.toFixed(0)}</span>
+            <span style="color:var(--muted);font-size:9px">${isAbs ? (l.abs_vol_ratio || 0).toFixed(1) + 'x vol' : (l.gap_to_lis?.toFixed(1) + ' / ' + l.rr_ratio?.toFixed(1) + 'x')}</span>
             <span style="font-size:9px"><span style="color:${c10}">${has10pt}</span> <span style="color:${cTgt}">${hasTgt}</span> <span style="color:${cStop}">${hasStop}</span></span>
             <span style="font-size:9px">${result}</span>
             <span style="color:var(--muted);font-size:9px;text-align:right">${date} ${time} ${bell}</span>
@@ -9071,13 +9350,29 @@ DASH_HTML_TEMPLATE = """
 
         // Title
         const isBofa = e.setup_name === 'BofA Scalp';
-        const dir = e.direction === 'long' ? 'LONG ▲' : 'SHORT ▼';
-        const dirColor = e.direction === 'long' ? '#22c55e' : '#ef4444';
-        const setupLabel = isBofa ? 'BofA Scalp ' : '';
-        title.innerHTML = setupLabel + '<span style="color:' + dirColor + '">' + dir + '</span> ' + e.grade + ' @ SPX ' + e.spot?.toFixed(0);
+        const isAbs = e.setup_name === 'ES Absorption';
+        const dir = isAbs ? (e.direction === 'bullish' ? 'BUY ▲' : 'SELL ▼') : (e.direction === 'long' ? 'LONG ▲' : 'SHORT ▼');
+        const dirColor = (e.direction === 'long' || e.direction === 'bullish') ? '#22c55e' : '#ef4444';
+        const setupLabel = isBofa ? 'BofA Scalp ' : isAbs ? 'ES Absorption ' : '';
+        const priceLabel = isAbs ? '@ ES ' : '@ SPX ';
+        const displayPrice = isAbs ? (e.abs_es_price || e.spot)?.toFixed(2) : e.spot?.toFixed(0);
+        title.innerHTML = setupLabel + '<span style="color:' + dirColor + '">' + dir + '</span> ' + e.grade + ' ' + priceLabel + displayPrice;
 
         // Info grid
-        const infoItems = isBofa ? [
+        const infoItems = isAbs ? [
+          ['Time', fmtDateTimeET(e.ts) + ' ET'],
+          ['ES Entry', (lv.abs_es_price || e.abs_es_price)?.toFixed(2)],
+          ['10pt Target', lv.ten_pt?.toFixed(2) || '–'],
+          ['Vol Target', lv.target_es?.toFixed(2) || '10pt only'],
+          ['Stop (-12)', lv.stop?.toFixed(2) || '–'],
+          ['Vol Ratio', (e.abs_vol_ratio || 0).toFixed(1) + 'x'],
+          ['Paradigm', e.paradigm || '–'],
+          ['LIS (SPX)', e.lis?.toFixed(0) || '–'],
+          ['Score', e.score + '/100'],
+          ['Div', e.support_score],
+          ['Vol', e.upside_score],
+          ['DD', e.floor_cluster_score],
+        ] : isBofa ? [
           ['Time', fmtDateTimeET(e.ts) + ' ET'],
           ['Paradigm', e.paradigm || '–'],
           ['Entry', e.spot?.toFixed(2)],
@@ -9105,6 +9400,46 @@ DASH_HTML_TEMPLATE = """
         info.innerHTML = infoItems.map(([k, v]) => '<div style="background:#1a1d21;padding:6px 8px;border-radius:4px"><div style="color:var(--muted);font-size:9px">' + k + '</div><div style="color:var(--text);font-weight:600">' + (v || '–') + '</div></div>').join('');
 
         // Outcome row
+        if (isAbs) {
+          if (o.no_data || o.error) {
+            outcome.innerHTML = '<div style="color:var(--muted);text-align:center;padding:8px;font-size:11px">ES Absorption — ' + (o.error || 'no ES range bar data for outcome') + '</div>';
+          } else {
+            const ac10 = o.hit_10pt ? '#22c55e' : '#888';
+            const acTgt = o.hit_target ? '#22c55e' : '#888';
+            const aStopIsLoss = o.hit_stop && o.first_event === 'stop';
+            const acStop = aStopIsLoss ? '#ef4444' : (o.hit_stop ? '#888' : '#22c55e');
+            const aStopLabel = o.hit_stop ? (aStopIsLoss ? '✗ STOPPED' : 'STOPPED (BE)') : '✓ SAFE';
+            const isPending = o.first_event === 'pending';
+            const isBofaPara = o.is_bofa_paradigm;
+            outcome.innerHTML = `
+              <div style="flex:1;text-align:center">
+                <div style="color:var(--muted);font-size:10px">10pt Target</div>
+                <div style="color:${isPending ? '#888' : ac10};font-size:18px;font-weight:700">${isPending ? '⏳' : (o.hit_10pt ? '✓ HIT' : '✗ MISS')}</div>
+                ${o.time_to_10pt ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.time_to_10pt) + ' ET</div>' : ''}
+              </div>
+              <div style="flex:1;text-align:center">
+                <div style="color:var(--muted);font-size:10px">${isBofaPara ? '10pt (BofA)' : 'Vol Target'}</div>
+                <div style="color:${isPending ? '#888' : acTgt};font-size:18px;font-weight:700">${isPending ? '⏳' : (o.hit_target ? '✓ HIT' : '✗ MISS')}</div>
+                ${o.time_to_target ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.time_to_target) + ' ET</div>' : ''}
+              </div>
+              <div style="flex:1;text-align:center">
+                <div style="color:var(--muted);font-size:10px">Stop</div>
+                <div style="color:${isPending ? '#888' : acStop};font-size:18px;font-weight:700">${isPending ? '⏳' : aStopLabel}</div>
+                ${o.time_to_stop ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.time_to_stop) + ' ET</div>' : ''}
+              </div>
+              <div style="flex:1;text-align:center">
+                <div style="color:var(--muted);font-size:10px">Max Profit</div>
+                <div style="color:#22c55e;font-size:18px;font-weight:700">+${o.max_profit?.toFixed(1) || 0}</div>
+                ${o.max_profit_ts ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.max_profit_ts) + ' ET</div>' : ''}
+              </div>
+              <div style="flex:1;text-align:center">
+                <div style="color:var(--muted);font-size:10px">Max Loss</div>
+                <div style="color:#ef4444;font-size:18px;font-weight:700">${o.max_loss?.toFixed(1) || 0}</div>
+                ${o.max_loss_ts ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.max_loss_ts) + ' ET</div>' : ''}
+              </div>
+            `;
+          }
+        } else {
         const c10 = o.hit_10pt ? '#22c55e' : '#888';
         const cTgt = o.hit_target ? '#22c55e' : '#888';
         const stopIsLoss = o.hit_stop && o.first_event === 'stop';
@@ -9143,9 +9478,129 @@ DASH_HTML_TEMPLATE = """
             ${o.max_loss_ts ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.max_loss_ts) + ' ET</div>' : ''}
           </div>
         `;
+        } // end else (non-absorption outcome)
 
-        // Draw chart (candlestick bars, full day from market open)
-        if (data.prices && data.prices.length > 0) {
+        // Draw chart
+        if (isAbs && data.es_bars && data.es_bars.length > 0) {
+          // ES Absorption: render ES range bar candlestick + CVD chart
+          const esBars = data.es_bars;
+
+          // Find signal bar by closest price match (robust float comparison)
+          const sigPrice = e.abs_es_price || e.spot;
+          let sigBarIdx = -1;
+          if (sigPrice) {
+            let minDist = Infinity;
+            for (let i = 0; i < esBars.length; i++) {
+              const d = Math.abs(esBars[i].close - sigPrice);
+              if (d < minDist) { minDist = d; sigBarIdx = i; }
+            }
+            // Also try matching by timestamp (more reliable)
+            if (e.ts) {
+              const sigTs = new Date(e.ts).getTime();
+              let minTsDist = Infinity;
+              for (let i = 0; i < esBars.length; i++) {
+                const barTs = new Date(esBars[i].ts_end).getTime();
+                const d = Math.abs(barTs - sigTs);
+                if (d < minTsDist) { minTsDist = d; sigBarIdx = i; }
+              }
+            }
+          }
+
+          // Window: show signal bar ± 30 bars for context, minimum 20 bars before
+          const contextBefore = 30, contextAfter = 30;
+          const winStart = Math.max(0, sigBarIdx - contextBefore);
+          const winEnd = Math.min(esBars.length, sigBarIdx + contextAfter + 1);
+          const visibleBars = esBars.slice(winStart, winEnd);
+          const barLabels = visibleBars.map(b => b.idx.toString());
+
+          // Price candlestick trace
+          const priceTrace = {
+            type: 'candlestick',
+            x: barLabels,
+            open: visibleBars.map(b => b.open),
+            high: visibleBars.map(b => b.high),
+            low: visibleBars.map(b => b.low),
+            close: visibleBars.map(b => b.close),
+            increasing: { line: { color: '#22c55e' }, fillcolor: '#22c55e' },
+            decreasing: { line: { color: '#ef4444' }, fillcolor: '#ef4444' },
+            name: 'ES Price',
+            yaxis: 'y'
+          };
+
+          // CVD line trace (secondary y-axis)
+          const cvdTrace = {
+            type: 'scatter', mode: 'lines',
+            x: barLabels,
+            y: visibleBars.map(b => b.cvd),
+            line: { color: '#60a5fa', width: 1.5 },
+            name: 'CVD',
+            yaxis: 'y2'
+          };
+
+          const shapes = [];
+          const annots = [];
+
+          // Mark signal bar with vertical line
+          if (sigBarIdx >= winStart && sigBarIdx < winEnd) {
+            const sigLabel = esBars[sigBarIdx].idx.toString();
+            shapes.push({ type:'line', x0:sigLabel, x1:sigLabel, y0:0, y1:1, yref:'paper', line:{color:'#f59e0b',width:3,dash:'solid'} });
+            const isBull = e.direction === 'bullish';
+            const arrow = isBull ? '▲ BUY' : '▼ SELL';
+            annots.push({ x:sigLabel, y:1, yref:'paper', text:arrow + ' ' + e.grade, showarrow:false, font:{color:'#f59e0b',size:11,weight:'bold'}, yanchor:'bottom' });
+          }
+
+          // Entry price level line
+          if (lv.entry) {
+            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.entry, y1:lv.entry, line:{color:'#f59e0b',width:2,dash:'solid'} });
+            annots.push({ x:barLabels[0], y:lv.entry, text:'Entry ' + lv.entry?.toFixed(2), showarrow:false, font:{color:'#f59e0b',size:10}, xanchor:'left' });
+          }
+          // 10pt target line
+          if (lv.ten_pt) {
+            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.ten_pt, y1:lv.ten_pt, line:{color:'#22c55e',width:1,dash:'dash'} });
+            annots.push({ x:barLabels[barLabels.length-1], y:lv.ten_pt, text:'10pt', showarrow:false, font:{color:'#22c55e',size:9}, xanchor:'right' });
+          }
+          // Volland target (ES converted)
+          if (lv.target_es && lv.target_es !== lv.ten_pt) {
+            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.target_es, y1:lv.target_es, line:{color:'#10b981',width:1,dash:'dot'} });
+            annots.push({ x:barLabels[barLabels.length-1], y:lv.target_es, text:'Tgt', showarrow:false, font:{color:'#10b981',size:9}, xanchor:'right' });
+          }
+          // Stop line
+          if (lv.stop) {
+            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.stop, y1:lv.stop, line:{color:'#ef4444',width:2,dash:'dash'} });
+            annots.push({ x:barLabels[barLabels.length-1], y:lv.stop, text:'Stop', showarrow:false, font:{color:'#ef4444',size:9}, xanchor:'right' });
+          }
+          // SPX→ES converted levels (LIS, +GEX, -GEX)
+          const esOffset = lv.offset || 0;
+          if (lv.lis && esOffset) {
+            const esLIS = lv.lis + esOffset;
+            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:esLIS, y1:esLIS, line:{color:'#f97316',width:1,dash:'dot'} });
+            annots.push({ x:barLabels[0], y:esLIS, text:'LIS ' + esLIS.toFixed(0), showarrow:false, font:{color:'#f97316',size:9}, xanchor:'left' });
+          }
+          if (lv.max_plus_gex && esOffset) {
+            const esGP = lv.max_plus_gex + esOffset;
+            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:esGP, y1:esGP, line:{color:'#22c55e',width:1,dash:'dot'} });
+            annots.push({ x:barLabels[0], y:esGP, text:'+G ' + esGP.toFixed(0), showarrow:false, font:{color:'#22c55e',size:9}, xanchor:'left' });
+          }
+          if (lv.max_minus_gex && esOffset) {
+            const esGM = lv.max_minus_gex + esOffset;
+            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:esGM, y1:esGM, line:{color:'#ef4444',width:1,dash:'dot'} });
+            annots.push({ x:barLabels[0], y:esGM, text:'-G ' + esGM.toFixed(0), showarrow:false, font:{color:'#ef4444',size:9}, xanchor:'left' });
+          }
+
+          Plotly.react(chart, [priceTrace, cvdTrace], {
+            margin: { l:50, r:50, t:20, b:40 },
+            paper_bgcolor: '#0f1115',
+            plot_bgcolor: '#0a0c0f',
+            xaxis: { type:'category', gridcolor:'#1a1d21', tickfont:{size:9,color:'#888'}, tickangle:0, nticks:10, title:{text:'Bar #',font:{size:9,color:'#666'}} },
+            yaxis: { gridcolor:'#1a1d21', tickfont:{size:10,color:'#888'}, side:'left', title:{text:'ES Price',font:{size:9,color:'#666'}} },
+            yaxis2: { overlaying:'y', side:'right', gridcolor:'transparent', tickfont:{size:9,color:'#60a5fa'}, title:{text:'CVD',font:{size:9,color:'#60a5fa'}}, showgrid:false },
+            font: { color:'#e6e7e9' },
+            shapes: shapes,
+            annotations: annots,
+            showlegend: true,
+            legend: { x:0, y:1.1, orientation:'h', font:{size:10,color:'#888'} }
+          }, { displayModeBar:false, responsive:true });
+        } else if (data.prices && data.prices.length > 0) {
           const times = data.prices.map(p => fmtTimeET(p.ts));
           const spots = data.prices.map(p => p.spot);
 
@@ -9262,15 +9717,19 @@ DASH_HTML_TEMPLATE = """
         }
 
         // Stats
-        const scoreLabels = isBofa
+        const scoreLabels = isAbs
+          ? [['Divergence', e.support_score], ['Volume', e.upside_score], ['DD Hedging', e.floor_cluster_score], ['Paradigm', e.target_cluster_score], ['LIS Prox', e.rr_score]]
+          : isBofa
           ? [['Stability', e.support_score], ['Width', e.upside_score], ['Charm', e.floor_cluster_score], ['Time of Day', e.target_cluster_score], ['Midpoint', e.rr_score]]
           : [['Support', e.support_score], ['Upside', e.upside_score], ['Floor Cluster', e.floor_cluster_score], ['Target Cluster', e.target_cluster_score], ['R:R Score', e.rr_score]];
         const scoreRows = scoreLabels.map(([k, v]) => '<div>' + k + ': <span style="color:var(--text)">' + (v || '–') + '</span></div>').join('');
-        const bonusRow = isBofa ? '' : '<div>First Hour: <span style="color:var(--text)">' + (e.first_hour ? 'Yes (+10)' : 'No') + '</span></div>';
+        const bonusRow = (isBofa || isAbs) ? '' : '<div>First Hour: <span style="color:var(--text)">' + (e.first_hour ? 'Yes (+10)' : 'No') + '</span></div>';
         const firstEvt = o.first_event || '';
         const evtColor = (firstEvt === 'stop' || firstEvt === 'timeout') ? '#ef4444' : '#22c55e';
         let summaryLabel = '';
-        if (firstEvt === '10pt' || firstEvt === 'target' || firstEvt === '15pt') summaryLabel = '<span style="color:#22c55e;font-weight:700;font-size:14px">✓ WINNER</span>';
+        if (isAbs && firstEvt === 'pending') {
+          summaryLabel = '<span style="color:#888;font-size:12px">⏳ PENDING (insufficient bars after signal)</span>';
+        } else if (firstEvt === '10pt' || firstEvt === 'target' || firstEvt === '15pt') summaryLabel = '<span style="color:#22c55e;font-weight:700;font-size:14px">✓ WINNER</span>';
         else if (firstEvt === 'stop') summaryLabel = '<span style="color:#ef4444;font-weight:700;font-size:14px">✗ LOSER</span>';
         else if (firstEvt === 'timeout') {
           const tp = o.timeout_pnl || 0;
@@ -9290,8 +9749,8 @@ DASH_HTML_TEMPLATE = """
           <div style="background:#1a1d21;padding:10px;border-radius:6px">
             <div style="font-weight:600;margin-bottom:6px;color:var(--muted)">Trade Summary</div>
             <div style="font-size:10px">
-              <div>First Event: <span style="color:${evtColor};font-weight:600">${firstEvt.toUpperCase() || 'NONE'}</span></div>
-              <div>Data Points: <span style="color:var(--text)">${o.price_count || 0}</span></div>
+              <div>First Event: <span style="color:${evtColor};font-weight:600">${(firstEvt.toUpperCase() || 'NONE')}</span></div>
+              ${isAbs ? '<div>Bars After Signal: <span style="color:var(--text)">' + (o.bars_after || 0) + '</span></div>' : '<div>Data Points: <span style="color:var(--text)">' + (o.price_count || 0) + '</span></div>'}
               <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
                 ${summaryLabel}
               </div>

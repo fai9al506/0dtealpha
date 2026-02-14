@@ -910,7 +910,8 @@ DEFAULT_ABSORPTION_SETTINGS = {
 _cooldown_absorption = {
     "last_bullish_bar": -100,
     "last_bearish_bar": -100,
-    "last_checked_idx": -1,
+    "last_bullish_eval_idx": -1,
+    "last_bearish_eval_idx": -1,
     "last_date": None,
 }
 
@@ -925,7 +926,8 @@ def reset_absorption_session():
     """Reset absorption detector state for a new ES session."""
     _cooldown_absorption["last_bullish_bar"] = -100
     _cooldown_absorption["last_bearish_bar"] = -100
-    _cooldown_absorption["last_checked_idx"] = -1
+    _cooldown_absorption["last_bullish_eval_idx"] = -1
+    _cooldown_absorption["last_bearish_eval_idx"] = -1
     _swing_tracker["swings"] = []
     _swing_tracker["last_type"] = None
     _swing_tracker["last_pivot_idx"] = -1
@@ -1084,11 +1086,6 @@ def evaluate_absorption(bars, volland_stats, settings):
     trigger = closed[-1]
     trigger_idx = trigger["idx"]
 
-    # Skip if already checked this bar
-    if trigger_idx <= _cooldown_absorption["last_checked_idx"]:
-        return None
-    _cooldown_absorption["last_checked_idx"] = trigger_idx
-
     # --- Step 1: Update swing tracker (always, even pre-10AM) ---
     _update_swings(closed, pivot_left, pivot_right)
 
@@ -1175,9 +1172,15 @@ def evaluate_absorption(bars, volland_stats, settings):
                         "score": round(score, 1),
                     })
 
-    # Pick direction with best score
+    # Evaluate each direction independently (per-direction gate, not shared)
     best_bull = max(bullish_divs, key=lambda d: d["score"]) if bullish_divs else None
     best_bear = max(bearish_divs, key=lambda d: d["score"]) if bearish_divs else None
+
+    # Skip directions already evaluated for this trigger bar
+    if best_bull and trigger_idx <= _cooldown_absorption.get("last_bullish_eval_idx", -1):
+        best_bull = None
+    if best_bear and trigger_idx <= _cooldown_absorption.get("last_bearish_eval_idx", -1):
+        best_bear = None
 
     if not best_bull and not best_bear:
         return None
@@ -1191,6 +1194,12 @@ def evaluate_absorption(bars, volland_stats, settings):
         direction, best, all_divs = "bullish", best_bull, bullish_divs
     else:
         direction, best, all_divs = "bearish", best_bear, bearish_divs
+
+    # Mark this direction as evaluated for this trigger bar
+    if direction == "bullish":
+        _cooldown_absorption["last_bullish_eval_idx"] = trigger_idx
+    else:
+        _cooldown_absorption["last_bearish_eval_idx"] = trigger_idx
 
     # Sort all divergences by score descending
     all_divs = sorted(all_divs, key=lambda d: d["score"], reverse=True)
@@ -1333,8 +1342,9 @@ def should_notify_absorption(result):
 
     bar_idx = result["bar_idx"]
     direction = result["direction"]
-    # Cooldown is enforced inside evaluate_absorption via last_checked_idx,
-    # but we also gate on bar distance here for notification dedup
+    # evaluate_absorption uses per-direction eval gates (last_bullish_eval_idx,
+    # last_bearish_eval_idx) so both directions can fire on the same trigger bar.
+    # This function gates on bar distance for notification dedup.
     cooldown = 10  # default; caller can check settings but evaluate already gates
 
     if direction == "bullish":

@@ -57,8 +57,14 @@ def send_telegram(message: str) -> bool:
 
 
 def market_open_now() -> bool:
+    """Worker operating window: 9:20-16:10 ET."""
     t = datetime.now(NY)
     return dtime(9, 20) <= t.time() <= dtime(16, 10)
+
+def is_market_hours() -> bool:
+    """Actual market hours: 9:30-16:00 ET. Used for alert logic."""
+    t = datetime.now(NY)
+    return dtime(9, 30) <= t.time() <= dtime(16, 0)
 
 
 # ── Database ──────────────────────────────────────────────────────────
@@ -354,10 +360,11 @@ def run():
             return list(seen.values()), cycle["paradigm"], cycle["spot_vol"]
 
         def save_cycle(exposures, paradigm, spot_vol):
-            """Format, save to DB, log."""
+            """Format, save to DB, log. Returns (stats, total_points, zero_exposures)."""
             stats = format_statistics(paradigm, spot_vol)
 
             total_points = 0
+            zero_exposures = []
             for exp in exposures:
                 greek      = exp["greek"]
                 exp_option = exp["expiration_option"]
@@ -374,6 +381,8 @@ def run():
                     current_price=cur_price, expiration_option=db_exp_option,
                 )
                 total_points += count
+                if count == 0:
+                    zero_exposures.append(f"{greek}/{exp_option}")
 
             payload = {
                 "ts_utc": datetime.now(timezone.utc).isoformat(),
@@ -406,7 +415,7 @@ def run():
                 f"charm={stats.get('aggregatedCharm', 'N/A')}",
                 flush=True,
             )
-            return stats, total_points
+            return stats, total_points, zero_exposures
 
         # Register handlers once (persist across navigations)
         setup_handlers(page)
@@ -513,22 +522,24 @@ def run():
                         last_known_modified = lm
                         break
 
-                _stats, _total_pts = save_cycle(exposures, paradigm, spot_vol)
+                _stats, _total_pts, _zero_exps = save_cycle(exposures, paradigm, spot_vol)
 
-                # Track consecutive zero-point cycles during market hours
-                if _total_pts == 0 and market_open_now():
+                # Track exposures with 0 points during actual market hours
+                if _zero_exps and is_market_hours():
                     consecutive_zero_pts += 1
-                    print(f"[volland-v2] WARNING: 0 points captured ({consecutive_zero_pts}/{ZERO_POINTS_THRESHOLD} consecutive)", flush=True)
+                    print(f"[volland-v2] WARNING: 0-pt exposures ({consecutive_zero_pts}/{ZERO_POINTS_THRESHOLD}): {', '.join(_zero_exps)}", flush=True)
                     if consecutive_zero_pts >= ZERO_POINTS_THRESHOLD and not zero_pts_alerted:
                         zero_pts_alerted = True
+                        exp_list = "\n".join(f"  • {e}" for e in _zero_exps)
                         send_telegram(
-                            "⚠️ <b>Volland 0 Points</b>\n\n"
-                            f"{consecutive_zero_pts} consecutive cycles with 0 exposure points.\n"
-                            "Data pipeline may be broken. Check Volland service."
+                            "⚠️ <b>Volland 0-Point Exposures</b>\n\n"
+                            f"{consecutive_zero_pts} consecutive cycles with 0-pt exposures:\n"
+                            f"{exp_list}\n\n"
+                            "Check Volland service."
                         )
                 else:
                     if consecutive_zero_pts > 0:
-                        print(f"[volland-v2] points recovered ({_total_pts} pts), streak reset", flush=True)
+                        print(f"[volland-v2] all exposures recovered, streak reset", flush=True)
                     consecutive_zero_pts = 0
                     zero_pts_alerted = False
 

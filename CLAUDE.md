@@ -6,8 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 0DTE Alpha is a real-time options trading dashboard for SPX/SPXW 0DTE (zero days to expiration) options. It combines:
 - **FastAPI web service** (`app/main.py`) - serves live options chain data, charts, and a dashboard
+- **Setup detector** (`app/setup_detector.py`) - scoring module for GEX Long, AG Short, BofA Scalp, and ES Absorption setups
 - **Volland scraper worker** (`volland_worker_v2.py`) - Playwright route-based scraper for charm/vanna/gamma exposure data from vol.land
 - **ES cumulative delta** (integrated in `app/main.py`) - scheduler job pulls ES 1-min bars from TradeStation API
+- **ES quote stream** (integrated in `app/main.py`) - WebSocket stream builds bid/ask delta range bars from TradeStation ES quotes
 
 ## IMPORTANT: Volland Worker Versions (v1 vs v2)
 
@@ -32,6 +34,12 @@ When the user mentions "volland worker" or "volland not working", they mean **v2
 **Overnight sync hang:** The sync phase waits for `lastModified` to change by polling the page. After overnight idle (~17 hours), the page goes stale and widgets stop auto-refreshing. Fix: reload workspace page (`page.goto()`) at the start of each sync phase + 2-minute timeout fallback.
 
 **Pipeline health alert silent skip:** The `api_data_freshness()` query defaults to `status: "closed"`. If the query fails or returns no rows during market hours, `check_pipeline_health()` was silently skipping (treating it as market closed). Fix: treat `"closed"` during market hours as `"error"` and send Telegram alert.
+
+### v2 Features Added (2026-02-14)
+
+- **Per-exposure 0-points Telegram alert:** Tracks each of the 10 exposure types individually. If any exposure returns 0 points for 3 consecutive cycles during market hours (9:30-16:00 ET), sends alert. Uses `is_market_hours()` (9:30-16:00) separate from `market_open_now()` (9:20-16:10).
+- **Auto re-login on session expiry:** Error handler checks `page.url` for `/sign-in`, calls `login_if_needed()`, sends Telegram alert on failure during market hours.
+- **Telegram integration:** Volland service has its own `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` env vars on Railway for direct alerts.
 
 ## CRITICAL WARNING: volland_worker_v2.py
 
@@ -84,8 +92,24 @@ Append new analysis sections to this file after each review session.
 - Calculates GEX (Gamma Exposure) from options chain data
 - Serves dashboard with embedded Plotly.js charts at `/`
 - Pipeline health monitoring: sends Telegram alerts when data sources go stale
+- 401 Telegram alert: `_alert_401()` with 5-min cooldown for persistent TradeStation auth failures
+- `/api/health` endpoint: component-level freshness (chain, volland, ES delta stream) with overall status
 - ES cumulative delta: `pull_es_delta()` runs every 30s, fetches @ES 1-min bars, calculates delta from UpVolume/DownVolume
-- API endpoints: `/api/series`, `/api/snapshot`, `/api/history`, `/api/volland/*`, `/api/es/delta/*`
+- ES quote stream: WebSocket connection to TradeStation, builds 5-pt range bars with bid/ask delta, CVD OHLC
+- ES absorption detector: `_run_absorption_detection()` evaluates swing-based CVD divergence on range bars (see setup_detector.py)
+- Thread safety: `_es_delta_lock` and `_es_quote_lock` protect shared ES state from concurrent access
+- Dashboard auto-refresh: per-tab polling with `Plotly.react()` (no page reload), tab persistence via `sessionStorage`
+- Setup cooldown persistence: saves to `setup_cooldowns` DB table, restored on startup
+- Admin password from `ADMIN_PASSWORD` env var (not hardcoded)
+- API endpoints: `/api/series`, `/api/snapshot`, `/api/history`, `/api/volland/*`, `/api/es/delta/*`, `/api/es/delta/rangebars`, `/api/health`
+
+**app/setup_detector.py** (Setup scoring module):
+- Self-contained module — receives all data as parameters, no imports from main.py
+- **GEX Long**: Scores support proximity, upside range, floor cluster, target cluster, risk/reward
+- **AG Short**: Bearish counterpart to GEX Long
+- **BofA Scalp**: LIS-based scalp with charm/stability/width scoring
+- **ES Absorption** (swing-based, rewritten 2026-02-15): See "ES Absorption Detector" section below
+- Cooldown persistence: `export_cooldowns()` / `import_cooldowns()` serialize state to/from DB
 
 **volland_worker_v2.py** (Playwright scraper — ACTIVE):
 - Logs into vol.land, intercepts network requests via Playwright route handlers
@@ -93,6 +117,39 @@ Append new analysis sections to this file after each review session.
 - Captures paradigm, LIS, aggregatedCharm, spot-vol-beta from response handlers
 - Runs on 120-second cycle synced to Volland's refresh interval
 - Sync phase at market open: reloads page to avoid stale overnight state, 2-min timeout
+- Per-exposure 0-points alert (3 consecutive cycles during market hours)
+- Auto re-login on session expiry
+
+### ES Absorption Detector (Swing-Based CVD Divergence)
+
+Detects passive buyer/seller absorption by comparing CVD at current bar vs historical swing points. Rewritten 2026-02-15 to replace the old slope-based lookback window approach.
+
+**Architecture (3 components):**
+
+1. **Swing Tracker** (`_update_swings`, `_add_swing`):
+   - Pivot detection: left=2, right=2, using `<=` for lows and `>=` for highs (not strict)
+   - Alternating enforcement: L-H-L-H — after a low, next must be a high and vice versa
+   - Adaptive invalidation: lower low replaces previous swing low, higher high replaces previous swing high
+   - State persists across calls within a session (`_swing_tracker` dict)
+
+2. **Volume Trigger**: Fire only when trigger bar volume >= 1.4x of 10-bar rolling average. Only the trigger bar needs elevated volume; swing reference bars don't.
+
+3. **Divergence Scan** (`evaluate_absorption`):
+   - Bullish: `swing.low <= trigger.low AND trigger.cvd < swing.cvd` (price holding, CVD dropping = passive buyers absorbing)
+   - Bearish: `swing.high >= trigger.high AND trigger.cvd > swing.cvd` (price failing, CVD rising = passive sellers absorbing)
+   - CVD gap scored as z-score: `cvd_gap / rolling_std_dev(bar-to-bar CVD changes, 20 bars)`
+   - Price distance scored as ATR multiple: `price_dist / avg(|close-to-close|, 20 bars)`
+   - **Detection-first**: fires on ALL divergences with z >= 0.5 (no grade-based suppression)
+   - Grade defaults to "C" if composite score below thresholds (never returns None for qualifying divergences)
+   - Logs ALL confirming swings with full breakdown (cvd_z, price_atr, score)
+   - Best swing by score for primary display and Telegram
+
+**Key settings** (tunable via dashboard admin panel):
+- `abs_pivot_left/right`: 2 (pivot neighbor count)
+- `abs_min_vol_ratio`: 1.4 (volume trigger threshold)
+- `abs_cvd_z_min`: 0.5 (minimum z-score to fire)
+- `abs_cvd_std_window`: 20 (rolling window for CVD std dev)
+- `abs_vol_window`: 10 (rolling average for volume gate)
 
 ### Database Tables
 - `chain_snapshots` - options chain data with Greeks
@@ -100,6 +157,7 @@ Append new analysis sections to this file after each review session.
 - `volland_exposure_points` - parsed exposure points by strike (charm, vanna, gamma, deltaDecay)
 - `es_delta_snapshots` - ES cumulative delta state (every 30s, from TradeStation @ES bars)
 - `es_delta_bars` - ES 1-minute delta bars (UpVolume - DownVolume per bar)
+- `setup_cooldowns` - persisted cooldown state (trade_date, JSONB state including swing tracker)
 
 ## Railway Deployment
 
@@ -174,7 +232,12 @@ VOLLAND_WORKSPACE_URL    # v2 all-in-one workspace URL (preferred)
 TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID           # General alerts (pipeline health, LIS, paradigm)
 TELEGRAM_CHAT_ID_SETUPS    # Setup detector alerts
+
+# Admin
+ADMIN_PASSWORD             # Dashboard admin panel password (default: "changeme")
 ```
+
+**Note:** The Volland Railway service also has `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` set separately for its own 0-points and session expiry alerts.
 
 ## Full Backups
 
@@ -191,12 +254,20 @@ See `Backup_tags.md` for the full list of backup tags.
 
 - Market hours check: `dtime(9, 30) <= t.time() <= dtime(16, 0)` in US/Eastern timezone
 - Volland worker market hours: `dtime(9, 20) <= t.time() <= dtime(16, 10)` (slightly wider for pre/post scraping)
+- Volland worker `is_market_hours()`: `dtime(9, 30) <= t.time() <= dtime(16, 0)` (strict, for 0-points alerts)
 - Options chain fetches use streaming endpoint with 5-second timeout, falls back to snapshot endpoint
 - GEX calculation: `call_gex = gamma * OI * 100`, `put_gex = -gamma * OI * 100`
 - Volland v2 uses Playwright `page.route()` to intercept exposure API calls (route handlers survive `page.goto()` navigations)
+- ES quote stream: WebSocket to TradeStation, builds 5-pt range bars with bid/ask delta. Bars have `{idx, open, high, low, close, volume, delta, buy_volume, sell_volume, cvd, cvd_open, cvd_high, cvd_low, cvd_close, ts_start, ts_end, status}`
+- ES absorption: swing-based CVD divergence detector runs on each new completed range bar (see "ES Absorption Detector" section)
+- Thread safety: `_es_delta_lock` for ES 1-min delta state, `_es_quote_lock` for ES quote stream range bars
+- Dashboard: no page reload — uses per-tab polling timers with `Plotly.react()`, tab persisted via `sessionStorage`
+- Setup cooldowns: saved to DB after each evaluation via `setup_cooldowns` table (JSONB), loaded on startup
+- Charm thresholds (setup_detector.py): calibrated to actual data — brackets are [50M, 100M, 250M, 500M] (not the original [500, 2K, 5K, 10K])
 - Pipeline health: checks data freshness every 30s during market hours, sends Telegram on error/recovery
   - TS API: ok < 2min, stale < 5min, error >= 5min
   - Volland: ok < 3min, stale < 10min, error >= 10min
+- 401 alert: `_alert_401()` with 5-min cooldown, wired into `api_get()`, ES delta stream, ES quote stream
 
 ## Troubleshooting
 

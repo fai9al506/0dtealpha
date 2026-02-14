@@ -1089,8 +1089,16 @@ def evaluate_absorption(bars, volland_stats, settings):
         return None
     _cooldown_absorption["last_checked_idx"] = trigger_idx
 
-    # --- Step 1: Update swing tracker ---
+    # --- Step 1: Update swing tracker (always, even pre-10AM) ---
     _update_swings(closed, pivot_left, pivot_right)
+
+    # --- No signals before 10:00 AM ET ---
+    # Opening bars (9:30-10:00) have inflated volume from premarket→regular
+    # session transition, causing false volume triggers. Swings are still
+    # tracked above so they're available as reference points after 10:00.
+    now_et = datetime.now(NY)
+    if now_et.time() < dtime(10, 0):
+        return None
 
     # --- Step 2: Volume gate ---
     recent_vols = [b["volume"] for b in closed[-(vol_window + 1):-1]]

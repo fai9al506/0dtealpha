@@ -17,3 +17,4 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 11 | 2026-02-13 23:48 | `stable-20260213-234842` | ES quote stream, absorption detector, SPX key levels on ES Delta chart |
 | 12 | 2026-02-14 19:00 | `stable-20260214-190010` | 401 Telegram alert, /api/health upgrade, Volland 0-pts per-exposure alert |
 | 13 | 2026-02-15 00:05 | `stable-20260215-000500` | Pre-swing-based absorption detector rewrite (thread safety, auto-refresh, cooldown persistence) |
+| 14 | 2026-02-16 18:00 | `stable-20260216-180000` | Session continuity system, DB cleanup (585 MB reclaimed), Volland weekend fix |

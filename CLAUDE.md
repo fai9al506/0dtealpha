@@ -2,6 +2,29 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session Continuity Protocol (MANDATORY)
+
+### On Session Start
+1. **Read `PROJECT_BRAIN.md`** from memory directory — contains vision, ideas backlog, design decisions, pending items
+2. **Read `SESSION_LOG.md`** from memory directory — contains what was done in recent sessions
+3. You now have full context. Do NOT ask the user to explain what the system does or what was done before.
+4. **Print a 3-5 line brief** to the user summarizing: what was done recently, what the current state is, and what the current priority is. Do NOT ask "what do you want to work on?" — just show you know where we are. The user will then tell you what to do.
+
+### On Session End (when user says "bye", "done", "session end", "that's all", or similar)
+1. **Update `SESSION_LOG.md`** — add entry for this session: what was done, decisions made, ideas discussed
+2. **Update `MEMORY.md`** — if system state, priorities, or architecture changed
+3. **Update `PROJECT_BRAIN.md`** — if new ideas, design decisions, or pending items emerged
+4. **Update this CLAUDE.md** — if new features, components, or technical details were added to the codebase
+5. **Confirm to the user**: print a short message like "Session logged. Files updated. See you next time." so the user knows it's safe to close the window. Do NOT close without confirming.
+
+### After Any Code Changes
+- Update the relevant sections of CLAUDE.md (architecture, features, technical details)
+- Update MEMORY.md if intervals, tables, or key parameters changed
+
+Memory directory: see the path in MEMORY.md header.
+
+---
+
 ## Project Overview
 
 0DTE Alpha is a real-time options trading dashboard for SPX/SPXW 0DTE (zero days to expiration) options. It combines:

@@ -57,13 +57,17 @@ def send_telegram(message: str) -> bool:
 
 
 def market_open_now() -> bool:
-    """Worker operating window: 9:20-16:10 ET."""
+    """Worker operating window: 9:20-16:10 ET, Mon-Fri only."""
     t = datetime.now(NY)
+    if t.weekday() >= 5:  # Sat=5, Sun=6
+        return False
     return dtime(9, 20) <= t.time() <= dtime(16, 10)
 
 def is_market_hours() -> bool:
-    """Actual market hours: 9:30-16:00 ET. Used for alert logic."""
+    """Actual market hours: 9:30-16:00 ET, Mon-Fri only. Used for alert logic."""
     t = datetime.now(NY)
+    if t.weekday() >= 5:
+        return False
     return dtime(9, 30) <= t.time() <= dtime(16, 0)
 
 

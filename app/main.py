@@ -448,6 +448,19 @@ def db_init():
         EXCEPTION WHEN duplicate_column THEN NULL;
         END $$;
         """))
+        # Paradigm Reversal columns on setup_settings
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_settings ADD COLUMN paradigm_rev_enabled BOOLEAN DEFAULT TRUE;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_settings ADD COLUMN paradigm_rev_settings JSONB;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
         # Absorption extra columns on setup_log
         conn.execute(text("""
         DO $$ BEGIN
@@ -691,6 +704,11 @@ def load_setup_settings():
                 if "absorption_settings" in rk and row["absorption_settings"]:
                     raw = row["absorption_settings"]
                     abs_db = raw if isinstance(raw, dict) else json.loads(raw)
+                # Load Paradigm Reversal settings from JSONB column or defaults
+                pr_db = {}
+                if "paradigm_rev_settings" in rk and row["paradigm_rev_settings"]:
+                    raw = row["paradigm_rev_settings"]
+                    pr_db = raw if isinstance(raw, dict) else json.loads(raw)
                 _setup_settings = {
                     "gex_long_enabled": row["gex_long_enabled"],
                     "ag_short_enabled": row["ag_short_enabled"] if "ag_short_enabled" in rk else True,
@@ -706,7 +724,7 @@ def load_setup_settings():
                     "bofa_weight_charm": bofa_db.get("weight_charm", 20),
                     "bofa_weight_time": bofa_db.get("weight_time", 20),
                     "bofa_weight_midpoint": bofa_db.get("weight_midpoint", 20),
-                    "bofa_max_proximity": bofa_db.get("max_proximity", 3),
+                    "bofa_max_proximity": bofa_db.get("max_proximity", 5),
                     "bofa_min_lis_width": bofa_db.get("min_lis_width", 15),
                     "bofa_stop_distance": bofa_db.get("stop_distance", 12),
                     "bofa_target_distance": bofa_db.get("target_distance", 10),
@@ -725,6 +743,16 @@ def load_setup_settings():
                     "abs_weight_paradigm": abs_db.get("weight_paradigm", 15),
                     "abs_weight_lis": abs_db.get("weight_lis", 20),
                     "abs_grade_thresholds": abs_db.get("grade_thresholds", {"A+": 75, "A": 55, "B": 35}),
+                    "paradigm_rev_enabled": row["paradigm_rev_enabled"] if "paradigm_rev_enabled" in rk else True,
+                    "pr_max_flip_age_s": pr_db.get("max_flip_age_s", 180),
+                    "pr_max_lis_distance": pr_db.get("max_lis_distance", 5),
+                    "pr_cooldown_minutes": pr_db.get("cooldown_minutes", 30),
+                    "pr_weight_proximity": pr_db.get("weight_proximity", 25),
+                    "pr_weight_es_volume": pr_db.get("weight_es_volume", 25),
+                    "pr_weight_charm": pr_db.get("weight_charm", 20),
+                    "pr_weight_dd": pr_db.get("weight_dd", 15),
+                    "pr_weight_time": pr_db.get("weight_time", 15),
+                    "pr_grade_thresholds": pr_db.get("grade_thresholds", {"A+": 80, "A": 60, "A-Entry": 45}),
                     "brackets": row["brackets"] if isinstance(row["brackets"], dict) else json.loads(row["brackets"]) if row["brackets"] else _DEFAULT_SETUP_SETTINGS["brackets"],
                     "grade_thresholds": row["grade_thresholds"] if isinstance(row["grade_thresholds"], dict) else json.loads(row["grade_thresholds"]) if row["grade_thresholds"] else _DEFAULT_SETUP_SETTINGS["grade_thresholds"],
                 }
@@ -744,7 +772,7 @@ def save_setup_settings():
                 "weight_charm": _setup_settings.get("bofa_weight_charm", 20),
                 "weight_time": _setup_settings.get("bofa_weight_time", 20),
                 "weight_midpoint": _setup_settings.get("bofa_weight_midpoint", 20),
-                "max_proximity": _setup_settings.get("bofa_max_proximity", 3),
+                "max_proximity": _setup_settings.get("bofa_max_proximity", 5),
                 "min_lis_width": _setup_settings.get("bofa_min_lis_width", 15),
                 "stop_distance": _setup_settings.get("bofa_stop_distance", 12),
                 "target_distance": _setup_settings.get("bofa_target_distance", 10),
@@ -766,12 +794,24 @@ def save_setup_settings():
                 "weight_lis": _setup_settings.get("abs_weight_lis", 20),
                 "grade_thresholds": _setup_settings.get("abs_grade_thresholds", {"A+": 75, "A": 55, "B": 35}),
             })
+            pr_json = json.dumps({
+                "max_flip_age_s": _setup_settings.get("pr_max_flip_age_s", 180),
+                "max_lis_distance": _setup_settings.get("pr_max_lis_distance", 5),
+                "cooldown_minutes": _setup_settings.get("pr_cooldown_minutes", 30),
+                "weight_proximity": _setup_settings.get("pr_weight_proximity", 25),
+                "weight_es_volume": _setup_settings.get("pr_weight_es_volume", 25),
+                "weight_charm": _setup_settings.get("pr_weight_charm", 20),
+                "weight_dd": _setup_settings.get("pr_weight_dd", 15),
+                "weight_time": _setup_settings.get("pr_weight_time", 15),
+                "grade_thresholds": _setup_settings.get("pr_grade_thresholds", {"A+": 80, "A": 60, "A-Entry": 45}),
+            })
             conn.execute(text("""
                 UPDATE setup_settings SET
                     gex_long_enabled = :gex_long_enabled,
                     ag_short_enabled = :ag_short_enabled,
                     bofa_scalp_enabled = :bofa_scalp_enabled,
                     absorption_enabled = :absorption_enabled,
+                    paradigm_rev_enabled = :paradigm_rev_enabled,
                     weight_support = :weight_support,
                     weight_upside = :weight_upside,
                     weight_floor_cluster = :weight_floor_cluster,
@@ -780,13 +820,15 @@ def save_setup_settings():
                     brackets = :brackets,
                     grade_thresholds = :grade_thresholds,
                     bofa_settings = :bofa_settings,
-                    absorption_settings = :absorption_settings
+                    absorption_settings = :absorption_settings,
+                    paradigm_rev_settings = :paradigm_rev_settings
                 WHERE id = 1
             """), {
                 "gex_long_enabled": _setup_settings["gex_long_enabled"],
                 "ag_short_enabled": _setup_settings.get("ag_short_enabled", True),
                 "bofa_scalp_enabled": _setup_settings.get("bofa_scalp_enabled", True),
                 "absorption_enabled": _setup_settings.get("absorption_enabled", True),
+                "paradigm_rev_enabled": _setup_settings.get("paradigm_rev_enabled", True),
                 "weight_support": _setup_settings["weight_support"],
                 "weight_upside": _setup_settings["weight_upside"],
                 "weight_floor_cluster": _setup_settings["weight_floor_cluster"],
@@ -796,6 +838,7 @@ def save_setup_settings():
                 "grade_thresholds": json.dumps(_setup_settings.get("grade_thresholds", _DEFAULT_SETUP_SETTINGS["grade_thresholds"])),
                 "bofa_settings": bofa_json,
                 "absorption_settings": abs_json,
+                "paradigm_rev_settings": pr_json,
             })
         return True
     except Exception as e:
@@ -862,7 +905,7 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "Paradigm Reversal": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
@@ -2080,6 +2123,27 @@ def _run_setup_check():
         except Exception:
             pass
 
+    # Extract DD hedging from Volland stats (for Paradigm Reversal)
+    dd_hedging = None
+    if statistics_raw and isinstance(statistics_raw, dict):
+        dd_hedging = statistics_raw.get("deltadecayHedging") or statistics_raw.get("delta_decay_hedging")
+
+    # Query recent ES 1-min bars for Paradigm Reversal volume check
+    es_bars = []
+    if engine:
+        try:
+            with engine.begin() as conn:
+                rows = conn.execute(text("""
+                    SELECT bar_volume, bar_buy_volume, bar_sell_volume, bar_delta,
+                           cumulative_delta, bar_close_price, ts
+                    FROM es_delta_bars
+                    WHERE trade_date = :td AND symbol = :sym
+                    ORDER BY ts DESC LIMIT 15
+                """), {"td": now_et().strftime("%Y-%m-%d"), "sym": ES_DELTA_SYMBOL}).mappings().all()
+                es_bars = list(reversed(rows))  # oldest first
+        except Exception:
+            pass
+
     # Calculate max +GEX / -GEX strikes from latest_df
     max_plus_gex, max_minus_gex = None, None
     with _df_lock:
@@ -2101,6 +2165,7 @@ def _run_setup_check():
     result_wrappers = _check_setups_fn(
         spot, paradigm, lis, target, max_plus_gex, max_minus_gex, _setup_settings,
         lis_lower=lis_lower, lis_upper=lis_upper, aggregated_charm=aggregated_charm,
+        dd_hedging=dd_hedging, es_bars=es_bars,
     )
     for rw in result_wrappers:
         setup_name = rw["result"]["setup_name"]
@@ -2358,6 +2423,11 @@ def _es_quote_process_trade(last: float, bid: float, ask: float, volume: int, ts
         q["_completed_bars"].append(completed)
         q["_flush_buffer"].append(completed)
         q["_bar_idx"] += 1
+        print(f"[es-quote] bar #{completed['idx']} closed: "
+              f"O={completed['open']:.2f} H={completed['high']:.2f} "
+              f"L={completed['low']:.2f} C={completed['close']:.2f} "
+              f"vol={completed['volume']} delta={completed['delta']:+d} "
+              f"cvd={completed['cvd']:+d}", flush=True)
         # Start new bar at the close price of the completed bar
         q["_forming_bar"] = _new_quote_range_bar(last, ts)
 
@@ -2809,6 +2879,15 @@ def _es_quote_stream_loop():
                 ts_now = now_et().isoformat()
                 with _es_quote_lock:
                     _es_quote_process_trade(last_f, bid_f, ask_f, trade_vol, ts_now)
+                    tc = _es_quote["trade_count"]
+                    # Log first 5 trades, then every 1000th for diagnostics
+                    if tc <= 5 or tc % 1000 == 0:
+                        fb = _es_quote.get("_forming_bar")
+                        fb_range = f"{fb['high'] - fb['low']:.2f}" if fb else "?"
+                        print(f"[es-quote] trade #{tc}: last={last_f} vol={trade_vol} "
+                              f"completed={len(_es_quote['_completed_bars'])} "
+                              f"forming_range={fb_range}/{_es_quote['_range_pts']}",
+                              flush=True)
 
             try:
                 r.close()
@@ -2902,13 +2981,26 @@ def save_es_range_bars():
         if not _es_futures_open():
             return
         if not engine:
+            print("[es-quote-save] no DB engine, skipping", flush=True)
             return
 
         with _es_quote_lock:
             bars = _es_quote["_flush_buffer"]
             _es_quote["_flush_buffer"] = []
+            # Snapshot diagnostics under lock
+            _diag_stream = _es_quote.get("stream_ok", False)
+            _diag_trades = _es_quote.get("trade_count", 0)
+            _diag_completed = len(_es_quote.get("_completed_bars", []))
+            _diag_forming = _es_quote.get("_forming_bar")
+            _diag_range_pts = _es_quote.get("_range_pts", 5.0)
 
         if not bars:
+            forming_info = "none"
+            if _diag_forming:
+                fr = _diag_forming["high"] - _diag_forming["low"]
+                forming_info = f"{fr:.2f}/{_diag_range_pts}pt vol={_diag_forming['volume']}"
+            print(f"[es-quote-save] empty buffer: stream={_diag_stream} trades={_diag_trades} "
+                  f"completed={_diag_completed} forming={forming_info}", flush=True)
             return
 
         today = _es_quote["trade_date"] or _es_session_date()

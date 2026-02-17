@@ -18,3 +18,4 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 12 | 2026-02-14 19:00 | `stable-20260214-190010` | 401 Telegram alert, /api/health upgrade, Volland 0-pts per-exposure alert |
 | 13 | 2026-02-15 00:05 | `stable-20260215-000500` | Pre-swing-based absorption detector rewrite (thread safety, auto-refresh, cooldown persistence) |
 | 14 | 2026-02-16 18:00 | `stable-20260216-180000` | Session continuity system, DB cleanup (585 MB reclaimed), Volland weekend fix |
+| 15 | 2026-02-17 22:30 | `stable-20260217-223000` | Pre-paradigm reversal setup, BofA relaxation, ES range bars investigation |

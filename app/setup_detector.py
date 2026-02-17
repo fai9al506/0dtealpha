@@ -462,20 +462,32 @@ def format_ag_short_message(result):
 _lis_history_upper = deque(maxlen=12)
 _lis_history_lower = deque(maxlen=12)
 _lis_buffer_last_date = None
+_lis_last_paradigm = None
 
 
-def update_lis_buffer(lis_lower, lis_upper):
+def update_lis_buffer(lis_lower, lis_upper, paradigm=None):
     """
     Called from main.py each time new Volland stats arrive.
     Appends latest LIS values to rolling buffers.
     Resets daily at market open.
+    Resets on paradigm change (old AG values would corrupt BofA stability).
     """
-    global _lis_buffer_last_date
+    global _lis_buffer_last_date, _lis_last_paradigm
     today = datetime.now(NY).date()
     if _lis_buffer_last_date != today:
         _lis_history_upper.clear()
         _lis_history_lower.clear()
         _lis_buffer_last_date = today
+        _lis_last_paradigm = None
+
+    # Reset buffers on paradigm change so old values don't pollute stability
+    if paradigm is not None and _lis_last_paradigm is not None:
+        if paradigm != _lis_last_paradigm:
+            _lis_history_upper.clear()
+            _lis_history_lower.clear()
+            print(f"[setup] LIS buffer reset: paradigm {_lis_last_paradigm} → {paradigm}", flush=True)
+    if paradigm is not None:
+        _lis_last_paradigm = paradigm
 
     if lis_lower is not None:
         _lis_history_lower.append(lis_lower)
@@ -487,12 +499,24 @@ def get_lis_stability(side):
     """
     Check LIS stability for a given side ("lower" or "upper").
     Returns (is_stable, drift, stable_bars) where:
-      - is_stable: True if drift <= 3 over last 6 readings
-      - drift: max - min over last 6 readings
+      - is_stable: True if drift <= threshold over recent readings
+      - drift: max - min over recent readings
       - stable_bars: count of consecutive stable bars going back
+
+    After paradigm reset (3-5 readings), uses relaxed criteria:
+      3 readings within 5pt drift (instead of 6 readings within 3pt).
     """
     buf = _lis_history_lower if side == "lower" else _lis_history_upper
-    if len(buf) < 6:
+    n = len(buf)
+
+    # Relaxed stability for fresh buffers (just after paradigm reset)
+    if 3 <= n < 6:
+        recent = list(buf)[-n:]
+        drift = max(recent) - min(recent)
+        is_stable = drift <= 5
+        return is_stable, round(drift, 2), n if is_stable else 0
+
+    if n < 6:
         return False, 999, 0
 
     # Check drift over last 6 readings
@@ -534,7 +558,7 @@ BOFA_SIDE_COOLDOWN_MINUTES = 40
 
 DEFAULT_BOFA_SCALP_SETTINGS = {
     "bofa_scalp_enabled": True,
-    "bofa_max_proximity": 3,
+    "bofa_max_proximity": 5,
     "bofa_min_lis_width": 15,
     "bofa_stability_bars": 6,
     "bofa_stability_threshold": 3,
@@ -1403,20 +1427,321 @@ def format_absorption_message(result):
     return "\n".join(parts)
 
 
+# ── Paradigm Reversal — defaults and state ─────────────────────────────────
+
+DEFAULT_PARADIGM_REV_SETTINGS = {
+    "paradigm_rev_enabled": True,
+    "pr_max_flip_age_s": 180,
+    "pr_max_lis_distance": 5,
+    "pr_cooldown_minutes": 30,
+    "pr_weight_proximity": 25,
+    "pr_weight_es_volume": 25,
+    "pr_weight_charm": 20,
+    "pr_weight_dd": 15,
+    "pr_weight_time": 15,
+    "pr_grade_thresholds": {"A+": 80, "A": 60, "A-Entry": 45},
+}
+
+_cooldown_paradigm_rev = {
+    "last_long_time": None,
+    "last_short_time": None,
+    "last_date": None,
+}
+
+_paradigm_tracker = {
+    "current": None,
+    "previous": None,
+    "flip_time": None,
+}
+
+
+def update_paradigm_tracker(paradigm):
+    """Track paradigm changes. Call each cycle from check_setups()."""
+    if paradigm is None:
+        return
+    p = str(paradigm)
+    if _paradigm_tracker["current"] is None:
+        _paradigm_tracker["current"] = p
+        return
+    if p != _paradigm_tracker["current"]:
+        _paradigm_tracker["previous"] = _paradigm_tracker["current"]
+        _paradigm_tracker["current"] = p
+        _paradigm_tracker["flip_time"] = datetime.now(NY)
+        print(f"[setup] paradigm flip: {_paradigm_tracker['previous']} → {p}", flush=True)
+
+
+def _paradigm_rev_direction(prev, curr):
+    """Determine trade direction from paradigm transition.
+    AG → anything = LONG (bearish regime ending)
+    GEX → anything = SHORT (bullish regime ending)
+    BofA → GEX = LONG, BofA → AG = SHORT
+    """
+    prev_u = (prev or "").upper()
+    curr_u = (curr or "").upper()
+    if "AG" in prev_u and "AG" not in curr_u:
+        return "long"
+    if "GEX" in prev_u and "GEX" not in curr_u:
+        return "short"
+    if "BOFA" in prev_u:
+        if "GEX" in curr_u:
+            return "long"
+        if "AG" in curr_u:
+            return "short"
+    return None
+
+
+def evaluate_paradigm_reversal(spot, paradigm, lis_lower, lis_upper,
+                               aggregated_charm, dd_hedging, es_bars, settings):
+    """
+    Evaluate Paradigm Reversal setup. Returns a result dict or None.
+
+    Fires when paradigm just flipped, price is near LIS, and ES volume confirms.
+    """
+    if not settings.get("paradigm_rev_enabled", True):
+        return None
+
+    # Must have a recent flip
+    flip_time = _paradigm_tracker.get("flip_time")
+    prev = _paradigm_tracker.get("previous")
+    curr = _paradigm_tracker.get("current")
+    if flip_time is None or prev is None:
+        return None
+
+    max_age = settings.get("pr_max_flip_age_s", 180)
+    age = (datetime.now(NY) - flip_time).total_seconds()
+    if age > max_age:
+        return None
+
+    # Determine direction
+    direction = _paradigm_rev_direction(prev, curr)
+    if direction is None:
+        return None
+
+    # Per-direction cooldown
+    now = datetime.now(NY)
+    today = now.date()
+    if _cooldown_paradigm_rev.get("last_date") != today:
+        _cooldown_paradigm_rev["last_long_time"] = None
+        _cooldown_paradigm_rev["last_short_time"] = None
+        _cooldown_paradigm_rev["last_date"] = today
+
+    cooldown_min = settings.get("pr_cooldown_minutes", 30)
+    side_key = "last_long_time" if direction == "long" else "last_short_time"
+    last_fire = _cooldown_paradigm_rev.get(side_key)
+    if last_fire is not None:
+        elapsed = (now - last_fire).total_seconds() / 60
+        if elapsed < cooldown_min:
+            return None
+
+    # Need LIS values
+    if spot is None or lis_lower is None or lis_upper is None:
+        return None
+
+    # Price must be near LIS zone
+    max_dist = settings.get("pr_max_lis_distance", 5)
+    dist_lower = abs(spot - lis_lower)
+    dist_upper = abs(spot - lis_upper)
+    min_dist = min(dist_lower, dist_upper)
+    if min_dist > max_dist:
+        return None
+
+    # Determine which LIS we're near
+    near_lis = lis_lower if dist_lower <= dist_upper else lis_upper
+
+    # Time check — no signals before 10:00
+    t = now.time()
+    if t < dtime(10, 0) or t > dtime(15, 45):
+        return None
+
+    # ── Component scores ──────────────────────────────────────────────────
+
+    # 1. LIS Proximity (closer = better)
+    if min_dist <= 1:
+        prox_score = 100
+    elif min_dist <= 2:
+        prox_score = 85
+    elif min_dist <= 3:
+        prox_score = 70
+    elif min_dist <= 5:
+        prox_score = 50
+    else:
+        prox_score = 0
+
+    # 2. ES Volume ratio (recent bars volume vs average)
+    vol_ratio = 0
+    vol_score = 25  # default if no ES bars
+    if es_bars and len(es_bars) >= 3:
+        recent_vols = [b.get("bar_volume", 0) for b in es_bars[-5:]]
+        older_vols = [b.get("bar_volume", 0) for b in es_bars[:-5]] if len(es_bars) > 5 else recent_vols
+        avg_vol = sum(older_vols) / len(older_vols) if older_vols else 1
+        if avg_vol > 0:
+            vol_ratio = sum(recent_vols) / len(recent_vols) / avg_vol
+        if vol_ratio >= 2.0:
+            vol_score = 100
+        elif vol_ratio >= 1.5:
+            vol_score = 75
+        elif vol_ratio >= 1.2:
+            vol_score = 50
+        else:
+            vol_score = 25
+
+    # 3. Charm alignment
+    charm_score = 0
+    if aggregated_charm is not None:
+        if direction == "long" and aggregated_charm > 0:
+            charm_score = 100
+        elif direction == "short" and aggregated_charm < 0:
+            charm_score = 100
+        elif abs(aggregated_charm) < 50_000_000:
+            charm_score = 50  # neutral charm is OK
+
+    # 4. DD Hedging alignment
+    dd_score = 0
+    dd_str = str(dd_hedging or "").lower()
+    if direction == "long" and "long" in dd_str:
+        dd_score = 100
+    elif direction == "short" and "short" in dd_str:
+        dd_score = 100
+
+    # 5. Time of Day
+    time_decimal = t.hour + t.minute / 60
+    if time_decimal >= 14.0:
+        time_score = 100
+    elif time_decimal >= 12.0:
+        time_score = 75
+    elif time_decimal >= 11.0:
+        time_score = 50
+    elif time_decimal >= 10.0:
+        time_score = 25
+    else:
+        time_score = 0
+
+    # ── Weighted composite ────────────────────────────────────────────────
+    w_prox = settings.get("pr_weight_proximity", 25)
+    w_vol = settings.get("pr_weight_es_volume", 25)
+    w_charm = settings.get("pr_weight_charm", 20)
+    w_dd = settings.get("pr_weight_dd", 15)
+    w_time = settings.get("pr_weight_time", 15)
+    total_weight = w_prox + w_vol + w_charm + w_dd + w_time
+
+    if total_weight == 0:
+        return None
+
+    composite = (
+        prox_score * w_prox
+        + vol_score * w_vol
+        + charm_score * w_charm
+        + dd_score * w_dd
+        + time_score * w_time
+    ) / total_weight
+
+    composite = max(0, min(100, composite))
+
+    # ── Grade ─────────────────────────────────────────────────────────────
+    thresholds = settings.get("pr_grade_thresholds",
+                              DEFAULT_PARADIGM_REV_SETTINGS["pr_grade_thresholds"])
+    grade = compute_grade(composite, thresholds)
+    if grade is None:
+        return None
+
+    # Record cooldown
+    _cooldown_paradigm_rev[side_key] = now
+
+    lis_width = lis_upper - lis_lower
+
+    return {
+        "setup_name": "Paradigm Reversal",
+        "direction": direction,
+        "grade": grade,
+        "score": round(composite, 1),
+        "paradigm": str(paradigm),
+        "spot": round(spot, 2),
+        "lis": round(near_lis, 2),
+        "lis_lower": round(lis_lower, 2),
+        "lis_upper": round(lis_upper, 2),
+        "target": None,
+        "max_plus_gex": None,
+        "max_minus_gex": None,
+        "gap_to_lis": round(min_dist, 2),
+        "upside": None,
+        "rr_ratio": None,
+        "first_hour": False,
+        "support_score": prox_score,
+        "upside_score": vol_score,
+        "floor_cluster_score": charm_score,
+        "target_cluster_score": dd_score,
+        "rr_score": time_score,
+        # Paradigm Reversal specifics
+        "pr_prev_paradigm": prev,
+        "pr_curr_paradigm": curr,
+        "pr_flip_age_s": round(age, 0),
+        "pr_vol_ratio": round(vol_ratio, 2),
+        "pr_lis_width": round(lis_width, 2),
+        "pr_dd_hedging": str(dd_hedging or ""),
+        "pr_charm": aggregated_charm,
+    }
+
+
+def should_notify_paradigm_rev(result):
+    """Always fire if evaluate returned non-None (cooldown already in evaluate)."""
+    if result is None:
+        return False, None
+    return True, "new"
+
+
+def format_paradigm_reversal_message(result):
+    """Format a Telegram HTML message for Paradigm Reversal."""
+    dir_emoji = "\U0001f535" if result["direction"] == "long" else "\U0001f534"
+    dir_label = "LONG" if result["direction"] == "long" else "SHORT"
+    grade_emoji = {"A+": "\U0001f7e2", "A": "\U0001f535", "A-Entry": "\U0001f7e1"}.get(result["grade"], "\u26aa")
+
+    prev = result.get("pr_prev_paradigm", "?")
+    curr = result.get("pr_curr_paradigm", "?")
+
+    msg = f"{dir_emoji} <b>Paradigm Reversal — {dir_label}</b>\n"
+    msg += f"Grade: {grade_emoji} {result['grade']} (Score: {result['score']})\n"
+    msg += "\u2501" * 18 + "\n"
+    msg += f"\U0001f504 {prev} \u2192 {curr}\n"
+    msg += f"\U0001f4cd Spot: {result['spot']:.1f}\n"
+    msg += f"\U0001f4cf LIS: {result.get('lis_lower', 0):.0f} \u2014 {result.get('lis_upper', 0):.0f}"
+    msg += f" ({result.get('pr_lis_width', 0):.0f}pt width)\n"
+    msg += f"Gap to LIS: {result['gap_to_lis']:.1f}pts\n\n"
+    msg += "<b>Scoring:</b>\n"
+    msg += f"  \U0001f4cd Proximity: {result['support_score']}\n"
+    msg += f"  \U0001f4ca ES Volume: {result['upside_score']}"
+    if result.get("pr_vol_ratio"):
+        msg += f" ({result['pr_vol_ratio']:.1f}x)"
+    msg += "\n"
+    msg += f"  \u2696 Charm: {result['floor_cluster_score']}\n"
+    msg += f"  \U0001f6e1 DD Hedging: {result['target_cluster_score']}"
+    if result.get("pr_dd_hedging"):
+        msg += f" ({result['pr_dd_hedging']})"
+    msg += "\n"
+    msg += f"  \U0001f552 Time: {result['rr_score']}\n"
+    msg += f"\n\u26a1 Paradigm just flipped {int(result.get('pr_flip_age_s', 0))}s ago"
+    return msg
+
+
 # ── Main entry point ───────────────────────────────────────────────────────
 
 def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings,
-                 lis_lower=None, lis_upper=None, aggregated_charm=None):
+                 lis_lower=None, lis_upper=None, aggregated_charm=None,
+                 dd_hedging=None, es_bars=None):
     """
     Main entry point called from main.py.
     Returns a list of result wrappers (each has keys: result, notify, notify_reason, message).
     List may be empty.
 
-    New kwargs for BofA Scalp:
-      lis_lower, lis_upper: parsed LIS low/high values
+    Kwargs:
+      lis_lower, lis_upper: parsed LIS low/high values (BofA Scalp, Paradigm Reversal)
       aggregated_charm: aggregated charm from Volland stats
+      dd_hedging: delta decay hedging string from Volland stats (Paradigm Reversal)
+      es_bars: list of recent ES 1-min bar dicts from DB (Paradigm Reversal)
     """
     results = []
+
+    # ── Track paradigm changes (must be before setup evaluations) ──
+    update_paradigm_tracker(paradigm)
 
     # ── GEX Long cooldown expiry tracking ──
     if paradigm and "GEX" not in str(paradigm).upper():
@@ -1457,7 +1782,7 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
 
     # Update LIS buffer (called here so it happens on every check cycle)
     if lis_lower is not None and lis_upper is not None:
-        update_lis_buffer(lis_lower, lis_upper)
+        update_lis_buffer(lis_lower, lis_upper, paradigm=str(paradigm) if paradigm else None)
 
     bofa_result = evaluate_bofa_scalp(spot, paradigm, lis_lower, lis_upper, aggregated_charm, settings)
     if bofa_result is not None:
@@ -1467,6 +1792,20 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
             "notify": notify_bofa,
             "notify_reason": reason_bofa,
             "message": format_bofa_scalp_message(bofa_result),
+        })
+
+    # ── Paradigm Reversal ──
+    pr_result = evaluate_paradigm_reversal(
+        spot, paradigm, lis_lower, lis_upper,
+        aggregated_charm, dd_hedging, es_bars, settings,
+    )
+    if pr_result is not None:
+        notify_pr, reason_pr = should_notify_paradigm_rev(pr_result)
+        results.append({
+            "result": pr_result,
+            "notify": notify_pr,
+            "notify_reason": reason_pr,
+            "message": format_paradigm_reversal_message(pr_result),
         })
 
     return results
@@ -1491,6 +1830,8 @@ def export_cooldowns() -> dict:
         "bofa": _serialize(_cooldown_bofa),
         "absorption": _serialize(_cooldown_absorption),
         "swing_tracker": copy.deepcopy(_swing_tracker),
+        "paradigm_rev": _serialize(_cooldown_paradigm_rev),
+        "paradigm_tracker": _serialize(_paradigm_tracker),
     }
 
 def import_cooldowns(data: dict):
@@ -1498,10 +1839,11 @@ def import_cooldowns(data: dict):
     global _cooldown, _cooldown_ag, _cooldown_bofa, _cooldown_absorption
     if not data:
         return
-    def _deserialize(d, has_datetimes=False):
+    def _deserialize(d, has_datetimes=False, dt_keys=None):
         out = dict(d)
         if has_datetimes:
-            for k in ("last_trade_time_long", "last_trade_time_short"):
+            keys = dt_keys or ("last_trade_time_long", "last_trade_time_short")
+            for k in keys:
                 if out.get(k) and isinstance(out[k], str):
                     try:
                         out[k] = datetime.fromisoformat(out[k])
@@ -1518,3 +1860,11 @@ def import_cooldowns(data: dict):
         _cooldown_absorption.update(_deserialize(data["absorption"]))
     if "swing_tracker" in data:
         _swing_tracker.update(data["swing_tracker"])
+    if "paradigm_rev" in data:
+        _cooldown_paradigm_rev.update(_deserialize(
+            data["paradigm_rev"], has_datetimes=True,
+            dt_keys=("last_long_time", "last_short_time")))
+    if "paradigm_tracker" in data:
+        restored = _deserialize(data["paradigm_tracker"], has_datetimes=True,
+                                dt_keys=("flip_time",))
+        _paradigm_tracker.update(restored)

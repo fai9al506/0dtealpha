@@ -36,6 +36,7 @@ SYNC_POLL_SEC = int(os.getenv("VOLLAND_SYNC_POLL_SEC", "20"))
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
 ZERO_POINTS_THRESHOLD = 3  # consecutive zero-point cycles before alerting
+AUTO_RESTART_THRESHOLD = 5  # consecutive zero-point cycles before browser restart
 
 NY = pytz.timezone("US/Eastern")
 
@@ -528,22 +529,49 @@ def run():
 
                 _stats, _total_pts, _zero_exps = save_cycle(exposures, paradigm, spot_vol)
 
-                # Track exposures with 0 points during actual market hours
-                if _zero_exps and is_market_hours():
+                # Track 0-point cycles during actual market hours
+                if _total_pts == 0 and is_market_hours():
                     consecutive_zero_pts += 1
-                    print(f"[volland-v2] WARNING: 0-pt exposures ({consecutive_zero_pts}/{ZERO_POINTS_THRESHOLD}): {', '.join(_zero_exps)}", flush=True)
+                    detail = f"exposures={len(exposures)}"
+                    if _zero_exps:
+                        detail += f" zero=[{', '.join(_zero_exps)}]"
+                    print(f"[volland-v2] WARNING: 0 total pts ({consecutive_zero_pts}/{ZERO_POINTS_THRESHOLD}): {detail}", flush=True)
                     if consecutive_zero_pts >= ZERO_POINTS_THRESHOLD and not zero_pts_alerted:
                         zero_pts_alerted = True
-                        exp_list = "\n".join(f"  • {e}" for e in _zero_exps)
                         send_telegram(
                             "⚠️ <b>Volland 0-Point Exposures</b>\n\n"
-                            f"{consecutive_zero_pts} consecutive cycles with 0-pt exposures:\n"
-                            f"{exp_list}\n\n"
-                            "Check Volland service."
+                            f"{consecutive_zero_pts} consecutive cycles with 0 points.\n"
+                            f"Exposures captured: {len(exposures)}\n\n"
+                            "Auto-restart will trigger after "
+                            f"{AUTO_RESTART_THRESHOLD} cycles."
                         )
-                else:
+                    # Auto-restart: recreate browser after sustained failure
+                    if consecutive_zero_pts >= AUTO_RESTART_THRESHOLD:
+                        print(f"[volland-v2] AUTO-RESTART: {consecutive_zero_pts} zero-point cycles, recreating browser...", flush=True)
+                        try:
+                            browser.close()
+                        except Exception:
+                            pass
+                        browser = p.chromium.launch(
+                            headless=True,
+                            args=["--no-sandbox", "--disable-dev-shm-usage"],
+                        )
+                        page = browser.new_page(viewport={"width": 1400, "height": 900})
+                        page.set_default_timeout(90000)
+                        setup_handlers(page)
+                        login_if_needed(page, WORKSPACE_URL)
+                        last_known_modified = ""  # force re-sync
+                        consecutive_zero_pts = 0
+                        zero_pts_alerted = False
+                        print("[volland-v2] AUTO-RESTART: browser recreated, re-syncing", flush=True)
+                        send_telegram(
+                            "🔄 <b>Volland Auto-Restart</b>\n\n"
+                            "Browser recreated after sustained 0-point captures.\n"
+                            "Re-syncing to Volland refresh cycle."
+                        )
+                elif _total_pts > 0:
                     if consecutive_zero_pts > 0:
-                        print(f"[volland-v2] all exposures recovered, streak reset", flush=True)
+                        print(f"[volland-v2] recovered after {consecutive_zero_pts} zero-point cycles", flush=True)
                     consecutive_zero_pts = 0
                     zero_pts_alerted = False
 

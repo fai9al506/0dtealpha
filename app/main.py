@@ -5308,10 +5308,9 @@ def api_data_freshness():
                 volland_row = conn.execute(text("""
                     SELECT ts FROM volland_snapshots
                     WHERE payload->>'error_event' IS NULL
-                      AND (payload->'statistics' IS NOT NULL
-                           OR CASE WHEN payload->>'exposure_points_saved' ~ '^\d+$'
-                                   THEN (payload->>'exposure_points_saved')::int > 0
-                                   ELSE false END)
+                      AND CASE WHEN payload->>'exposure_points_saved' ~ '^\d+$'
+                               THEN (payload->>'exposure_points_saved')::int > 0
+                               ELSE false END
                     ORDER BY ts DESC LIMIT 1
                 """)).mappings().first()
 

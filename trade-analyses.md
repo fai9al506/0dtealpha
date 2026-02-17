@@ -110,6 +110,81 @@ Blocked: #99 (AG Short, DD bullish), #100 (BofA Long, DD bearish), #104 (BofA Lo
 
 ---
 
+## Analysis #2 — Feb 17, 2026
+
+### Dataset: 2 AG Short setups, same day
+
+| # | Time (ET) | Setup | Grade | Score | Entry | LIS | Target | Result (actual) | Result (dashboard) |
+|---|-----------|-------|-------|-------|-------|-----|--------|-----------------|-------------------|
+| 112 | 10:04 | AG Short | A+ | 90 | 6797.56 | 6799 | 6772 | WIN | WIN |
+| 113 | 10:16 | AG Short | A | 85 | 6794.18 | 6795 | 6778 | LOSS (27pt adverse) | **WIN (BUG)** |
+
+### Price Action Timeline
+
+```
+09:40  SPX=6844.69  ← High of day
+09:52  SPX=6800.02  ← Selling accelerates
+10:00  SPX=6783.65  ← Local low
+10:04  SPX=6792.43  ← Setup #112 fires (A+ AG Short, spot 6797)
+10:06  SPX=6801.01  ← Brief bounce (+3 pts)
+10:12  SPX=6787.49  ← Drops, 10pt target hit
+10:16  SPX=6787.55  ← Setup #113 fires (A AG Short, spot 6794)
+10:18  SPX=6800.32  ← Bounce starts
+10:20  SPX=6814.31  ← VIOLENT SQUEEZE (+27 pts against #113!)
+10:24  SPX=6796.90  ← Fades back
+10:34  SPX=6777.18  ← Low of day, near both targets
+```
+
+### Volland Metrics — DD Hedging Flip
+
+| Time | DD Hedging | Charm | Note |
+|------|-----------|-------|------|
+| 10:05 | **-$828M** | 58M | #112 fires into deepening bearish DD |
+| 10:12 | -$301M | 70M | DD weakening |
+| 10:15 | -$284M | 68M | DD fading toward zero |
+| 10:17 | **-$808M** | 53M | #113 fires, looks bearish... |
+| 10:19 | **+$636M** | 32M | DD FLIPS BULLISH ($1.4B swing in 2 min!) |
+| 10:22 | +$826M | 26M | Dealers hedging bullish → 27pt squeeze |
+| 10:24 | -$440M | 48M | DD flips back bearish, price drops again |
+
+### Why #112 Worked and #113 Didn't
+
+**1. DD Hedging alignment (#112) vs DD flip (#113)**
+- Setup #112 fired at 10:04 when DD was deepening bearish (-$490M → -$828M). Fully aligned with short.
+- Setup #113 fired at 10:17, literally 2 minutes before DD swung from -$808M to +$636M. The $1.4B flip caused the 27-pt squeeze.
+- This is the same pattern as Analysis #1: every loss has DD hedging opposing the direction.
+
+**2. Charm collapse**
+- Charm halved from 53M to 32M at the exact moment of the bounce (10:17→10:19), removing bearish pressure.
+
+**3. "Second bite" trap**
+- Setup #112 was the primary short near LIS at 6797. By the time #113 fired, SPX was already 10 pts lower at 6787 — chasing a mostly-done move right before mean reversion.
+
+### BUG FOUND: Outcome Calculation Marks #113 as "Win"
+
+**Root cause:** The stop level for AG Short is calculated as:
+```python
+stop_level = lis + 5          # = 6795 + 5 = 6800
+if max_plus_gex > stop_level:
+    stop_level = max_plus_gex  # = 6885 (!)
+```
+
+This sets the stop at **6885 — a full 91 points above entry**. No realistic stop. Price bounced to 6814 (20 pts against), but that's still below 6885, so the stop was never triggered. Price then dropped to 6777, crossing the 10pt level (6784) → `first_event = "10pt"` → dashboard shows **WIN**.
+
+**The problem:** Using `max_plus_gex` as the stop level is wrong when it's far from spot. Today's max +GEX was at 6885 (88 pts above LIS). This makes the stop unreachable and inflates the win rate by ignoring massive adverse moves.
+
+**Proposed fix:** Cap the AG Short stop at `max(lis + 5, spot + 15)` or similar. A 15-pt stop is realistic for a 0DTE setup. Using `max_plus_gex` only when it's within ~20 pts of LIS.
+
+### Status of Issues Found
+
+| Issue | Status | Priority |
+|-------|--------|----------|
+| Stop level uses distant max_plus_gex (inflates wins) | **BUG — needs fix** | HIGH |
+| DD hedging momentum filter (fading toward zero) | PROPOSED | MEDIUM |
+| Re-entry cooldown for same setup within 15 min | PROPOSED | LOW |
+
+---
+
 ## Next Review
 
 Re-run this analysis after accumulating 20+ more trades (target: ~2 weeks). Check:

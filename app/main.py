@@ -4797,14 +4797,17 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             target_level = target
             max_minus_gex = entry.get("max_minus_gex")
             max_plus_gex = entry.get("max_plus_gex")
+            max_stop_dist = 20  # Cap stop at 20 pts from entry
             if is_long:
                 stop_level = lis - 5
                 if max_minus_gex is not None and max_minus_gex < stop_level:
                     stop_level = max_minus_gex
+                stop_level = max(stop_level, spot - max_stop_dist)
             else:
                 stop_level = lis + 5
                 if max_plus_gex is not None and max_plus_gex > stop_level:
                     stop_level = max_plus_gex
+                stop_level = min(stop_level, spot + max_stop_dist)
 
         # Track outcomes
         hit_10pt = False

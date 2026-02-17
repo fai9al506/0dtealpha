@@ -93,7 +93,14 @@
       "Bash(pip uninstall:*)",
       "Bash(railway redeploy:*)",
       "Bash(DATABASE_URL=\"postgresql://postgres:JwLVqJOvxdzflxJsCZHrPzcdPUYrmVYY@nozomi.proxy.rlwy.net:55417/railway\" uvicorn:*)",
-      "Bash(PGPASSWORD=JwLVqJOvxdzflxJsCZHrPzcdPUYrmVYY psql:*)"
+      "Bash(PGPASSWORD=JwLVqJOvxdzflxJsCZHrPzcdPUYrmVYY psql:*)",
+      "Bash(railway deployments:*)",
+      "Bash(railway deployment:*)",
+      "Bash(docker build:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python:*)",
+      "Bash(export DATABASE_URL=\"postgresql://postgres:JwLVqJOvxdzflxJsCZHrPzcdPUYrmVYY@nozomi.proxy.rlwy.net:55417/railway\")",
+      "Bash(psql:*)",
+      "Bash(python3:*)"
     ]
   }
 }

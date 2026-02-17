@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### On Session Start
 1. **Read `PROJECT_BRAIN.md`** from memory directory — contains vision, ideas backlog, design decisions, pending items
 2. **Read `SESSION_LOG.md`** from memory directory — contains what was done in recent sessions
-3. You now have full context. Do NOT ask the user to explain what the system does or what was done before.
-4. **Print a 3-5 line brief** to the user summarizing: what was done recently, what the current state is, and what the current priority is. Do NOT ask "what do you want to work on?" — just show you know where we are. The user will then tell you what to do.
+3. **Scan `references/`** — glob all files, compare against `references/INDEX.md`. If new files found, read them and update the index with a short summary. This keeps knowledge current without the user having to notify.
+4. You now have full context. Do NOT ask the user to explain what the system does or what was done before.
+5. **Print a 3-5 line brief** to the user summarizing: what was done recently, what the current state is, and what the current priority is. Do NOT ask "what do you want to work on?" — just show you know where we are. The user will then tell you what to do.
 
 ### On Session End (when user says "bye", "done", "session end", "that's all", or similar)
 1. **Update `SESSION_LOG.md`** — add entry for this session: what was done, decisions made, ideas discussed
@@ -22,6 +23,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Update MEMORY.md if intervals, tables, or key parameters changed
 
 Memory directory: see the path in MEMORY.md header.
+
+---
+
+## Trading References Library (`references/`)
+
+When answering trading questions, improving setup detection, or discussing strategy — check the `references/` folder for relevant documents before responding. Read on-demand, not every session.
+
+| Folder | Contents |
+|--------|----------|
+| `references/volland/` | User guide, white paper, Discord community insights, charm/vanna/gamma interpretation |
+| `references/gex/` | Gamma exposure studies, dealer hedging mechanics, GEX frameworks |
+| `references/orderflow/` | Order flow, delta, CVD, absorption patterns, footprint charts |
+| `references/general/` | Options Greeks, market microstructure, 0DTE strategies |
+
+Supported formats: `.md`, `.txt`, `.pdf`, `.png`, `.jpg`
 
 ---
 
@@ -60,7 +76,8 @@ When the user mentions "volland worker" or "volland not working", they mean **v2
 
 ### v2 Features Added (2026-02-14)
 
-- **Per-exposure 0-points Telegram alert:** Tracks each of the 10 exposure types individually. If any exposure returns 0 points for 3 consecutive cycles during market hours (9:30-16:00 ET), sends alert. Uses `is_market_hours()` (9:30-16:00) separate from `market_open_now()` (9:20-16:10).
+- **0-points Telegram alert:** Tracks `_total_pts == 0` (not per-exposure). If total points = 0 for 3 consecutive cycles during market hours (9:30-16:00 ET), sends alert. Uses `is_market_hours()` (9:30-16:00) separate from `market_open_now()` (9:20-16:10).
+- **Auto browser restart:** After 5 consecutive 0-point cycles (~10 min) during market hours, kills browser, launches fresh one, re-logs in, forces re-sync, sends Telegram. Recovers from stale sessions (e.g., after long weekends).
 - **Auto re-login on session expiry:** Error handler checks `page.url` for `/sign-in`, calls `login_if_needed()`, sends Telegram alert on failure during market hours.
 - **Telegram integration:** Volland service has its own `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` env vars on Railway for direct alerts.
 
@@ -141,6 +158,7 @@ Append new analysis sections to this file after each review session.
 - Runs on 120-second cycle synced to Volland's refresh interval
 - Sync phase at market open: reloads page to avoid stale overnight state, 2-min timeout
 - Per-exposure 0-points alert (3 consecutive cycles during market hours)
+- Auto browser restart after 5 consecutive 0-point cycles
 - Auto re-login on session expiry
 
 ### ES Absorption Detector (Swing-Based CVD Divergence)

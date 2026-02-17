@@ -185,6 +185,125 @@ This sets the stop at **6885 — a full 91 points above entry**. No realistic st
 
 ---
 
+## Analysis #3 — Feb 17, 2026: DD Hedging Deep Dive
+
+### Objective
+
+Understand DD hedging as a signal, not just a filter. Analyzed 4,526 DD change observations across 28 trading days (Jan 20 - Feb 17) and simulated a standalone "DD Exhaustion" strategy.
+
+### Part 1: DD Alignment vs Trade Outcome (30 deduped setups)
+
+| | Count | Avg P&L @10m | WR @10m | Avg P&L @30m | WR @30m |
+|---|---|---|---|---|---|
+| DD ALIGNED | 18 | +3.4 | 61% | +8.3 | 67% |
+| DD OPPOSED | 12 | -2.3 | 58% | -6.0 | 33% |
+| **Edge** | | **+5.7/trade** | | **+14.2/trade** | |
+
+By setup type:
+- **GEX Long**: ALIGN +0.7 @10m (56% WR) vs OPPOSE -15.4 @10m (**0% WR, never went green**)
+- **AG Short**: ALIGN +8.3 @10m (71% WR) vs OPPOSE -0.8 @10m (50% WR)
+- **BofA Scalp**: DD filter NOT useful — BofA is mean-reversion, works against DD
+
+DD flip within 5 min: avg -6.2 pts (33% WR) vs DD stable: +3.0 pts (67% WR).
+
+### Part 2: DD as Leading Indicator (4,526 observations)
+
+**Key finding: DD is LAGGING, not leading.**
+
+| DD Change Bucket | N | Avg ret @10m | % Up |
+|---|---|---|---|
+| Big bull flip (>+$500M) | 806 | -0.26 | 48% |
+| Flat (-$50 to +$50M) | 548 | +0.26 | 50% |
+| Big bear flip (<-$500M) | 813 | +0.03 | 46% |
+
+Big DD shifts have zero predictive power. The move already happened.
+
+DD momentum (3+ consecutive shifts) is noise:
+- Bullish momentum: 53% correct direction
+- Bearish momentum: **38% correct** (actually a contrarian bullish signal)
+
+### Part 3: DD + Charm Confluence (THE DISCOVERY)
+
+Charm alone: positive charm = +0.85 @10m, negative charm = -0.97 @10m.
+
+| Scenario | N | Avg @10m | Avg @30m | WR @10m |
+|----------|---|---------|---------|---------|
+| DD bear shift + pos charm (both "bearish") | 88 | **+1.38** | **+2.12** | **56%** |
+| DD bull shift + pos charm | 89 | +0.29 | +0.14 | 48% |
+| DD bull shift + neg charm (both "bullish") | 29 | **-1.37** | **-4.43** | **34%** |
+| DD bear shift + neg charm | 37 | -1.23 | -5.68 | 35% |
+
+**Interpretation: DD-Charm divergence is a contrarian/exhaustion signal.**
+- DD goes bearish while charm stays positive = dealers over-hedged bearish, price bounces (LONG)
+- DD goes bullish while charm stays negative = dealers over-positioned bullish, price fades (SHORT)
+- DD and charm aligned in same direction = noise, negative EV
+
+### Part 4: DD Exhaustion Strategy Simulation
+
+**Rules:**
+- LONG: DD shift < -$200M + charm > 0 (bearish exhaustion bounce)
+- SHORT: DD shift > +$200M + charm < 0 (bullish exhaustion fade)
+- Target: 10 pts, Stop: 20 pts, Max hold: 60 min, Cooldown: 30 min
+- Market hours: 10:00 - 15:30 ET
+
+**Results: 24 trades over 5 days (Feb 11-17)**
+
+| Metric | Value |
+|--------|-------|
+| Win rate (target hit) | 58% (14/24) |
+| Total P&L | +54.2 pts |
+| Avg per trade | +2.3 pts |
+| Profit factor | 1.55x |
+| Max drawdown | 30.0 pts |
+
+| Direction | Trades | WR | P&L | Avg/trade |
+|-----------|--------|-----|------|-----------|
+| LONG (bearish DD exhaust) | 17 | 59% | +21.6 | +1.3 |
+| SHORT (bullish DD exhaust) | 7 | 57% | +32.6 | +4.7 |
+
+Equity curve consistently upward, no extended losing streaks. Shorts more profitable per trade (+4.7 vs +1.3).
+
+### Trade Log (Full)
+
+| # | Date | Time | Dir | Entry | DD chg | Charm | Result | P&L | MaxFav | MaxAdv | Hold |
+|---|------|------|-----|-------|--------|-------|--------|-----|--------|--------|------|
+| 1 | 02/11 | 12:22 | S | 6950.9 | +1473M | -193M | WIN | +10.0 | +14.8 | -6.9 | 52m |
+| 2 | 02/11 | 13:03 | S | 6948.0 | +4941M | -190M | WIN | +10.0 | +11.8 | -0.5 | 12m |
+| 3 | 02/11 | 13:42 | S | 6944.5 | +1886M | -231M | T-LOSS | -12.9 | +0.0 | -13.8 | 57m |
+| 4 | 02/11 | 14:16 | S | 6954.4 | +311M | -119M | T-WIN | +5.3 | +5.8 | -3.9 | 59m |
+| 5 | 02/11 | 14:58 | S | 6949.6 | +267M | -274M | T-WIN | +0.2 | +9.6 | -1.9 | 52m |
+| 6 | 02/12 | 12:11 | L | 6860.5 | -2697M | 137M | WIN | +10.0 | +12.0 | -11.9 | 26m |
+| 7 | 02/12 | 12:50 | L | 6863.9 | -3877M | 163M | T-WIN | +3.4 | +4.4 | -18.9 | 59m |
+| 8 | 02/12 | 13:22 | L | 6849.1 | -234M | 231M | WIN | +10.0 | +23.1 | -4.1 | 17m |
+| 9 | 02/12 | 13:57 | L | 6867.7 | -385M | 136M | T-WIN | +4.4 | +9.1 | -9.5 | 59m |
+| 10 | 02/12 | 14:29 | L | 6860.4 | -2293M | 252M | WIN | +10.0 | +16.4 | -5.5 | 9m |
+| 11 | 02/12 | 15:03 | L | 6870.6 | -804M | 238M | LOSS | -20.0 | +2.9 | -45.4 | 31m |
+| 12 | 02/13 | 10:04 | L | 6829.4 | -893M | 48M | WIN | +10.0 | +32.9 | -8.6 | 5m |
+| 13 | 02/13 | 10:36 | L | 6862.3 | -245M | 67M | LOSS | -20.0 | +0.0 | -34.4 | 9m |
+| 14 | 02/13 | 11:14 | L | 6853.2 | -319M | 103M | WIN | +10.0 | +22.4 | -13.4 | 30m |
+| 15 | 02/13 | 11:46 | L | 6865.8 | -330M | 64M | WIN | +10.0 | +14.5 | -1.3 | 30m |
+| 16 | 02/13 | 12:21 | L | 6869.7 | -1318M | 39M | WIN | +10.0 | +10.6 | -8.9 | 21m |
+| 17 | 02/13 | 13:03 | L | 6863.2 | -1512M | 54M | WIN | +10.0 | +16.1 | -2.4 | 14m |
+| 18 | 02/13 | 13:45 | L | 6869.7 | -943M | 75M | T-LOSS | -14.6 | +4.7 | -14.6 | 58m |
+| 19 | 02/13 | 14:21 | S | 6869.9 | +1454M | -40M | WIN | +10.0 | +29.2 | -1.8 | 18m |
+| 20 | 02/13 | 14:52 | S | 6855.2 | +1241M | -95M | WIN | +10.0 | +37.3 | +0.0 | 7m |
+| 21 | 02/13 | 15:24 | L | 6839.3 | -3205M | 259M | LOSS | -20.0 | +0.0 | -21.4 | 20m |
+| 22 | 02/17 | 10:05 | L | 6801.0 | -338M | 58M | WIN | +10.0 | +13.3 | -23.8 | 15m |
+| 23 | 02/17 | 10:49 | L | 6793.6 | -240M | 39M | WIN | +10.0 | +55.3 | -1.9 | 13m |
+| 24 | 02/17 | 11:21 | L | 6842.6 | -2061M | 3M | T-LOSS | -11.6 | +6.3 | -14.1 | 12m |
+
+### Caveats & Next Steps
+
+- Only 5 days with charm data available (charm capture started ~Feb 11). Need 20+ days minimum.
+- 24 trades is a small sample. Results could be inflated by favorable period.
+- The $200M DD change threshold and charm sign are initial parameters — not optimized.
+- Shorts outperformed longs per trade; consider asymmetric targets.
+- Consider adding: paradigm filter, LIS proximity, time-of-day weighting.
+
+**REVIEW AFTER: 50+ trades (~3 more weeks of data collection). Re-run simulation with larger dataset.**
+
+---
+
 ## Next Review
 
 Re-run this analysis after accumulating 20+ more trades (target: ~2 weeks). Check:

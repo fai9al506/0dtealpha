@@ -9837,21 +9837,16 @@ DASH_HTML_TEMPLATE = """
             name: 'Price'
           };
 
-          // Get entry time in ET and find closest matching time in chart data
+          // Get entry time and find the candle that contains it.
+          // Each candle at times[i] covers the period times[i-1] -> times[i],
+          // so we need the first snapshot AT or AFTER the entry (full timestamp comparison).
           const entryTimeET = fmtTimeET(e.ts);
-          const [entryH, entryM] = entryTimeET.split(':').map(Number);
-          const entryMinutes = entryH * 60 + entryM;
-
-          // Find the closest time label in the chart data
-          let entryLabel = times[0];
-          let minDiff = Infinity;
-          for (const t of times) {
-            const [h, m] = t.split(':').map(Number);
-            const tMinutes = h * 60 + m;
-            const diff = Math.abs(tMinutes - entryMinutes);
-            if (diff < minDiff) {
-              minDiff = diff;
-              entryLabel = t;
+          const entryMs = new Date(e.ts).getTime();
+          let entryLabel = times[times.length - 1];
+          for (let i = 0; i < data.prices.length; i++) {
+            if (new Date(data.prices[i].ts).getTime() >= entryMs) {
+              entryLabel = times[i];
+              break;
             }
           }
 

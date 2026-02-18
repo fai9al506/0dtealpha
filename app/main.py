@@ -890,6 +890,15 @@ def _backfill_outcomes():
     if not engine:
         return
     try:
+        # One-time: reset DD Exhaustion outcomes to recalculate with trailing stop
+        with engine.begin() as conn:
+            reset = conn.execute(text("""
+                UPDATE setup_log SET outcome_result = NULL, outcome_pnl = NULL,
+                       outcome_target_level = NULL, outcome_stop_level = NULL, outcome_elapsed_min = NULL
+                WHERE setup_name = 'DD Exhaustion' AND outcome_result IS NOT NULL
+            """))
+            if reset.rowcount > 0:
+                print(f"[backfill] reset {reset.rowcount} DD Exhaustion outcomes for trailing stop recalc", flush=True)
         with engine.begin() as conn:
             rows = conn.execute(text("""
                 SELECT id, ts, setup_name, direction, grade, score,
@@ -930,7 +939,15 @@ def _backfill_outcomes():
             es_price = entry.get("abs_es_price")
             entry_price = es_price if entry.get("setup_name") == "ES Absorption" and es_price else spot
 
-            if result_type == "WIN":
+            is_dd = entry.get("setup_name") == "DD Exhaustion"
+            if is_dd:
+                # DD trailing stop: P&L = final stop level - entry (or timeout P&L)
+                if result_type == "EXPIRED":
+                    pnl = outcome.get("timeout_pnl", 0) or 0
+                else:
+                    sl = outcome.get("dd_final_stop") or outcome.get("stop_level", 0)
+                    pnl = (sl - entry_price) if is_long else (entry_price - sl)
+            elif result_type == "WIN":
                 tgt = outcome.get("ten_pt_level") or outcome.get("bofa_target_level")
                 if tgt:
                     pnl = abs(tgt - entry_price) if is_long else abs(entry_price - tgt)
@@ -5388,9 +5405,36 @@ def _calculate_setup_outcome(entry: dict) -> dict:
 
         first_event = None  # "10pt", "target", "stop", or "timeout" (BofA only)
 
+        dd_max_fav = 0.0  # DD trailing: track max favorable excursion
+        dd_stopped = False
+
         for price_ts, price in prices:
             if is_long:
                 profit = price - spot
+
+                # DD Exhaustion: trailing stop logic
+                if is_dd and not dd_stopped:
+                    if profit > dd_max_fav:
+                        dd_max_fav = profit
+                    # Apply trail ladder: +7→SL+5, +12→SL+10, +17→SL+15, ...
+                    trail_lock = None
+                    rung = 7
+                    while rung <= dd_max_fav:
+                        trail_lock = rung - 2
+                        rung += 5
+                    if trail_lock is not None:
+                        new_stop = spot + trail_lock
+                        if new_stop > stop_level:
+                            stop_level = new_stop
+                    # Check trailing stop
+                    if price <= stop_level:
+                        dd_stopped = True
+                        hit_stop = True
+                        time_to_stop = price_ts
+                        pnl_at_stop = stop_level - spot
+                        first_event = "target" if pnl_at_stop > 0 else "stop"
+                        continue
+
                 if not hit_10pt and price >= ten_pt_level:
                     hit_10pt = True
                     time_to_10pt = price_ts
@@ -5401,7 +5445,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     time_to_target = price_ts
                     if first_event is None:
                         first_event = "target"
-                if not hit_stop and price <= stop_level:
+                if not is_dd and not hit_stop and price <= stop_level:
                     hit_stop = True
                     time_to_stop = price_ts
                     if first_event is None:
@@ -5414,6 +5458,28 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     max_loss_ts = price_ts
             else:  # SHORT
                 profit = spot - price
+
+                # DD Exhaustion: trailing stop logic
+                if is_dd and not dd_stopped:
+                    if profit > dd_max_fav:
+                        dd_max_fav = profit
+                    trail_lock = None
+                    rung = 7
+                    while rung <= dd_max_fav:
+                        trail_lock = rung - 2
+                        rung += 5
+                    if trail_lock is not None:
+                        new_stop = spot - trail_lock
+                        if new_stop < stop_level:
+                            stop_level = new_stop
+                    if price >= stop_level:
+                        dd_stopped = True
+                        hit_stop = True
+                        time_to_stop = price_ts
+                        pnl_at_stop = spot - stop_level
+                        first_event = "target" if pnl_at_stop > 0 else "stop"
+                        continue
+
                 if not hit_10pt and price <= ten_pt_level:
                     hit_10pt = True
                     time_to_10pt = price_ts
@@ -5424,7 +5490,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     time_to_target = price_ts
                     if first_event is None:
                         first_event = "target"
-                if not hit_stop and price >= stop_level:
+                if not is_dd and not hit_stop and price >= stop_level:
                     hit_stop = True
                     time_to_stop = price_ts
                     if first_event is None:
@@ -5436,6 +5502,13 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     max_loss = profit
                     max_loss_ts = price_ts
 
+        # DD Exhaustion: if trail stopped with profit, mark as target hit
+        if is_dd and dd_stopped:
+            pnl_at_stop = stop_level - spot if is_long else spot - stop_level
+            if pnl_at_stop > 0:
+                hit_target = True
+                time_to_target = time_to_stop
+
         # BofA Scalp: if no event by end of window, it's a timeout
         timeout_pnl = None
         if is_bofa and first_event is None:
@@ -5443,6 +5516,12 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             if prices:
                 last_price = prices[-1][1]
                 timeout_pnl = round((last_price - spot) if is_long else (spot - last_price), 2)
+
+        # DD Exhaustion: if trailing stop never hit, EOD mark-to-market
+        if is_dd and first_event is None and prices:
+            last_price = prices[-1][1]
+            timeout_pnl = round((last_price - spot) if is_long else (spot - last_price), 2)
+            first_event = "timeout"
 
         result = {
             "hit_10pt": hit_10pt,
@@ -5465,6 +5544,11 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             result["timeout_pnl"] = timeout_pnl
             result["bofa_target_level"] = round(ten_pt_level, 2)
             result["bofa_max_hold_minutes"] = entry.get("bofa_max_hold_minutes") or 30
+        if is_dd:
+            result["is_dd"] = True
+            result["timeout_pnl"] = timeout_pnl
+            result["dd_max_fav"] = round(dd_max_fav, 2)
+            result["dd_final_stop"] = round(stop_level, 2)
         return result
     except Exception as e:
         print(f"[setups] outcome calculation error: {e}", flush=True)

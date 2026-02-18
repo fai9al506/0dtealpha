@@ -899,6 +899,20 @@ def _backfill_outcomes():
             """))
             if reset.rowcount > 0:
                 print(f"[backfill] reset {reset.rowcount} DD Exhaustion outcomes for trailing stop recalc", flush=True)
+        # Re-verify EXPIRED outcomes — live tracker polling may have missed stop/target hits
+        # The historical backfill uses playback_snapshots (2-min granularity) which is more
+        # reliable than 30s live polling that can miss price spikes between checks
+        with engine.begin() as conn:
+            reset2 = conn.execute(text("""
+                UPDATE setup_log SET outcome_result = NULL, outcome_pnl = NULL,
+                       outcome_target_level = NULL, outcome_stop_level = NULL,
+                       outcome_elapsed_min = NULL, outcome_max_profit = NULL,
+                       outcome_max_loss = NULL, outcome_first_event = NULL
+                WHERE outcome_result = 'EXPIRED'
+                  AND setup_name NOT IN ('DD Exhaustion', 'ES Absorption')
+            """))
+            if reset2.rowcount > 0:
+                print(f"[backfill] re-verifying {reset2.rowcount} EXPIRED outcomes against price history", flush=True)
         with engine.begin() as conn:
             rows = conn.execute(text("""
                 SELECT id, ts, setup_name, direction, grade, score,
@@ -961,15 +975,10 @@ def _backfill_outcomes():
 
             # Elapsed time
             elapsed = None
-            if fe == "10pt" and outcome.get("time_to_10pt"):
+            time_key = {"10pt": "time_to_10pt", "target": "time_to_target", "stop": "time_to_stop"}.get(fe)
+            if time_key and outcome.get(time_key):
                 try:
-                    t = datetime.fromisoformat(outcome["time_to_10pt"])
-                    elapsed = int((t - entry["ts"]).total_seconds() / 60)
-                except Exception:
-                    pass
-            elif fe == "stop" and outcome.get("time_to_stop"):
-                try:
-                    t = datetime.fromisoformat(outcome["time_to_stop"])
+                    t = datetime.fromisoformat(outcome[time_key])
                     elapsed = int((t - entry["ts"]).total_seconds() / 60)
                 except Exception:
                     pass
@@ -5317,13 +5326,14 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         setup_name = entry.get("setup_name", "")
         is_bofa = setup_name == "BofA Scalp"
         is_dd = setup_name == "DD Exhaustion"
+        is_paradigm = setup_name == "Paradigm Reversal"
 
         if not all([ts, spot]):
             return {}
-        # DD Exhaustion and BofA don't need lis/target — they use fixed pts
-        if not is_bofa and not is_dd and not lis:
+        # DD, BofA, Paradigm don't need lis/target — they use fixed pts from spot
+        if not is_bofa and not is_dd and not is_paradigm and not lis:
             return {}
-        if not is_bofa and not is_dd and target is None:
+        if not is_bofa and not is_dd and not is_paradigm and target is None:
             return {}
 
         # Get market close time for that day (4:00 PM ET)
@@ -5363,6 +5373,11 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             ten_pt_level = spot + 7 if is_long else spot - 7  # first trail rung
             target_level = None  # trailing — no fixed target
             stop_level = spot - dd_stp if is_long else spot + dd_stp
+        elif is_paradigm:
+            # Paradigm Reversal: fixed 10pt target, 15pt stop from spot
+            ten_pt_level = spot + 10 if is_long else spot - 10
+            target_level = ten_pt_level
+            stop_level = spot - 15 if is_long else spot + 15
         elif is_bofa:
             # BofA Scalp: fixed 10pt target, 12pt stop beyond LIS
             bofa_target_dist = entry.get("bofa_target_level") or (spot + 10 if is_long else spot - 10)

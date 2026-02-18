@@ -7122,7 +7122,7 @@ DASH_HTML_TEMPLATE = """
         <div class="tl-filters">
           <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="PENDING">PENDING</option></select>
-          <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>LOG</option></select>
+          <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
         </div>
@@ -10020,7 +10020,7 @@ DASH_HTML_TEMPLATE = """
     // ===== Trade Log Tab =====
     let _tradeLogData = [];
     const _tlPillColors = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4'};
-    const _tlGradeColors = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308','LOG':'#6b7280'};
+    const _tlGradeColors = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308'};
 
     async function loadTradeLogFull() {
       try {

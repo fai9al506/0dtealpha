@@ -1498,9 +1498,9 @@ def update_dd_tracker(dd_value):
 
 def evaluate_dd_exhaustion(spot, dd_value, dd_shift, charm, paradigm, settings):
     """
-    Evaluate DD Exhaustion setup (log-only mode).
-    LONG: dd_shift < -threshold AND charm > 0
-    SHORT: dd_shift > +threshold AND charm < 0
+    Evaluate DD Exhaustion setup.
+    LONG: dd_shift < -threshold AND charm > 0  (dealers over-hedged bearish, price bounces)
+    SHORT: dd_shift > +threshold AND charm < 0  (dealers over-positioned bullish, price fades)
     Returns result dict or None.
     """
     if not settings.get("dd_exhaust_enabled", True):
@@ -1541,11 +1541,91 @@ def evaluate_dd_exhaustion(spot, dd_value, dd_shift, charm, paradigm, settings):
         target_price = round(spot - target_pts, 2)
         stop_price = round(spot + stop_pts, 2)
 
+    # --- Scoring (5 components, max 100) ---
+    # Based on backtest (24 trades, 58% WR, PF 1.55x) + Volland Discord research
+
+    # 1. DD Shift magnitude (0-30 pts): bell-curve, sweet spot $500M-$2B
+    #    Backtest: $3B+ trades (#3, #21) showed 0 maxFav → regime change not exhaustion
+    abs_shift = abs(dd_shift)
+    if abs_shift >= 3_000_000_000:
+        shift_score = 15       # extreme: possibly regime change, not just exhaustion
+    elif abs_shift >= 2_000_000_000:
+        shift_score = 25       # strong but may be overdone
+    elif abs_shift >= 1_000_000_000:
+        shift_score = 30       # sweet spot: most winners cluster here
+    elif abs_shift >= 500_000_000:
+        shift_score = 20       # moderate, reliable range
+    else:
+        shift_score = 10       # minimum threshold met ($200M+)
+
+    # 2. Charm alignment strength (0-25 pts): structural anchor for the divergence
+    #    WizOps: "all 0DTE vanna, charm, gamma captured in delta decay"
+    #    Apollo: "bearish charm won't effect much with elevated skew"
+    #    Backtest: charm <20M → unreliable (trade #24: charm=$3M → LOSS)
+    abs_charm = abs(charm)
+    if abs_charm < 20_000_000:
+        charm_score = 0        # too weak — no structural support
+    elif abs_charm < 50_000_000:
+        charm_score = 8
+    elif abs_charm < 100_000_000:
+        charm_score = 15
+    elif abs_charm < 250_000_000:
+        charm_score = 22
+    else:
+        charm_score = 25       # strong structural conviction
+
+    # 3. Time-of-day (0-15 pts)
+    #    WizOps: "0DTE delta decay is more actionable in the middle of the day"
+    #    Dark Matter: "Post 2 pm is dealer o'clock"
+    #    Backtest: trades #19 (14:21), #20 (14:52) both won
+    t = now.time()
+    if t >= dtime(14, 0):
+        time_score = 15        # dealer o'clock — highest conviction
+    elif t >= dtime(11, 30):
+        time_score = 12        # mid-day sweet spot
+    elif t >= dtime(10, 30):
+        time_score = 8         # settling period
+    else:
+        time_score = 3         # 10:00-10:30 — opening noise
+
+    # 4. Paradigm context (0-15 pts) — actual Volland paradigm names
+    #    Apollo: "Paradigm is AG pure BUT 0dte Delta Decay is +3B"
+    #    DK5000: "Sidial = consolidation" → DD signals are noise
+    para_score = 0
+    if paradigm:
+        p = str(paradigm).upper()
+        if "BOFA" in p or "BOF" in p:
+            para_score = 10    # range-bound: exhaustion at extremes fits well
+        elif "GEX" in p and "AG" not in p and "ANTI" not in p:
+            # GEX-PURE is bullish regime
+            para_score = 15 if direction == "long" else 5
+        elif "AG" in p or "ANTI" in p:
+            # AG is bearish regime
+            para_score = 5 if direction == "long" else 15
+        elif "SIDIAL" in p:
+            para_score = 3     # consolidation, DD signals are noise
+        # Messy / unknown: 0
+
+    # 5. Direction bonus (0-15 pts)
+    #    Backtest: shorts avg +4.7/trade vs longs +1.3/trade (3.6x better)
+    #    Market microstructure: bullish over-positioning creates stronger fades
+    dir_score = 15 if direction == "short" else 8
+
+    total_score = shift_score + charm_score + time_score + para_score + dir_score
+
+    # Grade thresholds
+    if total_score >= 75:
+        grade = "A+"
+    elif total_score >= 55:
+        grade = "A"
+    else:
+        grade = "A-Entry"
+
     return {
         "setup_name": "DD Exhaustion",
         "direction": direction,
-        "grade": "LOG",
-        "score": 0,
+        "grade": grade,
+        "score": total_score,
         "dd_shift": dd_shift,
         "dd_current": dd_value,
         "charm": charm,
@@ -1557,16 +1637,16 @@ def evaluate_dd_exhaustion(spot, dd_value, dd_shift, charm, paradigm, settings):
         "target": None,
         "max_plus_gex": None,
         "max_minus_gex": None,
-        # Fields expected by log_setup INSERT
+        # Sub-scores stored in existing columns for breakdown display
         "gap_to_lis": None,
         "upside": None,
         "rr_ratio": None,
         "first_hour": False,
-        "support_score": 0,
-        "upside_score": 0,
-        "floor_cluster_score": 0,
-        "target_cluster_score": 0,
-        "rr_score": 0,
+        "support_score": shift_score,       # DD shift magnitude (0-30)
+        "upside_score": charm_score,        # charm strength (0-25)
+        "floor_cluster_score": time_score,  # time-of-day (0-15)
+        "target_cluster_score": para_score, # paradigm context (0-15)
+        "rr_score": dir_score,              # direction bonus (0-15)
     }
 
 
@@ -1596,10 +1676,12 @@ def should_notify_dd_exhaust(result):
 
 
 def format_dd_exhaustion_message(result):
-    """Format Telegram HTML message for DD Exhaustion (log-only)."""
+    """Format Telegram HTML message for DD Exhaustion."""
     direction = result["direction"]
     dir_label = "LONG" if direction == "long" else "SHORT"
     dir_emoji = "\U0001f535" if direction == "long" else "\U0001f534"
+    grade = result.get("grade", "?")
+    score = result.get("score", 0)
 
     shift = result["dd_shift"]
     shift_m = shift / 1_000_000
@@ -1610,13 +1692,12 @@ def format_dd_exhaustion_message(result):
     else:
         exhaust_label = "bullish exhaust"
 
-    msg = f"{dir_emoji} <b>[LOG-ONLY] DD EXHAUSTION \u2014 {dir_label}</b>\n"
+    msg = f"{dir_emoji} <b>DD EXHAUSTION \u2014 {dir_label} ({grade} / {score})</b>\n"
     msg += "\u2501" * 18 + "\n"
     msg += f"DD Shift: ${shift_m:+,.0f}M ({exhaust_label})\n"
     msg += f"Charm: ${charm_m:+,.0f}M ({'bullish \u2713' if result['charm'] > 0 else 'bearish \u2713'})\n"
     msg += f"Paradigm: {result['paradigm'] or 'N/A'}\n"
-    msg += f"Entry: ${result['spot']:,.0f} | Tgt: ${result['target_price']:,.0f} | Stop: ${result['stop_price']:,.0f}\n"
-    msg += f"\u23f1 Log-only mode \u2014 not a trade signal"
+    msg += f"Entry: ${result['spot']:,.0f} | Tgt: ${result['target_price']:,.0f} | Stop: ${result['stop_price']:,.0f}"
     return msg
 
 
@@ -1636,11 +1717,9 @@ def format_setup_outcome(trade: dict, result_type: str, pnl: float, elapsed_min:
     spot = trade["spot"]
     r = trade.get("result_data", {})
 
-    # DD Exhaustion keeps its LOG-ONLY tag
     is_dd = setup_name == "DD Exhaustion"
-    name_prefix = "[LOG-ONLY] " if is_dd else ""
 
-    msg = f"{emoji} <b>{name_prefix}{setup_name} \u2014 {direction} \u2192 {result_type}</b> ({pnl:+.1f} pts, {elapsed_min} min)\n"
+    msg = f"{emoji} <b>{setup_name} \u2014 {direction} \u2192 {result_type}</b> ({pnl:+.1f} pts, {elapsed_min} min)\n"
 
     if result_type == "WIN":
         msg += f"Entry: ${spot:,.0f} | Target: ${trade['target_level']:,.0f} | Grade: {grade}"
@@ -1689,8 +1768,6 @@ def format_setup_daily_summary(trades_list: list) -> str:
         name_short = {"Paradigm Reversal": "Paradigm Rev", "DD Exhaustion": "DD Exhaust"}.get(name, name)
         direction = t["direction"].upper()
         grade = t.get("grade", "?")
-        if grade == "LOG":
-            grade = "LOG"
         pnl = t["pnl"]
         elapsed = t.get("elapsed_min", 0)
         if t["result_type"] == "EXPIRED":

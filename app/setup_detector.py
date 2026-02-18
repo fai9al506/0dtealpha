@@ -1,6 +1,7 @@
 """
 Trading Setup Detector — self-contained scoring module.
-Evaluates GEX Long, AG Short, BofA Scalp, and ES Absorption setups.
+Evaluates GEX Long, AG Short, BofA Scalp, ES Absorption, Paradigm Reversal,
+and DD Exhaustion (log-only) setups.
 Receives all data as parameters; no imports from main.py.
 """
 from collections import deque
@@ -1455,6 +1456,170 @@ _paradigm_tracker = {
 }
 
 
+# ── DD Exhaustion (log-only) — defaults and state ───────────────────────────
+
+DEFAULT_DD_EXHAUST_SETTINGS = {
+    "dd_exhaust_enabled": True,
+    "dd_shift_threshold": 200_000_000,   # $200M minimum shift
+    "dd_cooldown_minutes": 30,
+    "dd_target_pts": 10,
+    "dd_stop_pts": 20,
+    "dd_market_start": "10:00",          # Avoid first 30 min
+    "dd_market_end": "15:30",
+}
+
+_cooldown_dd_exhaust = {
+    "last_long_time": None,
+    "last_short_time": None,
+    "last_date": None,
+}
+
+_dd_tracker = {
+    "prev_dd_value": None,
+    "prev_dd_date": None,
+}
+
+
+def update_dd_tracker(dd_value):
+    """Track DD hedging changes across cycles. Returns shift or None."""
+    today = datetime.now(NY).date()
+    if _dd_tracker["prev_dd_date"] != today:
+        _dd_tracker["prev_dd_value"] = None
+        _dd_tracker["prev_dd_date"] = today
+
+    prev = _dd_tracker["prev_dd_value"]
+    _dd_tracker["prev_dd_value"] = dd_value
+    _dd_tracker["prev_dd_date"] = today
+
+    if prev is None:
+        return None
+    return dd_value - prev
+
+
+def evaluate_dd_exhaustion(spot, dd_value, dd_shift, charm, paradigm, settings):
+    """
+    Evaluate DD Exhaustion setup (log-only mode).
+    LONG: dd_shift < -threshold AND charm > 0
+    SHORT: dd_shift > +threshold AND charm < 0
+    Returns result dict or None.
+    """
+    if not settings.get("dd_exhaust_enabled", True):
+        return None
+    if spot is None or dd_value is None or dd_shift is None or charm is None:
+        return None
+
+    # Time window check
+    now = datetime.now(NY)
+    start_str = settings.get("dd_market_start", "10:00")
+    end_str = settings.get("dd_market_end", "15:30")
+    try:
+        h, m = map(int, start_str.split(":"))
+        market_start = dtime(h, m)
+        h, m = map(int, end_str.split(":"))
+        market_end = dtime(h, m)
+    except Exception:
+        market_start, market_end = dtime(10, 0), dtime(15, 30)
+    if not (market_start <= now.time() <= market_end):
+        return None
+
+    threshold = settings.get("dd_shift_threshold", 200_000_000)
+    target_pts = settings.get("dd_target_pts", 10)
+    stop_pts = settings.get("dd_stop_pts", 20)
+
+    # Signal detection
+    if dd_shift < -threshold and charm > 0:
+        direction = "long"
+    elif dd_shift > threshold and charm < 0:
+        direction = "short"
+    else:
+        return None
+
+    if direction == "long":
+        target_price = round(spot + target_pts, 2)
+        stop_price = round(spot - stop_pts, 2)
+    else:
+        target_price = round(spot - target_pts, 2)
+        stop_price = round(spot + stop_pts, 2)
+
+    return {
+        "setup_name": "DD Exhaustion",
+        "direction": direction,
+        "grade": "LOG",
+        "score": 0,
+        "dd_shift": dd_shift,
+        "dd_current": dd_value,
+        "charm": charm,
+        "paradigm": str(paradigm) if paradigm else None,
+        "spot": round(spot, 2),
+        "target_price": target_price,
+        "stop_price": stop_price,
+        "lis": None,
+        "target": None,
+        "max_plus_gex": None,
+        "max_minus_gex": None,
+        # Fields expected by log_setup INSERT
+        "gap_to_lis": None,
+        "upside": None,
+        "rr_ratio": None,
+        "first_hour": False,
+        "support_score": 0,
+        "upside_score": 0,
+        "floor_cluster_score": 0,
+        "target_cluster_score": 0,
+        "rr_score": 0,
+    }
+
+
+def should_notify_dd_exhaust(result):
+    """30-min cooldown per direction for DD Exhaustion."""
+    if result is None:
+        return False, None
+
+    direction = result["direction"]
+    now = datetime.now(NY)
+    today = now.date()
+
+    if _cooldown_dd_exhaust.get("last_date") != today:
+        _cooldown_dd_exhaust["last_long_time"] = None
+        _cooldown_dd_exhaust["last_short_time"] = None
+        _cooldown_dd_exhaust["last_date"] = today
+
+    side_key = "last_long_time" if direction == "long" else "last_short_time"
+    last_fire = _cooldown_dd_exhaust.get(side_key)
+    if last_fire is not None:
+        elapsed = (now - last_fire).total_seconds() / 60
+        if elapsed < 30:
+            return False, None
+
+    _cooldown_dd_exhaust[side_key] = now
+    return True, "new"
+
+
+def format_dd_exhaustion_message(result):
+    """Format Telegram HTML message for DD Exhaustion (log-only)."""
+    direction = result["direction"]
+    dir_label = "LONG" if direction == "long" else "SHORT"
+    dir_emoji = "\U0001f535" if direction == "long" else "\U0001f534"
+
+    shift = result["dd_shift"]
+    shift_m = shift / 1_000_000
+    charm_m = result["charm"] / 1_000_000
+
+    if direction == "long":
+        exhaust_label = "bearish exhaust"
+    else:
+        exhaust_label = "bullish exhaust"
+
+    msg = f"{dir_emoji} <b>[LOG-ONLY] DD EXHAUSTION \u2014 {dir_label}</b>\n"
+    msg += "\u2501" * 18 + "\n"
+    msg += f"DD Shift: ${shift_m:+,.0f}M ({exhaust_label})\n"
+    msg += f"Charm: ${charm_m:+,.0f}M ({'bullish \u2713' if result['charm'] > 0 else 'bearish \u2713'})\n"
+    msg += f"Paradigm: {result['paradigm'] or 'N/A'}\n"
+    msg += f"Entry: ${result['spot']:,.0f} | Tgt: ${result['target_price']:,.0f} | Stop: ${result['stop_price']:,.0f}\n"
+    msg += f"\u23f1 Log-only mode \u2014 not a trade signal"
+    return msg
+
+
 def update_paradigm_tracker(paradigm):
     """Track paradigm changes. Call each cycle from check_setups()."""
     if paradigm is None:
@@ -1726,7 +1891,8 @@ def format_paradigm_reversal_message(result):
 
 def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings,
                  lis_lower=None, lis_upper=None, aggregated_charm=None,
-                 dd_hedging=None, es_bars=None):
+                 dd_hedging=None, es_bars=None,
+                 dd_value=None, dd_shift=None):
     """
     Main entry point called from main.py.
     Returns a list of result wrappers (each has keys: result, notify, notify_reason, message).
@@ -1737,6 +1903,8 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
       aggregated_charm: aggregated charm from Volland stats
       dd_hedging: delta decay hedging string from Volland stats (Paradigm Reversal)
       es_bars: list of recent ES 1-min bar dicts from DB (Paradigm Reversal)
+      dd_value: numeric DD hedging value (DD Exhaustion)
+      dd_shift: change in DD hedging from previous cycle (DD Exhaustion)
     """
     results = []
 
@@ -1808,6 +1976,19 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
             "message": format_paradigm_reversal_message(pr_result),
         })
 
+    # ── DD Exhaustion (log-only) ──
+    dd_exhaust_result = evaluate_dd_exhaustion(
+        spot, dd_value, dd_shift, aggregated_charm, paradigm, settings,
+    )
+    if dd_exhaust_result is not None:
+        notify_dde, reason_dde = should_notify_dd_exhaust(dd_exhaust_result)
+        results.append({
+            "result": dd_exhaust_result,
+            "notify": notify_dde,
+            "notify_reason": reason_dde,
+            "message": format_dd_exhaustion_message(dd_exhaust_result),
+        })
+
     return results
 
 
@@ -1832,6 +2013,8 @@ def export_cooldowns() -> dict:
         "swing_tracker": copy.deepcopy(_swing_tracker),
         "paradigm_rev": _serialize(_cooldown_paradigm_rev),
         "paradigm_tracker": _serialize(_paradigm_tracker),
+        "dd_exhaust": _serialize(_cooldown_dd_exhaust),
+        "dd_tracker": _serialize(_dd_tracker),
     }
 
 def import_cooldowns(data: dict):
@@ -1868,3 +2051,9 @@ def import_cooldowns(data: dict):
         restored = _deserialize(data["paradigm_tracker"], has_datetimes=True,
                                 dt_keys=("flip_time",))
         _paradigm_tracker.update(restored)
+    if "dd_exhaust" in data:
+        _cooldown_dd_exhaust.update(_deserialize(
+            data["dd_exhaust"], has_datetimes=True,
+            dt_keys=("last_long_time", "last_short_time")))
+    if "dd_tracker" in data:
+        _dd_tracker.update(data["dd_tracker"])

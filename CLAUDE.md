@@ -45,7 +45,7 @@ Supported formats: `.md`, `.txt`, `.pdf`, `.png`, `.jpg`
 
 0DTE Alpha is a real-time options trading dashboard for SPX/SPXW 0DTE (zero days to expiration) options. It combines:
 - **FastAPI web service** (`app/main.py`) - serves live options chain data, charts, and a dashboard
-- **Setup detector** (`app/setup_detector.py`) - scoring module for GEX Long, AG Short, BofA Scalp, and ES Absorption setups
+- **Setup detector** (`app/setup_detector.py`) - scoring module for GEX Long, AG Short, BofA Scalp, ES Absorption, Paradigm Reversal, and DD Exhaustion (log-only) setups
 - **Volland scraper worker** (`volland_worker_v2.py`) - Playwright route-based scraper for charm/vanna/gamma exposure data from vol.land
 - **ES cumulative delta** (integrated in `app/main.py`) - scheduler job pulls ES 1-min bars from TradeStation API
 - **ES quote stream** (integrated in `app/main.py`) - WebSocket stream builds bid/ask delta range bars from TradeStation ES quotes
@@ -149,6 +149,7 @@ Append new analysis sections to this file after each review session.
 - **AG Short**: Bearish counterpart to GEX Long
 - **BofA Scalp**: LIS-based scalp with charm/stability/width scoring
 - **ES Absorption** (swing-based, rewritten 2026-02-15): See "ES Absorption Detector" section below
+- **DD Exhaustion** (log-only, added 2026-02-18): See "DD Exhaustion Detector" section below
 - Cooldown persistence: `export_cooldowns()` / `import_cooldowns()` serialize state to/from DB
 
 **volland_worker_v2.py** (Playwright scraper — ACTIVE):
@@ -191,6 +192,27 @@ Detects passive buyer/seller absorption by comparing CVD at current bar vs histo
 - `abs_cvd_z_min`: 0.5 (minimum z-score to fire)
 - `abs_cvd_std_window`: 20 (rolling window for CVD std dev)
 - `abs_vol_window`: 10 (rolling average for volume gate)
+
+### DD Exhaustion Detector (Log-Only Mode)
+
+Detects DD-Charm divergence as a contrarian exhaustion signal. Based on Analysis #3 backtest (24 trades, 58% WR, +54.2 pts, PF 1.55x over Feb 11-17).
+
+**Signal logic:**
+- LONG: DD shifts bearish (< -$200M) while charm stays positive → dealers over-hedged, price bounces
+- SHORT: DD shifts bullish (> +$200M) while charm stays negative → dealers over-positioned, price fades
+
+**Data flow:**
+- Volland API string (e.g. "$7,298,110,681") → `_parse_dd_numeric()` in main.py → numeric value
+- `update_dd_tracker()` computes shift (current - previous cycle) with daily reset
+- `evaluate_dd_exhaustion()` checks signal + time window (10:00-15:30 ET)
+
+**Key settings** (DEFAULT_DD_EXHAUST_SETTINGS):
+- `dd_shift_threshold`: $200M minimum shift to trigger
+- `dd_cooldown_minutes`: 30 (per direction)
+- `dd_target_pts`: 10, `dd_stop_pts`: 20
+- `dd_market_start`: "10:00", `dd_market_end`: "15:30"
+
+**Log-only mode:** Grade always "LOG", score always 0. Telegram messages tagged `[LOG-ONLY]`. Target: 50+ live signals before enabling as real setup.
 
 ### Database Tables
 - `chain_snapshots` - options chain data with Greeks

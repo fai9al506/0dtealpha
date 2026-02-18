@@ -885,6 +885,7 @@ _current_setup_log = {
     "AG Short": None,
     "BofA Scalp": None,
     "ES Absorption": None,
+    "DD Exhaustion": None,
     "last_date": None,
 }
 
@@ -905,7 +906,7 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "Paradigm Reversal": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
@@ -999,6 +1000,15 @@ def _json_load_maybe(v: Any) -> Any:
         except Exception:
             return v
     return v
+
+def _parse_dd_numeric(dd_str):
+    """Parse DD hedging string like '$7,298,110,681' to numeric value."""
+    if not dd_str:
+        return None
+    try:
+        return float(str(dd_str).replace("$", "").replace(",", ""))
+    except (ValueError, TypeError):
+        return None
 
 def db_latest_volland() -> Optional[dict]:
     if not engine:
@@ -2128,6 +2138,11 @@ def _run_setup_check():
     if statistics_raw and isinstance(statistics_raw, dict):
         dd_hedging = statistics_raw.get("deltadecayHedging") or statistics_raw.get("delta_decay_hedging")
 
+    # Parse DD hedging to numeric value for DD Exhaustion
+    from app.setup_detector import update_dd_tracker
+    dd_numeric = _parse_dd_numeric(dd_hedging)
+    dd_shift = update_dd_tracker(dd_numeric) if dd_numeric is not None else None
+
     # Query recent ES 1-min bars for Paradigm Reversal volume check
     es_bars = []
     if engine:
@@ -2166,6 +2181,7 @@ def _run_setup_check():
         spot, paradigm, lis, target, max_plus_gex, max_minus_gex, _setup_settings,
         lis_lower=lis_lower, lis_upper=lis_upper, aggregated_charm=aggregated_charm,
         dd_hedging=dd_hedging, es_bars=es_bars,
+        dd_value=dd_numeric, dd_shift=dd_shift,
     )
     for rw in result_wrappers:
         setup_name = rw["result"]["setup_name"]

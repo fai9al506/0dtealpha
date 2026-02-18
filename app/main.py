@@ -890,15 +890,17 @@ def _backfill_outcomes():
     if not engine:
         return
     try:
-        # One-time: reset DD Exhaustion outcomes to recalculate with trailing stop
+        # Reset trailing stop setups to recalculate (DD Exhaustion + GEX Long)
         with engine.begin() as conn:
             reset = conn.execute(text("""
                 UPDATE setup_log SET outcome_result = NULL, outcome_pnl = NULL,
-                       outcome_target_level = NULL, outcome_stop_level = NULL, outcome_elapsed_min = NULL
-                WHERE setup_name = 'DD Exhaustion' AND outcome_result IS NOT NULL
+                       outcome_target_level = NULL, outcome_stop_level = NULL,
+                       outcome_elapsed_min = NULL, outcome_max_profit = NULL,
+                       outcome_max_loss = NULL, outcome_first_event = NULL
+                WHERE setup_name IN ('DD Exhaustion', 'GEX Long') AND outcome_result IS NOT NULL
             """))
             if reset.rowcount > 0:
-                print(f"[backfill] reset {reset.rowcount} DD Exhaustion outcomes for trailing stop recalc", flush=True)
+                print(f"[backfill] reset {reset.rowcount} DD/GEX outcomes for trailing stop recalc", flush=True)
         # Re-verify EXPIRED outcomes — live tracker polling may have missed stop/target hits
         # The historical backfill uses playback_snapshots (2-min granularity) which is more
         # reliable than 30s live polling that can miss price spikes between checks
@@ -913,7 +915,7 @@ def _backfill_outcomes():
             """))
             if reset2.rowcount > 0:
                 print(f"[backfill] re-verifying {reset2.rowcount} EXPIRED outcomes against price history", flush=True)
-        # Re-verify WIN outcomes — P&L was capped at 10pt even when full target was hit
+        # Re-verify AG Short WIN outcomes — P&L was capped at 10pt even when full target was hit
         with engine.begin() as conn:
             reset3 = conn.execute(text("""
                 UPDATE setup_log SET outcome_result = NULL, outcome_pnl = NULL,
@@ -921,10 +923,10 @@ def _backfill_outcomes():
                        outcome_elapsed_min = NULL, outcome_max_profit = NULL,
                        outcome_max_loss = NULL, outcome_first_event = NULL
                 WHERE outcome_result = 'WIN'
-                  AND setup_name IN ('GEX Long', 'AG Short')
+                  AND setup_name = 'AG Short'
             """))
             if reset3.rowcount > 0:
-                print(f"[backfill] re-verifying {reset3.rowcount} GEX/AG WIN outcomes for full target P&L", flush=True)
+                print(f"[backfill] re-verifying {reset3.rowcount} AG Short WIN outcomes for full target P&L", flush=True)
         with engine.begin() as conn:
             rows = conn.execute(text("""
                 SELECT id, ts, setup_name, direction, grade, score,
@@ -965,13 +967,13 @@ def _backfill_outcomes():
             es_price = entry.get("abs_es_price")
             entry_price = es_price if entry.get("setup_name") == "ES Absorption" and es_price else spot
 
-            is_dd = entry.get("setup_name") == "DD Exhaustion"
-            if is_dd:
-                # DD trailing stop: P&L = final stop level - entry (or timeout P&L)
+            is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long")
+            if is_trailing_setup:
+                # Trailing stop: P&L = final stop level - entry (or timeout P&L)
                 if result_type == "EXPIRED":
                     pnl = outcome.get("timeout_pnl", 0) or 0
                 else:
-                    sl = outcome.get("dd_final_stop") or outcome.get("stop_level", 0)
+                    sl = outcome.get("trail_final_stop") or outcome.get("dd_final_stop") or outcome.get("stop_level", 0)
                     pnl = (sl - entry_price) if is_long else (entry_price - sl)
             elif result_type == "WIN":
                 # Use full target if hit, otherwise use 10pt level
@@ -2278,12 +2280,18 @@ def _compute_setup_levels(r: dict):
         stop_lvl = spot - 12 if is_long else spot + 12
         return None, round(stop_lvl, 2)
 
+    if setup_name == "GEX Long":
+        # Trailing stop — no fixed target; initial SL = 8 pts
+        # Trail: +12→SL+10, +17→SL+15, +22→SL+20, ... (rung_start=12, step=5, lock=rung-2)
+        stop_lvl = spot - 8 if is_long else spot + 8
+        return None, round(stop_lvl, 2)
+
     if setup_name == "Paradigm Reversal":
         target_lvl = spot + 10 if is_long else spot - 10
         stop_lvl = spot - 15 if is_long else spot + 15
         return round(target_lvl, 2), round(stop_lvl, 2)
 
-    # GEX Long / AG Short
+    # AG Short
     lis = r.get("lis")
     target = r.get("target")
     if not lis or not target:
@@ -2381,9 +2389,10 @@ def _check_setup_outcomes(spot: float):
             trade["_seen_low"] = min(trade.get("_seen_low", spx_cycle_low), spx_cycle_low)
             trade["_seen_high"] = max(trade.get("_seen_high", spx_cycle_high), spx_cycle_high)
 
-        # DD Exhaustion: trailing stop, no fixed target
+        # Trailing stop setups: DD Exhaustion (rung_start=7) and GEX Long (rung_start=12)
         # Uses cycle low/high (not all-time) since trail level changes each cycle
-        if setup_name == "DD Exhaustion":
+        _trail_rung_start = {"DD Exhaustion": 7, "GEX Long": 12}.get(setup_name)
+        if _trail_rung_start is not None:
             # Advance trail using cycle high (long) or cycle low (short)
             fav_price = spx_cycle_high if is_long else spx_cycle_low
             fav = (fav_price - entry_price) if is_long else (entry_price - fav_price)
@@ -2391,10 +2400,11 @@ def _check_setup_outcomes(spot: float):
             if fav > max_fav:
                 max_fav = fav
                 trade["_dd_max_fav"] = max_fav
-            # Trailing ladder: at +7 → SL +5, at +12 → SL +10, at +17 → SL +15, ...
-            # Pattern: every 5-pt rung starting at +7, lock in (rung - 2)
+            # Trailing ladder: every 5-pt rung, lock in (rung - 2)
+            # DD: +7→SL+5, +12→SL+10, +17→SL+15, ...
+            # GEX: +12→SL+10, +17→SL+15, +22→SL+20, ...
             trail_lock = None
-            rung = 7
+            rung = _trail_rung_start
             while rung <= max_fav:
                 trail_lock = rung - 2
                 rung += 5
@@ -2634,8 +2644,9 @@ def _run_setup_check():
                 print(f"[setups] {setup_name} NEW: {grade} ({score})", flush=True)
                 # Record open trade for live outcome tracking
                 target_lvl, stop_lvl = _compute_setup_levels(r)
-                # DD Exhaustion uses trailing stop (target_lvl=None is OK)
-                if stop_lvl is not None and (target_lvl is not None or setup_name == "DD Exhaustion"):
+                # DD Exhaustion and GEX Long use trailing stop (target_lvl=None is OK)
+                _trailing_setups = ("DD Exhaustion", "GEX Long")
+                if stop_lvl is not None and (target_lvl is not None or setup_name in _trailing_setups):
                     _setup_open_trades.append({
                         "setup_name": setup_name, "direction": r["direction"],
                         "spot": r["spot"], "grade": grade,
@@ -2646,7 +2657,8 @@ def _run_setup_check():
                         "setup_log_id": _current_setup_log.get(setup_name),
                         "_dd_max_fav": 0.0,  # track max favorable excursion for trailing
                     })
-                    print(f"[outcome] tracking {setup_name}: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
+                    tgt_str = "trail" if target_lvl is None else f"{target_lvl:.1f}"
+                    print(f"[outcome] tracking {setup_name}: target={tgt_str} stop={stop_lvl:.1f}", flush=True)
             elif reason == "grade_upgrade":
                 # Short upgrade notice
                 emoji = "⬆️"
@@ -5373,13 +5385,15 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         is_bofa = setup_name == "BofA Scalp"
         is_dd = setup_name == "DD Exhaustion"
         is_paradigm = setup_name == "Paradigm Reversal"
+        is_gex = setup_name == "GEX Long"
+        is_trailing = is_dd or is_gex  # setups with trailing stop, no fixed target
 
         if not all([ts, spot]):
             return {}
-        # DD, BofA, Paradigm don't need lis/target — they use fixed pts from spot
-        if not is_bofa and not is_dd and not is_paradigm and not lis:
+        # Trailing, BofA, Paradigm don't need lis/target — they use fixed pts from spot
+        if not is_bofa and not is_trailing and not is_paradigm and not lis:
             return {}
-        if not is_bofa and not is_dd and not is_paradigm and target is None:
+        if not is_bofa and not is_trailing and not is_paradigm and target is None:
             return {}
 
         # Get market close time for that day (4:00 PM ET)
@@ -5413,12 +5427,14 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         # Calculate levels
         is_long = direction.lower() == "long"
 
-        if is_dd:
-            # DD Exhaustion: trailing stop, no fixed target; initial SL = 12 pts
-            dd_stp = 12
-            ten_pt_level = spot + 7 if is_long else spot - 7  # first trail rung
+        # Trailing stop parameters: rung_start, step=5, lock=rung-2
+        _trail_rung = {"DD Exhaustion": (7, 12), "GEX Long": (12, 8)}  # (rung_start, initial_sl)
+
+        if is_trailing:
+            rung_start, initial_sl = _trail_rung[setup_name]
+            ten_pt_level = spot + rung_start if is_long else spot - rung_start  # first trail rung
             target_level = None  # trailing — no fixed target
-            stop_level = spot - dd_stp if is_long else spot + dd_stp
+            stop_level = spot - initial_sl if is_long else spot + initial_sl
         elif is_paradigm:
             # Paradigm Reversal: fixed 10pt target, 15pt stop from spot
             ten_pt_level = spot + 10 if is_long else spot - 10
@@ -5466,30 +5482,28 @@ def _calculate_setup_outcome(entry: dict) -> dict:
 
         first_event = None  # "10pt", "target", "stop", or "timeout" (BofA only)
 
-        dd_max_fav = 0.0  # DD trailing: track max favorable excursion
-        dd_stopped = False
+        trail_max_fav = 0.0  # Trailing setups: track max favorable excursion
+        trail_stopped = False
 
         for price_ts, price in prices:
             if is_long:
                 profit = price - spot
 
-                # DD Exhaustion: trailing stop logic
-                if is_dd and not dd_stopped:
-                    if profit > dd_max_fav:
-                        dd_max_fav = profit
-                    # Apply trail ladder: +7→SL+5, +12→SL+10, +17→SL+15, ...
+                # Trailing stop logic (DD Exhaustion, GEX Long)
+                if is_trailing and not trail_stopped:
+                    if profit > trail_max_fav:
+                        trail_max_fav = profit
                     trail_lock = None
-                    rung = 7
-                    while rung <= dd_max_fav:
+                    rung = rung_start
+                    while rung <= trail_max_fav:
                         trail_lock = rung - 2
                         rung += 5
                     if trail_lock is not None:
                         new_stop = spot + trail_lock
                         if new_stop > stop_level:
                             stop_level = new_stop
-                    # Check trailing stop
                     if price <= stop_level:
-                        dd_stopped = True
+                        trail_stopped = True
                         hit_stop = True
                         time_to_stop = price_ts
                         pnl_at_stop = stop_level - spot
@@ -5506,7 +5520,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     time_to_target = price_ts
                     if first_event is None:
                         first_event = "target"
-                if not is_dd and not hit_stop and price <= stop_level:
+                if not is_trailing and not hit_stop and price <= stop_level:
                     hit_stop = True
                     time_to_stop = price_ts
                     if first_event is None:
@@ -5520,13 +5534,13 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             else:  # SHORT
                 profit = spot - price
 
-                # DD Exhaustion: trailing stop logic
-                if is_dd and not dd_stopped:
-                    if profit > dd_max_fav:
-                        dd_max_fav = profit
+                # Trailing stop logic (DD Exhaustion, GEX Long)
+                if is_trailing and not trail_stopped:
+                    if profit > trail_max_fav:
+                        trail_max_fav = profit
                     trail_lock = None
-                    rung = 7
-                    while rung <= dd_max_fav:
+                    rung = rung_start
+                    while rung <= trail_max_fav:
                         trail_lock = rung - 2
                         rung += 5
                     if trail_lock is not None:
@@ -5534,7 +5548,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                         if new_stop < stop_level:
                             stop_level = new_stop
                     if price >= stop_level:
-                        dd_stopped = True
+                        trail_stopped = True
                         hit_stop = True
                         time_to_stop = price_ts
                         pnl_at_stop = spot - stop_level
@@ -5551,7 +5565,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     time_to_target = price_ts
                     if first_event is None:
                         first_event = "target"
-                if not is_dd and not hit_stop and price >= stop_level:
+                if not is_trailing and not hit_stop and price >= stop_level:
                     hit_stop = True
                     time_to_stop = price_ts
                     if first_event is None:
@@ -5563,8 +5577,8 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     max_loss = profit
                     max_loss_ts = price_ts
 
-        # DD Exhaustion: if trail stopped with profit, mark as target hit
-        if is_dd and dd_stopped:
+        # Trailing setups: if trail stopped with profit, mark as target hit
+        if is_trailing and trail_stopped:
             pnl_at_stop = stop_level - spot if is_long else spot - stop_level
             if pnl_at_stop > 0:
                 hit_target = True
@@ -5578,8 +5592,8 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                 last_price = prices[-1][1]
                 timeout_pnl = round((last_price - spot) if is_long else (spot - last_price), 2)
 
-        # DD Exhaustion: if trailing stop never hit, EOD mark-to-market
-        if is_dd and first_event is None and prices:
+        # Trailing setups: if trailing stop never hit, EOD mark-to-market
+        if is_trailing and first_event is None and prices:
             last_price = prices[-1][1]
             timeout_pnl = round((last_price - spot) if is_long else (spot - last_price), 2)
             first_event = "timeout"
@@ -5606,11 +5620,14 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             result["timeout_pnl"] = timeout_pnl
             result["bofa_target_level"] = round(ten_pt_level, 2)
             result["bofa_max_hold_minutes"] = entry.get("bofa_max_hold_minutes") or 30
-        if is_dd:
-            result["is_dd"] = True
+        if is_trailing:
+            result["is_trailing"] = True
             result["timeout_pnl"] = timeout_pnl
-            result["dd_max_fav"] = round(dd_max_fav, 2)
-            result["dd_final_stop"] = round(stop_level, 2)
+            result["trail_max_fav"] = round(trail_max_fav, 2)
+            result["trail_final_stop"] = round(stop_level, 2)
+            # Keep legacy keys for backward compat
+            result["dd_max_fav"] = result["trail_max_fav"]
+            result["dd_final_stop"] = result["trail_final_stop"]
         return result
     except Exception as e:
         print(f"[setups] outcome calculation error: {e}", flush=True)

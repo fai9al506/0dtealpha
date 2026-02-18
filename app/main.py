@@ -2818,34 +2818,38 @@ def _run_absorption_detection(bars: list) -> dict | None:
               f"score={div['score']:.0f}",
               flush=True)
 
-    # Notification gate and logging
+    # Notification gate
     fire, reason = should_notify_absorption(result)
+
+    # Always log signal to setup_log for history (regardless of cooldown)
+    rw = {
+        "result": result,
+        "notify": fire,
+        "notify_reason": reason or "cooldown",
+        "message": format_absorption_message(result),
+    }
+    log_setup(rw)
+
+    # Send Telegram only when notification gate passes
     if fire:
-        rw = {
-            "result": result,
-            "notify": True,
-            "notify_reason": reason,
-            "message": format_absorption_message(result),
-        }
-        log_setup(rw)
         try:
             send_telegram_setups(rw["message"])
         except Exception as e:
             print(f"[absorption] telegram error: {e}", flush=True)
 
-        # Record open trade for live outcome tracking (only for new/reformed)
-        if reason in ("new", "reformed"):
-            target_lvl, stop_lvl = _compute_setup_levels(result)
-            if target_lvl is not None and stop_lvl is not None:
-                _setup_open_trades.append({
-                    "setup_name": "ES Absorption", "direction": result["direction"],
-                    "spot": result["spot"], "grade": result["grade"],
-                    "target_level": target_lvl, "stop_level": stop_lvl,
-                    "ts": now_et(), "result_data": result,
-                    "max_hold_minutes": None,
-                    "_trade_date": now_et().date(),
-                })
-                print(f"[outcome] tracking ES Absorption: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
+    # Always track outcome for results validation (regardless of cooldown)
+    # Uses reason="new" from gate, or "cooldown" — either way we track
+    target_lvl, stop_lvl = _compute_setup_levels(result)
+    if target_lvl is not None and stop_lvl is not None:
+        _setup_open_trades.append({
+            "setup_name": "ES Absorption", "direction": result["direction"],
+            "spot": result["spot"], "grade": result["grade"],
+            "target_level": target_lvl, "stop_level": stop_lvl,
+            "ts": now_et(), "result_data": result,
+            "max_hold_minutes": None,
+            "_trade_date": now_et().date(),
+        })
+        print(f"[outcome] tracking ES Absorption: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
 
     return signal
 

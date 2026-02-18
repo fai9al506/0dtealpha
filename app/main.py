@@ -2157,8 +2157,8 @@ def _check_setup_outcomes(spot: float):
     # Get current ES price for absorption outcome checks
     es_price = None
     with _es_quote_lock:
-        if _es_range_bars:
-            last_bar = _es_range_bars[-1]
+        if _es_quote["_completed_bars"]:
+            last_bar = _es_quote["_completed_bars"][-1]
             es_price = last_bar.get("close")
 
     for trade in _setup_open_trades:
@@ -3271,8 +3271,8 @@ def _send_setup_eod_summary():
     except Exception:
         pass
     with _es_quote_lock:
-        if _es_range_bars:
-            es_price = _es_range_bars[-1].get("close")
+        if _es_quote["_completed_bars"]:
+            es_price = _es_quote["_completed_bars"][-1].get("close")
 
     for trade in _setup_open_trades:
         setup_name = trade["setup_name"]

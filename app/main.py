@@ -5258,10 +5258,14 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         target = entry.get("target")
         setup_name = entry.get("setup_name", "")
         is_bofa = setup_name == "BofA Scalp"
+        is_dd = setup_name == "DD Exhaustion"
 
-        if not all([ts, spot, lis]):
+        if not all([ts, spot]):
             return {}
-        if not is_bofa and target is None:
+        # DD Exhaustion and BofA don't need lis/target — they use fixed pts
+        if not is_bofa and not is_dd and not lis:
+            return {}
+        if not is_bofa and not is_dd and target is None:
             return {}
 
         # Get market close time for that day (4:00 PM ET)
@@ -5295,7 +5299,14 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         # Calculate levels
         is_long = direction.lower() == "long"
 
-        if is_bofa:
+        if is_dd:
+            # DD Exhaustion: fixed target/stop from settings (default 10pt/20pt)
+            dd_tgt = 10  # dd_target_pts default
+            dd_stp = 20  # dd_stop_pts default
+            ten_pt_level = spot + dd_tgt if is_long else spot - dd_tgt
+            target_level = ten_pt_level
+            stop_level = spot - dd_stp if is_long else spot + dd_stp
+        elif is_bofa:
             # BofA Scalp: fixed 10pt target, 12pt stop beyond LIS
             bofa_target_dist = entry.get("bofa_target_level") or (spot + 10 if is_long else spot - 10)
             bofa_stop = entry.get("bofa_stop_level")

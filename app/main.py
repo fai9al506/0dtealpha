@@ -2389,10 +2389,16 @@ def _check_setup_outcomes(spot: float):
             trade["_seen_low"] = min(trade.get("_seen_low", spx_cycle_low), spx_cycle_low)
             trade["_seen_high"] = max(trade.get("_seen_high", spx_cycle_high), spx_cycle_high)
 
-        # Trailing stop setups: DD Exhaustion (rung_start=7) and GEX Long (rung_start=12)
+        # Trailing stop setups: DD Exhaustion and GEX Long
+        # DD: continuous trail (activation=20, gap=5) — waits for confirmed move before trailing
+        # GEX: rung-based trail (rung_start=12, step=5, lock=rung-2)
         # Uses cycle low/high (not all-time) since trail level changes each cycle
-        _trail_rung_start = {"DD Exhaustion": 7, "GEX Long": 12}.get(setup_name)
-        if _trail_rung_start is not None:
+        _trail_params = {
+            "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
+            "GEX Long": {"mode": "rung", "rung_start": 12, "step": 5, "lock_offset": 2},
+        }
+        _tp = _trail_params.get(setup_name)
+        if _tp is not None:
             # Advance trail using cycle high (long) or cycle low (short)
             fav_price = spx_cycle_high if is_long else spx_cycle_low
             fav = (fav_price - entry_price) if is_long else (entry_price - fav_price)
@@ -2400,14 +2406,17 @@ def _check_setup_outcomes(spot: float):
             if fav > max_fav:
                 max_fav = fav
                 trade["_dd_max_fav"] = max_fav
-            # Trailing ladder: every 5-pt rung, lock in (rung - 2)
-            # DD: +7→SL+5, +12→SL+10, +17→SL+15, ...
-            # GEX: +12→SL+10, +17→SL+15, +22→SL+20, ...
             trail_lock = None
-            rung = _trail_rung_start
-            while rung <= max_fav:
-                trail_lock = rung - 2
-                rung += 5
+            if _tp["mode"] == "continuous":
+                # Continuous trail: after activation, lock at max_fav - gap
+                if max_fav >= _tp["activation"]:
+                    trail_lock = max_fav - _tp["gap"]
+            else:
+                # Rung-based trail: step every N pts with lock offset
+                rung = _tp["rung_start"]
+                while rung <= max_fav:
+                    trail_lock = rung - _tp["lock_offset"]
+                    rung += _tp["step"]
             if trail_lock is not None:
                 # Move stop to lock-in level
                 if is_long:
@@ -5427,12 +5436,19 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         # Calculate levels
         is_long = direction.lower() == "long"
 
-        # Trailing stop parameters: rung_start, step=5, lock=rung-2
-        _trail_rung = {"DD Exhaustion": (7, 12), "GEX Long": (12, 8)}  # (rung_start, initial_sl)
+        # Trailing stop parameters
+        # DD Exhaustion: continuous trail (activation=20, gap=5, initial_sl=12)
+        # GEX Long: rung-based trail (rung_start=12, step=5, lock=rung-2, initial_sl=8)
+        _trail_params = {
+            "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5, "initial_sl": 12},
+            "GEX Long": {"mode": "rung", "rung_start": 12, "step": 5, "lock_offset": 2, "initial_sl": 8},
+        }
 
         if is_trailing:
-            rung_start, initial_sl = _trail_rung[setup_name]
-            ten_pt_level = spot + rung_start if is_long else spot - rung_start  # first trail rung
+            tp = _trail_params[setup_name]
+            initial_sl = tp["initial_sl"]
+            rung_start = tp.get("rung_start") or tp.get("activation")
+            ten_pt_level = spot + rung_start if is_long else spot - rung_start  # first trail activation
             target_level = None  # trailing — no fixed target
             stop_level = spot - initial_sl if is_long else spot + initial_sl
         elif is_paradigm:
@@ -5494,10 +5510,16 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     if profit > trail_max_fav:
                         trail_max_fav = profit
                     trail_lock = None
-                    rung = rung_start
-                    while rung <= trail_max_fav:
-                        trail_lock = rung - 2
-                        rung += 5
+                    if tp["mode"] == "continuous":
+                        # Continuous trail: after activation, lock at max_fav - gap
+                        if trail_max_fav >= tp["activation"]:
+                            trail_lock = trail_max_fav - tp["gap"]
+                    else:
+                        # Rung-based trail: step every N pts with lock offset
+                        rung = tp["rung_start"]
+                        while rung <= trail_max_fav:
+                            trail_lock = rung - tp["lock_offset"]
+                            rung += tp["step"]
                     if trail_lock is not None:
                         new_stop = spot + trail_lock
                         if new_stop > stop_level:
@@ -5539,10 +5561,16 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     if profit > trail_max_fav:
                         trail_max_fav = profit
                     trail_lock = None
-                    rung = rung_start
-                    while rung <= trail_max_fav:
-                        trail_lock = rung - 2
-                        rung += 5
+                    if tp["mode"] == "continuous":
+                        # Continuous trail: after activation, lock at max_fav - gap
+                        if trail_max_fav >= tp["activation"]:
+                            trail_lock = trail_max_fav - tp["gap"]
+                    else:
+                        # Rung-based trail: step every N pts with lock offset
+                        rung = tp["rung_start"]
+                        while rung <= trail_max_fav:
+                            trail_lock = rung - tp["lock_offset"]
+                            rung += tp["step"]
                     if trail_lock is not None:
                         new_stop = spot - trail_lock
                         if new_stop < stop_level:

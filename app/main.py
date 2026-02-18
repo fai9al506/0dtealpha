@@ -1047,6 +1047,7 @@ _setup_open_trades = []
 # Each entry: {setup_name, direction, spot, target_level, stop_level, ts, grade, result_data, max_hold_minutes}
 _setup_resolved_trades = []
 # Each entry: {setup_name, direction, spot, target_level, stop_level, ts, grade, result_type, pnl, elapsed_min, result_data}
+_spot_accumulator = []  # Accumulate spot prices between outcome checks for high/low tracking
 
 def log_setup(result_wrapper):
     """
@@ -2290,14 +2291,23 @@ def _compute_setup_levels(r: dict):
 def _check_setup_outcomes(spot: float):
     """Check open trades for target/stop hits. Called each cycle (~30s).
 
+    Uses accumulated spot high/low to catch SL/TP breaches between checks.
     For ES Absorption, uses ES price (abs_es_price) instead of SPX spot.
     Sends Telegram outcome for each resolved trade and moves to resolved list.
     """
-    global _setup_open_trades, _setup_resolved_trades
+    global _setup_open_trades, _setup_resolved_trades, _spot_accumulator
     if not spot:
         return
 
     from app.setup_detector import format_setup_outcome
+
+    # Consume accumulated spot prices for high/low tracking
+    accumulated = _spot_accumulator[:]
+    _spot_accumulator = []
+    if not accumulated or spot not in accumulated:
+        accumulated.append(spot)
+    spx_cycle_low = min(accumulated)
+    spx_cycle_high = max(accumulated)
 
     now = now_et()
     today = now.date()
@@ -2347,9 +2357,19 @@ def _check_setup_outcomes(spot: float):
         result_type = None
         pnl = None
 
+        # Update per-trade price tracking with cycle extremes (SPX setups only)
+        # For fixed SL/TP setups, _seen_low/_seen_high persist across cycles so
+        # a stop/target breach is never missed even if a check cycle is skipped
+        if setup_name != "ES Absorption":
+            trade["_seen_low"] = min(trade.get("_seen_low", spx_cycle_low), spx_cycle_low)
+            trade["_seen_high"] = max(trade.get("_seen_high", spx_cycle_high), spx_cycle_high)
+
         # DD Exhaustion: trailing stop, no fixed target
+        # Uses cycle low/high (not all-time) since trail level changes each cycle
         if setup_name == "DD Exhaustion":
-            fav = (check_price - entry_price) if is_long else (entry_price - check_price)
+            # Advance trail using cycle high (long) or cycle low (short)
+            fav_price = spx_cycle_high if is_long else spx_cycle_low
+            fav = (fav_price - entry_price) if is_long else (entry_price - fav_price)
             max_fav = trade.get("_dd_max_fav", 0.0)
             if fav > max_fav:
                 max_fav = fav
@@ -2373,31 +2393,37 @@ def _check_setup_outcomes(spot: float):
                     if new_stop < stop_lvl:
                         stop_lvl = new_stop
                         trade["stop_level"] = stop_lvl
-            # Check trailing stop hit (no target check)
-            if is_long and check_price <= stop_lvl:
+            # Check trailing stop hit using cycle extreme (not just current price)
+            stop_check = spx_cycle_low if is_long else spx_cycle_high
+            if is_long and stop_check <= stop_lvl:
                 result_type = "WIN" if stop_lvl >= entry_price else "LOSS"
                 pnl = stop_lvl - entry_price
-            elif not is_long and check_price >= stop_lvl:
+            elif not is_long and stop_check >= stop_lvl:
                 result_type = "WIN" if stop_lvl <= entry_price else "LOSS"
                 pnl = entry_price - stop_lvl
             elif market_closed:
                 result_type = "EXPIRED"
                 pnl = (check_price - entry_price) if is_long else (entry_price - check_price)
         elif is_long:
-            if check_price >= target_lvl:
+            # Use all-time seen_high/seen_low for fixed SL/TP (never miss a breach)
+            price_high = trade.get("_seen_high", check_price)
+            price_low = trade.get("_seen_low", check_price)
+            if price_high >= target_lvl:
                 result_type = "WIN"
                 pnl = target_lvl - entry_price
-            elif check_price <= stop_lvl:
+            elif price_low <= stop_lvl:
                 result_type = "LOSS"
                 pnl = stop_lvl - entry_price
             elif market_closed or bofa_expired:
                 result_type = "EXPIRED"
                 pnl = check_price - entry_price
         else:
-            if check_price <= target_lvl:
+            price_high = trade.get("_seen_high", check_price)
+            price_low = trade.get("_seen_low", check_price)
+            if price_low <= target_lvl:
                 result_type = "WIN"
                 pnl = entry_price - target_lvl
-            elif check_price >= stop_lvl:
+            elif price_high >= stop_lvl:
                 result_type = "LOSS"
                 pnl = entry_price - stop_lvl
             elif market_closed or bofa_expired:
@@ -2463,6 +2489,9 @@ def _run_setup_check():
         pass
     if not spot:
         return
+
+    # Accumulate spot for high/low tracking across cycles
+    _spot_accumulator.append(spot)
 
     # Check open trades for outcome resolution each cycle
     _check_setup_outcomes(spot)

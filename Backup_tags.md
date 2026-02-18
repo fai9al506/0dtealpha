@@ -20,3 +20,4 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 14 | 2026-02-16 18:00 | `stable-20260216-180000` | Session continuity system, DB cleanup (585 MB reclaimed), Volland weekend fix |
 | 15 | 2026-02-17 22:30 | `stable-20260217-223000` | Pre-paradigm reversal setup, BofA relaxation, ES range bars investigation |
 | 16 | 2026-02-18 21:54 | `stable-20260218-215457` | Trade Log tab, DD Exhaustion detector, outcome tracking with backfill |
+| 17 | 2026-02-19 23:45 | `stable-20260219-234500` | DD continuous trail (activation=20, gap=5), GEX SL=8+trail, high/low tracking, outcome fixes, trade study |

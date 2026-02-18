@@ -3025,7 +3025,6 @@ def _es_quote_stream_loop():
                 _es_quote["stream_ok"] = True
             print(f"[es-quote] stream connected (session {session_date})", flush=True)
 
-            _diag_msg_count = 0
             for line in r.iter_lines(decode_unicode=True):
                 if not line:
                     continue
@@ -3033,11 +3032,6 @@ def _es_quote_stream_loop():
                     data = json.loads(line)
                 except Exception:
                     continue
-
-                # Log first 3 non-heartbeat messages for diagnostics
-                if "Heartbeat" not in data and _diag_msg_count < 3:
-                    _diag_msg_count += 1
-                    print(f"[es-quote] raw msg #{_diag_msg_count}: {json.dumps(data)[:300]}", flush=True)
 
                 # Stream control messages
                 if "Heartbeat" in data:
@@ -3058,12 +3052,13 @@ def _es_quote_stream_loop():
                     last_vals = {}
 
                 # Merge partial updates into persistent NBBO
-                for key in ("Last", "Bid", "Ask", "DailyVolume"):
+                # TradeStation uses "Volume" (not "DailyVolume") for cumulative daily volume
+                for key in ("Last", "Bid", "Ask", "Volume"):
                     if key in data:
                         last_vals[key] = data[key]
 
-                # Detect trade: DailyVolume increased
-                daily_vol_str = last_vals.get("DailyVolume")
+                # Detect trade: Volume increased
+                daily_vol_str = last_vals.get("Volume")
                 if daily_vol_str is None:
                     continue
                 try:

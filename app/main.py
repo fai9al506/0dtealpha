@@ -3709,51 +3709,34 @@ def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, 
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
 
-        # Priority 1: Live quote-stream range bars (accurate bid/ask delta)
-        # Require at least 10 completed bars before switching — avoids showing
-        # a tiny window of data on mid-session deploy when no backfill exists
+        # Live quote-stream range bars (tick-accurate bid/ask delta)
+        # Bars persist to DB and reload on restart via _es_quote_reset()
         with _es_quote_lock:
             completed = list(_es_quote["_completed_bars"])
             forming = _es_quote["_forming_bar"]
             cvd_now = _es_quote["_cvd"]
 
-        if len(completed) >= 10:
-            result = list(completed)
-            # Add forming bar as "open" status
-            if forming and (forming["volume"] > 0 or abs(forming["open"] - forming["close"]) > 0.001):
-                result.append({
-                    "idx": len(completed),
-                    "open": forming["open"], "high": forming["high"],
-                    "low": forming["low"], "close": forming["close"],
-                    "volume": forming["volume"], "delta": forming["delta"],
-                    "buy_volume": forming["buy"], "sell_volume": forming["sell"],
-                    "cvd": cvd_now,
-                    "cvd_open": forming["cvd_open"],
-                    "cvd_high": forming["cvd_high"],
-                    "cvd_low": forming["cvd_low"],
-                    "cvd_close": cvd_now,
-                    "ts_start": forming["ts_start"], "ts_end": forming["ts_end"],
-                    "status": "open",
-                })
-            # Run absorption detection on completed bars
-            _run_absorption_detection(result)
-            return {"bars": result, "signals": _absorption_signals}
-
-        # Priority 2: Fallback to 1-min bar reconstruction (approximate)
-        one_min_bars = db_es_delta_bars(limit=1400)
-        with _es_delta_lock:
-            buffered_bars = list(_es_delta["_bars_buffer"])
-        for buf in buffered_bars:
-            one_min_bars.append({
-                "ts": buf["ts"], "bar_open_price": buf["bar_open_price"],
-                "bar_high_price": buf["bar_high_price"], "bar_low_price": buf["bar_low_price"],
-                "bar_close_price": buf["bar_close_price"], "bar_volume": buf["bar_volume"],
-                "bar_buy_volume": buf["bar_buy_volume"], "bar_sell_volume": buf["bar_sell_volume"],
-                "bar_delta": buf["bar_delta"],
+        result = list(completed)
+        # Add forming bar as "open" status
+        if forming and (forming["volume"] > 0 or abs(forming["open"] - forming["close"]) > 0.001):
+            result.append({
+                "idx": len(completed),
+                "open": forming["open"], "high": forming["high"],
+                "low": forming["low"], "close": forming["close"],
+                "volume": forming["volume"], "delta": forming["delta"],
+                "buy_volume": forming["buy"], "sell_volume": forming["sell"],
+                "cvd": cvd_now,
+                "cvd_open": forming["cvd_open"],
+                "cvd_high": forming["cvd_high"],
+                "cvd_low": forming["cvd_low"],
+                "cvd_close": cvd_now,
+                "ts_start": forming["ts_start"], "ts_end": forming["ts_end"],
+                "status": "open",
             })
-        if not one_min_bars:
-            return {"bars": [], "signals": []}
-        return {"bars": _build_range_bars(one_min_bars, range_pts), "signals": []}
+        # Run absorption detection on completed bars
+        if completed:
+            _run_absorption_detection(result)
+        return {"bars": result, "signals": _absorption_signals}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

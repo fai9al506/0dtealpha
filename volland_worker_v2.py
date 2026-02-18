@@ -13,7 +13,7 @@ Key differences from V1:
   - Synced to Volland's 120s refresh cycle (no duplicate data)
 """
 
-import os, json, time, traceback
+import os, json, sys, time, traceback
 from datetime import datetime, timezone, time as dtime
 import pytz
 import requests as _requests
@@ -272,7 +272,7 @@ def run():
         page.set_default_timeout(90000)
 
         # Mutable capture state — reset each cycle, shared via closure
-        cycle = {"exposures": [], "paradigm": None, "spot_vol": None}
+        cycle = {"exposures": [], "paradigm": None, "spot_vol": None, "zero_captures": 0}
 
         def handle_exposure(route, request):
             """Route handler: intercept exposure POST, fetch response, store both."""
@@ -299,7 +299,10 @@ def run():
                         "last_modified": data.get("lastModified"),
                     })
                     n = len(data.get("items", []))
-                    print(f"[capture] exposure: {greek}/{exp_option} ({n} pts)", flush=True)
+                    if n > 0:
+                        print(f"[capture] exposure: {greek}/{exp_option} ({n} pts)", flush=True)
+                    else:
+                        cycle["zero_captures"] = cycle.get("zero_captures", 0) + 1
                 except json.JSONDecodeError:
                     pass
                 route.fulfill(response=response)
@@ -344,6 +347,7 @@ def run():
             cycle["exposures"] = []
             cycle["paradigm"] = None
             cycle["spot_vol"] = None
+            cycle["zero_captures"] = 0
 
             page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
 
@@ -352,6 +356,7 @@ def run():
                 cycle["exposures"] = []
                 cycle["paradigm"] = None
                 cycle["spot_vol"] = None
+                cycle["zero_captures"] = 0
                 page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
 
             page.wait_for_timeout(int(WAIT_SEC * 1000))
@@ -362,6 +367,11 @@ def run():
             for exp in cycle["exposures"]:
                 key = (exp["greek"], exp["expiration_option"])
                 seen[key] = exp
+
+            zc = cycle.get("zero_captures", 0)
+            if zc > 0:
+                print(f"[capture] {zc} exposure API calls returned 0 pts", flush=True)
+
             return list(seen.values()), cycle["paradigm"], cycle["spot_vol"]
 
         def save_cycle(exposures, paradigm, spot_vol):
@@ -432,6 +442,7 @@ def run():
         last_known_modified = ""
         consecutive_zero_pts = 0
         zero_pts_alerted = False
+        _was_in_market = False  # Track if we've been active this session
 
         def get_exposure_lastmodified():
             """Get lastModified from the most recent exposure capture."""
@@ -443,10 +454,17 @@ def run():
 
         while True:
             if not market_open_now():
-                # Reset sync state so we re-sync at next market open
+                if _was_in_market:
+                    # Market closed after we were active — exit for fresh start
+                    # tomorrow. Railway auto-restarts; new process = fresh
+                    # Playwright context = no overnight degradation.
+                    print("[volland-v2] Market closed. Exiting for fresh start tomorrow.", flush=True)
+                    sys.exit(0)
+                # Pre-market: just wait
                 last_known_modified = ""
                 time.sleep(30)
                 continue
+            _was_in_market = True
 
             try:
                 # ══════════════════════════════════════════════════════
@@ -462,12 +480,14 @@ def run():
                     cycle["exposures"] = []
                     cycle["paradigm"] = None
                     cycle["spot_vol"] = None
+                    cycle["zero_captures"] = 0
                     page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
                     if "/sign-in" in page.url:
                         login_if_needed(page, WORKSPACE_URL)
                         cycle["exposures"] = []
                         cycle["paradigm"] = None
                         cycle["spot_vol"] = None
+                        cycle["zero_captures"] = 0
                         page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
                     page.wait_for_timeout(int(WAIT_SEC * 1000))
 
@@ -545,30 +565,23 @@ def run():
                             "Auto-restart will trigger after "
                             f"{AUTO_RESTART_THRESHOLD} cycles."
                         )
-                    # Auto-restart: recreate browser after sustained failure
+                    # Process exit: in-process browser restart doesn't fix the
+                    # root cause (degraded Playwright context after extended
+                    # uptime). Let Railway restart the entire process — fresh
+                    # Python process = fresh Playwright context = working handlers.
                     if consecutive_zero_pts >= AUTO_RESTART_THRESHOLD:
-                        print(f"[volland-v2] AUTO-RESTART: {consecutive_zero_pts} zero-point cycles, recreating browser...", flush=True)
-                        try:
-                            browser.close()
-                        except Exception:
-                            pass
-                        browser = p.chromium.launch(
-                            headless=True,
-                            args=["--no-sandbox", "--disable-dev-shm-usage"],
+                        print(
+                            f"[volland-v2] PROCESS EXIT: {consecutive_zero_pts} "
+                            f"consecutive zero-point cycles. Railway will restart fresh.",
+                            flush=True,
                         )
-                        page = browser.new_page(viewport={"width": 1400, "height": 900})
-                        page.set_default_timeout(90000)
-                        setup_handlers(page)
-                        login_if_needed(page, WORKSPACE_URL)
-                        last_known_modified = ""  # force re-sync
-                        consecutive_zero_pts = 0
-                        zero_pts_alerted = False
-                        print("[volland-v2] AUTO-RESTART: browser recreated, re-syncing", flush=True)
                         send_telegram(
-                            "🔄 <b>Volland Auto-Restart</b>\n\n"
-                            "Browser recreated after sustained 0-point captures.\n"
-                            "Re-syncing to Volland refresh cycle."
+                            "🔄 <b>Volland Process Restart</b>\n\n"
+                            f"{consecutive_zero_pts} consecutive cycles with 0 points.\n"
+                            "Exiting for clean Railway restart (fresh Playwright context)."
                         )
+                        time.sleep(5)
+                        sys.exit(1)
                 elif _total_pts > 0:
                     if consecutive_zero_pts > 0:
                         print(f"[volland-v2] recovered after {consecutive_zero_pts} zero-point cycles", flush=True)
@@ -605,22 +618,16 @@ def run():
                             "Session may have expired. Check credentials."
                         )
 
-                # Browser crash recovery
+                # Browser crash recovery — exit for clean restart
                 if "closed" in str(e).lower() or "Target" in str(e):
-                    print("[volland-v2] Browser/page crashed — recreating...", flush=True)
-                    try:
-                        browser.close()
-                    except Exception:
-                        pass
-                    browser = p.chromium.launch(
-                        headless=True,
-                        args=["--no-sandbox", "--disable-dev-shm-usage"],
+                    print("[volland-v2] Browser/page crashed — exiting for clean restart...", flush=True)
+                    send_telegram(
+                        "💥 <b>Volland Browser Crash</b>\n\n"
+                        f"Error: <code>{str(e)[:200]}</code>\n"
+                        "Exiting for clean Railway restart."
                     )
-                    page = browser.new_page(viewport={"width": 1400, "height": 900})
-                    page.set_default_timeout(90000)
-                    setup_handlers(page)
-                    login_if_needed(page, WORKSPACE_URL)
-                    print("[volland-v2] Browser recreated successfully", flush=True)
+                    time.sleep(5)
+                    sys.exit(1)
 
             time.sleep(PULL_EVERY)
 

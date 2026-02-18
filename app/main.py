@@ -2229,7 +2229,10 @@ def _compute_setup_levels(r: dict):
         return round(target_lvl, 2), round(stop_lvl, 2)
 
     if setup_name == "DD Exhaustion":
-        return r.get("target_price"), r.get("stop_price")
+        # Trailing stop — no fixed target; initial SL = 12 pts
+        # target_level=None signals trailing mode in _check_setup_outcomes
+        stop_lvl = spot - 12 if is_long else spot + 12
+        return None, round(stop_lvl, 2)
 
     if setup_name == "Paradigm Reversal":
         target_lvl = spot + 10 if is_long else spot - 10
@@ -2318,7 +2321,43 @@ def _check_setup_outcomes(spot: float):
         result_type = None
         pnl = None
 
-        if is_long:
+        # DD Exhaustion: trailing stop, no fixed target
+        if setup_name == "DD Exhaustion":
+            fav = (check_price - entry_price) if is_long else (entry_price - check_price)
+            max_fav = trade.get("_dd_max_fav", 0.0)
+            if fav > max_fav:
+                max_fav = fav
+                trade["_dd_max_fav"] = max_fav
+            # Trailing ladder: at +7 → SL +5, at +12 → SL +10, at +17 → SL +15, ...
+            # Pattern: every 5-pt rung starting at +7, lock in (rung - 2)
+            trail_lock = None
+            rung = 7
+            while rung <= max_fav:
+                trail_lock = rung - 2
+                rung += 5
+            if trail_lock is not None:
+                # Move stop to lock-in level
+                if is_long:
+                    new_stop = entry_price + trail_lock
+                    if new_stop > stop_lvl:
+                        stop_lvl = new_stop
+                        trade["stop_level"] = stop_lvl
+                else:
+                    new_stop = entry_price - trail_lock
+                    if new_stop < stop_lvl:
+                        stop_lvl = new_stop
+                        trade["stop_level"] = stop_lvl
+            # Check trailing stop hit (no target check)
+            if is_long and check_price <= stop_lvl:
+                result_type = "WIN" if stop_lvl >= entry_price else "LOSS"
+                pnl = stop_lvl - entry_price
+            elif not is_long and check_price >= stop_lvl:
+                result_type = "WIN" if stop_lvl <= entry_price else "LOSS"
+                pnl = entry_price - stop_lvl
+            elif market_closed:
+                result_type = "EXPIRED"
+                pnl = (check_price - entry_price) if is_long else (entry_price - check_price)
+        elif is_long:
             if check_price >= target_lvl:
                 result_type = "WIN"
                 pnl = target_lvl - entry_price
@@ -2523,7 +2562,8 @@ def _run_setup_check():
                 print(f"[setups] {setup_name} NEW: {grade} ({score})", flush=True)
                 # Record open trade for live outcome tracking
                 target_lvl, stop_lvl = _compute_setup_levels(r)
-                if target_lvl is not None and stop_lvl is not None:
+                # DD Exhaustion uses trailing stop (target_lvl=None is OK)
+                if stop_lvl is not None and (target_lvl is not None or setup_name == "DD Exhaustion"):
                     _setup_open_trades.append({
                         "setup_name": setup_name, "direction": r["direction"],
                         "spot": r["spot"], "grade": grade,
@@ -2532,6 +2572,7 @@ def _run_setup_check():
                         "max_hold_minutes": r.get("bofa_max_hold_minutes"),
                         "_trade_date": now_et().date(),
                         "setup_log_id": _current_setup_log.get(setup_name),
+                        "_dd_max_fav": 0.0,  # track max favorable excursion for trailing
                     })
                     print(f"[outcome] tracking {setup_name}: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
             elif reason == "grade_upgrade":
@@ -5300,11 +5341,10 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         is_long = direction.lower() == "long"
 
         if is_dd:
-            # DD Exhaustion: fixed target/stop from settings (default 10pt/20pt)
-            dd_tgt = 10  # dd_target_pts default
-            dd_stp = 20  # dd_stop_pts default
-            ten_pt_level = spot + dd_tgt if is_long else spot - dd_tgt
-            target_level = ten_pt_level
+            # DD Exhaustion: trailing stop, no fixed target; initial SL = 12 pts
+            dd_stp = 12
+            ten_pt_level = spot + 7 if is_long else spot - 7  # first trail rung
+            target_level = None  # trailing — no fixed target
             stop_level = spot - dd_stp if is_long else spot + dd_stp
         elif is_bofa:
             # BofA Scalp: fixed 10pt target, 12pt stop beyond LIS
@@ -5356,7 +5396,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     time_to_10pt = price_ts
                     if first_event is None:
                         first_event = "10pt"
-                if not hit_target and price >= target_level:
+                if target_level is not None and not hit_target and price >= target_level:
                     hit_target = True
                     time_to_target = price_ts
                     if first_event is None:
@@ -5379,7 +5419,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     time_to_10pt = price_ts
                     if first_event is None:
                         first_event = "10pt"
-                if not hit_target and price <= target_level:
+                if target_level is not None and not hit_target and price <= target_level:
                     hit_target = True
                     time_to_target = price_ts
                     if first_event is None:

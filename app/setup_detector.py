@@ -1462,8 +1462,8 @@ DEFAULT_DD_EXHAUST_SETTINGS = {
     "dd_exhaust_enabled": True,
     "dd_shift_threshold": 200_000_000,   # $200M minimum shift
     "dd_cooldown_minutes": 30,
-    "dd_target_pts": 10,
-    "dd_stop_pts": 20,
+    "dd_stop_pts": 12,                   # initial SL before trailing kicks in
+    # Trailing ladder: +7→SL+5, +12→SL+10, +17→SL+15, ... (no fixed target)
     "dd_market_start": "10:00",          # Avoid first 30 min
     "dd_market_end": "15:30",
 }
@@ -1523,8 +1523,7 @@ def evaluate_dd_exhaustion(spot, dd_value, dd_shift, charm, paradigm, settings):
         return None
 
     threshold = settings.get("dd_shift_threshold", 200_000_000)
-    target_pts = settings.get("dd_target_pts", 10)
-    stop_pts = settings.get("dd_stop_pts", 20)
+    stop_pts = settings.get("dd_stop_pts", 12)  # initial SL before trailing kicks in
 
     # Signal detection
     if dd_shift < -threshold and charm > 0:
@@ -1534,11 +1533,10 @@ def evaluate_dd_exhaustion(spot, dd_value, dd_shift, charm, paradigm, settings):
     else:
         return None
 
+    # Trailing stop — no fixed target; SL adjusted live by _check_setup_outcomes
     if direction == "long":
-        target_price = round(spot + target_pts, 2)
         stop_price = round(spot - stop_pts, 2)
     else:
-        target_price = round(spot - target_pts, 2)
         stop_price = round(spot + stop_pts, 2)
 
     # --- Scoring (5 components, max 100) ---
@@ -1631,7 +1629,7 @@ def evaluate_dd_exhaustion(spot, dd_value, dd_shift, charm, paradigm, settings):
         "charm": charm,
         "paradigm": str(paradigm) if paradigm else None,
         "spot": round(spot, 2),
-        "target_price": target_price,
+        "target_price": None,   # trailing stop — no fixed target
         "stop_price": stop_price,
         "lis": None,
         "target": None,
@@ -1697,7 +1695,7 @@ def format_dd_exhaustion_message(result):
     msg += f"DD Shift: ${shift_m:+,.0f}M ({exhaust_label})\n"
     msg += f"Charm: ${charm_m:+,.0f}M ({'bullish \u2713' if result['charm'] > 0 else 'bearish \u2713'})\n"
     msg += f"Paradigm: {result['paradigm'] or 'N/A'}\n"
-    msg += f"Entry: ${result['spot']:,.0f} | Tgt: ${result['target_price']:,.0f} | Stop: ${result['stop_price']:,.0f}"
+    msg += f"Entry: ${result['spot']:,.0f} | SL: ${result['stop_price']:,.0f} | Trail: +7\u2192SL+5, +12\u2192SL+10"
     return msg
 
 

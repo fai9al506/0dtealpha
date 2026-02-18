@@ -214,6 +214,12 @@ Detects DD-Charm divergence as a contrarian exhaustion signal. Based on Analysis
 - `dd_target_pts`: 10, `dd_stop_pts`: 20
 - `dd_market_start`: "10:00", `dd_market_end`: "15:30"
 
+**Outcome tracking — continuous trail** (updated 2026-02-19):
+- DD uses a continuous trailing stop: activation=20 pts, gap=5 pts
+- Once max profit reaches 20 pts, trail engages at max_profit - 5
+- Replaces rung-based trail (activation=7, step=5, lock=rung-2) which triggered prematurely on contrarian setups
+- Simulation: +41.9 pts (continuous) vs +4.0 pts (old rung-based) across 8 DD trades
+
 **Log-only mode:** Grade always "LOG", score always 0. Telegram messages tagged `[LOG-ONLY]`. Target: 50+ live signals before enabling as real setup.
 
 ### Database Tables

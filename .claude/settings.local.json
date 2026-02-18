@@ -108,7 +108,12 @@
       "WebFetch(domain:vol.land)",
       "Bash(cd:*)",
       "WebFetch(domain:forum.ninjatrader.com)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(railway volume:*)",
+      "Bash(railway connect:*)",
+      "Bash(1:*)",
+      "Bash(openssl s_client:*)",
+      "Bash(openssl x509:*)"
     ]
   }
 }

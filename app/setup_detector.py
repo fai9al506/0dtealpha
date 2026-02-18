@@ -1620,6 +1620,89 @@ def format_dd_exhaustion_message(result):
     return msg
 
 
+def format_setup_outcome(trade: dict, result_type: str, pnl: float, elapsed_min: int) -> str:
+    """Format a Telegram HTML message for a setup outcome (WIN/LOSS/EXPIRED).
+
+    Args:
+        trade: open trade dict with setup_name, direction, spot, target_level, stop_level, grade, result_data
+        result_type: "WIN", "LOSS", or "EXPIRED"
+        pnl: points gained/lost
+        elapsed_min: minutes from entry to resolution
+    """
+    emoji = {"WIN": "\u2705", "LOSS": "\u274c", "EXPIRED": "\u23f9"}.get(result_type, "\u2753")
+    setup_name = trade["setup_name"]
+    direction = trade["direction"].upper()
+    grade = trade.get("grade", "?")
+    spot = trade["spot"]
+    r = trade.get("result_data", {})
+
+    # DD Exhaustion keeps its LOG-ONLY tag
+    is_dd = setup_name == "DD Exhaustion"
+    name_prefix = "[LOG-ONLY] " if is_dd else ""
+
+    msg = f"{emoji} <b>{name_prefix}{setup_name} \u2014 {direction} \u2192 {result_type}</b> ({pnl:+.1f} pts, {elapsed_min} min)\n"
+
+    if result_type == "WIN":
+        msg += f"Entry: ${spot:,.0f} | Target: ${trade['target_level']:,.0f} | Grade: {grade}"
+    elif result_type == "LOSS":
+        msg += f"Entry: ${spot:,.0f} | Stop: ${trade['stop_level']:,.0f} | Grade: {grade}"
+    else:  # EXPIRED
+        close_price = trade.get("close_price", spot + pnl if direction == "LONG" else spot - pnl)
+        msg += f"Entry: ${spot:,.0f} | Close: ${close_price:,.0f} | Grade: {grade}"
+
+    # DD Exhaustion extra context
+    if is_dd and r:
+        shift_m = (r.get("dd_shift") or 0) / 1_000_000
+        charm_m = (r.get("charm") or 0) / 1_000_000
+        msg += f"\nDD Shift: ${shift_m:+,.0f}M | Charm: ${charm_m:+,.0f}M"
+
+    return msg
+
+
+def format_setup_daily_summary(trades_list: list) -> str:
+    """Format EOD summary Telegram message with all resolved trades.
+
+    Args:
+        trades_list: list of resolved trade dicts, each with:
+            setup_name, direction, grade, pnl, result_type, elapsed_min, ts
+    """
+    if not trades_list:
+        return ""
+
+    wins = sum(1 for t in trades_list if t["result_type"] == "WIN")
+    losses = sum(1 for t in trades_list if t["result_type"] == "LOSS")
+    expired = sum(1 for t in trades_list if t["result_type"] == "EXPIRED")
+    total = len(trades_list)
+    net_pnl = sum(t["pnl"] for t in trades_list)
+    win_rate = round(100 * wins / total) if total > 0 else 0
+
+    msg = "\U0001f4ca <b>Setup Alerts \u2014 Daily Summary</b>\n"
+    msg += "\u2501" * 18 + "\n"
+    msg += f"Trades: {total} | Wins: {wins} | Losses: {losses} | Expired: {expired}\n"
+    msg += f"Net P&L: {net_pnl:+.1f} pts | Win Rate: {win_rate}%\n\n"
+
+    for t in trades_list:
+        emoji = {"WIN": "\u2705", "LOSS": "\u274c", "EXPIRED": "\u23f9"}.get(t["result_type"], "\u2753")
+        ts_str = t.get("ts_str", "")
+        name = t["setup_name"]
+        # Shorten some names for the summary line
+        name_short = {"Paradigm Reversal": "Paradigm Rev", "DD Exhaustion": "DD Exhaust"}.get(name, name)
+        direction = t["direction"].upper()
+        grade = t.get("grade", "?")
+        if grade == "LOG":
+            grade = "LOG"
+        pnl = t["pnl"]
+        elapsed = t.get("elapsed_min", 0)
+        if t["result_type"] == "EXPIRED":
+            elapsed_str = "(expired)"
+        else:
+            elapsed_str = f"({elapsed} min)"
+        msg += f"{emoji} {ts_str} {name_short} {direction} {grade} {pnl:+.1f} pts {elapsed_str}\n"
+
+    msg += "\u2501" * 18
+    return msg
+
+
 def update_paradigm_tracker(paradigm):
     """Track paradigm changes. Call each cycle from check_setups()."""
     if paradigm is None:

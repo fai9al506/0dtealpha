@@ -889,6 +889,12 @@ _current_setup_log = {
     "last_date": None,
 }
 
+# Live outcome tracking: open trades awaiting resolution, resolved trades for EOD summary
+_setup_open_trades = []
+# Each entry: {setup_name, direction, spot, target_level, stop_level, ts, grade, result_data, max_hold_minutes}
+_setup_resolved_trades = []
+# Each entry: {setup_name, direction, spot, target_level, stop_level, ts, grade, result_type, pnl, elapsed_min, result_data}
+
 def log_setup(result_wrapper):
     """
     Insert or update a detection in setup_log table.
@@ -2067,6 +2073,168 @@ def send_summary_alert(time_label: str):
     except Exception as e:
         print(f"[alerts] summary error: {e}", flush=True)
 
+def _compute_setup_levels(r: dict):
+    """Compute (target_level, stop_level) from a setup result dict.
+
+    Mirrors the level logic in _calculate_setup_outcome() but works from
+    the live result dict directly (no DB query needed).
+    Returns (target_level, stop_level) or (None, None) if levels can't be determined.
+    """
+    setup_name = r.get("setup_name", "")
+    direction = r.get("direction", "long")
+    spot = r.get("spot")
+    if not spot:
+        return None, None
+
+    is_long = direction.lower() in ("long", "bullish")
+
+    if setup_name == "BofA Scalp":
+        target_lvl = r.get("bofa_target_level")
+        stop_lvl = r.get("bofa_stop_level")
+        return target_lvl, stop_lvl
+
+    if setup_name == "ES Absorption":
+        es_price = r.get("abs_es_price")
+        if not es_price:
+            return None, None
+        target_lvl = es_price + 10 if is_long else es_price - 10
+        stop_lvl = es_price - 12 if is_long else es_price + 12
+        return round(target_lvl, 2), round(stop_lvl, 2)
+
+    if setup_name == "DD Exhaustion":
+        return r.get("target_price"), r.get("stop_price")
+
+    if setup_name == "Paradigm Reversal":
+        target_lvl = spot + 10 if is_long else spot - 10
+        stop_lvl = spot - 15 if is_long else spot + 15
+        return round(target_lvl, 2), round(stop_lvl, 2)
+
+    # GEX Long / AG Short
+    lis = r.get("lis")
+    target = r.get("target")
+    if not lis or not target:
+        return None, None
+    max_minus_gex = r.get("max_minus_gex")
+    max_plus_gex = r.get("max_plus_gex")
+    max_stop_dist = 20
+    if is_long:
+        stop_lvl = lis - 5
+        if max_minus_gex is not None and max_minus_gex < stop_lvl:
+            stop_lvl = max_minus_gex
+        stop_lvl = max(stop_lvl, spot - max_stop_dist)
+        return round(target, 2), round(stop_lvl, 2)
+    else:
+        stop_lvl = lis + 5
+        if max_plus_gex is not None and max_plus_gex > stop_lvl:
+            stop_lvl = max_plus_gex
+        stop_lvl = min(stop_lvl, spot + max_stop_dist)
+        return round(target, 2), round(stop_lvl, 2)
+
+
+def _check_setup_outcomes(spot: float):
+    """Check open trades for target/stop hits. Called each cycle (~30s).
+
+    For ES Absorption, uses ES price (abs_es_price) instead of SPX spot.
+    Sends Telegram outcome for each resolved trade and moves to resolved list.
+    """
+    global _setup_open_trades, _setup_resolved_trades
+    if not spot:
+        return
+
+    from app.setup_detector import format_setup_outcome
+
+    now = now_et()
+    today = now.date()
+
+    # Daily reset
+    if _setup_open_trades and _setup_open_trades[0].get("_trade_date") != today:
+        _setup_open_trades = []
+        _setup_resolved_trades = []
+
+    market_closed = now.time() >= dtime(16, 0)
+    still_open = []
+
+    # Get current ES price for absorption outcome checks
+    es_price = None
+    with _es_quote_lock:
+        if _es_range_bars:
+            last_bar = _es_range_bars[-1]
+            es_price = last_bar.get("close")
+
+    for trade in _setup_open_trades:
+        setup_name = trade["setup_name"]
+        direction = trade["direction"]
+        entry_spot = trade["spot"]
+        target_lvl = trade["target_level"]
+        stop_lvl = trade["stop_level"]
+        ts_entry = trade["ts"]
+        is_long = direction.lower() in ("long", "bullish")
+
+        # Use ES price for absorption, SPX spot for everything else
+        if setup_name == "ES Absorption":
+            check_price = es_price if es_price else spot
+        else:
+            check_price = spot
+
+        # Determine entry price for P&L calc (ES price for absorption, SPX for others)
+        if setup_name == "ES Absorption":
+            entry_price = trade.get("result_data", {}).get("abs_es_price", entry_spot)
+        else:
+            entry_price = entry_spot
+
+        elapsed = (now - ts_entry).total_seconds() / 60.0
+
+        # BofA max hold expiry
+        max_hold = trade.get("max_hold_minutes")
+        bofa_expired = max_hold and elapsed >= max_hold
+
+        result_type = None
+        pnl = None
+
+        if is_long:
+            if check_price >= target_lvl:
+                result_type = "WIN"
+                pnl = target_lvl - entry_price
+            elif check_price <= stop_lvl:
+                result_type = "LOSS"
+                pnl = stop_lvl - entry_price
+            elif market_closed or bofa_expired:
+                result_type = "EXPIRED"
+                pnl = check_price - entry_price
+        else:
+            if check_price <= target_lvl:
+                result_type = "WIN"
+                pnl = entry_price - target_lvl
+            elif check_price >= stop_lvl:
+                result_type = "LOSS"
+                pnl = entry_price - stop_lvl
+            elif market_closed or bofa_expired:
+                result_type = "EXPIRED"
+                pnl = entry_price - check_price
+
+        if result_type:
+            pnl = round(pnl, 1)
+            elapsed_min = int(elapsed)
+            trade["close_price"] = check_price
+
+            # Send individual outcome Telegram
+            try:
+                outcome_msg = format_setup_outcome(trade, result_type, pnl, elapsed_min)
+                send_telegram_setups(outcome_msg)
+            except Exception as e:
+                print(f"[outcome] telegram error: {e}", flush=True)
+
+            # Move to resolved list
+            resolved = {**trade, "result_type": result_type, "pnl": pnl, "elapsed_min": elapsed_min,
+                        "ts_str": ts_entry.strftime("%H:%M") if hasattr(ts_entry, "strftime") else ""}
+            _setup_resolved_trades.append(resolved)
+            print(f"[outcome] {setup_name} {direction} -> {result_type} {pnl:+.1f}pts ({elapsed_min}min)", flush=True)
+        else:
+            still_open.append(trade)
+
+    _setup_open_trades = still_open
+
+
 def _run_setup_check():
     """Run setup detectors (GEX Long + AG Short + BofA Scalp) after each data pull."""
     # Get spot price (same pattern as check_alerts)
@@ -2079,6 +2247,9 @@ def _run_setup_check():
         pass
     if not spot:
         return
+
+    # Check open trades for outcome resolution each cycle
+    _check_setup_outcomes(spot)
 
     # Get Volland stats
     stats_result = db_volland_stats()
@@ -2199,6 +2370,18 @@ def _run_setup_check():
                 # Full setup alert for new/reformed setups
                 send_telegram_setups(rw["message"])
                 print(f"[setups] {setup_name} NEW: {grade} ({score})", flush=True)
+                # Record open trade for live outcome tracking
+                target_lvl, stop_lvl = _compute_setup_levels(r)
+                if target_lvl is not None and stop_lvl is not None:
+                    _setup_open_trades.append({
+                        "setup_name": setup_name, "direction": r["direction"],
+                        "spot": r["spot"], "grade": grade,
+                        "target_level": target_lvl, "stop_level": stop_lvl,
+                        "ts": now_et(), "result_data": r,
+                        "max_hold_minutes": r.get("bofa_max_hold_minutes"),
+                        "_trade_date": now_et().date(),
+                    })
+                    print(f"[outcome] tracking {setup_name}: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
             elif reason == "grade_upgrade":
                 # Short upgrade notice
                 emoji = "⬆️"
@@ -2650,6 +2833,20 @@ def _run_absorption_detection(bars: list) -> dict | None:
         except Exception as e:
             print(f"[absorption] telegram error: {e}", flush=True)
 
+        # Record open trade for live outcome tracking (only for new/reformed)
+        if reason in ("new", "reformed"):
+            target_lvl, stop_lvl = _compute_setup_levels(result)
+            if target_lvl is not None and stop_lvl is not None:
+                _setup_open_trades.append({
+                    "setup_name": "ES Absorption", "direction": result["direction"],
+                    "spot": result["spot"], "grade": result["grade"],
+                    "target_level": target_lvl, "stop_level": stop_lvl,
+                    "ts": now_et(), "result_data": result,
+                    "max_hold_minutes": None,
+                    "_trade_date": now_et().date(),
+                })
+                print(f"[outcome] tracking ES Absorption: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
+
     return signal
 
 
@@ -3056,6 +3253,71 @@ def save_es_range_bars():
     except Exception as e:
         print(f"[es-quote] save error: {e}", flush=True)
 
+def _send_setup_eod_summary():
+    """Send end-of-day summary of all setup outcomes via Telegram. Runs at 16:05 ET."""
+    global _setup_open_trades, _setup_resolved_trades
+    from app.setup_detector import format_setup_outcome, format_setup_daily_summary
+
+    now = now_et()
+    print(f"[eod-summary] running at {now.strftime('%H:%M:%S')}", flush=True)
+
+    # First, expire any still-open trades (market closed)
+    es_price = None
+    spot = None
+    try:
+        msg = last_run_status.get("msg") or ""
+        parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+        spot = float(parts.get("spot", ""))
+    except Exception:
+        pass
+    with _es_quote_lock:
+        if _es_range_bars:
+            es_price = _es_range_bars[-1].get("close")
+
+    for trade in _setup_open_trades:
+        setup_name = trade["setup_name"]
+        direction = trade["direction"]
+        is_long = direction.lower() in ("long", "bullish")
+        ts_entry = trade["ts"]
+
+        if setup_name == "ES Absorption":
+            check_price = es_price if es_price else spot
+            entry_price = trade.get("result_data", {}).get("abs_es_price", trade["spot"])
+        else:
+            check_price = spot
+            entry_price = trade["spot"]
+
+        if check_price and entry_price:
+            pnl = round((check_price - entry_price) if is_long else (entry_price - check_price), 1)
+        else:
+            pnl = 0.0
+
+        elapsed_min = int((now - ts_entry).total_seconds() / 60.0) if ts_entry else 0
+        trade["close_price"] = check_price
+
+        try:
+            outcome_msg = format_setup_outcome(trade, "EXPIRED", pnl, elapsed_min)
+            send_telegram_setups(outcome_msg)
+        except Exception as e:
+            print(f"[eod-summary] expire telegram error: {e}", flush=True)
+
+        resolved = {**trade, "result_type": "EXPIRED", "pnl": pnl, "elapsed_min": elapsed_min,
+                    "ts_str": ts_entry.strftime("%H:%M") if hasattr(ts_entry, "strftime") else ""}
+        _setup_resolved_trades.append(resolved)
+        print(f"[eod-summary] expired {setup_name} {direction} {pnl:+.1f}pts", flush=True)
+
+    _setup_open_trades = []
+
+    # Send daily summary if there were any trades
+    if _setup_resolved_trades:
+        summary_msg = format_setup_daily_summary(_setup_resolved_trades)
+        if summary_msg:
+            send_telegram_setups(summary_msg)
+            print(f"[eod-summary] sent daily summary ({len(_setup_resolved_trades)} trades)", flush=True)
+    else:
+        print("[eod-summary] no trades today, skipping summary", flush=True)
+
+
 def start_scheduler():
     sch = BackgroundScheduler(timezone="US/Eastern")
     sch.add_job(run_market_job, "interval", seconds=PULL_EVERY, id="pull", coalesce=True, max_instances=1)
@@ -3063,6 +3325,8 @@ def start_scheduler():
     sch.add_job(save_playback_snapshot, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="playback", coalesce=True, max_instances=1)
     sch.add_job(save_es_delta, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="es_delta_save", coalesce=True, max_instances=1)
     sch.add_job(save_es_range_bars, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="es_range_save", coalesce=True, max_instances=1)
+    sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,
+                id="setup_eod", coalesce=True, max_instances=1)
     sch.start()
     print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min; ES delta save every", SAVE_EVERY_MIN, "min", flush=True)
     return sch

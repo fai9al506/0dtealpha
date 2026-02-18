@@ -913,6 +913,18 @@ def _backfill_outcomes():
             """))
             if reset2.rowcount > 0:
                 print(f"[backfill] re-verifying {reset2.rowcount} EXPIRED outcomes against price history", flush=True)
+        # Re-verify WIN outcomes — P&L was capped at 10pt even when full target was hit
+        with engine.begin() as conn:
+            reset3 = conn.execute(text("""
+                UPDATE setup_log SET outcome_result = NULL, outcome_pnl = NULL,
+                       outcome_target_level = NULL, outcome_stop_level = NULL,
+                       outcome_elapsed_min = NULL, outcome_max_profit = NULL,
+                       outcome_max_loss = NULL, outcome_first_event = NULL
+                WHERE outcome_result = 'WIN'
+                  AND setup_name IN ('GEX Long', 'AG Short')
+            """))
+            if reset3.rowcount > 0:
+                print(f"[backfill] re-verifying {reset3.rowcount} GEX/AG WIN outcomes for full target P&L", flush=True)
         with engine.begin() as conn:
             rows = conn.execute(text("""
                 SELECT id, ts, setup_name, direction, grade, score,
@@ -962,11 +974,16 @@ def _backfill_outcomes():
                     sl = outcome.get("dd_final_stop") or outcome.get("stop_level", 0)
                     pnl = (sl - entry_price) if is_long else (entry_price - sl)
             elif result_type == "WIN":
-                tgt = outcome.get("ten_pt_level") or outcome.get("bofa_target_level")
-                if tgt:
-                    pnl = abs(tgt - entry_price) if is_long else abs(entry_price - tgt)
+                # Use full target if hit, otherwise use 10pt level
+                full_tgt = outcome.get("target_level")
+                if outcome.get("hit_target") and full_tgt:
+                    pnl = abs(full_tgt - entry_price) if is_long else abs(entry_price - full_tgt)
                 else:
-                    pnl = outcome.get("max_profit", 0)
+                    tgt = outcome.get("ten_pt_level") or outcome.get("bofa_target_level")
+                    if tgt:
+                        pnl = abs(tgt - entry_price) if is_long else abs(entry_price - tgt)
+                    else:
+                        pnl = outcome.get("max_profit", 0)
             elif result_type == "LOSS":
                 sl = outcome.get("stop_level", 0)
                 pnl = -(abs(entry_price - sl)) if is_long else -(abs(sl - entry_price))
@@ -998,7 +1015,7 @@ def _backfill_outcomes():
                 """), {
                     "res": result_type,
                     "pnl": round(pnl, 2) if pnl is not None else None,
-                    "tgt": outcome.get("ten_pt_level") or outcome.get("bofa_target_level"),
+                    "tgt": outcome.get("target_level") or outcome.get("ten_pt_level") or outcome.get("bofa_target_level"),
                     "sl": outcome.get("stop_level"),
                     "mp": outcome.get("max_profit"),
                     "ml": outcome.get("max_loss"),
@@ -5580,6 +5597,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             "max_loss_ts": max_loss_ts.isoformat() if max_loss_ts and hasattr(max_loss_ts, "isoformat") else max_loss_ts,
             "first_event": first_event,
             "ten_pt_level": round(ten_pt_level, 2),
+            "target_level": round(target_level, 2) if target_level is not None else None,
             "stop_level": round(stop_level, 2),
             "price_count": len(prices),
         }

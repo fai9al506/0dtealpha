@@ -5602,11 +5602,12 @@ def api_setup_log_with_outcomes(limit: int = Query(50)):
                        target_cluster_score, rr_score, notified,
                        bofa_stop_level, bofa_target_level, bofa_lis_width,
                        bofa_max_hold_minutes, lis_upper,
-                       abs_vol_ratio, abs_es_price
+                       abs_vol_ratio, abs_es_price,
+                       comments, outcome_result, outcome_pnl
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim
-            """), {"lim": min(int(limit), 200)}).mappings().all()
+            """), {"lim": min(int(limit), 500)}).mappings().all()
 
         results = []
         for r in rows:
@@ -6451,6 +6452,20 @@ DASH_HTML_TEMPLATE = """
     .strike-btn:hover { border-color:#444; color:var(--text); }
     .strike-btn.active { background:#1a2634; border-color:#2a3a57; color:var(--text); }
 
+    /* Trade Log */
+    .tl-filters { display:flex; gap:8px; padding:12px; border-bottom:1px solid var(--border); flex-wrap:wrap; align-items:center; }
+    .tl-filters select, .tl-filters input { background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:4px 8px; font-size:11px; }
+    .tl-stats { display:flex; gap:16px; padding:8px 12px; border-bottom:1px solid var(--border); font-size:12px; color:var(--muted); }
+    .tl-stats .stat-val { font-weight:700; color:var(--text); }
+    .tl-header { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 72px 56px 56px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:2px solid var(--border); color:var(--muted); font-size:10px; font-weight:600; position:sticky; top:0; background:var(--card); z-index:1; }
+    .tl-row { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 72px 56px 56px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:1px solid var(--border); cursor:pointer; }
+    .tl-row:hover { background:#1a1d21; }
+    .tl-notes { padding:8px 12px 8px 44px; border-bottom:1px solid var(--border); display:none; }
+    .tl-notes textarea { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:6px; font-size:12px; resize:vertical; min-height:60px; box-sizing:border-box; }
+    .tl-notes .tl-save-btn { margin-top:4px; padding:3px 10px; font-size:11px; background:#3b82f6; color:white; border:none; border-radius:4px; cursor:pointer; }
+    .tl-notes .tl-save-btn:hover { background:#2563eb; }
+    .setup-pill { font-size:10px; font-weight:600; padding:2px 6px; border-radius:3px; white-space:nowrap; display:inline-block; }
+
     /* Playback View */
     .playback-container { display:flex; flex-direction:column; height:calc(100vh - 180px); }
     .playback-info { padding:8px 0; display:flex; align-items:center; }
@@ -6584,6 +6599,7 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabPlayback">Playback</button>
         <button class="btn" id="tabRegimeMap">Regime Map</button>
         <button class="btn" id="tabEsDelta">ES Delta</button>
+        <button class="btn" id="tabTradeLog">Trade Log</button>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
       <div class="stats-box">
@@ -7100,6 +7116,25 @@ DASH_HTML_TEMPLATE = """
         <div id="esDeltaPlot" style="height:calc(100vh - 80px)"></div>
       </div>
 
+      <!-- Trade Log View -->
+      <div id="viewTradeLog" class="panel" style="display:none;flex-direction:column;overflow:auto">
+        <div class="header"><div><strong>Trade Log</strong></div><span id="tlStatus" style="font-size:11px;color:var(--muted)"></span></div>
+        <div class="tl-filters">
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option></select>
+          <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="PENDING">PENDING</option></select>
+          <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>LOG</option></select>
+          <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
+          <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
+        </div>
+        <div class="tl-stats" id="tlStats"></div>
+        <div style="overflow-y:auto;flex:1">
+          <div class="tl-header">
+            <span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Time</span><span></span>
+          </div>
+          <div id="tlBody"></div>
+        </div>
+      </div>
+
     </main>
   </div>
 
@@ -7268,7 +7303,8 @@ DASH_HTML_TEMPLATE = """
           tabSpot=document.getElementById('tabSpot'),
           tabPlayback=document.getElementById('tabPlayback'),
           tabRegimeMap=document.getElementById('tabRegimeMap'),
-          tabEsDelta=document.getElementById('tabEsDelta');
+          tabEsDelta=document.getElementById('tabEsDelta'),
+          tabTradeLog=document.getElementById('tabTradeLog');
 
     const viewTable=document.getElementById('viewTable'),
           viewCharts=document.getElementById('viewCharts'),
@@ -7276,21 +7312,26 @@ DASH_HTML_TEMPLATE = """
           viewSpot=document.getElementById('viewSpot'),
           viewPlayback=document.getElementById('viewPlayback'),
           viewRegimeMap=document.getElementById('viewRegimeMap'),
-          viewEsDelta=document.getElementById('viewEsDelta');
+          viewEsDelta=document.getElementById('viewEsDelta'),
+          viewTradeLog=document.getElementById('viewTradeLog');
+
+    let tradeLogTimer = null;
+    function stopTradeLog() { if(tradeLogTimer){clearInterval(tradeLogTimer);tradeLogTimer=null;} }
 
     function setActive(btn){
-      [tabTable,tabCharts,tabChartsHT,tabSpot,tabPlayback,tabRegimeMap,tabEsDelta].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabCharts,tabChartsHT,tabSpot,tabPlayback,tabRegimeMap,tabEsDelta,tabTradeLog].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewChartsHT.style.display='none'; viewSpot.style.display='none'; viewPlayback.style.display='none'; viewRegimeMap.style.display='none'; viewEsDelta.style.display='none'; }
+    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewChartsHT.style.display='none'; viewSpot.style.display='none'; viewPlayback.style.display='none'; viewRegimeMap.style.display='none'; viewEsDelta.style.display='none'; viewTradeLog.style.display='none'; }
     function saveTab(name){ try{sessionStorage.setItem('activeTab',name);}catch(e){} }
-    function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); saveTab('table'); }
-    function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); saveTab('charts'); }
-    function showChartsHT(){ setActive(tabChartsHT); hideAllViews(); viewChartsHT.style.display=''; startChartsHT(); stopCharts(); stopSpot(); stopStatistics(); stopEsDelta(); saveTab('chartsHT'); }
-    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); startStatistics(); stopCharts(); stopChartsHT(); stopEsDelta(); saveTab('spot'); }
-    function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); initPlayback(); saveTab('playback'); }
-    function showRegimeMap(){ setActive(tabRegimeMap); hideAllViews(); viewRegimeMap.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); initRegimeMap(); saveTab('regimeMap'); }
-    function showEsDelta(){ setActive(tabEsDelta); hideAllViews(); viewEsDelta.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); startEsDelta(); saveTab('esDelta'); }
+    function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); saveTab('table'); }
+    function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); saveTab('charts'); }
+    function showChartsHT(){ setActive(tabChartsHT); hideAllViews(); viewChartsHT.style.display=''; startChartsHT(); stopCharts(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); saveTab('chartsHT'); }
+    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); startStatistics(); stopCharts(); stopChartsHT(); stopEsDelta(); stopTradeLog(); saveTab('spot'); }
+    function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); initPlayback(); saveTab('playback'); }
+    function showRegimeMap(){ setActive(tabRegimeMap); hideAllViews(); viewRegimeMap.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); initRegimeMap(); saveTab('regimeMap'); }
+    function showEsDelta(){ setActive(tabEsDelta); hideAllViews(); viewEsDelta.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopTradeLog(); startEsDelta(); saveTab('esDelta'); }
+    function showTradeLog(){ setActive(tabTradeLog); hideAllViews(); viewTradeLog.style.display='flex'; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); loadTradeLogFull(); tradeLogTimer=setInterval(loadTradeLogFull,30000); saveTab('tradeLog'); }
     tabTable.addEventListener('click', showTable);
     tabCharts.addEventListener('click', showCharts);
     tabChartsHT.addEventListener('click', showChartsHT);
@@ -7298,11 +7339,12 @@ DASH_HTML_TEMPLATE = """
     tabPlayback.addEventListener('click', showPlayback);
     tabRegimeMap.addEventListener('click', showRegimeMap);
     tabEsDelta.addEventListener('click', showEsDelta);
+    tabTradeLog.addEventListener('click', showTradeLog);
 
     // Restore last active tab on page load
     try {
       const saved = sessionStorage.getItem('activeTab');
-      const tabMap = {charts:showCharts, chartsHT:showChartsHT, spot:showSpot, playback:showPlayback, regimeMap:showRegimeMap, esDelta:showEsDelta};
+      const tabMap = {charts:showCharts, chartsHT:showChartsHT, spot:showSpot, playback:showPlayback, regimeMap:showRegimeMap, esDelta:showEsDelta, tradeLog:showTradeLog};
       if(saved && tabMap[saved]) tabMap[saved]();
     } catch(e){}
 
@@ -9974,6 +10016,224 @@ DASH_HTML_TEMPLATE = """
         setTimeout(() => { status.textContent = ''; }, 2000);
       }
     }
+
+    // ===== Trade Log Tab =====
+    let _tradeLogData = [];
+    const _tlPillColors = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4'};
+    const _tlGradeColors = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308','LOG':'#6b7280'};
+
+    async function loadTradeLogFull() {
+      try {
+        const r = await fetch('/api/setup/log_with_outcomes?limit=500', {cache:'no-store'});
+        _tradeLogData = await r.json();
+        if (!Array.isArray(_tradeLogData)) _tradeLogData = [];
+        renderTradeLog();
+        document.getElementById('tlStatus').textContent = _tradeLogData.length + ' signals loaded';
+      } catch(err) {
+        console.error('loadTradeLogFull error:', err);
+        document.getElementById('tlBody').innerHTML = '<div style="color:var(--red);padding:12px">Error loading trade log</div>';
+      }
+    }
+
+    function _tlGetFiltered() {
+      const fSetup = document.getElementById('tlFilterSetup').value;
+      const fResult = document.getElementById('tlFilterResult').value;
+      const fGrade = document.getElementById('tlFilterGrade').value;
+      const fDate = document.getElementById('tlFilterDate').value;
+      const fSearch = document.getElementById('tlSearch').value.toLowerCase().trim();
+      const now = new Date();
+      const todayET = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
+      const todayStr = todayET.getFullYear()+'-'+String(todayET.getMonth()+1).padStart(2,'0')+'-'+String(todayET.getDate()).padStart(2,'0');
+
+      return _tradeLogData.filter(l => {
+        if (fSetup && l.setup_name !== fSetup) return false;
+        if (fGrade && l.grade !== fGrade) return false;
+
+        // Result filter
+        if (fResult) {
+          const o = l.outcome || {};
+          let res = '';
+          if (o.first_event === 'pending') res = 'PENDING';
+          else if (o.first_event === '10pt' || o.first_event === 'target' || o.first_event === '15pt') res = 'WIN';
+          else if (o.first_event === 'stop') res = 'LOSS';
+          else if (o.first_event === 'miss') res = 'EXPIRED';
+          else if (o.first_event === 'timeout') res = 'TIMEOUT';
+          else if (l.outcome_result) res = l.outcome_result;
+          else res = 'PENDING';
+          if (res !== fResult) return false;
+        }
+
+        // Date filter
+        if (fDate && l.ts) {
+          const d = new Date(l.ts);
+          const dET = new Date(d.toLocaleString('en-US',{timeZone:'America/New_York'}));
+          if (fDate === 'today') {
+            const dStr = dET.getFullYear()+'-'+String(dET.getMonth()+1).padStart(2,'0')+'-'+String(dET.getDate()).padStart(2,'0');
+            if (dStr !== todayStr) return false;
+          } else if (fDate === 'week') {
+            const diff = (todayET - dET) / 86400000;
+            if (diff > 7) return false;
+          } else if (fDate === 'month') {
+            if (dET.getMonth() !== todayET.getMonth() || dET.getFullYear() !== todayET.getFullYear()) return false;
+          }
+        }
+
+        // Text search
+        if (fSearch) {
+          const hay = [l.setup_name, l.grade, l.direction, l.comments, l.spot?.toString(), l.outcome_result].filter(Boolean).join(' ').toLowerCase();
+          if (!hay.includes(fSearch)) return false;
+        }
+        return true;
+      });
+    }
+
+    function renderTradeLog() {
+      const filtered = _tlGetFiltered();
+
+      // Stats
+      let wins=0, losses=0, totalPnl=0, pnlCount=0;
+      filtered.forEach(l => {
+        const o = l.outcome || {};
+        const fe = o.first_event;
+        if (fe === '10pt' || fe === 'target' || fe === '15pt') wins++;
+        else if (fe === 'stop') losses++;
+        else if (fe === 'timeout') { if ((o.timeout_pnl||0) > 0) wins++; else if ((o.timeout_pnl||0) < 0) losses++; }
+        else if (l.outcome_result === 'WIN') wins++;
+        else if (l.outcome_result === 'LOSS') losses++;
+        if (l.outcome_pnl != null) { totalPnl += l.outcome_pnl; pnlCount++; }
+        else if (o.timeout_pnl != null) { totalPnl += o.timeout_pnl; pnlCount++; }
+      });
+      const wr = (wins+losses) > 0 ? ((wins/(wins+losses))*100).toFixed(0) : '--';
+      const pnlColor = totalPnl >= 0 ? '#22c55e' : '#ef4444';
+      const pnlStr = pnlCount > 0 ? ((totalPnl >= 0 ? '+' : '') + totalPnl.toFixed(1)) : '--';
+      document.getElementById('tlStats').innerHTML =
+        '<span>Total: <span class="stat-val">'+filtered.length+'</span></span>' +
+        '<span>Wins: <span class="stat-val" style="color:#22c55e">'+wins+'</span></span>' +
+        '<span>Losses: <span class="stat-val" style="color:#ef4444">'+losses+'</span></span>' +
+        '<span>WR: <span class="stat-val">'+wr+'%</span></span>' +
+        '<span>Net P&L: <span class="stat-val" style="color:'+pnlColor+'">'+pnlStr+'</span></span>';
+
+      // Table body
+      const body = document.getElementById('tlBody');
+      if (filtered.length === 0) {
+        body.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">No matching signals</div>';
+        return;
+      }
+
+      let html = '';
+      filtered.forEach((l, i) => {
+        const isAbs = l.setup_name === 'ES Absorption';
+        const isBofa = l.setup_name === 'BofA Scalp';
+        const pillColor = _tlPillColors[l.setup_name] || '#888';
+        const dir = isAbs ? (l.direction === 'bullish' ? '▲' : '▼') : (l.direction === 'long' ? '▲' : '▼');
+        const dirColor = (l.direction === 'long' || l.direction === 'bullish') ? '#22c55e' : '#ef4444';
+        const gradeColor = _tlGradeColors[l.grade] || '#888';
+        const entry = isAbs ? (l.abs_es_price || l.spot)?.toFixed(2) : l.spot?.toFixed(0);
+        const gapRr = isAbs ? ((l.abs_vol_ratio||0).toFixed(1)+'x') : ((l.gap_to_lis?.toFixed(1)||'--')+' / '+(l.rr_ratio?.toFixed(1)||'--')+'x');
+
+        // 10p/Tgt/Stp
+        const o = l.outcome || {};
+        const tgtLabel = isBofa ? '15p' : '10p';
+        const has10pt = o.hit_10pt === true ? '✓' : (o.hit_10pt === false ? '✗' : '–');
+        const hasTgt = o.hit_target === true ? '✓' : (o.hit_target === false ? '✗' : '–');
+        const hasStop = o.hit_stop === true ? '✗' : (o.hit_stop === false ? '✓' : '–');
+        const c10 = o.hit_10pt ? '#22c55e' : (o.hit_10pt === false ? '#888' : '#555');
+        const cTgt = o.hit_target ? '#22c55e' : (o.hit_target === false ? '#888' : '#555');
+        const stopIsLoss = o.hit_stop && o.first_event === 'stop';
+        const cStop = stopIsLoss ? '#ef4444' : (o.hit_stop === false ? '#22c55e' : '#888');
+
+        // Result
+        let result = '';
+        const fe = o.first_event;
+        if (fe === 'pending') result = '<span style="color:#888">PENDING</span>';
+        else if (fe === '10pt' || fe === 'target' || fe === '15pt') result = '<span style="color:#22c55e;font-weight:700">WIN</span>';
+        else if (fe === 'stop') result = '<span style="color:#ef4444;font-weight:700">LOSS</span>';
+        else if (fe === 'miss') result = '<span style="color:#888">MISS</span>';
+        else if (fe === 'timeout') {
+          const tp = o.timeout_pnl || 0;
+          result = tp > 0 ? '<span style="color:#22c55e">TO+'+tp.toFixed(0)+'</span>' : '<span style="color:#ef4444">TO'+tp.toFixed(0)+'</span>';
+        } else if (l.outcome_result) {
+          const rc = l.outcome_result === 'WIN' ? '#22c55e' : l.outcome_result === 'LOSS' ? '#ef4444' : '#888';
+          result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
+        } else {
+          result = '<span style="color:#888">--</span>';
+        }
+
+        // P&L
+        let pnl = '--';
+        let pnlC = '#888';
+        if (l.outcome_pnl != null) { pnl = (l.outcome_pnl >= 0 ? '+' : '') + l.outcome_pnl.toFixed(1); pnlC = l.outcome_pnl >= 0 ? '#22c55e' : '#ef4444'; }
+        else if (o.timeout_pnl != null) { pnl = (o.timeout_pnl >= 0 ? '+' : '') + o.timeout_pnl.toFixed(1); pnlC = o.timeout_pnl >= 0 ? '#22c55e' : '#ef4444'; }
+
+        const time = fmtTimeET(l.ts);
+        const date = fmtDateShortET(l.ts);
+        const hasNotes = l.comments && l.comments.trim().length > 0;
+        const noteIcon = hasNotes ? '💬' : '📝';
+
+        html += '<div class="tl-row" data-id="'+l.id+'" data-idx="'+i+'">' +
+          '<span style="color:var(--muted)">'+(i+1)+'</span>' +
+          '<span class="setup-pill" style="background:'+pillColor+'22;color:'+pillColor+'">'+l.setup_name+'</span>' +
+          '<span style="color:'+dirColor+';font-weight:700;text-align:center">'+dir+'</span>' +
+          '<span style="color:'+gradeColor+';font-weight:600">'+l.grade+'</span>' +
+          '<span style="color:var(--muted)">'+l.score+'</span>' +
+          '<span style="color:var(--text)">'+(entry||'--')+'</span>' +
+          '<span style="color:var(--muted);font-size:10px">'+gapRr+'</span>' +
+          '<span style="font-size:10px"><span style="color:'+c10+'">'+has10pt+'</span> <span style="color:'+cTgt+'">'+hasTgt+'</span> <span style="color:'+cStop+'">'+hasStop+'</span></span>' +
+          '<span style="font-size:10px">'+result+'</span>' +
+          '<span style="color:'+pnlC+';font-size:10px">'+pnl+'</span>' +
+          '<span style="color:var(--muted);font-size:9px">'+date+' '+time+'</span>' +
+          '<span class="tl-note-icon" data-idx="'+i+'" style="cursor:pointer;text-align:center" title="Notes">'+noteIcon+'</span>' +
+        '</div>';
+        html += '<div class="tl-notes" id="tlNotes'+i+'">' +
+          '<textarea id="tlNotesText'+i+'">'+(l.comments||'').replace(/</g,'&lt;')+'</textarea>' +
+          '<button class="tl-save-btn" data-id="'+l.id+'" data-idx="'+i+'">Save</button> <span id="tlNotesStatus'+i+'" style="font-size:10px;color:var(--muted)"></span>' +
+        '</div>';
+      });
+      body.innerHTML = html;
+
+      // Event listeners
+      body.querySelectorAll('.tl-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('.tl-note-icon')) return;
+          showSetupDetail(row.dataset.id);
+        });
+      });
+      body.querySelectorAll('.tl-note-icon').forEach(icon => {
+        icon.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const idx = icon.dataset.idx;
+          const notesDiv = document.getElementById('tlNotes'+idx);
+          notesDiv.style.display = notesDiv.style.display === 'block' ? 'none' : 'block';
+        });
+      });
+      body.querySelectorAll('.tl-save-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const logId = btn.dataset.id;
+          const idx = btn.dataset.idx;
+          const text = document.getElementById('tlNotesText'+idx).value;
+          const status = document.getElementById('tlNotesStatus'+idx);
+          try {
+            const r = await fetch('/api/setup/log/'+logId+'/comment', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({comments:text})});
+            if (r.ok) {
+              status.textContent = 'Saved';
+              status.style.color = '#22c55e';
+              const entry = _tradeLogData.find(d => String(d.id) === String(logId));
+              if (entry) entry.comments = text;
+              const noteIcon = body.querySelector('.tl-note-icon[data-idx="'+idx+'"]');
+              if (noteIcon) noteIcon.textContent = text.trim() ? '💬' : '📝';
+            } else { status.textContent = 'Error'; status.style.color = '#ef4444'; }
+          } catch(err) { status.textContent = 'Error'; status.style.color = '#ef4444'; }
+          setTimeout(() => { status.textContent = ''; }, 2000);
+        });
+      });
+    }
+
+    // Wire up filter changes
+    ['tlFilterSetup','tlFilterResult','tlFilterGrade','tlFilterDate'].forEach(id => {
+      document.getElementById(id).addEventListener('change', renderTradeLog);
+    });
+    document.getElementById('tlSearch').addEventListener('input', renderTradeLog);
 
     async function loadSetupLog() {
       const list = document.getElementById('setupLogList');

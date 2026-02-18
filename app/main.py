@@ -475,6 +475,24 @@ def db_init():
         END $$;
         """))
 
+        # Outcome tracking columns on setup_log
+        for col, ctype in [
+            ("outcome_result", "TEXT"),          # WIN / LOSS / EXPIRED / TIMEOUT
+            ("outcome_pnl", "DOUBLE PRECISION"), # P&L in points
+            ("outcome_target_level", "DOUBLE PRECISION"),
+            ("outcome_stop_level", "DOUBLE PRECISION"),
+            ("outcome_max_profit", "DOUBLE PRECISION"),
+            ("outcome_max_loss", "DOUBLE PRECISION"),
+            ("outcome_first_event", "TEXT"),     # 10pt / target / stop / timeout
+            ("outcome_elapsed_min", "INTEGER"),  # minutes from signal to resolution
+        ]:
+            conn.execute(text(f"""
+            DO $$ BEGIN
+                ALTER TABLE setup_log ADD COLUMN {col} {ctype};
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
+            """))
+
         # Setup detection log table
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS setup_log (
@@ -623,6 +641,7 @@ def db_init():
     load_alert_settings()
     load_setup_settings()
     _load_cooldowns()
+    _backfill_outcomes()
     print("[db] ready", flush=True)
 
 def load_alert_settings():
@@ -861,6 +880,114 @@ def _load_cooldowns():
             print(f"[setups] cooldowns restored for {today}", flush=True)
     except Exception as e:
         print(f"[setups] cooldown load error (non-fatal): {e}", flush=True)
+
+def _backfill_outcomes():
+    """Backfill outcome results for setup_log entries that have no outcome yet.
+
+    Runs once on startup. Uses _calculate_setup_outcome() to compute
+    WIN/LOSS/EXPIRED for each historical signal from price history.
+    """
+    if not engine:
+        return
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT id, ts, setup_name, direction, grade, score,
+                       paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
+                       bofa_stop_level, bofa_target_level, bofa_max_hold_minutes,
+                       abs_vol_ratio, abs_es_price
+                FROM setup_log
+                WHERE outcome_result IS NULL
+                ORDER BY ts ASC
+            """)).mappings().all()
+
+        if not rows:
+            print("[backfill] all setup_log entries have outcomes", flush=True)
+            return
+
+        print(f"[backfill] computing outcomes for {len(rows)} signals...", flush=True)
+        filled = 0
+        for row in rows:
+            entry = dict(row)
+            outcome = _calculate_setup_outcome(entry)
+            if not outcome or outcome.get("no_data") or outcome.get("error"):
+                continue
+
+            fe = outcome.get("first_event")
+            if fe in ("10pt", "target"):
+                result_type = "WIN"
+            elif fe == "stop":
+                result_type = "LOSS"
+            elif fe == "timeout":
+                result_type = "EXPIRED"
+            else:
+                # No event hit — expired at market close
+                result_type = "EXPIRED"
+
+            # Calculate P&L
+            is_long = entry.get("direction", "long").lower() in ("long", "bullish")
+            spot = entry.get("spot") or 0
+            es_price = entry.get("abs_es_price")
+            entry_price = es_price if entry.get("setup_name") == "ES Absorption" and es_price else spot
+
+            if result_type == "WIN":
+                tgt = outcome.get("ten_pt_level") or outcome.get("bofa_target_level")
+                if tgt:
+                    pnl = abs(tgt - entry_price) if is_long else abs(entry_price - tgt)
+                else:
+                    pnl = outcome.get("max_profit", 0)
+            elif result_type == "LOSS":
+                sl = outcome.get("stop_level", 0)
+                pnl = -(abs(entry_price - sl)) if is_long else -(abs(sl - entry_price))
+            else:
+                pnl = outcome.get("max_profit", 0) if outcome.get("max_profit", 0) != 0 else outcome.get("max_loss", 0)
+
+            # Elapsed time
+            elapsed = None
+            if fe == "10pt" and outcome.get("time_to_10pt"):
+                try:
+                    t = datetime.fromisoformat(outcome["time_to_10pt"])
+                    elapsed = int((t - entry["ts"]).total_seconds() / 60)
+                except Exception:
+                    pass
+            elif fe == "stop" and outcome.get("time_to_stop"):
+                try:
+                    t = datetime.fromisoformat(outcome["time_to_stop"])
+                    elapsed = int((t - entry["ts"]).total_seconds() / 60)
+                except Exception:
+                    pass
+
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    UPDATE setup_log SET
+                        outcome_result = :res,
+                        outcome_pnl = :pnl,
+                        outcome_target_level = :tgt,
+                        outcome_stop_level = :sl,
+                        outcome_max_profit = :mp,
+                        outcome_max_loss = :ml,
+                        outcome_first_event = :fe,
+                        outcome_elapsed_min = :em
+                    WHERE id = :id
+                """), {
+                    "res": result_type,
+                    "pnl": round(pnl, 2) if pnl is not None else None,
+                    "tgt": outcome.get("ten_pt_level") or outcome.get("bofa_target_level"),
+                    "sl": outcome.get("stop_level"),
+                    "mp": outcome.get("max_profit"),
+                    "ml": outcome.get("max_loss"),
+                    "fe": fe,
+                    "em": elapsed,
+                    "id": entry["id"],
+                })
+            filled += 1
+
+        print(f"[backfill] filled {filled}/{len(rows)} outcomes", flush=True)
+    except Exception as e:
+        print(f"[backfill] error (non-fatal): {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+
 
 def _save_cooldowns():
     """Persist current cooldown state to DB."""
@@ -2224,6 +2351,30 @@ def _check_setup_outcomes(spot: float):
             except Exception as e:
                 print(f"[outcome] telegram error: {e}", flush=True)
 
+            # Persist outcome to setup_log DB
+            log_id = trade.get("setup_log_id")
+            if log_id and engine:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("""
+                            UPDATE setup_log SET
+                                outcome_result = :res,
+                                outcome_pnl = :pnl,
+                                outcome_target_level = :tgt,
+                                outcome_stop_level = :sl,
+                                outcome_elapsed_min = :em
+                            WHERE id = :id
+                        """), {
+                            "res": result_type,
+                            "pnl": pnl,
+                            "tgt": target_lvl,
+                            "sl": stop_lvl,
+                            "em": elapsed_min,
+                            "id": log_id,
+                        })
+                except Exception as db_err:
+                    print(f"[outcome] DB persist error: {db_err}", flush=True)
+
             # Move to resolved list
             resolved = {**trade, "result_type": result_type, "pnl": pnl, "elapsed_min": elapsed_min,
                         "ts_str": ts_entry.strftime("%H:%M") if hasattr(ts_entry, "strftime") else ""}
@@ -2380,6 +2531,7 @@ def _run_setup_check():
                         "ts": now_et(), "result_data": r,
                         "max_hold_minutes": r.get("bofa_max_hold_minutes"),
                         "_trade_date": now_et().date(),
+                        "setup_log_id": _current_setup_log.get(setup_name),
                     })
                     print(f"[outcome] tracking {setup_name}: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
             elif reason == "grade_upgrade":
@@ -2848,6 +3000,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
             "ts": now_et(), "result_data": result,
             "max_hold_minutes": None,
             "_trade_date": now_et().date(),
+            "setup_log_id": _current_setup_log.get("ES Absorption"),
         })
         print(f"[outcome] tracking ES Absorption: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
 

@@ -140,6 +140,8 @@ Append new analysis sections to this file after each review session.
 - Thread safety: `_es_delta_lock` and `_es_quote_lock` protect shared ES state from concurrent access
 - Dashboard auto-refresh: per-tab polling with `Plotly.react()` (no page reload), tab persistence via `sessionStorage`
 - Setup cooldown persistence: saves to `setup_cooldowns` DB table, restored on startup
+- Live outcome tracking: `_setup_open_trades` list tracks open setups, `_check_setup_outcomes(spot)` checks each ~30s cycle for WIN/LOSS/EXPIRED, sends per-trade Telegram. `_compute_setup_levels(r)` extracts target/stop from any setup result dict.
+- EOD summary: `_send_setup_eod_summary()` cron at 16:05 ET — expires remaining open trades, sends daily summary Telegram (trades, wins/losses, net P&L, win rate)
 - Admin password from `ADMIN_PASSWORD` env var (not hardcoded)
 - API endpoints: `/api/series`, `/api/snapshot`, `/api/history`, `/api/volland/*`, `/api/es/delta/*`, `/api/es/delta/rangebars`, `/api/health`
 

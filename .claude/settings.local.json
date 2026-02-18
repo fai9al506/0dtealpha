@@ -100,7 +100,15 @@
       "Bash(PYTHONIOENCODING=utf-8 python:*)",
       "Bash(export DATABASE_URL=\"postgresql://postgres:JwLVqJOvxdzflxJsCZHrPzcdPUYrmVYY@nozomi.proxy.rlwy.net:55417/railway\")",
       "Bash(psql:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "WebFetch(domain:www.wizofops.com)",
+      "WebFetch(domain:x.com)",
+      "WebFetch(domain:laductrading.com)",
+      "WebFetch(domain:www.scribd.com)",
+      "WebFetch(domain:vol.land)",
+      "Bash(cd:*)",
+      "WebFetch(domain:forum.ninjatrader.com)",
+      "Bash(findstr:*)"
     ]
   }
 }

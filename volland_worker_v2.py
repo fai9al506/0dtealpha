@@ -351,16 +351,17 @@ def run():
             except Exception:
                 pass
 
-        # Diagnostic: log API requests to see what the page is actually calling
+        # Diagnostic: track API requests to understand page behavior
         _diag_cycle_count = {"n": 0}
+        _diag_api_urls = []  # collect API URLs seen per cycle
 
         def handle_request_diag(request):
             """Log API requests for diagnostics (first 3 cycles only)."""
-            if _diag_cycle_count["n"] > 3:
-                return
             url = request.url
             if "/api/" in url or "/data/" in url:
-                print(f"[diag] {request.method} {url[:120]}", flush=True)
+                _diag_api_urls.append(f"{request.method} {url[:100]}")
+                if _diag_cycle_count["n"] <= 3:
+                    print(f"[diag] {request.method} {url[:120]}", flush=True)
 
         def setup_handlers(pg):
             """Register route and response handlers on a page."""
@@ -375,6 +376,7 @@ def run():
             cycle["spot_vol"] = None
             cycle["zero_captures"] = 0
             _diag_cycle_count["n"] += 1
+            _diag_api_urls.clear()
 
             page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
 
@@ -473,6 +475,24 @@ def run():
                 flush=True,
             )
             return stats, total_points, zero_exposures
+
+        def _get_page_diagnostic() -> str:
+            """Gather page state for Telegram alerts when things go wrong."""
+            parts = []
+            try:
+                parts.append(f"URL: {page.url[:80]}")
+                parts.append(f"Title: {page.title()[:60]}")
+            except Exception:
+                parts.append("URL/Title: unavailable")
+            # Summarize API requests seen this cycle
+            exposure_reqs = [u for u in _diag_api_urls if "exposure" in u.lower()]
+            paradigm_reqs = [u for u in _diag_api_urls if "paradigm" in u.lower()]
+            parts.append(f"API calls: {len(_diag_api_urls)} total, {len(exposure_reqs)} exposure, {len(paradigm_reqs)} paradigm")
+            if _diag_api_urls and not exposure_reqs:
+                # Show what URLs ARE being called (helps diagnose endpoint changes)
+                sample = list(set(_diag_api_urls))[:5]
+                parts.append(f"Sample: {', '.join(sample)}")
+            return "\n".join(parts)
 
         # Register handlers once (persist across navigations)
         setup_handlers(page)
@@ -613,18 +633,19 @@ def run():
                     print(f"[volland-v2] WARNING: 0 total pts ({consecutive_zero_pts}/{ZERO_POINTS_THRESHOLD}): {detail}", flush=True)
                     if consecutive_zero_pts >= ZERO_POINTS_THRESHOLD and not zero_pts_alerted:
                         zero_pts_alerted = True
+                        diag = _get_page_diagnostic()
                         send_telegram(
                             "⚠️ <b>Volland 0-Point Exposures</b>\n\n"
                             f"{consecutive_zero_pts} consecutive cycles with 0 points.\n"
                             f"Exposures captured: {len(exposures)}\n\n"
+                            f"<b>Diagnostic:</b>\n<code>{diag}</code>\n\n"
                             "Auto-restart will trigger after "
                             f"{AUTO_RESTART_THRESHOLD} cycles."
                         )
-                    # Process exit: in-process browser restart doesn't fix the
-                    # root cause (degraded Playwright context after extended
-                    # uptime). Let Railway restart the entire process — fresh
-                    # Python process = fresh Playwright context = working handlers.
+                    # Process exit: Railway restarts the entire process — fresh
+                    # Python + Playwright context.
                     if consecutive_zero_pts >= AUTO_RESTART_THRESHOLD:
+                        diag = _get_page_diagnostic()
                         print(
                             f"[volland-v2] PROCESS EXIT: {consecutive_zero_pts} "
                             f"consecutive zero-point cycles. Railway will restart fresh.",
@@ -633,7 +654,8 @@ def run():
                         send_telegram(
                             "🔄 <b>Volland Process Restart</b>\n\n"
                             f"{consecutive_zero_pts} consecutive cycles with 0 points.\n"
-                            "Exiting for clean Railway restart (fresh Playwright context)."
+                            "Exiting for clean Railway restart.\n\n"
+                            f"<b>Diagnostic:</b>\n<code>{diag}</code>"
                         )
                         time.sleep(5)
                         sys.exit(1)

@@ -2531,12 +2531,14 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
     market_closed = now.time() >= dtime(16, 0)
     still_open = []
 
-    # Get current ES price for absorption outcome checks
+    # Get current ES price + bar H/L extremes for absorption outcome checks
     es_price = None
+    es_bars_snapshot = []
     with _es_quote_lock:
         if _es_quote["_completed_bars"]:
             last_bar = _es_quote["_completed_bars"][-1]
             es_price = last_bar.get("close")
+            es_bars_snapshot = list(_es_quote["_completed_bars"])
 
     for trade in _setup_open_trades:
         setup_name = trade["setup_name"]
@@ -2549,7 +2551,10 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
 
         # Use ES price for absorption, SPX spot for everything else
         if setup_name == "ES Absorption":
-            check_price = es_price if es_price else spot
+            if not es_price:
+                still_open.append(trade)
+                continue  # Skip — no ES data; never fall back to SPX
+            check_price = es_price
         else:
             check_price = spot
 
@@ -2568,10 +2573,25 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         result_type = None
         pnl = None
 
-        # Update per-trade price tracking with cycle extremes (SPX setups only)
-        # For fixed SL/TP setups, _seen_low/_seen_high persist across cycles so
-        # a stop/target breach is never missed even if a check cycle is skipped
-        if setup_name != "ES Absorption":
+        # Update per-trade price tracking with cycle extremes
+        if setup_name == "ES Absorption":
+            # ES Absorption: scan completed ES range bar H/L since entry bar
+            # This catches intra-bar target/stop hits that bar-close checks miss
+            entry_bar_idx = trade.get("result_data", {}).get("bar_idx", 0)
+            last_scanned = trade.get("_es_last_bar_idx", entry_bar_idx)
+            for bar in es_bars_snapshot:
+                bidx = bar.get("idx", 0)
+                if bidx <= last_scanned:
+                    continue
+                bh = bar.get("high")
+                bl = bar.get("low")
+                if bh is not None:
+                    trade["_seen_high"] = max(trade.get("_seen_high", bh), bh)
+                if bl is not None:
+                    trade["_seen_low"] = min(trade.get("_seen_low", bl), bl)
+                trade["_es_last_bar_idx"] = bidx
+        else:
+            # SPX setups: use session-derived cycle extremes
             trade["_seen_low"] = min(trade.get("_seen_low", spx_cycle_low), spx_cycle_low)
             trade["_seen_high"] = max(trade.get("_seen_high", spx_cycle_high), spx_cycle_high)
 
@@ -5466,20 +5486,16 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
         if not bar_rows:
             return {"no_data": True}
 
-        # Find the signal bar by timestamp
+        # Find the signal bar: last completed bar that started before the trade timestamp
         signal_bar_idx = None
-        ts_str = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
         for r in bar_rows:
-            r_ts = r["ts_end"].isoformat() if hasattr(r["ts_end"], "isoformat") else str(r["ts_end"])
-            if r_ts[:19] == ts_str[:19]:
-                signal_bar_idx = r["bar_idx"]
-                break
-        if signal_bar_idx is None:
-            # Fallback: find bar closest to signal time
-            for r in bar_rows:
-                if r["bar_idx"] == entry.get("bar_idx"):
-                    signal_bar_idx = r["bar_idx"]
-                    break
+            bar_start = r["ts_start"]
+            if hasattr(bar_start, "tzinfo") and bar_start.tzinfo is None:
+                bar_start = NY.localize(bar_start)
+            if bar_start <= ts:
+                signal_bar_idx = r["bar_idx"]  # keep updating — last bar before ts
+            else:
+                break  # bars are ordered by idx, so stop once we pass ts
         if signal_bar_idx is None:
             return {"no_data": True}
 

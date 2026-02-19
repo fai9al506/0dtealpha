@@ -1066,7 +1066,10 @@ _setup_open_trades = []
 # Each entry: {setup_name, direction, spot, target_level, stop_level, ts, grade, result_data, max_hold_minutes}
 _setup_resolved_trades = []
 # Each entry: {setup_name, direction, spot, target_level, stop_level, ts, grade, result_type, pnl, elapsed_min, result_data}
-_spot_accumulator = []  # Accumulate spot prices between outcome checks for high/low tracking
+# Session H/L tracking: derive intra-cycle extremes from TS API session High/Low
+_spx_session = {"high": None, "low": None, "date": None}  # previous poll's session H/L
+_spx_cycle_high = None  # derived cycle high (max of spot & any new session high)
+_spx_cycle_low = None   # derived cycle low  (min of spot & any new session low)
 
 def log_setup(result_wrapper):
     """
@@ -1608,16 +1611,35 @@ def market_open_now() -> bool:
     return dtime(9, 30) <= t.time() <= dtime(16, 0)
 
 # ====== TS helpers ======
-def get_spx_last() -> float:
+def get_spx_quote() -> dict:
+    """Return {last, high, low} from TS API quote (same single API call)."""
     js = api_get("/marketdata/quotes/%24SPX.X", timeout=8).json()
     for q in js.get("Quotes", []):
         if q.get("Symbol") == "$SPX.X":
             v = q.get("Last") or q.get("Close")
             try:
-                return float(v)
-            except:
-                return 0.0
-    return 0.0
+                last = float(v)
+            except Exception:
+                last = 0.0
+            high = None
+            low = None
+            try:
+                h = q.get("High")
+                if h is not None:
+                    high = float(h)
+            except Exception:
+                pass
+            try:
+                lo = q.get("Low")
+                if lo is not None:
+                    low = float(lo)
+            except Exception:
+                pass
+            return {"last": last, "high": high, "low": low}
+    return {"last": 0.0, "high": None, "low": None}
+
+def get_spx_last() -> float:
+    return get_spx_quote()["last"]
 
 def get_0dte_exp() -> str:
     ymd = now_et().date().isoformat()
@@ -1829,13 +1851,44 @@ def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
 
 # ====== jobs ======
 def run_market_job():
-    global latest_df, last_run_status
+    global latest_df, last_run_status, _spx_session, _spx_cycle_high, _spx_cycle_low
     try:
         if not market_open_now():
             last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
             print("[pull] skipped (closed)", last_run_status["ts"], flush=True)
             return
-        spot = get_spx_last()
+        quote = get_spx_quote()
+        spot = quote["last"]
+        sess_high = quote["high"]
+        sess_low = quote["low"]
+
+        # Derive intra-cycle extremes from session H/L changes
+        today = now_et().date()
+        if _spx_session["date"] != today:
+            # Daily reset
+            _spx_session = {"high": None, "low": None, "date": today}
+
+        cycle_hi = spot
+        cycle_lo = spot
+        prev_h = _spx_session["high"]
+        prev_l = _spx_session["low"]
+        if sess_high is not None and prev_h is not None and sess_high > prev_h:
+            cycle_hi = max(spot, sess_high)
+        if sess_low is not None and prev_l is not None and sess_low < prev_l:
+            cycle_lo = min(spot, sess_low)
+
+        _spx_cycle_high = cycle_hi
+        _spx_cycle_low = cycle_lo
+
+        # Update session state for next cycle
+        if sess_high is not None:
+            _spx_session["high"] = sess_high
+        if sess_low is not None:
+            _spx_session["low"] = sess_low
+
+        if cycle_hi != spot or cycle_lo != spot:
+            print(f"[pull] cycle extremes: spot={spot:.2f} hi={cycle_hi:.2f} lo={cycle_lo:.2f} (sess H={sess_high} L={sess_low})", flush=True)
+
         exp  = get_0dte_exp()
         rows = get_chain_rows(exp, spot)
         raw_count = len(rows)
@@ -2313,26 +2366,22 @@ def _compute_setup_levels(r: dict):
         return round(target, 2), round(stop_lvl, 2)
 
 
-def _check_setup_outcomes(spot: float):
+def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
     """Check open trades for target/stop hits. Called each cycle (~30s).
 
-    Uses accumulated spot high/low to catch SL/TP breaches between checks.
+    Uses session-derived cycle high/low to catch SL/TP breaches between checks.
     For ES Absorption, uses ES price (abs_es_price) instead of SPX spot.
     Sends Telegram outcome for each resolved trade and moves to resolved list.
     """
-    global _setup_open_trades, _setup_resolved_trades, _spot_accumulator
+    global _setup_open_trades, _setup_resolved_trades
     if not spot:
         return
 
     from app.setup_detector import format_setup_outcome
 
-    # Consume accumulated spot prices for high/low tracking
-    accumulated = _spot_accumulator[:]
-    _spot_accumulator = []
-    if not accumulated or spot not in accumulated:
-        accumulated.append(spot)
-    spx_cycle_low = min(accumulated)
-    spx_cycle_high = max(accumulated)
+    # Use session-derived cycle extremes (or fall back to spot)
+    spx_cycle_high = cycle_high if cycle_high is not None else spot
+    spx_cycle_low = cycle_low if cycle_low is not None else spot
 
     now = now_et()
     today = now.date()
@@ -2526,11 +2575,8 @@ def _run_setup_check():
     if not spot:
         return
 
-    # Accumulate spot for high/low tracking across cycles
-    _spot_accumulator.append(spot)
-
     # Check open trades for outcome resolution each cycle
-    _check_setup_outcomes(spot)
+    _check_setup_outcomes(spot, _spx_cycle_high, _spx_cycle_low)
 
     # Get Volland stats
     stats_result = db_volland_stats()

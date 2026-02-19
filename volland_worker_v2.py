@@ -268,7 +268,11 @@ def run():
             headless=True,
             args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
-        page = browser.new_page(viewport={"width": 1400, "height": 900})
+        context = browser.new_context(
+            viewport={"width": 1400, "height": 900},
+            service_workers="block",
+        )
+        page = context.new_page()
         page.set_default_timeout(90000)
 
         # Mutable capture state — reset each cycle, shared via closure
@@ -337,10 +341,22 @@ def run():
             except Exception:
                 pass
 
+        # Diagnostic: log API requests to see what the page is actually calling
+        _diag_cycle_count = {"n": 0}
+
+        def handle_request_diag(request):
+            """Log API requests for diagnostics (first 3 cycles only)."""
+            if _diag_cycle_count["n"] > 3:
+                return
+            url = request.url
+            if "/api/" in url or "/data/" in url:
+                print(f"[diag] {request.method} {url[:120]}", flush=True)
+
         def setup_handlers(pg):
             """Register route and response handlers on a page."""
             pg.route("**/api/v1/data/exposure", handle_exposure)
             pg.on("response", handle_response)
+            pg.on("request", handle_request_diag)
 
         def do_full_capture():
             """Navigate to workspace, wait, return deduped (exposures, paradigm, spot_vol)."""
@@ -348,6 +364,7 @@ def run():
             cycle["paradigm"] = None
             cycle["spot_vol"] = None
             cycle["zero_captures"] = 0
+            _diag_cycle_count["n"] += 1
 
             page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
 
@@ -359,8 +376,23 @@ def run():
                 cycle["zero_captures"] = 0
                 page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
 
+            # Wait for full page load (scripts, stylesheets) before data wait
+            try:
+                page.wait_for_load_state("load", timeout=30000)
+            except Exception:
+                pass  # proceed even if load state times out
+
             page.wait_for_timeout(int(WAIT_SEC * 1000))
             handle_session_limit_modal(page)
+
+            # Diagnostic: log page state if no data captured
+            if not cycle["exposures"] and _diag_cycle_count["n"] <= 3:
+                try:
+                    title = page.title()
+                    url = page.url
+                    print(f"[diag] page title={title!r} url={url[:100]}", flush=True)
+                except Exception:
+                    pass
 
             # Deduplicate: widgets auto-refresh during wait, keep last per combo
             seen = {}
@@ -481,6 +513,7 @@ def run():
                     cycle["paradigm"] = None
                     cycle["spot_vol"] = None
                     cycle["zero_captures"] = 0
+                    _diag_cycle_count["n"] += 1
                     page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
                     if "/sign-in" in page.url:
                         login_if_needed(page, WORKSPACE_URL)
@@ -489,6 +522,10 @@ def run():
                         cycle["spot_vol"] = None
                         cycle["zero_captures"] = 0
                         page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
+                    try:
+                        page.wait_for_load_state("load", timeout=30000)
+                    except Exception:
+                        pass
                     page.wait_for_timeout(int(WAIT_SEC * 1000))
 
                     baseline = get_exposure_lastmodified()
@@ -497,6 +534,14 @@ def run():
                         f"baseline lastModified={baseline!r}",
                         flush=True,
                     )
+                    # Diagnostic: if no data captured during page load, log state
+                    if not baseline and _diag_cycle_count["n"] <= 3:
+                        try:
+                            title = page.title()
+                            url = page.url
+                            print(f"[diag-sync] page title={title!r} url={url[:100]}", flush=True)
+                        except Exception:
+                            pass
 
                     # Wait for widgets to auto-refresh on the page.
                     # page.wait_for_timeout keeps the event loop alive

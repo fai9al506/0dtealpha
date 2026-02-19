@@ -117,25 +117,35 @@ def save_snapshot(payload: dict):
 
 def save_exposure_points(points: list, greek: str, ticker: str = "SPX",
                          current_price: float = None, expiration_option: str = None):
-    """Insert exposure points into volland_exposure_points table."""
+    """Insert exposure points into volland_exposure_points table (batch)."""
     if not points:
         return 0
     ts_utc = datetime.now(timezone.utc)
-    with db() as conn, conn.cursor() as cur:
-        count = 0
-        for pt in points:
-            try:
-                strike = float(pt.get("x", 0))
-                value = float(pt.get("y", 0))
-                cur.execute("""
+    rows = []
+    for pt in points:
+        try:
+            rows.append((ts_utc, ticker, greek, expiration_option,
+                         float(pt.get("x", 0)), float(pt.get("y", 0)), current_price))
+        except (ValueError, TypeError):
+            pass
+    if not rows:
+        return 0
+    for attempt in range(2):
+        try:
+            with db() as conn, conn.cursor() as cur:
+                cur.executemany("""
                     INSERT INTO volland_exposure_points
                     (ts_utc, ticker, greek, expiration_option, strike, value, current_price)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (ts_utc, ticker, greek, expiration_option, strike, value, current_price))
-                count += 1
-            except Exception as e:
-                print(f"[exposure] Failed to insert point: {e}", flush=True)
-        return count
+                """, rows)
+            return len(rows)
+        except Exception as e:
+            if attempt == 0:
+                print(f"[exposure] {greek}: DB error ({len(rows)} pts), retrying: {e}", flush=True)
+                time.sleep(2)
+            else:
+                print(f"[exposure] {greek}: DB error ({len(rows)} pts), giving up: {e}", flush=True)
+    return 0
 
 
 # ── Login / session handling ──────────────────────────────────────────

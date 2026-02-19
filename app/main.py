@@ -891,17 +891,9 @@ def _backfill_outcomes():
     if not engine:
         return
     try:
-        # Reset trailing stop setups to recalculate (DD Exhaustion + GEX Long)
-        with engine.begin() as conn:
-            reset = conn.execute(text("""
-                UPDATE setup_log SET outcome_result = NULL, outcome_pnl = NULL,
-                       outcome_target_level = NULL, outcome_stop_level = NULL,
-                       outcome_elapsed_min = NULL, outcome_max_profit = NULL,
-                       outcome_max_loss = NULL, outcome_first_event = NULL
-                WHERE setup_name IN ('DD Exhaustion', 'GEX Long') AND outcome_result IS NOT NULL
-            """))
-            if reset.rowcount > 0:
-                print(f"[backfill] reset {reset.rowcount} DD/GEX outcomes for trailing stop recalc", flush=True)
+        # NOTE: Previously reset ALL DD/GEX outcomes on every startup to recalculate
+        # trailing stops. Removed — live tracker outcomes are more accurate (30s polling)
+        # than backfill (2-min playback snapshots). Backfill still catches NULL outcomes.
         # Re-verify EXPIRED outcomes — live tracker polling may have missed stop/target hits
         # The historical backfill uses playback_snapshots (2-min granularity) which is more
         # reliable than 30s live polling that can miss price spikes between checks
@@ -3736,6 +3728,16 @@ def save_es_range_bars():
     except Exception as e:
         print(f"[es-quote] save error: {e}", flush=True)
 
+def _save_rithmic_bars():
+    """Scheduler job: flush Rithmic range bars to DB (every 2 min)."""
+    try:
+        if not _es_futures_open() or not engine:
+            return
+        from rithmic_es_stream import flush_rithmic_bars
+        flush_rithmic_bars(engine)
+    except Exception as e:
+        print(f"[rithmic] save error: {e}", flush=True)
+
 def _send_setup_eod_summary():
     """Send end-of-day summary of all setup outcomes via Telegram. Runs at 16:05 ET."""
     global _setup_open_trades, _setup_resolved_trades
@@ -3808,6 +3810,7 @@ def start_scheduler():
     sch.add_job(save_playback_snapshot, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="playback", coalesce=True, max_instances=1)
     sch.add_job(save_es_delta, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="es_delta_save", coalesce=True, max_instances=1)
     sch.add_job(save_es_range_bars, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="es_range_save", coalesce=True, max_instances=1)
+    sch.add_job(_save_rithmic_bars, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="rithmic_range_save", coalesce=True, max_instances=1)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,
                 id="setup_eod", coalesce=True, max_instances=1)
     sch.start()
@@ -3837,6 +3840,9 @@ def on_startup():
     # Start ES quote streaming thread (bid/ask delta classification)
     Thread(target=_es_quote_stream_loop, daemon=True).start()
     print("[es-quote] streaming thread started", flush=True)
+    # Start Rithmic ES stream (parallel pipeline — skips if RITHMIC_USER not set)
+    from rithmic_es_stream import start_rithmic_stream
+    start_rithmic_stream(engine, send_telegram)
 
 @app.on_event("shutdown")
 def on_shutdown():
@@ -3903,6 +3909,14 @@ def api_health():
     with _es_quote_lock:
         es_quote_ok = _es_quote.get("stream_ok", False)
 
+    # Rithmic stream (optional — graceful if module not loaded)
+    rithmic_info = None
+    try:
+        from rithmic_es_stream import get_rithmic_state
+        rithmic_info = get_rithmic_state()
+    except ImportError:
+        pass
+
     # Overall status
     if not is_open:
         overall = "closed"
@@ -3929,6 +3943,7 @@ def api_health():
             },
             "es_delta_stream": {"connected": es_delta_ok},
             "es_quote_stream": {"connected": es_quote_ok},
+            **({"rithmic_stream": rithmic_info} if rithmic_info is not None else {}),
         },
         "last": last_run_status,
     }
@@ -4219,6 +4234,17 @@ def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, 
         if completed:
             _run_absorption_detection(result)
         return {"bars": result, "signals": _absorption_signals}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/es/rithmic/rangebars")
+def api_es_rithmic_rangebars():
+    """Rithmic parallel pipeline range bars (symbol @ES-R)."""
+    try:
+        from rithmic_es_stream import get_rithmic_bars, get_rithmic_state
+        return {"bars": get_rithmic_bars(), "state": get_rithmic_state()}
+    except ImportError:
+        return JSONResponse({"error": "Rithmic module not available"}, status_code=501)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -10471,16 +10497,16 @@ DASH_HTML_TEMPLATE = """
         if (fSetup && l.setup_name !== fSetup) return false;
         if (fGrade && l.grade !== fGrade) return false;
 
-        // Result filter
+        // Result filter — prefer DB-stored outcome_result (consistent with outcome_pnl)
         if (fResult) {
           const o = l.outcome || {};
           let res = '';
-          if (o.first_event === 'pending') res = 'PENDING';
+          if (l.outcome_result) res = l.outcome_result;
+          else if (o.first_event === 'pending') res = 'PENDING';
           else if (o.first_event === '10pt' || o.first_event === 'target' || o.first_event === '15pt') res = 'WIN';
           else if (o.first_event === 'stop') res = 'LOSS';
           else if (o.first_event === 'miss') res = 'EXPIRED';
           else if (o.first_event === 'timeout') res = 'TIMEOUT';
-          else if (l.outcome_result) res = l.outcome_result;
           else res = 'OPEN';
           if (res !== fResult) return false;
         }
@@ -10564,19 +10590,20 @@ DASH_HTML_TEMPLATE = """
         const stopIsLoss = o.hit_stop && o.first_event === 'stop';
         const cStop = stopIsLoss ? '#ef4444' : (o.hit_stop === false ? '#22c55e' : '#888');
 
-        // Result
+        // Result — prefer DB-stored outcome_result (consistent with outcome_pnl)
+        // Only fall back to recalculated first_event for open/pending trades
         let result = '';
         const fe = o.first_event;
-        if (fe === 'pending') result = '<span style="color:#888">PENDING</span>';
+        if (l.outcome_result) {
+          const rc = l.outcome_result === 'WIN' ? '#22c55e' : l.outcome_result === 'LOSS' ? '#ef4444' : '#888';
+          result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
+        } else if (fe === 'pending') result = '<span style="color:#888">PENDING</span>';
         else if (fe === '10pt' || fe === 'target' || fe === '15pt') result = '<span style="color:#22c55e;font-weight:700">WIN</span>';
         else if (fe === 'stop') result = '<span style="color:#ef4444;font-weight:700">LOSS</span>';
         else if (fe === 'miss') result = '<span style="color:#888">MISS</span>';
         else if (fe === 'timeout') {
           const tp = o.timeout_pnl || 0;
           result = tp > 0 ? '<span style="color:#22c55e">TO+'+tp.toFixed(0)+'</span>' : '<span style="color:#ef4444">TO'+tp.toFixed(0)+'</span>';
-        } else if (l.outcome_result) {
-          const rc = l.outcome_result === 'WIN' ? '#22c55e' : l.outcome_result === 'LOSS' ? '#ef4444' : '#888';
-          result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
         } else {
           result = '<span style="color:#3b82f6;font-weight:600">OPEN</span>';
         }

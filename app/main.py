@@ -642,6 +642,7 @@ def db_init():
     load_setup_settings()
     _load_cooldowns()
     _backfill_outcomes()
+    _restore_open_trades()
     print("[db] ready", flush=True)
 
 def load_alert_settings():
@@ -927,8 +928,26 @@ def _backfill_outcomes():
             """))
             if reset3.rowcount > 0:
                 print(f"[backfill] re-verifying {reset3.rowcount} AG Short WIN outcomes for full target P&L", flush=True)
-        with engine.begin() as conn:
-            rows = conn.execute(text("""
+        # During market hours, skip today's trades — let the live tracker handle them
+        # (backfill with incomplete price data persists wrong outcomes)
+        _now = now_et()
+        _market_open = dtime(9, 30) <= _now.time() <= dtime(16, 5)
+        _today_str = _now.strftime("%Y-%m-%d")
+
+        if _market_open:
+            _backfill_query = """
+                SELECT id, ts, setup_name, direction, grade, score,
+                       paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
+                       bofa_stop_level, bofa_target_level, bofa_max_hold_minutes,
+                       abs_vol_ratio, abs_es_price
+                FROM setup_log
+                WHERE outcome_result IS NULL
+                  AND ts < :today_start
+                ORDER BY ts ASC
+            """
+            _params = {"today_start": f"{_today_str} 00:00:00-05:00"}
+        else:
+            _backfill_query = """
                 SELECT id, ts, setup_name, direction, grade, score,
                        paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
                        bofa_stop_level, bofa_target_level, bofa_max_hold_minutes,
@@ -936,10 +955,17 @@ def _backfill_outcomes():
                 FROM setup_log
                 WHERE outcome_result IS NULL
                 ORDER BY ts ASC
-            """)).mappings().all()
+            """
+            _params = {}
+
+        with engine.begin() as conn:
+            rows = conn.execute(text(_backfill_query), _params).mappings().all()
 
         if not rows:
-            print("[backfill] all setup_log entries have outcomes", flush=True)
+            msg = "[backfill] all setup_log entries have outcomes"
+            if _market_open:
+                msg += " (today's trades deferred to live tracker)"
+            print(msg, flush=True)
             return
 
         print(f"[backfill] computing outcomes for {len(rows)} signals...", flush=True)
@@ -1030,6 +1056,125 @@ def _backfill_outcomes():
         print(f"[backfill] filled {filled}/{len(rows)} outcomes", flush=True)
     except Exception as e:
         print(f"[backfill] error (non-fatal): {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+
+
+def _restore_open_trades():
+    """Restore today's unresolved trades to _setup_open_trades on startup.
+
+    After a service restart, in-memory _setup_open_trades is empty.
+    This queries setup_log for today's trades with no outcome and re-adds them
+    so the live tracker continues monitoring them.
+
+    For each restored trade, queries historical price extremes (min/max spot since
+    entry) so the live tracker immediately sees any target/stop hits that occurred
+    before the restart.
+    """
+    global _setup_open_trades
+    if not engine:
+        return
+    try:
+        _now = now_et()
+        # Only restore during market hours (before EOD summary at 16:05)
+        if not (dtime(9, 30) <= _now.time() <= dtime(16, 5)):
+            return
+        _today_str = _now.strftime("%Y-%m-%d")
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT id, ts, setup_name, direction, grade, score,
+                       spot, lis, target, max_plus_gex, max_minus_gex,
+                       bofa_stop_level, bofa_target_level, bofa_max_hold_minutes,
+                       abs_vol_ratio, abs_es_price
+                FROM setup_log
+                WHERE outcome_result IS NULL
+                  AND ts >= :today_start
+                ORDER BY ts ASC
+            """), {"today_start": f"{_today_str} 00:00:00-05:00"}).mappings().all()
+
+        if not rows:
+            print("[restore] no unresolved trades to restore", flush=True)
+            return
+
+        _trailing_setups = ("DD Exhaustion", "GEX Long")
+        restored = 0
+        for row in rows:
+            entry = dict(row)
+            setup_name = entry["setup_name"]
+            direction = entry.get("direction", "long")
+            spot = entry.get("spot")
+            if not spot:
+                continue
+
+            # Rebuild the result_data dict needed by _compute_setup_levels
+            r = {
+                "setup_name": setup_name,
+                "direction": direction,
+                "spot": spot,
+                "lis": entry.get("lis"),
+                "target": entry.get("target"),
+                "max_plus_gex": entry.get("max_plus_gex"),
+                "max_minus_gex": entry.get("max_minus_gex"),
+                "bofa_stop_level": entry.get("bofa_stop_level"),
+                "bofa_target_level": entry.get("bofa_target_level"),
+                "bofa_max_hold_minutes": entry.get("bofa_max_hold_minutes"),
+                "abs_es_price": entry.get("abs_es_price"),
+            }
+            target_lvl, stop_lvl = _compute_setup_levels(r)
+            if stop_lvl is None:
+                continue
+            if target_lvl is None and setup_name not in _trailing_setups:
+                continue
+
+            # Reconstruct the trade entry
+            ts = entry["ts"]
+            if ts.tzinfo is None:
+                ts = NY.localize(ts)
+
+            # Query historical price extremes since entry to seed _seen_low/_seen_high
+            # Without this, restored trades would miss target/stop hits before restart
+            seen_high = spot
+            seen_low = spot
+            dd_max_fav = 0.0
+            try:
+                with engine.begin() as conn:
+                    extremes = conn.execute(text("""
+                        SELECT MAX(spot) as hi, MIN(spot) as lo
+                        FROM playback_snapshots
+                        WHERE ts >= :entry_ts AND ts <= NOW()
+                    """), {"entry_ts": ts}).mappings().first()
+                if extremes and extremes["hi"] is not None:
+                    seen_high = extremes["hi"]
+                    seen_low = extremes["lo"]
+                    is_long = direction.lower() in ("long", "bullish")
+                    fav = (seen_high - spot) if is_long else (spot - seen_low)
+                    dd_max_fav = max(0.0, fav)
+            except Exception:
+                pass  # fall back to spot as default
+
+            _setup_open_trades.append({
+                "setup_name": setup_name,
+                "direction": direction,
+                "spot": spot,
+                "grade": entry.get("grade", ""),
+                "target_level": target_lvl,
+                "stop_level": stop_lvl,
+                "ts": ts,
+                "result_data": r,
+                "max_hold_minutes": entry.get("bofa_max_hold_minutes"),
+                "_trade_date": _now.date(),
+                "setup_log_id": entry["id"],
+                "_dd_max_fav": dd_max_fav,
+                "_seen_high": seen_high,
+                "_seen_low": seen_low,
+            })
+            restored += 1
+            print(f"[restore] {setup_name} {direction} id={entry['id']} spot={spot:.1f} "
+                  f"seen_lo={seen_low:.1f} seen_hi={seen_high:.1f}", flush=True)
+
+        print(f"[restore] restored {restored} open trades to live tracker", flush=True)
+    except Exception as e:
+        print(f"[restore] error (non-fatal): {e}", flush=True)
         import traceback
         traceback.print_exc()
 

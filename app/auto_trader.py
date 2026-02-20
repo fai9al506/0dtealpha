@@ -8,7 +8,7 @@
 #   Flow A (BofA/Absorption/Paradigm): entry + stop + single limit @ +10pts
 #   Flow B (GEX/AG/DD): entry + stop + T1 @ +10pts + T2 @ full target (DD: trail-only)
 
-import os, json, time, requests
+import os, json, math, time, requests
 from datetime import datetime
 from threading import Lock
 
@@ -25,6 +25,8 @@ T1_QTY = int(os.getenv("MES_T1_QTY", "1"))
 T2_QTY = int(os.getenv("MES_T2_QTY", "0"))   # 0 = no T2 with 1 contract
 FIRST_TARGET_PTS = 10.0  # T1 target for all setups
 MES_TICK_SIZE = 0.25     # MES minimum price increment
+MES_POINT_VALUE = 5.0    # $5 per point per MES contract
+COMMISSION_PER_SIDE = 0.50  # $0.50 per contract per side (TS standard micro)
 
 
 def _round_mes(price: float) -> float:
@@ -582,10 +584,19 @@ def _check_order_fills(lid, order, broker_orders):
                     order["t1_filled"] = True
                     order["stop_qty"] -= t1_qty
                 changed = True
-                # Move stop to breakeven (entry price) for remaining contracts
+                # Move stop to breakeven + commissions for remaining contracts
+                # Covers round-trip commissions on ALL contracts (open + close)
                 be_price = order.get("fill_price")
                 if be_price and order["stop_qty"] > 0:
-                    order["current_stop"] = _round_mes(be_price)
+                    total_commission = TOTAL_QTY * COMMISSION_PER_SIDE * 2
+                    be_offset = total_commission / (order["stop_qty"] * MES_POINT_VALUE)
+                    # Round UP to next tick so we fully cover commissions
+                    be_offset = math.ceil(be_offset / MES_TICK_SIZE) * MES_TICK_SIZE
+                    is_long = order["direction"].lower() in ("long", "bullish")
+                    if is_long:
+                        order["current_stop"] = _round_mes(be_price + be_offset)
+                    else:
+                        order["current_stop"] = _round_mes(be_price - be_offset)
                 print(f"[auto-trader] T1 filled: {order['setup_name']} "
                       f"qty={t1_qty} stop_qty={order['stop_qty']} "
                       f"stop->BE={order.get('current_stop')}", flush=True)

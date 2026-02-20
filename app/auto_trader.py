@@ -582,12 +582,18 @@ def _check_order_fills(lid, order, broker_orders):
                     order["t1_filled"] = True
                     order["stop_qty"] -= t1_qty
                 changed = True
+                # Move stop to breakeven (entry price) for remaining contracts
+                be_price = order.get("fill_price")
+                if be_price and order["stop_qty"] > 0:
+                    order["current_stop"] = _round_mes(be_price)
                 print(f"[auto-trader] T1 filled: {order['setup_name']} "
-                      f"qty={t1_qty} stop_qty={order['stop_qty']}", flush=True)
+                      f"qty={t1_qty} stop_qty={order['stop_qty']} "
+                      f"stop->BE={order.get('current_stop')}", flush=True)
                 _alert(f"[AUTO-TRADE] {order['setup_name']} T1 FILLED\n"
                        f"{t1_qty} {MES_SYMBOL} @ {order.get('first_target_price', 0):.2f}\n"
-                       f"Remaining: {order['stop_qty']} contracts")
-                # Reduce stop qty or close if all filled
+                       f"Remaining: {order['stop_qty']} contracts\n"
+                       f"Stop moved to breakeven: {order.get('current_stop', 0):.2f}")
+                # Reduce stop qty + update price to breakeven
                 _adjust_stop_qty(lid, order)
 
         # Check T2 fill

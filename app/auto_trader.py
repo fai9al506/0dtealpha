@@ -28,14 +28,14 @@ _send_telegram = None   # callable(msg) -> bool
 _lock = Lock()
 _active_orders: dict[int, dict] = {}  # keyed by setup_log_id
 
-# Per-setup toggles — all default OFF
+# Per-setup toggles — all default ON for SIM testing
 _toggles: dict[str, bool] = {
-    "GEX Long": False,
-    "AG Short": False,
-    "BofA Scalp": False,
-    "ES Absorption": False,
-    "Paradigm Reversal": False,
-    "DD Exhaustion": False,
+    "GEX Long": True,
+    "AG Short": True,
+    "BofA Scalp": True,
+    "ES Absorption": True,
+    "Paradigm Reversal": True,
+    "DD Exhaustion": True,
 }
 
 # Setup → order flow mapping
@@ -75,8 +75,10 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         full_target_pts: distance to Volland full target for T2. None = same as target_pts.
     """
     if not AUTO_TRADE_ENABLED:
+        print(f"[auto-trader] skip {setup_name}: master switch OFF", flush=True)
         return
     if not _toggles.get(setup_name, False):
+        print(f"[auto-trader] skip {setup_name}: toggle OFF", flush=True)
         return
     if not setup_log_id:
         print(f"[auto-trader] skip {setup_name}: no setup_log_id", flush=True)

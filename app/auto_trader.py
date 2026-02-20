@@ -173,7 +173,9 @@ def _place_single_target(setup_log_id, setup_name, direction, is_long,
                f"(id={entry_oid}) but STOP FAILED!\n"
                f"Side: {side} MES: {es_price:.2f} Stop: {es_stop:.2f}")
 
-    # 3. Target limit (exit side)
+    # 3. Target limit (exit side) — best-effort: may be rejected if insufficient
+    #    margin (TS treats limit exit orders as new positions requiring margin).
+    #    If rejected, outcome tracking handles target exits via market close.
     t1_payload = {
         "AccountID": SIM_ACCOUNT_ID,
         "Symbol": MES_SYMBOL,
@@ -188,6 +190,9 @@ def _place_single_target(setup_log_id, setup_name, direction, is_long,
     t1_oid = None
     if t1_resp:
         t1_oid = t1_resp.get("Orders", [{}])[0].get("OrderID")
+    if not t1_oid:
+        print(f"[auto-trader] target limit skipped (margin): {setup_name} "
+              f"target={es_target:.2f} — outcome tracking will handle exit", flush=True)
 
     order = {
         "setup_log_id": setup_log_id,
@@ -198,7 +203,7 @@ def _place_single_target(setup_log_id, setup_name, direction, is_long,
         "t2_order_id": None,
         "stop_order_id": stop_oid,
         "stop_qty": TOTAL_QTY,
-        "t1_qty": TOTAL_QTY,
+        "t1_qty": TOTAL_QTY if t1_oid else 0,
         "t2_qty": 0,
         "current_stop": es_stop,
         "first_target_price": es_target,
@@ -281,22 +286,26 @@ def _place_split_target(setup_log_id, setup_name, direction, is_long,
                f"(id={entry_oid}) but STOP FAILED!\n"
                f"Side: {side} MES: {es_price:.2f} Stop: {es_stop:.2f}")
 
-    # 3. T1 limit order (T1_QTY MES @ +10pts)
-    t1_payload = {
-        "AccountID": SIM_ACCOUNT_ID,
-        "Symbol": MES_SYMBOL,
-        "Quantity": str(T1_QTY),
-        "OrderType": "Limit",
-        "LimitPrice": str(t1_price),
-        "TradeAction": exit_side,
-        "TimeInForce": {"Duration": "DAY"},
-        "Route": "Intelligent",
-    }
-    t1_resp = _sim_api("POST", "/orderexecution/orders", t1_payload)
+    # 3. T1 limit order — best-effort (may be rejected if insufficient margin)
     t1_oid = None
-    if t1_resp:
-        t1o = t1_resp.get("Orders", [])
-        t1_oid = t1o[0].get("OrderID") if t1o else None
+    if T1_QTY > 0:
+        t1_payload = {
+            "AccountID": SIM_ACCOUNT_ID,
+            "Symbol": MES_SYMBOL,
+            "Quantity": str(T1_QTY),
+            "OrderType": "Limit",
+            "LimitPrice": str(t1_price),
+            "TradeAction": exit_side,
+            "TimeInForce": {"Duration": "DAY"},
+            "Route": "Intelligent",
+        }
+        t1_resp = _sim_api("POST", "/orderexecution/orders", t1_payload)
+        if t1_resp:
+            t1o = t1_resp.get("Orders", [])
+            t1_oid = t1o[0].get("OrderID") if t1o else None
+        if not t1_oid:
+            print(f"[auto-trader] T1 limit skipped (margin): {setup_name} "
+                  f"t1={t1_price:.2f} — outcome tracking will handle exit", flush=True)
 
     # 4. T2 limit order @ full target — skip for DD trail-only or if T2_QTY=0
     t2_oid = None
@@ -400,7 +409,9 @@ def update_stop(setup_log_id: int, new_stop_price: float):
 
 
 def close_trade(setup_log_id: int, result_type: str):
-    """Close a trade on outcome resolution."""
+    """Close a trade on outcome resolution.
+    Always flattens because individual orders are not linked — a WIN doesn't
+    auto-cancel the stop, and a LOSS doesn't auto-cancel the target."""
     with _lock:
         order = _active_orders.get(setup_log_id)
         if not order:
@@ -410,11 +421,8 @@ def close_trade(setup_log_id: int, result_type: str):
 
     setup_name = order["setup_name"]
 
-    if result_type == "EXPIRED":
-        # Flatten remaining position + cancel pending orders
-        _flatten_position(order)
-    # For WIN/LOSS on bracket orders, the broker auto-handles the fill
-    # We just update state
+    # Always flatten: cancel remaining orders + market close if needed
+    _flatten_position(order)
 
     with _lock:
         order["status"] = "closed"

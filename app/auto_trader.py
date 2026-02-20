@@ -24,6 +24,30 @@ TOTAL_QTY = int(os.getenv("MES_TOTAL_QTY", "1"))
 T1_QTY = int(os.getenv("MES_T1_QTY", "1"))
 T2_QTY = int(os.getenv("MES_T2_QTY", "0"))   # 0 = no T2 with 1 contract
 FIRST_TARGET_PTS = 10.0  # T1 target for all setups
+MES_TICK_SIZE = 0.25     # MES minimum price increment
+
+
+def _round_mes(price: float) -> float:
+    """Round price to nearest MES tick (0.25)."""
+    return round(round(price / MES_TICK_SIZE) * MES_TICK_SIZE, 2)
+
+
+def _order_ok(resp: dict | None) -> tuple[bool, str | None]:
+    """Check if an order response succeeded. Returns (ok, order_id).
+    TS returns HTTP 200 even for FAILED orders — must check order-level Error."""
+    if not resp:
+        return False, None
+    orders = resp.get("Orders", [])
+    if not orders:
+        return False, None
+    first = orders[0]
+    if first.get("Error") == "FAILED":
+        msg = first.get("Message", "unknown error")
+        print(f"[auto-trader] order FAILED: {msg}", flush=True)
+        return False, first.get("OrderID")
+    oid = first.get("OrderID")
+    return bool(oid), oid
+
 
 # ====== STATE ======
 _engine = None
@@ -127,11 +151,11 @@ def _place_single_target(setup_log_id, setup_name, direction, is_long,
     exit_side = "Sell" if is_long else "Buy"
 
     if is_long:
-        es_stop = round(es_price - stop_pts, 2)
-        es_target = round(es_price + FIRST_TARGET_PTS, 2)
+        es_stop = _round_mes(es_price - stop_pts)
+        es_target = _round_mes(es_price + FIRST_TARGET_PTS)
     else:
-        es_stop = round(es_price + stop_pts, 2)
-        es_target = round(es_price - FIRST_TARGET_PTS, 2)
+        es_stop = _round_mes(es_price + stop_pts)
+        es_target = _round_mes(es_price - FIRST_TARGET_PTS)
 
     qty = str(TOTAL_QTY)
 
@@ -146,12 +170,11 @@ def _place_single_target(setup_log_id, setup_name, direction, is_long,
         "Route": "Intelligent",
     }
     resp = _sim_api("POST", "/orderexecution/orders", entry_payload)
-    if not resp:
+    ok, entry_oid = _order_ok(resp)
+    if not ok:
         _alert(f"[AUTO-TRADE] FAILED entry for {setup_name}\n"
                f"Side: {side} {TOTAL_QTY} {MES_SYMBOL} @ {es_price:.2f}")
         return
-
-    entry_oid = resp.get("Orders", [{}])[0].get("OrderID")
 
     # 2. Stop order (exit side)
     stop_payload = {
@@ -165,10 +188,8 @@ def _place_single_target(setup_log_id, setup_name, direction, is_long,
         "Route": "Intelligent",
     }
     stop_resp = _sim_api("POST", "/orderexecution/orders", stop_payload)
-    stop_oid = None
-    if stop_resp:
-        stop_oid = stop_resp.get("Orders", [{}])[0].get("OrderID")
-    if not stop_oid:
+    stop_ok, stop_oid = _order_ok(stop_resp)
+    if not stop_ok:
         _alert(f"[AUTO-TRADE] MANUAL INTERVENTION: {setup_name} entry placed "
                f"(id={entry_oid}) but STOP FAILED!\n"
                f"Side: {side} MES: {es_price:.2f} Stop: {es_stop:.2f}")
@@ -187,10 +208,9 @@ def _place_single_target(setup_log_id, setup_name, direction, is_long,
         "Route": "Intelligent",
     }
     t1_resp = _sim_api("POST", "/orderexecution/orders", t1_payload)
-    t1_oid = None
-    if t1_resp:
-        t1_oid = t1_resp.get("Orders", [{}])[0].get("OrderID")
-    if not t1_oid:
+    t1_ok, t1_oid = _order_ok(t1_resp)
+    if not t1_ok:
+        t1_oid = None
         print(f"[auto-trader] target limit skipped (margin): {setup_name} "
               f"target={es_target:.2f} — outcome tracking will handle exit", flush=True)
 
@@ -235,13 +255,13 @@ def _place_split_target(setup_log_id, setup_name, direction, is_long,
     exit_side = "Sell" if is_long else "Buy"
 
     if is_long:
-        es_stop = round(es_price - stop_pts, 2)
-        t1_price = round(es_price + FIRST_TARGET_PTS, 2)
-        t2_price = round(es_price + full_target_pts, 2) if full_target_pts else None
+        es_stop = _round_mes(es_price - stop_pts)
+        t1_price = _round_mes(es_price + FIRST_TARGET_PTS)
+        t2_price = _round_mes(es_price + full_target_pts) if full_target_pts else None
     else:
-        es_stop = round(es_price + stop_pts, 2)
-        t1_price = round(es_price - FIRST_TARGET_PTS, 2)
-        t2_price = round(es_price - full_target_pts, 2) if full_target_pts else None
+        es_stop = _round_mes(es_price + stop_pts)
+        t1_price = _round_mes(es_price - FIRST_TARGET_PTS)
+        t2_price = _round_mes(es_price - full_target_pts) if full_target_pts else None
 
     # DD Exhaustion: trail-only T2 (no limit order)
     is_trail_only_t2 = (setup_name == "DD Exhaustion")
@@ -259,12 +279,11 @@ def _place_split_target(setup_log_id, setup_name, direction, is_long,
         "Route": "Intelligent",
     }
     resp = _sim_api("POST", "/orderexecution/orders", entry_payload)
-    if not resp:
+    ok, entry_oid = _order_ok(resp)
+    if not ok:
         _alert(f"[AUTO-TRADE] FAILED entry for {setup_name}\n"
                f"Side: {side} {TOTAL_QTY} {MES_SYMBOL} @ {es_price:.2f}")
         return
-
-    entry_oid = resp.get("Orders", [{}])[0].get("OrderID")
 
     # 2. Stop order (exit side — covers full position)
     stop_payload = {
@@ -278,10 +297,9 @@ def _place_split_target(setup_log_id, setup_name, direction, is_long,
         "Route": "Intelligent",
     }
     stop_resp = _sim_api("POST", "/orderexecution/orders", stop_payload)
-    stop_oid = None
-    if stop_resp:
-        stop_oid = stop_resp.get("Orders", [{}])[0].get("OrderID")
-    if not stop_oid:
+    stop_ok, stop_oid = _order_ok(stop_resp)
+    if not stop_ok:
+        stop_oid = None
         _alert(f"[AUTO-TRADE] MANUAL INTERVENTION: {setup_name} entry placed "
                f"(id={entry_oid}) but STOP FAILED!\n"
                f"Side: {side} MES: {es_price:.2f} Stop: {es_stop:.2f}")
@@ -300,10 +318,9 @@ def _place_split_target(setup_log_id, setup_name, direction, is_long,
             "Route": "Intelligent",
         }
         t1_resp = _sim_api("POST", "/orderexecution/orders", t1_payload)
-        if t1_resp:
-            t1o = t1_resp.get("Orders", [])
-            t1_oid = t1o[0].get("OrderID") if t1o else None
-        if not t1_oid:
+        t1_ok, t1_oid = _order_ok(t1_resp)
+        if not t1_ok:
+            t1_oid = None
             print(f"[auto-trader] T1 limit skipped (margin): {setup_name} "
                   f"t1={t1_price:.2f} — outcome tracking will handle exit", flush=True)
 
@@ -321,9 +338,9 @@ def _place_split_target(setup_log_id, setup_name, direction, is_long,
             "Route": "Intelligent",
         }
         t2_resp = _sim_api("POST", "/orderexecution/orders", t2_payload)
-        if t2_resp:
-            t2o = t2_resp.get("Orders", [])
-            t2_oid = t2o[0].get("OrderID") if t2o else None
+        t2_ok, t2_oid = _order_ok(t2_resp)
+        if not t2_ok:
+            t2_oid = None
 
     order = {
         "setup_log_id": setup_log_id,
@@ -380,7 +397,7 @@ def update_stop(setup_log_id: int, new_stop_price: float):
     if not stop_oid or stop_qty <= 0:
         return
 
-    new_stop_price = round(new_stop_price, 2)
+    new_stop_price = _round_mes(new_stop_price)
 
     # Replace the stop order via PUT (with current remaining qty)
     replace_payload = {

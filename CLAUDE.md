@@ -100,7 +100,7 @@ This file scrapes a third-party website using Playwright with carefully tuned:
 
 ## Repo Structure
 
-- `app/` — production code (main.py, setup_detector.py) — **this is the main codebase**
+- `app/` — production code (main.py, setup_detector.py, auto_trader.py) — **this is the main codebase**
 - `volland_worker_v2.py` — **ACTIVE** Playwright scraper (see warning above)
 - `volland_worker.py` — **LEGACY/SUSPENDED** v1 scraper (do NOT run)
 - `0dtealpha/` — git submodule (separate repo, NOT the main codebase)
@@ -222,6 +222,34 @@ Detects DD-Charm divergence as a contrarian exhaustion signal. Based on Analysis
 
 **Log-only mode:** Grade always "LOG", score always 0. Telegram messages tagged `[LOG-ONLY]`. Target: 50+ live signals before enabling as real setup.
 
+### ES Auto-Trader (SIM Execution)
+
+Self-contained module (`app/auto_trader.py`) that auto-trades ES futures on TradeStation SIM account when setups fire. Receives `engine`, `ts_access_token`, and `send_telegram_setups` via `init()` — no imports from main.py.
+
+**Safety:** Hardcoded to `sim-api.tradestation.com` (cannot hit live). Master kill switch `AUTO_TRADE_ENABLED` env var (default OFF). Per-setup toggles all default OFF. 1 contract quantity.
+
+**Config:**
+- `AUTO_TRADE_ENABLED`: master switch (default `false`)
+- `ES_TRADE_SYMBOL`: front-month contract (default `ESM25`, manual quarterly rollover)
+- SIM account: `SIM2609239F`, hardcoded
+
+**Order types by setup:**
+- Bracket (BRK group): BofA Scalp, ES Absorption, Paradigm Reversal — market entry + StopMarket + Limit as single group
+- Entry + Stop: GEX Long, AG Short, DD Exhaustion — market entry + separate StopMarket, trail updates via `update_stop()`
+
+**ES price conversion:** SPX point distances applied to current ES price from quote stream. E.g., SPX spot=6100, stop=6092 → stop_dist=8 → ES 6116 → ES stop=6108.
+
+**Integration points in main.py (7):**
+1. Startup init after Rithmic
+2. `auto_trade_orders` table in `db_init()`
+3. `place_trade()` after setup fires (both main loop and ES Absorption path)
+4. `update_stop()` after trail advances
+5. `close_trade()` on outcome resolution
+6. `poll_order_status()` at top of `_check_setup_outcomes()`
+7. Health endpoint + admin API (`/api/auto-trade/status`, `/api/auto-trade/toggle`)
+
+**Crash recovery:** Active orders persisted to `auto_trade_orders` table (JSONB), restored on startup.
+
 ### Database Tables
 - `chain_snapshots` - options chain data with Greeks
 - `volland_snapshots` - raw scraped data with statistics (paradigm, LIS, charm, etc.)
@@ -229,6 +257,7 @@ Detects DD-Charm divergence as a contrarian exhaustion signal. Based on Analysis
 - `es_delta_snapshots` - ES cumulative delta state (every 30s, from TradeStation @ES bars)
 - `es_delta_bars` - ES 1-minute delta bars (UpVolume - DownVolume per bar)
 - `setup_cooldowns` - persisted cooldown state (trade_date, JSONB state including swing tracker)
+- `auto_trade_orders` - ES SIM auto-trade order state (setup_log_id PK, JSONB state, crash recovery)
 
 ## Railway Deployment
 
@@ -306,6 +335,10 @@ TELEGRAM_CHAT_ID_SETUPS    # Setup detector alerts
 
 # Admin
 ADMIN_PASSWORD             # Dashboard admin panel password (default: "changeme")
+
+# Auto-trader (optional — disabled by default)
+AUTO_TRADE_ENABLED         # Master switch (default: "false")
+ES_TRADE_SYMBOL            # Front-month ES contract (default: "ESM25")
 ```
 
 **Note:** The Volland Railway service also has `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` set separately for its own 0-points and session expiry alerts.

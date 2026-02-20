@@ -627,6 +627,15 @@ def db_init():
         );
         """))
 
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS auto_trade_orders (
+            setup_log_id BIGINT PRIMARY KEY,
+            state JSONB NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """))
+
         # Create default admin user if no users exist
         existing = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
         if existing == 0:
@@ -2514,6 +2523,13 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
     if not spot:
         return
 
+    # Auto-trade: poll broker for order fills
+    try:
+        from app import auto_trader
+        auto_trader.poll_order_status()
+    except Exception:
+        pass
+
     from app.setup_detector import format_setup_outcome
 
     # Use session-derived cycle extremes (or fall back to spot)
@@ -2635,6 +2651,17 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                     if new_stop < stop_lvl:
                         stop_lvl = new_stop
                         trade["stop_level"] = stop_lvl
+                # Auto-trade: update ES stop to match trail
+                try:
+                    from app import auto_trader
+                    log_id = trade.get("setup_log_id")
+                    if log_id:
+                        at_order = auto_trader._active_orders.get(log_id)
+                        if at_order and at_order.get("fill_price"):
+                            es_stop = at_order["fill_price"] + (stop_lvl - entry_price)
+                            auto_trader.update_stop(log_id, round(es_stop, 2))
+                except Exception:
+                    pass
             # Check trailing stop hit using cycle extreme (not just current price)
             stop_check = spx_cycle_low if is_long else spx_cycle_high
             if is_long and stop_check <= stop_lvl:
@@ -2707,6 +2734,14 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                         })
                 except Exception as db_err:
                     print(f"[outcome] DB persist error: {db_err}", flush=True)
+
+            # Auto-trade: close ES position on outcome
+            try:
+                from app import auto_trader
+                if log_id:
+                    auto_trader.close_trade(log_id, result_type)
+            except Exception:
+                pass
 
             # Move to resolved list
             resolved = {**trade, "result_type": result_type, "pnl": pnl, "elapsed_min": elapsed_min,
@@ -2871,6 +2906,22 @@ def _run_setup_check():
                     })
                     tgt_str = "trail" if target_lvl is None else f"{target_lvl:.1f}"
                     print(f"[outcome] tracking {setup_name}: target={tgt_str} stop={stop_lvl:.1f}", flush=True)
+                    # Auto-trade: place ES SIM order
+                    try:
+                        from app import auto_trader
+                        es_px = None
+                        with _es_quote_lock:
+                            es_px = _es_quote.get("last_price")
+                        if es_px and stop_lvl is not None:
+                            stop_dist = abs(r["spot"] - stop_lvl)
+                            target_dist = abs(target_lvl - r["spot"]) if target_lvl else None
+                            auto_trader.place_trade(
+                                setup_log_id=_current_setup_log.get(setup_name),
+                                setup_name=setup_name, direction=r["direction"],
+                                es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
+                            )
+                    except Exception as e:
+                        print(f"[auto-trader] place error: {e}", flush=True)
             elif reason == "grade_upgrade":
                 # Short upgrade notice
                 emoji = "⬆️"
@@ -3340,6 +3391,20 @@ def _run_absorption_detection(bars: list) -> dict | None:
             "setup_log_id": _current_setup_log.get("ES Absorption"),
         })
         print(f"[outcome] tracking ES Absorption: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
+        # Auto-trade: ES Absorption uses ES price directly
+        try:
+            from app import auto_trader
+            es_px = result.get("abs_es_price")
+            if es_px and stop_lvl is not None:
+                stop_dist = abs(es_px - stop_lvl)
+                target_dist = abs(target_lvl - es_px) if target_lvl else None
+                auto_trader.place_trade(
+                    setup_log_id=_current_setup_log.get("ES Absorption"),
+                    setup_name="ES Absorption", direction=result["direction"],
+                    es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
+                )
+        except Exception as e:
+            print(f"[auto-trader] absorption place error: {e}", flush=True)
 
     return signal
 
@@ -3863,6 +3928,12 @@ def on_startup():
     # Start Rithmic ES stream (parallel pipeline — skips if RITHMIC_USER not set)
     from rithmic_es_stream import start_rithmic_stream
     start_rithmic_stream(engine, send_telegram)
+    # Initialize auto-trader (SIM ES execution — disabled by default)
+    try:
+        from app.auto_trader import init as auto_trader_init
+        auto_trader_init(engine, ts_access_token, send_telegram_setups)
+    except Exception as e:
+        print(f"[auto-trader] init error (non-fatal): {e}", flush=True)
 
 @app.on_event("shutdown")
 def on_shutdown():
@@ -3964,13 +4035,43 @@ def api_health():
             "es_delta_stream": {"connected": es_delta_ok},
             "es_quote_stream": {"connected": es_quote_ok},
             **({"rithmic_stream": rithmic_info} if rithmic_info is not None else {}),
+            **_auto_trader_health(),
         },
         "last": last_run_status,
     }
 
+def _auto_trader_health() -> dict:
+    """Get auto-trader status for health endpoint (graceful if not loaded)."""
+    try:
+        from app import auto_trader
+        return {"auto_trader": auto_trader.get_status()}
+    except Exception:
+        return {}
+
 @app.get("/status")
 def status():
     return last_run_status
+
+@app.get("/api/auto-trade/status")
+def api_auto_trade_status():
+    """Get auto-trader status and toggles."""
+    try:
+        from app import auto_trader
+        return auto_trader.get_status()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api/auto-trade/toggle")
+def api_auto_trade_toggle(setup_name: str = Query(...), enabled: bool = Query(...)):
+    """Toggle auto-trading for a specific setup."""
+    try:
+        from app import auto_trader
+        ok = auto_trader.set_toggle(setup_name, enabled)
+        if not ok:
+            return {"error": f"Unknown setup: {setup_name}"}
+        return {"ok": True, "toggles": auto_trader.get_toggles()}
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/api/snapshot")
 def snapshot():
@@ -5283,6 +5384,74 @@ def api_alerts_status():
         "chat_id_preview": TELEGRAM_CHAT_ID[:5] + "..." if TELEGRAM_CHAT_ID else None,
         "settings": _alert_settings
     }
+
+# ====== TRADESTATION OAUTH RE-AUTHORIZATION ======
+# Used to upgrade scopes (e.g. add Trade scope for SIM auto-trading)
+TS_REDIRECT_URI = "https://0dtealpha.com/api/ts/callback"
+TS_SCOPES = "openid profile MarketData ReadAccount Trade offline_access"
+
+@app.get("/api/ts/authorize")
+def ts_authorize():
+    """Redirect to TradeStation OAuth to re-authorize with Trade scope."""
+    if not CID:
+        return JSONResponse({"error": "TS_CLIENT_ID not set"}, status_code=500)
+    import urllib.parse
+    params = urllib.parse.urlencode({
+        "response_type": "code",
+        "client_id": CID,
+        "redirect_uri": TS_REDIRECT_URI,
+        "audience": "https://api.tradestation.com",
+        "scope": TS_SCOPES,
+    })
+    url = f"{AUTH_DOMAIN}/authorize?{params}"
+    return RedirectResponse(url=url)
+
+@app.get("/api/ts/callback")
+def ts_callback(code: str = Query(None), error: str = Query(None)):
+    """OAuth callback — exchange code for tokens with Trade scope."""
+    global _access_token, _refresh_token, _access_exp_at
+    if error:
+        return HTMLResponse(f"<h2>OAuth Error</h2><p>{error}</p>", status_code=400)
+    if not code:
+        return HTMLResponse("<h2>Missing code parameter</h2>", status_code=400)
+    try:
+        r = requests.post(
+            f"{AUTH_DOMAIN}/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "client_id": CID,
+                "client_secret": SECRET,
+                "redirect_uri": TS_REDIRECT_URI,
+            },
+            timeout=15,
+        )
+        if r.status_code >= 400:
+            return HTMLResponse(f"<h2>Token exchange failed</h2><pre>{r.text[:500]}</pre>", status_code=400)
+        tok = r.json()
+        _access_token = tok["access_token"]
+        new_refresh = tok.get("refresh_token", "")
+        if new_refresh:
+            _refresh_token = new_refresh
+        _stamp_token(tok.get("expires_in", 900))
+        # Show the new refresh token so the user can update Railway env var
+        masked = new_refresh[:8] + "..." + new_refresh[-8:] if len(new_refresh) > 20 else new_refresh
+        scopes = tok.get("scope", "unknown")
+        html = f"""<html><body style="font-family:monospace;background:#0d1117;color:#e6edf3;padding:40px">
+        <h2 style="color:#22c55e">OAuth Success</h2>
+        <p><b>Scopes:</b> {scopes}</p>
+        <p><b>Token active in memory</b> — trading will work until next restart.</p>
+        <hr>
+        <p><b>To persist across restarts</b>, update the Railway env var:</p>
+        <pre style="background:#161b22;padding:12px;border-radius:6px;overflow-x:auto;user-select:all">{new_refresh}</pre>
+        <p style="color:#f59e0b">Copy the full token above and set it as <code>TS_REFRESH_TOKEN</code> on Railway.</p>
+        <p><a href="/dashboard" style="color:#3b82f6">Back to Dashboard</a></p>
+        </body></html>"""
+        print(f"[auth] OAuth re-auth success: scopes={scopes} refresh={masked}", flush=True)
+        send_telegram(f"🔑 <b>TS OAuth re-authorized</b>\nScopes: {scopes}")
+        return HTMLResponse(html)
+    except Exception as e:
+        return HTMLResponse(f"<h2>Error</h2><pre>{e}</pre>", status_code=500)
 
 # ====== SETUP DETECTOR ENDPOINTS ======
 
@@ -7326,6 +7495,35 @@ DASH_HTML_TEMPLATE = """
               <label style="font-size:11px">Cooldown (bars)
                 <input type="number" id="absCooldownBars" min="1" max="50" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
               </label>
+            </div>
+
+            <!-- Auto Trade Section -->
+            <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;margin-bottom:14px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <div style="font-weight:600;color:var(--muted);font-size:12px">ES Auto-Trade (SIM)</div>
+                <div id="autoTradeStatus" style="font-size:10px;padding:2px 8px;border-radius:4px;background:var(--surface);color:var(--muted)">Loading...</div>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px">
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
+                  <input type="checkbox" id="atGexLong" style="width:14px;height:14px"> GEX Long
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
+                  <input type="checkbox" id="atAgShort" style="width:14px;height:14px"> AG Short
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
+                  <input type="checkbox" id="atBofaScalp" style="width:14px;height:14px"> BofA Scalp
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
+                  <input type="checkbox" id="atAbsorption" style="width:14px;height:14px"> ES Absorption
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
+                  <input type="checkbox" id="atParadigm" style="width:14px;height:14px"> Paradigm
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
+                  <input type="checkbox" id="atDDExhaust" style="width:14px;height:14px"> DD Exhaust
+                </label>
+              </div>
+              <div id="autoTradeOrders" style="font-size:10px;color:var(--muted)"></div>
             </div>
 
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -10430,6 +10628,63 @@ DASH_HTML_TEMPLATE = """
         console.error('Failed to load setup settings', err);
       }
       loadSetupLog();
+      loadAutoTradeStatus();
+    }
+
+    // ====== Auto Trade Status ======
+    const _atToggleMap = {
+      'atGexLong': 'GEX Long', 'atAgShort': 'AG Short', 'atBofaScalp': 'BofA Scalp',
+      'atAbsorption': 'ES Absorption', 'atParadigm': 'Paradigm Reversal', 'atDDExhaust': 'DD Exhaustion',
+    };
+
+    async function loadAutoTradeStatus() {
+      try {
+        const r = await fetch('/api/auto-trade/status', { cache: 'no-store' });
+        const s = await r.json();
+        const badge = document.getElementById('autoTradeStatus');
+        if (s.enabled) {
+          badge.textContent = `ON | ${s.symbol} | ${s.active_count} active`;
+          badge.style.color = '#22c55e';
+        } else {
+          badge.textContent = 'DISABLED';
+          badge.style.color = '#ef4444';
+        }
+        const toggles = s.toggles || {};
+        for (const [elId, name] of Object.entries(_atToggleMap)) {
+          const el = document.getElementById(elId);
+          if (el) el.checked = !!toggles[name];
+        }
+        const ordersEl = document.getElementById('autoTradeOrders');
+        const orders = s.active_orders || {};
+        const keys = Object.keys(orders);
+        if (keys.length === 0) {
+          ordersEl.textContent = '';
+        } else {
+          ordersEl.innerHTML = keys.map(k => {
+            const o = orders[k];
+            const dir = o.direction?.toLowerCase().includes('long') ? 'LONG' : 'SHORT';
+            const fill = o.fill_price ? `@ ${o.fill_price}` : 'pending';
+            return `<div>${o.setup_name} ${dir} ${fill} | stop: ${o.current_stop}${o.current_target ? ' | tgt: '+o.current_target : ''}</div>`;
+          }).join('');
+        }
+      } catch (err) {
+        console.error('Failed to load auto-trade status', err);
+      }
+    }
+
+    async function toggleAutoTrade(setupName, enabled) {
+      try {
+        const params = new URLSearchParams({ setup_name: setupName, enabled });
+        await fetch('/api/auto-trade/toggle?' + params, { method: 'POST' });
+      } catch (err) {
+        console.error('Auto-trade toggle error', err);
+      }
+    }
+
+    for (const [elId, name] of Object.entries(_atToggleMap)) {
+      document.getElementById(elId)?.addEventListener('change', (e) => {
+        toggleAutoTrade(name, e.target.checked);
+      });
     }
 
     async function saveSetupSettings() {

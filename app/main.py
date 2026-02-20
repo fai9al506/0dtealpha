@@ -4104,6 +4104,15 @@ def api_auto_trade_toggle(setup_name: str = Query(...), enabled: bool = Query(..
     except Exception as e:
         return {"error": str(e)}
 
+@app.post("/api/auto-trade/test")
+def api_auto_trade_test():
+    """Place a test 1 MES order to diagnose SIM API issues."""
+    try:
+        from app import auto_trader
+        return auto_trader.test_order()
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/api/snapshot")
 def snapshot():
     with _df_lock:

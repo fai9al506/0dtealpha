@@ -665,6 +665,74 @@ def get_status() -> dict:
     }
 
 
+def test_order() -> dict:
+    """Place a tiny test order to diagnose SIM API issues. Returns full response."""
+    if not _get_token:
+        return {"error": "no token function"}
+
+    token = _get_token()
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    results = {}
+
+    # 1. List accounts (on LIVE API — SIM doesn't have this)
+    try:
+        r = requests.get("https://api.tradestation.com/v3/brokerage/accounts",
+                         headers=headers, timeout=10)
+        results["accounts"] = r.json() if r.status_code == 200 else {"status": r.status_code, "body": r.text[:300]}
+    except Exception as e:
+        results["accounts"] = {"error": str(e)}
+
+    # 2. Place 1 MES Buy Market on SIM
+    payload = {
+        "AccountID": SIM_ACCOUNT_ID,
+        "Symbol": MES_SYMBOL,
+        "Quantity": "1",
+        "OrderType": "Market",
+        "TradeAction": "Buy",
+        "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+    try:
+        r = requests.post(f"{SIM_BASE}/orderexecution/orders",
+                          headers=headers, json=payload, timeout=10)
+        results["place_order"] = {"status": r.status_code, "body": r.json() if r.text else {}}
+        results["payload"] = payload
+
+        # 3. If order placed, wait and check status
+        if r.status_code == 200:
+            order_id = None
+            orders = r.json().get("Orders", [])
+            if orders:
+                order_id = orders[0].get("OrderID")
+            if order_id:
+                import time as _time
+                _time.sleep(3)
+                # Check order status on SIM
+                sr = requests.get(
+                    f"{SIM_BASE}/brokerage/accounts/{SIM_ACCOUNT_ID}/orders",
+                    headers=headers, timeout=10)
+                if sr.status_code == 200:
+                    all_orders = sr.json().get("Orders", [])
+                    for o in all_orders:
+                        if o.get("OrderID") == order_id:
+                            results["order_status"] = o
+                            break
+                    else:
+                        results["order_status"] = {"note": f"order {order_id} not found in {len(all_orders)} orders"}
+                else:
+                    results["order_status"] = {"status": sr.status_code, "body": sr.text[:300]}
+                # Cancel if still open
+                try:
+                    requests.delete(f"{SIM_BASE}/orderexecution/orders/{order_id}",
+                                    headers=headers, timeout=5)
+                except Exception:
+                    pass
+    except Exception as e:
+        results["place_order"] = {"error": str(e)}
+
+    return results
+
+
 def set_toggle(setup_name: str, enabled: bool) -> bool:
     """Toggle a specific setup on/off. Returns True if valid setup name."""
     if setup_name not in _toggles:

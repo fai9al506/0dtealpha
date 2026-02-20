@@ -233,42 +233,42 @@ def _place_split_target(setup_log_id, setup_name, direction, is_long,
     if is_trail_only_t2:
         t2_price = None
 
-    # 1. Market entry (10 MES)
-    entry_payload = {
-        "AccountID": SIM_ACCOUNT_ID,
-        "Symbol": MES_SYMBOL,
-        "Quantity": str(TOTAL_QTY),
-        "OrderType": "Market",
-        "TradeAction": side,
-        "TimeInForce": {"Duration": "DAY"},
-        "Route": "Intelligent",
+    # 1. Entry + Stop as bracket (qualifies for intraday margin with stop attached)
+    # TS bracket: all legs same TradeAction, system handles exit direction
+    bracket_payload = {
+        "Type": "BRK",
+        "Orders": [
+            {
+                "AccountID": SIM_ACCOUNT_ID,
+                "Symbol": MES_SYMBOL,
+                "Quantity": str(TOTAL_QTY),
+                "OrderType": "Market",
+                "TradeAction": side,
+                "TimeInForce": {"Duration": "DAY"},
+                "Route": "Intelligent",
+            },
+            {
+                "AccountID": SIM_ACCOUNT_ID,
+                "Symbol": MES_SYMBOL,
+                "Quantity": str(TOTAL_QTY),
+                "OrderType": "StopMarket",
+                "StopPrice": str(es_stop),
+                "TradeAction": side,
+                "TimeInForce": {"Duration": "DAY"},
+                "Route": "Intelligent",
+            },
+        ],
     }
 
-    resp = _sim_api("POST", "/orderexecution/orders", entry_payload)
+    resp = _sim_api("POST", "/orderexecution/ordergroups", bracket_payload)
     if not resp:
-        _alert(f"[AUTO-TRADE] FAILED entry for {setup_name}\n"
+        _alert(f"[AUTO-TRADE] FAILED entry+stop for {setup_name}\n"
                f"Side: {side} 10 {MES_SYMBOL} @ {es_price:.2f}")
         return
 
     orders = resp.get("Orders", [])
-    entry_oid = orders[0].get("OrderID") if orders else None
-
-    # 2. Stop order (10 MES — covers full position)
-    stop_payload = {
-        "AccountID": SIM_ACCOUNT_ID,
-        "Symbol": MES_SYMBOL,
-        "Quantity": str(TOTAL_QTY),
-        "OrderType": "StopMarket",
-        "StopPrice": str(es_stop),
-        "TradeAction": exit_side,
-        "TimeInForce": {"Duration": "DAY"},
-        "Route": "Intelligent",
-    }
-    stop_resp = _sim_api("POST", "/orderexecution/orders", stop_payload)
-    stop_oid = None
-    if stop_resp:
-        so = stop_resp.get("Orders", [])
-        stop_oid = so[0].get("OrderID") if so else None
+    entry_oid = orders[0].get("OrderID") if len(orders) > 0 else None
+    stop_oid = orders[1].get("OrderID") if len(orders) > 1 else None
 
     if not stop_oid:
         _alert(f"[AUTO-TRADE] MANUAL INTERVENTION: {setup_name} entry placed "
@@ -682,18 +682,33 @@ def test_order() -> dict:
     except Exception as e:
         results["accounts"] = {"error": str(e)}
 
-    # 2. Place 1 MES Buy Market on SIM
+    # 2. Place 1 MES Buy bracket (entry+stop) on SIM — tests intraday margin
     payload = {
-        "AccountID": SIM_ACCOUNT_ID,
-        "Symbol": MES_SYMBOL,
-        "Quantity": "1",
-        "OrderType": "Market",
-        "TradeAction": "Buy",
-        "TimeInForce": {"Duration": "DAY"},
-        "Route": "Intelligent",
+        "Type": "BRK",
+        "Orders": [
+            {
+                "AccountID": SIM_ACCOUNT_ID,
+                "Symbol": MES_SYMBOL,
+                "Quantity": "1",
+                "OrderType": "Market",
+                "TradeAction": "Buy",
+                "TimeInForce": {"Duration": "DAY"},
+                "Route": "Intelligent",
+            },
+            {
+                "AccountID": SIM_ACCOUNT_ID,
+                "Symbol": MES_SYMBOL,
+                "Quantity": "1",
+                "OrderType": "StopMarket",
+                "StopPrice": "6880.00",
+                "TradeAction": "Buy",
+                "TimeInForce": {"Duration": "DAY"},
+                "Route": "Intelligent",
+            },
+        ],
     }
     try:
-        r = requests.post(f"{SIM_BASE}/orderexecution/orders",
+        r = requests.post(f"{SIM_BASE}/orderexecution/ordergroups",
                           headers=headers, json=payload, timeout=10)
         results["place_order"] = {"status": r.status_code, "body": r.json() if r.text else {}}
         results["payload"] = payload

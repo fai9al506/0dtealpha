@@ -639,16 +639,23 @@ def _adjust_stop_qty(lid, order):
 
 def _extract_fill_price(entry_order: dict) -> float | None:
     """Extract fill price from a broker order response."""
+    # Try FilledPrice first (top-level, most reliable)
+    try:
+        fp = float(entry_order.get("FilledPrice", 0))
+        if fp > 0:
+            return fp
+    except (ValueError, TypeError):
+        pass
+    # Fallback: Legs[0].ExecPrice
     fills = entry_order.get("Legs", [{}])
     if fills:
         try:
-            return float(fills[0].get("ExecPrice", 0))
+            ep = float(fills[0].get("ExecPrice", 0))
+            if ep > 0:
+                return ep
         except (ValueError, TypeError):
             pass
-    try:
-        return float(entry_order.get("FilledPrice", 0))
-    except (ValueError, TypeError):
-        return None
+    return None
 
 
 # ====== STATUS & TOGGLES ======

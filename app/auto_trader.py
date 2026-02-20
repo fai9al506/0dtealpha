@@ -1,6 +1,10 @@
-# Auto-Trader: ES Futures SIM execution module
+# Auto-Trader: MES Futures SIM execution module
 # Self-contained — receives engine, token fn, and telegram fn via init()
 # Hardcoded to SIM API — cannot hit live.
+#
+# 10 MES contracts with split-target exits:
+#   Flow A (BofA/Absorption/Paradigm): 10 MES, single limit @ +10pts
+#   Flow B (GEX/AG/DD): 5 MES T1 @ +10pts, 5 MES T2 @ full target (DD: trail-only, no T2 limit)
 
 import os, json, time, requests
 from datetime import datetime
@@ -9,9 +13,13 @@ from threading import Lock
 # ====== CONFIG ======
 SIM_BASE = "https://sim-api.tradestation.com/v3"
 SIM_ACCOUNT_ID = "SIM2609239F"
-QUANTITY = "1"
-ES_SYMBOL = os.getenv("ES_TRADE_SYMBOL", "@ES")
+MES_SYMBOL = os.getenv("ES_TRADE_SYMBOL", "@MES")
 AUTO_TRADE_ENABLED = os.getenv("AUTO_TRADE_ENABLED", "false").lower() == "true"
+
+TOTAL_QTY = 10
+T1_QTY = 5
+T2_QTY = 5
+FIRST_TARGET_PTS = 10.0  # T1 target for all setups
 
 # ====== STATE ======
 _engine = None
@@ -30,9 +38,9 @@ _toggles: dict[str, bool] = {
     "DD Exhaustion": False,
 }
 
-# Setup → order strategy mapping
-_BRACKET_SETUPS = {"BofA Scalp", "ES Absorption", "Paradigm Reversal"}
-_TRAILING_SETUPS = {"GEX Long", "AG Short", "DD Exhaustion"}
+# Setup → order flow mapping
+_SINGLE_TARGET_SETUPS = {"BofA Scalp", "ES Absorption", "Paradigm Reversal"}
+_SPLIT_TARGET_SETUPS = {"GEX Long", "AG Short", "DD Exhaustion"}
 
 
 def init(engine, get_token_fn, send_telegram_fn):
@@ -43,7 +51,7 @@ def init(engine, get_token_fn, send_telegram_fn):
     _send_telegram = send_telegram_fn
     _load_active_orders()
     n = len(_active_orders)
-    print(f"[auto-trader] init: enabled={AUTO_TRADE_ENABLED} symbol={ES_SYMBOL} "
+    print(f"[auto-trader] init: enabled={AUTO_TRADE_ENABLED} symbol={MES_SYMBOL} "
           f"active_orders={n}", flush=True)
     for name, on in _toggles.items():
         if on:
@@ -53,16 +61,18 @@ def init(engine, get_token_fn, send_telegram_fn):
 # ====== MAIN ENTRY POINT ======
 
 def place_trade(setup_log_id: int, setup_name: str, direction: str,
-                es_price: float, target_pts: float | None, stop_pts: float):
-    """Place an ES SIM trade when a setup fires.
+                es_price: float, target_pts: float | None, stop_pts: float,
+                full_target_pts: float | None = None):
+    """Place MES SIM trade when a setup fires.
 
     Args:
         setup_log_id: DB id from setup_log table
         setup_name: e.g. "BofA Scalp", "GEX Long"
         direction: "Long"/"Bullish" or "Short"/"Bearish"
-        es_price: current ES price from quote stream
-        target_pts: distance in points to target (None for trailing setups)
+        es_price: current ES/MES price from quote stream
+        target_pts: distance in points to first target (None for trailing setups)
         stop_pts: distance in points to stop
+        full_target_pts: distance to Volland full target for T2. None = same as target_pts.
     """
     if not AUTO_TRADE_ENABLED:
         return
@@ -79,38 +89,42 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
 
     is_long = direction.lower() in ("long", "bullish")
 
-    # Calculate ES target/stop prices from point distances
-    if is_long:
-        es_stop = round(es_price - stop_pts, 2)
-        es_target = round(es_price + target_pts, 2) if target_pts else None
+    # Determine order flow
+    if setup_name in _SINGLE_TARGET_SETUPS:
+        # Flow A: single target, all 10 contracts
+        _place_single_target(setup_log_id, setup_name, direction, is_long,
+                             es_price, stop_pts)
     else:
-        es_stop = round(es_price + stop_pts, 2)
-        es_target = round(es_price - target_pts, 2) if target_pts else None
-
-    side = "Buy" if is_long else "SellShort"
-
-    if setup_name in _BRACKET_SETUPS and es_target is not None:
-        _place_bracket_order(setup_log_id, setup_name, side, es_price,
-                             es_target, es_stop, direction)
-    else:
-        _place_entry_with_stop(setup_log_id, setup_name, side, es_price,
-                               es_stop, direction)
+        # Flow B: split target (T1 @ +10, T2 @ full target or trail-only)
+        _place_split_target(setup_log_id, setup_name, direction, is_long,
+                            es_price, stop_pts, full_target_pts)
 
 
 # ====== ORDER PLACEMENT ======
 
-def _place_bracket_order(setup_log_id, setup_name, side, es_price,
-                         es_target, es_stop, direction):
-    """Place bracket order (market entry + stop + limit target) as a group."""
-    exit_side = "Sell" if side == "Buy" else "BuyToCover"
+def _place_single_target(setup_log_id, setup_name, direction, is_long,
+                          es_price, stop_pts):
+    """Flow A: 10 MES with single limit target @ +10pts + stop."""
+    side = "Buy" if is_long else "SellShort"
+    exit_side = "Sell" if is_long else "BuyToCover"
 
+    if is_long:
+        es_stop = round(es_price - stop_pts, 2)
+        es_target = round(es_price + FIRST_TARGET_PTS, 2)
+    else:
+        es_stop = round(es_price + stop_pts, 2)
+        es_target = round(es_price - FIRST_TARGET_PTS, 2)
+
+    qty = str(TOTAL_QTY)
+
+    # Place as bracket order group
     payload = {
         "Type": "BRK",
         "Orders": [
             {
                 "AccountID": SIM_ACCOUNT_ID,
-                "Symbol": ES_SYMBOL,
-                "Quantity": QUANTITY,
+                "Symbol": MES_SYMBOL,
+                "Quantity": qty,
                 "OrderType": "Market",
                 "TradeAction": side,
                 "TimeInForce": {"Duration": "DAY"},
@@ -118,8 +132,8 @@ def _place_bracket_order(setup_log_id, setup_name, side, es_price,
             },
             {
                 "AccountID": SIM_ACCOUNT_ID,
-                "Symbol": ES_SYMBOL,
-                "Quantity": QUANTITY,
+                "Symbol": MES_SYMBOL,
+                "Quantity": qty,
                 "OrderType": "StopMarket",
                 "StopPrice": str(es_stop),
                 "TradeAction": exit_side,
@@ -128,8 +142,8 @@ def _place_bracket_order(setup_log_id, setup_name, side, es_price,
             },
             {
                 "AccountID": SIM_ACCOUNT_ID,
-                "Symbol": ES_SYMBOL,
-                "Quantity": QUANTITY,
+                "Symbol": MES_SYMBOL,
+                "Quantity": qty,
                 "OrderType": "Limit",
                 "LimitPrice": str(es_target),
                 "TradeAction": exit_side,
@@ -141,26 +155,32 @@ def _place_bracket_order(setup_log_id, setup_name, side, es_price,
 
     resp = _sim_api("POST", "/ordergroups", payload)
     if not resp:
-        _alert(f"[AUTO-TRADE] FAILED to place bracket for {setup_name}\n"
-               f"Side: {side} ES: {es_price:.2f}")
+        _alert(f"[AUTO-TRADE] FAILED bracket for {setup_name}\n"
+               f"Side: {side} MES: {es_price:.2f}")
         return
 
-    # Extract order IDs from response
     orders = resp.get("Orders", [])
     entry_oid = orders[0].get("OrderID") if len(orders) > 0 else None
     stop_oid = orders[1].get("OrderID") if len(orders) > 1 else None
-    target_oid = orders[2].get("OrderID") if len(orders) > 2 else None
+    t1_oid = orders[2].get("OrderID") if len(orders) > 2 else None
 
     order = {
         "setup_log_id": setup_log_id,
         "setup_name": setup_name,
         "direction": direction,
         "entry_order_id": entry_oid,
+        "t1_order_id": t1_oid,
+        "t2_order_id": None,
         "stop_order_id": stop_oid,
-        "target_order_id": target_oid,
+        "stop_qty": TOTAL_QTY,
+        "t1_qty": TOTAL_QTY,
+        "t2_qty": 0,
         "current_stop": es_stop,
-        "current_target": es_target,
+        "first_target_price": es_target,
+        "full_target_price": None,
         "status": "pending_entry",
+        "t1_filled": False,
+        "t2_filled": False,
         "fill_price": None,
         "ts_placed": datetime.utcnow().isoformat(),
     }
@@ -169,22 +189,39 @@ def _place_bracket_order(setup_log_id, setup_name, side, es_price,
         _active_orders[setup_log_id] = order
     _persist_order(setup_log_id)
 
-    print(f"[auto-trader] BRACKET placed: {setup_name} {side} "
-          f"ES={es_price:.2f} target={es_target:.2f} stop={es_stop:.2f} "
-          f"ids={entry_oid}/{stop_oid}/{target_oid}", flush=True)
+    print(f"[auto-trader] BRACKET placed: {setup_name} {side} 10 {MES_SYMBOL} "
+          f"@ {es_price:.2f} target={es_target:.2f} stop={es_stop:.2f} "
+          f"ids={entry_oid}/{stop_oid}/{t1_oid}", flush=True)
     _alert(f"[AUTO-TRADE] {setup_name} BRACKET placed\n"
-           f"Side: {side} | ES: {es_price:.2f}\n"
+           f"Side: {side} | 10 {MES_SYMBOL} @ {es_price:.2f}\n"
            f"Target: {es_target:.2f} | Stop: {es_stop:.2f}")
 
 
-def _place_entry_with_stop(setup_log_id, setup_name, side, es_price,
-                            es_stop, direction):
-    """Place market entry + separate stop order (for trailing setups)."""
-    # 1. Market entry
+def _place_split_target(setup_log_id, setup_name, direction, is_long,
+                         es_price, stop_pts, full_target_pts):
+    """Flow B: 10 MES entry, T1=5@+10pts, T2=5@full_target (or trail-only for DD)."""
+    side = "Buy" if is_long else "SellShort"
+    exit_side = "Sell" if is_long else "BuyToCover"
+
+    if is_long:
+        es_stop = round(es_price - stop_pts, 2)
+        t1_price = round(es_price + FIRST_TARGET_PTS, 2)
+        t2_price = round(es_price + full_target_pts, 2) if full_target_pts else None
+    else:
+        es_stop = round(es_price + stop_pts, 2)
+        t1_price = round(es_price - FIRST_TARGET_PTS, 2)
+        t2_price = round(es_price - full_target_pts, 2) if full_target_pts else None
+
+    # DD Exhaustion: trail-only T2 (no limit order)
+    is_trail_only_t2 = (setup_name == "DD Exhaustion")
+    if is_trail_only_t2:
+        t2_price = None
+
+    # 1. Market entry (10 MES)
     entry_payload = {
         "AccountID": SIM_ACCOUNT_ID,
-        "Symbol": ES_SYMBOL,
-        "Quantity": QUANTITY,
+        "Symbol": MES_SYMBOL,
+        "Quantity": str(TOTAL_QTY),
         "OrderType": "Market",
         "TradeAction": side,
         "TimeInForce": {"Duration": "DAY"},
@@ -194,46 +231,86 @@ def _place_entry_with_stop(setup_log_id, setup_name, side, es_price,
     resp = _sim_api("POST", "/orders", entry_payload)
     if not resp:
         _alert(f"[AUTO-TRADE] FAILED entry for {setup_name}\n"
-               f"Side: {side} ES: {es_price:.2f}")
+               f"Side: {side} 10 {MES_SYMBOL} @ {es_price:.2f}")
         return
 
     orders = resp.get("Orders", [])
     entry_oid = orders[0].get("OrderID") if orders else None
 
-    # 2. Stop order
-    exit_side = "Sell" if side == "Buy" else "BuyToCover"
+    # 2. Stop order (10 MES — covers full position)
     stop_payload = {
         "AccountID": SIM_ACCOUNT_ID,
-        "Symbol": ES_SYMBOL,
-        "Quantity": QUANTITY,
+        "Symbol": MES_SYMBOL,
+        "Quantity": str(TOTAL_QTY),
         "OrderType": "StopMarket",
         "StopPrice": str(es_stop),
         "TradeAction": exit_side,
         "TimeInForce": {"Duration": "DAY"},
         "Route": "Intelligent",
     }
-
     stop_resp = _sim_api("POST", "/orders", stop_payload)
     stop_oid = None
     if stop_resp:
-        stop_orders = stop_resp.get("Orders", [])
-        stop_oid = stop_orders[0].get("OrderID") if stop_orders else None
+        so = stop_resp.get("Orders", [])
+        stop_oid = so[0].get("OrderID") if so else None
 
     if not stop_oid:
         _alert(f"[AUTO-TRADE] MANUAL INTERVENTION: {setup_name} entry placed "
                f"(id={entry_oid}) but STOP FAILED!\n"
-               f"Side: {side} ES: {es_price:.2f} Stop: {es_stop:.2f}")
+               f"Side: {side} MES: {es_price:.2f} Stop: {es_stop:.2f}")
+
+    # 3. T1 limit order (5 MES @ +10pts)
+    t1_payload = {
+        "AccountID": SIM_ACCOUNT_ID,
+        "Symbol": MES_SYMBOL,
+        "Quantity": str(T1_QTY),
+        "OrderType": "Limit",
+        "LimitPrice": str(t1_price),
+        "TradeAction": exit_side,
+        "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+    t1_resp = _sim_api("POST", "/orders", t1_payload)
+    t1_oid = None
+    if t1_resp:
+        t1o = t1_resp.get("Orders", [])
+        t1_oid = t1o[0].get("OrderID") if t1o else None
+
+    # 4. T2 limit order (5 MES @ full target — skip for DD trail-only)
+    t2_oid = None
+    if t2_price is not None:
+        t2_payload = {
+            "AccountID": SIM_ACCOUNT_ID,
+            "Symbol": MES_SYMBOL,
+            "Quantity": str(T2_QTY),
+            "OrderType": "Limit",
+            "LimitPrice": str(t2_price),
+            "TradeAction": exit_side,
+            "TimeInForce": {"Duration": "DAY"},
+            "Route": "Intelligent",
+        }
+        t2_resp = _sim_api("POST", "/orders", t2_payload)
+        if t2_resp:
+            t2o = t2_resp.get("Orders", [])
+            t2_oid = t2o[0].get("OrderID") if t2o else None
 
     order = {
         "setup_log_id": setup_log_id,
         "setup_name": setup_name,
         "direction": direction,
         "entry_order_id": entry_oid,
+        "t1_order_id": t1_oid,
+        "t2_order_id": t2_oid,
         "stop_order_id": stop_oid,
-        "target_order_id": None,
+        "stop_qty": TOTAL_QTY,
+        "t1_qty": T1_QTY,
+        "t2_qty": T2_QTY,
         "current_stop": es_stop,
-        "current_target": None,
+        "first_target_price": t1_price,
+        "full_target_price": t2_price,
         "status": "pending_entry",
+        "t1_filled": False,
+        "t2_filled": False,
         "fill_price": None,
         "ts_placed": datetime.utcnow().isoformat(),
     }
@@ -242,11 +319,13 @@ def _place_entry_with_stop(setup_log_id, setup_name, side, es_price,
         _active_orders[setup_log_id] = order
     _persist_order(setup_log_id)
 
-    print(f"[auto-trader] ENTRY+STOP placed: {setup_name} {side} "
-          f"ES={es_price:.2f} stop={es_stop:.2f} "
-          f"ids={entry_oid}/{stop_oid}", flush=True)
-    _alert(f"[AUTO-TRADE] {setup_name} ENTRY placed\n"
-           f"Side: {side} | ES: {es_price:.2f}\n"
+    t2_str = f"T2={t2_price:.2f}" if t2_price else "T2=trail"
+    print(f"[auto-trader] SPLIT placed: {setup_name} {side} 10 {MES_SYMBOL} "
+          f"@ {es_price:.2f} T1={t1_price:.2f} {t2_str} stop={es_stop:.2f} "
+          f"ids=entry:{entry_oid}/stop:{stop_oid}/t1:{t1_oid}/t2:{t2_oid}", flush=True)
+    _alert(f"[AUTO-TRADE] {setup_name} SPLIT placed\n"
+           f"Side: {side} | 10 {MES_SYMBOL} @ {es_price:.2f}\n"
+           f"T1: 5 @ {t1_price:.2f} | {t2_str}\n"
            f"Stop: {es_stop:.2f}")
 
 
@@ -261,21 +340,22 @@ def update_stop(setup_log_id: int, new_stop_price: float):
         if order["status"] != "filled":
             return
         old_stop = order["current_stop"]
-        # Skip trivial changes (< 0.25 pts = 1 ES tick)
+        # Skip trivial changes (< 0.25 pts = 1 MES tick)
         if abs(new_stop_price - old_stop) < 0.25:
             return
         stop_oid = order["stop_order_id"]
+        stop_qty = order["stop_qty"]
 
-    if not stop_oid:
+    if not stop_oid or stop_qty <= 0:
         return
 
     new_stop_price = round(new_stop_price, 2)
 
-    # Replace the stop order via PUT
+    # Replace the stop order via PUT (with current remaining qty)
     replace_payload = {
         "AccountID": SIM_ACCOUNT_ID,
-        "Symbol": ES_SYMBOL,
-        "Quantity": QUANTITY,
+        "Symbol": MES_SYMBOL,
+        "Quantity": str(stop_qty),
         "OrderType": "StopMarket",
         "StopPrice": str(new_stop_price),
         "TimeInForce": {"Duration": "DAY"},
@@ -286,13 +366,12 @@ def update_stop(setup_log_id: int, new_stop_price: float):
     if resp:
         with _lock:
             order["current_stop"] = new_stop_price
-            # Update stop_order_id if replaced order gets new ID
             new_orders = resp.get("Orders", [])
             if new_orders and new_orders[0].get("OrderID"):
                 order["stop_order_id"] = new_orders[0]["OrderID"]
         _persist_order(setup_log_id)
         print(f"[auto-trader] stop updated: id={setup_log_id} "
-              f"{old_stop:.2f} -> {new_stop_price:.2f}", flush=True)
+              f"{old_stop:.2f} -> {new_stop_price:.2f} qty={stop_qty}", flush=True)
     else:
         _alert(f"[AUTO-TRADE] MANUAL INTERVENTION: stop update FAILED\n"
                f"id={setup_log_id} old={old_stop:.2f} new={new_stop_price:.2f}")
@@ -310,7 +389,7 @@ def close_trade(setup_log_id: int, result_type: str):
     setup_name = order["setup_name"]
 
     if result_type == "EXPIRED":
-        # Flatten position + cancel pending orders
+        # Flatten remaining position + cancel pending orders
         _flatten_position(order)
     # For WIN/LOSS on bracket orders, the broker auto-handles the fill
     # We just update state
@@ -323,22 +402,25 @@ def close_trade(setup_log_id: int, result_type: str):
 
 
 def _flatten_position(order):
-    """Market close + cancel all pending orders for a trade."""
+    """Market close remaining contracts + cancel all pending orders."""
     is_long = order["direction"].lower() in ("long", "bullish")
     close_side = "Sell" if is_long else "BuyToCover"
 
-    # Cancel pending stop/target orders
-    for oid_key in ("stop_order_id", "target_order_id"):
+    # Cancel pending stop/t1/t2 orders
+    for oid_key in ("stop_order_id", "t1_order_id", "t2_order_id"):
         oid = order.get(oid_key)
         if oid:
             _sim_api("DELETE", f"/orders/{oid}", None)
 
-    # Market close
+    # Market close remaining contracts
     if order["status"] == "filled":
+        remaining = order.get("stop_qty", 0)
+        if remaining <= 0:
+            return
         close_payload = {
             "AccountID": SIM_ACCOUNT_ID,
-            "Symbol": ES_SYMBOL,
-            "Quantity": QUANTITY,
+            "Symbol": MES_SYMBOL,
+            "Quantity": str(remaining),
             "OrderType": "Market",
             "TradeAction": close_side,
             "TimeInForce": {"Duration": "DAY"},
@@ -346,10 +428,11 @@ def _flatten_position(order):
         }
         resp = _sim_api("POST", "/orders", close_payload)
         if resp:
-            print(f"[auto-trader] flattened: {order['setup_name']}", flush=True)
+            print(f"[auto-trader] flattened: {order['setup_name']} "
+                  f"qty={remaining}", flush=True)
         else:
             _alert(f"[AUTO-TRADE] MANUAL INTERVENTION: flatten FAILED\n"
-                   f"{order['setup_name']} id={order['setup_log_id']}")
+                   f"{order['setup_name']} id={order['setup_log_id']} qty={remaining}")
 
 
 # ====== POLL ORDER STATUS ======
@@ -395,52 +478,146 @@ def _check_order_fills(lid, order, broker_orders):
         entry = broker_orders.get(order["entry_order_id"], {})
         entry_status = entry.get("Status", "")
         if entry_status == "FLL":  # Filled
-            fill_price = None
-            fills = entry.get("Legs", [{}])
-            if fills:
-                try:
-                    fill_price = float(fills[0].get("ExecPrice", 0))
-                except (ValueError, TypeError):
-                    pass
-            if not fill_price:
-                try:
-                    fill_price = float(entry.get("FilledPrice", 0))
-                except (ValueError, TypeError):
-                    pass
+            fill_price = _extract_fill_price(entry)
             with _lock:
                 order["status"] = "filled"
                 order["fill_price"] = fill_price
             changed = True
             print(f"[auto-trader] FILLED: {order['setup_name']} "
-                  f"@ {fill_price}", flush=True)
-            _alert(f"[AUTO-TRADE] {order['setup_name']} FILLED @ {fill_price}\n"
-                   f"Stop: {order['current_stop']:.2f}"
-                   + (f" | Target: {order['current_target']:.2f}"
-                      if order.get('current_target') else ""))
-        elif entry_status in ("REJ", "CAN", "EXP"):  # Rejected/Cancelled/Expired
+                  f"10 {MES_SYMBOL} @ {fill_price}", flush=True)
+
+            t2_str = ""
+            if order.get("full_target_price"):
+                t2_str = f" | T2: {order['full_target_price']:.2f}"
+            elif order.get("t2_qty", 0) > 0:
+                t2_str = " | T2: trail"
+
+            _alert(f"[AUTO-TRADE] {order['setup_name']} FILLED\n"
+                   f"10 {MES_SYMBOL} @ {fill_price}\n"
+                   f"T1: {order.get('first_target_price', 0):.2f}"
+                   f"{t2_str}\n"
+                   f"Stop: {order['current_stop']:.2f}")
+        elif entry_status in ("REJ", "CAN", "EXP"):
             with _lock:
                 order["status"] = "closed"
             changed = True
             print(f"[auto-trader] entry {entry_status}: {order['setup_name']}", flush=True)
 
-    # Check stop/target fills (for filled orders)
+    # Check T1/T2/stop fills (for filled orders)
     if order["status"] == "filled":
-        for oid_key in ("stop_order_id", "target_order_id"):
-            oid = order.get(oid_key)
-            if not oid:
-                continue
-            exit_order = broker_orders.get(oid, {})
-            exit_status = exit_order.get("Status", "")
-            if exit_status == "FLL":
+        # Check T1 fill
+        if not order.get("t1_filled") and order.get("t1_order_id"):
+            t1 = broker_orders.get(order["t1_order_id"], {})
+            if t1.get("Status") == "FLL":
+                t1_qty = order.get("t1_qty", T1_QTY)
+                with _lock:
+                    order["t1_filled"] = True
+                    order["stop_qty"] -= t1_qty
+                changed = True
+                print(f"[auto-trader] T1 filled: {order['setup_name']} "
+                      f"qty={t1_qty} stop_qty={order['stop_qty']}", flush=True)
+                _alert(f"[AUTO-TRADE] {order['setup_name']} T1 FILLED\n"
+                       f"{t1_qty} {MES_SYMBOL} @ {order.get('first_target_price', 0):.2f}\n"
+                       f"Remaining: {order['stop_qty']} contracts")
+                # Reduce stop qty or close if all filled
+                _adjust_stop_qty(lid, order)
+
+        # Check T2 fill
+        if not order.get("t2_filled") and order.get("t2_order_id"):
+            t2 = broker_orders.get(order["t2_order_id"], {})
+            if t2.get("Status") == "FLL":
+                t2_qty = order.get("t2_qty", T2_QTY)
+                with _lock:
+                    order["t2_filled"] = True
+                    order["stop_qty"] -= t2_qty
+                changed = True
+                print(f"[auto-trader] T2 filled: {order['setup_name']} "
+                      f"qty={t2_qty} stop_qty={order['stop_qty']}", flush=True)
+                _alert(f"[AUTO-TRADE] {order['setup_name']} T2 FILLED\n"
+                       f"{t2_qty} {MES_SYMBOL} @ {order.get('full_target_price', 0):.2f}\n"
+                       f"Remaining: {order['stop_qty']} contracts")
+                _adjust_stop_qty(lid, order)
+
+        # Check stop fill (closes remaining position)
+        if order.get("stop_order_id"):
+            stop_order = broker_orders.get(order["stop_order_id"], {})
+            if stop_order.get("Status") == "FLL":
                 with _lock:
                     order["status"] = "closed"
+                    order["stop_qty"] = 0
                 changed = True
-                label = "STOP" if oid_key == "stop_order_id" else "TARGET"
-                print(f"[auto-trader] {label} filled: {order['setup_name']}", flush=True)
-                break
+                print(f"[auto-trader] STOP filled: {order['setup_name']}", flush=True)
+                # Cancel remaining limit orders
+                for oid_key in ("t1_order_id", "t2_order_id"):
+                    oid = order.get(oid_key)
+                    filled_key = oid_key.replace("_order_id", "_filled")
+                    if oid and not order.get(filled_key):
+                        _sim_api("DELETE", f"/orders/{oid}", None)
+
+        # All targets filled and no remaining position → close
+        if order["stop_qty"] <= 0 and order["status"] == "filled":
+            with _lock:
+                order["status"] = "closed"
+            # Cancel the stop if still open
+            if order.get("stop_order_id"):
+                _sim_api("DELETE", f"/orders/{order['stop_order_id']}", None)
+            changed = True
+            print(f"[auto-trader] all targets filled: {order['setup_name']}", flush=True)
 
     if changed:
         _persist_order(lid)
+
+
+def _adjust_stop_qty(lid, order):
+    """After a partial fill (T1 or T2), adjust the stop order quantity."""
+    stop_oid = order.get("stop_order_id")
+    new_qty = order["stop_qty"]
+
+    if new_qty <= 0:
+        # All contracts covered by targets — cancel stop
+        if stop_oid:
+            _sim_api("DELETE", f"/orders/{stop_oid}", None)
+        return
+
+    if not stop_oid:
+        return
+
+    # Replace stop with reduced quantity
+    replace_payload = {
+        "AccountID": SIM_ACCOUNT_ID,
+        "Symbol": MES_SYMBOL,
+        "Quantity": str(new_qty),
+        "OrderType": "StopMarket",
+        "StopPrice": str(order["current_stop"]),
+        "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+
+    resp = _sim_api("PUT", f"/orders/{stop_oid}", replace_payload)
+    if resp:
+        new_orders = resp.get("Orders", [])
+        if new_orders and new_orders[0].get("OrderID"):
+            with _lock:
+                order["stop_order_id"] = new_orders[0]["OrderID"]
+        _persist_order(lid)
+        print(f"[auto-trader] stop qty adjusted: id={lid} qty={new_qty}", flush=True)
+    else:
+        _alert(f"[AUTO-TRADE] MANUAL INTERVENTION: stop qty adjust FAILED\n"
+               f"id={lid} target_qty={new_qty}")
+
+
+def _extract_fill_price(entry_order: dict) -> float | None:
+    """Extract fill price from a broker order response."""
+    fills = entry_order.get("Legs", [{}])
+    if fills:
+        try:
+            return float(fills[0].get("ExecPrice", 0))
+        except (ValueError, TypeError):
+            pass
+    try:
+        return float(entry_order.get("FilledPrice", 0))
+    except (ValueError, TypeError):
+        return None
 
 
 # ====== STATUS & TOGGLES ======
@@ -454,12 +631,17 @@ def get_status() -> dict:
             "status": o["status"],
             "fill_price": o["fill_price"],
             "current_stop": o["current_stop"],
-            "current_target": o["current_target"],
+            "first_target_price": o.get("first_target_price"),
+            "full_target_price": o.get("full_target_price"),
+            "stop_qty": o.get("stop_qty", 0),
+            "t1_filled": o.get("t1_filled", False),
+            "t2_filled": o.get("t2_filled", False),
         } for lid, o in _active_orders.items() if o["status"] != "closed"}
 
     return {
         "enabled": AUTO_TRADE_ENABLED,
-        "symbol": ES_SYMBOL,
+        "symbol": MES_SYMBOL,
+        "total_qty": TOTAL_QTY,
         "active_count": len(active),
         "active_orders": active,
         "toggles": dict(_toggles),
@@ -508,7 +690,6 @@ def _sim_api(method: str, path: str, json_body: dict | None) -> dict | None:
                 return None
 
             if r.status_code == 401 and attempt == 0:
-                # Force token refresh and retry
                 continue
 
             if r.status_code >= 400:

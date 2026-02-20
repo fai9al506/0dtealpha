@@ -2906,7 +2906,7 @@ def _run_setup_check():
                     })
                     tgt_str = "trail" if target_lvl is None else f"{target_lvl:.1f}"
                     print(f"[outcome] tracking {setup_name}: target={tgt_str} stop={stop_lvl:.1f}", flush=True)
-                    # Auto-trade: place ES SIM order
+                    # Auto-trade: place MES SIM order
                     try:
                         from app import auto_trader
                         es_px = None
@@ -2915,10 +2915,14 @@ def _run_setup_check():
                         if es_px and stop_lvl is not None:
                             stop_dist = abs(r["spot"] - stop_lvl)
                             target_dist = abs(target_lvl - r["spot"]) if target_lvl else None
+                            # Compute Volland full target distance for split-target setups
+                            full_tgt = r.get("target") or r.get("bofa_target_level")
+                            full_target_dist = abs(full_tgt - r["spot"]) if full_tgt else target_dist
                             auto_trader.place_trade(
                                 setup_log_id=_current_setup_log.get(setup_name),
                                 setup_name=setup_name, direction=r["direction"],
                                 es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
+                                full_target_pts=full_target_dist,
                             )
                     except Exception as e:
                         print(f"[auto-trader] place error: {e}", flush=True)
@@ -3402,6 +3406,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
                     setup_log_id=_current_setup_log.get("ES Absorption"),
                     setup_name="ES Absorption", direction=result["direction"],
                     es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
+                    full_target_pts=target_dist,
                 )
         except Exception as e:
             print(f"[auto-trader] absorption place error: {e}", flush=True)
@@ -7261,6 +7266,7 @@ DASH_HTML_TEMPLATE = """
           <button class="settings-tab" data-tab="users">Users</button>
           <button class="settings-tab" data-tab="messages">Messages</button>
           <button class="settings-tab" data-tab="setups">Trading Setups</button>
+          <button class="settings-tab" data-tab="autotrade">Auto-trade</button>
         </div>
         <!-- Alerts Tab -->
         <div class="settings-panel" id="tabPanelAlerts">
@@ -7497,35 +7503,6 @@ DASH_HTML_TEMPLATE = """
               </label>
             </div>
 
-            <!-- Auto Trade Section -->
-            <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;margin-bottom:14px">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-                <div style="font-weight:600;color:var(--muted);font-size:12px">ES Auto-Trade (SIM)</div>
-                <div id="autoTradeStatus" style="font-size:10px;padding:2px 8px;border-radius:4px;background:var(--surface);color:var(--muted)">Loading...</div>
-              </div>
-              <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px">
-                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
-                  <input type="checkbox" id="atGexLong" style="width:14px;height:14px"> GEX Long
-                </label>
-                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
-                  <input type="checkbox" id="atAgShort" style="width:14px;height:14px"> AG Short
-                </label>
-                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
-                  <input type="checkbox" id="atBofaScalp" style="width:14px;height:14px"> BofA Scalp
-                </label>
-                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
-                  <input type="checkbox" id="atAbsorption" style="width:14px;height:14px"> ES Absorption
-                </label>
-                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
-                  <input type="checkbox" id="atParadigm" style="width:14px;height:14px"> Paradigm
-                </label>
-                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
-                  <input type="checkbox" id="atDDExhaust" style="width:14px;height:14px"> DD Exhaust
-                </label>
-              </div>
-              <div id="autoTradeOrders" style="font-size:10px;color:var(--muted)"></div>
-            </div>
-
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
               <div style="font-weight:600;color:var(--muted);font-size:12px">Recent Detections <span style="font-weight:400;font-size:10px">(click for details)</span></div>
               <button id="btnExportSetups" style="padding:3px 8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-size:10px">📥 Export CSV</button>
@@ -7539,6 +7516,46 @@ DASH_HTML_TEMPLATE = """
               <button id="btnTestSetup" style="padding:6px 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--fg);cursor:pointer;font-size:12px">Test Alert</button>
               <button id="btnSaveSetups" style="padding:6px 12px;background:var(--accent);border:none;border-radius:6px;color:var(--bg);cursor:pointer;font-weight:600;font-size:12px">Save</button>
             </div>
+          </div>
+        </div>
+        <!-- Auto-trade Tab -->
+        <div class="settings-panel" id="tabPanelAutotrade">
+          <div class="modal-body">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+              <div style="font-weight:600;font-size:14px">MES Auto-Trade (SIM)</div>
+              <div id="autoTradeStatus" style="font-size:11px;padding:3px 10px;border-radius:4px;background:var(--surface);color:var(--muted)">Loading...</div>
+            </div>
+            <div style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:14px;background:var(--surface)">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:8px">10 MES contracts per trade | T1: 5 @ +10pts | T2: 5 @ full target</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+                  <input type="checkbox" id="atGexLong" style="width:16px;height:16px"> GEX Long
+                  <span style="font-size:9px;color:var(--muted)">(split)</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+                  <input type="checkbox" id="atAgShort" style="width:16px;height:16px"> AG Short
+                  <span style="font-size:9px;color:var(--muted)">(split)</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+                  <input type="checkbox" id="atBofaScalp" style="width:16px;height:16px"> BofA Scalp
+                  <span style="font-size:9px;color:var(--muted)">(10 @ +10)</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+                  <input type="checkbox" id="atAbsorption" style="width:16px;height:16px"> ES Absorption
+                  <span style="font-size:9px;color:var(--muted)">(10 @ +10)</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+                  <input type="checkbox" id="atParadigm" style="width:16px;height:16px"> Paradigm
+                  <span style="font-size:9px;color:var(--muted)">(10 @ +10)</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+                  <input type="checkbox" id="atDDExhaust" style="width:16px;height:16px"> DD Exhaust
+                  <span style="font-size:9px;color:var(--muted)">(trail)</span>
+                </label>
+              </div>
+            </div>
+            <div style="font-weight:600;font-size:12px;color:var(--muted);margin-bottom:6px">Active Orders</div>
+            <div id="autoTradeOrders" style="min-height:40px;border:1px solid var(--border);border-radius:6px;padding:8px;background:var(--surface);font-size:11px;color:var(--muted)">No active orders</div>
           </div>
         </div>
       </div>
@@ -10368,7 +10385,7 @@ DASH_HTML_TEMPLATE = """
 
     // Show/hide admin tabs
     settingsTabs.forEach(tab => {
-      if ((tab.dataset.tab === 'users' || tab.dataset.tab === 'messages') && !isAdmin) {
+      if ((tab.dataset.tab === 'users' || tab.dataset.tab === 'messages' || tab.dataset.tab === 'autotrade') && !isAdmin) {
         tab.style.display = 'none';
       }
     });
@@ -10387,6 +10404,7 @@ DASH_HTML_TEMPLATE = """
         if (tab.dataset.tab === 'users') loadUsers();
         if (tab.dataset.tab === 'messages') loadMessages();
         if (tab.dataset.tab === 'setups') loadSetupSettings();
+        if (tab.dataset.tab === 'autotrade') loadAutoTradeStatus();
       });
     });
 
@@ -10628,7 +10646,6 @@ DASH_HTML_TEMPLATE = """
         console.error('Failed to load setup settings', err);
       }
       loadSetupLog();
-      loadAutoTradeStatus();
     }
 
     // ====== Auto Trade Status ======
@@ -10643,7 +10660,7 @@ DASH_HTML_TEMPLATE = """
         const s = await r.json();
         const badge = document.getElementById('autoTradeStatus');
         if (s.enabled) {
-          badge.textContent = `ON | ${s.symbol} | ${s.active_count} active`;
+          badge.textContent = `ON | ${s.symbol} x${s.total_qty || 10} | ${s.active_count} active`;
           badge.style.color = '#22c55e';
         } else {
           badge.textContent = 'DISABLED';
@@ -10658,13 +10675,16 @@ DASH_HTML_TEMPLATE = """
         const orders = s.active_orders || {};
         const keys = Object.keys(orders);
         if (keys.length === 0) {
-          ordersEl.textContent = '';
+          ordersEl.textContent = 'No active orders';
         } else {
           ordersEl.innerHTML = keys.map(k => {
             const o = orders[k];
             const dir = o.direction?.toLowerCase().includes('long') ? 'LONG' : 'SHORT';
             const fill = o.fill_price ? `@ ${o.fill_price}` : 'pending';
-            return `<div>${o.setup_name} ${dir} ${fill} | stop: ${o.current_stop}${o.current_target ? ' | tgt: '+o.current_target : ''}</div>`;
+            const t1 = o.t1_filled ? 'T1 filled' : `T1: ${o.first_target_price || '-'}`;
+            const t2 = o.t2_filled ? 'T2 filled' : (o.full_target_price ? `T2: ${o.full_target_price}` : 'T2: trail');
+            const qty = o.stop_qty != null ? `qty: ${o.stop_qty}` : '';
+            return `<div style="padding:3px 0;border-bottom:1px solid var(--border)">${o.setup_name} ${dir} ${fill} | ${t1} | ${t2} | stop: ${o.current_stop} | ${qty}</div>`;
           }).join('');
         }
       } catch (err) {

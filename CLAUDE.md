@@ -222,27 +222,35 @@ Detects DD-Charm divergence as a contrarian exhaustion signal. Based on Analysis
 
 **Log-only mode:** Grade always "LOG", score always 0. Telegram messages tagged `[LOG-ONLY]`. Target: 50+ live signals before enabling as real setup.
 
-### ES Auto-Trader (SIM Execution)
+### MES Auto-Trader (SIM Execution — Split-Target)
 
-Self-contained module (`app/auto_trader.py`) that auto-trades ES futures on TradeStation SIM account when setups fire. Receives `engine`, `ts_access_token`, and `send_telegram_setups` via `init()` — no imports from main.py.
+Self-contained module (`app/auto_trader.py`) that auto-trades **10 MES** futures on TradeStation SIM account when setups fire. Receives `engine`, `ts_access_token`, and `send_telegram_setups` via `init()` — no imports from main.py.
 
-**Safety:** Hardcoded to `sim-api.tradestation.com` (cannot hit live). Master kill switch `AUTO_TRADE_ENABLED` env var (default OFF). Per-setup toggles all default OFF. 1 contract quantity.
+**Safety:** Hardcoded to `sim-api.tradestation.com` (cannot hit live). Master kill switch `AUTO_TRADE_ENABLED` env var (default OFF). Per-setup toggles all default OFF. 10 MES contracts.
 
 **Config:**
 - `AUTO_TRADE_ENABLED`: master switch (default `false`)
-- `ES_TRADE_SYMBOL`: front-month contract (default `ESM25`, manual quarterly rollover)
+- `ES_TRADE_SYMBOL`: MES symbol (default `@MES`)
+- `TOTAL_QTY=10`, `T1_QTY=5`, `T2_QTY=5`, `FIRST_TARGET_PTS=10.0`
 - SIM account: `SIM2609239F`, hardcoded
 
-**Order types by setup:**
-- Bracket (BRK group): BofA Scalp, ES Absorption, Paradigm Reversal — market entry + StopMarket + Limit as single group
-- Entry + Stop: GEX Long, AG Short, DD Exhaustion — market entry + separate StopMarket, trail updates via `update_stop()`
+**Two order flows:**
+- **Flow A — Single target** (BofA Scalp, ES Absorption, Paradigm Reversal): Bracket (BRK group) — 10 MES market entry + Limit 10 @ +10pts + StopMarket 10
+- **Flow B — Split target** (GEX Long, AG Short, DD Exhaustion): Market entry 10 MES + separate orders:
+  - T1: Limit 5 @ +10pts (first target)
+  - T2: Limit 5 @ full Volland target (DD: trail-only, no T2 limit)
+  - Stop: StopMarket 10 (qty reduced on T1/T2 fills)
 
-**ES price conversion:** SPX point distances applied to current ES price from quote stream. E.g., SPX spot=6100, stop=6092 → stop_dist=8 → ES 6116 → ES stop=6108.
+**Split-target qty management:** When T1 fills, stop qty reduced 10→5 via PUT. When T2 fills, stop qty reduced further. When stop fills, remaining limits cancelled. `_adjust_stop_qty()` handles all transitions.
+
+**MES price conversion:** SPX point distances applied to current MES price from quote stream (same tick size as ES).
+
+**place_trade() signature:** `place_trade(setup_log_id, setup_name, direction, es_price, target_pts, stop_pts, full_target_pts=None)` — `full_target_pts` is the Volland full target distance for T2.
 
 **Integration points in main.py (7):**
 1. Startup init after Rithmic
 2. `auto_trade_orders` table in `db_init()`
-3. `place_trade()` after setup fires (both main loop and ES Absorption path)
+3. `place_trade()` after setup fires (both main loop and ES Absorption path) — passes `full_target_pts`
 4. `update_stop()` after trail advances
 5. `close_trade()` on outcome resolution
 6. `poll_order_status()` at top of `_check_setup_outcomes()`
@@ -257,7 +265,7 @@ Self-contained module (`app/auto_trader.py`) that auto-trades ES futures on Trad
 - `es_delta_snapshots` - ES cumulative delta state (every 30s, from TradeStation @ES bars)
 - `es_delta_bars` - ES 1-minute delta bars (UpVolume - DownVolume per bar)
 - `setup_cooldowns` - persisted cooldown state (trade_date, JSONB state including swing tracker)
-- `auto_trade_orders` - ES SIM auto-trade order state (setup_log_id PK, JSONB state, crash recovery)
+- `auto_trade_orders` - MES SIM auto-trade order state (setup_log_id PK, JSONB state with split-target tracking, crash recovery)
 
 ## Railway Deployment
 

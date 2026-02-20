@@ -6267,7 +6267,9 @@ def api_setup_log_with_outcomes(limit: int = Query(50)):
                        bofa_stop_level, bofa_target_level, bofa_lis_width,
                        bofa_max_hold_minutes, lis_upper,
                        abs_vol_ratio, abs_es_price,
-                       comments, outcome_result, outcome_pnl
+                       comments, outcome_result, outcome_pnl,
+                       outcome_max_profit, outcome_max_loss,
+                       outcome_first_event, outcome_elapsed_min
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim
@@ -6276,8 +6278,22 @@ def api_setup_log_with_outcomes(limit: int = Query(50)):
         results = []
         for r in rows:
             entry = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(r).items()}
-            outcome = _calculate_setup_outcome(dict(r))
-            entry["outcome"] = outcome
+            # Use stored outcome if already resolved (avoids expensive per-row DB query)
+            if entry.get("outcome_result"):
+                entry["outcome"] = {
+                    "result": entry["outcome_result"],
+                    "pnl": entry.get("outcome_pnl"),
+                    "first_event": entry.get("outcome_first_event"),
+                    "max_profit": entry.get("outcome_max_profit") or 0,
+                    "max_loss": entry.get("outcome_max_loss") or 0,
+                    "elapsed_min": entry.get("outcome_elapsed_min"),
+                    "hit_10pt": entry.get("outcome_first_event") in ("10pt", "target", "15pt"),
+                    "hit_target": entry.get("outcome_first_event") == "target",
+                    "hit_stop": entry.get("outcome_first_event") == "stop",
+                }
+            else:
+                # Only compute in real-time for OPEN/unresolved trades
+                entry["outcome"] = _calculate_setup_outcome(dict(r))
             results.append(entry)
 
         return results

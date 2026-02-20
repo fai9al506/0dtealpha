@@ -52,10 +52,20 @@ def init(engine, get_token_fn, send_telegram_fn):
     _load_active_orders()
     n = len(_active_orders)
     print(f"[auto-trader] init: enabled={AUTO_TRADE_ENABLED} symbol={MES_SYMBOL} "
-          f"active_orders={n}", flush=True)
+          f"account={SIM_ACCOUNT_ID} active_orders={n}", flush=True)
     for name, on in _toggles.items():
         if on:
             print(f"[auto-trader]   {name}: ON", flush=True)
+    # Diagnostic: verify SIM account access
+    if AUTO_TRADE_ENABLED and _get_token:
+        try:
+            acct = _sim_api("GET", f"/brokerage/accounts/{SIM_ACCOUNT_ID}", None)
+            if acct:
+                print(f"[auto-trader] account info: {json.dumps(acct, default=str)[:300]}", flush=True)
+            else:
+                print("[auto-trader] WARNING: cannot access SIM account", flush=True)
+        except Exception as e:
+            print(f"[auto-trader] account check error: {e}", flush=True)
 
 
 # ====== MAIN ENTRY POINT ======
@@ -121,6 +131,8 @@ def _place_single_target(setup_log_id, setup_name, direction, is_long,
     qty = str(TOTAL_QTY)
 
     # Place as bracket order group
+    # TS bracket groups require ALL legs to have the same TradeAction (entry side)
+    # The system automatically handles exit direction for stop/limit legs
     payload = {
         "Type": "BRK",
         "Orders": [
@@ -139,7 +151,7 @@ def _place_single_target(setup_log_id, setup_name, direction, is_long,
                 "Quantity": qty,
                 "OrderType": "StopMarket",
                 "StopPrice": str(es_stop),
-                "TradeAction": exit_side,
+                "TradeAction": side,
                 "TimeInForce": {"Duration": "DAY"},
                 "Route": "Intelligent",
             },
@@ -149,7 +161,7 @@ def _place_single_target(setup_log_id, setup_name, direction, is_long,
                 "Quantity": qty,
                 "OrderType": "Limit",
                 "LimitPrice": str(es_target),
-                "TradeAction": exit_side,
+                "TradeAction": side,
                 "TimeInForce": {"Duration": "DAY"},
                 "Route": "Intelligent",
             },
@@ -505,7 +517,8 @@ def _check_order_fills(lid, order, broker_orders):
             with _lock:
                 order["status"] = "closed"
             changed = True
-            print(f"[auto-trader] entry {entry_status}: {order['setup_name']}", flush=True)
+            rej_reason = entry.get("RejectReason") or entry.get("StatusDescription") or entry.get("Message", "")
+            print(f"[auto-trader] entry {entry_status}: {order['setup_name']} reason={rej_reason} order={json.dumps(entry, default=str)[:500]}", flush=True)
 
     # Check T1/T2/stop fills (for filled orders)
     if order["status"] == "filled":
@@ -698,10 +711,16 @@ def _sim_api(method: str, path: str, json_body: dict | None) -> dict | None:
 
             if r.status_code >= 400:
                 print(f"[auto-trader] API {method} {path} [{r.status_code}]: "
-                      f"{r.text[:200]}", flush=True)
+                      f"{r.text[:300]}", flush=True)
+                if method == "POST" and json_body:
+                    print(f"[auto-trader] payload: {json.dumps(json_body, default=str)[:300]}", flush=True)
                 return None
 
-            return r.json() if r.text else {}
+            result = r.json() if r.text else {}
+            if method == "POST" and "order" in path.lower():
+                print(f"[auto-trader] API {method} {path} [{r.status_code}]: "
+                      f"{json.dumps(result, default=str)[:300]}", flush=True)
+            return result
 
         except Exception as e:
             print(f"[auto-trader] API error {method} {path}: {e}", flush=True)

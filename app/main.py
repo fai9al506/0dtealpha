@@ -182,7 +182,7 @@ app = FastAPI()
 NY = pytz.timezone("US/Eastern")
 
 # Public paths that don't require authentication
-PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png"}
+PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png", "/api/ts/authorize", "/api/ts/callback"}
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):

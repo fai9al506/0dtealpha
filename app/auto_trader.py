@@ -13,7 +13,7 @@ from threading import Lock
 # ====== CONFIG ======
 SIM_BASE = "https://sim-api.tradestation.com/v3"
 SIM_ACCOUNT_ID = "SIM2609239F"
-MES_SYMBOL = os.getenv("ES_TRADE_SYMBOL", "@MES")
+MES_SYMBOL = os.getenv("ES_TRADE_SYMBOL", "MESH26")
 AUTO_TRADE_ENABLED = os.getenv("AUTO_TRADE_ENABLED", "false").lower() == "true"
 
 TOTAL_QTY = 10

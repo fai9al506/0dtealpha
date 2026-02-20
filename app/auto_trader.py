@@ -155,7 +155,7 @@ def _place_single_target(setup_log_id, setup_name, direction, is_long,
         ],
     }
 
-    resp = _sim_api("POST", "/ordergroups", payload)
+    resp = _sim_api("POST", "/orderexecution/ordergroups", payload)
     if not resp:
         _alert(f"[AUTO-TRADE] FAILED bracket for {setup_name}\n"
                f"Side: {side} MES: {es_price:.2f}")
@@ -230,7 +230,7 @@ def _place_split_target(setup_log_id, setup_name, direction, is_long,
         "Route": "Intelligent",
     }
 
-    resp = _sim_api("POST", "/orders", entry_payload)
+    resp = _sim_api("POST", "/orderexecution/orders", entry_payload)
     if not resp:
         _alert(f"[AUTO-TRADE] FAILED entry for {setup_name}\n"
                f"Side: {side} 10 {MES_SYMBOL} @ {es_price:.2f}")
@@ -250,7 +250,7 @@ def _place_split_target(setup_log_id, setup_name, direction, is_long,
         "TimeInForce": {"Duration": "DAY"},
         "Route": "Intelligent",
     }
-    stop_resp = _sim_api("POST", "/orders", stop_payload)
+    stop_resp = _sim_api("POST", "/orderexecution/orders", stop_payload)
     stop_oid = None
     if stop_resp:
         so = stop_resp.get("Orders", [])
@@ -272,7 +272,7 @@ def _place_split_target(setup_log_id, setup_name, direction, is_long,
         "TimeInForce": {"Duration": "DAY"},
         "Route": "Intelligent",
     }
-    t1_resp = _sim_api("POST", "/orders", t1_payload)
+    t1_resp = _sim_api("POST", "/orderexecution/orders", t1_payload)
     t1_oid = None
     if t1_resp:
         t1o = t1_resp.get("Orders", [])
@@ -291,7 +291,7 @@ def _place_split_target(setup_log_id, setup_name, direction, is_long,
             "TimeInForce": {"Duration": "DAY"},
             "Route": "Intelligent",
         }
-        t2_resp = _sim_api("POST", "/orders", t2_payload)
+        t2_resp = _sim_api("POST", "/orderexecution/orders", t2_payload)
         if t2_resp:
             t2o = t2_resp.get("Orders", [])
             t2_oid = t2o[0].get("OrderID") if t2o else None
@@ -364,7 +364,7 @@ def update_stop(setup_log_id: int, new_stop_price: float):
         "Route": "Intelligent",
     }
 
-    resp = _sim_api("PUT", f"/orders/{stop_oid}", replace_payload)
+    resp = _sim_api("PUT", f"/orderexecution/orders/{stop_oid}", replace_payload)
     if resp:
         with _lock:
             order["current_stop"] = new_stop_price
@@ -412,7 +412,7 @@ def _flatten_position(order):
     for oid_key in ("stop_order_id", "t1_order_id", "t2_order_id"):
         oid = order.get(oid_key)
         if oid:
-            _sim_api("DELETE", f"/orders/{oid}", None)
+            _sim_api("DELETE", f"/orderexecution/orders/{oid}", None)
 
     # Market close remaining contracts
     if order["status"] == "filled":
@@ -428,7 +428,7 @@ def _flatten_position(order):
             "TimeInForce": {"Duration": "DAY"},
             "Route": "Intelligent",
         }
-        resp = _sim_api("POST", "/orders", close_payload)
+        resp = _sim_api("POST", "/orderexecution/orders", close_payload)
         if resp:
             print(f"[auto-trader] flattened: {order['setup_name']} "
                   f"qty={remaining}", flush=True)
@@ -554,7 +554,7 @@ def _check_order_fills(lid, order, broker_orders):
                     oid = order.get(oid_key)
                     filled_key = oid_key.replace("_order_id", "_filled")
                     if oid and not order.get(filled_key):
-                        _sim_api("DELETE", f"/orders/{oid}", None)
+                        _sim_api("DELETE", f"/orderexecution/orders/{oid}", None)
 
         # All targets filled and no remaining position → close
         if order["stop_qty"] <= 0 and order["status"] == "filled":
@@ -562,7 +562,7 @@ def _check_order_fills(lid, order, broker_orders):
                 order["status"] = "closed"
             # Cancel the stop if still open
             if order.get("stop_order_id"):
-                _sim_api("DELETE", f"/orders/{order['stop_order_id']}", None)
+                _sim_api("DELETE", f"/orderexecution/orders/{order['stop_order_id']}", None)
             changed = True
             print(f"[auto-trader] all targets filled: {order['setup_name']}", flush=True)
 
@@ -578,7 +578,7 @@ def _adjust_stop_qty(lid, order):
     if new_qty <= 0:
         # All contracts covered by targets — cancel stop
         if stop_oid:
-            _sim_api("DELETE", f"/orders/{stop_oid}", None)
+            _sim_api("DELETE", f"/orderexecution/orders/{stop_oid}", None)
         return
 
     if not stop_oid:
@@ -595,7 +595,7 @@ def _adjust_stop_qty(lid, order):
         "Route": "Intelligent",
     }
 
-    resp = _sim_api("PUT", f"/orders/{stop_oid}", replace_payload)
+    resp = _sim_api("PUT", f"/orderexecution/orders/{stop_oid}", replace_payload)
     if resp:
         new_orders = resp.get("Orders", [])
         if new_orders and new_orders[0].get("OrderID"):

@@ -131,19 +131,19 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
 
     is_long = direction.lower() in ("long", "bullish")
 
-    # Conflict check: close opposing positions, skip same-direction duplicates
+    # Conflict check: skip duplicate same-setup, close opposite-direction positions
     with _lock:
         active_filled = [(lid, o) for lid, o in _active_orders.items()
                          if o["status"] in ("pending_entry", "filled")]
     for lid, o in active_filled:
-        o_long = o["direction"].lower() in ("long", "bullish")
-        if o_long == is_long:
-            # Same direction — already exposed, skip new trade
-            print(f"[auto-trader] skip {setup_name}: same direction as active "
-                  f"#{lid} {o['setup_name']}", flush=True)
+        if o["setup_name"] == setup_name:
+            # Same setup already active — skip duplicate
+            print(f"[auto-trader] skip {setup_name}: already active #{lid}", flush=True)
             return
-        else:
-            # Opposite direction — close existing, then enter new
+    # Close all opposite-direction positions before entering
+    for lid, o in active_filled:
+        o_long = o["direction"].lower() in ("long", "bullish")
+        if o_long != is_long:
             print(f"[auto-trader] REVERSING: closing #{lid} {o['setup_name']} "
                   f"({o['direction']}) for new {setup_name} ({direction})", flush=True)
             _alert(f"[AUTO-TRADE] REVERSING position\n"

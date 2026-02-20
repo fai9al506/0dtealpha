@@ -7146,8 +7146,8 @@ DASH_HTML_TEMPLATE = """
     .tl-filters select, .tl-filters input { background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:4px 8px; font-size:11px; }
     .tl-stats { display:flex; gap:16px; padding:8px 12px; border-bottom:1px solid var(--border); font-size:12px; color:var(--muted); }
     .tl-stats .stat-val { font-weight:700; color:var(--text); }
-    .tl-header { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 72px 56px 56px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:2px solid var(--border); color:var(--muted); font-size:10px; font-weight:600; position:sticky; top:0; background:var(--card); z-index:1; }
-    .tl-row { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 72px 56px 56px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:1px solid var(--border); cursor:pointer; }
+    .tl-header { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:2px solid var(--border); color:var(--muted); font-size:10px; font-weight:600; position:sticky; top:0; background:var(--card); z-index:1; }
+    .tl-row { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:1px solid var(--border); cursor:pointer; }
     .tl-row:hover { background:#1a1d21; }
     .tl-notes { padding:8px 12px 8px 44px; border-bottom:1px solid var(--border); display:none; }
     .tl-notes textarea { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:6px; font-size:12px; resize:vertical; min-height:60px; box-sizing:border-box; }
@@ -7859,7 +7859,7 @@ DASH_HTML_TEMPLATE = """
         <div class="tl-stats" id="tlStats"></div>
         <div style="overflow-y:auto;flex:1">
           <div class="tl-header">
-            <span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Time</span><span></span>
+            <span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>
           </div>
           <div id="tlBody"></div>
         </div>
@@ -10956,6 +10956,10 @@ DASH_HTML_TEMPLATE = """
         if (l.outcome_pnl != null) { pnl = (l.outcome_pnl >= 0 ? '+' : '') + l.outcome_pnl.toFixed(1); pnlC = l.outcome_pnl >= 0 ? '#22c55e' : '#ef4444'; }
         else if (o.timeout_pnl != null) { pnl = (o.timeout_pnl >= 0 ? '+' : '') + o.timeout_pnl.toFixed(1); pnlC = o.timeout_pnl >= 0 ? '#22c55e' : '#ef4444'; }
 
+        // Duration in minutes
+        const em = l.outcome_elapsed_min || (o && o.elapsed_min);
+        const durStr = em != null ? (em >= 60 ? Math.floor(em/60)+'h'+String(em%60).padStart(2,'0') : em+'m') : '--';
+
         const time = fmtTimeET(l.ts);
         const date = fmtDateShortET(l.ts);
         const hasNotes = l.comments && l.comments.trim().length > 0;
@@ -10972,6 +10976,7 @@ DASH_HTML_TEMPLATE = """
           '<span style="font-size:10px"><span style="color:'+c10+'">'+has10pt+'</span> <span style="color:'+cTgt+'">'+hasTgt+'</span> <span style="color:'+cStop+'">'+hasStop+'</span></span>' +
           '<span style="font-size:10px">'+result+'</span>' +
           '<span style="color:'+pnlC+';font-size:10px">'+pnl+'</span>' +
+          '<span style="color:var(--muted);font-size:9px">'+durStr+'</span>' +
           '<span style="color:var(--muted);font-size:9px">'+date+' '+time+'</span>' +
           '<span class="tl-note-icon" data-idx="'+i+'" style="cursor:pointer;text-align:center" title="Notes">'+noteIcon+'</span>' +
         '</div>';

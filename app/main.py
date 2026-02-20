@@ -2913,6 +2913,12 @@ def _run_setup_check():
                         es_px = None
                         with _es_quote_lock:
                             es_px = _es_quote.get("last_price")
+                        if not es_px:
+                            # Fallback: use ES delta stream price (1-min bars)
+                            with _es_delta_lock:
+                                es_px = _es_delta.get("last_price")
+                            if es_px:
+                                print(f"[auto-trader] using ES delta price fallback: {es_px}", flush=True)
                         if es_px and stop_lvl is not None:
                             stop_dist = abs(r["spot"] - stop_lvl)
                             target_dist = abs(target_lvl - r["spot"]) if target_lvl else None
@@ -2925,6 +2931,10 @@ def _run_setup_check():
                                 es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
                                 full_target_pts=full_target_dist,
                             )
+                        elif not es_px:
+                            print(f"[auto-trader] SKIPPED {setup_name}: no ES price available (quote stream and delta both None)", flush=True)
+                        elif stop_lvl is None:
+                            print(f"[auto-trader] SKIPPED {setup_name}: stop_lvl is None", flush=True)
                     except Exception as e:
                         print(f"[auto-trader] place error: {e}", flush=True)
             elif reason == "grade_upgrade":
@@ -3400,6 +3410,15 @@ def _run_absorption_detection(bars: list) -> dict | None:
         try:
             from app import auto_trader
             es_px = result.get("abs_es_price")
+            if not es_px:
+                # Fallback: use quote stream or delta stream price
+                with _es_quote_lock:
+                    es_px = _es_quote.get("last_price")
+                if not es_px:
+                    with _es_delta_lock:
+                        es_px = _es_delta.get("last_price")
+                if es_px:
+                    print(f"[auto-trader] ES Absorption using fallback price: {es_px}", flush=True)
             if es_px and stop_lvl is not None:
                 stop_dist = abs(es_px - stop_lvl)
                 target_dist = abs(target_lvl - es_px) if target_lvl else None
@@ -3409,6 +3428,8 @@ def _run_absorption_detection(bars: list) -> dict | None:
                     es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
                     full_target_pts=target_dist,
                 )
+            elif not es_px:
+                print(f"[auto-trader] SKIPPED ES Absorption: no ES price available", flush=True)
         except Exception as e:
             print(f"[auto-trader] absorption place error: {e}", flush=True)
 
@@ -3602,7 +3623,11 @@ def _es_quote_stream_loop():
                 if "Heartbeat" in data:
                     continue
                 if "Error" in data:
+                    err_msg = data.get("Error", "")
                     print(f"[es-quote] stream error msg: {data}", flush=True)
+                    if err_msg == "DualLogon":
+                        # Another session is connected — wait longer before retry
+                        backoff = max(backoff, 15.0)
                     break
                 if data.get("StreamStatus") == "GoAway":
                     print("[es-quote] GoAway received, reconnecting", flush=True)

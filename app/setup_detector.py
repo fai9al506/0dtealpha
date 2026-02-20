@@ -5,7 +5,7 @@ and DD Exhaustion (log-only) setups.
 Receives all data as parameters; no imports from main.py.
 """
 from collections import deque
-from datetime import datetime, time as dtime, timedelta
+from datetime import date, datetime, time as dtime, timedelta
 import re
 import pytz
 
@@ -2159,6 +2159,8 @@ def export_cooldowns() -> dict:
         out = {}
         for k, v in d.items():
             if isinstance(v, datetime):
+                out[k] = v.isoformat()
+            elif isinstance(v, date):
                 out[k] = v.isoformat()
             else:
                 out[k] = v

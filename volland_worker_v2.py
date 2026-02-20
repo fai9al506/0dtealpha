@@ -517,16 +517,46 @@ def run():
         while True:
             if not market_open_now():
                 if _was_in_market:
-                    # Market closed after we were active — exit for fresh start
-                    # tomorrow. Railway auto-restarts; new process = fresh
-                    # Playwright context = no overnight degradation.
-                    print("[volland-v2] Market closed. Exiting for fresh start tomorrow.", flush=True)
-                    sys.exit(0)
+                    # Market closed — tear down browser, sleep until next session
+                    print("[volland-v2] Market closed. Closing browser for fresh start next session.", flush=True)
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
+                    browser = None
+                    page = None
+                    _was_in_market = False
+                    consecutive_zero_pts = 0
+                    zero_pts_alerted = False
                 # Pre-market: just wait
                 last_known_modified = ""
                 time.sleep(30)
                 continue
             _was_in_market = True
+
+            # Ensure browser is running (fresh launch after overnight)
+            if browser is None:
+                try:
+                    print("[volland-v2] Launching fresh browser...", flush=True)
+                    browser = p.chromium.launch(
+                        headless=True,
+                        args=["--no-sandbox", "--disable-dev-shm-usage"],
+                    )
+                    context = browser.new_context(
+                        viewport={"width": 1400, "height": 900},
+                        service_workers="block",
+                    )
+                    page = context.new_page()
+                    page.set_default_timeout(90000)
+                    setup_handlers(page)
+                    login_if_needed(page, WORKSPACE_URL)
+                    print("[volland-v2] Fresh browser ready.", flush=True)
+                except Exception as launch_err:
+                    print(f"[volland-v2] Browser launch failed: {launch_err}", flush=True)
+                    browser = None
+                    page = None
+                    time.sleep(30)
+                    continue
 
             try:
                 # ══════════════════════════════════════════════════════
@@ -642,23 +672,31 @@ def run():
                             "Auto-restart will trigger after "
                             f"{AUTO_RESTART_THRESHOLD} cycles."
                         )
-                    # Process exit: Railway restarts the entire process — fresh
-                    # Python + Playwright context.
+                    # Browser recreate: close and relaunch for fresh context
                     if consecutive_zero_pts >= AUTO_RESTART_THRESHOLD:
                         diag = _get_page_diagnostic()
                         print(
-                            f"[volland-v2] PROCESS EXIT: {consecutive_zero_pts} "
-                            f"consecutive zero-point cycles. Railway will restart fresh.",
+                            f"[volland-v2] BROWSER RECREATE: {consecutive_zero_pts} "
+                            f"consecutive zero-point cycles.",
                             flush=True,
                         )
                         send_telegram(
-                            "🔄 <b>Volland Process Restart</b>\n\n"
+                            "🔄 <b>Volland Browser Restart</b>\n\n"
                             f"{consecutive_zero_pts} consecutive cycles with 0 points.\n"
-                            "Exiting for clean Railway restart.\n\n"
+                            "Recreating browser for fresh session.\n\n"
                             f"<b>Diagnostic:</b>\n<code>{diag}</code>"
                         )
+                        try:
+                            browser.close()
+                        except Exception:
+                            pass
+                        browser = None
+                        page = None
+                        last_known_modified = ""
+                        consecutive_zero_pts = 0
+                        zero_pts_alerted = False
                         time.sleep(5)
-                        sys.exit(1)
+                        continue
                 elif _total_pts > 0:
                     if consecutive_zero_pts > 0:
                         print(f"[volland-v2] recovered after {consecutive_zero_pts} zero-point cycles", flush=True)
@@ -681,7 +719,7 @@ def run():
 
                 # Session expiry recovery: try re-login if we're on sign-in page
                 try:
-                    if "/sign-in" in (page.url or ""):
+                    if page and "/sign-in" in (page.url or ""):
                         print("[volland-v2] Session expired — attempting re-login...", flush=True)
                         login_if_needed(page, WORKSPACE_URL)
                         last_known_modified = ""  # force re-sync
@@ -695,16 +733,19 @@ def run():
                             "Session may have expired. Check credentials."
                         )
 
-                # Browser crash recovery — exit for clean restart
+                # Browser crash recovery — recreate browser
                 if "closed" in str(e).lower() or "Target" in str(e):
-                    print("[volland-v2] Browser/page crashed — exiting for clean restart...", flush=True)
+                    print("[volland-v2] Browser/page crashed — will recreate...", flush=True)
                     send_telegram(
                         "💥 <b>Volland Browser Crash</b>\n\n"
                         f"Error: <code>{str(e)[:200]}</code>\n"
-                        "Exiting for clean Railway restart."
+                        "Recreating browser."
                     )
+                    browser = None
+                    page = None
+                    last_known_modified = ""
                     time.sleep(5)
-                    sys.exit(1)
+                    continue
 
             time.sleep(PULL_EVERY)
 

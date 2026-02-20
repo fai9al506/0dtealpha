@@ -1707,6 +1707,7 @@ def ts_access_token() -> str:
             "refresh_token": _refresh_token,
             "client_id": CID,
             "client_secret": SECRET,
+            "scope": "openid profile MarketData ReadAccount Trade OptionSpreads offline_access",
         },
         timeout=15,
     )

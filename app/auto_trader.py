@@ -107,8 +107,9 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
 def _place_single_target(setup_log_id, setup_name, direction, is_long,
                           es_price, stop_pts):
     """Flow A: 10 MES with single limit target @ +10pts + stop."""
-    side = "Buy" if is_long else "SellShort"
-    exit_side = "Sell" if is_long else "BuyToCover"
+    # Futures use Buy/Sell only (not SellShort/BuyToCover which are equity-only)
+    side = "Buy" if is_long else "Sell"
+    exit_side = "Sell" if is_long else "Buy"
 
     if is_long:
         es_stop = round(es_price - stop_pts, 2)
@@ -202,8 +203,9 @@ def _place_single_target(setup_log_id, setup_name, direction, is_long,
 def _place_split_target(setup_log_id, setup_name, direction, is_long,
                          es_price, stop_pts, full_target_pts):
     """Flow B: 10 MES entry, T1=5@+10pts, T2=5@full_target (or trail-only for DD)."""
-    side = "Buy" if is_long else "SellShort"
-    exit_side = "Sell" if is_long else "BuyToCover"
+    # Futures use Buy/Sell only (not SellShort/BuyToCover which are equity-only)
+    side = "Buy" if is_long else "Sell"
+    exit_side = "Sell" if is_long else "Buy"
 
     if is_long:
         es_stop = round(es_price - stop_pts, 2)
@@ -406,7 +408,7 @@ def close_trade(setup_log_id: int, result_type: str):
 def _flatten_position(order):
     """Market close remaining contracts + cancel all pending orders."""
     is_long = order["direction"].lower() in ("long", "bullish")
-    close_side = "Sell" if is_long else "BuyToCover"
+    close_side = "Sell" if is_long else "Buy"  # Futures: Buy/Sell only
 
     # Cancel pending stop/t1/t2 orders
     for oid_key in ("stop_order_id", "t1_order_id", "t2_order_id"):

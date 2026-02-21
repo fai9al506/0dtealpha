@@ -17,6 +17,7 @@ RITHMIC_PASSWORD = os.getenv("RITHMIC_PASSWORD", "")
 RITHMIC_SYSTEM_NAME = os.getenv("RITHMIC_SYSTEM_NAME", "Rithmic Paper Trading")
 RITHMIC_URL = os.getenv("RITHMIC_URL", "")
 RITHMIC_SYMBOL = "@ES-R"   # parallel symbol — change to @ES when migrating
+RITHMIC_CONFORMANCE = os.getenv("RITHMIC_CONFORMANCE", "").lower() == "true"
 RANGE_PTS = 5.0
 
 # ====== STATE ======
@@ -375,8 +376,8 @@ async def _rithmic_stream_async(engine, send_telegram_fn):
 
     while True:
         try:
-            # Wait for ES futures session
-            if not _es_futures_open():
+            # Wait for ES futures session (skip check during conformance)
+            if not RITHMIC_CONFORMANCE and not _es_futures_open():
                 backoff = 1.0
                 await asyncio.sleep(30)
                 continue
@@ -391,7 +392,7 @@ async def _rithmic_stream_async(engine, send_telegram_fn):
                 user=RITHMIC_USER,
                 password=RITHMIC_PASSWORD,
                 system_name=RITHMIC_SYSTEM_NAME,
-                app_name="0dte_alpha",
+                app_name="faal:0dte_alpha",
                 app_version="1.0",
                 url=RITHMIC_URL,
             )

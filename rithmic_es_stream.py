@@ -405,6 +405,18 @@ async def _rithmic_stream_async(engine, send_telegram_fn):
                 _state["_last_connect_time"] = _now_et().isoformat()
                 _state["_connection_errors"] = max(0, _state["_connection_errors"])
 
+            # Conformance mode: just stay logged in, don't subscribe to data
+            if RITHMIC_CONFORMANCE:
+                print("[rithmic] CONFORMANCE MODE: connected and staying logged in", flush=True)
+                try:
+                    if send_telegram_fn:
+                        send_telegram_fn("[Rithmic] Conformance mode — connected to order plant, waiting for review")
+                except Exception:
+                    pass
+                while True:
+                    await asyncio.sleep(60)
+                    print("[rithmic] conformance: still connected", flush=True)
+
             # Resolve front-month contract (e.g. "ESH6")
             front_month = await client.get_front_month_contract("ES", "CME")
             with _lock:

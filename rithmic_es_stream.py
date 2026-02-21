@@ -511,6 +511,11 @@ async def _rithmic_stream_async(engine, send_telegram_fn):
             with _lock:
                 _state["connected"] = False
                 _state["_connection_errors"] += 1
+            try:
+                if send_telegram_fn:
+                    send_telegram_fn(f"[Rithmic] DISCONNECTED: {e}")
+            except Exception:
+                pass
 
         with _lock:
             _state["connected"] = False

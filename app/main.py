@@ -44,6 +44,7 @@ MIN_REQUIRED_STRIKES = 30  # Minimum rows required; reject data below this thres
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 TELEGRAM_CHAT_ID_SETUPS = os.getenv("TELEGRAM_CHAT_ID_SETUPS", "")
+EVAL_API_KEY = os.getenv("EVAL_API_KEY", "")
 
 # Alert state tracking
 _alert_state = {
@@ -192,6 +193,14 @@ async def auth_middleware(request: Request, call_next):
     # Allow public paths
     if path in PUBLIC_PATHS:
         return await call_next(request)
+
+    # Eval API — authenticate via API key in Authorization header
+    if path == "/api/eval/signals":
+        if EVAL_API_KEY:
+            auth = request.headers.get("Authorization", "")
+            if auth == f"Bearer {EVAL_API_KEY}":
+                return await call_next(request)
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
     # Check session cookie
     session = request.cookies.get("session")
@@ -4112,6 +4121,63 @@ def api_auto_trade_test():
         return auto_trader.test_order()
     except Exception as e:
         return {"error": str(e)}
+
+@app.get("/api/eval/signals")
+def api_eval_signals(since_id: int = Query(0, ge=0)):
+    """Return today's setup signals and outcomes for the eval trader.
+
+    Auth: Bearer token via EVAL_API_KEY (checked in middleware).
+    Query: since_id=N returns entries with id > N.
+    """
+    if not engine:
+        return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+    now_et = datetime.now(pytz.timezone("US/Eastern"))
+    today_str = now_et.strftime("%Y-%m-%d")
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text(
+                "SELECT id, ts, setup_name, direction, grade, score, spot, target, lis, "
+                "paradigm, bofa_stop_level, bofa_target_level, abs_es_price, "
+                "max_plus_gex, max_minus_gex, "
+                "outcome_result, outcome_pnl "
+                "FROM setup_log "
+                "WHERE id > :since AND ts::date = :today "
+                "ORDER BY id ASC"
+            ), {"since": since_id, "today": today_str}).mappings().all()
+
+        signals, outcomes = [], []
+        for r in rows:
+            row = dict(r)
+            # Compute target/stop levels
+            tgt_lvl, stop_lvl = _compute_setup_levels(row)
+            entry = {
+                "id": row["id"],
+                "ts": row["ts"].isoformat() if row["ts"] else None,
+                "setup_name": row["setup_name"],
+                "direction": row["direction"],
+                "grade": row["grade"],
+                "score": row["score"],
+                "spot": row["spot"],
+                "target": row["target"],
+                "lis": row["lis"],
+                "paradigm": row["paradigm"],
+                "bofa_stop_level": row["bofa_stop_level"],
+                "bofa_target_level": row["bofa_target_level"],
+                "abs_es_price": row["abs_es_price"],
+                "stop_level": stop_lvl,
+                "target_level": tgt_lvl,
+            }
+            signals.append(entry)
+            if row["outcome_result"]:
+                outcomes.append({
+                    "id": row["id"],
+                    "setup_name": row["setup_name"],
+                    "outcome_result": row["outcome_result"],
+                    "outcome_pnl": row["outcome_pnl"],
+                })
+        return {"signals": signals, "outcomes": outcomes}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/snapshot")
 def snapshot():

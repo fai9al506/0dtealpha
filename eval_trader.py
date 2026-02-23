@@ -2,7 +2,7 @@
 eval_trader.py — E2T Evaluation Auto-Trader for NinjaTrader 8
 
 Standalone local script that:
-  1. Polls Telegram for setup signals from 0DTE Alpha
+  1. Polls Railway API (or Telegram as fallback) for setup signals from 0DTE Alpha
   2. Enforces E2T 50K TCP compliance rules
   3. Places orders through NinjaTrader 8 OIF (Order Instruction Files)
   4. Tracks position state and daily P&L for compliance
@@ -12,7 +12,8 @@ Usage: python eval_trader.py
 Config: eval_trader_config.json (created on first run — fill in required fields)
 
 Architecture:
-  Railway (setup fires) → Telegram → this script → OIF file → NT8 → Rithmic → E2T
+  Railway (setup fires) → /api/eval/signals → this script → OIF file → NT8 → Rithmic → E2T
+  (Legacy: Railway → Telegram → this script, when signal_source="telegram")
 
 Stop/target orders execute at exchange level via NT8. Even if this script
 crashes, your stops and targets remain live. The script's job is signal
@@ -92,7 +93,12 @@ def current_mes_symbol(fmt: str = "nt8") -> str:
 
 # ─── Default Configuration ────────────────────────────────────────────────────
 DEFAULT_CONFIG = {
-    # ── Telegram (same bot/chat as 0DTE Alpha setups channel) ──
+    # ── Signal source: "api" (Railway endpoint) or "telegram" (legacy) ──
+    "signal_source": "api",
+    "railway_api_url": "",         # e.g. "https://0dtealpha-production.up.railway.app"
+    "eval_api_key": "",            # Must match EVAL_API_KEY env var on Railway
+
+    # ── Telegram (legacy fallback — used when signal_source="telegram") ──
     "telegram_bot_token": "",
     "telegram_chat_id": "",        # TELEGRAM_CHAT_ID_SETUPS value
     "telegram_poll_interval_s": 2,
@@ -216,6 +222,143 @@ class TelegramPoller:
         except Exception as e:
             log.error(f"Telegram poll error: {e}")
             return []
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  RAILWAY API POLLING
+# ═════════════════════════════════════════════════════════════════════════════
+
+class APIPoller:
+    """Polls Railway /api/eval/signals for setup signals and outcomes."""
+
+    def __init__(self, api_url: str, api_key: str):
+        self.url = api_url.rstrip("/") + "/api/eval/signals"
+        self.api_key = api_key
+        self.last_id = 0
+        self._seen_outcomes: set[int] = set()  # track outcome IDs already processed
+        self._load_state()
+
+    def _state_file(self) -> Path:
+        return SCRIPT_DIR / "eval_trader_api_state.json"
+
+    def _load_state(self):
+        sf = self._state_file()
+        if sf.exists():
+            try:
+                data = json.loads(sf.read_text())
+                self.last_id = data.get("last_id", 0)
+                self._seen_outcomes = set(data.get("seen_outcomes", []))
+                log.info(f"API poller state restored: last_id={self.last_id}")
+            except Exception:
+                pass
+
+    def _save_state(self):
+        self._state_file().write_text(json.dumps({
+            "last_id": self.last_id,
+            "seen_outcomes": list(self._seen_outcomes),
+        }))
+
+    def poll(self) -> tuple[list[dict], list[dict]]:
+        """Poll the API. Returns (new_signals, new_outcomes).
+
+        Each signal dict matches the format expected by open_trade():
+          {setup_name, direction, spot, grade, msg_target_pts, msg_stop_pts}
+        Each outcome dict matches close_on_outcome():
+          {setup_name, result, pnl_pts}
+        """
+        try:
+            resp = requests.get(
+                self.url,
+                params={"since_id": self.last_id},
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=8,
+            )
+            if resp.status_code == 401:
+                log.error("API auth failed — check eval_api_key in config")
+                return [], []
+            if resp.status_code != 200:
+                log.warning(f"API poll error: HTTP {resp.status_code}")
+                return [], []
+
+            data = resp.json()
+        except requests.ConnectionError:
+            log.debug("API unreachable — will retry")
+            return [], []
+        except Exception as e:
+            log.error(f"API poll error: {e}")
+            return [], []
+
+        raw_signals = data.get("signals", [])
+        raw_outcomes = data.get("outcomes", [])
+
+        # Update last_id to highest seen
+        if raw_signals:
+            max_id = max(s["id"] for s in raw_signals)
+            if max_id > self.last_id:
+                self.last_id = max_id
+                self._save_state()
+
+        # Convert API signals to the format open_trade() expects
+        new_signals = []
+        for s in raw_signals:
+            # Skip if this is an outcome-only row (already resolved before we saw it)
+            if s.get("outcome_result"):
+                continue
+            sig = self._api_to_signal(s)
+            if sig:
+                new_signals.append(sig)
+
+        # Convert outcomes (only unseen ones)
+        new_outcomes = []
+        for o in raw_outcomes:
+            oid = o["id"]
+            if oid in self._seen_outcomes:
+                continue
+            self._seen_outcomes.add(oid)
+            new_outcomes.append({
+                "setup_name": o["setup_name"],
+                "result": o["outcome_result"],
+                "pnl_pts": o.get("outcome_pnl", 0) or 0,
+            })
+        if new_outcomes:
+            self._save_state()
+
+        return new_signals, new_outcomes
+
+    def _api_to_signal(self, s: dict) -> dict | None:
+        """Convert API signal entry to the dict format expected by open_trade()."""
+        setup = s.get("setup_name")
+        direction = s.get("direction", "long")
+        is_long = direction.lower() in ("long", "bullish")
+
+        # ES Absorption uses ES price as spot
+        if setup == "ES Absorption":
+            spot = s.get("abs_es_price") or s.get("spot")
+        else:
+            spot = s.get("spot")
+
+        if not spot:
+            return None
+
+        # Compute msg_target_pts from target_level / stop_level
+        target_level = s.get("target_level")
+        stop_level = s.get("stop_level")
+
+        msg_target_pts = None
+        msg_stop_pts = None
+        if target_level is not None:
+            msg_target_pts = round(abs(target_level - spot), 1)
+        if stop_level is not None:
+            msg_stop_pts = round(abs(spot - stop_level), 1)
+
+        return {
+            "setup_name": setup,
+            "direction": direction,
+            "spot": spot,
+            "grade": s.get("grade", "?"),
+            "msg_target_pts": msg_target_pts,
+            "msg_stop_pts": msg_stop_pts,
+        }
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -964,14 +1107,23 @@ def _banner(cfg: dict):
 
 def main():
     cfg = load_config()
+    use_api = cfg.get("signal_source", "api") == "api"
 
-    # Validate required fields
-    required = {
-        "telegram_bot_token": cfg["telegram_bot_token"],
-        "telegram_chat_id": cfg["telegram_chat_id"],
-        "nt8_incoming_folder": cfg["nt8_incoming_folder"],
-        "nt8_account_id": cfg["nt8_account_id"],
-    }
+    # Validate required fields based on signal source
+    if use_api:
+        required = {
+            "railway_api_url": cfg.get("railway_api_url", ""),
+            "eval_api_key": cfg.get("eval_api_key", ""),
+            "nt8_incoming_folder": cfg["nt8_incoming_folder"],
+            "nt8_account_id": cfg["nt8_account_id"],
+        }
+    else:
+        required = {
+            "telegram_bot_token": cfg["telegram_bot_token"],
+            "telegram_chat_id": cfg["telegram_chat_id"],
+            "nt8_incoming_folder": cfg["nt8_incoming_folder"],
+            "nt8_account_id": cfg["nt8_account_id"],
+        }
     missing = [k for k, v in required.items() if not v]
     if missing:
         log.error(f"Missing required config in {CONFIG_FILE}:")
@@ -990,14 +1142,20 @@ def main():
         log.info(f"Auto-rollover: MES symbol resolved to {mes_symbol}")
 
     # Initialize components
-    poller = TelegramPoller(cfg["telegram_bot_token"], cfg["telegram_chat_id"])
+    if use_api:
+        api_poller = APIPoller(cfg["railway_api_url"], cfg["eval_api_key"])
+        log.info(f"Signal source: Railway API ({cfg['railway_api_url']})")
+    else:
+        telegram_poller = TelegramPoller(cfg["telegram_bot_token"], cfg["telegram_chat_id"])
+        log.info(f"Signal source: Telegram (legacy)")
+
     quote_poller = TSQuotePoller()
     compliance = ComplianceGate(cfg)
     nt8 = NT8Bridge(cfg["nt8_incoming_folder"], cfg["nt8_account_id"], mes_symbol)
     tracker = PositionTracker(nt8, compliance, cfg, quote_poller)
 
-    log.info(f"Polling Telegram every {cfg['telegram_poll_interval_s']}s...")
-    poll_interval = cfg["telegram_poll_interval_s"]
+    poll_interval = cfg.get("telegram_poll_interval_s", 2)
+    log.info(f"Polling every {poll_interval}s...")
     last_be_check = 0.0
     BE_CHECK_INTERVAL = 5.0  # seconds between breakeven checks
 
@@ -1018,35 +1176,44 @@ def main():
                 tracker.check_breakeven()
                 last_be_check = time.time()
 
-            # Poll Telegram for new messages
-            messages = poller.poll()
+            # ── Poll for signals and outcomes ──
+            if use_api:
+                new_signals, new_outcomes = api_poller.poll()
 
-            for msg in messages:
-                text = msg["text"]
+                # Process outcomes first
+                for outcome in new_outcomes:
+                    if tracker.is_open:
+                        tracker.close_on_outcome(outcome)
 
-                # Check for outcome messages first (close tracking)
-                outcome = parse_outcome(text)
-                if outcome and tracker.is_open:
-                    tracker.close_on_outcome(outcome)
-                    continue
-
-                # Check for setup signals
-                signal = parse_signal(text)
-                if not signal:
-                    continue
-
-                log.info(f"Signal received: {signal['setup_name']} "
-                         f"{signal['direction'].upper()} [{signal.get('grade', '?')}] "
-                         f"@ {signal['spot']:.2f}")
-
-                # Compliance gate
-                allowed, reason = compliance.check(signal)
-                if not allowed:
-                    log.info(f"  BLOCKED: {reason}")
-                    continue
-
-                # Place trade
-                tracker.open_trade(signal)
+                # Process signals
+                for signal in new_signals:
+                    log.info(f"Signal received: {signal['setup_name']} "
+                             f"{signal['direction'].upper()} [{signal.get('grade', '?')}] "
+                             f"@ {signal['spot']:.2f}")
+                    allowed, reason = compliance.check(signal)
+                    if not allowed:
+                        log.info(f"  BLOCKED: {reason}")
+                        continue
+                    tracker.open_trade(signal)
+            else:
+                messages = telegram_poller.poll()
+                for msg in messages:
+                    text = msg["text"]
+                    outcome = parse_outcome(text)
+                    if outcome and tracker.is_open:
+                        tracker.close_on_outcome(outcome)
+                        continue
+                    signal = parse_signal(text)
+                    if not signal:
+                        continue
+                    log.info(f"Signal received: {signal['setup_name']} "
+                             f"{signal['direction'].upper()} [{signal.get('grade', '?')}] "
+                             f"@ {signal['spot']:.2f}")
+                    allowed, reason = compliance.check(signal)
+                    if not allowed:
+                        log.info(f"  BLOCKED: {reason}")
+                        continue
+                    tracker.open_trade(signal)
 
             time.sleep(poll_interval)
 

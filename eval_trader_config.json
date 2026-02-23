@@ -1,4 +1,7 @@
 {
+  "signal_source": "api",
+  "railway_api_url": "https://0dtealpha.com",
+  "eval_api_key": "qigYBFsjqZE1DaSx1K4NE0JJ0bLtVpl3fIroWt9lPvM",
   "telegram_bot_token": "8544971756:AAGsdiBWXCZtPtKiUfhPddsd3M93Vwv8X",
   "telegram_chat_id": "-1003886332593",
   "telegram_poll_interval_s": 2,

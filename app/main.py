@@ -11084,11 +11084,7 @@ DASH_HTML_TEMPLATE = """
           const rc = l.outcome_result === 'WIN' ? '#22c55e' : l.outcome_result === 'LOSS' ? '#ef4444' : '#888';
           result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
         } else {
-          // Trade not yet resolved by live tracker — show OPEN with current P&L
-          const curPnl = o.timeout_pnl || 0;
-          if (curPnl > 0) result = '<span style="color:#3b82f6;font-weight:600">OPEN</span> <span style="color:#22c55e">+'+curPnl.toFixed(0)+'</span>';
-          else if (curPnl < 0) result = '<span style="color:#3b82f6;font-weight:600">OPEN</span> <span style="color:#ef4444">'+curPnl.toFixed(0)+'</span>';
-          else result = '<span style="color:#3b82f6;font-weight:600">OPEN</span>';
+          result = '<span style="color:#3b82f6;font-weight:600">OPEN</span>';
         }
 
         // P&L
@@ -11210,11 +11206,7 @@ DASH_HTML_TEMPLATE = """
             const rc = l.outcome_result === 'WIN' ? '#22c55e' : l.outcome_result === 'LOSS' ? '#ef4444' : '#888';
             result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
           } else {
-            // Trade not yet resolved — show OPEN with current P&L hint
-            const curPnl = o.timeout_pnl || 0;
-            if (curPnl > 0) result = '<span style="color:#3b82f6;font-size:8px;font-weight:600">OPEN</span> <span style="color:#22c55e;font-size:8px">+'+curPnl.toFixed(0)+'</span>';
-            else if (curPnl < 0) result = '<span style="color:#3b82f6;font-size:8px;font-weight:600">OPEN</span> <span style="color:#ef4444;font-size:8px">'+curPnl.toFixed(0)+'</span>';
-            else result = '<span style="color:#3b82f6;font-size:8px;font-weight:600">OPEN</span>';
+            result = '<span style="color:#3b82f6;font-size:8px;font-weight:600">OPEN</span>';
           }
           const nameTag = isBofa ? '<span style="color:#a78bfa;font-size:7px;font-weight:600">BofA</span>' : isAbs ? '<span style="color:#f59e0b;font-size:7px;font-weight:600">Abs</span>' : '';
           return `<div class="setup-log-row" data-id="${l.id}" style="display:grid;grid-template-columns:28px 50px 28px 55px 60px 70px 50px 1fr;align-items:center;gap:4px;padding:4px 2px;border-bottom:1px solid var(--border);cursor:pointer" onmouseover="this.style.background='#1a1d21'" onmouseout="this.style.background='transparent'">
@@ -11654,10 +11646,7 @@ DASH_HTML_TEMPLATE = """
               : '<span style="color:#ef4444;font-weight:700;font-size:14px">⏱ EXPIRED ' + tp.toFixed(1) + '</span>';
           } else summaryLabel = '<span style="color:#888;font-weight:700;font-size:14px">' + l.outcome_result + '</span>';
         } else {
-          const curPnl = o.timeout_pnl || 0;
-          if (curPnl > 0) summaryLabel = '<span style="color:#3b82f6;font-weight:700;font-size:14px">OPEN</span> <span style="color:#22c55e;font-size:14px">+' + curPnl.toFixed(1) + '</span>';
-          else if (curPnl < 0) summaryLabel = '<span style="color:#3b82f6;font-weight:700;font-size:14px">OPEN</span> <span style="color:#ef4444;font-size:14px">' + curPnl.toFixed(1) + '</span>';
-          else summaryLabel = '<span style="color:#3b82f6;font-weight:700;font-size:14px">OPEN</span>';
+          summaryLabel = '<span style="color:#3b82f6;font-weight:700;font-size:14px">OPEN</span>';
         }
         stats.innerHTML = `
           <div style="background:#1a1d21;padding:10px;border-radius:6px">

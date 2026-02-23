@@ -11030,10 +11030,10 @@ DASH_HTML_TEMPLATE = """
           const epnl = l.outcome_pnl || 0;
           if (epnl > 0) wins++; else if (epnl < 0) losses++;
         } else {
-          // Fallback for live/unresolved trades
-          const fe = (l.outcome || {}).first_event;
-          if (fe === '10pt' || fe === 'target' || fe === '15pt') wins++;
-          else if (fe === 'stop') losses++;
+          // Fallback: use historical calculator hit_target/hit_stop (not first_event)
+          const oo = l.outcome || {};
+          if (oo.hit_target) wins++;
+          else if (oo.hit_stop) losses++;
         }
         if (l.outcome_pnl != null) { totalPnl += l.outcome_pnl; pnlCount++; }
       });
@@ -11076,13 +11076,16 @@ DASH_HTML_TEMPLATE = """
         const stopIsLoss = o.hit_stop && o.first_event === 'stop';
         const cStop = stopIsLoss ? '#ef4444' : (o.hit_stop === false ? '#22c55e' : '#888');
 
-        // Result — prefer DB-stored outcome_result (consistent with outcome_pnl)
-        // Unresolved trades show OPEN with current P&L (never premature WIN/LOSS)
+        // Result — prefer DB-stored outcome_result, then historical calculator
+        // Only show OPEN if neither target nor stop was hit yet
         let result = '';
-        const fe = o.first_event;
         if (l.outcome_result) {
           const rc = l.outcome_result === 'WIN' ? '#22c55e' : l.outcome_result === 'LOSS' ? '#ef4444' : '#888';
           result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
+        } else if (o.hit_target) {
+          result = '<span style="color:#22c55e;font-weight:700">WIN</span>';
+        } else if (o.hit_stop) {
+          result = '<span style="color:#ef4444;font-weight:700">LOSS</span>';
         } else {
           result = '<span style="color:#3b82f6;font-weight:600">OPEN</span>';
         }
@@ -11205,6 +11208,10 @@ DASH_HTML_TEMPLATE = """
           if (l.outcome_result) {
             const rc = l.outcome_result === 'WIN' ? '#22c55e' : l.outcome_result === 'LOSS' ? '#ef4444' : '#888';
             result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
+          } else if (o.hit_target) {
+            result = '<span style="color:#22c55e;font-weight:700">WIN</span>';
+          } else if (o.hit_stop) {
+            result = '<span style="color:#ef4444;font-weight:700">LOSS</span>';
           } else {
             result = '<span style="color:#3b82f6;font-size:8px;font-weight:600">OPEN</span>';
           }
@@ -11645,6 +11652,10 @@ DASH_HTML_TEMPLATE = """
               ? '<span style="color:#22c55e;font-weight:700;font-size:14px">⏱ EXPIRED +' + tp.toFixed(1) + '</span>'
               : '<span style="color:#ef4444;font-weight:700;font-size:14px">⏱ EXPIRED ' + tp.toFixed(1) + '</span>';
           } else summaryLabel = '<span style="color:#888;font-weight:700;font-size:14px">' + l.outcome_result + '</span>';
+        } else if (o.hit_target) {
+          summaryLabel = '<span style="color:#22c55e;font-weight:700;font-size:14px">✓ WINNER</span>';
+        } else if (o.hit_stop) {
+          summaryLabel = '<span style="color:#ef4444;font-weight:700;font-size:14px">✗ LOSER</span>';
         } else {
           summaryLabel = '<span style="color:#3b82f6;font-weight:700;font-size:14px">OPEN</span>';
         }

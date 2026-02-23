@@ -1,0 +1,57 @@
+{
+  "telegram_bot_token": "8544971756:AAGsdiBWXCZtPtKiUfhPddsd3M93Vwv8X",
+  "telegram_chat_id": "-1003886332593",
+  "telegram_poll_interval_s": 2,
+  "nt8_incoming_folder": "C:\\Users\\Faisal\\Documents\\NinjaTrader 8\\incoming",
+  "nt8_account_id": "falde5482-simE",
+  "nt8_mes_symbol": "auto",
+  "qty": 10,
+  "max_trade_risk": 200,
+  "dynamic_sizing": true,
+  "be_trigger_pts": 5.0,
+  "max_losses_per_day": 3,
+  "e2t_daily_loss_limit": 1100,
+  "e2t_daily_loss_buffer": 100,
+  "e2t_daily_pnl_cap": 900,
+  "e2t_eod_trailing_drawdown": 2000,
+  "e2t_max_contracts_es_equiv": 6,
+  "e2t_starting_balance": 50000,
+  "e2t_peak_balance": 50000,
+  "market_open_ct": "08:30",
+  "no_new_trades_after_ct": "15:30",
+  "flatten_time_ct": "15:50",
+  "setup_rules": {
+    "GEX Long": {
+      "enabled": false,
+      "stop": 8,
+      "target": "msg"
+    },
+    "AG Short": {
+      "enabled": true,
+      "stop": 20,
+      "target": "msg"
+    },
+    "BofA Scalp": {
+      "enabled": false,
+      "stop": 12,
+      "target": "msg",
+      "max_hold_min": 30
+    },
+    "ES Absorption": {
+      "enabled": true,
+      "stop": 12,
+      "target": 10
+    },
+    "Paradigm Reversal": {
+      "enabled": true,
+      "stop": 15,
+      "target": 10
+    },
+    "DD Exhaustion": {
+      "enabled": true,
+      "stop": 12,
+      "target": null
+    }
+  },
+  "enabled": true
+}

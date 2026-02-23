@@ -8,14 +8,32 @@
 #   Flow A (BofA/Absorption/Paradigm): entry + stop + single limit @ +10pts
 #   Flow B (GEX/AG/DD): entry + stop + T1 @ +10pts + T2 @ full target (DD: trail-only)
 
-import os, json, math, time, requests
-from datetime import datetime
+import os, json, math, time, calendar, requests
+from datetime import datetime, date, timedelta
 from threading import Lock
+
+# ====== MES CONTRACT AUTO-ROLLOVER ======
+_MES_MONTHS = [(3, "H"), (6, "M"), (9, "U"), (12, "Z")]
+
+def _third_friday(year: int, month: int) -> date:
+    c = calendar.Calendar(firstweekday=calendar.MONDAY)
+    fridays = [d for d in c.itermonthdates(year, month) if d.month == month and d.weekday() == 4]
+    return fridays[2]
+
+def _auto_mes_symbol() -> str:
+    """Return front-month MES symbol for TradeStation (e.g. MESH26), rolling ~8 days before expiry."""
+    today = date.today()
+    for month_num, code in _MES_MONTHS:
+        expiry = _third_friday(today.year, month_num)
+        if today <= expiry - timedelta(days=8):
+            return f"MES{code}{today.year % 100}"
+    return f"MESH{(today.year + 1) % 100}"
 
 # ====== CONFIG ======
 SIM_BASE = "https://sim-api.tradestation.com/v3"
 SIM_ACCOUNT_ID = "SIM2609239F"
-MES_SYMBOL = os.getenv("ES_TRADE_SYMBOL", "MESH26")
+_es_env = os.getenv("ES_TRADE_SYMBOL", "auto")
+MES_SYMBOL = _auto_mes_symbol() if _es_env.lower() == "auto" else _es_env
 AUTO_TRADE_ENABLED = os.getenv("AUTO_TRADE_ENABLED", "false").lower() == "true"
 
 # SIM: $2,735 overnight margin per MES (no API intraday discount)

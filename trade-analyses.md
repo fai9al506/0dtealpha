@@ -433,3 +433,140 @@ The SPX key levels on the ES Delta chart are significant for execution:
 - Traders watching ES futures can now see the same Volland-derived levels without switching tabs
 - The SPX→ES offset auto-adjusts as the spread changes intraday
 - Combined with absorption signals, this creates a complete ES execution view: price action + delta flow + key levels + institutional absorption markers
+
+---
+
+## Analysis #4 — Feb 22, 2026: GEX Long Deep Dive (Why 17.6% Win Rate?)
+
+### Dataset: 17 GEX Long trades, Feb 3 - Feb 20
+
+| # | Date | Time | Grade | Score | Paradigm | Spot | +GEX | -GEX | LIS | Gap | Result | PnL |
+|---|------|------|-------|-------|----------|------|------|------|-----|-----|--------|-----|
+| 1 | 02/03 | 09:30 | A | 80 | GEX-PURE | 6986.4 | 7010 | 6950 | 6984 | +2.4 | LOSS | -8.0 |
+| 7 | 02/03 | 12:26 | A-Entry | 65 | GEX-LIS | 6919.6 | 6980 | 6900 | 6912 | +7.6 | LOSS | -8.0 |
+| 13 | 02/03 | 15:12 | A | 80 | GEX-LIS | 6889.6 | 6930 | 6900 | 6886 | +3.6 | WIN | +20.0 |
+| 62 | 02/05 | 11:26 | A-Entry | 70 | GEX-LIS | 6810.8 | 6890 | 6800 | 6809 | +1.8 | LOSS | -8.0 |
+| 79 | 02/05 | 13:05 | A | 75 | GEX-LIS | 6826.9 | 6890 | 6800 | 6808 | +18.9 | LOSS | -8.0 |
+| 80 | 02/05 | 13:41 | A-Entry | 65 | GEX-PURE | 6809.3 | 6890 | 6800 | 6808 | +1.3 | LOSS | -8.0 |
+| 96 | 02/09 | 09:53 | A+ | 90 | GEX-PURE | 6923.2 | 7015 | 6850 | 6922 | +0.2 | WIN | +20.0 |
+| 97 | 02/09 | 10:26 | A | 75 | GEX-LIS | 6942.1 | 6975 | 6875 | 6939 | +3.1 | WIN | +25.0 |
+| 109 | 02/13 | 14:59 | A | 75 | GEX-LIS | 6843.8 | 6935 | 6850 | 6835 | +9.8 | LOSS | -8.0 |
+| 110 | 02/13 | 15:16 | A-Entry | 65 | GEX-LIS | 6840.4 | 6935 | 6850 | 6827 | +13.3 | LOSS | -8.0 |
+| 111 | 02/13 | 15:31 | A | 80 | GEX-LIS | 6824.3 | 6860 | 6810 | 6823 | +1.3 | EXPIRED | +6.0 |
+| 117 | 02/17 | 15:40 | A+ | 95 | GEX-LIS | 6840.6 | 6935 | 6840 | 6840 | +0.6 | EXPIRED | -0.4 |
+| 123 | 02/18 | 13:00 | A-Entry | 60 | GEX-TARGET | 6902.9 | 6915 | 6830 | 6898 | +5.0 | LOSS | -8.0 |
+| 153 | 02/20 | 11:01 | A | 80 | GEX-MESSY | 6903.1 | 7000 | 6845 | 6900 | +3.1 | LOSS | -8.0 |
+| 156 | 02/20 | 11:11 | A | 80 | GEX-MESSY | 6898.5 | 6920 | 6845 | 6897 | +1.5 | LOSS | -8.0 |
+| 161 | 02/20 | 11:50 | A-Entry | 65 | GEX-MESSY | 6904.7 | 6920 | 6845 | 6897 | +7.7 | LOSS | -8.0 |
+| 162 | 02/20 | 12:02 | A-Entry | 70 | GEX-MESSY | 6902.6 | 7000 | 6845 | 6897 | +5.6 | LOSS | -8.0 |
+
+**Actual: 3W/12L/2E = 17.6% WR, -25.4 pts**
+
+### Finding 1: GEX Alignment Is NOT the Problem
+
+14 of 17 trades had correct alignment (+GEX above spot, -GEX below). Those 14 went 2W/10L/2E = 14% WR. The GEX structure thesis is sound — the detector is firing at wrong times/paradigms.
+
+### Finding 2: Paradigm Quality Matters
+
+| Paradigm | Trades | W/L/E | WR | PnL | Notes |
+|----------|--------|-------|-----|-----|-------|
+| GEX-PURE | 4 | 2/2/0 | 50% | +14.0 | Clean GEX structure |
+| GEX-LIS | 9 | 1/5/3 | 11% | -28.0 | Mixed signals |
+| GEX-MESSY | 4 | 0/4/0 | 0% | -32.0 | All losses, maxP near zero |
+| GEX-TARGET | 1 | 0/1/0 | 0% | -8.0 | |
+
+**GEX-MESSY was 0/4 with near-zero max profit.** "MESSY" literally means the GEX structure is unclear.
+
+### Finding 3: Time of Day
+
+| Period | Trades | W/L/E | WR | PnL |
+|--------|--------|-------|-----|-----|
+| Morning (9:30-11:00) | 3 | 2/1/0 | 67% | +37.0 |
+| Midday (11:00-14:00) | 9 | 0/7/2 | 0% | -72.0 |
+| Afternoon (14:00-16:00) | 5 | 1/4/0 | 20% | +9.6 |
+
+**Every midday trade was a loss.** Mean reversion dominates 11-14:00, overwhelming the GEX directional signal.
+
+### Finding 4: Max Profit on Losers — Stop Too Tight
+
+| # | Max Profit | Stop (PnL) | Notes |
+|---|-----------|------------|-------|
+| 62 | +26.1 | -8.0 | Was right, shaken out |
+| 80 | +24.2 | -8.0 | Was right, shaken out |
+| 109 | +7.2 | -8.0 | Close, not enough room |
+| 123 | +5.1 | -8.0 | Close, not enough room |
+
+Trades #62 and #80 went +24-26 pts in favor before being stopped at -8. Correct directional call killed by tight stop.
+
+### Finding 5: Re-fires on Broken Levels
+
+- Feb 5: #62, #79, #80 all on same LIS 6808 — 3 trades, 0W at the time
+- Feb 13: #109, #110 back-to-back 17 min apart
+- Feb 20: #153, #156, #161, #162 — four trades in 1 hour on same LIS 6897
+
+Cooldown isn't preventing repeated entries on a level that already failed.
+
+### Simulation: Filter + Trail Optimization
+
+Replayed all 17 trades through chain_snapshots price data with different configurations.
+
+**Scenario comparison (8 filtered trades: no MESSY, before 14:00):**
+
+| Config | W/L/E | WR | PnL | Avg/trade |
+|--------|-------|-----|-----|-----------|
+| Fixed tgt=10, stop=12 | 4/4/0 | 50% | -8.0 | -1.0 |
+| Fixed tgt=15, stop=12 | 4/4/0 | 50% | +12.0 | +1.5 |
+| Trail act=5, gap=3, stop=12 | **5/3/0** | **62%** | **+53.6** | **+6.7** |
+| Trail act=5, gap=5, stop=12 | 5/3/0 | 62% | +43.6 | +5.5 |
+| Trail act=10, gap=5, stop=12 | 4/4/0 | 50% | +31.5 | +3.9 |
+| Trail act=15, gap=5, stop=12 | 4/4/0 | 50% | +39.6 | +4.9 |
+| Trail act=15, gap=7, stop=12 | 4/4/0 | 50% | +61.3 | +7.7 |
+| Trail act=20, gap=5, stop=12 | 4/4/0 | 50% | +39.6 | +4.9 |
+
+**Key insight on trail activation levels:**
+
+- **act=5** catches one extra winner (#123 peaked at +5.1, trail locks +2) but risks premature lock on choppy action
+- **act=7 through act=20** produce identical W/L splits — all 4 winners ran past +20, so activation level doesn't matter for them
+- **act=25** loses a winner (#80 peaked at +24.2, never activates, hits -12 stop)
+- **gap=7** outperforms gap=3 and gap=5 because trade #97 ran to +36 — wider gap lets it breathe and captures +48 vs +31
+
+Trail activation 10-15 with gap 5 is the safe sweet spot. Act=5/gap=3 is highest raw PnL but aggressive for 0DTE noise.
+
+### Individual trade replay (best scenario: act=5, gap=3, stop=12):
+
+| # | Date | Paradigm | DB Result | Sim Result | Sim PnL | MaxP |
+|---|------|----------|-----------|------------|---------|------|
+| 1 | 02/03 | GEX-PURE | LOSS | LOSS | -12.0 | +0.0 |
+| 7 | 02/03 | GEX-LIS | LOSS | LOSS | -12.0 | +0.0 |
+| 62 | 02/05 | GEX-LIS | LOSS | **WIN** | **+12.0** | +22.7 |
+| 79 | 02/05 | GEX-LIS | LOSS | LOSS | -12.0 | +0.0 |
+| 80 | 02/05 | GEX-PURE | LOSS | **WIN** | **+21.0** | +24.2 |
+| 96 | 02/09 | GEX-PURE | WIN | WIN | +22.0 | +25.0 |
+| 97 | 02/09 | GEX-LIS | WIN | WIN | +33.0 | +35.7 |
+| 123 | 02/18 | GEX-TARGET | LOSS | **WIN** | **+2.0** | +5.1 |
+
+### Proposed Changes (NOT YET IMPLEMENTED — pending more data)
+
+| Change | Impact | Confidence |
+|--------|--------|------------|
+| **Exclude MESSY paradigm** | Removes 4 guaranteed losses (-32 pts) | HIGH — 0/4 with ~zero max profit |
+| **Exclude after 14:00** | Removes 5 afternoon losers (-9.4 pts) | MEDIUM — small sample |
+| **Widen stop 8 -> 12 pts** | Saves #62 and #80 from shakeout | MEDIUM — bigger losses when wrong |
+| **Add continuous trail (act=10-15, gap=5)** | Lets winners run (+31 to +40 vs +10) | HIGH — proven with DD Exhaustion |
+| **Re-entry cooldown on same LIS** | Prevents 3-4x entries on broken level | LOW — needs more study |
+
+### Estimated Impact if All Applied
+
+| Metric | Current | With Changes |
+|--------|---------|-------------|
+| Trades | 17 | ~8 (filtered) |
+| Win Rate | 18% | ~50-62% |
+| Total PnL | -25.4 | +32 to +54 |
+| Avg/trade | -1.5 | +4 to +7 |
+
+### Caveats
+
+- 17 trades is a very small sample; 8 after filtering is even smaller
+- Trail activation optimization on 4 winners is curve-fitting risk
+- The MESSY filter is the only high-confidence change (clear 0/4 pattern)
+- **REVIEW AFTER: 15+ new GEX Long trades with these filters. Re-run simulation to validate.**

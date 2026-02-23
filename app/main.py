@@ -1064,6 +1064,45 @@ def _backfill_outcomes():
             filled += 1
 
         print(f"[backfill] filled {filled}/{len(rows)} outcomes", flush=True)
+
+        # Second pass: patch legacy rows that have outcome_result but NULL outcome_first_event
+        # (live-resolved trades before this fix was deployed)
+        with engine.begin() as conn:
+            legacy_rows = conn.execute(text("""
+                SELECT id, setup_name, outcome_result, outcome_pnl, outcome_max_profit
+                FROM setup_log
+                WHERE outcome_result IS NOT NULL
+                  AND (outcome_first_event IS NULL OR outcome_max_profit IS NULL)
+            """)).mappings().all()
+
+        if legacy_rows:
+            patched = 0
+            trailing_setups = ("DD Exhaustion", "GEX Long")
+            for lr in legacy_rows:
+                res = lr["outcome_result"]
+                sname = lr["setup_name"]
+                pnl_val = lr["outcome_pnl"]
+                is_trailing = sname in trailing_setups
+                if res == "WIN":
+                    fe = "target" if is_trailing else "10pt"
+                elif res == "LOSS":
+                    fe = "stop"
+                else:  # EXPIRED
+                    fe = "timeout"
+                # Approximate max_profit from P&L for legacy rows (actual max >= final P&L for wins)
+                mp = lr["outcome_max_profit"]
+                if mp is None and pnl_val is not None:
+                    mp = max(pnl_val, 0)  # conservative: at least the final P&L if positive
+                with engine.begin() as conn:
+                    conn.execute(text("""
+                        UPDATE setup_log SET
+                            outcome_first_event = COALESCE(outcome_first_event, :fe),
+                            outcome_max_profit = COALESCE(outcome_max_profit, :mp)
+                        WHERE id = :id
+                    """), {"fe": fe, "mp": mp, "id": lr["id"]})
+                patched += 1
+            print(f"[backfill] patched outcome_first_event/max_profit for {patched} legacy rows", flush=True)
+
     except Exception as e:
         print(f"[backfill] error (non-fatal): {e}", flush=True)
         import traceback
@@ -2725,6 +2764,25 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             log_id = trade.get("setup_log_id")
             if log_id and engine:
                 try:
+                    # Compute first_event
+                    is_trailing = setup_name in ("DD Exhaustion", "GEX Long")
+                    if result_type == "WIN":
+                        first_event = "target" if is_trailing else "10pt"
+                    elif result_type == "LOSS":
+                        first_event = "stop"
+                    else:  # EXPIRED
+                        first_event = "timeout"
+
+                    # Compute max_profit / max_loss from seen extremes
+                    seen_high = trade.get("_seen_high", entry_price)
+                    seen_low = trade.get("_seen_low", entry_price)
+                    if is_long:
+                        max_profit = round(seen_high - entry_price, 2)
+                        max_loss = round(seen_low - entry_price, 2)
+                    else:
+                        max_profit = round(entry_price - seen_low, 2)
+                        max_loss = round(entry_price - seen_high, 2)
+
                     with engine.begin() as conn:
                         conn.execute(text("""
                             UPDATE setup_log SET
@@ -2732,7 +2790,10 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                                 outcome_pnl = :pnl,
                                 outcome_target_level = :tgt,
                                 outcome_stop_level = :sl,
-                                outcome_elapsed_min = :em
+                                outcome_elapsed_min = :em,
+                                outcome_first_event = :fe,
+                                outcome_max_profit = :mp,
+                                outcome_max_loss = :ml
                             WHERE id = :id
                         """), {
                             "res": result_type,
@@ -2740,6 +2801,9 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                             "tgt": target_lvl,
                             "sl": stop_lvl,
                             "em": elapsed_min,
+                            "fe": first_event,
+                            "mp": max_profit,
+                            "ml": max_loss,
                             "id": log_id,
                         })
                 except Exception as db_err:
@@ -6356,16 +6420,22 @@ def api_setup_log_with_outcomes(limit: int = Query(50)):
             entry = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(r).items()}
             # Use stored outcome if already resolved (avoids expensive per-row DB query)
             if entry.get("outcome_result"):
+                fe = entry.get("outcome_first_event")
+                pnl = entry.get("outcome_pnl")
+                mp = entry.get("outcome_max_profit") or 0
+                # hit_10pt = price ever reached +10 from entry (independent of final outcome)
+                # Derive from max_profit (most reliable), fall back to P&L for legacy rows
+                hit_10 = mp >= 10 if mp else (pnl is not None and pnl >= 10)
                 entry["outcome"] = {
                     "result": entry["outcome_result"],
-                    "pnl": entry.get("outcome_pnl"),
-                    "first_event": entry.get("outcome_first_event"),
-                    "max_profit": entry.get("outcome_max_profit") or 0,
+                    "pnl": pnl,
+                    "first_event": fe,
+                    "max_profit": mp,
                     "max_loss": entry.get("outcome_max_loss") or 0,
                     "elapsed_min": entry.get("outcome_elapsed_min"),
-                    "hit_10pt": entry.get("outcome_first_event") in ("10pt", "target", "15pt"),
-                    "hit_target": entry.get("outcome_first_event") == "target",
-                    "hit_stop": entry.get("outcome_first_event") == "stop",
+                    "hit_10pt": hit_10,
+                    "hit_target": entry["outcome_result"] == "WIN",
+                    "hit_stop": entry["outcome_result"] == "LOSS",
                 }
             else:
                 # Only compute in real-time for OPEN/unresolved trades
@@ -10947,18 +11017,21 @@ DASH_HTML_TEMPLATE = """
     function renderTradeLog() {
       const filtered = _tlGetFiltered();
 
-      // Stats
+      // Stats — prefer DB-stored outcome_result (always set for resolved trades)
       let wins=0, losses=0, totalPnl=0, pnlCount=0;
       filtered.forEach(l => {
-        const o = l.outcome || {};
-        const fe = o.first_event;
-        if (fe === '10pt' || fe === 'target' || fe === '15pt') wins++;
-        else if (fe === 'stop') losses++;
-        else if (fe === 'timeout') { if ((o.timeout_pnl||0) > 0) wins++; else if ((o.timeout_pnl||0) < 0) losses++; }
-        else if (l.outcome_result === 'WIN') wins++;
+        if (l.outcome_result === 'WIN') wins++;
         else if (l.outcome_result === 'LOSS') losses++;
+        else if (l.outcome_result === 'EXPIRED') {
+          const epnl = l.outcome_pnl || 0;
+          if (epnl > 0) wins++; else if (epnl < 0) losses++;
+        } else {
+          // Fallback for live/unresolved trades
+          const fe = (l.outcome || {}).first_event;
+          if (fe === '10pt' || fe === 'target' || fe === '15pt') wins++;
+          else if (fe === 'stop') losses++;
+        }
         if (l.outcome_pnl != null) { totalPnl += l.outcome_pnl; pnlCount++; }
-        else if (o.timeout_pnl != null) { totalPnl += o.timeout_pnl; pnlCount++; }
       });
       const wr = (wins+losses) > 0 ? ((wins/(wins+losses))*100).toFixed(0) : '--';
       const pnlColor = totalPnl >= 0 ? '#22c55e' : '#ef4444';

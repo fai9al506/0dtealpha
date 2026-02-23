@@ -4240,7 +4240,11 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                     "outcome_result": row["outcome_result"],
                     "outcome_pnl": row["outcome_pnl"],
                 })
-        return {"signals": signals, "outcomes": outcomes}
+        # Include current ES price so eval_trader can compute stop/target
+        # relative to MES (SPX and MES differ by ~15-20 pts spread)
+        with _es_quote_lock:
+            es_price = _es_quote.get("last_price")
+        return {"signals": signals, "outcomes": outcomes, "es_price": es_price}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -11073,21 +11077,20 @@ DASH_HTML_TEMPLATE = """
         const cStop = stopIsLoss ? '#ef4444' : (o.hit_stop === false ? '#22c55e' : '#888');
 
         // Result — prefer DB-stored outcome_result (consistent with outcome_pnl)
-        // Only fall back to recalculated first_event for open/pending trades
+        // Unresolved trades show OPEN with current P&L (never premature WIN/LOSS)
         let result = '';
         const fe = o.first_event;
         if (l.outcome_result) {
           const rc = l.outcome_result === 'WIN' ? '#22c55e' : l.outcome_result === 'LOSS' ? '#ef4444' : '#888';
           result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
-        } else if (fe === 'pending') result = '<span style="color:#888">PENDING</span>';
-        else if (fe === '10pt' || fe === 'target' || fe === '15pt') result = '<span style="color:#22c55e;font-weight:700">WIN</span>';
-        else if (fe === 'stop') result = '<span style="color:#ef4444;font-weight:700">LOSS</span>';
-        else if (fe === 'miss') result = '<span style="color:#888">MISS</span>';
-        else if (fe === 'timeout') {
-          const tp = o.timeout_pnl || 0;
-          result = tp > 0 ? '<span style="color:#22c55e">TO+'+tp.toFixed(0)+'</span>' : '<span style="color:#ef4444">TO'+tp.toFixed(0)+'</span>';
         } else {
-          result = '<span style="color:#3b82f6;font-weight:600">OPEN</span>';
+          // Trade not yet resolved by live tracker — show OPEN with current P&L
+          const cp = o.max_profit || 0;
+          const cl = o.max_loss || 0;
+          const curPnl = cp > Math.abs(cl) ? cp : cl;
+          if (curPnl > 0) result = '<span style="color:#3b82f6;font-weight:600">OPEN</span> <span style="color:#22c55e">+'+curPnl.toFixed(0)+'</span>';
+          else if (curPnl < 0) result = '<span style="color:#3b82f6;font-weight:600">OPEN</span> <span style="color:#ef4444">'+curPnl.toFixed(0)+'</span>';
+          else result = '<span style="color:#3b82f6;font-weight:600">OPEN</span>';
         }
 
         // P&L
@@ -11205,23 +11208,17 @@ DASH_HTML_TEMPLATE = """
           const stopIsLoss = o.hit_stop && o.first_event === 'stop';
           const cStop = stopIsLoss ? '#ef4444' : (o.hit_stop === false ? '#22c55e' : '#888');
           let result = '';
-          if (o.first_event === 'pending') {
-            result = '<span style="color:#888;font-size:8px">⏳</span>';
-          } else if (o.first_event === '10pt' || o.first_event === 'target' || o.first_event === '15pt') {
-            result = '<span style="color:#22c55e;font-weight:700">WIN</span>';
-          } else if (o.first_event === 'stop') {
-            result = '<span style="color:#ef4444;font-weight:700">LOSS</span>';
-          } else if (o.first_event === 'miss') {
-            result = '<span style="color:#888;font-size:8px">MISS</span>';
-          } else if (o.first_event === 'timeout') {
-            const tp = o.timeout_pnl || 0;
-            result = tp > 0
-              ? '<span style="color:#22c55e;font-size:8px">TO+' + tp.toFixed(0) + '</span>'
-              : '<span style="color:#ef4444;font-size:8px">TO' + tp.toFixed(0) + '</span>';
-          } else if (o.max_profit > 0) {
-            result = '<span style="color:#888">+' + o.max_profit?.toFixed(0) + '</span>';
+          if (l.outcome_result) {
+            const rc = l.outcome_result === 'WIN' ? '#22c55e' : l.outcome_result === 'LOSS' ? '#ef4444' : '#888';
+            result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
           } else {
-            result = '<span style="color:#3b82f6;font-size:8px;font-weight:600">OPEN</span>';
+            // Trade not yet resolved — show OPEN with current P&L hint
+            const cp = o.max_profit || 0;
+            const cl = o.max_loss || 0;
+            const curPnl = cp > Math.abs(cl) ? cp : cl;
+            if (curPnl > 0) result = '<span style="color:#3b82f6;font-size:8px;font-weight:600">OPEN</span> <span style="color:#22c55e;font-size:8px">+'+curPnl.toFixed(0)+'</span>';
+            else if (curPnl < 0) result = '<span style="color:#3b82f6;font-size:8px;font-weight:600">OPEN</span> <span style="color:#ef4444;font-size:8px">'+curPnl.toFixed(0)+'</span>';
+            else result = '<span style="color:#3b82f6;font-size:8px;font-weight:600">OPEN</span>';
           }
           const nameTag = isBofa ? '<span style="color:#a78bfa;font-size:7px;font-weight:600">BofA</span>' : isAbs ? '<span style="color:#f59e0b;font-size:7px;font-weight:600">Abs</span>' : '';
           return `<div class="setup-log-row" data-id="${l.id}" style="display:grid;grid-template-columns:28px 50px 28px 55px 60px 70px 50px 1fr;align-items:center;gap:4px;padding:4px 2px;border-bottom:1px solid var(--border);cursor:pointer" onmouseover="this.style.background='#1a1d21'" onmouseout="this.style.background='transparent'">

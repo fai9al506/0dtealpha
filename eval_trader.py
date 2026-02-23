@@ -235,7 +235,8 @@ class APIPoller:
         self.url = api_url.rstrip("/") + "/api/eval/signals"
         self.api_key = api_key
         self.last_id = 0
-        self._seen_outcomes: set[int] = set()  # track outcome IDs already processed
+        self._seen_signals: set[int] = set()   # track signal IDs already emitted
+        self._seen_outcomes: set[int] = set()   # track outcome IDs already processed
         self._state_date: str = ""  # date string for daily reset
         self._load_state()
 
@@ -251,6 +252,7 @@ class APIPoller:
                 today = date.today().isoformat()
                 if saved_date == today:
                     self.last_id = data.get("last_id", 0)
+                    self._seen_signals = set(data.get("seen_signals", []))
                     self._seen_outcomes = set(data.get("seen_outcomes", []))
                     self._state_date = today
                     log.info(f"API poller state restored: last_id={self.last_id}")
@@ -264,6 +266,7 @@ class APIPoller:
         self._state_file().write_text(json.dumps({
             "date": date.today().isoformat(),
             "last_id": self.last_id,
+            "seen_signals": list(self._seen_signals),
             "seen_outcomes": list(self._seen_outcomes),
         }))
 
@@ -299,6 +302,7 @@ class APIPoller:
 
         raw_signals = data.get("signals", [])
         raw_outcomes = data.get("outcomes", [])
+        es_price = data.get("es_price")  # current MES/ES price from Railway
 
         # Update last_id to highest seen
         if raw_signals:
@@ -308,14 +312,22 @@ class APIPoller:
                 self._save_state()
 
         # Convert API signals to the format open_trade() expects
+        # Use _seen_signals to track which signal IDs we've already processed.
+        # On first sight, always emit the signal even if outcome_result is set
+        # (e.g. DD fired and got REVERSED by AG in the same Railway cycle —
+        # the eval trader should still see the DD signal and let compliance decide).
         new_signals = []
         for s in raw_signals:
-            # Skip if this is an outcome-only row (already resolved before we saw it)
-            if s.get("outcome_result"):
+            sid = s["id"]
+            if sid in self._seen_signals:
                 continue
+            self._seen_signals.add(sid)
             sig = self._api_to_signal(s)
             if sig:
+                sig["es_price"] = es_price
                 new_signals.append(sig)
+        if new_signals:
+            self._save_state()
 
         # Convert outcomes (only unseen ones)
         new_outcomes = []
@@ -752,7 +764,7 @@ class NT8Bridge:
 
     def _write(self, cmd: str):
         try:
-            f = self.incoming / f"eval_{int(time.time() * 1000)}.txt"
+            f = self.incoming / f"oif{int(time.time() * 1000)}.txt"
             f.write_text(cmd)
             log.debug(f"OIF: {cmd.strip()}")
         except Exception as e:
@@ -928,15 +940,25 @@ class PositionTracker:
         else:
             target_pts = float(cfg_target)
 
-        stop_price = (spot - stop_pts) if is_long else (spot + stop_pts)
-        target_price = (spot + target_pts) if is_long else (spot - target_pts)
+        # Use ES/MES price for stop/target calculation (SPX and MES differ by ~15-20 pts)
+        # ES price comes from Railway API's quote stream; fall back to SPX spot if unavailable
+        es_price = signal.get("es_price")
+        if es_price:
+            order_ref = es_price
+            log.info(f"  Using ES price for orders: {es_price:.2f} (SPX spot: {spot:.2f})")
+        else:
+            order_ref = spot
+            log.warning(f"  ES price unavailable — using SPX spot {spot:.2f} for orders")
 
-        # Get ES entry price for breakeven tracking
-        es_entry = None
-        if self.quote_poller and self.quote_poller.available:
+        stop_price = (order_ref - stop_pts) if is_long else (order_ref + stop_pts)
+        target_price = (order_ref + target_pts) if is_long else (order_ref - target_pts)
+
+        # ES entry price for breakeven tracking
+        es_entry = es_price
+        if not es_entry and self.quote_poller and self.quote_poller.available:
             es_entry = self.quote_poller.get_es_price()
-            if es_entry:
-                log.info(f"  ES entry price: {es_entry:.2f} (for breakeven tracking)")
+        if es_entry:
+            log.info(f"  ES entry price: {es_entry:.2f} (for breakeven tracking)")
 
         # Place orders in NT8
         if trail_only:
@@ -948,7 +970,8 @@ class PositionTracker:
             "setup_name": name,
             "direction": direction,
             "grade": signal.get("grade", "?"),
-            "entry_price": spot,
+            "entry_price": order_ref,
+            "spx_spot": spot,
             "stop_price": stop_price,
             "target_price": target_price if not trail_only else None,
             "stop_pts": stop_pts,
@@ -967,12 +990,12 @@ class PositionTracker:
         pnl_risk = stop_pts * qty * MES_POINT_VALUE
         if trail_only:
             log.info(f"TRADE OPENED: {name} {direction.upper()} [{signal.get('grade', '?')}]")
-            log.info(f"  Entry: {spot:.2f} | Stop: {stop_price:.2f} (-{stop_pts}pts / -${pnl_risk:.0f}) | "
+            log.info(f"  MES Entry: {order_ref:.2f} | Stop: {stop_price:.2f} (-{stop_pts}pts / -${pnl_risk:.0f}) | "
                      f"Target: TRAIL-ONLY (breakeven @ +{self.cfg.get('be_trigger_pts', 5)}pts) | Qty: {qty}")
         else:
             pnl_reward = target_pts * qty * MES_POINT_VALUE
             log.info(f"TRADE OPENED: {name} {direction.upper()} [{signal.get('grade', '?')}]")
-            log.info(f"  Entry: {spot:.2f} | Stop: {stop_price:.2f} (-{stop_pts}pts / -${pnl_risk:.0f}) | "
+            log.info(f"  MES Entry: {order_ref:.2f} | Stop: {stop_price:.2f} (-{stop_pts}pts / -${pnl_risk:.0f}) | "
                      f"Target: {target_price:.2f} (+{target_pts:.1f}pts / +${pnl_reward:.0f}) | Qty: {qty}")
 
     def close_on_outcome(self, outcome: dict):

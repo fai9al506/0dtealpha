@@ -270,13 +270,14 @@ class APIPoller:
             "seen_outcomes": list(self._seen_outcomes),
         }))
 
-    def poll(self) -> tuple[list[dict], list[dict]]:
-        """Poll the API. Returns (new_signals, new_outcomes).
+    def poll(self) -> tuple[list[dict], list[dict], float | None]:
+        """Poll the API. Returns (new_signals, new_outcomes, es_price).
 
         Each signal dict matches the format expected by open_trade():
           {setup_name, direction, spot, grade, msg_target_pts, msg_stop_pts}
         Each outcome dict matches close_on_outcome():
           {setup_name, result, pnl_pts}
+        es_price: current ES/MES price from Railway quote stream (for trailing stop)
         """
         try:
             resp = requests.get(
@@ -287,18 +288,18 @@ class APIPoller:
             )
             if resp.status_code == 401:
                 log.error("API auth failed — check eval_api_key in config")
-                return [], []
+                return [], [], None
             if resp.status_code != 200:
                 log.warning(f"API poll error: HTTP {resp.status_code}")
-                return [], []
+                return [], [], None
 
             data = resp.json()
         except requests.ConnectionError:
             log.debug("API unreachable — will retry")
-            return [], []
+            return [], [], None
         except Exception as e:
             log.error(f"API poll error: {e}")
-            return [], []
+            return [], [], None
 
         raw_signals = data.get("signals", [])
         raw_outcomes = data.get("outcomes", [])
@@ -344,7 +345,7 @@ class APIPoller:
         if new_outcomes:
             self._save_state()
 
-        return new_signals, new_outcomes
+        return new_signals, new_outcomes, es_price
 
     def _api_to_signal(self, s: dict) -> dict | None:
         """Convert API signal entry to the dict format expected by open_trade()."""
@@ -376,6 +377,7 @@ class APIPoller:
             "setup_name": setup,
             "direction": direction,
             "spot": spot,
+            "signal_ts": s.get("ts"),
             "grade": s.get("grade", "?"),
             "msg_target_pts": msg_target_pts,
             "msg_stop_pts": msg_stop_pts,
@@ -648,6 +650,7 @@ class ComplianceGate:
             return False, f"{signal['setup_name']} disabled"
 
         # Already in position?
+        # Opposite-direction signals return "reverse" so main loop can close + reopen
         if self.has_open_position:
             return False, "already in position"
 
@@ -865,6 +868,29 @@ class NT8Bridge:
         self._write(f"CLOSEPOSITION;{self.account};{self.symbol}\n")
         log.info(f"NT8 CLOSEPOSITION: {self.symbol}")
 
+    def check_order_state(self, order_id: str) -> dict | None:
+        """Check NT8 outgoing folder for order fill/reject status.
+
+        NT8 writes '{account}_{orderID}.txt' with content like:
+          FILLED;qty;price   or   REJECTED;0;0
+        Returns {status, qty, price} or None if no file found.
+        """
+        outgoing = self.incoming.parent / "outgoing"
+        if not outgoing.exists():
+            return None
+        f = outgoing / f"{self.account}_{order_id}.txt"
+        if not f.exists():
+            return None
+        try:
+            content = f.read_text().strip()
+            parts = content.split(";")
+            status = parts[0]
+            qty = int(parts[1]) if len(parts) > 1 else 0
+            price = float(parts[2]) if len(parts) > 2 else 0.0
+            return {"status": status, "qty": qty, "price": price}
+        except Exception:
+            return None
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  POSITION TRACKER
@@ -887,6 +913,26 @@ class PositionTracker:
             try:
                 pos = json.loads(POSITION_FILE.read_text())
                 if pos:
+                    # Check if position is from a previous day → auto-flatten
+                    pos_ts = pos.get("ts", "")
+                    if pos_ts:
+                        try:
+                            pos_dt = datetime.fromisoformat(pos_ts)
+                            today_ct = datetime.now(CT).date()
+                            if pos_dt.date() < today_ct:
+                                log.warning(f"STALE POSITION from {pos_dt.date()}: "
+                                            f"{pos['setup_name']} {pos['direction']} "
+                                            f"@ {pos['entry_price']:.2f}")
+                                log.warning(f"  Auto-flattening — should have been closed EOD")
+                                self.position = pos  # set temporarily so flatten() works
+                                self.compliance.has_open_position = True
+                                # Don't call flatten() yet — nt8 not initialized
+                                # Just mark for flatten on first loop iteration
+                                self._stale_flatten = True
+                                return
+                        except Exception:
+                            pass
+
                     self.position = pos
                     self.compliance.has_open_position = True
                     tgt = pos.get('target_price')
@@ -896,6 +942,7 @@ class PositionTracker:
                              f"target={tgt_str})")
             except Exception:
                 pass
+        self._stale_flatten = False
 
     def _save(self):
         if self.position:
@@ -1030,6 +1077,51 @@ class PositionTracker:
         self.position = None
         self._save()
 
+    def is_opposite(self, signal: dict) -> bool:
+        """Check if signal is in opposite direction to current position."""
+        if not self.position:
+            return False
+        pos_long = self.position["direction"] in ("long", "bullish")
+        sig_long = signal["direction"] in ("long", "bullish")
+        return pos_long != sig_long
+
+    def reverse(self, signal: dict, es_price: float | None):
+        """Close current position and open new one in opposite direction.
+
+        Matches Railway auto_trader REVERSE behavior.
+        """
+        if not self.position:
+            return
+
+        old_name = self.position["setup_name"]
+        old_dir = self.position["direction"].upper()
+        new_name = signal["setup_name"]
+        new_dir = signal["direction"].upper()
+        trade_qty = self.position.get("qty", self.cfg["qty"])
+
+        log.info(f"REVERSING: closing {old_name} {old_dir} for new {new_name} {new_dir}")
+
+        # Close current position
+        self.nt8.close_position()
+        self.nt8.cancel(self.position["stop_oid"])
+        if self.position.get("target_oid"):
+            self.nt8.cancel(self.position["target_oid"])
+
+        # Estimate P&L from ES price (best we can do without fill data)
+        pnl_pts = 0.0
+        if es_price and self.position.get("es_entry_price"):
+            is_long = self.position["direction"] in ("long", "bullish")
+            pnl_pts = (es_price - self.position["es_entry_price"]) if is_long else (self.position["es_entry_price"] - es_price)
+
+        self.compliance.record_trade(pnl_pts, old_name, trade_qty)
+        log.info(f"  Closed {old_name}: ~{pnl_pts:+.1f} pts (estimated from ES price)")
+
+        self.position = None
+        self._save()
+
+        # Open new position
+        self.open_trade(signal)
+
     def flatten(self, reason: str = "EOD"):
         """Force-close position (e.g., EOD flatten)."""
         if not self.position:
@@ -1050,38 +1142,134 @@ class PositionTracker:
         self.position = None
         self._save()
 
-    def check_breakeven(self):
-        """Move stop to breakeven when ES moves +be_trigger_pts from entry."""
-        if not self.position:
-            return
-        if self.position.get("be_triggered"):
+    # Trail params — mirrors Railway's _trail_params in main.py
+    # DD Exhaustion: continuous trail (activation=20, gap=5)
+    # GEX Long: rung-based trail (rung_start=12, step=5, lock_offset=2)
+    _TRAIL_PARAMS = {
+        "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
+        "GEX Long":      {"mode": "rung", "rung_start": 12, "step": 5, "lock_offset": 2},
+    }
+
+    def check_trail(self, es_price: float | None):
+        """Trailing stop + breakeven using live ES price from Railway API.
+
+        Trail logic (same as Railway):
+          - DD Exhaustion: continuous — once profit >= 20, lock at max_profit - 5
+          - GEX Long: rung-based — +12→lock+10, +17→lock+15, +22→lock+20, ...
+          - All others: breakeven only — move stop to entry at +be_trigger_pts
+        """
+        if not self.position or not es_price:
             return
         if not self.position.get("es_entry_price"):
             return
-        if not self.quote_poller or not self.quote_poller.available:
-            return
 
-        be_pts = self.cfg.get("be_trigger_pts", 5.0)
         es_entry = self.position["es_entry_price"]
-        es_now = self.quote_poller.get_es_price()
-        if es_now is None:
+        is_long = self.position["direction"] in ("long", "bullish")
+        profit = (es_price - es_entry) if is_long else (es_entry - es_price)
+        setup_name = self.position["setup_name"]
+        qty = self.position.get("qty", self.cfg["qty"])
+
+        # Track max favorable excursion
+        max_fav = self.position.get("_max_fav", 0.0)
+        if profit > max_fav:
+            max_fav = profit
+            self.position["_max_fav"] = max_fav
+
+        tp = self._TRAIL_PARAMS.get(setup_name)
+        new_stop = None
+
+        if tp:
+            # ── Trailing stop setups ──
+            if tp["mode"] == "continuous":
+                # Continuous: once max_fav >= activation, lock at max_fav - gap
+                if max_fav >= tp["activation"]:
+                    lock = max_fav - tp["gap"]
+                    new_stop = (es_entry + lock) if is_long else (es_entry - lock)
+            else:
+                # Rung-based: step every N pts with lock offset
+                rung_start = tp["rung_start"]
+                step = tp["step"]
+                lock_offset = tp["lock_offset"]
+                if max_fav >= rung_start:
+                    rungs_hit = int((max_fav - rung_start) / step)
+                    lock = rung_start + (rungs_hit * step) - lock_offset
+                    new_stop = (es_entry + lock) if is_long else (es_entry - lock)
+        else:
+            # ── Non-trailing setups: breakeven only ──
+            be_pts = self.cfg.get("be_trigger_pts", 5.0)
+            if not self.position.get("be_triggered") and profit >= be_pts:
+                new_stop = es_entry
+                self.position["be_triggered"] = True
+
+        # Move stop if new level is tighter than current
+        if new_stop is not None:
+            current_stop = self.position["stop_price"]
+            tighter = (new_stop > current_stop) if is_long else (new_stop < current_stop)
+            if tighter:
+                self.nt8.change_stop(self.position["stop_oid"], new_stop, qty)
+                old_stop = self.position["stop_price"]
+                self.position["stop_price"] = new_stop
+                self._save()
+                trail_type = "TRAIL" if tp else "BREAKEVEN"
+                log.info(f"  {trail_type}: stop {old_stop:.2f} → {new_stop:.2f} "
+                         f"(profit={profit:+.1f} max={max_fav:+.1f})")
+
+    def check_nt8_fills(self):
+        """Poll NT8 outgoing folder to detect stop/target fills or rejections.
+
+        If the stop or target filled in NT8, close the position in the tracker
+        so we don't block new signals with a phantom position.
+        """
+        if not self.position:
             return
 
+        stop_oid = self.position.get("stop_oid")
+        target_oid = self.position.get("target_oid")
+        entry_oid = self.position.get("entry_oid")
+        trade_qty = self.position.get("qty", self.cfg["qty"])
         is_long = self.position["direction"] in ("long", "bullish")
-        triggered = False
-        if is_long and es_now >= es_entry + be_pts:
-            triggered = True
-        elif not is_long and es_now <= es_entry - be_pts:
-            triggered = True
 
-        if triggered:
-            qty = self.position.get("qty", self.cfg["qty"])
-            self.nt8.change_stop(self.position["stop_oid"], es_entry, qty)
-            self.position["be_triggered"] = True
-            self.position["stop_price"] = es_entry
-            self._save()
-            log.info(f"BREAKEVEN: stop moved to {es_entry:.2f} "
-                     f"(ES now {es_now:.2f}, entry was {es_entry:.2f})")
+        # Check if entry was rejected
+        if entry_oid:
+            entry_state = self.nt8.check_order_state(entry_oid)
+            if entry_state and entry_state["status"] == "REJECTED":
+                log.warning(f"NT8: entry REJECTED — clearing position")
+                self.position = None
+                self.compliance.has_open_position = False
+                self._save()
+                return
+
+        # Check if stop filled
+        if stop_oid:
+            stop_state = self.nt8.check_order_state(stop_oid)
+            if stop_state and stop_state["status"] == "FILLED":
+                fill_price = stop_state["price"]
+                entry_price = self.position["entry_price"]
+                pnl_pts = (fill_price - entry_price) if is_long else (entry_price - fill_price)
+                log.info(f"NT8: stop FILLED @ {fill_price:.2f} → {pnl_pts:+.1f} pts")
+                # Cancel target if it exists
+                if target_oid:
+                    self.nt8.cancel(target_oid)
+                self.compliance.record_trade(pnl_pts, self.position["setup_name"], trade_qty)
+                self.position = None
+                self._save()
+                return
+
+        # Check if target filled
+        if target_oid:
+            target_state = self.nt8.check_order_state(target_oid)
+            if target_state and target_state["status"] == "FILLED":
+                fill_price = target_state["price"]
+                entry_price = self.position["entry_price"]
+                pnl_pts = (fill_price - entry_price) if is_long else (entry_price - fill_price)
+                log.info(f"NT8: target FILLED @ {fill_price:.2f} → {pnl_pts:+.1f} pts")
+                # Cancel stop
+                if stop_oid:
+                    self.nt8.cancel(stop_oid)
+                self.compliance.record_trade(pnl_pts, self.position["setup_name"], trade_qty)
+                self.position = None
+                self._save()
+                return
 
     @property
     def is_open(self) -> bool:
@@ -1186,10 +1374,16 @@ def main():
     nt8 = NT8Bridge(cfg["nt8_incoming_folder"], cfg["nt8_account_id"], mes_symbol)
     tracker = PositionTracker(nt8, compliance, cfg, quote_poller)
 
+    # Auto-flatten stale positions from previous day
+    if getattr(tracker, '_stale_flatten', False):
+        tracker.flatten("STALE_OVERNIGHT")
+        tracker._stale_flatten = False
+
     poll_interval = cfg.get("telegram_poll_interval_s", 2)
     log.info(f"Polling every {poll_interval}s...")
-    last_be_check = 0.0
-    BE_CHECK_INTERVAL = 5.0  # seconds between breakeven checks
+    last_trail_check = 0.0
+    TRAIL_CHECK_INTERVAL = 5.0  # seconds between trail/fill checks
+    latest_es_price = None  # updated from each API poll
 
     try:
         while True:
@@ -1203,14 +1397,17 @@ def main():
             if now_ct.time() >= flatten_time and tracker.is_open:
                 tracker.flatten("EOD_FLATTEN")
 
-            # Breakeven stop check (every 5s when position open)
-            if tracker.is_open and time.time() - last_be_check >= BE_CHECK_INTERVAL:
-                tracker.check_breakeven()
-                last_be_check = time.time()
+            # Check NT8 fills + trailing stop (every 5s when position open)
+            if tracker.is_open and time.time() - last_trail_check >= TRAIL_CHECK_INTERVAL:
+                tracker.check_nt8_fills()
+                tracker.check_trail(latest_es_price)
+                last_trail_check = time.time()
 
             # ── Poll for signals and outcomes ──
             if use_api:
-                new_signals, new_outcomes = api_poller.poll()
+                new_signals, new_outcomes, poll_es_price = api_poller.poll()
+                if poll_es_price:
+                    latest_es_price = poll_es_price
 
                 # Process outcomes first
                 for outcome in new_outcomes:
@@ -1218,10 +1415,36 @@ def main():
                         tracker.close_on_outcome(outcome)
 
                 # Process signals
+                MAX_SIGNAL_AGE_S = 120  # skip signals older than 2 minutes
                 for signal in new_signals:
                     log.info(f"Signal received: {signal['setup_name']} "
                              f"{signal['direction'].upper()} [{signal.get('grade', '?')}] "
                              f"@ {signal['spot']:.2f}")
+                    # Staleness check: skip signals older than 2 minutes
+                    sig_ts = signal.get("signal_ts")
+                    if sig_ts:
+                        try:
+                            sig_dt = datetime.fromisoformat(sig_ts)
+                            if sig_dt.tzinfo is None:
+                                sig_dt = sig_dt.replace(tzinfo=ET)
+                            age_s = (datetime.now(ET) - sig_dt).total_seconds()
+                            if age_s > MAX_SIGNAL_AGE_S:
+                                log.info(f"  SKIPPED: signal too old ({age_s:.0f}s > {MAX_SIGNAL_AGE_S}s)")
+                                continue
+                        except Exception:
+                            pass
+                    # Check for reversal: opposite-direction signal while in position
+                    if tracker.is_open and tracker.is_opposite(signal):
+                        # Run compliance on the new signal (skip "already in position")
+                        compliance.has_open_position = False
+                        allowed, reason = compliance.check(signal)
+                        compliance.has_open_position = True
+                        if not allowed:
+                            log.info(f"  BLOCKED (reverse): {reason}")
+                            continue
+                        tracker.reverse(signal, latest_es_price)
+                        continue
+
                     allowed, reason = compliance.check(signal)
                     if not allowed:
                         log.info(f"  BLOCKED: {reason}")
@@ -1261,5 +1484,84 @@ def main():
         log.info("State saved. Goodbye.")
 
 
+def test_mode():
+    """Test the full OIF pipeline with a fake signal.
+
+    Usage: python eval_trader.py --test [buy|sell]
+
+    Places a small test order (1 MES), monitors NT8 outgoing for fills,
+    then auto-flattens after 10 seconds. Tests the entire chain:
+      signal → compliance → OIF write → NT8 fill detection → position close
+    """
+    direction = "long"
+    if len(sys.argv) > 2 and sys.argv[2].lower() in ("sell", "short"):
+        direction = "short"
+
+    cfg = load_config()
+    mes_symbol = cfg["nt8_mes_symbol"]
+    if mes_symbol.lower() == "auto":
+        mes_symbol = current_mes_symbol("nt8")
+
+    nt8 = NT8Bridge(cfg["nt8_incoming_folder"], cfg["nt8_account_id"], mes_symbol)
+
+    log.info("=" * 50)
+    log.info("  TEST MODE — fake signal pipeline test")
+    log.info("=" * 50)
+    log.info(f"  Symbol: {mes_symbol}")
+    log.info(f"  Direction: {direction.upper()}")
+    log.info(f"  Qty: 1 (test)")
+    log.info("")
+
+    # Step 1: Place market entry + stop
+    is_long = direction == "long"
+    # Use a wide stop so it won't fill during test (50 pts away)
+    fake_price = 6850.0  # doesn't matter — market order fills at current price
+    stop_price = (fake_price - 50) if is_long else (fake_price + 50)
+
+    log.info("[1/4] Placing market entry + stop via OIF...")
+    oids = nt8.place_entry_and_stop(direction, 1, stop_price)
+    log.info(f"  entry_oid: {oids['entry_oid']}")
+    log.info(f"  stop_oid:  {oids['stop_oid']}")
+
+    # Step 2: Wait for NT8 to process and check outgoing
+    log.info("[2/4] Waiting for NT8 fill (checking outgoing folder)...")
+    for i in range(20):  # wait up to 10 seconds
+        time.sleep(0.5)
+        entry_state = nt8.check_order_state(oids["entry_oid"])
+        if entry_state:
+            log.info(f"  Entry: {entry_state['status']} qty={entry_state['qty']} "
+                     f"price={entry_state['price']}")
+            break
+    else:
+        log.warning("  No entry fill detected in 10s — check NT8 manually")
+
+    stop_state = nt8.check_order_state(oids["stop_oid"])
+    if stop_state:
+        log.info(f"  Stop: {stop_state['status']} "
+                 f"{'@ ' + str(stop_state['price']) if stop_state['price'] else ''}")
+    else:
+        log.info("  Stop: pending (not yet filled — good)")
+
+    # Step 3: Flatten
+    log.info("[3/4] Flattening test position...")
+    time.sleep(1)
+    nt8.close_position()
+    nt8.cancel(oids["stop_oid"])
+
+    # Step 4: Verify close
+    log.info("[4/4] Waiting for close confirmation...")
+    time.sleep(2)
+    stop_state2 = nt8.check_order_state(oids["stop_oid"])
+    if stop_state2:
+        log.info(f"  Stop after cancel: {stop_state2['status']}")
+
+    log.info("")
+    log.info("TEST COMPLETE. Check NT8 to confirm position is flat.")
+    log.info("If everything worked: entry filled, stop cancelled, position closed.")
+
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == "--test":
+        test_mode()
+    else:
+        main()

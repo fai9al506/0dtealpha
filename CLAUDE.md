@@ -101,6 +101,7 @@ This file scrapes a third-party website using Playwright with carefully tuned:
 ## Repo Structure
 
 - `app/` — production code (main.py, setup_detector.py, auto_trader.py) — **this is the main codebase**
+- `eval_trader.py` — local E2T auto-trader (polls Railway API → OIF → NT8 → MES). Runs on user's PC, not Railway.
 - `volland_worker_v2.py` — **ACTIVE** Playwright scraper (see warning above)
 - `volland_worker.py` — **LEGACY/SUSPENDED** v1 scraper (do NOT run)
 - `0dtealpha/` — git submodule (separate repo, NOT the main codebase)
@@ -143,7 +144,7 @@ Append new analysis sections to this file after each review session.
 - Live outcome tracking: `_setup_open_trades` list tracks open setups, `_check_setup_outcomes(spot)` checks each ~30s cycle for WIN/LOSS/EXPIRED, sends per-trade Telegram. `_compute_setup_levels(r)` extracts target/stop from any setup result dict.
 - EOD summary: `_send_setup_eod_summary()` cron at 16:05 ET — expires remaining open trades, sends daily summary Telegram (trades, wins/losses, net P&L, win rate)
 - Admin password from `ADMIN_PASSWORD` env var (not hardcoded)
-- API endpoints: `/api/series`, `/api/snapshot`, `/api/history`, `/api/volland/*`, `/api/es/delta/*`, `/api/es/delta/rangebars`, `/api/health`
+- API endpoints: `/api/series`, `/api/snapshot`, `/api/history`, `/api/volland/*`, `/api/es/delta/*`, `/api/es/delta/rangebars`, `/api/health`, `/api/eval/signals` (Bearer token auth, returns signals+outcomes+es_price)
 
 **app/setup_detector.py** (Setup scoring module):
 - Self-contained module — receives all data as parameters, no imports from main.py
@@ -257,6 +258,33 @@ Self-contained module (`app/auto_trader.py`) that auto-trades **10 MES** futures
 7. Health endpoint + admin API (`/api/auto-trade/status`, `/api/auto-trade/toggle`)
 
 **Crash recovery:** Active orders persisted to `auto_trade_orders` table (JSONB), restored on startup.
+
+### Eval Trader (`eval_trader.py` — Local E2T Auto-Trader)
+
+Standalone local script that polls Railway for setup signals and places MES orders on NinjaTrader 8 for E2T (Earn2Trade) evaluation account. Runs on the user's local PC, NOT on Railway.
+
+**Architecture:** Railway `/api/eval/signals` → `APIPoller` → `ComplianceGate` → `NT8Bridge` (OIF file) → NinjaTrader 8 → Rithmic → E2T
+
+**Key classes:**
+- `APIPoller` — polls `/api/eval/signals` every 2s with Bearer token auth. Returns `(signals, outcomes, es_price)`. Tracks `_seen_signals` set to prevent re-emitting. Daily reset. State in `eval_trader_api_state.json`.
+- `NT8Bridge` — writes OIF files (`oif{timestamp}.txt`) to NT8 incoming folder. Reads fill/reject from outgoing folder (`{account}_{orderID}.txt`).
+- `ComplianceGate` — E2T 50K TCP rules: daily loss limit, max contracts, max losses/day, market hours, daily P&L cap.
+- `PositionTracker` — open position state, trailing stop, NT8 fill detection, reversal, stale overnight auto-flatten. State in `eval_trader_position.json`.
+
+**Critical design points:**
+- **ES price for stops**: SPX and MES differ by ~15-20 pts (variable spread). Railway sends `es_price` from quote stream. Stop/target calculated from ES price, NOT SPX spot.
+- **OIF naming**: NT8 ATI requires prefix `oif`, extension `.txt`. Example: `oif1740422400000.txt`.
+- **Signal staleness**: `MAX_SIGNAL_AGE_S = 120` — signals older than 2 min are skipped (prevents stale entries after restart).
+- **Trailing stop**: DD Exhaustion=continuous trail (activation=20, gap=5). GEX Long=rung-based (start=12, step=5, lock=rung-2). Others=breakeven at `+be_trigger_pts`.
+- **Reversal**: Opposite-direction signal closes current position, opens new one. Checks compliance for new position first.
+- **Stale overnight**: On startup, if position date < today → auto-flatten.
+- **Test mode**: `python eval_trader.py --test buy` or `--test sell` for manual testing.
+
+**Config files (local, gitignored state files):**
+- `eval_trader_config.json` — setup rules, E2T params, API URL/key, NT8 paths, qty
+- `eval_trader_state.json` — daily P&L, trade count, compliance state
+- `eval_trader_api_state.json` — `last_id`, `seen_signals`, `seen_outcomes` (daily reset)
+- `eval_trader_position.json` — open position for crash recovery
 
 ### Database Tables
 - `chain_snapshots` - options chain data with Greeks

@@ -3995,12 +3995,45 @@ def _send_setup_eod_summary():
 
     _setup_open_trades = []
 
-    # Send daily summary if there were any trades
-    if _setup_resolved_trades:
-        summary_msg = format_setup_daily_summary(_setup_resolved_trades)
+    # Build daily summary from DB (not in-memory) so mid-day restarts don't lose trades
+    trades_for_summary = []
+    if engine:
+        try:
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            with engine.connect() as conn:
+                rows = conn.execute(text("""
+                    SELECT setup_name, direction, grade, ts,
+                           outcome_result, outcome_pnl, outcome_elapsed_min
+                    FROM setup_log
+                    WHERE ts >= :today_start
+                      AND outcome_result IS NOT NULL
+                    ORDER BY ts ASC
+                """), {"today_start": today_start}).fetchall()
+            for row in rows:
+                ts_val = row[3]
+                ts_str = ts_val.strftime("%H:%M") if hasattr(ts_val, "strftime") else ""
+                trades_for_summary.append({
+                    "setup_name": row[0],
+                    "direction": row[1],
+                    "grade": row[2],
+                    "ts_str": ts_str,
+                    "result_type": row[4],
+                    "pnl": float(row[5]) if row[5] is not None else 0.0,
+                    "elapsed_min": int(row[6]) if row[6] is not None else 0,
+                })
+            print(f"[eod-summary] loaded {len(trades_for_summary)} trades from DB", flush=True)
+        except Exception as db_err:
+            print(f"[eod-summary] DB query error, falling back to in-memory: {db_err}", flush=True)
+            trades_for_summary = _setup_resolved_trades
+
+    if not trades_for_summary:
+        trades_for_summary = _setup_resolved_trades
+
+    if trades_for_summary:
+        summary_msg = format_setup_daily_summary(trades_for_summary)
         if summary_msg:
             send_telegram_setups(summary_msg)
-            print(f"[eod-summary] sent daily summary ({len(_setup_resolved_trades)} trades)", flush=True)
+            print(f"[eod-summary] sent daily summary ({len(trades_for_summary)} trades)", flush=True)
     else:
         print("[eod-summary] no trades today, skipping summary", flush=True)
 

@@ -909,35 +909,11 @@ def _backfill_outcomes():
     if not engine:
         return
     try:
-        # NOTE: Previously reset ALL DD/GEX outcomes on every startup to recalculate
-        # trailing stops. Removed — live tracker outcomes are more accurate (30s polling)
-        # than backfill (2-min playback snapshots). Backfill still catches NULL outcomes.
-        # Re-verify EXPIRED outcomes — live tracker polling may have missed stop/target hits
-        # The historical backfill uses playback_snapshots (2-min granularity) which is more
-        # reliable than 30s live polling that can miss price spikes between checks
-        with engine.begin() as conn:
-            reset2 = conn.execute(text("""
-                UPDATE setup_log SET outcome_result = NULL, outcome_pnl = NULL,
-                       outcome_target_level = NULL, outcome_stop_level = NULL,
-                       outcome_elapsed_min = NULL, outcome_max_profit = NULL,
-                       outcome_max_loss = NULL, outcome_first_event = NULL
-                WHERE outcome_result = 'EXPIRED'
-                  AND setup_name NOT IN ('DD Exhaustion', 'ES Absorption')
-            """))
-            if reset2.rowcount > 0:
-                print(f"[backfill] re-verifying {reset2.rowcount} EXPIRED outcomes against price history", flush=True)
-        # Re-verify AG Short WIN outcomes — P&L was capped at 10pt even when full target was hit
-        with engine.begin() as conn:
-            reset3 = conn.execute(text("""
-                UPDATE setup_log SET outcome_result = NULL, outcome_pnl = NULL,
-                       outcome_target_level = NULL, outcome_stop_level = NULL,
-                       outcome_elapsed_min = NULL, outcome_max_profit = NULL,
-                       outcome_max_loss = NULL, outcome_first_event = NULL
-                WHERE outcome_result = 'WIN'
-                  AND setup_name = 'AG Short'
-            """))
-            if reset3.rowcount > 0:
-                print(f"[backfill] re-verifying {reset3.rowcount} AG Short WIN outcomes for full target P&L", flush=True)
+        # NOTE: One-time migration resets removed (2026-02-24).
+        # Previously reset EXPIRED and AG Short WIN outcomes on every startup to recalculate.
+        # This was destructive — overwrote accurate live tracker values (30s polling + session H/L)
+        # with less accurate backfill values (2-min playback snapshots).
+        # Backfill now ONLY fills NULL outcomes (never overwrites existing ones).
         # During market hours, skip today's trades — let the live tracker handle them
         # (backfill with incomplete price data persists wrong outcomes)
         _now = now_et()

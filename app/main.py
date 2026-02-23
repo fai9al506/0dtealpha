@@ -4166,6 +4166,7 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 "abs_es_price": row["abs_es_price"],
                 "stop_level": stop_lvl,
                 "target_level": tgt_lvl,
+                "outcome_result": row["outcome_result"],
             }
             signals.append(entry)
             if row["outcome_result"]:

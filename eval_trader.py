@@ -236,6 +236,7 @@ class APIPoller:
         self.api_key = api_key
         self.last_id = 0
         self._seen_outcomes: set[int] = set()  # track outcome IDs already processed
+        self._state_date: str = ""  # date string for daily reset
         self._load_state()
 
     def _state_file(self) -> Path:
@@ -246,14 +247,22 @@ class APIPoller:
         if sf.exists():
             try:
                 data = json.loads(sf.read_text())
-                self.last_id = data.get("last_id", 0)
-                self._seen_outcomes = set(data.get("seen_outcomes", []))
-                log.info(f"API poller state restored: last_id={self.last_id}")
+                saved_date = data.get("date", "")
+                today = date.today().isoformat()
+                if saved_date == today:
+                    self.last_id = data.get("last_id", 0)
+                    self._seen_outcomes = set(data.get("seen_outcomes", []))
+                    self._state_date = today
+                    log.info(f"API poller state restored: last_id={self.last_id}")
+                else:
+                    log.info(f"API poller: new day (was {saved_date}), resetting state")
+                    self._state_date = today
             except Exception:
                 pass
 
     def _save_state(self):
         self._state_file().write_text(json.dumps({
+            "date": date.today().isoformat(),
             "last_id": self.last_id,
             "seen_outcomes": list(self._seen_outcomes),
         }))

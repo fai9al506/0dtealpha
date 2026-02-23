@@ -3978,6 +3978,43 @@ def _send_setup_eod_summary():
         resolved = {**trade, "result_type": "EXPIRED", "pnl": pnl, "elapsed_min": elapsed_min,
                     "ts_str": ts_entry.strftime("%H:%M") if hasattr(ts_entry, "strftime") else ""}
         _setup_resolved_trades.append(resolved)
+
+        # Persist expired outcome to DB (was missing — caused Telegram vs portal P&L mismatch)
+        log_id = trade.get("setup_log_id")
+        if log_id and engine:
+            try:
+                seen_high = trade.get("_seen_high", entry_price)
+                seen_low = trade.get("_seen_low", entry_price)
+                if is_long:
+                    max_profit = round(seen_high - entry_price, 2)
+                    max_loss = round(seen_low - entry_price, 2)
+                else:
+                    max_profit = round(entry_price - seen_low, 2)
+                    max_loss = round(entry_price - seen_high, 2)
+                with engine.begin() as conn:
+                    conn.execute(text("""
+                        UPDATE setup_log SET
+                            outcome_result = 'EXPIRED',
+                            outcome_pnl = :pnl,
+                            outcome_target_level = :tgt,
+                            outcome_stop_level = :sl,
+                            outcome_elapsed_min = :em,
+                            outcome_first_event = 'timeout',
+                            outcome_max_profit = :mp,
+                            outcome_max_loss = :ml
+                        WHERE id = :id AND outcome_result IS NULL
+                    """), {
+                        "pnl": pnl,
+                        "tgt": trade.get("target_level"),
+                        "sl": trade.get("stop_level"),
+                        "em": elapsed_min,
+                        "mp": max_profit,
+                        "ml": max_loss,
+                        "id": log_id,
+                    })
+            except Exception as db_err:
+                print(f"[eod-summary] DB persist error: {db_err}", flush=True)
+
         print(f"[eod-summary] expired {setup_name} {direction} {pnl:+.1f}pts", flush=True)
 
     _setup_open_trades = []

@@ -1720,11 +1720,15 @@ def format_setup_outcome(trade: dict, result_type: str, pnl: float, elapsed_min:
     msg = f"{emoji} <b>{setup_name} \u2014 {direction} \u2192 {result_type}</b> ({pnl:+.1f} pts, {elapsed_min} min)\n"
 
     if result_type == "WIN":
-        msg += f"Entry: ${spot:,.0f} | Target: ${trade['target_level']:,.0f} | Grade: {grade}"
+        tgt = trade.get('target_level')
+        tgt_str = f"${tgt:,.0f}" if tgt is not None else "trail"
+        msg += f"Entry: ${spot:,.0f} | Target: {tgt_str} | Grade: {grade}"
     elif result_type == "LOSS":
-        msg += f"Entry: ${spot:,.0f} | Stop: ${trade['stop_level']:,.0f} | Grade: {grade}"
+        sl = trade.get('stop_level')
+        sl_str = f"${sl:,.0f}" if sl is not None else "?"
+        msg += f"Entry: ${spot:,.0f} | Stop: {sl_str} | Grade: {grade}"
     else:  # EXPIRED
-        close_price = trade.get("close_price", spot + pnl if direction == "LONG" else spot - pnl)
+        close_price = trade.get("close_price") or (spot + pnl if direction == "LONG" else spot - pnl)
         msg += f"Entry: ${spot:,.0f} | Close: ${close_price:,.0f} | Grade: {grade}"
 
     # DD Exhaustion extra context

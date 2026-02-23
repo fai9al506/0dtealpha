@@ -89,6 +89,8 @@ _toggles: dict[str, bool] = {
 # Setup → order flow mapping
 _SINGLE_TARGET_SETUPS = {"BofA Scalp", "ES Absorption", "Paradigm Reversal"}
 _SPLIT_TARGET_SETUPS = {"GEX Long", "AG Short", "DD Exhaustion"}
+_STRONG_SETUPS = {"AG Short", "GEX Long", "Paradigm Reversal", "ES Absorption"}
+_TIGHTEN_GAP_PTS = 5.0  # When DD fires vs strong: tighten SL to this many pts from spot
 
 
 def init(engine, get_token_fn, send_telegram_fn):
@@ -162,6 +164,19 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     for lid, o in active_filled:
         o_long = o["direction"].lower() in ("long", "bullish")
         if o_long != is_long:
+            # DD vs strong setup: tighten SL instead of reversing
+            if setup_name == "DD Exhaustion" and o["setup_name"] in _STRONG_SETUPS:
+                new_stop = _round_mes(es_price - _TIGHTEN_GAP_PTS) if o_long else \
+                           _round_mes(es_price + _TIGHTEN_GAP_PTS)
+                print(f"[auto-trader] DD vs {o['setup_name']}#{lid}: "
+                      f"tightening SL to {new_stop:.2f} (spot={es_price:.2f} +/-{_TIGHTEN_GAP_PTS}), "
+                      f"skipping DD trade", flush=True)
+                _alert(f"[AUTO-TRADE] DD signal vs {o['setup_name']}\n"
+                       f"Tightening SL to {new_stop:.2f} (5pts from spot)\n"
+                       f"Keeping {o['setup_name']} ({o['direction']}) open")
+                update_stop(lid, new_stop)
+                return  # skip the DD trade entirely
+
             print(f"[auto-trader] REVERSING: closing #{lid} {o['setup_name']} "
                   f"({o['direction']}) for new {setup_name} ({direction})", flush=True)
             _alert(f"[AUTO-TRADE] REVERSING position\n"

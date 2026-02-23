@@ -11085,9 +11085,7 @@ DASH_HTML_TEMPLATE = """
           result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
         } else {
           // Trade not yet resolved by live tracker — show OPEN with current P&L
-          const cp = o.max_profit || 0;
-          const cl = o.max_loss || 0;
-          const curPnl = cp > Math.abs(cl) ? cp : cl;
+          const curPnl = o.timeout_pnl || 0;
           if (curPnl > 0) result = '<span style="color:#3b82f6;font-weight:600">OPEN</span> <span style="color:#22c55e">+'+curPnl.toFixed(0)+'</span>';
           else if (curPnl < 0) result = '<span style="color:#3b82f6;font-weight:600">OPEN</span> <span style="color:#ef4444">'+curPnl.toFixed(0)+'</span>';
           else result = '<span style="color:#3b82f6;font-weight:600">OPEN</span>';
@@ -11213,9 +11211,7 @@ DASH_HTML_TEMPLATE = """
             result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
           } else {
             // Trade not yet resolved — show OPEN with current P&L hint
-            const cp = o.max_profit || 0;
-            const cl = o.max_loss || 0;
-            const curPnl = cp > Math.abs(cl) ? cp : cl;
+            const curPnl = o.timeout_pnl || 0;
             if (curPnl > 0) result = '<span style="color:#3b82f6;font-size:8px;font-weight:600">OPEN</span> <span style="color:#22c55e;font-size:8px">+'+curPnl.toFixed(0)+'</span>';
             else if (curPnl < 0) result = '<span style="color:#3b82f6;font-size:8px;font-weight:600">OPEN</span> <span style="color:#ef4444;font-size:8px">'+curPnl.toFixed(0)+'</span>';
             else result = '<span style="color:#3b82f6;font-size:8px;font-weight:600">OPEN</span>';
@@ -11647,20 +11643,22 @@ DASH_HTML_TEMPLATE = """
           : [['Support', e.support_score], ['Upside', e.upside_score], ['Floor Cluster', e.floor_cluster_score], ['Target Cluster', e.target_cluster_score], ['R:R Score', e.rr_score]];
         const scoreRows = scoreLabels.map(([k, v]) => '<div>' + k + ': <span style="color:var(--text)">' + (v || '–') + '</span></div>').join('');
         const bonusRow = (isBofa || isAbs) ? '' : '<div>First Hour: <span style="color:var(--text)">' + (e.first_hour ? 'Yes (+10)' : 'No') + '</span></div>';
-        const firstEvt = o.first_event || '';
-        const evtColor = (firstEvt === 'stop' || firstEvt === 'timeout') ? '#ef4444' : '#22c55e';
         let summaryLabel = '';
-        if (isAbs && firstEvt === 'pending') {
-          summaryLabel = '<span style="color:#888;font-size:12px">⏳ PENDING (insufficient bars after signal)</span>';
-        } else if (firstEvt === '10pt' || firstEvt === 'target' || firstEvt === '15pt') summaryLabel = '<span style="color:#22c55e;font-weight:700;font-size:14px">✓ WINNER</span>';
-        else if (firstEvt === 'stop') summaryLabel = '<span style="color:#ef4444;font-weight:700;font-size:14px">✗ LOSER</span>';
-        else if (firstEvt === 'timeout') {
-          const tp = o.timeout_pnl || 0;
-          summaryLabel = tp >= 0
-            ? '<span style="color:#22c55e;font-weight:700;font-size:14px">⏱ TIMEOUT +' + tp.toFixed(1) + '</span>'
-            : '<span style="color:#ef4444;font-weight:700;font-size:14px">⏱ TIMEOUT ' + tp.toFixed(1) + '</span>';
+        if (l.outcome_result) {
+          if (l.outcome_result === 'WIN') summaryLabel = '<span style="color:#22c55e;font-weight:700;font-size:14px">✓ WINNER</span>';
+          else if (l.outcome_result === 'LOSS') summaryLabel = '<span style="color:#ef4444;font-weight:700;font-size:14px">✗ LOSER</span>';
+          else if (l.outcome_result === 'EXPIRED') {
+            const tp = l.outcome_pnl || 0;
+            summaryLabel = tp >= 0
+              ? '<span style="color:#22c55e;font-weight:700;font-size:14px">⏱ EXPIRED +' + tp.toFixed(1) + '</span>'
+              : '<span style="color:#ef4444;font-weight:700;font-size:14px">⏱ EXPIRED ' + tp.toFixed(1) + '</span>';
+          } else summaryLabel = '<span style="color:#888;font-weight:700;font-size:14px">' + l.outcome_result + '</span>';
+        } else {
+          const curPnl = o.timeout_pnl || 0;
+          if (curPnl > 0) summaryLabel = '<span style="color:#3b82f6;font-weight:700;font-size:14px">OPEN</span> <span style="color:#22c55e;font-size:14px">+' + curPnl.toFixed(1) + '</span>';
+          else if (curPnl < 0) summaryLabel = '<span style="color:#3b82f6;font-weight:700;font-size:14px">OPEN</span> <span style="color:#ef4444;font-size:14px">' + curPnl.toFixed(1) + '</span>';
+          else summaryLabel = '<span style="color:#3b82f6;font-weight:700;font-size:14px">OPEN</span>';
         }
-        else summaryLabel = '<span style="color:#888;font-size:12px">No clear outcome</span>';
         stats.innerHTML = `
           <div style="background:#1a1d21;padding:10px;border-radius:6px">
             <div style="font-weight:600;margin-bottom:6px;color:var(--muted)">Score Breakdown</div>

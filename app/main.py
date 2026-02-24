@@ -1691,6 +1691,9 @@ def db_volland_stats() -> Optional[dict]:
                 stats["lines_in_sand"] = statistics.get("lines_in_sand")
                 stats["delta_decay_hedging"] = statistics.get("delta_decay_hedging")
                 stats["opt_volume"] = statistics.get("opt_volume")
+                svb = statistics.get("spot_vol_beta")
+                if svb and isinstance(svb, dict):
+                    stats["svb_correlation"] = svb.get("correlation")
                 ts = row["ts"]
                 break
     
@@ -8379,6 +8382,13 @@ DASH_HTML_TEMPLATE = """
         h += '<div class="stats-row"><span class="stats-label">0DTE Volume</span><span class="stats-value">' + s.opt_volume + '</span></div>';
       }
       
+      // Spot-Vol Beta
+      if (s.svb_correlation != null) {
+        const svb = s.svb_correlation;
+        const svbColor = svb < -0.3 ? 'red' : svb > 0.3 ? 'green' : '';
+        h += '<div class="stats-row"><span class="stats-label">Spot-Vol Beta</span><span class="stats-value ' + svbColor + '">' + (svb >= 0 ? '+' : '') + svb.toFixed(2) + '</span></div>';
+      }
+
       // If no statistics found
       if (!s.paradigm && !s.target && !s.lines_in_sand && !s.delta_decay_hedging && !s.opt_volume) {
         h += '<div style="color:var(--muted);font-size:10px">No statistics available</div>';

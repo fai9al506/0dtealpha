@@ -873,6 +873,11 @@ class NT8Bridge:
         self._write(f"CLOSEPOSITION;{self.account};{self.symbol}\n")
         log.info(f"NT8 CLOSEPOSITION: {self.symbol}")
 
+    def cancel_all(self):
+        """Cancel ALL working orders for this symbol (safety net)."""
+        self._write(f"CANCELALLORDERS;{self.account};{self.symbol}\n")
+        log.info(f"NT8 CANCELALLORDERS: {self.symbol}")
+
     def check_order_state(self, order_id: str) -> dict | None:
         """Check NT8 outgoing folder for order fill/reject status.
 
@@ -1112,7 +1117,9 @@ class PositionTracker:
     def reverse(self, signal: dict, es_price: float | None):
         """Close current position and open new one in opposite direction.
 
-        Matches Railway auto_trader REVERSE behavior.
+        Uses CLOSEPOSITION to flatten, then cancels ALL working orders for the
+        symbol before placing new ones. Sleeps between each OIF command to
+        prevent file collisions and give NT8 time to process.
         """
         if not self.position:
             return
@@ -1125,13 +1132,12 @@ class PositionTracker:
 
         log.info(f"REVERSING: closing {old_name} {old_dir} for new {new_name} {new_dir}")
 
-        # Close current position (sleep between commands so NT8 processes each OIF)
+        # Step 1: Cancel ALL working orders for symbol (safety net — catches any orphans)
+        self.nt8.cancel_all()
+
+        # Step 2: Flatten position
+        time.sleep(0.5)
         self.nt8.close_position()
-        time.sleep(0.3)
-        self.nt8.cancel(self.position["stop_oid"])
-        if self.position.get("target_oid"):
-            time.sleep(0.3)
-            self.nt8.cancel(self.position["target_oid"])
 
         # Estimate P&L from ES price (best we can do without fill data)
         pnl_pts = 0.0
@@ -1145,10 +1151,10 @@ class PositionTracker:
         self.position = None
         self._save()
 
-        # Wait for NT8 to finish processing close before placing new orders
-        time.sleep(0.5)
+        # Step 3: Wait for NT8 to finish processing close + cancels
+        time.sleep(1.0)
 
-        # Open new position
+        # Step 4: Open new position
         self.open_trade(signal)
 
     def flatten(self, reason: str = "EOD"):
@@ -1157,13 +1163,10 @@ class PositionTracker:
             return
 
         trade_qty = self.position.get("qty", self.cfg["qty"])
+        # Cancel all working orders, then flatten
+        self.nt8.cancel_all()
+        time.sleep(0.5)
         self.nt8.close_position()
-        time.sleep(0.3)
-        # Cancel all pending exit orders
-        self.nt8.cancel(self.position["stop_oid"])
-        if self.position.get("target_oid"):
-            time.sleep(0.3)
-            self.nt8.cancel(self.position["target_oid"])
 
         log.info(f"FLATTENED ({reason}): {self.position['setup_name']} — "
                  f"recording 0 P&L (actual may differ)")

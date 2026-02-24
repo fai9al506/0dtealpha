@@ -372,6 +372,13 @@ async def _rithmic_stream_async(engine, send_telegram_fn):
     from async_rithmic import RithmicClient, DataType, LastTradePresenceBits, BestBidOfferPresenceBits
 
     latest_bbo = {"bid": None, "ask": None}
+    # Trade aggregation buffer — Rithmic unbundles CME MDP 3.0 Trade Summary
+    # messages into per-fill sub-trades.  We reaggregate by
+    # aggressor_exchange_order_id + price (same as ATAS / Sierra Chart).
+    _agg_buf = {
+        "order_id": None, "price": None, "size": 0,
+        "aggressor": None, "bid": None, "ask": None, "ts": None,
+    }
     backoff = 1.0
 
     while True:
@@ -429,6 +436,31 @@ async def _rithmic_stream_async(engine, send_telegram_fn):
             except Exception:
                 pass
 
+            # --- Trade aggregation helpers ---
+            def _flush_agg_buf():
+                """Flush the aggregation buffer as one combined trade."""
+                buf = _agg_buf
+                if buf["order_id"] is None or buf["size"] == 0:
+                    return
+                with _lock:
+                    new_session = _es_session_date()
+                    if _state["trade_date"] != new_session:
+                        pass  # Will be caught in outer loop
+                    _process_trade(buf["price"], buf["size"], buf["aggressor"],
+                                   buf["bid"], buf["ask"], buf["ts"])
+                    tc = _state["trade_count"]
+                    if tc <= 5 or tc % 1000 == 0:
+                        fb = _state.get("_forming_bar")
+                        fb_range = f"{fb['high'] - fb['low']:.2f}" if fb else "?"
+                        agg_pct = (_state["_aggressor_count"] / max(tc, 1)) * 100
+                        print(f"[rithmic] trade #{tc}: price={buf['price']} vol={buf['size']} "
+                              f"agg={'BUY' if buf['aggressor'] == 1 else 'SELL' if buf['aggressor'] == 2 else '?'} "
+                              f"completed={len(_state['_completed_bars'])} "
+                              f"forming_range={fb_range}/{RANGE_PTS} "
+                              f"agg_pct={agg_pct:.0f}%", flush=True)
+                buf["order_id"] = None
+                buf["size"] = 0
+
             # Tick callback
             async def on_tick(data):
                 if data["data_type"] == DataType.BBO:
@@ -457,24 +489,26 @@ async def _rithmic_stream_async(engine, send_telegram_fn):
                     if bid is None or ask is None:
                         return
 
-                    ts = _now_et().isoformat()
-                    with _lock:
-                        # Session rollover check
-                        new_session = _es_session_date()
-                        if _state["trade_date"] != new_session:
-                            pass  # Will be caught in outer loop
+                    # Reaggregate CME sub-fills by aggressor_exchange_order_id + price.
+                    # When same aggressive order fills against multiple resting orders,
+                    # Rithmic sends one LastTrade per fill.  We combine them to match
+                    # what ATAS / Sierra Chart show as a single trade.
+                    agg_oid = data.get("aggressor_exchange_order_id")
+                    buf = _agg_buf
 
-                        _process_trade(price, size, aggressor, bid, ask, ts)
-                        tc = _state["trade_count"]
-                        if tc <= 5 or tc % 1000 == 0:
-                            fb = _state.get("_forming_bar")
-                            fb_range = f"{fb['high'] - fb['low']:.2f}" if fb else "?"
-                            agg_pct = (_state["_aggressor_count"] / max(tc, 1)) * 100
-                            print(f"[rithmic] trade #{tc}: price={price} vol={size} "
-                                  f"agg={'BUY' if aggressor == 1 else 'SELL' if aggressor == 2 else '?'} "
-                                  f"completed={len(_state['_completed_bars'])} "
-                                  f"forming_range={fb_range}/{RANGE_PTS} "
-                                  f"agg_pct={agg_pct:.0f}%", flush=True)
+                    if agg_oid and agg_oid == buf["order_id"] and price == buf["price"]:
+                        # Same aggressive order, same price — accumulate
+                        buf["size"] += size
+                    else:
+                        # New order or new price level — flush previous, start new
+                        _flush_agg_buf()
+                        buf["order_id"] = agg_oid or f"_no_oid_{time.monotonic_ns()}"
+                        buf["price"] = price
+                        buf["size"] = size
+                        buf["aggressor"] = aggressor
+                        buf["bid"] = bid
+                        buf["ask"] = ask
+                        buf["ts"] = _now_et().isoformat()
 
             client.on_tick += on_tick
             await client.subscribe_to_market_data(
@@ -484,6 +518,8 @@ async def _rithmic_stream_async(engine, send_telegram_fn):
             # Keep alive — check session/connection periodically
             while True:
                 await asyncio.sleep(10)
+                # Flush any lingering aggregation buffer (last trade in a burst)
+                _flush_agg_buf()
                 if not _es_futures_open():
                     print("[rithmic] ES session closed, disconnecting", flush=True)
                     break

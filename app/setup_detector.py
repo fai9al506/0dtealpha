@@ -1074,7 +1074,7 @@ def _divergence_score(cvd_z, price_atr):
     return min(100, base * mult)
 
 
-def evaluate_absorption(bars, volland_stats, settings):
+def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
     """
     Evaluate ES Absorption using swing-based CVD divergence.
 
@@ -1264,7 +1264,9 @@ def evaluate_absorption(bars, volland_stats, settings):
         lis_match = re.search(r'[\d,]+\.?\d*', lis_raw_str.replace(',', ''))
         if lis_match:
             lis_val = float(lis_match.group())
-            lis_dist = abs(trigger["close"] - lis_val)
+            # LIS is SPX-based — use SPX spot for distance (not ES price)
+            price_for_lis = spx_spot if spx_spot else trigger["close"]
+            lis_dist = abs(price_for_lis - lis_val)
             if lis_dist <= 5:
                 lis_raw = 2
             elif lis_dist <= 15:

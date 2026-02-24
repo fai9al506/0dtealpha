@@ -3346,12 +3346,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
     except Exception as e:
         print(f"[absorption] volland lookup error: {e}", flush=True)
 
-    result = evaluate_absorption(bars, volland_stats, _setup_settings)
-    if result is None:
-        return None
-
-    # Enrich result with SPX context for setup_log storage & SPX→ES conversion
-    # SPX spot from latest chain pull
+    # SPX spot from latest chain pull (needed for LIS distance calc)
     spx_spot = None
     try:
         msg = last_run_status.get("msg") or ""
@@ -3359,6 +3354,10 @@ def _run_absorption_detection(bars: list) -> dict | None:
         spx_spot = float(parts.get("spot", ""))
     except Exception:
         pass
+
+    result = evaluate_absorption(bars, volland_stats, _setup_settings, spx_spot=spx_spot)
+    if result is None:
+        return None
 
     # Parse SPX target from Volland stats
     target_spx = None

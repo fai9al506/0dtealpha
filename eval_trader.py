@@ -759,6 +759,7 @@ class NT8Bridge:
         self.account = account_id
         self.symbol = symbol
         self._counter = int(time.time()) % 100000
+        self._write_seq = 0
 
         if not self.incoming.exists():
             log.error(f"NT8 incoming folder NOT FOUND: {self.incoming}")
@@ -770,7 +771,8 @@ class NT8Bridge:
 
     def _write(self, cmd: str):
         try:
-            f = self.incoming / f"oif{int(time.time() * 1000)}.txt"
+            self._write_seq += 1
+            f = self.incoming / f"oif{int(time.time() * 1000)}_{self._write_seq}.txt"
             f.write_text(cmd)
             log.debug(f"OIF: {cmd.strip()}")
         except Exception as e:
@@ -1123,10 +1125,12 @@ class PositionTracker:
 
         log.info(f"REVERSING: closing {old_name} {old_dir} for new {new_name} {new_dir}")
 
-        # Close current position
+        # Close current position (sleep between commands so NT8 processes each OIF)
         self.nt8.close_position()
+        time.sleep(0.3)
         self.nt8.cancel(self.position["stop_oid"])
         if self.position.get("target_oid"):
+            time.sleep(0.3)
             self.nt8.cancel(self.position["target_oid"])
 
         # Estimate P&L from ES price (best we can do without fill data)
@@ -1141,6 +1145,9 @@ class PositionTracker:
         self.position = None
         self._save()
 
+        # Wait for NT8 to finish processing close before placing new orders
+        time.sleep(0.5)
+
         # Open new position
         self.open_trade(signal)
 
@@ -1151,9 +1158,11 @@ class PositionTracker:
 
         trade_qty = self.position.get("qty", self.cfg["qty"])
         self.nt8.close_position()
+        time.sleep(0.3)
         # Cancel all pending exit orders
         self.nt8.cancel(self.position["stop_oid"])
         if self.position.get("target_oid"):
+            time.sleep(0.3)
             self.nt8.cancel(self.position["target_oid"])
 
         log.info(f"FLATTENED ({reason}): {self.position['setup_name']} — "

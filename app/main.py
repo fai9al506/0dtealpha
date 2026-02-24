@@ -4249,7 +4249,6 @@ def api_auto_trade_log(limit: int = Query(200)):
                 LIMIT :lim
             """), {"lim": min(int(limit), 500)}).mappings().all()
 
-        MES_PV = 5.0  # $5 per point per MES contract
         results = []
         for r in rows:
             st = r["state"]
@@ -4260,34 +4259,13 @@ def api_auto_trade_log(limit: int = Query(200)):
             stop = st.get("current_stop")
             t1_price = st.get("first_target_price")
             t2_price = st.get("full_target_price")
-            is_long = (st.get("direction", "").lower() in ("long", "bullish"))
 
             # Original entry qty: t1_qty + t2_qty = TOTAL_QTY at trade time
-            # (stop_qty gets decremented so don't use it for original)
             t1q = st.get("t1_qty", 0) or 0
             t2q = st.get("t2_qty", 0) or 0
             orig_qty = t1q + t2q
             if orig_qty == 0:
-                # Fallback for Flow A where T1 limit was rejected (t1_qty=0)
                 orig_qty = max(st.get("stop_qty", 0) or 0, 1)
-
-            # Compute MES $ P&L from actual fill/target/stop prices (not SPX outcome_pnl)
-            mes_pnl = None
-            if fill and st.get("status") == "closed":
-                sign = 1 if is_long else -1  # long: exit-entry, short: entry-exit
-                pnl = 0.0
-                filled_qty = 0
-                if st.get("t1_filled") and t1_price:
-                    pnl += (t1_price - fill) * sign * t1q * MES_PV
-                    filled_qty += t1q
-                if st.get("t2_filled") and t2_price:
-                    pnl += (t2_price - fill) * sign * t2q * MES_PV
-                    filled_qty += t2q
-                # Remaining qty hit stop (or was market-closed at ~stop level)
-                remaining = orig_qty - filled_qty
-                if remaining > 0 and stop:
-                    pnl += (stop - fill) * sign * remaining * MES_PV
-                mes_pnl = round(pnl, 2)
 
             results.append({
                 "setup_log_id": r["setup_log_id"],
@@ -4308,7 +4286,6 @@ def api_auto_trade_log(limit: int = Query(200)):
                 "outcome_pnl": r["outcome_pnl"],
                 "outcome_elapsed_min": r["outcome_elapsed_min"],
                 "mes_qty": orig_qty,
-                "mes_pnl": mes_pnl,
             })
         return results
     except Exception as e:
@@ -4337,14 +4314,9 @@ def api_eval_log(limit: int = Query(200)):
         for r in rows:
             entry_price = r["abs_es_price"] or r["spot"] or 0
             # Compute qty based on $200 max risk / (stop_pts * $5/pt)
-            # Default stop distances per setup
             stop_map = {"AG Short": 25, "DD Exhaustion": 20, "ES Absorption": 15, "Paradigm Reversal": 25}
             stop_pts = stop_map.get(r["setup_name"], 20)
             qty = max(1, int(200 / (stop_pts * 5)))  # $200 risk / ($5 * stop)
-            # $ P&L = outcome_pnl (SPX pts) * $5 * qty
-            dollar_pnl = None
-            if r["outcome_pnl"] is not None:
-                dollar_pnl = round(r["outcome_pnl"] * 5 * qty, 2)
 
             results.append({
                 "id": r["id"],
@@ -4359,7 +4331,6 @@ def api_eval_log(limit: int = Query(200)):
                 "qty": qty,
                 "outcome_result": r["outcome_result"],
                 "outcome_pnl": r["outcome_pnl"],
-                "dollar_pnl": dollar_pnl,
                 "outcome_elapsed_min": r["outcome_elapsed_min"],
             })
         return results
@@ -11427,23 +11398,23 @@ DASH_HTML_TEMPLATE = """
     function renderTsSimLog() {
       const hdr = document.getElementById('tlHeaderRow');
       hdr.className = 'tl-header tl-grid-sim';
-      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Time</span><span>MES Entry</span><span>MES Stop</span><span>T1</span><span>T2</span><span>Result</span><span>P&L ($)</span><span>Dur</span><span>Status</span>';
+      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Time</span><span>MES Entry</span><span>MES Stop</span><span>T1</span><span>T2</span><span>Result</span><span>P&L</span><span>Dur</span><span>Status</span>';
       const filtered = _tsSimGetFiltered();
       let wins=0,losses=0,totalPnl=0,pnlCount=0;
       filtered.forEach(l => {
         if (l.outcome_result==='WIN') wins++;
         else if (l.outcome_result==='LOSS') losses++;
-        if (l.mes_pnl!=null) { totalPnl += l.mes_pnl; pnlCount++; }
+        if (l.outcome_pnl!=null) { totalPnl += l.outcome_pnl; pnlCount++; }
       });
       const wr = (wins+losses)>0 ? ((wins/(wins+losses))*100).toFixed(0) : '--';
       const pnlColor = totalPnl>=0 ? '#22c55e' : '#ef4444';
-      const pnlStr = pnlCount>0 ? ('$'+(totalPnl>=0?'+':'')+totalPnl.toFixed(0)) : '--';
+      const pnlStr = pnlCount>0 ? ((totalPnl>=0?'+':'')+totalPnl.toFixed(1)) : '--';
       document.getElementById('tlStats').innerHTML =
         '<span>Total: <span class="stat-val">'+filtered.length+'</span></span>' +
         '<span>Wins: <span class="stat-val" style="color:#22c55e">'+wins+'</span></span>' +
         '<span>Losses: <span class="stat-val" style="color:#ef4444">'+losses+'</span></span>' +
         '<span>WR: <span class="stat-val">'+wr+'%</span></span>' +
-        '<span>Net P&L: <span class="stat-val" style="color:'+pnlColor+'">'+pnlStr+'</span></span>';
+        '<span>Net P&L: <span class="stat-val" style="color:'+pnlColor+'">'+pnlStr+' pts</span></span>';
       const body = document.getElementById('tlBody');
       if (filtered.length===0) { body.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px">No MES trades</div>'; return; }
       let html='';
@@ -11464,9 +11435,9 @@ DASH_HTML_TEMPLATE = """
           result = '<span style="color:var(--muted)">CLOSED</span>';
         }
         let pnl='--', pnlC='#888';
-        if (l.mes_pnl!=null) {
-          pnl = '$'+(l.mes_pnl>=0?'+':'')+l.mes_pnl.toFixed(0);
-          pnlC = l.mes_pnl>=0 ? '#22c55e' : '#ef4444';
+        if (l.outcome_pnl!=null) {
+          pnl = (l.outcome_pnl>=0?'+':'')+l.outcome_pnl.toFixed(1);
+          pnlC = l.outcome_pnl>=0 ? '#22c55e' : '#ef4444';
         }
         const em = l.outcome_elapsed_min;
         const durStr = em!=null ? (em>=60?Math.floor(em/60)+'h'+String(em%60).padStart(2,'0'):em+'m') : '--';
@@ -11538,23 +11509,23 @@ DASH_HTML_TEMPLATE = """
     function renderEvalLog() {
       const hdr = document.getElementById('tlHeaderRow');
       hdr.className = 'tl-header tl-grid-eval';
-      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Time</span><span>Qty</span><span>Entry</span><span>Stop</span><span>Result</span><span>P&L ($)</span><span>Dur</span><span>Status</span>';
+      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Time</span><span>Qty</span><span>Entry</span><span>Stop</span><span>Result</span><span>P&L</span><span>Dur</span><span>Status</span>';
       const filtered = _evalGetFiltered();
       let wins=0,losses=0,totalPnl=0,pnlCount=0;
       filtered.forEach(l => {
         if (l.outcome_result==='WIN') wins++;
         else if (l.outcome_result==='LOSS') losses++;
-        if (l.dollar_pnl!=null) { totalPnl += l.dollar_pnl; pnlCount++; }
+        if (l.outcome_pnl!=null) { totalPnl += l.outcome_pnl; pnlCount++; }
       });
       const wr = (wins+losses)>0 ? ((wins/(wins+losses))*100).toFixed(0) : '--';
       const pnlColor = totalPnl>=0 ? '#22c55e' : '#ef4444';
-      const pnlStr = pnlCount>0 ? ('$'+(totalPnl>=0?'+':'')+totalPnl.toFixed(0)) : '--';
+      const pnlStr = pnlCount>0 ? ((totalPnl>=0?'+':'')+totalPnl.toFixed(1)) : '--';
       document.getElementById('tlStats').innerHTML =
         '<span>Total: <span class="stat-val">'+filtered.length+'</span></span>' +
         '<span>Wins: <span class="stat-val" style="color:#22c55e">'+wins+'</span></span>' +
         '<span>Losses: <span class="stat-val" style="color:#ef4444">'+losses+'</span></span>' +
         '<span>WR: <span class="stat-val">'+wr+'%</span></span>' +
-        '<span>Net P&L: <span class="stat-val" style="color:'+pnlColor+'">'+pnlStr+'</span></span>';
+        '<span>Net P&L: <span class="stat-val" style="color:'+pnlColor+'">'+pnlStr+' pts</span></span>';
       const body = document.getElementById('tlBody');
       if (filtered.length===0) { body.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px">No eval signals</div>'; return; }
       let html='';
@@ -11571,9 +11542,9 @@ DASH_HTML_TEMPLATE = """
           result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
         }
         let pnl='--', pnlC='#888';
-        if (l.dollar_pnl!=null) {
-          pnl = '$'+(l.dollar_pnl>=0?'+':'')+l.dollar_pnl.toFixed(0);
-          pnlC = l.dollar_pnl>=0 ? '#22c55e' : '#ef4444';
+        if (l.outcome_pnl!=null) {
+          pnl = (l.outcome_pnl>=0?'+':'')+l.outcome_pnl.toFixed(1);
+          pnlC = l.outcome_pnl>=0 ? '#22c55e' : '#ef4444';
         }
         const em = l.outcome_elapsed_min;
         const durStr = em!=null ? (em>=60?Math.floor(em/60)+'h'+String(em%60).padStart(2,'0'):em+'m') : '--';

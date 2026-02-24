@@ -8321,8 +8321,8 @@ DASH_HTML_TEMPLATE = """
       const tsColor = statusColors[ts.status] || statusColors.error;
       const vlColor = statusColors[vl.status] || statusColors.error;
 
-      const spotStr = data.spot ? '<span style="color:#60a5fa;font-weight:600">SPX ' + data.spot.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + '</span>' : '';
-      const vixStr = data.vix ? '<span style="margin-left:12px;color:#f59e0b;font-weight:600">VIX ' + data.vix.toFixed(2) + '</span>' : '';
+      const spotStr = data.spot ? 'SPX ' + data.spot.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '';
+      const vixStr = data.vix ? '<span style="margin-left:12px">VIX ' + data.vix.toFixed(2) + '</span>' : '';
       const priceRow = (spotStr || vixStr) ? spotStr + vixStr + '<br>' : '';
 
       dataFreshnessEl.innerHTML = priceRow +

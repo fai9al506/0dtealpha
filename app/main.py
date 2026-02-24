@@ -512,6 +512,22 @@ def db_init():
             END $$;
             """))
 
+        # Economic calendar events table
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS economic_events (
+            id SERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL,
+            title TEXT NOT NULL,
+            country TEXT,
+            impact TEXT,
+            forecast TEXT,
+            previous TEXT,
+            actual TEXT,
+            fetched_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(ts, title, country)
+        )
+        """))
+
         # Setup detection log table
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS setup_log (
@@ -4060,6 +4076,55 @@ def _send_setup_eod_summary():
         print("[eod-summary] no trades today, skipping summary", flush=True)
 
 
+ECON_CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+
+def fetch_economic_calendar():
+    """Fetch this week's economic events and upsert into DB. Runs Monday 8 AM ET + on startup."""
+    if not engine:
+        return
+    try:
+        resp = requests.get(ECON_CALENDAR_URL, timeout=15)
+        resp.raise_for_status()
+        events = resp.json()
+        if not isinstance(events, list):
+            print(f"[econ-cal] unexpected response type: {type(events)}", flush=True)
+            return
+
+        count = 0
+        with engine.begin() as conn:
+            for ev in events:
+                title = ev.get("title", "").strip()
+                country = ev.get("country", "").strip()
+                date_str = ev.get("date", "")
+                impact = ev.get("impact", "").strip()
+                forecast = ev.get("forecast", "").strip() or None
+                previous = ev.get("previous", "").strip() or None
+                actual = ev.get("actual", "").strip() or None
+
+                if not title or not date_str:
+                    continue
+
+                conn.execute(text("""
+                    INSERT INTO economic_events (ts, title, country, impact, forecast, previous, actual, fetched_at)
+                    VALUES (:ts, :title, :country, :impact, :forecast, :previous, :actual, NOW())
+                    ON CONFLICT (ts, title, country) DO UPDATE SET
+                        impact = EXCLUDED.impact,
+                        forecast = EXCLUDED.forecast,
+                        previous = EXCLUDED.previous,
+                        actual = COALESCE(EXCLUDED.actual, economic_events.actual),
+                        fetched_at = NOW()
+                """), {
+                    "ts": date_str, "title": title, "country": country,
+                    "impact": impact, "forecast": forecast,
+                    "previous": previous, "actual": actual,
+                })
+                count += 1
+
+        print(f"[econ-cal] upserted {count} events for this week", flush=True)
+    except Exception as e:
+        print(f"[econ-cal] fetch error: {e}", flush=True)
+
+
 def start_scheduler():
     sch = BackgroundScheduler(timezone="US/Eastern")
     sch.add_job(run_market_job, "interval", seconds=PULL_EVERY, id="pull", coalesce=True, max_instances=1)
@@ -4070,6 +4135,8 @@ def start_scheduler():
     sch.add_job(_save_rithmic_bars, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="rithmic_range_save", coalesce=True, max_instances=1)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,
                 id="setup_eod", coalesce=True, max_instances=1)
+    sch.add_job(fetch_economic_calendar, "cron", day_of_week="mon", hour=8, minute=0,
+                id="econ_cal", coalesce=True, max_instances=1)
     sch.start()
     print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min; ES delta save every", SAVE_EVERY_MIN, "min", flush=True)
     return sch
@@ -4091,6 +4158,8 @@ def on_startup():
         print("[db] engine not created (no DATABASE_URL)", flush=True)
     global scheduler
     scheduler = start_scheduler()
+    # Fetch economic calendar on startup (don't wait for Monday cron)
+    Thread(target=fetch_economic_calendar, daemon=True).start()
     # Start ES delta streaming thread (real-time barchart feed)
     Thread(target=_es_delta_stream_loop, daemon=True).start()
     print("[es-delta] streaming thread started", flush=True)
@@ -4148,6 +4217,22 @@ def api_series():
         "callGEX": call_gex.tolist(), "putGEX": put_gex.tolist(), "netGEX": net_gex.tolist(),
         "spot": spot
     }
+
+@app.get("/api/economic-calendar")
+def api_economic_calendar(country: str = "USD", impact: str = None):
+    """Return economic events. Filter by country (default USD) and optionally impact level."""
+    if not engine:
+        return JSONResponse({"error": "no db"}, 500)
+    with engine.connect() as conn:
+        q = "SELECT ts, title, country, impact, forecast, previous, actual FROM economic_events WHERE country = :country"
+        params = {"country": country}
+        if impact:
+            q += " AND LOWER(impact) = LOWER(:impact)"
+            params["impact"] = impact
+        q += " ORDER BY ts"
+        rows = conn.execute(text(q), params).fetchall()
+    return [{"ts": r[0].isoformat(), "title": r[1], "country": r[2],
+             "impact": r[3], "forecast": r[4], "previous": r[5], "actual": r[6]} for r in rows]
 
 @app.get("/api/health")
 def api_health():

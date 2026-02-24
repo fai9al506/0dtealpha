@@ -50,6 +50,9 @@ log = logging.getLogger("eval_trader")
 # ─── Constants ────────────────────────────────────────────────────────────────
 MES_POINT_VALUE = 5.0   # $5 per point per MES contract
 MES_TICK_SIZE = 0.25     # MES minimum price increment
+MAX_SIGNAL_AGE_S = 120   # Skip signals older than 2 min (prevents stale entries after restart)
+_STRONG_SETUPS = {"AG Short", "GEX Long", "Paradigm Reversal", "ES Absorption"}
+_TIGHTEN_GAP_PTS = 5.0   # When DD fires vs strong: tighten SL to this many pts from spot
 SCRIPT_DIR = Path(__file__).parent
 CONFIG_FILE = SCRIPT_DIR / "eval_trader_config.json"
 STATE_FILE = SCRIPT_DIR / "eval_trader_state.json"
@@ -860,7 +863,7 @@ class NT8Bridge:
 
     def cancel(self, order_id: str):
         """Cancel an order by ID."""
-        self._write(f"CANCEL;{self.account};{self.account};{order_id}\n")
+        self._write(f"CANCEL;{self.account};{self.symbol};{order_id}\n")
         log.info(f"NT8 cancel: {order_id}")
 
     def close_position(self):
@@ -1084,6 +1087,25 @@ class PositionTracker:
         pos_long = self.position["direction"] in ("long", "bullish")
         sig_long = signal["direction"] in ("long", "bullish")
         return pos_long != sig_long
+
+    def tighten_stop(self, es_price: float, gap_pts: float = _TIGHTEN_GAP_PTS):
+        """Tighten SL to gap_pts from current ES price instead of reversing.
+
+        Used when DD Exhaustion fires against a strong setup — keep the strong
+        setup open but move stop closer. Mirrors Railway auto_trader logic.
+        """
+        if not self.position:
+            return
+        is_long = self.position["direction"] in ("long", "bullish")
+        new_stop = _round_tick(es_price - gap_pts) if is_long else _round_tick(es_price + gap_pts)
+        old_stop = self.position["stop_price"]
+
+        self.nt8.change_stop(self.position["stop_oid"], new_stop, self.position.get("qty", self.cfg["qty"]))
+        self.position["stop_price"] = new_stop
+        self._save()
+
+        log.info(f"  Tightened SL: {old_stop:.2f} → {new_stop:.2f} "
+                 f"({gap_pts}pts from ES {es_price:.2f}), keeping {self.position['setup_name']} open")
 
     def reverse(self, signal: dict, es_price: float | None):
         """Close current position and open new one in opposite direction.
@@ -1415,7 +1437,6 @@ def main():
                         tracker.close_on_outcome(outcome)
 
                 # Process signals
-                MAX_SIGNAL_AGE_S = 120  # skip signals older than 2 minutes
                 for signal in new_signals:
                     log.info(f"Signal received: {signal['setup_name']} "
                              f"{signal['direction'].upper()} [{signal.get('grade', '?')}] "
@@ -1435,6 +1456,17 @@ def main():
                             pass
                     # Check for reversal: opposite-direction signal while in position
                     if tracker.is_open and tracker.is_opposite(signal):
+                        # DD vs strong setup: tighten SL instead of reversing
+                        # (mirrors Railway auto_trader logic)
+                        existing_name = tracker.position["setup_name"]
+                        new_name = signal["setup_name"]
+                        if new_name == "DD Exhaustion" and existing_name in _STRONG_SETUPS:
+                            if latest_es_price:
+                                tracker.tighten_stop(latest_es_price)
+                                log.info(f"  DD vs {existing_name}: tightened SL, skipping DD trade")
+                            else:
+                                log.warning(f"  DD vs {existing_name}: no ES price, cannot tighten — skipping")
+                            continue
                         # Run compliance on the new signal (skip "already in position")
                         compliance.has_open_position = False
                         allowed, reason = compliance.check(signal)

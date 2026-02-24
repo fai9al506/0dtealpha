@@ -4232,6 +4232,122 @@ def api_auto_trade_test():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/auto-trade/log")
+def api_auto_trade_log(limit: int = Query(200)):
+    """Return TS SIM auto-trade orders joined with setup_log for the dashboard."""
+    if not engine:
+        return []
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT ato.setup_log_id, ato.state, ato.created_at, ato.updated_at,
+                       sl.setup_name, sl.direction, sl.grade, sl.ts, sl.spot,
+                       sl.outcome_result, sl.outcome_pnl, sl.outcome_elapsed_min
+                FROM auto_trade_orders ato
+                JOIN setup_log sl ON ato.setup_log_id = sl.id
+                ORDER BY sl.ts DESC
+                LIMIT :lim
+            """), {"lim": min(int(limit), 500)}).mappings().all()
+
+        results = []
+        for r in rows:
+            st = r["state"]
+            if isinstance(st, str):
+                import json as _json
+                st = _json.loads(st)
+            fill = st.get("fill_price")
+            stop = st.get("current_stop")
+            t1_price = st.get("first_target_price")
+            t2_price = st.get("full_target_price")
+            is_long = (st.get("direction", "").lower() in ("long", "bullish"))
+            # Compute MES $ P&L from setup_log outcome_pnl (SPX points) * $5/pt * qty
+            total_qty = st.get("stop_qty", 0)
+            if st.get("t1_filled"):
+                total_qty += st.get("t1_qty", 0)
+            if st.get("t2_filled"):
+                total_qty += st.get("t2_qty", 0)
+            # Use original total from entry
+            orig_qty = (st.get("t1_qty", 0) or 0) + (st.get("t2_qty", 0) or 0) + (st.get("stop_qty", 0) or 0)
+            if st.get("t1_filled") or st.get("t2_filled") or st.get("status") == "closed":
+                orig_qty = max(orig_qty, 1)  # restore original entry qty
+
+            results.append({
+                "setup_log_id": r["setup_log_id"],
+                "setup_name": r["setup_name"],
+                "direction": r["direction"],
+                "grade": r["grade"],
+                "ts": r["ts"].isoformat() if hasattr(r["ts"], "isoformat") else r["ts"],
+                "spot": r["spot"],
+                "fill_price": fill,
+                "current_stop": stop,
+                "first_target_price": t1_price,
+                "full_target_price": t2_price,
+                "t1_filled": st.get("t1_filled", False),
+                "t2_filled": st.get("t2_filled", False),
+                "status": st.get("status", "unknown"),
+                "stop_qty": st.get("stop_qty", 0),
+                "outcome_result": r["outcome_result"],
+                "outcome_pnl": r["outcome_pnl"],
+                "outcome_elapsed_min": r["outcome_elapsed_min"],
+                "mes_qty": orig_qty if orig_qty > 0 else 1,
+            })
+        return results
+    except Exception as e:
+        print(f"[auto-trade] log query error: {e}", flush=True)
+        return []
+
+@app.get("/api/eval/log")
+def api_eval_log(limit: int = Query(200)):
+    """Return eval-eligible setup_log entries with computed MES qty and $ P&L."""
+    if not engine:
+        return []
+    _EVAL_SETUPS = ("AG Short", "DD Exhaustion", "ES Absorption", "Paradigm Reversal")
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT id, ts, setup_name, direction, grade, score, spot,
+                       abs_es_price, outcome_result, outcome_pnl,
+                       outcome_max_profit, outcome_max_loss, outcome_elapsed_min
+                FROM setup_log
+                WHERE setup_name = ANY(:setups)
+                ORDER BY ts DESC
+                LIMIT :lim
+            """), {"setups": list(_EVAL_SETUPS), "lim": min(int(limit), 500)}).mappings().all()
+
+        results = []
+        for r in rows:
+            entry_price = r["abs_es_price"] or r["spot"] or 0
+            # Compute qty based on $200 max risk / (stop_pts * $5/pt)
+            # Default stop distances per setup
+            stop_map = {"AG Short": 25, "DD Exhaustion": 20, "ES Absorption": 15, "Paradigm Reversal": 25}
+            stop_pts = stop_map.get(r["setup_name"], 20)
+            qty = max(1, int(200 / (stop_pts * 5)))  # $200 risk / ($5 * stop)
+            # $ P&L = outcome_pnl (SPX pts) * $5 * qty
+            dollar_pnl = None
+            if r["outcome_pnl"] is not None:
+                dollar_pnl = round(r["outcome_pnl"] * 5 * qty, 2)
+
+            results.append({
+                "id": r["id"],
+                "ts": r["ts"].isoformat() if hasattr(r["ts"], "isoformat") else r["ts"],
+                "setup_name": r["setup_name"],
+                "direction": r["direction"],
+                "grade": r["grade"],
+                "score": r["score"],
+                "spot": r["spot"],
+                "entry_price": entry_price,
+                "stop_pts": stop_pts,
+                "qty": qty,
+                "outcome_result": r["outcome_result"],
+                "outcome_pnl": r["outcome_pnl"],
+                "dollar_pnl": dollar_pnl,
+                "outcome_elapsed_min": r["outcome_elapsed_min"],
+            })
+        return results
+    except Exception as e:
+        print(f"[eval] log query error: {e}", flush=True)
+        return []
+
 @app.get("/api/eval/signals")
 def api_eval_signals(since_id: int = Query(0, ge=0)):
     """Return today's setup signals and outcomes for the eval trader.
@@ -7329,6 +7445,10 @@ DASH_HTML_TEMPLATE = """
     .strike-btn.active { background:#1a2634; border-color:#2a3a57; color:var(--text); }
 
     /* Trade Log */
+    .tl-subtabs { display:flex; gap:4px; padding:8px 12px; border-bottom:1px solid var(--border); }
+    .tl-subtab { padding:4px 12px; font-size:11px; font-weight:600; border:1px solid var(--border); border-radius:14px; background:transparent; color:var(--muted); cursor:pointer; transition:all .15s; }
+    .tl-subtab:hover { border-color:#444; color:var(--text); }
+    .tl-subtab.active { background:#1a2634; border-color:#3b82f6; color:#3b82f6; }
     .tl-filters { display:flex; gap:8px; padding:12px; border-bottom:1px solid var(--border); flex-wrap:wrap; align-items:center; }
     .tl-filters select, .tl-filters input { background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:4px 8px; font-size:11px; }
     .tl-stats { display:flex; gap:16px; padding:8px 12px; border-bottom:1px solid var(--border); font-size:12px; color:var(--muted); }
@@ -7341,6 +7461,10 @@ DASH_HTML_TEMPLATE = """
     .tl-notes .tl-save-btn { margin-top:4px; padding:3px 10px; font-size:11px; background:#3b82f6; color:white; border:none; border-radius:4px; cursor:pointer; }
     .tl-notes .tl-save-btn:hover { background:#2563eb; }
     .setup-pill { font-size:10px; font-weight:600; padding:2px 6px; border-radius:3px; white-space:nowrap; display:inline-block; }
+    /* TS SIM Log grid: #, Setup, Dir, Grade, Time, MES Entry, MES Stop, T1, T2, Result, P&L($), Dur, Status */
+    .tl-header.tl-grid-sim, .tl-row.tl-grid-sim { grid-template-columns:32px 100px 32px 48px 72px 72px 72px 40px 40px 56px 64px 44px 64px; }
+    /* Eval Log grid: #, Setup, Dir, Grade, Time, Qty, Entry, Stop, Result, P&L($), Dur, Status */
+    .tl-header.tl-grid-eval, .tl-row.tl-grid-eval { grid-template-columns:32px 100px 32px 48px 72px 36px 72px 56px 56px 64px 44px 64px; }
 
     /* Playback View */
     .playback-container { display:flex; flex-direction:column; height:calc(100vh - 180px); }
@@ -8036,6 +8160,11 @@ DASH_HTML_TEMPLATE = """
       <!-- Trade Log View -->
       <div id="viewTradeLog" class="panel" style="display:none;flex-direction:column;overflow:auto">
         <div class="header"><div><strong>Trade Log</strong></div><span id="tlStatus" style="font-size:11px;color:var(--muted)"></span></div>
+        <div class="tl-subtabs">
+          <button class="tl-subtab active" data-subtab="portal">Portal Log</button>
+          <button class="tl-subtab" data-subtab="tssim">TS SIM Log</button>
+          <button class="tl-subtab" data-subtab="eval">Eval Log</button>
+        </div>
         <div class="tl-filters">
           <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
@@ -8045,7 +8174,7 @@ DASH_HTML_TEMPLATE = """
         </div>
         <div class="tl-stats" id="tlStats"></div>
         <div style="overflow-y:auto;flex:1">
-          <div class="tl-header">
+          <div id="tlHeaderRow" class="tl-header">
             <span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>
           </div>
           <div id="tlBody"></div>
@@ -8248,7 +8377,7 @@ DASH_HTML_TEMPLATE = """
     function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); initPlayback(); saveTab('playback'); }
     function showRegimeMap(){ setActive(tabRegimeMap); hideAllViews(); viewRegimeMap.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); initRegimeMap(); saveTab('regimeMap'); }
     function showEsDelta(){ setActive(tabEsDelta); hideAllViews(); viewEsDelta.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopTradeLog(); startEsDelta(); saveTab('esDelta'); }
-    function showTradeLog(){ setActive(tabTradeLog); hideAllViews(); viewTradeLog.style.display='flex'; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); loadTradeLogFull(); tradeLogTimer=setInterval(loadTradeLogFull,30000); saveTab('tradeLog'); }
+    function showTradeLog(){ setActive(tabTradeLog); hideAllViews(); viewTradeLog.style.display='flex'; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); _tlLoadActiveSubTab(); tradeLogTimer=setInterval(_tlLoadActiveSubTab,30000); saveTab('tradeLog'); }
     tabTable.addEventListener('click', showTable);
     tabCharts.addEventListener('click', showCharts);
     tabChartsHT.addEventListener('click', showChartsHT);
@@ -10996,8 +11125,26 @@ DASH_HTML_TEMPLATE = """
 
     // ===== Trade Log Tab =====
     let _tradeLogData = [];
+    let _tlActiveSubTab = 'portal';
+    let _tsSimData = [];
+    let _evalLogData = [];
     const _tlPillColors = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4'};
     const _tlGradeColors = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308'};
+
+    // Sub-tab switching
+    document.querySelectorAll('.tl-subtab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tl-subtab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        _tlActiveSubTab = btn.dataset.subtab;
+        _tlLoadActiveSubTab();
+      });
+    });
+    function _tlLoadActiveSubTab() {
+      if (_tlActiveSubTab === 'portal') loadTradeLogFull();
+      else if (_tlActiveSubTab === 'tssim') loadTsSimLog();
+      else if (_tlActiveSubTab === 'eval') loadEvalLog();
+    }
 
     async function loadTradeLogFull() {
       try {
@@ -11065,6 +11212,10 @@ DASH_HTML_TEMPLATE = """
     }
 
     function renderTradeLog() {
+      // Restore portal header/grid
+      const hdr = document.getElementById('tlHeaderRow');
+      hdr.className = 'tl-header';
+      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>';
       const filtered = _tlGetFiltered();
 
       // Stats — prefer DB-stored outcome_result (always set for resolved trades)
@@ -11211,11 +11362,236 @@ DASH_HTML_TEMPLATE = """
       });
     }
 
+    // ===== TS SIM Log =====
+    async function loadTsSimLog() {
+      try {
+        const r = await fetch('/api/auto-trade/log?limit=200', {cache:'no-store'});
+        _tsSimData = await r.json();
+        if (!Array.isArray(_tsSimData)) _tsSimData = [];
+        renderTsSimLog();
+        document.getElementById('tlStatus').textContent = _tsSimData.length + ' MES trades loaded';
+      } catch(err) {
+        console.error('loadTsSimLog error:', err);
+        document.getElementById('tlBody').innerHTML = '<div style="color:var(--red);padding:12px">Error loading TS SIM log</div>';
+      }
+    }
+    function _tsSimGetFiltered() {
+      const fSetup = document.getElementById('tlFilterSetup').value;
+      const fResult = document.getElementById('tlFilterResult').value;
+      const fGrade = document.getElementById('tlFilterGrade').value;
+      const fDate = document.getElementById('tlFilterDate').value;
+      const fSearch = document.getElementById('tlSearch').value.toLowerCase().trim();
+      const now = new Date();
+      const todayET = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
+      const todayStr = todayET.getFullYear()+'-'+String(todayET.getMonth()+1).padStart(2,'0')+'-'+String(todayET.getDate()).padStart(2,'0');
+      return _tsSimData.filter(l => {
+        if (fSetup && l.setup_name !== fSetup) return false;
+        if (fGrade && l.grade !== fGrade) return false;
+        if (fResult) {
+          let res = l.outcome_result || (l.status === 'closed' ? '' : 'OPEN');
+          if (res !== fResult) return false;
+        }
+        if (fDate && l.ts) {
+          const d = new Date(l.ts);
+          const dET = new Date(d.toLocaleString('en-US',{timeZone:'America/New_York'}));
+          if (fDate === 'today') { const dStr = dET.getFullYear()+'-'+String(dET.getMonth()+1).padStart(2,'0')+'-'+String(dET.getDate()).padStart(2,'0'); if (dStr !== todayStr) return false; }
+          else if (fDate === 'week') { if ((todayET - dET)/86400000 > 7) return false; }
+          else if (fDate === 'month') { if (dET.getMonth()!==todayET.getMonth()||dET.getFullYear()!==todayET.getFullYear()) return false; }
+        }
+        if (fSearch) {
+          const hay = [l.setup_name, l.grade, l.direction, l.status].filter(Boolean).join(' ').toLowerCase();
+          if (!hay.includes(fSearch)) return false;
+        }
+        return true;
+      });
+    }
+    function renderTsSimLog() {
+      const hdr = document.getElementById('tlHeaderRow');
+      hdr.className = 'tl-header tl-grid-sim';
+      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Time</span><span>MES Entry</span><span>MES Stop</span><span>T1</span><span>T2</span><span>Result</span><span>P&L ($)</span><span>Dur</span><span>Status</span>';
+      const filtered = _tsSimGetFiltered();
+      let wins=0,losses=0,totalPnl=0,pnlCount=0;
+      filtered.forEach(l => {
+        if (l.outcome_result==='WIN') wins++;
+        else if (l.outcome_result==='LOSS') losses++;
+        const pnl = l.outcome_pnl;
+        if (pnl!=null) { totalPnl += pnl * 5 * (l.mes_qty||1); pnlCount++; }
+      });
+      const wr = (wins+losses)>0 ? ((wins/(wins+losses))*100).toFixed(0) : '--';
+      const pnlColor = totalPnl>=0 ? '#22c55e' : '#ef4444';
+      const pnlStr = pnlCount>0 ? ('$'+(totalPnl>=0?'+':'')+totalPnl.toFixed(0)) : '--';
+      document.getElementById('tlStats').innerHTML =
+        '<span>Total: <span class="stat-val">'+filtered.length+'</span></span>' +
+        '<span>Wins: <span class="stat-val" style="color:#22c55e">'+wins+'</span></span>' +
+        '<span>Losses: <span class="stat-val" style="color:#ef4444">'+losses+'</span></span>' +
+        '<span>WR: <span class="stat-val">'+wr+'%</span></span>' +
+        '<span>Net P&L: <span class="stat-val" style="color:'+pnlColor+'">'+pnlStr+'</span></span>';
+      const body = document.getElementById('tlBody');
+      if (filtered.length===0) { body.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px">No MES trades</div>'; return; }
+      let html='';
+      filtered.forEach((l,i) => {
+        const pillColor = _tlPillColors[l.setup_name]||'#888';
+        const dir = (l.direction==='long'||l.direction==='bullish') ? '\u25B2' : '\u25BC';
+        const dirColor = (l.direction==='long'||l.direction==='bullish') ? '#22c55e' : '#ef4444';
+        const gradeColor = _tlGradeColors[l.grade]||'#888';
+        const fill = l.fill_price!=null ? l.fill_price.toFixed(2) : '--';
+        const stop = l.current_stop!=null ? l.current_stop.toFixed(2) : '--';
+        const t1 = l.t1_filled ? '\u2705' : (l.first_target_price!=null ? l.first_target_price.toFixed(0) : '--');
+        const t2 = l.t2_filled ? '\u2705' : (l.full_target_price!=null ? l.full_target_price.toFixed(0) : 'trail');
+        let result='<span style="color:#3b82f6;font-weight:600">OPEN</span>';
+        if (l.outcome_result) {
+          const rc = l.outcome_result==='WIN' ? '#22c55e' : l.outcome_result==='LOSS' ? '#ef4444' : '#888';
+          result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
+        } else if (l.status==='closed') {
+          result = '<span style="color:var(--muted)">CLOSED</span>';
+        }
+        let pnl='--', pnlC='#888';
+        if (l.outcome_pnl!=null) {
+          const dp = l.outcome_pnl * 5 * (l.mes_qty||1);
+          pnl = '$'+(dp>=0?'+':'')+dp.toFixed(0);
+          pnlC = dp>=0 ? '#22c55e' : '#ef4444';
+        }
+        const em = l.outcome_elapsed_min;
+        const durStr = em!=null ? (em>=60?Math.floor(em/60)+'h'+String(em%60).padStart(2,'0'):em+'m') : '--';
+        const time = fmtTimeET(l.ts);
+        const date = fmtDateShortET(l.ts);
+        const statusColor = l.status==='filled'?'#f59e0b':l.status==='closed'?'var(--muted)':'#3b82f6';
+        html += '<div class="tl-row tl-grid-sim">' +
+          '<span style="color:var(--muted)">'+(i+1)+'</span>' +
+          '<span class="setup-pill" style="background:'+pillColor+'22;color:'+pillColor+'">'+l.setup_name+'</span>' +
+          '<span style="color:'+dirColor+';font-weight:700;text-align:center">'+dir+'</span>' +
+          '<span style="color:'+gradeColor+';font-weight:600">'+l.grade+'</span>' +
+          '<span style="color:var(--muted);font-size:9px">'+date+' '+time+'</span>' +
+          '<span style="color:var(--text)">'+fill+'</span>' +
+          '<span style="color:var(--muted)">'+stop+'</span>' +
+          '<span style="font-size:10px;text-align:center">'+t1+'</span>' +
+          '<span style="font-size:10px;text-align:center">'+t2+'</span>' +
+          '<span style="font-size:10px">'+result+'</span>' +
+          '<span style="color:'+pnlC+';font-size:10px">'+pnl+'</span>' +
+          '<span style="color:var(--muted);font-size:9px">'+durStr+'</span>' +
+          '<span style="color:'+statusColor+';font-size:9px;text-transform:uppercase">'+l.status+'</span>' +
+        '</div>';
+      });
+      body.innerHTML = html;
+    }
+
+    // ===== Eval Log =====
+    async function loadEvalLog() {
+      try {
+        const r = await fetch('/api/eval/log?limit=200', {cache:'no-store'});
+        _evalLogData = await r.json();
+        if (!Array.isArray(_evalLogData)) _evalLogData = [];
+        renderEvalLog();
+        document.getElementById('tlStatus').textContent = _evalLogData.length + ' eval signals loaded';
+      } catch(err) {
+        console.error('loadEvalLog error:', err);
+        document.getElementById('tlBody').innerHTML = '<div style="color:var(--red);padding:12px">Error loading eval log</div>';
+      }
+    }
+    function _evalGetFiltered() {
+      const fSetup = document.getElementById('tlFilterSetup').value;
+      const fResult = document.getElementById('tlFilterResult').value;
+      const fGrade = document.getElementById('tlFilterGrade').value;
+      const fDate = document.getElementById('tlFilterDate').value;
+      const fSearch = document.getElementById('tlSearch').value.toLowerCase().trim();
+      const now = new Date();
+      const todayET = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
+      const todayStr = todayET.getFullYear()+'-'+String(todayET.getMonth()+1).padStart(2,'0')+'-'+String(todayET.getDate()).padStart(2,'0');
+      return _evalLogData.filter(l => {
+        if (fSetup && l.setup_name !== fSetup) return false;
+        if (fGrade && l.grade !== fGrade) return false;
+        if (fResult) {
+          const res = l.outcome_result || 'OPEN';
+          if (res !== fResult) return false;
+        }
+        if (fDate && l.ts) {
+          const d = new Date(l.ts);
+          const dET = new Date(d.toLocaleString('en-US',{timeZone:'America/New_York'}));
+          if (fDate === 'today') { const dStr = dET.getFullYear()+'-'+String(dET.getMonth()+1).padStart(2,'0')+'-'+String(dET.getDate()).padStart(2,'0'); if (dStr !== todayStr) return false; }
+          else if (fDate === 'week') { if ((todayET - dET)/86400000 > 7) return false; }
+          else if (fDate === 'month') { if (dET.getMonth()!==todayET.getMonth()||dET.getFullYear()!==todayET.getFullYear()) return false; }
+        }
+        if (fSearch) {
+          const hay = [l.setup_name, l.grade, l.direction].filter(Boolean).join(' ').toLowerCase();
+          if (!hay.includes(fSearch)) return false;
+        }
+        return true;
+      });
+    }
+    function renderEvalLog() {
+      const hdr = document.getElementById('tlHeaderRow');
+      hdr.className = 'tl-header tl-grid-eval';
+      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Time</span><span>Qty</span><span>Entry</span><span>Stop</span><span>Result</span><span>P&L ($)</span><span>Dur</span><span>Status</span>';
+      const filtered = _evalGetFiltered();
+      let wins=0,losses=0,totalPnl=0,pnlCount=0;
+      filtered.forEach(l => {
+        if (l.outcome_result==='WIN') wins++;
+        else if (l.outcome_result==='LOSS') losses++;
+        if (l.dollar_pnl!=null) { totalPnl += l.dollar_pnl; pnlCount++; }
+      });
+      const wr = (wins+losses)>0 ? ((wins/(wins+losses))*100).toFixed(0) : '--';
+      const pnlColor = totalPnl>=0 ? '#22c55e' : '#ef4444';
+      const pnlStr = pnlCount>0 ? ('$'+(totalPnl>=0?'+':'')+totalPnl.toFixed(0)) : '--';
+      document.getElementById('tlStats').innerHTML =
+        '<span>Total: <span class="stat-val">'+filtered.length+'</span></span>' +
+        '<span>Wins: <span class="stat-val" style="color:#22c55e">'+wins+'</span></span>' +
+        '<span>Losses: <span class="stat-val" style="color:#ef4444">'+losses+'</span></span>' +
+        '<span>WR: <span class="stat-val">'+wr+'%</span></span>' +
+        '<span>Net P&L: <span class="stat-val" style="color:'+pnlColor+'">'+pnlStr+'</span></span>';
+      const body = document.getElementById('tlBody');
+      if (filtered.length===0) { body.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px">No eval signals</div>'; return; }
+      let html='';
+      filtered.forEach((l,i) => {
+        const pillColor = _tlPillColors[l.setup_name]||'#888';
+        const dir = (l.direction==='long'||l.direction==='bullish') ? '\u25B2' : '\u25BC';
+        const dirColor = (l.direction==='long'||l.direction==='bullish') ? '#22c55e' : '#ef4444';
+        const gradeColor = _tlGradeColors[l.grade]||'#888';
+        const entry = l.entry_price ? l.entry_price.toFixed(2) : '--';
+        const stopPts = l.stop_pts || '--';
+        let result='<span style="color:#3b82f6;font-weight:600">OPEN</span>';
+        if (l.outcome_result) {
+          const rc = l.outcome_result==='WIN' ? '#22c55e' : l.outcome_result==='LOSS' ? '#ef4444' : '#888';
+          result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
+        }
+        let pnl='--', pnlC='#888';
+        if (l.dollar_pnl!=null) {
+          pnl = '$'+(l.dollar_pnl>=0?'+':'')+l.dollar_pnl.toFixed(0);
+          pnlC = l.dollar_pnl>=0 ? '#22c55e' : '#ef4444';
+        }
+        const em = l.outcome_elapsed_min;
+        const durStr = em!=null ? (em>=60?Math.floor(em/60)+'h'+String(em%60).padStart(2,'0'):em+'m') : '--';
+        const time = fmtTimeET(l.ts);
+        const date = fmtDateShortET(l.ts);
+        const status = l.outcome_result || 'OPEN';
+        const statusColor = status==='WIN'?'#22c55e':status==='LOSS'?'#ef4444':'#3b82f6';
+        html += '<div class="tl-row tl-grid-eval">' +
+          '<span style="color:var(--muted)">'+(i+1)+'</span>' +
+          '<span class="setup-pill" style="background:'+pillColor+'22;color:'+pillColor+'">'+l.setup_name+'</span>' +
+          '<span style="color:'+dirColor+';font-weight:700;text-align:center">'+dir+'</span>' +
+          '<span style="color:'+gradeColor+';font-weight:600">'+l.grade+'</span>' +
+          '<span style="color:var(--muted);font-size:9px">'+date+' '+time+'</span>' +
+          '<span style="color:var(--text);text-align:center">'+l.qty+'</span>' +
+          '<span style="color:var(--text)">'+entry+'</span>' +
+          '<span style="color:var(--muted)">'+stopPts+'pt</span>' +
+          '<span style="font-size:10px">'+result+'</span>' +
+          '<span style="color:'+pnlC+';font-size:10px">'+pnl+'</span>' +
+          '<span style="color:var(--muted);font-size:9px">'+durStr+'</span>' +
+          '<span style="color:'+statusColor+';font-size:9px;font-weight:600">'+status+'</span>' +
+        '</div>';
+      });
+      body.innerHTML = html;
+    }
+
     // Wire up filter changes
+    function _tlRerender() {
+      if (_tlActiveSubTab === 'portal') renderTradeLog();
+      else if (_tlActiveSubTab === 'tssim') renderTsSimLog();
+      else if (_tlActiveSubTab === 'eval') renderEvalLog();
+    }
     ['tlFilterSetup','tlFilterResult','tlFilterGrade','tlFilterDate'].forEach(id => {
-      document.getElementById(id).addEventListener('change', renderTradeLog);
+      document.getElementById(id).addEventListener('change', _tlRerender);
     });
-    document.getElementById('tlSearch').addEventListener('input', renderTradeLog);
+    document.getElementById('tlSearch').addEventListener('input', _tlRerender);
 
     async function loadSetupLog() {
       const list = document.getElementById('setupLogList');

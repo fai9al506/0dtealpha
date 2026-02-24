@@ -989,9 +989,5 @@ def _load_active_orders():
 # ====== TELEGRAM HELPER ======
 
 def _alert(msg: str):
-    """Send auto-trade alert via setups Telegram."""
-    if _send_telegram:
-        try:
-            _send_telegram(msg)
-        except Exception:
-            pass
+    """Auto-trade alerts moved to dashboard TS SIM Log tab. Telegram suppressed."""
+    pass

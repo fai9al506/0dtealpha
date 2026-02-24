@@ -503,6 +503,19 @@ def close_trade(setup_log_id: int, result_type: str):
           f"result={result_type}", flush=True)
 
 
+def _get_order_fill_price(order_id: str) -> float | None:
+    """Get fill price for a specific order by polling broker."""
+    try:
+        data = _sim_api("GET", f"/brokerage/accounts/{SIM_ACCOUNT_ID}/orders", None)
+        if data:
+            for o in data.get("Orders", []):
+                if o.get("OrderID") == order_id and o.get("Status") == "FLL":
+                    return _extract_fill_price(o)
+    except Exception:
+        pass
+    return None
+
+
 def _flatten_position(order):
     """Market close remaining contracts + cancel all pending orders."""
     is_long = order["direction"].lower() in ("long", "bullish")
@@ -530,8 +543,19 @@ def _flatten_position(order):
         }
         resp = _sim_api("POST", "/orderexecution/orders", close_payload)
         if resp:
+            order["close_qty"] = remaining
+            # Capture flatten fill price (SIM fills near-instantly)
+            close_oid = None
+            orders_list = resp.get("Orders", [])
+            if orders_list:
+                close_oid = orders_list[0].get("OrderID")
+            if close_oid:
+                time.sleep(1)
+                close_fp = _get_order_fill_price(close_oid)
+                if close_fp:
+                    order["close_fill_price"] = close_fp
             print(f"[auto-trader] flattened: {order['setup_name']} "
-                  f"qty={remaining}", flush=True)
+                  f"qty={remaining} fill={order.get('close_fill_price')}", flush=True)
         else:
             _alert(f"[AUTO-TRADE] MANUAL INTERVENTION: flatten FAILED\n"
                    f"{order['setup_name']} id={order['setup_log_id']} qty={remaining}")
@@ -613,8 +637,10 @@ def _check_order_fills(lid, order, broker_orders):
             t1 = broker_orders.get(order["t1_order_id"], {})
             if t1.get("Status") == "FLL":
                 t1_qty = order.get("t1_qty", T1_QTY)
+                t1_fp = _extract_fill_price(t1)
                 with _lock:
                     order["t1_filled"] = True
+                    order["t1_fill_price"] = t1_fp
                     order["stop_qty"] -= t1_qty
                 changed = True
                 # Move stop to breakeven + commissions for remaining contracts
@@ -645,8 +671,10 @@ def _check_order_fills(lid, order, broker_orders):
             t2 = broker_orders.get(order["t2_order_id"], {})
             if t2.get("Status") == "FLL":
                 t2_qty = order.get("t2_qty", T2_QTY)
+                t2_fp = _extract_fill_price(t2)
                 with _lock:
                     order["t2_filled"] = True
+                    order["t2_fill_price"] = t2_fp
                     order["stop_qty"] -= t2_qty
                 changed = True
                 print(f"[auto-trader] T2 filled: {order['setup_name']} "
@@ -660,11 +688,16 @@ def _check_order_fills(lid, order, broker_orders):
         if order.get("stop_order_id"):
             stop_order = broker_orders.get(order["stop_order_id"], {})
             if stop_order.get("Status") == "FLL":
+                stop_fp = _extract_fill_price(stop_order)
+                stop_filled_qty = order.get("stop_qty", 0)
                 with _lock:
+                    order["stop_fill_price"] = stop_fp
+                    order["stop_filled_qty"] = stop_filled_qty
                     order["status"] = "closed"
                     order["stop_qty"] = 0
                 changed = True
-                print(f"[auto-trader] STOP filled: {order['setup_name']}", flush=True)
+                print(f"[auto-trader] STOP filled: {order['setup_name']} "
+                      f"@ {stop_fp} qty={stop_filled_qty}", flush=True)
                 # Cancel remaining limit orders
                 for oid_key in ("t1_order_id", "t2_order_id"):
                     oid = order.get(oid_key)

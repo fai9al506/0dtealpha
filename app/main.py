@@ -4249,6 +4249,7 @@ def api_auto_trade_log(limit: int = Query(200)):
                 LIMIT :lim
             """), {"lim": min(int(limit), 500)}).mappings().all()
 
+        MES_PV = 5.0
         results = []
         for r in rows:
             st = r["state"]
@@ -4259,6 +4260,7 @@ def api_auto_trade_log(limit: int = Query(200)):
             stop = st.get("current_stop")
             t1_price = st.get("first_target_price")
             t2_price = st.get("full_target_price")
+            is_long = (st.get("direction", "").lower() in ("long", "bullish"))
 
             # Original entry qty: t1_qty + t2_qty = TOTAL_QTY at trade time
             t1q = st.get("t1_qty", 0) or 0
@@ -4266,6 +4268,29 @@ def api_auto_trade_log(limit: int = Query(200)):
             orig_qty = t1q + t2q
             if orig_qty == 0:
                 orig_qty = max(st.get("stop_qty", 0) or 0, 1)
+
+            # Compute real MES $ P&L from actual exit fill prices
+            # Only available for trades with fill tracking (new trades after this deploy)
+            mes_pnl = None
+            if fill and st.get("status") == "closed":
+                has_exits = any(st.get(k) for k in
+                    ("t1_fill_price", "t2_fill_price", "stop_fill_price", "close_fill_price"))
+                if has_exits:
+                    sign = 1 if is_long else -1
+                    pnl = 0.0
+                    if st.get("t1_filled") and st.get("t1_fill_price"):
+                        pnl += (st["t1_fill_price"] - fill) * sign * t1q * MES_PV
+                    if st.get("t2_filled") and st.get("t2_fill_price"):
+                        pnl += (st["t2_fill_price"] - fill) * sign * t2q * MES_PV
+                    sfp = st.get("stop_fill_price")
+                    sfq = st.get("stop_filled_qty", 0)
+                    if sfp and sfq > 0:
+                        pnl += (sfp - fill) * sign * sfq * MES_PV
+                    cfp = st.get("close_fill_price")
+                    cq = st.get("close_qty", 0)
+                    if cfp and cq > 0:
+                        pnl += (cfp - fill) * sign * cq * MES_PV
+                    mes_pnl = round(pnl, 2)
 
             results.append({
                 "setup_log_id": r["setup_log_id"],
@@ -4286,6 +4311,7 @@ def api_auto_trade_log(limit: int = Query(200)):
                 "outcome_pnl": r["outcome_pnl"],
                 "outcome_elapsed_min": r["outcome_elapsed_min"],
                 "mes_qty": orig_qty,
+                "mes_pnl": mes_pnl,
             })
         return results
     except Exception as e:
@@ -11411,21 +11437,29 @@ DASH_HTML_TEMPLATE = """
       hdr.className = 'tl-header tl-grid-sim';
       hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Time</span><span>MES Entry</span><span>MES Stop</span><span>T1</span><span>T2</span><span>Result</span><span>P&L</span><span>Dur</span><span>Status</span>';
       const filtered = _tsSimGetFiltered();
-      let wins=0,losses=0,totalPnl=0,pnlCount=0;
+      let wins=0,losses=0,dollarPnl=0,dollarN=0,ptsPnl=0,ptsN=0;
       filtered.forEach(l => {
         if (l.outcome_result==='WIN') wins++;
         else if (l.outcome_result==='LOSS') losses++;
-        if (l.outcome_pnl!=null) { totalPnl += l.outcome_pnl; pnlCount++; }
+        if (l.mes_pnl!=null) { dollarPnl += l.mes_pnl; dollarN++; }
+        else if (l.outcome_pnl!=null) { ptsPnl += l.outcome_pnl; ptsN++; }
       });
       const wr = (wins+losses)>0 ? ((wins/(wins+losses))*100).toFixed(0) : '--';
-      const pnlColor = totalPnl>=0 ? '#22c55e' : '#ef4444';
-      const pnlStr = pnlCount>0 ? ((totalPnl>=0?'+':'')+totalPnl.toFixed(1)) : '--';
+      let pnlHtml = '--';
+      if (dollarN>0) {
+        const c = dollarPnl>=0?'#22c55e':'#ef4444';
+        pnlHtml = '<span style="color:'+c+'">'+(dollarPnl>=0?'+$':'$')+dollarPnl.toFixed(0)+'</span>';
+        if (ptsN>0) pnlHtml += ' <span style="color:var(--muted);font-size:9px">+ '+(ptsPnl>=0?'+':'')+ptsPnl.toFixed(1)+'pt legacy</span>';
+      } else if (ptsN>0) {
+        const c = ptsPnl>=0?'#22c55e':'#ef4444';
+        pnlHtml = '<span style="color:'+c+'">'+(ptsPnl>=0?'+':'')+ptsPnl.toFixed(1)+' pts</span> <span style="color:var(--muted);font-size:8px">(portal)</span>';
+      }
       document.getElementById('tlStats').innerHTML =
         '<span>Total: <span class="stat-val">'+filtered.length+'</span></span>' +
         '<span>Wins: <span class="stat-val" style="color:#22c55e">'+wins+'</span></span>' +
         '<span>Losses: <span class="stat-val" style="color:#ef4444">'+losses+'</span></span>' +
         '<span>WR: <span class="stat-val">'+wr+'%</span></span>' +
-        '<span>Net P&L: <span class="stat-val" style="color:'+pnlColor+'">'+pnlStr+' pts</span></span>';
+        '<span>Net P&L: '+pnlHtml+'</span>';
       const body = document.getElementById('tlBody');
       if (filtered.length===0) { body.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px">No MES trades</div>'; return; }
       let html='';
@@ -11446,8 +11480,11 @@ DASH_HTML_TEMPLATE = """
           result = '<span style="color:var(--muted)">CLOSED</span>';
         }
         let pnl='--', pnlC='#888';
-        if (l.outcome_pnl!=null) {
-          pnl = (l.outcome_pnl>=0?'+':'')+l.outcome_pnl.toFixed(1);
+        if (l.mes_pnl!=null) {
+          pnl = '$'+(l.mes_pnl>=0?'+':'')+l.mes_pnl.toFixed(0);
+          pnlC = l.mes_pnl>=0 ? '#22c55e' : '#ef4444';
+        } else if (l.outcome_pnl!=null) {
+          pnl = (l.outcome_pnl>=0?'+':'')+l.outcome_pnl.toFixed(1)+'pt';
           pnlC = l.outcome_pnl>=0 ? '#22c55e' : '#ef4444';
         }
         const em = l.outcome_elapsed_min;
@@ -11536,7 +11573,8 @@ DASH_HTML_TEMPLATE = """
         '<span>Wins: <span class="stat-val" style="color:#22c55e">'+wins+'</span></span>' +
         '<span>Losses: <span class="stat-val" style="color:#ef4444">'+losses+'</span></span>' +
         '<span>WR: <span class="stat-val">'+wr+'%</span></span>' +
-        '<span>Net P&L: <span class="stat-val" style="color:'+pnlColor+'">'+pnlStr+' pts</span></span>';
+        '<span>Net P&L: <span class="stat-val" style="color:'+pnlColor+'">'+pnlStr+' pts</span></span>' +
+        '<span style="color:var(--muted);font-size:8px;font-style:italic;margin-left:8px">P&L is portal SPX pts, not actual execution</span>';
       const body = document.getElementById('tlBody');
       if (filtered.length===0) { body.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px">No eval signals</div>'; return; }
       let html='';

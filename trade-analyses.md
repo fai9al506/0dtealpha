@@ -570,3 +570,174 @@ Trail activation 10-15 with gap 5 is the safe sweet spot. Act=5/gap=3 is highest
 - Trail activation optimization on 4 winners is curve-fitting risk
 - The MESSY filter is the only high-confidence change (clear 0/4 pattern)
 - **REVIEW AFTER: 15+ new GEX Long trades with these filters. Re-run simulation to validate.**
+
+---
+
+## Analysis #5 — Feb 24, 2026: DD Exhaustion Deep Dive (49 Trades)
+
+### Objective
+
+Deep analysis of DD Exhaustion setup performance to identify improvement levers: when to enter, when to avoid, which Volland metrics (charm, paradigm, vanna) make signals stronger.
+
+### Dataset: 49 DD Exhaustion trades, Feb 18-23
+
+**Overall: 22W / 18L / 9E = 44.9% WR, +283.9 pts**
+
+| Direction | Trades | WR | P&L |
+|-----------|--------|-----|-----|
+| SHORT | 29 | 48.3% | +219.0 |
+| LONG | 20 | 40.0% | +64.9 |
+
+### Finding 1: Afternoon Is a Dead Zone (BIGGEST EDGE)
+
+| Time (ET) | Trades | WR | Total P&L | Avg P&L |
+|-----------|--------|-----|-----------|---------|
+| 10:00-11:00 | 6 | 50% | +45.5 | +7.6 |
+| **11:00-12:00** | **13** | **76.9%** | **+221.2** | **+17.0** |
+| 12:00-13:00 | 7 | 71.4% | +85.3 | +12.2 |
+| 13:00-14:00 | 10 | 50% | +14.0 | +1.4 |
+| **14:00-16:00** | **13** | **0%** | **-82.1** | **-6.3** |
+
+Every single trade after 14:00 ET lost or expired. Zero wins in 13 attempts. The scoring model awards maximum points (15/15) for "dealer o'clock" 14:00+ — this is backwards. Best window is 11:00-13:00 (76% WR, +15.3 avg/trade).
+
+### Finding 2: Paradigm Determines Fate
+
+| Paradigm | Trades | WR | P&L | Notes |
+|----------|--------|-----|-----|-------|
+| **SIDIAL-MESSY** | 4 | **100%** | **+77.9** | All shorts, perfect |
+| **GEX-MESSY** | 4 | **100%** | **+122.9** | All shorts, massive P&L |
+| SIDIAL-EXTREME | 3 | 67% | +56.3 | Good |
+| AG-TARGET | 4 | 50% | +32.2 | Mixed |
+| AG-LIS | 14 | 36% | +22.9 | High volume, mediocre |
+| AG-PURE | 5 | 40% | +7.3 | Mediocre |
+| **BOFA-PURE** | **11** | **18.2%** | **-21.5** | **Worst — avoid** |
+| GEX-LIS/PURE/TARGET | 3 | 0% | -36.0 | Small sample, 0/3 |
+
+MESSY paradigms work brilliantly (8/8 wins, +200.8 pts). When GEX/SIDIAL structure is unclear, the DD-Charm divergence becomes the dominant signal. In clean paradigms (BOFA-PURE, GEX-PURE), the existing regime fights the DD exhaustion signal.
+
+### Finding 3: Score Is NOT Predictive
+
+| Grade | Trades | WR | P&L | Avg P&L |
+|-------|--------|-----|-----|---------|
+| LOG (score=0) | 5 | **80%** | +65.9 | +13.2 |
+| A-Entry (<55) | 12 | 41.7% | +40.2 | +3.4 |
+| A (55-74) | 23 | 47.8% | +157.8 | +6.9 |
+| **A+ (75+)** | **9** | **22.2%** | **+20.1** | **+2.2** |
+
+Correlation between score and P&L: -0.033 (essentially zero). A+ has the worst WR. The 5-component scoring formula does not predict outcomes.
+
+### Finding 4: Direction + Time Interaction
+
+| Period | Short WR | Short Avg P&L | Long WR | Long Avg P&L |
+|--------|----------|---------------|---------|--------------|
+| **Morning (10-12)** | **84.6%** | **+21.7** | 33.3% | -1.0 |
+| Midday (12-14) | 50.0% | +0.5 | **60.0%** | +7.5 |
+| Afternoon (14-16) | 0% | -7.5 | 0% | -4.0 |
+
+Shorts work in the morning, longs work at midday. Aligns with market microstructure — morning selling exhaustion bounces back (short DD fade), midday mean-reversion supports long signals.
+
+### Finding 5: Charm Sweet Spot
+
+| |Charm| Bucket | Trades | WR | Avg P&L |
+|-----------------|--------|-----|---------|
+| < $20M | 17 | 41.2% | +4.5 |
+| $20-50M | 6 | 50% | +9.8 |
+| **$50-100M** | **14** | **57.1%** | **+13.7** |
+| $100-250M | 9 | 33.3% | -1.3 |
+| **$250M+** | **3** | **0%** | **-8.5** |
+
+Sweet spot is $50-100M. Too weak (<$20M) = no structural conviction. Too strong ($250M+) = charm regime dominates and DD divergence gets overwhelmed.
+
+### Finding 6: DD Shift Magnitude
+
+| DD Shift Bucket | Trades | WR | Avg P&L |
+|-----------------|--------|-----|---------|
+| $200-500M | 14 | 35.7% | +2.2 |
+| $500M-1B | 9 | 22.2% | -0.7 |
+| **$1B-2B** | **15** | **46.7%** | **+7.0** |
+| **$2B-3B** | **4** | **75%** | **+19.8** |
+| $3B+ | 7 | 57.1% | +9.4 |
+
+Sweet spot is $1B-3B. Smaller shifts ($200-500M) barely clear the threshold and have poor WR.
+
+### Finding 7: Clustering Disaster (Feb 19 Afternoon)
+
+6 consecutive BOFA-PURE short entries in 4 hours, net -33.3 pts:
+
+| Time ET | Paradigm | Result | P&L |
+|---------|----------|--------|-----|
+| 12:12 | BOFA-PURE | EXPIRED | -6.9 |
+| 12:41 | BOFA-PURE | **WIN** | +15.5 |
+| 13:25 | BOFA-PURE | LOSS | -12.0 |
+| 14:02 | BOFA-PURE | EXPIRED | -5.9 |
+| 14:43 | BOFA-PURE | LOSS | -12.0 |
+| 15:17 | BOFA-PURE | LOSS | -12.0 |
+
+DD signal kept re-firing as DD shifted, but price was range-bound in BOFA-PURE. Only the first clean entry worked.
+
+### Finding 8: Losers That Never Went Green
+
+Of 18 losses:
+- **7 (39%) had max_profit = 0** — signal fundamentally wrong from start
+- 6 had max_profit 1-5 pts — marginal
+- 5 had max_profit > 5 pts — setup was right, exit was the problem
+- Trade #7 had 16.6 pts max profit but lost -12 (GEX-LIS long, 14:00+ ET)
+
+### Finding 9: Win vs Loss Patterns
+
+| Metric | Winners | Losers |
+|--------|---------|--------|
+| Avg |DD Hedging| | $2,151M | $1,218M |
+| Avg |charm| | $43M | $64M |
+| Avg time (ET) | 11:59 | 13:02 |
+| Avg elapsed | 89 min | 39 min |
+| Avg score | 49.9 | 57.1 |
+
+Winners: bigger DD shifts, moderate charm, earlier in the day, held longer. Losers: higher scores (ironic), later times, resolved quickly (hit stop fast).
+
+### Proposed Filter Stack (Cumulative Impact)
+
+| Filter | Removes | Remaining | WR | P&L |
+|--------|---------|-----------|-----|-----|
+| **Baseline** | — | 49 | 44.9% | +283.9 |
+| **Cut after 14:00 ET** | 13 | 36 | 61.1% | +366.0 |
+| **Block BOFA-PURE** | 7 more | 29 | 62.1% | +365.5 |
+| **Raise DD threshold to $500M** | ~5 more | ~24 | ~67% | ~+340 |
+| **Block |charm| > $200M** | ~2 more | ~22 | ~68% | ~+345 |
+
+### Recommended Changes (Priority Order)
+
+| # | Change | Confidence | Impact |
+|---|--------|------------|--------|
+| 1 | `dd_market_end`: "15:30" → "14:00" | VERY HIGH — 0/13 after 14:00 | +82 pts saved |
+| 2 | Block BOFA-PURE paradigm | HIGH — 2/11, -21.5 pts | +21 pts saved |
+| 3 | Raise `dd_shift_threshold` to $500M | MEDIUM — 5/14 WR at $200-500M | Removes weak signals |
+| 4 | Add charm ceiling $200M | MEDIUM — 0/3 at $250M+ | Safety filter |
+| 5 | Paradigm-level cooldown (60 min) | MEDIUM — prevents clustering | Reduces overtrading |
+| 6 | Rewrite scoring formula | LOW — score doesn't gate trades | Cosmetic |
+
+### Proposed Scoring Rewrite
+
+Current 5-component score doesn't predict outcomes. Simpler model based on what actually works:
+
+| Factor | Weight | Best Values |
+|--------|--------|-------------|
+| Time of day | 30 | 11:00-13:00 = max, 10:00-11:00 = medium |
+| Paradigm fit | 25 | MESSY/SIDIAL = max, AG-LIS = medium, BOFA-PURE = 0 |
+| DD shift magnitude | 20 | $1B-3B = max, $500M-1B = medium |
+| Charm strength | 15 | $50-100M = max, $20-50M = medium |
+| Direction-time match | 10 | Short morning OR Long midday = bonus |
+
+### Caveats
+
+- 49 trades over 4 trading days is still a small sample (especially per-paradigm buckets of 3-4 trades)
+- The Feb 20 monster day (19 trades, +203 pts) heavily skews aggregate numbers
+- GEX-MESSY and SIDIAL-MESSY perfection may be sample luck (only 4 trades each)
+- The afternoon dead zone is robust (13 trades, 0 wins) but could be a regime artifact of this specific week
+- **REVIEW AFTER: 30+ more trades (~2 weeks). Validate time filter and paradigm filter on new data before implementing.**
+
+### Status
+
+| Change | Status | Date |
+|--------|--------|------|
+| All proposed changes | PENDING — saved for implementation | Feb 24, 2026 |

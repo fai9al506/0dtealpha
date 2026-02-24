@@ -7471,11 +7471,11 @@ DASH_HTML_TEMPLATE = """
     .strike-btn:hover { border-color:#444; color:var(--text); }
     .strike-btn.active { background:#1a2634; border-color:#2a3a57; color:var(--text); }
 
-    /* Trade Log */
-    .tl-subtabs { display:flex; gap:4px; padding:8px 12px; border-bottom:1px solid var(--border); }
-    .tl-subtab { padding:4px 12px; font-size:11px; font-weight:600; border:1px solid var(--border); border-radius:14px; background:transparent; color:var(--muted); cursor:pointer; transition:all .15s; }
-    .tl-subtab:hover { border-color:#444; color:var(--text); }
-    .tl-subtab.active { background:#1a2634; border-color:#3b82f6; color:#3b82f6; }
+    /* Sub-tabs (shared style for Charts, Historical, Trade Log) */
+    .subtabs { display:flex; gap:4px; padding:8px 12px; border-bottom:1px solid var(--border); }
+    .subtab-btn { padding:4px 12px; font-size:11px; font-weight:600; border:1px solid var(--border); border-radius:14px; background:transparent; color:var(--muted); cursor:pointer; transition:all .15s; }
+    .subtab-btn:hover { border-color:#444; color:var(--text); }
+    .subtab-btn.active { background:#1a2634; border-color:#3b82f6; color:#3b82f6; }
     .tl-filters { display:flex; gap:8px; padding:12px; border-bottom:1px solid var(--border); flex-wrap:wrap; align-items:center; }
     .tl-filters select, .tl-filters input { background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:4px 8px; font-size:11px; }
     .tl-stats { display:flex; gap:16px; padding:8px 12px; border-bottom:1px solid var(--border); font-size:12px; color:var(--muted); }
@@ -7620,12 +7620,10 @@ DASH_HTML_TEMPLATE = """
       </div>
       <div class="nav">
         <button class="btn active" id="tabTable">Table</button>
-        <button class="btn" id="tabCharts">Charts</button>
-        <button class="btn" id="tabChartsHT">Charts HT</button>
         <button class="btn" id="tabSpot">Spot</button>
-        <button class="btn" id="tabPlayback">Playback</button>
-        <button class="btn" id="tabRegimeMap">Regime Map</button>
+        <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabEsDelta">ES Delta</button>
+        <button class="btn" id="tabHistorical">Historical</button>
         <button class="btn" id="tabTradeLog">Trade Log</button>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
@@ -7992,34 +7990,39 @@ DASH_HTML_TEMPLATE = """
       </div>
 
       <div id="viewCharts" class="panel" style="display:none">
-        <div class="header">
-          <div><strong>0DTE Charts: GEX, Greeks, Volume &amp; OI</strong></div>
-          <div class="pill">spot line = dotted</div>
+        <div class="subtabs" id="chartsSubtabs">
+          <button class="subtab-btn active" data-subtab="0dte">0DTE Charts</button>
+          <button class="subtab-btn" data-subtab="htf">HTF Charts</button>
         </div>
-        <div class="charts-grid">
-          <div id="gexNetChart"></div>
-          <div id="gexCallPutChart"></div>
-          <div id="vannaChart"></div>
-          <div id="vannaOdteChart"></div>
-          <div id="deltaDecayChart"></div>
-          <div id="gammaOdteChart"></div>
-          <div id="oiChart"></div>
-          <div id="volChart"></div>
+        <div id="viewCharts0dte">
+          <div class="header">
+            <div><strong>0DTE Charts: GEX, Greeks, Volume &amp; OI</strong></div>
+            <div class="pill">spot line = dotted</div>
+          </div>
+          <div class="charts-grid">
+            <div id="gexNetChart"></div>
+            <div id="gexCallPutChart"></div>
+            <div id="vannaChart"></div>
+            <div id="vannaOdteChart"></div>
+            <div id="deltaDecayChart"></div>
+            <div id="gammaOdteChart"></div>
+            <div id="oiChart"></div>
+            <div id="volChart"></div>
+          </div>
         </div>
-      </div>
-
-      <div id="viewChartsHT" class="panel" style="display:none">
-        <div class="header">
-          <div><strong>Volland High-Tenor Vanna &amp; Gamma</strong></div>
-          <div class="pill">spot line = dotted</div>
-        </div>
-        <div class="ht-grid">
-          <div id="weeklyVannaChart"></div>
-          <div id="monthlyVannaChart"></div>
-          <div id="allVannaChart"></div>
-          <div id="weeklyGammaChart"></div>
-          <div id="monthlyGammaChart"></div>
-          <div id="allGammaChart"></div>
+        <div id="viewChartsHTF" style="display:none">
+          <div class="header">
+            <div><strong>Volland High-Tenor Vanna &amp; Gamma</strong></div>
+            <div class="pill">spot line = dotted</div>
+          </div>
+          <div class="ht-grid">
+            <div id="weeklyVannaChart"></div>
+            <div id="monthlyVannaChart"></div>
+            <div id="allVannaChart"></div>
+            <div id="weeklyGammaChart"></div>
+            <div id="monthlyGammaChart"></div>
+            <div id="allGammaChart"></div>
+          </div>
         </div>
       </div>
 
@@ -8067,107 +8070,111 @@ DASH_HTML_TEMPLATE = """
         </div>
       </div>
 
-      <div id="viewPlayback" class="panel" style="display:none">
-        <div class="header">
-          <div><strong>Historical Playback</strong></div>
-          <div style="display:flex;gap:10px;align-items:center">
-            <label style="font-size:11px;color:var(--muted)">Start Date:</label>
-            <input type="date" id="playbackDate" style="background:#0f1115;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px">
-            <div style="display:flex;gap:4px;background:#1a1d21;border-radius:6px;padding:2px">
-              <button class="strike-btn playback-range-btn" data-days="1" style="padding:4px 10px;font-size:10px">1D</button>
-              <button class="strike-btn playback-range-btn" data-days="3" style="padding:4px 10px;font-size:10px">3D</button>
-              <button class="strike-btn playback-range-btn active" data-days="7" style="padding:4px 10px;font-size:10px">7D</button>
-            </div>
-            <button id="playbackLoad" class="strike-btn" style="padding:4px 12px">Load</button>
-            <button id="playbackExportFull" class="strike-btn" style="padding:4px 12px">Export Full CSV</button>
-            <button id="playbackExportSummary" class="strike-btn" style="padding:4px 12px">Export Summary CSV</button>
-            <div style="display:flex;gap:4px;margin-left:10px;background:#1a1d21;border-radius:6px;padding:2px">
-              <button id="playbackViewFull" class="strike-btn active" style="padding:4px 10px;font-size:10px">Full View</button>
-              <button id="playbackViewSummary" class="strike-btn" style="padding:4px 10px;font-size:10px">Summary</button>
-            </div>
-          </div>
+      <div id="viewHistorical" class="panel" style="display:none">
+        <div class="subtabs" id="histSubtabs">
+          <button class="subtab-btn active" data-subtab="playback">Playback</button>
+          <button class="subtab-btn" data-subtab="regime">Regime Map</button>
         </div>
-        <div class="playback-container">
-          <div class="playback-info">
-            <span id="playbackTimestamp" style="font-size:12px;color:var(--text)">Select a date and click Load</span>
-            <span id="playbackStats" style="font-size:11px;color:var(--muted);margin-left:20px"></span>
-          </div>
-          <!-- Full View (current layout) -->
-          <div id="playbackFullView" class="playback-grid">
-            <div class="playback-card playback-price-card">
-              <h3 id="playbackPriceTitle">SPX Price (7D)</h3>
-              <div id="playbackPricePlot" class="playback-plot"></div>
-            </div>
-            <div class="playback-card">
-              <h3>Net GEX</h3>
-              <div id="playbackGexPlot" class="playback-plot"></div>
-            </div>
-            <div class="playback-card">
-              <h3>Charm</h3>
-              <div id="playbackCharmPlot" class="playback-plot"></div>
-            </div>
-            <div class="playback-card">
-              <h3>Volume</h3>
-              <div id="playbackVolPlot" class="playback-plot"></div>
-            </div>
-          </div>
-          <!-- Summary View (like Statistics tab) -->
-          <div id="playbackSummaryView" style="display:none">
-            <div style="display:flex;gap:16px;height:calc(100vh - 280px)">
-              <div style="flex:2;background:#121417;border-radius:8px;padding:8px">
-                <h3 style="font-size:12px;color:var(--muted);margin:0 0 8px 0">SPX Price + Key Levels</h3>
-                <div id="playbackSummaryPlot" style="width:100%;height:calc(100% - 30px)"></div>
+        <div id="viewHistPlayback">
+          <div class="header">
+            <div><strong>Historical Playback</strong></div>
+            <div style="display:flex;gap:10px;align-items:center">
+              <label style="font-size:11px;color:var(--muted)">Start Date:</label>
+              <input type="date" id="playbackDate" style="background:#0f1115;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px">
+              <div style="display:flex;gap:4px;background:#1a1d21;border-radius:6px;padding:2px">
+                <button class="strike-btn playback-range-btn" data-days="1" style="padding:4px 10px;font-size:10px">1D</button>
+                <button class="strike-btn playback-range-btn" data-days="3" style="padding:4px 10px;font-size:10px">3D</button>
+                <button class="strike-btn playback-range-btn active" data-days="7" style="padding:4px 10px;font-size:10px">7D</button>
               </div>
-              <div style="flex:1;background:#121417;border-radius:8px;padding:12px;overflow-y:auto">
-                <h3 style="font-size:12px;color:var(--muted);margin:0 0 12px 0">Statistics at Selected Time</h3>
-                <div id="playbackSummaryStats" style="font-size:13px"></div>
+              <button id="playbackLoad" class="strike-btn" style="padding:4px 12px">Load</button>
+              <button id="playbackExportFull" class="strike-btn" style="padding:4px 12px">Export Full CSV</button>
+              <button id="playbackExportSummary" class="strike-btn" style="padding:4px 12px">Export Summary CSV</button>
+              <div style="display:flex;gap:4px;margin-left:10px;background:#1a1d21;border-radius:6px;padding:2px">
+                <button id="playbackViewFull" class="strike-btn active" style="padding:4px 10px;font-size:10px">Full View</button>
+                <button id="playbackViewSummary" class="strike-btn" style="padding:4px 10px;font-size:10px">Summary</button>
               </div>
             </div>
-            <div style="margin-top:12px;font-size:11px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap">
-              <span><span style="color:#9ca3af">--</span> Day Open</span>
-              <span><span style="color:#3b82f6">■</span> Target</span>
-              <span><span style="color:#f59e0b">■</span> LIS</span>
-              <span><span style="color:#22c55e">■</span> Max +Gamma</span>
-              <span><span style="color:#ef4444">■</span> Max -Gamma</span>
-            </div>
           </div>
-          <div class="playback-slider-container">
-            <input type="range" id="playbackSlider" min="0" max="100" value="0" style="width:100%">
-            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px">
-              <span id="playbackSliderStart">--</span>
-              <span id="playbackSliderEnd">--</span>
+          <div class="playback-container">
+            <div class="playback-info">
+              <span id="playbackTimestamp" style="font-size:12px;color:var(--text)">Select a date and click Load</span>
+              <span id="playbackStats" style="font-size:11px;color:var(--muted);margin-left:20px"></span>
+            </div>
+            <!-- Full View (current layout) -->
+            <div id="playbackFullView" class="playback-grid">
+              <div class="playback-card playback-price-card">
+                <h3 id="playbackPriceTitle">SPX Price (7D)</h3>
+                <div id="playbackPricePlot" class="playback-plot"></div>
+              </div>
+              <div class="playback-card">
+                <h3>Net GEX</h3>
+                <div id="playbackGexPlot" class="playback-plot"></div>
+              </div>
+              <div class="playback-card">
+                <h3>Charm</h3>
+                <div id="playbackCharmPlot" class="playback-plot"></div>
+              </div>
+              <div class="playback-card">
+                <h3>Volume</h3>
+                <div id="playbackVolPlot" class="playback-plot"></div>
+              </div>
+            </div>
+            <!-- Summary View (like Statistics tab) -->
+            <div id="playbackSummaryView" style="display:none">
+              <div style="display:flex;gap:16px;height:calc(100vh - 280px)">
+                <div style="flex:2;background:#121417;border-radius:8px;padding:8px">
+                  <h3 style="font-size:12px;color:var(--muted);margin:0 0 8px 0">SPX Price + Key Levels</h3>
+                  <div id="playbackSummaryPlot" style="width:100%;height:calc(100% - 30px)"></div>
+                </div>
+                <div style="flex:1;background:#121417;border-radius:8px;padding:12px;overflow-y:auto">
+                  <h3 style="font-size:12px;color:var(--muted);margin:0 0 12px 0">Statistics at Selected Time</h3>
+                  <div id="playbackSummaryStats" style="font-size:13px"></div>
+                </div>
+              </div>
+              <div style="margin-top:12px;font-size:11px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap">
+                <span><span style="color:#9ca3af">--</span> Day Open</span>
+                <span><span style="color:#3b82f6">■</span> Target</span>
+                <span><span style="color:#f59e0b">■</span> LIS</span>
+                <span><span style="color:#22c55e">■</span> Max +Gamma</span>
+                <span><span style="color:#ef4444">■</span> Max -Gamma</span>
+              </div>
+            </div>
+            <div class="playback-slider-container">
+              <input type="range" id="playbackSlider" min="0" max="100" value="0" style="width:100%">
+              <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px">
+                <span id="playbackSliderStart">--</span>
+                <span id="playbackSliderEnd">--</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- Regime Map View -->
-      <div id="viewRegimeMap" class="panel" style="display:none">
-        <div class="header">
-          <div><strong>Regime Map</strong></div>
-          <div style="display:flex;gap:10px;align-items:center">
-            <label style="font-size:11px;color:var(--muted)">Date:</label>
-            <input type="date" id="regimeMapDate" style="background:#0f1115;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px">
-            <button id="regimeMapLoad" class="strike-btn" style="padding:4px 12px">Load</button>
-            <span style="margin-left:8px;font-size:10px;color:var(--muted)">TF:</span>
-            <button id="regimeMapTF5" class="strike-btn active" style="padding:2px 8px;font-size:10px">5m</button>
-            <button id="regimeMapTF1" class="strike-btn" style="padding:2px 8px;font-size:10px">1m</button>
-            <span id="regimeMapStatus" style="font-size:11px;color:var(--muted)">Select a date and click Load</span>
+        <div id="viewHistRegime" style="display:none">
+          <div class="header">
+            <div><strong>Regime Map</strong></div>
+            <div style="display:flex;gap:10px;align-items:center">
+              <label style="font-size:11px;color:var(--muted)">Date:</label>
+              <input type="date" id="regimeMapDate" style="background:#0f1115;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:11px">
+              <button id="regimeMapLoad" class="strike-btn" style="padding:4px 12px">Load</button>
+              <span style="margin-left:8px;font-size:10px;color:var(--muted)">TF:</span>
+              <button id="regimeMapTF5" class="strike-btn active" style="padding:2px 8px;font-size:10px">5m</button>
+              <button id="regimeMapTF1" class="strike-btn" style="padding:2px 8px;font-size:10px">1m</button>
+              <span id="regimeMapStatus" style="font-size:11px;color:var(--muted)">Select a date and click Load</span>
+            </div>
           </div>
-        </div>
-        <div style="display:flex;flex-direction:column;height:calc(100vh - 160px)">
-          <div id="regimeMapPlot" style="flex:1;min-height:0"></div>
-          <div style="margin-top:8px;font-size:11px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap;padding:0 8px 8px;align-items:center">
-            <span><span style="display:inline-block;width:6px;height:12px;background:#22c55e;vertical-align:middle;margin-right:1px"></span><span style="display:inline-block;width:6px;height:12px;background:#ef4444;vertical-align:middle"></span> SPX</span>
-            <span><span style="display:inline-block;width:16px;height:2.5px;background:#3b82f6;vertical-align:middle"></span> Target</span>
-            <span><span style="display:inline-block;width:16px;height:6px;background:rgba(245,158,11,0.15);border-top:1.5px solid #f59e0b;border-bottom:1.5px solid #f59e0b;vertical-align:middle"></span> LIS Zone</span>
-            <span><span style="display:inline-block;width:16px;height:1.5px;background:#22c55e;vertical-align:middle"></span> +GEX</span>
-            <span><span style="display:inline-block;width:16px;height:1.5px;background:#ef4444;vertical-align:middle"></span> -GEX</span>
-            <span style="margin-left:6px;font-weight:600">Paradigm:</span>
-            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(34,197,94,0.35);border-radius:2px;vertical-align:middle"></span> GEX</span>
-            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(239,68,68,0.35);border-radius:2px;vertical-align:middle"></span> Anti-GEX</span>
-            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(96,165,250,0.35);border-radius:2px;vertical-align:middle"></span> BofA</span>
-            <span><span style="display:inline-block;width:12px;height:12px;background:rgba(168,85,247,0.35);border-radius:2px;vertical-align:middle"></span> Sidial</span>
+          <div style="display:flex;flex-direction:column;height:calc(100vh - 160px)">
+            <div id="regimeMapPlot" style="flex:1;min-height:0"></div>
+            <div style="margin-top:8px;font-size:11px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap;padding:0 8px 8px;align-items:center">
+              <span><span style="display:inline-block;width:6px;height:12px;background:#22c55e;vertical-align:middle;margin-right:1px"></span><span style="display:inline-block;width:6px;height:12px;background:#ef4444;vertical-align:middle"></span> SPX</span>
+              <span><span style="display:inline-block;width:16px;height:2.5px;background:#3b82f6;vertical-align:middle"></span> Target</span>
+              <span><span style="display:inline-block;width:16px;height:6px;background:rgba(245,158,11,0.15);border-top:1.5px solid #f59e0b;border-bottom:1.5px solid #f59e0b;vertical-align:middle"></span> LIS Zone</span>
+              <span><span style="display:inline-block;width:16px;height:1.5px;background:#22c55e;vertical-align:middle"></span> +GEX</span>
+              <span><span style="display:inline-block;width:16px;height:1.5px;background:#ef4444;vertical-align:middle"></span> -GEX</span>
+              <span style="margin-left:6px;font-weight:600">Paradigm:</span>
+              <span><span style="display:inline-block;width:12px;height:12px;background:rgba(34,197,94,0.35);border-radius:2px;vertical-align:middle"></span> GEX</span>
+              <span><span style="display:inline-block;width:12px;height:12px;background:rgba(239,68,68,0.35);border-radius:2px;vertical-align:middle"></span> Anti-GEX</span>
+              <span><span style="display:inline-block;width:12px;height:12px;background:rgba(96,165,250,0.35);border-radius:2px;vertical-align:middle"></span> BofA</span>
+              <span><span style="display:inline-block;width:12px;height:12px;background:rgba(168,85,247,0.35);border-radius:2px;vertical-align:middle"></span> Sidial</span>
+            </div>
           </div>
         </div>
       </div>
@@ -8187,10 +8194,10 @@ DASH_HTML_TEMPLATE = """
       <!-- Trade Log View -->
       <div id="viewTradeLog" class="panel" style="display:none;flex-direction:column;overflow:auto">
         <div class="header"><div><strong>Trade Log</strong></div><span id="tlStatus" style="font-size:11px;color:var(--muted)"></span></div>
-        <div class="tl-subtabs">
-          <button class="tl-subtab active" data-subtab="portal">Portal Log</button>
-          <button class="tl-subtab" data-subtab="tssim">TS SIM Log</button>
-          <button class="tl-subtab" data-subtab="eval">Eval Log</button>
+        <div class="subtabs" id="tlSubtabs">
+          <button class="subtab-btn active" data-subtab="portal">Portal Log</button>
+          <button class="subtab-btn" data-subtab="tssim">TS SIM Log</button>
+          <button class="subtab-btn" data-subtab="eval">Eval Log</button>
         </div>
         <div class="tl-filters">
           <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option></select>
@@ -8371,53 +8378,90 @@ DASH_HTML_TEMPLATE = """
 
     // Tabs
     const tabTable=document.getElementById('tabTable'),
-          tabCharts=document.getElementById('tabCharts'),
-          tabChartsHT=document.getElementById('tabChartsHT'),
           tabSpot=document.getElementById('tabSpot'),
-          tabPlayback=document.getElementById('tabPlayback'),
-          tabRegimeMap=document.getElementById('tabRegimeMap'),
+          tabCharts=document.getElementById('tabCharts'),
           tabEsDelta=document.getElementById('tabEsDelta'),
+          tabHistorical=document.getElementById('tabHistorical'),
           tabTradeLog=document.getElementById('tabTradeLog');
 
     const viewTable=document.getElementById('viewTable'),
-          viewCharts=document.getElementById('viewCharts'),
-          viewChartsHT=document.getElementById('viewChartsHT'),
           viewSpot=document.getElementById('viewSpot'),
-          viewPlayback=document.getElementById('viewPlayback'),
-          viewRegimeMap=document.getElementById('viewRegimeMap'),
+          viewCharts=document.getElementById('viewCharts'),
           viewEsDelta=document.getElementById('viewEsDelta'),
+          viewHistorical=document.getElementById('viewHistorical'),
           viewTradeLog=document.getElementById('viewTradeLog');
+
+    // Charts sub-views
+    const viewCharts0dte=document.getElementById('viewCharts0dte'),
+          viewChartsHTF=document.getElementById('viewChartsHTF');
+    let _chartsActiveSubTab = '0dte';
+
+    // Historical sub-views
+    const viewHistPlayback=document.getElementById('viewHistPlayback'),
+          viewHistRegime=document.getElementById('viewHistRegime');
+    let _histActiveSubTab = 'playback';
 
     let tradeLogTimer = null;
     function stopTradeLog() { if(tradeLogTimer){clearInterval(tradeLogTimer);tradeLogTimer=null;} }
 
     function setActive(btn){
-      [tabTable,tabCharts,tabChartsHT,tabSpot,tabPlayback,tabRegimeMap,tabEsDelta,tabTradeLog].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabSpot,tabCharts,tabEsDelta,tabHistorical,tabTradeLog].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewChartsHT.style.display='none'; viewSpot.style.display='none'; viewPlayback.style.display='none'; viewRegimeMap.style.display='none'; viewEsDelta.style.display='none'; viewTradeLog.style.display='none'; }
+    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewHistorical.style.display='none'; viewEsDelta.style.display='none'; viewTradeLog.style.display='none'; }
+    function stopAllPolling(){ stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); }
     function saveTab(name){ try{sessionStorage.setItem('activeTab',name);}catch(e){} }
-    function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); saveTab('table'); }
-    function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; startCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); saveTab('charts'); }
-    function showChartsHT(){ setActive(tabChartsHT); hideAllViews(); viewChartsHT.style.display=''; startChartsHT(); stopCharts(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); saveTab('chartsHT'); }
-    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; startSpot(); startStatistics(); stopCharts(); stopChartsHT(); stopEsDelta(); stopTradeLog(); saveTab('spot'); }
-    function showPlayback(){ setActive(tabPlayback); hideAllViews(); viewPlayback.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); initPlayback(); saveTab('playback'); }
-    function showRegimeMap(){ setActive(tabRegimeMap); hideAllViews(); viewRegimeMap.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); initRegimeMap(); saveTab('regimeMap'); }
-    function showEsDelta(){ setActive(tabEsDelta); hideAllViews(); viewEsDelta.style.display=''; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopTradeLog(); startEsDelta(); saveTab('esDelta'); }
-    function showTradeLog(){ setActive(tabTradeLog); hideAllViews(); viewTradeLog.style.display='flex'; stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); _tlLoadActiveSubTab(); tradeLogTimer=setInterval(_tlLoadActiveSubTab,30000); saveTab('tradeLog'); }
+
+    // Charts sub-tab switching
+    function _chartsShowSubTab(sub) {
+      _chartsActiveSubTab = sub;
+      viewCharts0dte.style.display = sub==='0dte' ? '' : 'none';
+      viewChartsHTF.style.display = sub==='htf' ? '' : 'none';
+      document.querySelectorAll('#chartsSubtabs .subtab-btn').forEach(b => b.classList.toggle('active', b.dataset.subtab===sub));
+      if(sub==='0dte'){ startCharts(); stopChartsHT(); } else { stopCharts(); startChartsHT(); }
+      try{sessionStorage.setItem('chartsSubTab',sub);}catch(e){}
+    }
+    document.querySelectorAll('#chartsSubtabs .subtab-btn').forEach(btn => {
+      btn.addEventListener('click', () => _chartsShowSubTab(btn.dataset.subtab));
+    });
+
+    // Historical sub-tab switching
+    function _histShowSubTab(sub) {
+      _histActiveSubTab = sub;
+      viewHistPlayback.style.display = sub==='playback' ? '' : 'none';
+      viewHistRegime.style.display = sub==='regime' ? '' : 'none';
+      document.querySelectorAll('#histSubtabs .subtab-btn').forEach(b => b.classList.toggle('active', b.dataset.subtab===sub));
+      if(sub==='playback') initPlayback(); else initRegimeMap();
+      try{sessionStorage.setItem('histSubTab',sub);}catch(e){}
+    }
+    document.querySelectorAll('#histSubtabs .subtab-btn').forEach(btn => {
+      btn.addEventListener('click', () => _histShowSubTab(btn.dataset.subtab));
+    });
+
+    function showTable(){ setActive(tabTable); hideAllViews(); viewTable.style.display=''; stopAllPolling(); saveTab('table'); }
+    function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; stopAllPolling(); startSpot(); startStatistics(); saveTab('spot'); }
+    function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; stopAllPolling(); _chartsShowSubTab(_chartsActiveSubTab); saveTab('charts'); }
+    function showEsDelta(){ setActive(tabEsDelta); hideAllViews(); viewEsDelta.style.display=''; stopAllPolling(); startEsDelta(); saveTab('esDelta'); }
+    function showHistorical(){ setActive(tabHistorical); hideAllViews(); viewHistorical.style.display=''; stopAllPolling(); _histShowSubTab(_histActiveSubTab); saveTab('historical'); }
+    function showTradeLog(){ setActive(tabTradeLog); hideAllViews(); viewTradeLog.style.display='flex'; stopAllPolling(); _tlLoadActiveSubTab(); tradeLogTimer=setInterval(_tlLoadActiveSubTab,30000); saveTab('tradeLog'); }
     tabTable.addEventListener('click', showTable);
-    tabCharts.addEventListener('click', showCharts);
-    tabChartsHT.addEventListener('click', showChartsHT);
     tabSpot.addEventListener('click', showSpot);
-    tabPlayback.addEventListener('click', showPlayback);
-    tabRegimeMap.addEventListener('click', showRegimeMap);
+    tabCharts.addEventListener('click', showCharts);
     tabEsDelta.addEventListener('click', showEsDelta);
+    tabHistorical.addEventListener('click', showHistorical);
     tabTradeLog.addEventListener('click', showTradeLog);
 
     // Restore last active tab on page load
     try {
-      const saved = sessionStorage.getItem('activeTab');
-      const tabMap = {charts:showCharts, chartsHT:showChartsHT, spot:showSpot, playback:showPlayback, regimeMap:showRegimeMap, esDelta:showEsDelta, tradeLog:showTradeLog};
+      let saved = sessionStorage.getItem('activeTab');
+      // Backward compat: old tab names → new merged tabs
+      if(saved==='chartsHT'){ saved='charts'; _chartsActiveSubTab='htf'; }
+      if(saved==='playback'){ saved='historical'; _histActiveSubTab='playback'; }
+      if(saved==='regimeMap'){ saved='historical'; _histActiveSubTab='regime'; }
+      // Restore sub-tab memory
+      const cSub = sessionStorage.getItem('chartsSubTab'); if(cSub) _chartsActiveSubTab = cSub;
+      const hSub = sessionStorage.getItem('histSubTab'); if(hSub) _histActiveSubTab = hSub;
+      const tabMap = {spot:showSpot, charts:showCharts, esDelta:showEsDelta, historical:showHistorical, tradeLog:showTradeLog};
       if(saved && tabMap[saved]) tabMap[saved]();
     } catch(e){}
 
@@ -11158,10 +11202,10 @@ DASH_HTML_TEMPLATE = """
     const _tlPillColors = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4'};
     const _tlGradeColors = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308'};
 
-    // Sub-tab switching
-    document.querySelectorAll('.tl-subtab').forEach(btn => {
+    // Trade Log sub-tab switching
+    document.querySelectorAll('#tlSubtabs .subtab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.tl-subtab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#tlSubtabs .subtab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         _tlActiveSubTab = btn.dataset.subtab;
         _tlLoadActiveSubTab();

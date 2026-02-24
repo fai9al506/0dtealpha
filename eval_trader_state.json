@@ -1,11 +1,12 @@
 {
-  "daily_pnl": 307.5,
-  "total_pnl": 307.5,
-  "trades_today": 1,
-  "losses_today": 0,
+  "daily_pnl": -225.0,
+  "total_pnl": 82.5,
+  "trades_today": 5,
+  "losses_today": 3,
   "trade_days": [
-    "2026-02-23"
+    "2026-02-23",
+    "2026-02-24"
   ],
-  "last_reset_date": "2026-02-23",
-  "peak_balance": 50000
+  "last_reset_date": "2026-02-24",
+  "peak_balance": 50307.5
 }

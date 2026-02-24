@@ -46,15 +46,15 @@
       "stop": 8,
       "target": "msg"
     },
-    "ES Absorption": {
-      "enabled": true,
-      "stop": 12,
-      "target": 10
-    },
     "AG Short": {
       "enabled": true,
       "stop": 12,
       "target": "msg"
+    },
+    "ES Absorption": {
+      "enabled": true,
+      "stop": 12,
+      "target": 10
     }
   },
   "enabled": true

@@ -12,19 +12,25 @@
   "max_trade_risk": 200,
   "dynamic_sizing": true,
   "be_trigger_pts": 5.0,
+  "max_stop_loss_pts": 12,
   "max_losses_per_day": 3,
   "e2t_daily_loss_limit": 1100,
   "e2t_daily_loss_buffer": 100,
   "e2t_eod_trailing_drawdown": 2000,
   "e2t_max_contracts_es_equiv": 6,
   "e2t_starting_balance": 50000,
-  "e2t_peak_balance": 50000,
+  "e2t_peak_balance": 50307.5,
   "market_open_ct": "08:30",
   "no_new_trades_after_ct": "15:30",
   "flatten_time_ct": "15:50",
   "e2t_daily_pnl_cap": 900,
   "setup_rules": {
-    "ES Absorption": {
+    "DD Exhaustion": {
+      "enabled": true,
+      "stop": 12,
+      "target": null
+    },
+    "Paradigm Reversal": {
       "enabled": true,
       "stop": 12,
       "target": 10
@@ -40,20 +46,15 @@
       "stop": 8,
       "target": "msg"
     },
-    "AG Short": {
-      "enabled": true,
-      "stop": 20,
-      "target": "msg"
-    },
-    "DD Exhaustion": {
+    "ES Absorption": {
       "enabled": true,
       "stop": 12,
-      "target": null
-    },
-    "Paradigm Reversal": {
-      "enabled": true,
-      "stop": 15,
       "target": 10
+    },
+    "AG Short": {
+      "enabled": true,
+      "stop": 12,
+      "target": "msg"
     }
   },
   "enabled": true

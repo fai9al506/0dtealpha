@@ -116,8 +116,9 @@ DEFAULT_CONFIG = {
     "max_trade_risk": 300,       # $300 max risk per trade (dynamic sizing)
     "dynamic_sizing": True,      # True = calc qty from max_trade_risk / (stop × $5)
 
-    # ── Breakeven stop ──
+    # ── Survival mode ──
     "be_trigger_pts": 5.0,       # Move stop to breakeven when ES moves +5 pts
+    "max_stop_loss_pts": 12,     # Cap ALL stops at 12 pts max (survival mode)
 
     # ── Daily loss limit (trade count) ──
     "max_losses_per_day": 3,     # Stop trading after 3 losses
@@ -143,10 +144,10 @@ DEFAULT_CONFIG = {
     # Mirrors production system: same stops, same targets, smaller size
     "setup_rules": {
         "GEX Long":          {"enabled": False, "stop": 8,  "target": "msg"},
-        "AG Short":          {"enabled": True,  "stop": 20, "target": "msg"},
+        "AG Short":          {"enabled": True,  "stop": 12, "target": "msg"},
         "BofA Scalp":        {"enabled": False, "stop": 12, "target": "msg", "max_hold_min": 30},
         "ES Absorption":     {"enabled": True,  "stop": 12, "target": 10},
-        "Paradigm Reversal": {"enabled": True,  "stop": 15, "target": 10},
+        "Paradigm Reversal": {"enabled": True,  "stop": 12, "target": 10},
         "DD Exhaustion":     {"enabled": True,  "stop": 12, "target": None},
     },
 
@@ -976,6 +977,10 @@ class PositionTracker:
         is_long = direction in ("long", "bullish")
 
         stop_pts = rules["stop"]
+        max_sl = self.cfg.get("max_stop_loss_pts")
+        if max_sl and stop_pts > max_sl:
+            log.info(f"  Stop {stop_pts}pts capped to {max_sl}pts (survival mode)")
+            stop_pts = max_sl
         qty = _calc_qty(self.cfg, stop_pts)
 
         # Resolve target
@@ -1305,28 +1310,30 @@ class PositionTracker:
         tp = self._TRAIL_PARAMS.get(setup_name)
         new_stop = None
 
+        # ── Breakeven first (applies to ALL setups) ──
+        be_pts = self.cfg.get("be_trigger_pts", 5.0)
+        if not self.position.get("be_triggered") and profit >= be_pts:
+            new_stop = es_entry
+            self.position["be_triggered"] = True
+
         if tp:
-            # ── Trailing stop setups ──
+            # ── Trailing stop setups (overrides BE once trail activates) ──
             if tp["mode"] == "continuous":
-                # Continuous: once max_fav >= activation, lock at max_fav - gap
                 if max_fav >= tp["activation"]:
                     lock = max_fav - tp["gap"]
-                    new_stop = (es_entry + lock) if is_long else (es_entry - lock)
+                    trail_stop = (es_entry + lock) if is_long else (es_entry - lock)
+                    if new_stop is None or (is_long and trail_stop > new_stop) or (not is_long and trail_stop < new_stop):
+                        new_stop = trail_stop
             else:
-                # Rung-based: step every N pts with lock offset
                 rung_start = tp["rung_start"]
                 step = tp["step"]
                 lock_offset = tp["lock_offset"]
                 if max_fav >= rung_start:
                     rungs_hit = int((max_fav - rung_start) / step)
                     lock = rung_start + (rungs_hit * step) - lock_offset
-                    new_stop = (es_entry + lock) if is_long else (es_entry - lock)
-        else:
-            # ── Non-trailing setups: breakeven only ──
-            be_pts = self.cfg.get("be_trigger_pts", 5.0)
-            if not self.position.get("be_triggered") and profit >= be_pts:
-                new_stop = es_entry
-                self.position["be_triggered"] = True
+                    trail_stop = (es_entry + lock) if is_long else (es_entry - lock)
+                    if new_stop is None or (is_long and trail_stop > new_stop) or (not is_long and trail_stop < new_stop):
+                        new_stop = trail_stop
 
         # Move stop if new level is tighter than current
         if new_stop is not None:

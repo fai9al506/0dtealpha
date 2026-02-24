@@ -4648,38 +4648,49 @@ def api_es_delta_bars(limit: int = Query(1400, ge=1, le=2000)):
 def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, le=50.0)):
     """Build range bars for ES delta chart.
 
-    Priority: live quote-stream bars (bid/ask delta) → fallback to 1-min approximation.
+    Priority: Rithmic exchange aggressor → TS quote-stream fallback.
     """
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
 
-        # Live quote-stream range bars (tick-accurate bid/ask delta)
-        # Bars persist to DB and reload on restart via _es_quote_reset()
-        with _es_quote_lock:
-            completed = list(_es_quote["_completed_bars"])
-            forming = _es_quote["_forming_bar"]
-            cvd_now = _es_quote["_cvd"]
+        # Primary: Rithmic exchange aggressor data (100% accurate)
+        result = None
+        try:
+            from rithmic_es_stream import get_rithmic_bars
+            rithmic_bars = get_rithmic_bars()
+            if rithmic_bars:
+                result = rithmic_bars
+        except ImportError:
+            pass
 
-        result = list(completed)
-        # Add forming bar as "open" status
-        if forming and (forming["volume"] > 0 or abs(forming["open"] - forming["close"]) > 0.001):
-            result.append({
-                "idx": len(completed),
-                "open": forming["open"], "high": forming["high"],
-                "low": forming["low"], "close": forming["close"],
-                "volume": forming["volume"], "delta": forming["delta"],
-                "buy_volume": forming["buy"], "sell_volume": forming["sell"],
-                "cvd": cvd_now,
-                "cvd_open": forming["cvd_open"],
-                "cvd_high": forming["cvd_high"],
-                "cvd_low": forming["cvd_low"],
-                "cvd_close": cvd_now,
-                "ts_start": forming["ts_start"], "ts_end": forming["ts_end"],
-                "status": "open",
-            })
+        # Fallback: TS quote-stream bars (bid/ask inference)
+        if result is None:
+            with _es_quote_lock:
+                completed = list(_es_quote["_completed_bars"])
+                forming = _es_quote["_forming_bar"]
+                cvd_now = _es_quote["_cvd"]
+
+            result = list(completed)
+            if forming and (forming["volume"] > 0 or abs(forming["open"] - forming["close"]) > 0.001):
+                result.append({
+                    "idx": len(completed),
+                    "open": forming["open"], "high": forming["high"],
+                    "low": forming["low"], "close": forming["close"],
+                    "volume": forming["volume"], "delta": forming["delta"],
+                    "buy_volume": forming["buy"], "sell_volume": forming["sell"],
+                    "cvd": cvd_now,
+                    "cvd_open": forming["cvd_open"],
+                    "cvd_high": forming["cvd_high"],
+                    "cvd_low": forming["cvd_low"],
+                    "cvd_close": cvd_now,
+                    "ts_start": forming["ts_start"], "ts_end": forming["ts_end"],
+                    "status": "open",
+                })
+
         # Run absorption detection on completed bars
-        if completed:
+        completed_only = [b for b in result if b.get("status") != "open"]
+        if completed_only:
             _run_absorption_detection(result)
         return {"bars": result, "signals": _absorption_signals}
     except Exception as e:

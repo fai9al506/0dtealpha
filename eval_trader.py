@@ -1117,9 +1117,11 @@ class PositionTracker:
     def reverse(self, signal: dict, es_price: float | None):
         """Close current position and open new one in opposite direction.
 
-        Uses CLOSEPOSITION to flatten, then cancels ALL working orders for the
-        symbol before placing new ones. Sleeps between each OIF command to
-        prevent file collisions and give NT8 time to process.
+        Avoids unreliable CLOSEPOSITION. Instead:
+        1. Cancel old stop/target by ID
+        2. Single market order: old_qty + new_qty in new direction
+           (e.g., LONG 3 → SHORT 2 = SELL 5 at market — atomic net-off)
+        3. Place new stop and target
         """
         if not self.position:
             return
@@ -1128,48 +1130,139 @@ class PositionTracker:
         old_dir = self.position["direction"].upper()
         new_name = signal["setup_name"]
         new_dir = signal["direction"].upper()
-        trade_qty = self.position.get("qty", self.cfg["qty"])
+        old_qty = self.position.get("qty", self.cfg["qty"])
 
         log.info(f"REVERSING: closing {old_name} {old_dir} for new {new_name} {new_dir}")
 
-        # Step 1: Cancel ALL working orders for symbol (safety net — catches any orphans)
-        self.nt8.cancel_all()
+        # Step 1: Cancel old exit orders individually (known-working CANCEL command)
+        self.nt8.cancel(self.position["stop_oid"])
+        if self.position.get("target_oid"):
+            time.sleep(0.3)
+            self.nt8.cancel(self.position["target_oid"])
 
-        # Step 2: Flatten position
-        time.sleep(0.5)
-        self.nt8.close_position()
-
-        # Estimate P&L from ES price (best we can do without fill data)
+        # Estimate P&L from ES price
         pnl_pts = 0.0
         if es_price and self.position.get("es_entry_price"):
             is_long = self.position["direction"] in ("long", "bullish")
             pnl_pts = (es_price - self.position["es_entry_price"]) if is_long else (self.position["es_entry_price"] - es_price)
 
-        self.compliance.record_trade(pnl_pts, old_name, trade_qty)
+        self.compliance.record_trade(pnl_pts, old_name, old_qty)
         log.info(f"  Closed {old_name}: ~{pnl_pts:+.1f} pts (estimated from ES price)")
 
         self.position = None
         self._save()
 
-        # Step 3: Wait for NT8 to finish processing close + cancels
-        time.sleep(1.0)
+        # Step 2: Resolve new position params
+        new_rules = self.cfg["setup_rules"][new_name]
+        new_stop_pts = new_rules["stop"]
+        new_qty = _calc_qty(self.cfg, new_stop_pts)
+        new_is_long = signal["direction"] in ("long", "bullish")
 
-        # Step 4: Open new position
-        self.open_trade(signal)
+        # Step 3: Atomic net-off — single market order covers close + new entry
+        # e.g., was LONG 3, want SHORT 2 → SELL 5 at market
+        net_qty = old_qty + new_qty
+        net_side = "BUY" if new_is_long else "SELL"
+        exit_side = "SELL" if new_is_long else "BUY"
+        net_oid = self.nt8._oid("r")
+
+        time.sleep(0.5)
+        self.nt8._write(
+            f"PLACE;{self.nt8.account};{self.nt8.symbol};{net_side};{net_qty};"
+            f"MARKET;;;DAY;;{net_oid};;\n"
+        )
+        log.info(f"  Net-off order: {net_side} {net_qty} (close {old_qty} + open {new_qty})")
+
+        # Step 4: Place new stop and target for the new position
+        es_ref = signal.get("es_price") or es_price or signal["spot"]
+        new_stop_price = _round_tick(es_ref - new_stop_pts) if new_is_long else _round_tick(es_ref + new_stop_pts)
+
+        cfg_target = new_rules.get("target")
+        trail_only = cfg_target is None
+        if cfg_target == "msg":
+            target_pts = signal.get("msg_target_pts") or 10
+        elif cfg_target is None:
+            target_pts = 0
+        else:
+            target_pts = float(cfg_target)
+        new_target_price = _round_tick(es_ref + target_pts) if new_is_long else _round_tick(es_ref - target_pts)
+
+        time.sleep(0.5)
+        stop_oid = self.nt8._oid("s")
+        self.nt8._write(
+            f"PLACE;{self.nt8.account};{self.nt8.symbol};{exit_side};{new_qty};"
+            f"STOPMARKET;;{_round_tick(new_stop_price)};DAY;;{stop_oid};;\n"
+        )
+
+        target_oid = None
+        if not trail_only:
+            time.sleep(0.3)
+            target_oid = self.nt8._oid("t")
+            self.nt8._write(
+                f"PLACE;{self.nt8.account};{self.nt8.symbol};{exit_side};{new_qty};"
+                f"LIMIT;{_round_tick(new_target_price)};;DAY;;{target_oid};;\n"
+            )
+
+        log.info(f"NT8 reverse placed: {net_side} {net_qty} (net) + "
+                 f"stop={_round_tick(new_stop_price)}"
+                 f"{' target=' + str(_round_tick(new_target_price)) if not trail_only else ' (trail-only)'}")
+
+        # Step 5: Track new position
+        es_entry = signal.get("es_price") or es_price
+        self.position = {
+            "setup_name": new_name,
+            "direction": signal["direction"],
+            "grade": signal.get("grade", "?"),
+            "entry_price": es_ref,
+            "spx_spot": signal["spot"],
+            "stop_price": new_stop_price,
+            "target_price": new_target_price if not trail_only else None,
+            "stop_pts": new_stop_pts,
+            "target_pts": target_pts if not trail_only else None,
+            "trail_only": trail_only,
+            "qty": new_qty,
+            "ts": datetime.now(CT).isoformat(),
+            "max_hold_min": new_rules.get("max_hold_min"),
+            "es_entry_price": es_entry,
+            "be_triggered": False,
+            "entry_oid": net_oid,
+            "stop_oid": stop_oid,
+            "target_oid": target_oid,
+        }
+        self._save()
+
+        log.info(f"TRADE OPENED: {new_name} {new_dir} [{signal.get('grade', '?')}]")
+        log.info(f"  MES Entry: {es_ref:.2f} | Stop: {new_stop_price:.2f} "
+                 f"(-{new_stop_pts}pts / -${new_stop_pts * new_qty * MES_POINT_VALUE:.0f}) | "
+                 f"{'Target: ' + str(_round_tick(new_target_price)) + ' (+' + str(target_pts) + 'pts)' if not trail_only else 'Target: TRAIL-ONLY'}"
+                 f" | Qty: {new_qty}")
 
     def flatten(self, reason: str = "EOD"):
-        """Force-close position (e.g., EOD flatten)."""
+        """Force-close position (e.g., EOD flatten).
+
+        Uses explicit cancel + market exit order (not CLOSEPOSITION which is unreliable).
+        """
         if not self.position:
             return
 
         trade_qty = self.position.get("qty", self.cfg["qty"])
-        # Cancel all working orders, then flatten
-        self.nt8.cancel_all()
-        time.sleep(0.5)
-        self.nt8.close_position()
+        is_long = self.position["direction"] in ("long", "bullish")
+        exit_side = "SELL" if is_long else "BUY"
 
+        # Cancel old exit orders
+        self.nt8.cancel(self.position["stop_oid"])
+        if self.position.get("target_oid"):
+            time.sleep(0.3)
+            self.nt8.cancel(self.position["target_oid"])
+
+        # Market exit order to flatten
+        time.sleep(0.5)
+        flat_oid = self.nt8._oid("f")
+        self.nt8._write(
+            f"PLACE;{self.nt8.account};{self.nt8.symbol};{exit_side};{trade_qty};"
+            f"MARKET;;;DAY;;{flat_oid};;\n"
+        )
         log.info(f"FLATTENED ({reason}): {self.position['setup_name']} — "
-                 f"recording 0 P&L (actual may differ)")
+                 f"{exit_side} {trade_qty} at market")
 
         # Record 0 P&L for flatten (conservative — actual filled at market)
         self.compliance.record_trade(0, self.position["setup_name"], trade_qty)

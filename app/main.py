@@ -217,6 +217,7 @@ latest_df: pd.DataFrame | None = None
 last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
 _df_lock = Lock()
+_vix_last: float | None = None  # latest VIX value from TS quotes
 
 # ====== SETUP DETECTOR DEFAULTS ======
 _DEFAULT_SETUP_SETTINGS = {
@@ -498,6 +499,15 @@ def db_init():
             conn.execute(text(f"""
             DO $$ BEGIN
                 ALTER TABLE setup_log ADD COLUMN {col} {ctype};
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
+            """))
+
+        # VIX column on chain_snapshots, playback_snapshots, setup_log
+        for tbl in ("chain_snapshots", "playback_snapshots", "setup_log"):
+            conn.execute(text(f"""
+            DO $$ BEGIN
+                ALTER TABLE {tbl} ADD COLUMN vix DOUBLE PRECISION;
             EXCEPTION WHEN duplicate_column THEN NULL;
             END $$;
             """))
@@ -1274,6 +1284,7 @@ def log_setup(result_wrapper):
                 # Absorption extra columns (NULL for other setups)
                 insert_params.setdefault("abs_vol_ratio", r.get("abs_vol_ratio"))
                 insert_params.setdefault("abs_es_price", r.get("abs_es_price"))
+                insert_params["vix"] = _vix_last
                 result = conn.execute(text("""
                     INSERT INTO setup_log
                         (setup_name, direction, grade, score, paradigm, spot, lis, target,
@@ -1281,14 +1292,14 @@ def log_setup(result_wrapper):
                          first_hour, support_score, upside_score, floor_cluster_score,
                          target_cluster_score, rr_score, notified,
                          bofa_stop_level, bofa_target_level, bofa_lis_width, bofa_max_hold_minutes, lis_upper,
-                         abs_vol_ratio, abs_es_price)
+                         abs_vol_ratio, abs_es_price, vix)
                     VALUES
                         (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
                          :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
                          :first_hour, :support_score, :upside_score, :floor_cluster_score,
                          :target_cluster_score, :rr_score, TRUE,
                          :bofa_stop_level, :bofa_target_level, :bofa_lis_width, :bofa_max_hold_minutes, :lis_upper_val,
-                         :abs_vol_ratio, :abs_es_price)
+                         :abs_vol_ratio, :abs_es_price, :vix)
                     RETURNING id
                 """), insert_params)
                 log_id = result.fetchone()[0]
@@ -1303,9 +1314,9 @@ def log_setup(result_wrapper):
                         gap_to_lis = :gap_to_lis, upside = :upside, rr_ratio = :rr_ratio,
                         support_score = :support_score, upside_score = :upside_score,
                         floor_cluster_score = :floor_cluster_score, target_cluster_score = :target_cluster_score,
-                        rr_score = :rr_score, ts = NOW()
+                        rr_score = :rr_score, vix = :vix, ts = NOW()
                     WHERE id = :log_id
-                """), {**r, "log_id": log_id})
+                """), {**r, "log_id": log_id, "vix": _vix_last})
                 print(f"[setups] updated setup id={log_id} ({reason})", flush=True)
     except Exception as e:
         print(f"[setups] failed to log: {e}", flush=True)
@@ -1783,31 +1794,37 @@ def market_open_now() -> bool:
 
 # ====== TS helpers ======
 def get_spx_quote() -> dict:
-    """Return {last, high, low} from TS API quote (same single API call)."""
-    js = api_get("/marketdata/quotes/%24SPX.X", timeout=8).json()
+    """Return {last, high, low, vix} from TS API quote. Fetches SPX + VIX in one call."""
+    js = api_get("/marketdata/quotes/%24SPX.X,%24VIX.X", timeout=8).json()
+    result = {"last": 0.0, "high": None, "low": None, "vix": None}
     for q in js.get("Quotes", []):
-        if q.get("Symbol") == "$SPX.X":
+        sym = q.get("Symbol", "")
+        if sym == "$SPX.X":
             v = q.get("Last") or q.get("Close")
             try:
-                last = float(v)
+                result["last"] = float(v)
             except Exception:
-                last = 0.0
-            high = None
-            low = None
+                pass
             try:
                 h = q.get("High")
                 if h is not None:
-                    high = float(h)
+                    result["high"] = float(h)
             except Exception:
                 pass
             try:
                 lo = q.get("Low")
                 if lo is not None:
-                    low = float(lo)
+                    result["low"] = float(lo)
             except Exception:
                 pass
-            return {"last": last, "high": high, "low": low}
-    return {"last": 0.0, "high": None, "low": None}
+        elif sym == "$VIX.X":
+            try:
+                vv = q.get("Last") or q.get("Close")
+                if vv is not None:
+                    result["vix"] = float(vv)
+            except Exception:
+                pass
+    return result
 
 def get_spx_last() -> float:
     return get_spx_quote()["last"]
@@ -2022,7 +2039,7 @@ def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
 
 # ====== jobs ======
 def run_market_job():
-    global latest_df, last_run_status, _spx_session, _spx_cycle_high, _spx_cycle_low
+    global latest_df, last_run_status, _spx_session, _spx_cycle_high, _spx_cycle_low, _vix_last
     try:
         if not market_open_now():
             last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
@@ -2032,6 +2049,8 @@ def run_market_job():
         spot = quote["last"]
         sess_high = quote["high"]
         sess_low = quote["low"]
+        if quote["vix"] is not None:
+            _vix_last = quote["vix"]
 
         # Derive intra-cycle extremes from session H/L changes
         today = now_et().date()
@@ -2129,8 +2148,8 @@ def save_history_job():
             pass
         with engine.begin() as conn:
             conn.execute(
-                text("INSERT INTO chain_snapshots (ts, exp, spot, columns, rows) VALUES (:ts, :exp, :spot, :columns, :rows)"),
-                {"ts": now_et(), "exp": exp, "spot": spot,
+                text("INSERT INTO chain_snapshots (ts, exp, spot, vix, columns, rows) VALUES (:ts, :exp, :spot, :vix, :columns, :rows)"),
+                {"ts": now_et(), "exp": exp, "spot": spot, "vix": _vix_last,
                  "columns": json.dumps(payload["columns"]),
                  "rows": json.dumps(payload["rows"])}
             )
@@ -2214,11 +2233,12 @@ def save_playback_snapshot():
         with engine.begin() as conn:
             conn.execute(
                 text("""INSERT INTO playback_snapshots
-                        (ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats, call_gex, put_gex, call_oi, put_oi)
-                        VALUES (:ts, :spot, :strikes, :net_gex, :charm, :call_vol, :put_vol, :stats, :call_gex, :put_gex, :call_oi, :put_oi)"""),
+                        (ts, spot, vix, strikes, net_gex, charm, call_vol, put_vol, stats, call_gex, put_gex, call_oi, put_oi)
+                        VALUES (:ts, :spot, :vix, :strikes, :net_gex, :charm, :call_vol, :put_vol, :stats, :call_gex, :put_gex, :call_oi, :put_oi)"""),
                 {
                     "ts": now_et(),
                     "spot": spot,
+                    "vix": _vix_last,
                     "strikes": json.dumps(strikes),
                     "net_gex": json.dumps(net_gex),
                     "charm": json.dumps(charm_data) if charm_data else None,
@@ -6818,6 +6838,7 @@ def api_data_freshness():
 
     result = {
         "spot": spot,
+        "vix": _vix_last,
         "ts_api": {"last_update": None, "age_seconds": None, "status": "closed"},
         "volland": {"last_update": None, "age_seconds": None, "status": "closed"},
     }
@@ -8300,9 +8321,11 @@ DASH_HTML_TEMPLATE = """
       const tsColor = statusColors[ts.status] || statusColors.error;
       const vlColor = statusColors[vl.status] || statusColors.error;
 
-      const spotStr = data.spot ? '<span style="color:#60a5fa;font-weight:600">SPX ' + data.spot.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + '</span><br>' : '';
+      const spotStr = data.spot ? '<span style="color:#60a5fa;font-weight:600">SPX ' + data.spot.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + '</span>' : '';
+      const vixStr = data.vix ? '<span style="margin-left:12px;color:#f59e0b;font-weight:600">VIX ' + data.vix.toFixed(2) + '</span>' : '';
+      const priceRow = (spotStr || vixStr) ? spotStr + vixStr + '<br>' : '';
 
-      dataFreshnessEl.innerHTML = spotStr +
+      dataFreshnessEl.innerHTML = priceRow +
         '<span style="color:' + tsColor + '">TS:' + fmtTimeET(ts.last_update) + '</span>' +
         '<span style="margin:0 6px;color:#555">|</span>' +
         '<span style="color:' + vlColor + '">Vol:' + fmtTimeET(vl.last_update) + '</span>';

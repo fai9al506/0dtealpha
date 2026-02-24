@@ -4249,6 +4249,7 @@ def api_auto_trade_log(limit: int = Query(200)):
                 LIMIT :lim
             """), {"lim": min(int(limit), 500)}).mappings().all()
 
+        MES_PV = 5.0  # $5 per point per MES contract
         results = []
         for r in rows:
             st = r["state"]
@@ -4260,16 +4261,33 @@ def api_auto_trade_log(limit: int = Query(200)):
             t1_price = st.get("first_target_price")
             t2_price = st.get("full_target_price")
             is_long = (st.get("direction", "").lower() in ("long", "bullish"))
-            # Compute MES $ P&L from setup_log outcome_pnl (SPX points) * $5/pt * qty
-            total_qty = st.get("stop_qty", 0)
-            if st.get("t1_filled"):
-                total_qty += st.get("t1_qty", 0)
-            if st.get("t2_filled"):
-                total_qty += st.get("t2_qty", 0)
-            # Use original total from entry
-            orig_qty = (st.get("t1_qty", 0) or 0) + (st.get("t2_qty", 0) or 0) + (st.get("stop_qty", 0) or 0)
-            if st.get("t1_filled") or st.get("t2_filled") or st.get("status") == "closed":
-                orig_qty = max(orig_qty, 1)  # restore original entry qty
+
+            # Original entry qty: t1_qty + t2_qty = TOTAL_QTY at trade time
+            # (stop_qty gets decremented so don't use it for original)
+            t1q = st.get("t1_qty", 0) or 0
+            t2q = st.get("t2_qty", 0) or 0
+            orig_qty = t1q + t2q
+            if orig_qty == 0:
+                # Fallback for Flow A where T1 limit was rejected (t1_qty=0)
+                orig_qty = max(st.get("stop_qty", 0) or 0, 1)
+
+            # Compute MES $ P&L from actual fill/target/stop prices (not SPX outcome_pnl)
+            mes_pnl = None
+            if fill and st.get("status") == "closed":
+                sign = 1 if is_long else -1  # long: exit-entry, short: entry-exit
+                pnl = 0.0
+                filled_qty = 0
+                if st.get("t1_filled") and t1_price:
+                    pnl += (t1_price - fill) * sign * t1q * MES_PV
+                    filled_qty += t1q
+                if st.get("t2_filled") and t2_price:
+                    pnl += (t2_price - fill) * sign * t2q * MES_PV
+                    filled_qty += t2q
+                # Remaining qty hit stop (or was market-closed at ~stop level)
+                remaining = orig_qty - filled_qty
+                if remaining > 0 and stop:
+                    pnl += (stop - fill) * sign * remaining * MES_PV
+                mes_pnl = round(pnl, 2)
 
             results.append({
                 "setup_log_id": r["setup_log_id"],
@@ -4289,7 +4307,8 @@ def api_auto_trade_log(limit: int = Query(200)):
                 "outcome_result": r["outcome_result"],
                 "outcome_pnl": r["outcome_pnl"],
                 "outcome_elapsed_min": r["outcome_elapsed_min"],
-                "mes_qty": orig_qty if orig_qty > 0 else 1,
+                "mes_qty": orig_qty,
+                "mes_pnl": mes_pnl,
             })
         return results
     except Exception as e:
@@ -11414,8 +11433,7 @@ DASH_HTML_TEMPLATE = """
       filtered.forEach(l => {
         if (l.outcome_result==='WIN') wins++;
         else if (l.outcome_result==='LOSS') losses++;
-        const pnl = l.outcome_pnl;
-        if (pnl!=null) { totalPnl += pnl * 5 * (l.mes_qty||1); pnlCount++; }
+        if (l.mes_pnl!=null) { totalPnl += l.mes_pnl; pnlCount++; }
       });
       const wr = (wins+losses)>0 ? ((wins/(wins+losses))*100).toFixed(0) : '--';
       const pnlColor = totalPnl>=0 ? '#22c55e' : '#ef4444';
@@ -11446,10 +11464,9 @@ DASH_HTML_TEMPLATE = """
           result = '<span style="color:var(--muted)">CLOSED</span>';
         }
         let pnl='--', pnlC='#888';
-        if (l.outcome_pnl!=null) {
-          const dp = l.outcome_pnl * 5 * (l.mes_qty||1);
-          pnl = '$'+(dp>=0?'+':'')+dp.toFixed(0);
-          pnlC = dp>=0 ? '#22c55e' : '#ef4444';
+        if (l.mes_pnl!=null) {
+          pnl = '$'+(l.mes_pnl>=0?'+':'')+l.mes_pnl.toFixed(0);
+          pnlC = l.mes_pnl>=0 ? '#22c55e' : '#ef4444';
         }
         const em = l.outcome_elapsed_min;
         const durStr = em!=null ? (em>=60?Math.floor(em/60)+'h'+String(em%60).padStart(2,'0'):em+'m') : '--';

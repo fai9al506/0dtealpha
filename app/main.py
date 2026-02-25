@@ -10141,57 +10141,57 @@ DASH_HTML_TEMPLATE = """
       const putVol = (snap.put_vol || []).reduce((a, b) => a + b, 0);
       const totalVol = callVol + putVol;
 
-      let html = '<div style="display:flex;flex-direction:column;gap:12px">';
+      let html = '<div style="display:flex;flex-direction:column;gap:6px">';
 
       // SPX Spot
-      html += '<div style="padding:10px;background:#1a1d21;border-radius:6px">';
-      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">SPX Spot</div>';
-      html += '<div style="font-size:20px;font-weight:600;color:var(--text)">' + (snap.spot ? snap.spot.toFixed(2) : 'N/A') + '</div>';
+      html += '<div style="padding:6px 8px;background:#1a1d21;border-radius:5px">';
+      html += '<div style="font-size:9px;color:var(--muted);margin-bottom:2px">SPX Spot</div>';
+      html += '<div style="font-size:16px;font-weight:600;color:var(--text)">' + (snap.spot ? snap.spot.toFixed(2) : 'N/A') + '</div>';
       html += '</div>';
 
       // Paradigm
-      html += '<div style="padding:10px;background:#1a1d21;border-radius:6px">';
-      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Paradigm</div>';
-      html += '<div style="font-size:14px;color:var(--text)">' + (stats.paradigm || 'N/A') + '</div>';
+      html += '<div style="padding:6px 8px;background:#1a1d21;border-radius:5px">';
+      html += '<div style="font-size:9px;color:var(--muted);margin-bottom:2px">Paradigm</div>';
+      html += '<div style="font-size:12px;color:var(--text)">' + (stats.paradigm || 'N/A') + '</div>';
       html += '</div>';
 
-      // Target
-      html += '<div style="padding:10px;background:#1a1d21;border-radius:6px">';
-      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Target</div>';
-      html += '<div style="font-size:14px;color:#3b82f6">' + (stats.target || 'N/A') + '</div>';
+      // Target + LIS side by side
+      html += '<div style="display:flex;gap:6px">';
+      html += '<div style="flex:1;padding:6px 8px;background:#1a1d21;border-radius:5px">';
+      html += '<div style="font-size:9px;color:var(--muted);margin-bottom:2px">Target</div>';
+      html += '<div style="font-size:12px;color:#3b82f6">' + (stats.target || 'N/A') + '</div>';
+      html += '</div>';
+      html += '<div style="flex:1;padding:6px 8px;background:#1a1d21;border-radius:5px">';
+      html += '<div style="font-size:9px;color:var(--muted);margin-bottom:2px">LIS</div>';
+      html += '<div style="font-size:12px;color:#f59e0b">' + (stats.lis || 'N/A') + '</div>';
+      html += '</div>';
       html += '</div>';
 
-      // LIS
-      html += '<div style="padding:10px;background:#1a1d21;border-radius:6px">';
-      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Lines in Sand (LIS)</div>';
-      html += '<div style="font-size:14px;color:#f59e0b">' + (stats.lis || 'N/A') + '</div>';
+      // Max +GEX / -GEX side by side
+      html += '<div style="display:flex;gap:6px">';
+      html += '<div style="flex:1;padding:6px 8px;background:#1a1d21;border-radius:5px">';
+      html += '<div style="font-size:9px;color:var(--muted);margin-bottom:2px">Max +GEX</div>';
+      html += '<div style="font-size:12px;color:#22c55e">' + (maxPosGexStrike || 'N/A') + '</div>';
       html += '</div>';
-
-      // Max +GEX / -GEX
-      html += '<div style="display:flex;gap:8px">';
-      html += '<div style="flex:1;padding:10px;background:#1a1d21;border-radius:6px">';
-      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Max +GEX</div>';
-      html += '<div style="font-size:14px;color:#22c55e">' + (maxPosGexStrike || 'N/A') + '</div>';
-      html += '</div>';
-      html += '<div style="flex:1;padding:10px;background:#1a1d21;border-radius:6px">';
-      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Max -GEX</div>';
-      html += '<div style="font-size:14px;color:#ef4444">' + (maxNegGexStrike || 'N/A') + '</div>';
+      html += '<div style="flex:1;padding:6px 8px;background:#1a1d21;border-radius:5px">';
+      html += '<div style="font-size:9px;color:var(--muted);margin-bottom:2px">Max -GEX</div>';
+      html += '<div style="font-size:12px;color:#ef4444">' + (maxNegGexStrike || 'N/A') + '</div>';
       html += '</div>';
       html += '</div>';
 
       // DD Hedging
-      html += '<div style="padding:10px;background:#1a1d21;border-radius:6px">';
-      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">DD Hedging</div>';
+      html += '<div style="padding:6px 8px;background:#1a1d21;border-radius:5px">';
+      html += '<div style="font-size:9px;color:var(--muted);margin-bottom:2px">DD Hedging</div>';
       const ddHedging = stats.dd_hedging || 'N/A';
       const ddColor = ddHedging.includes('-') ? '#ef4444' : '#22c55e';
-      html += '<div style="font-size:14px;color:' + ddColor + '">' + ddHedging + '</div>';
+      html += '<div style="font-size:12px;color:' + ddColor + '">' + ddHedging + '</div>';
       html += '</div>';
 
       // 0DTE Volume
-      html += '<div style="padding:10px;background:#1a1d21;border-radius:6px">';
-      html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">0DTE Volume</div>';
-      html += '<div style="font-size:14px;color:var(--text)">' + totalVol.toLocaleString() + '</div>';
-      html += '<div style="font-size:10px;color:var(--muted)">Calls: ' + callVol.toLocaleString() + ' | Puts: ' + putVol.toLocaleString() + '</div>';
+      html += '<div style="padding:6px 8px;background:#1a1d21;border-radius:5px">';
+      html += '<div style="font-size:9px;color:var(--muted);margin-bottom:2px">0DTE Volume</div>';
+      html += '<div style="font-size:12px;color:var(--text)">' + totalVol.toLocaleString() + '</div>';
+      html += '<div style="font-size:9px;color:var(--muted)">C: ' + callVol.toLocaleString() + ' | P: ' + putVol.toLocaleString() + '</div>';
       html += '</div>';
 
       html += '</div>';

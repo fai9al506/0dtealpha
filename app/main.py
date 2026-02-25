@@ -5536,14 +5536,58 @@ def api_playback_range(start_date: str = Query(None, description="Start date YYY
                     ORDER BY ts ASC
                 """), {"start_ts": start_dt, "end_ts": end_dt}).mappings().all()
 
+            # Fetch Delta Decay data from volland_exposure_points for the same time range
+            # Match each playback timestamp to nearest DD snapshot (within 3 min)
+            dd_grouped = {}  # {ts_utc: {strike: value}}
+            dd_timestamps = []
+            if rows:
+                ts_min = rows[0]["ts"]
+                ts_max = rows[-1]["ts"]
+                dd_rows = conn.execute(text("""
+                    SELECT ts_utc, strike::numeric AS strike, value::numeric AS dd_val
+                    FROM volland_exposure_points
+                    WHERE greek = 'deltaDecay'
+                      AND ts_utc >= :ts_min - interval '3 minutes'
+                      AND ts_utc <= :ts_max + interval '3 minutes'
+                    ORDER BY ts_utc, strike
+                """), {"ts_min": ts_min, "ts_max": ts_max}).mappings().all()
+
+                for dr in dd_rows:
+                    ts_key = dr["ts_utc"]
+                    if ts_key not in dd_grouped:
+                        dd_grouped[ts_key] = {}
+                    dd_grouped[ts_key][float(dr["strike"])] = float(dr["dd_val"]) if dr["dd_val"] is not None else 0
+                dd_timestamps = sorted(dd_grouped.keys())
+
         snapshots = []
         for r in rows:
+            snap_ts = r["ts"]
+            strikes = _json_load_maybe(r["strikes"]) or []
+
+            # Find nearest DD timestamp (within 3 min)
+            dd_data = None
+            if dd_timestamps:
+                best_ts = None
+                best_diff = 999
+                # Binary-ish search: scan dd_timestamps for closest match
+                for dt in dd_timestamps:
+                    diff = abs((dt - snap_ts).total_seconds())
+                    if diff < best_diff:
+                        best_diff = diff
+                        best_ts = dt
+                    elif diff > best_diff:
+                        break  # timestamps are sorted, past the closest
+                if best_ts and best_diff <= 180 and dd_grouped.get(best_ts):
+                    dd_map = dd_grouped[best_ts]
+                    dd_data = [dd_map.get(s, 0) for s in strikes]
+
             snapshots.append({
-                "ts": r["ts"].isoformat() if hasattr(r["ts"], "isoformat") else str(r["ts"]),
+                "ts": snap_ts.isoformat() if hasattr(snap_ts, "isoformat") else str(snap_ts),
                 "spot": r["spot"],
-                "strikes": _json_load_maybe(r["strikes"]),
+                "strikes": strikes,
                 "net_gex": _json_load_maybe(r["net_gex"]),
                 "charm": _json_load_maybe(r["charm"]),
+                "delta_decay": dd_data,
                 "call_vol": _json_load_maybe(r["call_vol"]),
                 "put_vol": _json_load_maybe(r["put_vol"]),
                 "stats": _json_load_maybe(r["stats"]),
@@ -7602,14 +7646,15 @@ DASH_HTML_TEMPLATE = """
     .tl-header.tl-grid-eval, .tl-row.tl-grid-eval { grid-template-columns:32px 100px 32px 48px 72px 36px 72px 56px 56px 64px 44px 64px; }
 
     /* Playback View */
-    .playback-container { display:flex; flex-direction:column; height:calc(100vh - 180px); }
+    .playback-container { display:flex; flex-direction:column; height:calc(100vh - 180px); overflow-y:auto; }
     .playback-info { padding:8px 0; display:flex; align-items:center; }
-    .playback-grid {
+    .playback-detail-grid {
       display:grid;
-      grid-template-columns: 2fr 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
       gap:8px;
-      flex:1;
-      min-height:0;
+      height:320px;
+      min-height:280px;
+      flex-shrink:0;
     }
     .playback-card {
       background: var(--panel);
@@ -7663,7 +7708,7 @@ DASH_HTML_TEMPLATE = """
       box-shadow:0 0 6px rgba(96,165,250,0.4);
     }
     @media (max-width: 900px) {
-      .playback-grid { grid-template-columns:1fr; }
+      .playback-detail-grid { grid-template-columns:1fr; height:auto; }
       .playback-container { height:auto; }
     }
 
@@ -8197,10 +8242,6 @@ DASH_HTML_TEMPLATE = """
               <button id="playbackLoad" class="strike-btn" style="padding:4px 12px">Load</button>
               <button id="playbackExportFull" class="strike-btn" style="padding:4px 12px">Export Full CSV</button>
               <button id="playbackExportSummary" class="strike-btn" style="padding:4px 12px">Export Summary CSV</button>
-              <div style="display:flex;gap:4px;margin-left:10px;background:#1a1d21;border-radius:6px;padding:2px">
-                <button id="playbackViewFull" class="strike-btn active" style="padding:4px 10px;font-size:10px">Full View</button>
-                <button id="playbackViewSummary" class="strike-btn" style="padding:4px 10px;font-size:10px">Summary</button>
-              </div>
             </div>
           </div>
           <div class="playback-container">
@@ -8208,28 +8249,9 @@ DASH_HTML_TEMPLATE = """
               <span id="playbackTimestamp" style="font-size:12px;color:var(--text)">Select a date and click Load</span>
               <span id="playbackStats" style="font-size:11px;color:var(--muted);margin-left:20px"></span>
             </div>
-            <!-- Full View (current layout) -->
-            <div id="playbackFullView" class="playback-grid">
-              <div class="playback-card playback-price-card">
-                <h3 id="playbackPriceTitle">SPX Price (7D)</h3>
-                <div id="playbackPricePlot" class="playback-plot"></div>
-              </div>
-              <div class="playback-card">
-                <h3>Net GEX</h3>
-                <div id="playbackGexPlot" class="playback-plot"></div>
-              </div>
-              <div class="playback-card">
-                <h3>Charm</h3>
-                <div id="playbackCharmPlot" class="playback-plot"></div>
-              </div>
-              <div class="playback-card">
-                <h3>Volume</h3>
-                <div id="playbackVolPlot" class="playback-plot"></div>
-              </div>
-            </div>
-            <!-- Summary View (like Statistics tab) -->
-            <div id="playbackSummaryView" style="display:none">
-              <div style="display:flex;gap:16px;height:calc(100vh - 280px)">
+            <!-- Summary View (top): Price chart with key levels + stats panel -->
+            <div id="playbackSummaryView">
+              <div style="display:flex;gap:16px;height:420px">
                 <div style="flex:2;background:#121417;border-radius:8px;padding:8px">
                   <h3 style="font-size:12px;color:var(--muted);margin:0 0 8px 0">SPX Price + Key Levels</h3>
                   <div id="playbackSummaryPlot" style="width:100%;height:calc(100% - 30px)"></div>
@@ -8239,7 +8261,7 @@ DASH_HTML_TEMPLATE = """
                   <div id="playbackSummaryStats" style="font-size:13px"></div>
                 </div>
               </div>
-              <div style="margin-top:12px;font-size:11px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap">
+              <div style="margin-top:8px;font-size:11px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap">
                 <span><span style="color:#9ca3af">--</span> Day Open</span>
                 <span><span style="color:#3b82f6">■</span> Target</span>
                 <span><span style="color:#f59e0b">■</span> LIS</span>
@@ -8247,11 +8269,31 @@ DASH_HTML_TEMPLATE = """
                 <span><span style="color:#ef4444">■</span> Max -Gamma</span>
               </div>
             </div>
+            <!-- Slider (middle): shared time scrubber -->
             <div class="playback-slider-container">
               <input type="range" id="playbackSlider" min="0" max="100" value="0" style="width:100%">
               <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px">
                 <span id="playbackSliderStart">--</span>
                 <span id="playbackSliderEnd">--</span>
+              </div>
+            </div>
+            <!-- Full Detail View (bottom): Net GEX, Charm, Delta Decay, Volume cards -->
+            <div id="playbackFullView" class="playback-detail-grid">
+              <div class="playback-card">
+                <h3>Net GEX</h3>
+                <div id="playbackGexPlot" class="playback-plot"></div>
+              </div>
+              <div class="playback-card">
+                <h3>Charm</h3>
+                <div id="playbackCharmPlot" class="playback-plot"></div>
+              </div>
+              <div class="playback-card">
+                <h3>Delta Decay</h3>
+                <div id="playbackDDPlot" class="playback-plot"></div>
+              </div>
+              <div class="playback-card">
+                <h3>Volume</h3>
+                <div id="playbackVolPlot" class="playback-plot"></div>
               </div>
             </div>
           </div>
@@ -9657,20 +9699,15 @@ DASH_HTML_TEMPLATE = """
           playbackStats = document.getElementById('playbackStats'),
           playbackSliderStart = document.getElementById('playbackSliderStart'),
           playbackSliderEnd = document.getElementById('playbackSliderEnd'),
-          playbackPricePlot = document.getElementById('playbackPricePlot'),
           playbackGexPlot = document.getElementById('playbackGexPlot'),
           playbackCharmPlot = document.getElementById('playbackCharmPlot'),
+          playbackDDPlot = document.getElementById('playbackDDPlot'),
           playbackVolPlot = document.getElementById('playbackVolPlot'),
-          playbackFullView = document.getElementById('playbackFullView'),
-          playbackSummaryView = document.getElementById('playbackSummaryView'),
           playbackSummaryPlot = document.getElementById('playbackSummaryPlot'),
-          playbackSummaryStats = document.getElementById('playbackSummaryStats'),
-          playbackViewFullBtn = document.getElementById('playbackViewFull'),
-          playbackViewSummaryBtn = document.getElementById('playbackViewSummary');
+          playbackSummaryStats = document.getElementById('playbackSummaryStats');
 
     let playbackData = null;
     let playbackInitialized = false;
-    let playbackViewMode = 'full'; // 'full' or 'summary'
     let playbackDays = 7;
 
     function initPlayback() {
@@ -9692,10 +9729,6 @@ DASH_HTML_TEMPLATE = """
           loadPlaybackData();
         });
       });
-
-      // View toggle buttons
-      playbackViewFullBtn.addEventListener('click', () => setPlaybackViewMode('full'));
-      playbackViewSummaryBtn.addEventListener('click', () => setPlaybackViewMode('summary'));
     }
 
     function setPlaybackDays(days) {
@@ -9706,28 +9739,6 @@ DASH_HTML_TEMPLATE = """
       document.querySelectorAll('.playback-range-btn').forEach(b => {
         b.classList.toggle('active', parseInt(b.dataset.days) === days);
       });
-      const titleEl = document.getElementById('playbackPriceTitle');
-      if (titleEl) titleEl.textContent = 'SPX Price (' + days + 'D)';
-    }
-
-    function setPlaybackViewMode(mode) {
-      playbackViewMode = mode;
-      playbackViewFullBtn.classList.toggle('active', mode === 'full');
-      playbackViewSummaryBtn.classList.toggle('active', mode === 'summary');
-      playbackFullView.style.display = mode === 'full' ? '' : 'none';
-      playbackSummaryView.style.display = mode === 'summary' ? '' : 'none';
-
-      // Re-render current snapshot in new view mode
-      if (playbackData && playbackData.snapshots.length > 0) {
-        const idx = parseInt(playbackSlider.value);
-        if (mode === 'full') {
-          drawPlaybackPriceChart();
-          updatePlaybackSnapshot(idx);
-        } else {
-          drawPlaybackSummaryChart(idx);
-          updatePlaybackSummaryStats(idx);
-        }
-      }
     }
 
     async function loadPlaybackData() {
@@ -9762,14 +9773,10 @@ DASH_HTML_TEMPLATE = """
         playbackSliderStart.textContent = fmtDateTimeShortET(data.snapshots[0].ts) + ' ET';
         playbackSliderEnd.textContent = fmtDateTimeShortET(data.snapshots[data.snapshots.length - 1].ts) + ' ET';
 
-        // Render based on current view mode
-        if (playbackViewMode === 'full') {
-          drawPlaybackPriceChart();
-          updatePlaybackSnapshot(0);
-        } else {
-          drawPlaybackSummaryChart(0);
-          updatePlaybackSummaryStats(0);
-        }
+        // Render both views: summary chart on top + detail cards below
+        drawPlaybackSummaryChart(0);
+        updatePlaybackSummaryStats(0);
+        updatePlaybackSnapshot(0);
 
         playbackTimestamp.textContent = 'Loaded ' + data.count + ' snapshots. Drag slider to scrub through time.';
       } catch (err) {
@@ -9792,110 +9799,15 @@ DASH_HTML_TEMPLATE = """
     function onSliderChange() {
       if (!playbackData) return;
       const idx = parseInt(playbackSlider.value);
-      if (playbackViewMode === 'full') {
-        updatePlaybackSnapshot(idx);
-      } else {
-        drawPlaybackSummaryChart(idx);
-        updatePlaybackSummaryStats(idx);
-      }
-    }
-
-    function drawPlaybackPriceChart() {
-      if (!playbackData || !playbackData.snapshots.length) return;
-
-      const snaps = playbackData.snapshots;
-      const times = [];
-      const opens = [];
-      const highs = [];
-      const lows = [];
-      const closes = [];
-
-      // Create candlesticks from consecutive spot prices
-      // Use formatted labels as categories to eliminate time gaps
-      for (let i = 0; i < snaps.length; i++) {
-        const curr = snaps[i].spot;
-        const prev = i > 0 ? snaps[i - 1].spot : curr;
-
-        // Format timestamp as category label (MM/DD HH:MM) in ET
-        times.push(fmtDateTimeShortET(snaps[i].ts));
-
-        opens.push(prev);
-        closes.push(curr);
-        highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1);
-        lows.push(Math.min(prev, curr) - Math.abs(curr - prev) * 0.1);
-      }
-
-      const trace = {
-        type: 'candlestick',
-        x: times,
-        open: opens,
-        high: highs,
-        low: lows,
-        close: closes,
-        increasing: { line: { color: '#22c55e' }, fillcolor: '#22c55e' },
-        decreasing: { line: { color: '#ef4444' }, fillcolor: '#ef4444' },
-        hoverinfo: 'x+y'
-      };
-
-      Plotly.react(playbackPricePlot, [trace], {
-        margin: { l: 50, r: 8, t: 4, b: 50 },
-        paper_bgcolor: '#121417',
-        plot_bgcolor: '#0f1115',
-        xaxis: {
-          type: 'category',
-          gridcolor: '#20242a',
-          tickfont: { size: 8 },
-          tickangle: -45,
-          fixedrange: false,
-          nticks: 20  // Limit number of tick labels to avoid clutter
-        },
-        yaxis: { gridcolor: '#20242a', tickfont: { size: 9 }, side: 'left', fixedrange: false },
-        font: { color: '#e6e7e9', size: 10 },
-        shapes: [],
-        dragmode: 'zoom'
-      }, {
-        displayModeBar: true,
-        displaylogo: false,
-        modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
-        responsive: true,
-        scrollZoom: true
-      });
+      drawPlaybackSummaryChart(idx);
+      updatePlaybackSummaryStats(idx);
+      updatePlaybackSnapshot(idx);
     }
 
     function updatePlaybackSnapshot(idx) {
       if (!playbackData || idx >= playbackData.snapshots.length) return;
 
       const snap = playbackData.snapshots[idx];
-
-      // Update timestamp display (ET timezone)
-      playbackTimestamp.textContent = fmtDateET(snap.ts) + ' ' + fmtTimeFullET(snap.ts) + ' ET | SPX: ' + (snap.spot ? snap.spot.toFixed(2) : 'N/A');
-
-      // Update stats display
-      if (snap.stats) {
-        const s = snap.stats;
-        let statsHtml = '';
-        if (s.paradigm) statsHtml += 'Paradigm: ' + s.paradigm + ' | ';
-        if (s.target) statsHtml += 'Target: ' + s.target + ' | ';
-        if (s.lis) statsHtml += 'LIS: ' + s.lis + ' | ';
-        if (s.dd_hedging) statsHtml += 'DD: ' + s.dd_hedging;
-        playbackStats.textContent = statsHtml;
-      } else {
-        playbackStats.textContent = '';
-      }
-
-      // Update price chart marker - use category label format (MM/DD HH:MM) in ET
-      if (playbackPricePlot._fullLayout) {
-        const xLabel = fmtDateTimeShortET(snap.ts);
-        Plotly.relayout(playbackPricePlot, {
-          shapes: [{
-            type: 'line',
-            x0: xLabel, x1: xLabel,
-            y0: 0, y1: 1,
-            xref: 'x', yref: 'paper',
-            line: { color: '#ef4444', width: 2, dash: 'solid' }
-          }]
-        });
-      }
 
       // Get Y range from strikes
       const strikes = snap.strikes || [];
@@ -9910,6 +9822,9 @@ DASH_HTML_TEMPLATE = """
 
       // Draw Charm
       drawPlaybackBarChart(playbackCharmPlot, strikes, snap.charm || [], yRange, snap.spot, 'Charm');
+
+      // Draw Delta Decay
+      drawPlaybackBarChart(playbackDDPlot, strikes, snap.delta_decay || [], yRange, snap.spot, 'Delta Decay');
 
       // Draw Volume (calls vs puts)
       drawPlaybackVolumeChart(playbackVolPlot, strikes, snap.call_vol || [], snap.put_vol || [], yRange, snap.spot);
@@ -10158,8 +10073,19 @@ DASH_HTML_TEMPLATE = """
         scrollZoom: true
       });
 
-      // Update timestamp display (ET timezone)
+      // Update timestamp + stats display (ET timezone)
       playbackTimestamp.textContent = fmtDateET(currentSnap.ts) + ' ' + fmtTimeFullET(currentSnap.ts) + ' ET | SPX: ' + (currentSnap.spot ? currentSnap.spot.toFixed(2) : 'N/A');
+      if (currentSnap.stats) {
+        const s = currentSnap.stats;
+        let statsHtml = '';
+        if (s.paradigm) statsHtml += 'Paradigm: ' + s.paradigm + ' | ';
+        if (s.target) statsHtml += 'Target: ' + s.target + ' | ';
+        if (s.lis) statsHtml += 'LIS: ' + s.lis + ' | ';
+        if (s.dd_hedging) statsHtml += 'DD: ' + s.dd_hedging;
+        playbackStats.textContent = statsHtml;
+      } else {
+        playbackStats.textContent = '';
+      }
     }
 
     function updatePlaybackSummaryStats(idx) {

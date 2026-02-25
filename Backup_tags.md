@@ -23,3 +23,5 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 17 | 2026-02-19 23:45 | `stable-20260219-234500` | DD continuous trail (activation=20, gap=5), GEX SL=8+trail, high/low tracking, outcome fixes, trade study |
 | 18 | 2026-02-23 17:00 | `stable-20260223-170000` | Eval trader + auto_trader + tmp scripts + reports + eval API plan saved |
 | 19 | 2026-02-24 19:00 | `stable-20260224-190000` | Pre-tab reorganization (Charts merge, Historical merge, tab reorder) |
+| 20 | 2026-02-24 22:35 | `stable-20260224-223500` | Survival mode (BE@5+SL=12), economic calendar, LIS fix, analysis scripts |
+| 21 | 2026-02-25 pre | `stable-20260225-pre-playback-redesign` | Pre-playback tab redesign (rollback point) |

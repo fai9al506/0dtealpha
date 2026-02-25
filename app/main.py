@@ -253,6 +253,7 @@ _DEFAULT_SETUP_SETTINGS = {
     "abs_weight_dd": 15,
     "abs_weight_paradigm": 15,
     "abs_weight_lis": 20,
+    "abs_zone_min_away": 5,
     "abs_grade_thresholds": {"A+": 75, "A": 55, "B": 35},
     "brackets": {
         "support": [[5, 100], [10, 75], [15, 50], [20, 25]],

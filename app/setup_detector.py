@@ -930,6 +930,7 @@ DEFAULT_ABSORPTION_SETTINGS = {
     "abs_weight_paradigm": 15,
     "abs_weight_lis": 20,
     "abs_max_trigger_dist": 40,
+    "abs_zone_min_away": 5,
     "abs_grade_thresholds": {"A+": 75, "A": 55, "B": 35},
 }
 
@@ -947,6 +948,13 @@ _swing_tracker = {
     "last_pivot_idx": -1,  # last bar idx scanned for pivots
 }
 
+# Zone tracker: CVD at price zones for level-revisit divergence
+# Key = zone_key (int = bar_low // range_pts), value = {cvd, bar_idx, price}
+_zone_tracker = {
+    "zones": {},           # {str(zone_key): {"cvd": float, "bar_idx": int, "price": float}}
+    "last_update_idx": -1, # last bar idx processed for zone tracking
+}
+
 
 def reset_absorption_session():
     """Reset absorption detector state for a new ES session."""
@@ -957,6 +965,8 @@ def reset_absorption_session():
     _swing_tracker["swings"] = []
     _swing_tracker["last_type"] = None
     _swing_tracker["last_pivot_idx"] = -1
+    _zone_tracker["zones"] = {}
+    _zone_tracker["last_update_idx"] = -1
 
 
 def _add_swing(new_swing):
@@ -1075,6 +1085,50 @@ def _divergence_score(cvd_z, price_atr):
     return min(100, base * mult)
 
 
+def _update_zone_tracker(closed, range_pts=5.0):
+    """Track CVD at each price zone for level-revisit detection.
+
+    Called on every bar (before volume gate) so zones are tracked even during
+    quiet periods. Updates all bars EXCEPT the last (trigger) bar — the trigger
+    bar is updated after zone-revisit check so we can compare against the
+    previous visit's CVD.
+    """
+    last_idx = _zone_tracker["last_update_idx"]
+    zones = _zone_tracker["zones"]
+
+    # Update all bars except the last one (trigger bar updated later)
+    for bar in closed[:-1]:
+        if bar["idx"] <= last_idx:
+            continue
+        zone_key = str(int(bar["low"] // range_pts))
+        zones[zone_key] = {
+            "cvd": bar["cvd"],
+            "bar_idx": bar["idx"],
+            "price": bar["low"],
+        }
+
+    if len(closed) >= 2:
+        _zone_tracker["last_update_idx"] = closed[-2]["idx"]
+
+    # Prune old zones (keep only zones visited in last 200 bars)
+    if closed:
+        cutoff = closed[-1]["idx"] - 200
+        stale = [k for k, v in zones.items() if v["bar_idx"] < cutoff]
+        for k in stale:
+            del zones[k]
+
+
+def _finalize_zone_tracker(trigger, range_pts=5.0):
+    """Update zone tracker with the trigger bar (called after zone-revisit check)."""
+    zone_key = str(int(trigger["low"] // range_pts))
+    _zone_tracker["zones"][zone_key] = {
+        "cvd": trigger["cvd"],
+        "bar_idx": trigger["idx"],
+        "price": trigger["low"],
+    }
+    _zone_tracker["last_update_idx"] = trigger["idx"]
+
+
 def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
     """
     Evaluate ES Absorption using swing-to-swing CVD divergence.
@@ -1117,8 +1171,9 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
     trigger = closed[-1]
     trigger_idx = trigger["idx"]
 
-    # --- Step 1: Update swing tracker (always, even pre-10AM) ---
+    # --- Step 1: Update swing tracker and zone tracker (always, even pre-10AM) ---
     _update_swings(closed, pivot_left, pivot_right)
+    _update_zone_tracker(closed)
 
     # --- No signals before 10:00 AM ET ---
     # Opening bars (9:30-10:00) have inflated volume from premarket→regular
@@ -1166,14 +1221,13 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
     #   Bearish buy_exhaustion: higher high + lower CVD → buyers giving up
     #   Bearish buy_absorption: lower high + higher CVD → passive sellers absorbing
     swings = _swing_tracker["swings"]
-    if len(swings) < 2:
-        return None
 
     max_trigger_dist = settings.get("abs_max_trigger_dist", 40)
 
     bullish_divs = []
     bearish_divs = []
 
+    # --- Step 4a: Swing-to-swing divergence scan ---
     # Collect same-type swing pairs
     swing_lows = [s for s in swings if s["type"] == "L"]
     swing_highs = [s for s in swings if s["type"] == "H"]
@@ -1242,6 +1296,48 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
                 "price_dist": round(price_dist, 2), "price_atr": round(price_atr, 2),
                 "score": round(score, 1),
             })
+
+    # --- Step 4b: Zone-revisit divergence scan ---
+    # Compare CVD at the same price zone between current visit and previous visit.
+    # Higher CVD at same zone → accumulation → bullish
+    # Lower CVD at same zone → distribution → bearish
+    zone_min_away = settings.get("abs_zone_min_away", 5)
+    zone_key = str(int(trigger["low"] // 5.0))
+    zones = _zone_tracker["zones"]
+
+    if zone_key in zones:
+        prev = zones[zone_key]
+        bars_away = trigger_idx - prev["bar_idx"]
+        if bars_away >= zone_min_away:
+            cvd_diff = trigger["cvd"] - prev["cvd"]
+            cvd_z = abs(cvd_diff) / cvd_std if cvd_std > 0 else 0
+            if cvd_z >= cvd_z_min:
+                # Score: use CVD z-score with a 1.0x multiplier (no price_atr
+                # for zone revisits since price is approximately the same)
+                zone_score = round(min(100, cvd_z / 3.0 * 100), 1)
+                zone_div = {
+                    "swing": {"type": "Z", "price": trigger["low"],
+                              "cvd": trigger["cvd"], "bar_idx": trigger_idx},
+                    "ref_swing": {"type": "Z", "price": prev["price"],
+                                  "cvd": prev["cvd"], "bar_idx": prev["bar_idx"]},
+                    "cvd_gap": round(abs(cvd_diff), 1),
+                    "cvd_z": round(cvd_z, 2),
+                    "price_dist": round(abs(trigger["low"] - prev["price"]), 2),
+                    "price_atr": 0.0,
+                    "score": zone_score,
+                }
+                if cvd_diff > 0:
+                    # Higher CVD at same level → net buying accumulated → bullish
+                    zone_div["pattern"] = "zone_accumulation"
+                    bullish_divs.append(zone_div)
+                else:
+                    # Lower CVD at same level → net selling accumulated → bearish
+                    zone_div["pattern"] = "zone_distribution"
+                    bearish_divs.append(zone_div)
+
+    # Finalize zone tracker with trigger bar (after check, so next call sees
+    # this bar's CVD as the "previous visit" for this zone)
+    _finalize_zone_tracker(trigger)
 
     # Evaluate each direction independently (per-direction gate, not shared)
     best_bull = max(bullish_divs, key=lambda d: d["score"]) if bullish_divs else None
@@ -1402,7 +1498,7 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
         "lis_val": lis_val,
         "lis_dist": round(lis_dist, 1) if lis_dist is not None else None,
         "ts": trigger.get("ts_end", ""),
-        "lookback": f"swing ({len(swings)} tracked)",
+        "lookback": f"zone-revisit" if pattern.startswith("zone_") else f"swing ({len(swings)} tracked)",
     }
 
 
@@ -1450,6 +1546,8 @@ def format_absorption_message(result):
         "sell_absorption": "Sell Absorption",
         "buy_exhaustion": "Buy Exhaustion",
         "buy_absorption": "Buy Absorption",
+        "zone_accumulation": "Zone Accumulation",
+        "zone_distribution": "Zone Distribution",
     }
     pattern_label = pattern_labels.get(pattern, pattern)
 
@@ -1465,11 +1563,17 @@ def format_absorption_message(result):
     if best:
         sw = best["swing"]
         ref = best.get("ref_swing")
-        if ref:
+        if ref and ref.get("type") == "Z":
+            # Zone-revisit: show zone level and bars between visits
+            bars_gap = sw["bar_idx"] - ref["bar_idx"]
+            parts.append(f"Zone revisit: {ref['price']:.2f} (bar #{ref['bar_idx']}) -> bar #{sw['bar_idx']} ({bars_gap} bars apart)")
+            parts.append(f"  CVD: {ref['cvd']:+,} -> {sw['cvd']:+,} (z={best['cvd_z']:.2f})")
+        elif ref:
             parts.append(f"Swing pair: {ref['type']}@{ref['price']:.2f} \u2192 {sw['type']}@{sw['price']:.2f}")
+            parts.append(f"  CVD z: {best['cvd_z']:.2f} | Price: {best['price_atr']:.1f}x ATR")
         else:
             parts.append(f"Swing: {sw['type']}@{sw['price']:.2f} (bar #{sw['bar_idx']})")
-        parts.append(f"  CVD z: {best['cvd_z']:.2f} | Price: {best['price_atr']:.1f}x ATR")
+            parts.append(f"  CVD z: {best['cvd_z']:.2f} | Price: {best['price_atr']:.1f}x ATR")
 
     all_divs = result.get("all_divergences", [])
     if len(all_divs) > 1:
@@ -2239,6 +2343,7 @@ def export_cooldowns() -> dict:
         "bofa": _serialize(_cooldown_bofa),
         "absorption": _serialize(_cooldown_absorption),
         "swing_tracker": copy.deepcopy(_swing_tracker),
+        "zone_tracker": copy.deepcopy(_zone_tracker),
         "paradigm_rev": _serialize(_cooldown_paradigm_rev),
         "paradigm_tracker": _serialize(_paradigm_tracker),
         "dd_exhaust": _serialize(_cooldown_dd_exhaust),
@@ -2271,6 +2376,8 @@ def import_cooldowns(data: dict):
         _cooldown_absorption.update(_deserialize(data["absorption"]))
     if "swing_tracker" in data:
         _swing_tracker.update(data["swing_tracker"])
+    if "zone_tracker" in data:
+        _zone_tracker.update(data["zone_tracker"])
     if "paradigm_rev" in data:
         _cooldown_paradigm_rev.update(_deserialize(
             data["paradigm_rev"], has_datetimes=True,

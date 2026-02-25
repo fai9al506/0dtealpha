@@ -8510,8 +8510,8 @@ DASH_HTML_TEMPLATE = """
       
       // Spot-Vol Beta
       if (s.svb_correlation != null) {
-        const svb = s.svb_correlation;
-        h += '<div class="stats-row"><span class="stats-label">Spot-Vol Beta</span><span class="stats-value">' + (svb >= 0 ? '+' : '') + svb.toFixed(2) + '</span></div>';
+        const svb = parseFloat(s.svb_correlation);
+        if (!isNaN(svb)) h += '<div class="stats-row"><span class="stats-label">Spot-Vol Beta</span><span class="stats-value">' + (svb >= 0 ? '+' : '') + svb.toFixed(2) + '</span></div>';
       }
 
       // If no statistics found

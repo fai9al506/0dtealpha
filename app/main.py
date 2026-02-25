@@ -9766,6 +9766,7 @@ DASH_HTML_TEMPLATE = """
         }
 
         playbackData = data;
+        _playbackSummaryDrawn = false;  // Reset so chart gets fresh initial render
         playbackSlider.max = data.snapshots.length - 1;
         playbackSlider.value = 0;
 
@@ -9909,34 +9910,16 @@ DASH_HTML_TEMPLATE = """
     }
 
     // ===== Playback Summary View Functions =====
-    function drawPlaybackSummaryChart(idx) {
-      if (!playbackData || !playbackData.snapshots.length) return;
+    let _playbackSummaryDrawn = false;  // true after initial Plotly.react
+    let _playbackSummaryTimes = [];     // cached time labels for relayout
 
+    // Build shapes + annotations for a given snapshot index
+    function _buildPlaybackOverlay(idx) {
       const snaps = playbackData.snapshots;
-      const currentSnap = snaps[idx];
-
-      // Build candlestick data
-      const times = [];
-      const opens = [];
-      const highs = [];
-      const lows = [];
-      const closes = [];
-
-      for (let i = 0; i < snaps.length; i++) {
-        const curr = snaps[i].spot;
-        const prev = i > 0 ? snaps[i - 1].spot : curr;
-        // Format time in ET timezone
-        times.push(fmtDateTimeShortET(snaps[i].ts));
-        opens.push(prev);
-        closes.push(curr);
-        highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1);
-        lows.push(Math.min(prev, curr) - Math.abs(curr - prev) * 0.1);
-      }
-
-      // Get levels from current snapshot stats
-      const stats = currentSnap.stats || {};
-      const gexData = currentSnap.net_gex || [];
-      const strikes = currentSnap.strikes || [];
+      const snap = snaps[idx];
+      const stats = snap.stats || {};
+      const gexData = snap.net_gex || [];
+      const strikes = snap.strikes || [];
 
       // Find max +GEX and -GEX strikes
       let maxPosGexStrike = null, maxNegGexStrike = null;
@@ -9946,14 +9929,14 @@ DASH_HTML_TEMPLATE = """
         if (gexData[i] < maxNegVal) { maxNegVal = gexData[i]; maxNegGexStrike = strikes[i]; }
       }
 
-      // Parse target from stats
+      // Parse target
       let target = null;
       if (stats.target) {
         const tMatch = String(stats.target).replace(/[$,]/g, '').match(/([\d.]+)/);
         if (tMatch) target = parseFloat(tMatch[1]);
       }
 
-      // Parse LIS from stats
+      // Parse LIS
       let lisLow = null, lisHigh = null;
       if (stats.lis) {
         const lisStr = String(stats.lis).replace(/[$,]/g, '');
@@ -9973,25 +9956,20 @@ DASH_HTML_TEMPLATE = """
         }
       }
 
-      // Fixed Y range: 20 strikes (10 above, 10 below) centered on current day's opening price
-      // SPX strikes are 5 points apart, so 10 strikes = 50 points
-      // Find the first snapshot of the current day (using ET date comparison)
-      const currentDateET = fmtDateET(currentSnap.ts);
-      let dayOpenPrice = currentSnap.spot;
+      // Day open price for this snapshot's date
+      const currentDateET = fmtDateET(snap.ts);
+      let dayOpenPrice = snap.spot;
       for (let i = 0; i < snaps.length; i++) {
         if (fmtDateET(snaps[i].ts) === currentDateET) {
           dayOpenPrice = snaps[i].spot;
           break;
         }
       }
-      const yMin = dayOpenPrice - 50;
-      const yMax = dayOpenPrice + 50;
 
-      // Build shapes and annotations
       const shapes = [];
       const annotations = [];
 
-      // Day Open line (white dashed)
+      // Day Open (gray dashed)
       shapes.push({ type: 'line', y0: dayOpenPrice, y1: dayOpenPrice, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#9ca3af', width: 1, dash: 'dash' } });
       annotations.push({ x: 1.01, y: dayOpenPrice, xref: 'paper', yref: 'y', text: 'Open ' + Math.round(dayOpenPrice), showarrow: false, font: { color: '#9ca3af', size: 10 }, xanchor: 'left' });
 
@@ -10001,7 +9979,7 @@ DASH_HTML_TEMPLATE = """
         annotations.push({ x: 1.01, y: target, xref: 'paper', yref: 'y', text: 'Tgt ' + Math.round(target), showarrow: false, font: { color: '#3b82f6', size: 10 }, xanchor: 'left' });
       }
 
-      // LIS lines (amber)
+      // LIS (amber)
       if (lisLow) {
         shapes.push({ type: 'line', y0: lisLow, y1: lisLow, x0: 0, x1: 1, xref: 'paper', yref: 'y', line: { color: '#f59e0b', width: 2 } });
         annotations.push({ x: 1.01, y: lisLow, xref: 'paper', yref: 'y', text: 'LIS ' + Math.round(lisLow), showarrow: false, font: { color: '#f59e0b', size: 10 }, xanchor: 'left' });
@@ -10023,13 +10001,47 @@ DASH_HTML_TEMPLATE = """
         annotations.push({ x: 1.01, y: maxNegGexStrike, xref: 'paper', yref: 'y', text: '-G ' + maxNegGexStrike, showarrow: false, font: { color: '#ef4444', size: 10 }, xanchor: 'left' });
       }
 
-      // Add current position marker
-      const xLabel = times[idx];
-      shapes.push({
-        type: 'line', x0: xLabel, x1: xLabel, y0: 0, y1: 1,
-        xref: 'x', yref: 'paper',
-        line: { color: '#ef4444', width: 2, dash: 'solid' }
-      });
+      // Current position marker (red vertical)
+      const xLabel = _playbackSummaryTimes[idx];
+      shapes.push({ type: 'line', x0: xLabel, x1: xLabel, y0: 0, y1: 1, xref: 'x', yref: 'paper', line: { color: '#ef4444', width: 2, dash: 'solid' } });
+
+      return { shapes, annotations, dayOpenPrice };
+    }
+
+    // Initial draw: builds candlestick + sets Y-range once
+    function drawPlaybackSummaryChart(idx) {
+      if (!playbackData || !playbackData.snapshots.length) return;
+
+      // On slider scrub (chart already drawn): only update overlays, don't touch axes
+      if (_playbackSummaryDrawn) {
+        _updatePlaybackSummaryOverlay(idx);
+        return;
+      }
+
+      const snaps = playbackData.snapshots;
+
+      // Build candlestick data (once — cached in Plotly)
+      const times = [];
+      const opens = [];
+      const highs = [];
+      const lows = [];
+      const closes = [];
+
+      for (let i = 0; i < snaps.length; i++) {
+        const curr = snaps[i].spot;
+        const prev = i > 0 ? snaps[i - 1].spot : curr;
+        times.push(fmtDateTimeShortET(snaps[i].ts));
+        opens.push(prev);
+        closes.push(curr);
+        highs.push(Math.max(prev, curr) + Math.abs(curr - prev) * 0.1);
+        lows.push(Math.min(prev, curr) - Math.abs(curr - prev) * 0.1);
+      }
+      _playbackSummaryTimes = times;
+
+      // Initial Y-range: centered on first day's open ±50
+      const overlay = _buildPlaybackOverlay(idx);
+      const yMin = overlay.dayOpenPrice - 50;
+      const yMax = overlay.dayOpenPrice + 50;
 
       const trace = {
         type: 'candlestick',
@@ -10062,8 +10074,8 @@ DASH_HTML_TEMPLATE = """
           dtick: 5
         },
         font: { color: '#e6e7e9', size: 10 },
-        shapes: shapes,
-        annotations: annotations,
+        shapes: overlay.shapes,
+        annotations: overlay.annotations,
         dragmode: 'zoom'
       }, {
         displayModeBar: true,
@@ -10073,10 +10085,30 @@ DASH_HTML_TEMPLATE = """
         scrollZoom: true
       });
 
-      // Update timestamp + stats display (ET timezone)
-      playbackTimestamp.textContent = fmtDateET(currentSnap.ts) + ' ' + fmtTimeFullET(currentSnap.ts) + ' ET | SPX: ' + (currentSnap.spot ? currentSnap.spot.toFixed(2) : 'N/A');
-      if (currentSnap.stats) {
-        const s = currentSnap.stats;
+      _playbackSummaryDrawn = true;
+
+      // Update text displays
+      _updatePlaybackSummaryText(snaps[idx]);
+    }
+
+    // Slider scrub: only update shapes/annotations (preserves user zoom/autoscale)
+    function _updatePlaybackSummaryOverlay(idx) {
+      const snap = playbackData.snapshots[idx];
+      const overlay = _buildPlaybackOverlay(idx);
+
+      Plotly.relayout(playbackSummaryPlot, {
+        shapes: overlay.shapes,
+        annotations: overlay.annotations
+      });
+
+      _updatePlaybackSummaryText(snap);
+    }
+
+    // Update timestamp + stats bar text
+    function _updatePlaybackSummaryText(snap) {
+      playbackTimestamp.textContent = fmtDateET(snap.ts) + ' ' + fmtTimeFullET(snap.ts) + ' ET | SPX: ' + (snap.spot ? snap.spot.toFixed(2) : 'N/A');
+      if (snap.stats) {
+        const s = snap.stats;
         let statsHtml = '';
         if (s.paradigm) statsHtml += 'Paradigm: ' + s.paradigm + ' | ';
         if (s.target) statsHtml += 'Target: ' + s.target + ' | ';

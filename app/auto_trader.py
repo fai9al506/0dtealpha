@@ -1021,6 +1021,32 @@ def _load_active_orders():
 
 # ====== TELEGRAM HELPER ======
 
+def flatten_all_eod():
+    """Force-close all open SIM positions at end of day.
+    Called by scheduler at 15:55 ET before market close."""
+    with _lock:
+        open_orders = [(lid, o) for lid, o in _active_orders.items()
+                       if o["status"] in ("pending_entry", "filled")]
+    if not open_orders:
+        print("[auto-trader] EOD flatten: no open positions", flush=True)
+        return
+
+    print(f"[auto-trader] EOD flatten: closing {len(open_orders)} position(s)", flush=True)
+    for lid, order in open_orders:
+        try:
+            _flatten_position(order)
+            with _lock:
+                order["status"] = "closed"
+            _persist_order(lid)
+            print(f"[auto-trader] EOD flattened: {order['setup_name']} id={lid}", flush=True)
+        except Exception as e:
+            print(f"[auto-trader] EOD flatten error id={lid}: {e}", flush=True)
+            _alert(f"[AUTO-TRADE] EOD FLATTEN FAILED\n"
+                   f"{order['setup_name']} id={lid}\nError: {e}")
+
+    print(f"[auto-trader] EOD flatten complete", flush=True)
+
+
 def _alert(msg: str):
     """Auto-trade alerts moved to dashboard TS SIM Log tab. Telegram suppressed."""
     pass

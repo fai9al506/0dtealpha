@@ -318,8 +318,8 @@ def _place_split_target(setup_log_id, setup_name, direction, is_long,
         t1_price = _round_mes(es_price - FIRST_TARGET_PTS)
         t2_price = _round_mes(es_price - full_target_pts) if full_target_pts else None
 
-    # DD Exhaustion: trail-only T2 (no limit order)
-    is_trail_only_t2 = (setup_name == "DD Exhaustion")
+    # DD Exhaustion / AG Short: trail-only T2 (no limit order)
+    is_trail_only_t2 = setup_name in ("DD Exhaustion", "AG Short")
     if is_trail_only_t2:
         t2_price = None
 

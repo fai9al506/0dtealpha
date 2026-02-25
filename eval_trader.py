@@ -144,7 +144,7 @@ DEFAULT_CONFIG = {
     # Mirrors production system: same stops, same targets, smaller size
     "setup_rules": {
         "GEX Long":          {"enabled": False, "stop": 8,  "target": "msg"},
-        "AG Short":          {"enabled": True,  "stop": 12, "target": "msg"},
+        "AG Short":          {"enabled": True,  "stop": 12, "target": None},
         "BofA Scalp":        {"enabled": False, "stop": 12, "target": "msg", "max_hold_min": 30},
         "ES Absorption":     {"enabled": True,  "stop": 12, "target": 10},
         "Paradigm Reversal": {"enabled": True,  "stop": 12, "target": 10},
@@ -1277,9 +1277,11 @@ class PositionTracker:
     # Trail params — mirrors Railway's _trail_params in main.py
     # DD Exhaustion: continuous trail (activation=20, gap=5)
     # GEX Long: rung-based trail (rung_start=12, step=5, lock_offset=2)
+    # AG Short: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
     _TRAIL_PARAMS = {
         "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
         "GEX Long":      {"mode": "rung", "rung_start": 12, "step": 5, "lock_offset": 2},
+        "AG Short":      {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
     }
 
     def check_trail(self, es_price: float | None):
@@ -1324,6 +1326,17 @@ class PositionTracker:
                     trail_stop = (es_entry + lock) if is_long else (es_entry - lock)
                     if new_stop is None or (is_long and trail_stop > new_stop) or (not is_long and trail_stop < new_stop):
                         new_stop = trail_stop
+            elif tp["mode"] == "hybrid":
+                # Hybrid: breakeven at be_trigger, then continuous trail
+                if max_fav >= tp["activation"]:
+                    lock = max_fav - tp["gap"]
+                    trail_stop = (es_entry + lock) if is_long else (es_entry - lock)
+                    if new_stop is None or (is_long and trail_stop > new_stop) or (not is_long and trail_stop < new_stop):
+                        new_stop = trail_stop
+                elif max_fav >= tp["be_trigger"]:
+                    # Lock at breakeven (entry price)
+                    if new_stop is None or (is_long and es_entry > new_stop) or (not is_long and es_entry < new_stop):
+                        new_stop = es_entry
             else:
                 rung_start = tp["rung_start"]
                 step = tp["step"]
@@ -1512,6 +1525,40 @@ def main():
     if getattr(tracker, '_stale_flatten', False):
         tracker.flatten("STALE_OVERNIGHT")
         tracker._stale_flatten = False
+
+    # ── Startup reconciliation: verify restored position is still open ──
+    if tracker.is_open:
+        log.info("Reconciling restored position against NT8 fills...")
+        # Layer 1: check NT8 outgoing folder for fill files
+        tracker.check_nt8_fills()
+        # Layer 2: poll Railway API for outcomes (ignores _seen filter)
+        if tracker.is_open and use_api:
+            log.info("Checking Railway API for resolved outcomes...")
+            try:
+                resp = requests.get(
+                    cfg["railway_api_url"],
+                    headers={"Authorization": f"Bearer {cfg['eval_api_key']}"},
+                    timeout=8,
+                )
+                if resp.status_code == 200:
+                    outcomes = resp.json().get("outcomes", [])
+                    pos_name = tracker.position["setup_name"]
+                    for o in outcomes:
+                        if (o.get("setup_name") == pos_name
+                                and o.get("outcome_result") in ("WIN", "LOSS", "EXPIRED")):
+                            log.info(f"Railway shows {pos_name} already resolved: "
+                                     f"{o['outcome_result']} ({o.get('outcome_pnl', 0):+.1f} pts)")
+                            tracker.close_on_outcome({
+                                "setup_name": o["setup_name"],
+                                "result": o["outcome_result"],
+                                "pnl_pts": o.get("outcome_pnl", 0) or 0,
+                            })
+                            break
+            except Exception as e:
+                log.warning(f"Railway reconciliation failed: {e}")
+        if tracker.is_open:
+            log.info(f"Position confirmed open: {tracker.position['setup_name']} "
+                     f"{tracker.position['direction']}")
 
     poll_interval = cfg.get("telegram_poll_interval_s", 2)
     log.info(f"Polling every {poll_interval}s...")

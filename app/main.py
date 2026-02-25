@@ -1005,7 +1005,7 @@ def _backfill_outcomes():
             es_price = entry.get("abs_es_price")
             entry_price = es_price if entry.get("setup_name") == "ES Absorption" and es_price else spot
 
-            is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long")
+            is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long", "AG Short")
             if is_trailing_setup:
                 # Trailing stop: P&L = final stop level - entry (or timeout P&L)
                 if result_type == "EXPIRED":
@@ -1079,7 +1079,7 @@ def _backfill_outcomes():
 
         if legacy_rows:
             patched = 0
-            trailing_setups = ("DD Exhaustion", "GEX Long")
+            trailing_setups = ("DD Exhaustion", "GEX Long", "AG Short")
             for lr in legacy_rows:
                 res = lr["outcome_result"]
                 sname = lr["setup_name"]
@@ -1147,7 +1147,7 @@ def _restore_open_trades():
             print("[restore] no unresolved trades to restore", flush=True)
             return
 
-        _trailing_setups = ("DD Exhaustion", "GEX Long")
+        _trailing_setups = ("DD Exhaustion", "GEX Long", "AG Short")
         restored = 0
         for row in rows:
             entry = dict(row)
@@ -2554,7 +2554,7 @@ def _compute_setup_levels(r: dict):
         stop_lvl = spot - 15 if is_long else spot + 15
         return round(target_lvl, 2), round(stop_lvl, 2)
 
-    # AG Short
+    # AG Short — trailing mode (hybrid: BE at +10, trail at +15 gap=5)
     lis = r.get("lis")
     target = r.get("target")
     if not lis or not target:
@@ -2567,13 +2567,13 @@ def _compute_setup_levels(r: dict):
         if max_minus_gex is not None and max_minus_gex < stop_lvl:
             stop_lvl = max_minus_gex
         stop_lvl = max(stop_lvl, spot - max_stop_dist)
-        return round(target, 2), round(stop_lvl, 2)
+        return None, round(stop_lvl, 2)
     else:
         stop_lvl = lis + 5
         if max_plus_gex is not None and max_plus_gex > stop_lvl:
             stop_lvl = max_plus_gex
         stop_lvl = min(stop_lvl, spot + max_stop_dist)
-        return round(target, 2), round(stop_lvl, 2)
+        return None, round(stop_lvl, 2)
 
 
 def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
@@ -2682,6 +2682,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         _trail_params = {
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
             "GEX Long": {"mode": "rung", "rung_start": 12, "step": 5, "lock_offset": 2},
+            "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
         }
         _tp = _trail_params.get(setup_name)
         if _tp is not None:
@@ -2697,6 +2698,12 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 # Continuous trail: after activation, lock at max_fav - gap
                 if max_fav >= _tp["activation"]:
                     trail_lock = max_fav - _tp["gap"]
+            elif _tp["mode"] == "hybrid":
+                # Hybrid trail: breakeven at be_trigger, then continuous trail
+                if max_fav >= _tp["activation"]:
+                    trail_lock = max_fav - _tp["gap"]
+                elif max_fav >= _tp["be_trigger"]:
+                    trail_lock = 0  # breakeven
             else:
                 # Rung-based trail: step every N pts with lock offset
                 rung = _tp["rung_start"]
@@ -2780,7 +2787,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             if log_id and engine:
                 try:
                     # Compute first_event
-                    is_trailing = setup_name in ("DD Exhaustion", "GEX Long")
+                    is_trailing = setup_name in ("DD Exhaustion", "GEX Long", "AG Short")
                     if result_type == "WIN":
                         first_event = "target" if is_trailing else "10pt"
                     elif result_type == "LOSS":
@@ -2980,8 +2987,8 @@ def _run_setup_check():
                 print(f"[setups] {setup_name} NEW: {grade} ({score})", flush=True)
                 # Record open trade for live outcome tracking
                 target_lvl, stop_lvl = _compute_setup_levels(r)
-                # DD Exhaustion and GEX Long use trailing stop (target_lvl=None is OK)
-                _trailing_setups = ("DD Exhaustion", "GEX Long")
+                # Trailing setups use trailing stop (target_lvl=None is OK)
+                _trailing_setups = ("DD Exhaustion", "GEX Long", "AG Short")
                 if stop_lvl is not None and (target_lvl is not None or setup_name in _trailing_setups):
                     _setup_open_trades.append({
                         "setup_name": setup_name, "direction": r["direction"],
@@ -3011,8 +3018,12 @@ def _run_setup_check():
                             stop_dist = abs(r["spot"] - stop_lvl)
                             target_dist = abs(target_lvl - r["spot"]) if target_lvl else None
                             # Compute Volland full target distance for split-target setups
-                            full_tgt = r.get("target") or r.get("bofa_target_level")
-                            full_target_dist = abs(full_tgt - r["spot"]) if full_tgt else target_dist
+                            # AG Short and DD Exhaustion: trail-only T2 (no limit order)
+                            if setup_name in ("DD Exhaustion", "AG Short"):
+                                full_target_dist = None
+                            else:
+                                full_tgt = r.get("target") or r.get("bofa_target_level")
+                                full_target_dist = abs(full_tgt - r["spot"]) if full_tgt else target_dist
                             auto_trader.place_trade(
                                 setup_log_id=_current_setup_log.get(setup_name),
                                 setup_name=setup_name, direction=r["direction"],
@@ -6330,7 +6341,8 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         is_dd = setup_name == "DD Exhaustion"
         is_paradigm = setup_name == "Paradigm Reversal"
         is_gex = setup_name == "GEX Long"
-        is_trailing = is_dd or is_gex  # setups with trailing stop, no fixed target
+        is_ag = setup_name == "AG Short"
+        is_trailing = is_dd or is_gex or is_ag  # setups with trailing stop, no fixed target
 
         if not all([ts, spot]):
             return {}
@@ -6374,18 +6386,36 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         # Trailing stop parameters
         # DD Exhaustion: continuous trail (activation=20, gap=5, initial_sl=12)
         # GEX Long: rung-based trail (rung_start=12, step=5, lock=rung-2, initial_sl=8)
+        # AG Short: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
         _trail_params = {
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5, "initial_sl": 12},
             "GEX Long": {"mode": "rung", "rung_start": 12, "step": 5, "lock_offset": 2, "initial_sl": 8},
+            "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
         }
 
         if is_trailing:
             tp = _trail_params[setup_name]
-            initial_sl = tp["initial_sl"]
-            rung_start = tp.get("rung_start") or tp.get("activation")
+            if "initial_sl" in tp:
+                initial_sl = tp["initial_sl"]
+                stop_level = spot - initial_sl if is_long else spot + initial_sl
+            else:
+                # AG Short: use LIS-based stop (same as non-trailing AG logic)
+                max_minus_gex = entry.get("max_minus_gex")
+                max_plus_gex = entry.get("max_plus_gex")
+                max_stop_dist = 20
+                if is_long:
+                    stop_level = lis - 5 if lis else spot - 20
+                    if max_minus_gex is not None and max_minus_gex < stop_level:
+                        stop_level = max_minus_gex
+                    stop_level = max(stop_level, spot - max_stop_dist)
+                else:
+                    stop_level = lis + 5 if lis else spot + 20
+                    if max_plus_gex is not None and max_plus_gex > stop_level:
+                        stop_level = max_plus_gex
+                    stop_level = min(stop_level, spot + max_stop_dist)
+            rung_start = tp.get("rung_start") or tp.get("activation") or tp.get("be_trigger", 10)
             ten_pt_level = spot + rung_start if is_long else spot - rung_start  # first trail activation
             target_level = None  # trailing — no fixed target
-            stop_level = spot - initial_sl if is_long else spot + initial_sl
         elif is_paradigm:
             # Paradigm Reversal: fixed 10pt target, 15pt stop from spot
             ten_pt_level = spot + 10 if is_long else spot - 10
@@ -6440,17 +6470,20 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             if is_long:
                 profit = price - spot
 
-                # Trailing stop logic (DD Exhaustion, GEX Long)
+                # Trailing stop logic (DD Exhaustion, GEX Long, AG Short)
                 if is_trailing and not trail_stopped:
                     if profit > trail_max_fav:
                         trail_max_fav = profit
                     trail_lock = None
                     if tp["mode"] == "continuous":
-                        # Continuous trail: after activation, lock at max_fav - gap
                         if trail_max_fav >= tp["activation"]:
                             trail_lock = trail_max_fav - tp["gap"]
+                    elif tp["mode"] == "hybrid":
+                        if trail_max_fav >= tp["activation"]:
+                            trail_lock = trail_max_fav - tp["gap"]
+                        elif trail_max_fav >= tp["be_trigger"]:
+                            trail_lock = 0  # breakeven
                     else:
-                        # Rung-based trail: step every N pts with lock offset
                         rung = tp["rung_start"]
                         while rung <= trail_max_fav:
                             trail_lock = rung - tp["lock_offset"]
@@ -6491,17 +6524,20 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             else:  # SHORT
                 profit = spot - price
 
-                # Trailing stop logic (DD Exhaustion, GEX Long)
+                # Trailing stop logic (DD Exhaustion, GEX Long, AG Short)
                 if is_trailing and not trail_stopped:
                     if profit > trail_max_fav:
                         trail_max_fav = profit
                     trail_lock = None
                     if tp["mode"] == "continuous":
-                        # Continuous trail: after activation, lock at max_fav - gap
                         if trail_max_fav >= tp["activation"]:
                             trail_lock = trail_max_fav - tp["gap"]
+                    elif tp["mode"] == "hybrid":
+                        if trail_max_fav >= tp["activation"]:
+                            trail_lock = trail_max_fav - tp["gap"]
+                        elif trail_max_fav >= tp["be_trigger"]:
+                            trail_lock = 0  # breakeven
                     else:
-                        # Rung-based trail: step every N pts with lock offset
                         rung = tp["rung_start"]
                         while rung <= trail_max_fav:
                             trail_lock = rung - tp["lock_offset"]

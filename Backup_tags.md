@@ -25,3 +25,4 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 19 | 2026-02-24 19:00 | `stable-20260224-190000` | Pre-tab reorganization (Charts merge, Historical merge, tab reorder) |
 | 20 | 2026-02-24 22:35 | `stable-20260224-223500` | Survival mode (BE@5+SL=12), economic calendar, LIS fix, analysis scripts |
 | 21 | 2026-02-25 pre | `stable-20260225-pre-playback-redesign` | Pre-playback tab redesign (rollback point) |
+| 22 | 2026-02-25 20:56 | `stable-20260225-205654` | ES Absorption swing-to-swing rewrite (4 patterns, d=40, +161pts backtest) |

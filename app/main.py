@@ -3434,6 +3434,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
         "lis_val": result["lis_val"],
         "lis_dist": result.get("lis_dist"),
         "ts": result.get("ts", ""),
+        "pattern": result.get("pattern", "unknown"),
         "best_swing": result.get("best_swing"),
         "all_divergences": result.get("all_divergences"),
         "swing_count": result.get("swing_count", 0),
@@ -3445,17 +3446,23 @@ def _run_absorption_detection(bars: list) -> dict | None:
     best = result.get("best_swing", {})
     best_sw = best.get("swing", {}) if best else {}
     all_divs = result.get("all_divergences", [])
+    pattern = result.get("pattern", "unknown")
+    ref_sw = best.get("ref_swing", {}) if best else {}
     print(f"[absorption] {result['direction'].upper()} {result['grade']} ({result['score']:.0f}/100) "
-          f"price={result['abs_es_price']:.2f} cvd={result['cvd']:+d} "
+          f"pattern={pattern} price={result['abs_es_price']:.2f} cvd={result['cvd']:+d} "
           f"vol={result['vol_trigger']}({result['abs_vol_ratio']:.1f}x) "
-          f"best_swing: {best_sw.get('type','?')}@{best_sw.get('price',0):.2f} "
+          f"swing_pair: {ref_sw.get('type','?')}@{ref_sw.get('price',0):.2f}"
+          f" -> {best_sw.get('type','?')}@{best_sw.get('price',0):.2f} "
           f"cvd_z={best.get('cvd_z',0):.2f} price_atr={best.get('price_atr',0):.1f}x "
           f"swings={result.get('swing_count',0)}",
           flush=True)
     # Log all confirming divergences
     for i, div in enumerate(all_divs):
         sw = div["swing"]
-        print(f"  div#{i+1}: {sw['type']}@{sw['price']:.2f} idx={sw['bar_idx']} "
+        ref = div.get("ref_swing", {})
+        print(f"  div#{i+1}: {div.get('pattern','?')} "
+              f"{ref.get('type','?')}@{ref.get('price',0):.2f} -> "
+              f"{sw['type']}@{sw['price']:.2f} idx={sw['bar_idx']} "
               f"cvd={sw['cvd']:+d} -> z={div['cvd_z']:.2f} atr={div['price_atr']:.1f}x "
               f"score={div['score']:.0f}",
               flush=True)

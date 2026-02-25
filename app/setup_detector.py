@@ -929,6 +929,7 @@ DEFAULT_ABSORPTION_SETTINGS = {
     "abs_weight_dd": 15,
     "abs_weight_paradigm": 15,
     "abs_weight_lis": 20,
+    "abs_max_trigger_dist": 40,
     "abs_grade_thresholds": {"A+": 75, "A": 55, "B": 35},
 }
 
@@ -1076,14 +1077,19 @@ def _divergence_score(cvd_z, price_atr):
 
 def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
     """
-    Evaluate ES Absorption using swing-based CVD divergence.
+    Evaluate ES Absorption using swing-to-swing CVD divergence.
 
     Architecture:
     1. Swing Tracker — pivot detection (left=2, right=2, <=/>= comparison),
        alternating L-H-L-H, adaptive invalidation.
     2. Volume Trigger — fire only when bar volume >= 1.4x of 10-bar avg.
-    3. Divergence Scan — compare trigger bar CVD vs previous swing CVD,
-       fire on ALL divergences with z >= 0.5.
+    3. Swing-to-Swing Divergence — compare consecutive same-type swings
+       (low-vs-low, high-vs-high) for 4 patterns:
+       - Sell exhaustion: lower low + higher CVD → BUY
+       - Sell absorption: higher low + lower CVD → BUY
+       - Buy exhaustion: higher high + lower CVD → SELL
+       - Buy absorption: lower high + higher CVD → SELL
+       Trigger bar must be within abs_max_trigger_dist (40) bars of recent swing.
 
     Parameters:
       bars: list of bar dicts with idx, open, high, low, close, volume, cvd, status
@@ -1150,52 +1156,92 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
     if atr < 0.01:
         atr = 0.01
 
-    # --- Step 4: Divergence scan vs all swings ---
+    # --- Step 4: Swing-to-swing divergence scan ---
+    # Compare consecutive same-type swings (low-vs-low, high-vs-high).
+    # Trigger bar is volume confirmation only — must be within max_trigger_dist
+    # bars of the most recent swing in the pair.
+    # 4 patterns:
+    #   Bullish sell_exhaustion: lower low + higher CVD → sellers giving up
+    #   Bullish sell_absorption: higher low + lower CVD → passive buyers absorbing
+    #   Bearish buy_exhaustion: higher high + lower CVD → buyers giving up
+    #   Bearish buy_absorption: lower high + higher CVD → passive sellers absorbing
     swings = _swing_tracker["swings"]
-    if not swings:
+    if len(swings) < 2:
         return None
+
+    max_trigger_dist = settings.get("abs_max_trigger_dist", 40)
 
     bullish_divs = []
     bearish_divs = []
 
-    for sw in swings:
-        if sw["type"] == "L":
-            # Bullish: swing low <= trigger low (equal/higher low in price)
-            # AND trigger CVD < swing CVD (more selling, but price holds)
-            if sw["price"] <= trigger["low"] and trigger["cvd"] < sw["cvd"]:
-                cvd_gap = abs(trigger["cvd"] - sw["cvd"])
-                cvd_z = cvd_gap / cvd_std
-                if cvd_z >= cvd_z_min:
-                    price_dist = abs(trigger["low"] - sw["price"])
-                    price_atr = price_dist / atr
-                    score = _divergence_score(cvd_z, price_atr)
-                    bullish_divs.append({
-                        "swing": sw,
-                        "cvd_gap": round(cvd_gap, 1),
-                        "cvd_z": round(cvd_z, 2),
-                        "price_dist": round(price_dist, 2),
-                        "price_atr": round(price_atr, 2),
-                        "score": round(score, 1),
-                    })
+    # Collect same-type swing pairs
+    swing_lows = [s for s in swings if s["type"] == "L"]
+    swing_highs = [s for s in swings if s["type"] == "H"]
 
-        elif sw["type"] == "H":
-            # Bearish: swing high >= trigger high (equal/lower high in price)
-            # AND trigger CVD > swing CVD (more buying, but price fails)
-            if sw["price"] >= trigger["high"] and trigger["cvd"] > sw["cvd"]:
-                cvd_gap = abs(trigger["cvd"] - sw["cvd"])
-                cvd_z = cvd_gap / cvd_std
-                if cvd_z >= cvd_z_min:
-                    price_dist = abs(trigger["high"] - sw["price"])
-                    price_atr = price_dist / atr
-                    score = _divergence_score(cvd_z, price_atr)
-                    bearish_divs.append({
-                        "swing": sw,
-                        "cvd_gap": round(cvd_gap, 1),
-                        "cvd_z": round(cvd_z, 2),
-                        "price_dist": round(price_dist, 2),
-                        "price_atr": round(price_atr, 2),
-                        "score": round(score, 1),
-                    })
+    # Bullish patterns: compare consecutive swing lows
+    for i in range(1, len(swing_lows)):
+        s1, s2 = swing_lows[i - 1], swing_lows[i]
+        # Trigger bar must be within max_trigger_dist of the more recent swing
+        if trigger_idx - s2["bar_idx"] > max_trigger_dist:
+            continue
+
+        cvd_gap = abs(s2["cvd"] - s1["cvd"])
+        cvd_z = cvd_gap / cvd_std
+        if cvd_z < cvd_z_min:
+            continue
+
+        price_dist = abs(s2["price"] - s1["price"])
+        price_atr = price_dist / atr
+        score = _divergence_score(cvd_z, price_atr)
+
+        # Sell exhaustion: lower low + higher CVD → sellers exhausted → BUY
+        if s2["price"] < s1["price"] and s2["cvd"] > s1["cvd"]:
+            bullish_divs.append({
+                "swing": s2, "ref_swing": s1, "pattern": "sell_exhaustion",
+                "cvd_gap": round(cvd_gap, 1), "cvd_z": round(cvd_z, 2),
+                "price_dist": round(price_dist, 2), "price_atr": round(price_atr, 2),
+                "score": round(score, 1),
+            })
+        # Sell absorption: higher low + lower CVD → passive buyers absorbing → BUY
+        elif s2["price"] >= s1["price"] and s2["cvd"] < s1["cvd"]:
+            bullish_divs.append({
+                "swing": s2, "ref_swing": s1, "pattern": "sell_absorption",
+                "cvd_gap": round(cvd_gap, 1), "cvd_z": round(cvd_z, 2),
+                "price_dist": round(price_dist, 2), "price_atr": round(price_atr, 2),
+                "score": round(score, 1),
+            })
+
+    # Bearish patterns: compare consecutive swing highs
+    for i in range(1, len(swing_highs)):
+        s1, s2 = swing_highs[i - 1], swing_highs[i]
+        if trigger_idx - s2["bar_idx"] > max_trigger_dist:
+            continue
+
+        cvd_gap = abs(s2["cvd"] - s1["cvd"])
+        cvd_z = cvd_gap / cvd_std
+        if cvd_z < cvd_z_min:
+            continue
+
+        price_dist = abs(s2["price"] - s1["price"])
+        price_atr = price_dist / atr
+        score = _divergence_score(cvd_z, price_atr)
+
+        # Buy exhaustion: higher high + lower CVD → buyers exhausted → SELL
+        if s2["price"] > s1["price"] and s2["cvd"] < s1["cvd"]:
+            bearish_divs.append({
+                "swing": s2, "ref_swing": s1, "pattern": "buy_exhaustion",
+                "cvd_gap": round(cvd_gap, 1), "cvd_z": round(cvd_z, 2),
+                "price_dist": round(price_dist, 2), "price_atr": round(price_atr, 2),
+                "score": round(score, 1),
+            })
+        # Buy absorption: lower high + higher CVD → passive sellers absorbing → SELL
+        elif s2["price"] <= s1["price"] and s2["cvd"] > s1["cvd"]:
+            bearish_divs.append({
+                "swing": s2, "ref_swing": s1, "pattern": "buy_absorption",
+                "cvd_gap": round(cvd_gap, 1), "cvd_z": round(cvd_z, 2),
+                "price_dist": round(price_dist, 2), "price_atr": round(price_atr, 2),
+                "score": round(score, 1),
+            })
 
     # Evaluate each direction independently (per-direction gate, not shared)
     best_bull = max(bullish_divs, key=lambda d: d["score"]) if bullish_divs else None
@@ -1307,6 +1353,8 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
     if grade is None:
         grade = "C"
 
+    pattern = best.get("pattern", "unknown")
+
     return {
         "setup_name": "ES Absorption",
         "direction": direction,
@@ -1322,6 +1370,8 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
         "upside": None,
         "rr_ratio": None,
         "first_hour": False,
+        # Pattern classification
+        "pattern": pattern,
         # Mapped component scores
         "support_score": div_score,
         "upside_score": vol_score,
@@ -1394,8 +1444,18 @@ def format_absorption_message(result):
     score = result["score"]
     strong_tag = " STRONG" if grade == "A+" else ""
 
+    pattern = result.get("pattern", "unknown")
+    pattern_labels = {
+        "sell_exhaustion": "Sell Exhaustion",
+        "sell_absorption": "Sell Absorption",
+        "buy_exhaustion": "Buy Exhaustion",
+        "buy_absorption": "Buy Absorption",
+    }
+    pattern_label = pattern_labels.get(pattern, pattern)
+
     parts = [
         f"<b>ES ABSORPTION {side_emoji} {side_label} [{grade}] ({score:.0f}/100){strong_tag}</b>",
+        f"Pattern: {pattern_label}",
         "",
         f"Price: {result['abs_es_price']:.2f} | CVD: {result['cvd']:+,}",
         f"Vol spike: {result['vol_trigger']:,} ({result['abs_vol_ratio']:.1f}x avg)",
@@ -1404,14 +1464,16 @@ def format_absorption_message(result):
     best = result.get("best_swing")
     if best:
         sw = best["swing"]
-        div_type = "Price HL \u2191 / CVD \u2193" if result["direction"] == "bullish" else "Price LH \u2193 / CVD \u2191"
-        parts.append(f"Divergence: {div_type}")
-        parts.append(f"  vs swing {sw['type']}@{sw['price']:.2f} (bar #{sw['bar_idx']})")
+        ref = best.get("ref_swing")
+        if ref:
+            parts.append(f"Swing pair: {ref['type']}@{ref['price']:.2f} \u2192 {sw['type']}@{sw['price']:.2f}")
+        else:
+            parts.append(f"Swing: {sw['type']}@{sw['price']:.2f} (bar #{sw['bar_idx']})")
         parts.append(f"  CVD z: {best['cvd_z']:.2f} | Price: {best['price_atr']:.1f}x ATR")
 
     all_divs = result.get("all_divergences", [])
     if len(all_divs) > 1:
-        parts.append(f"({len(all_divs)} confirming swings)")
+        parts.append(f"({len(all_divs)} confirming swing pairs)")
 
     if result.get("dd_raw"):
         parts.append(f"DD Hedging: {result['dd_hedging']} \u2713")

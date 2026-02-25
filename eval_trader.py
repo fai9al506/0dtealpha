@@ -1276,11 +1276,11 @@ class PositionTracker:
 
     # Trail params — mirrors Railway's _trail_params in main.py
     # DD Exhaustion: continuous trail (activation=20, gap=5)
-    # GEX Long: rung-based trail (rung_start=12, step=5, lock_offset=2)
+    # GEX Long: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
     # AG Short: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
     _TRAIL_PARAMS = {
         "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
-        "GEX Long":      {"mode": "rung", "rung_start": 12, "step": 5, "lock_offset": 2},
+        "GEX Long":      {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
         "AG Short":      {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
     }
 

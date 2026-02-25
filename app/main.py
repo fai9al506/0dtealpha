@@ -2545,7 +2545,7 @@ def _compute_setup_levels(r: dict):
 
     if setup_name == "GEX Long":
         # Trailing stop — no fixed target; initial SL = 8 pts
-        # Trail: +12→SL+10, +17→SL+15, +22→SL+20, ... (rung_start=12, step=5, lock=rung-2)
+        # Hybrid trail: BE at +10, continuous trail activation=15, gap=5
         stop_lvl = spot - 8 if is_long else spot + 8
         return None, round(stop_lvl, 2)
 
@@ -2675,13 +2675,13 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             trade["_seen_low"] = min(trade.get("_seen_low", spx_cycle_low), spx_cycle_low)
             trade["_seen_high"] = max(trade.get("_seen_high", spx_cycle_high), spx_cycle_high)
 
-        # Trailing stop setups: DD Exhaustion and GEX Long
+        # Trailing stop setups: DD Exhaustion, GEX Long, AG Short
         # DD: continuous trail (activation=20, gap=5) — waits for confirmed move before trailing
-        # GEX: rung-based trail (rung_start=12, step=5, lock=rung-2)
+        # GEX/AG: hybrid trail (BE at +10, continuous trail activation=15, gap=5)
         # Uses cycle low/high (not all-time) since trail level changes each cycle
         _trail_params = {
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
-            "GEX Long": {"mode": "rung", "rung_start": 12, "step": 5, "lock_offset": 2},
+            "GEX Long": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
         }
         _tp = _trail_params.get(setup_name)
@@ -6385,11 +6385,11 @@ def _calculate_setup_outcome(entry: dict) -> dict:
 
         # Trailing stop parameters
         # DD Exhaustion: continuous trail (activation=20, gap=5, initial_sl=12)
-        # GEX Long: rung-based trail (rung_start=12, step=5, lock=rung-2, initial_sl=8)
+        # GEX Long: hybrid trail (BE at +10, continuous trail activation=15 gap=5, initial_sl=8)
         # AG Short: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
         _trail_params = {
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5, "initial_sl": 12},
-            "GEX Long": {"mode": "rung", "rung_start": 12, "step": 5, "lock_offset": 2, "initial_sl": 8},
+            "GEX Long": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5, "initial_sl": 8},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
         }
 

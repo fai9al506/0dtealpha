@@ -6359,7 +6359,7 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
                 SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
                        ts_start, ts_end, status
                 FROM es_range_bars
-                WHERE trade_date = :td AND symbol = '@ES' AND status = 'closed'
+                WHERE trade_date = :td AND symbol = '@ES' AND source = 'rithmic' AND status = 'closed'
                 ORDER BY bar_idx ASC
             """), {"td": alert_date.isoformat()}).mappings().all()
 
@@ -6815,7 +6815,11 @@ def api_setup_log_outcome(log_id: int):
                        gap_to_lis, upside, rr_ratio, first_hour, notified,
                        bofa_stop_level, bofa_target_level, bofa_lis_width,
                        bofa_max_hold_minutes, lis_upper, comments,
-                       abs_vol_ratio, abs_es_price
+                       abs_vol_ratio, abs_es_price,
+                       support_score, upside_score, floor_cluster_score,
+                       target_cluster_score, rr_score,
+                       outcome_result, outcome_pnl, outcome_max_profit,
+                       outcome_max_loss, outcome_first_event
                 FROM setup_log WHERE id = :log_id
             """), {"log_id": log_id}).mappings().first()
 
@@ -6840,7 +6844,7 @@ def api_setup_log_outcome(log_id: int):
                            bar_volume, bar_delta, cumulative_delta,
                            ts_start, ts_end, status
                     FROM es_range_bars
-                    WHERE trade_date = :td AND symbol = '@ES'
+                    WHERE trade_date = :td AND symbol = '@ES' AND source = 'rithmic'
                     ORDER BY bar_idx ASC
                 """), {"td": alert_date.isoformat()}).mappings().all()
 
@@ -12450,15 +12454,15 @@ DASH_HTML_TEMPLATE = """
         const scoreRows = scoreLabels.map(([k, v]) => '<div>' + k + ': <span style="color:var(--text)">' + (v || '–') + '</span></div>').join('');
         const bonusRow = (isBofa || isAbs) ? '' : '<div>First Hour: <span style="color:var(--text)">' + (e.first_hour ? 'Yes (+10)' : 'No') + '</span></div>';
         let summaryLabel = '';
-        if (l.outcome_result) {
-          if (l.outcome_result === 'WIN') summaryLabel = '<span style="color:#22c55e;font-weight:700;font-size:14px">✓ WINNER</span>';
-          else if (l.outcome_result === 'LOSS') summaryLabel = '<span style="color:#ef4444;font-weight:700;font-size:14px">✗ LOSER</span>';
-          else if (l.outcome_result === 'EXPIRED') {
-            const tp = l.outcome_pnl || 0;
+        if (e.outcome_result) {
+          if (e.outcome_result === 'WIN') summaryLabel = '<span style="color:#22c55e;font-weight:700;font-size:14px">✓ WINNER</span>';
+          else if (e.outcome_result === 'LOSS') summaryLabel = '<span style="color:#ef4444;font-weight:700;font-size:14px">✗ LOSER</span>';
+          else if (e.outcome_result === 'EXPIRED') {
+            const tp = e.outcome_pnl || 0;
             summaryLabel = tp >= 0
               ? '<span style="color:#22c55e;font-weight:700;font-size:14px">⏱ EXPIRED +' + tp.toFixed(1) + '</span>'
               : '<span style="color:#ef4444;font-weight:700;font-size:14px">⏱ EXPIRED ' + tp.toFixed(1) + '</span>';
-          } else summaryLabel = '<span style="color:#888;font-weight:700;font-size:14px">' + l.outcome_result + '</span>';
+          } else summaryLabel = '<span style="color:#888;font-weight:700;font-size:14px">' + e.outcome_result + '</span>';
         } else if (o.hit_target) {
           summaryLabel = '<span style="color:#22c55e;font-weight:700;font-size:14px">✓ WINNER</span>';
         } else if (o.hit_stop) {
@@ -12466,6 +12470,8 @@ DASH_HTML_TEMPLATE = """
         } else {
           summaryLabel = '<span style="color:#3b82f6;font-weight:700;font-size:14px">OPEN</span>';
         }
+        const firstEvt = o.first_event || 'none';
+        const evtColor = firstEvt === 'stop' ? '#ef4444' : (firstEvt === '10pt' || firstEvt === 'target') ? '#22c55e' : '#888';
         stats.innerHTML = `
           <div style="background:#1a1d21;padding:10px;border-radius:6px">
             <div style="font-weight:600;margin-bottom:6px;color:var(--muted)">Score Breakdown</div>

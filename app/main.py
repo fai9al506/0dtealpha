@@ -6359,7 +6359,7 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
                 SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
                        ts_start, ts_end, status
                 FROM es_range_bars
-                WHERE trade_date = :td AND symbol = '@ES' AND source = 'rithmic' AND status = 'closed'
+                WHERE trade_date = :td AND source = 'rithmic' AND status = 'closed'
                 ORDER BY bar_idx ASC
             """), {"td": alert_date.isoformat()}).mappings().all()
 
@@ -6844,7 +6844,7 @@ def api_setup_log_outcome(log_id: int):
                            bar_volume, bar_delta, cumulative_delta,
                            ts_start, ts_end, status
                     FROM es_range_bars
-                    WHERE trade_date = :td AND symbol = '@ES' AND source = 'rithmic'
+                    WHERE trade_date = :td AND source = 'rithmic'
                     ORDER BY bar_idx ASC
                 """), {"td": alert_date.isoformat()}).mappings().all()
 

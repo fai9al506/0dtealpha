@@ -1301,8 +1301,8 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
 
     # --- Step 4b: Zone-revisit divergence scan ---
     # Compare CVD at the same price zone between current visit and previous visit.
-    # Higher CVD at same zone → accumulation → bullish
-    # Lower CVD at same zone → distribution → bearish
+    # Lower CVD at same zone → selling absorbed by passive buyers → bullish
+    # Higher CVD at same zone → buying absorbed by passive sellers → bearish
     zone_min_away = settings.get("abs_zone_min_away", 5)
     zone_key = str(int(trigger["low"] // 5.0))
     zones = _zone_tracker["zones"]
@@ -1328,13 +1328,15 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
                     "price_atr": 0.0,
                     "score": zone_score,
                 }
-                if cvd_diff > 0:
-                    # Higher CVD at same level → net buying accumulated → bullish
-                    zone_div["pattern"] = "zone_accumulation"
+                if cvd_diff < 0:
+                    # Lower CVD at same level → selling couldn't push price down
+                    # → passive buyers absorbed it → bullish
+                    zone_div["pattern"] = "zone_sell_absorption"
                     bullish_divs.append(zone_div)
                 else:
-                    # Lower CVD at same level → net selling accumulated → bearish
-                    zone_div["pattern"] = "zone_distribution"
+                    # Higher CVD at same level → buying couldn't push price up
+                    # → passive sellers absorbed it → bearish
+                    zone_div["pattern"] = "zone_buy_absorption"
                     bearish_divs.append(zone_div)
 
     # Finalize zone tracker with trigger bar (after check, so next call sees
@@ -1588,8 +1590,8 @@ def format_absorption_message(result):
         "sell_absorption": "Sell Absorption",
         "buy_exhaustion": "Buy Exhaustion",
         "buy_absorption": "Buy Absorption",
-        "zone_accumulation": "Zone Accumulation",
-        "zone_distribution": "Zone Distribution",
+        "zone_sell_absorption": "Zone Sell Absorption",
+        "zone_buy_absorption": "Zone Buy Absorption",
     }
     pattern_label = pattern_labels.get(pattern, pattern)
 

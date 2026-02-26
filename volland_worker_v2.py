@@ -648,8 +648,8 @@ def run():
 
                 _stats, _total_pts, _zero_exps = save_cycle(exposures, paradigm, spot_vol)
 
-                # Track 0-point cycles during actual market hours
-                if _total_pts == 0 and is_market_hours():
+                # Track 0-point cycles during operating window (9:20+, not just 9:30+)
+                if _total_pts == 0 and market_open_now():
                     consecutive_zero_pts += 1
                     detail = f"exposures={len(exposures)}"
                     if _zero_exps:
@@ -714,7 +714,7 @@ def run():
                 # Session expired — full browser restart (fresh context + cookies)
                 if "session_expired_restart" in str(e):
                     print("[volland-v2] Tearing down browser for fresh restart...", flush=True)
-                    if is_market_hours():
+                    if market_open_now():
                         send_telegram(
                             "🔑 <b>Volland Session Expired</b>\n\n"
                             "Restarting browser with fresh context."
@@ -744,7 +744,7 @@ def run():
                         last_known_modified = ""
                         consecutive_zero_pts = 0
                         zero_pts_alerted = False
-                        if is_market_hours():
+                        if market_open_now():
                             send_telegram(
                                 "🔑 <b>Volland Session Expired</b>\n\n"
                                 f"Error: <code>{str(e)[:200]}</code>\n"

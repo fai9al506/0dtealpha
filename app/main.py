@@ -3454,6 +3454,26 @@ def _run_absorption_detection(bars: list) -> dict | None:
     if result is None:
         return None
 
+    # Freshness check: compare trigger bar price to CURRENT Rithmic price.
+    # If the market moved significantly while the callback was queued/processing,
+    # the signal is stale and would enter at the wrong price.
+    MAX_STALE_DISTANCE = 10.0  # max pts between trigger bar and current ES
+    trigger_price = result.get("abs_es_price")
+    if trigger_price:
+        try:
+            from rithmic_es_stream import get_rithmic_bars
+            current_bars = get_rithmic_bars()
+            if current_bars:
+                current_price = current_bars[-1].get("close", trigger_price)
+                stale_dist = abs(current_price - trigger_price)
+                if stale_dist > MAX_STALE_DISTANCE:
+                    print(f"[absorption] SKIPPED stale signal: trigger={trigger_price:.2f} "
+                          f"current={current_price:.2f} dist={stale_dist:.1f} > {MAX_STALE_DISTANCE}",
+                          flush=True)
+                    return None
+        except (ImportError, Exception) as e:
+            print(f"[absorption] freshness check error: {e}", flush=True)
+
     # Parse SPX target from Volland stats
     target_spx = None
     if volland_stats and volland_stats.get("target"):
@@ -3619,13 +3639,15 @@ def _run_absorption_detection(bars: list) -> dict | None:
 
 # Track last bar idx to avoid re-evaluating same bar
 _last_absorption_bar_idx = -1
+_absorption_thread_lock = Lock()
 
 
 def _on_rithmic_bar_complete(bars: list):
     """Callback from Rithmic stream when a range bar completes.
 
-    Runs absorption detection proactively — no dashboard polling needed.
-    Called from Rithmic's tick processing thread (outside its lock).
+    Runs absorption detection in a background thread so the Rithmic event
+    loop isn't blocked by DB/HTTP calls (which caused stale-signal bugs
+    where the trigger bar was minutes old by the time it was logged).
     """
     global _last_absorption_bar_idx
     if not bars:
@@ -3649,10 +3671,24 @@ def _on_rithmic_bar_complete(bars: list):
             return
     except (ImportError, Exception):
         pass
-    try:
-        _run_absorption_detection(bars)
-    except Exception as e:
-        print(f"[absorption] proactive eval error: {e}", flush=True)
+    # Offload to thread so Rithmic tick processing isn't blocked.
+    # The bars snapshot is already a copy (list of dicts) so thread-safe.
+    bars_copy = list(bars)
+    Thread(
+        target=_run_absorption_in_thread,
+        args=(bars_copy,),
+        daemon=True,
+    ).start()
+
+
+def _run_absorption_in_thread(bars: list):
+    """Thread wrapper: runs absorption detection with freshness check."""
+    # Serialize — only one absorption detection at a time
+    with _absorption_thread_lock:
+        try:
+            _run_absorption_detection(bars)
+        except Exception as e:
+            print(f"[absorption] proactive eval error: {e}", flush=True)
 
 
 def _es_session_date() -> str:

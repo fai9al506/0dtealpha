@@ -1019,7 +1019,22 @@ def _backfill_outcomes():
             entry_price = es_price if entry.get("setup_name") == "ES Absorption" and es_price else spot
 
             is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long", "AG Short")
-            if is_trailing_setup:
+            is_absorption = entry.get("setup_name") == "ES Absorption"
+            if is_absorption:
+                # ES Absorption: split-target. Use trail_exit_pnl as primary P&L.
+                if outcome.get("trail_exit_pnl") is not None:
+                    pnl = outcome["trail_exit_pnl"]
+                    result_type = "WIN" if pnl > 0 else "LOSS"
+                elif outcome.get("hit_10pt"):
+                    pnl = 10.0  # T1 hit, trail still running → conservative
+                    result_type = "WIN"
+                elif outcome.get("hit_stop"):
+                    pnl = outcome.get("max_loss", -12)
+                    result_type = "LOSS"
+                else:
+                    pnl = outcome.get("max_profit", 0)
+                    result_type = "EXPIRED"
+            elif is_trailing_setup:
                 # Trailing stop: P&L = final stop level - entry (or timeout P&L)
                 if result_type == "EXPIRED":
                     pnl = outcome.get("timeout_pnl", 0) or 0
@@ -1069,7 +1084,7 @@ def _backfill_outcomes():
                     "res": result_type,
                     "pnl": round(pnl, 2) if pnl is not None else None,
                     "tgt": outcome.get("target_level") or outcome.get("ten_pt_level") or outcome.get("bofa_target_level"),
-                    "sl": outcome.get("stop_level"),
+                    "sl": outcome.get("stop_level") or outcome.get("initial_stop"),
                     "mp": outcome.get("max_profit"),
                     "ml": outcome.get("max_loss"),
                     "fe": fe,
@@ -1299,6 +1314,7 @@ _setup_resolved_trades = []
 _spx_session = {"high": None, "low": None, "date": None}  # previous poll's session H/L
 _spx_cycle_high = None  # derived cycle high (max of spot & any new session high)
 _spx_cycle_low = None   # derived cycle low  (min of spot & any new session low)
+_last_known_spot = None  # cached spot for EOD summary fallback
 
 def log_setup(result_wrapper):
     """
@@ -2605,9 +2621,10 @@ def _compute_setup_levels(r: dict):
         es_price = r.get("abs_es_price")
         if not es_price:
             return None, None
-        target_lvl = es_price + 10 if is_long else es_price - 10
+        # Split target: T1=+10pt (tracked as first_event), T2=trailing (BE@+10, gap=5)
+        # target_level=None signals trailing mode in _check_setup_outcomes
         stop_lvl = es_price - 12 if is_long else es_price + 12
-        return round(target_lvl, 2), round(stop_lvl, 2)
+        return None, round(stop_lvl, 2)
 
     if setup_name == "DD Exhaustion":
         # Trailing stop — no fixed target; initial SL = 12 pts
@@ -2680,7 +2697,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         _setup_open_trades = []
         _setup_resolved_trades = []
 
-    market_closed = now.time() >= dtime(16, 0)
+    market_closed = now.time() >= dtime(15, 57)  # close 3 min before market end so spot is still live
     still_open = []
 
     # Get current ES price + bar H/L extremes for absorption outcome checks
@@ -2767,11 +2784,16 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
             "GEX Long": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
+            "ES Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
         }
         _tp = _trail_params.get(setup_name)
         if _tp is not None:
             # Advance trail using cycle high (long) or cycle low (short)
-            fav_price = spx_cycle_high if is_long else spx_cycle_low
+            # ES Absorption: use ES seen_high/low from range bars (not SPX cycle)
+            if setup_name == "ES Absorption":
+                fav_price = trade.get("_seen_high", entry_price) if is_long else trade.get("_seen_low", entry_price)
+            else:
+                fav_price = spx_cycle_high if is_long else spx_cycle_low
             fav = (fav_price - entry_price) if is_long else (entry_price - fav_price)
             max_fav = trade.get("_dd_max_fav", 0.0)
             if fav > max_fav:
@@ -2818,7 +2840,11 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 except Exception:
                     pass
             # Check trailing stop hit using cycle extreme (not just current price)
-            stop_check = spx_cycle_low if is_long else spx_cycle_high
+            # ES Absorption: use ES seen_low/high from range bars
+            if setup_name == "ES Absorption":
+                stop_check = trade.get("_seen_low", entry_price) if is_long else trade.get("_seen_high", entry_price)
+            else:
+                stop_check = spx_cycle_low if is_long else spx_cycle_high
             if is_long and stop_check <= stop_lvl:
                 result_type = "WIN" if stop_lvl >= entry_price else "LOSS"
                 pnl = stop_lvl - entry_price
@@ -2874,7 +2900,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             if log_id and engine:
                 try:
                     # Compute first_event
-                    is_trailing = setup_name in ("DD Exhaustion", "GEX Long", "AG Short")
+                    is_trailing = setup_name in ("DD Exhaustion", "GEX Long", "AG Short", "ES Absorption")
                     if result_type == "WIN":
                         first_event = "target" if is_trailing else "10pt"
                     elif result_type == "LOSS":
@@ -2949,6 +2975,9 @@ def _run_setup_check():
         pass
     if not spot:
         return
+
+    global _last_known_spot
+    _last_known_spot = spot  # cache for EOD summary fallback
 
     # Check open trades for outcome resolution each cycle
     _check_setup_outcomes(spot, _spx_cycle_high, _spx_cycle_low)
@@ -4166,6 +4195,8 @@ def _send_setup_eod_summary():
     print(f"[eod-summary] running at {now.strftime('%H:%M:%S')}", flush=True)
 
     # First, expire any still-open trades (market closed)
+    # Most trades should already be closed at 15:57 by _check_setup_outcomes.
+    # This is a safety net for any stragglers.
     es_price = None
     spot = None
     try:
@@ -4174,6 +4205,8 @@ def _send_setup_eod_summary():
         spot = float(parts.get("spot", ""))
     except Exception:
         pass
+    if not spot:
+        spot = _last_known_spot  # fallback to cached spot from last market-hours cycle
     with _es_quote_lock:
         if _es_quote["_completed_bars"]:
             es_price = _es_quote["_completed_bars"][-1].get("close")
@@ -6347,8 +6380,12 @@ def api_setup_log(limit: int = Query(50)):
 def _calculate_absorption_outcome(entry: dict) -> dict:
     """Calculate outcome for ES Absorption using ES range bars.
 
-    10pt first target, Volland target (converted SPX→ES) as second target
-    (or 10pt only for BofA paradigm), 12pt fixed stop.
+    Split-target tracking:
+      T1 = +10pt fixed target (tracked as hit_10pt / first_event)
+      T2 = trailing stop (BE@+10, gap=5) — trail_exit_pnl
+    Both tracked independently so we can compare strategies:
+      - 10pt only, trail only, or split (partial TP + trail)
+    Initial stop: -12pt fixed (before trail activates).
     """
     try:
         ts = entry.get("ts")
@@ -6363,22 +6400,10 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
 
         direction = entry.get("direction", "bullish")
         is_long = direction.lower() in ("long", "bullish")
-        paradigm = (entry.get("paradigm") or "").upper()
-        is_bofa_paradigm = "BOFA" in paradigm
 
-        # Determine levels
+        # Levels
         ten_pt_level = es_entry + 10 if is_long else es_entry - 10
-        stop_level = es_entry - 12 if is_long else es_entry + 12
-
-        # Volland target converted to ES
-        target_level = None
-        spx_spot = entry.get("spot")
-        spx_target = entry.get("target")
-        if not is_bofa_paradigm and spx_target and spx_spot and spx_spot != es_entry:
-            offset = es_entry - spx_spot
-            target_level = spx_target + offset
-        if target_level is None:
-            target_level = ten_pt_level  # fallback: same as 10pt
+        initial_stop = es_entry - 12 if is_long else es_entry + 12
 
         # Get ES range bars for that session date
         alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
@@ -6401,18 +6426,16 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
             if hasattr(bar_start, "tzinfo") and bar_start.tzinfo is None:
                 bar_start = NY.localize(bar_start)
             if bar_start <= ts:
-                signal_bar_idx = r["bar_idx"]  # keep updating — last bar before ts
+                signal_bar_idx = r["bar_idx"]
             else:
-                break  # bars are ordered by idx, so stop once we pass ts
+                break
         if signal_bar_idx is None:
             return {"no_data": True}
 
-        # Walk bars after the signal bar
+        # Walk bars after the signal bar — track T1 (+10) and T2 (trail)
         hit_10pt = False
-        hit_target = False
-        hit_stop = False
+        hit_stop = False  # initial -12 stop (before trail activates)
         time_to_10pt = None
-        time_to_target = None
         time_to_stop = None
         max_profit = 0.0
         max_profit_ts = None
@@ -6420,6 +6443,14 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
         max_loss_ts = None
         first_event = None
         bars_after = 0
+
+        # Trail state (hybrid: BE@+10, activation=10, gap=5)
+        trail_active = False
+        trail_stop = initial_stop  # starts as initial fixed stop
+        trail_peak = 0.0  # max favorable excursion in pts
+        trail_exit_pnl = None  # P&L when trail stop hit
+        trail_exit_bar = None
+        trail_exit_ts = None
 
         for r in bar_rows:
             if r["bar_idx"] <= signal_bar_idx:
@@ -6432,65 +6463,96 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
             if is_long:
                 profit_high = bar_high - es_entry
                 profit_low = bar_low - es_entry
-                if not hit_10pt and bar_high >= ten_pt_level:
-                    hit_10pt = True
-                    time_to_10pt = bar_ts
-                    if first_event is None:
-                        first_event = "10pt"
-                if not hit_target and bar_high >= target_level:
-                    hit_target = True
-                    time_to_target = bar_ts
-                    if first_event is None:
-                        first_event = "target"
-                if not hit_stop and bar_low <= stop_level:
-                    hit_stop = True
-                    time_to_stop = bar_ts
-                    if first_event is None:
-                        first_event = "stop"
-                if profit_high > max_profit:
-                    max_profit = profit_high
-                    max_profit_ts = bar_ts
-                if profit_low < max_loss:
-                    max_loss = profit_low
-                    max_loss_ts = bar_ts
             else:
                 profit_high = es_entry - bar_low
                 profit_low = es_entry - bar_high
-                if not hit_10pt and bar_low <= ten_pt_level:
+
+            # Track max profit / max loss
+            if profit_high > max_profit:
+                max_profit = profit_high
+                max_profit_ts = bar_ts
+            if profit_low < max_loss:
+                max_loss = profit_low
+                max_loss_ts = bar_ts
+
+            # T1: +10pt target
+            if not hit_10pt:
+                if is_long and bar_high >= ten_pt_level:
                     hit_10pt = True
                     time_to_10pt = bar_ts
                     if first_event is None:
                         first_event = "10pt"
-                if not hit_target and bar_low <= target_level:
-                    hit_target = True
-                    time_to_target = bar_ts
+                elif not is_long and bar_low <= ten_pt_level:
+                    hit_10pt = True
+                    time_to_10pt = bar_ts
                     if first_event is None:
-                        first_event = "target"
-                if not hit_stop and bar_high >= stop_level:
-                    hit_stop = True
-                    time_to_stop = bar_ts
-                    if first_event is None:
-                        first_event = "stop"
-                if profit_high > max_profit:
-                    max_profit = profit_high
-                    max_profit_ts = bar_ts
-                if profit_low < max_loss:
-                    max_loss = profit_low
-                    max_loss_ts = bar_ts
+                        first_event = "10pt"
 
+            # Trail logic: advance trail stop, check for trail exit
+            if trail_exit_pnl is None:  # trail not yet exited
+                # Update peak
+                if profit_high > trail_peak:
+                    trail_peak = profit_high
+
+                # Hybrid trail: BE at +10, then trail with gap=5
+                if trail_peak >= 10:
+                    trail_active = True
+                    trail_lock = max(trail_peak - 5, 0)  # gap=5, min=breakeven
+                    if is_long:
+                        new_stop = es_entry + trail_lock
+                        if new_stop > trail_stop:
+                            trail_stop = new_stop
+                    else:
+                        new_stop = es_entry - trail_lock
+                        if new_stop < trail_stop:
+                            trail_stop = new_stop
+
+                # Check trail/initial stop hit
+                if is_long and bar_low <= trail_stop:
+                    trail_exit_pnl = round(trail_stop - es_entry, 2)
+                    trail_exit_bar = bars_after
+                    trail_exit_ts = bar_ts
+                    if not hit_stop:
+                        hit_stop = True
+                        time_to_stop = bar_ts
+                        if first_event is None:
+                            first_event = "stop"
+                elif not is_long and bar_high >= trail_stop:
+                    trail_exit_pnl = round(es_entry - trail_stop, 2)
+                    trail_exit_bar = bars_after
+                    trail_exit_ts = bar_ts
+                    if not hit_stop:
+                        hit_stop = True
+                        time_to_stop = bar_ts
+                        if first_event is None:
+                            first_event = "stop"
         if first_event is None:
             first_event = "pending" if bars_after < 20 else "miss"
 
         def _iso(v):
             return v.isoformat() if v and hasattr(v, "isoformat") else v
 
+        # Determine outcome result for T1 and T2
+        # T1: +10pt fixed target
+        t1_result = "WIN" if hit_10pt else ("LOSS" if (hit_stop and not hit_10pt) else "PENDING")
+        t1_pnl = 10.0 if hit_10pt else (round(trail_exit_pnl, 2) if trail_exit_pnl is not None else 0.0)
+
+        # T2: trail result
+        if trail_exit_pnl is not None:
+            t2_result = "WIN" if trail_exit_pnl > 0 else "LOSS"
+            t2_pnl = round(trail_exit_pnl, 2)
+        elif hit_10pt:
+            t2_result = "TRAILING"  # trail still active
+            t2_pnl = round(max_profit, 2)
+        else:
+            t2_result = "PENDING"
+            t2_pnl = 0.0
+
         return {
             "is_absorption": True,
             "hit_10pt": hit_10pt,
-            "hit_target": hit_target,
             "hit_stop": hit_stop,
             "time_to_10pt": _iso(time_to_10pt),
-            "time_to_target": _iso(time_to_target),
             "time_to_stop": _iso(time_to_stop),
             "max_profit": round(max_profit, 2),
             "max_profit_ts": _iso(max_profit_ts),
@@ -6498,11 +6560,20 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
             "max_loss_ts": _iso(max_loss_ts),
             "first_event": first_event,
             "ten_pt_level": round(ten_pt_level, 2),
-            "target_level": round(target_level, 2),
-            "stop_level": round(stop_level, 2),
+            "initial_stop": round(initial_stop, 2),
             "bars_after": bars_after,
-            "is_bofa_paradigm": is_bofa_paradigm,
             "signal_bar_idx": signal_bar_idx,
+            # T1: fixed +10pt target
+            "t1_result": t1_result,
+            "t1_pnl": t1_pnl,
+            # T2: trailing stop (BE@+10, gap=5)
+            "t2_result": t2_result,
+            "t2_pnl": t2_pnl,
+            "trail_active": trail_active,
+            "trail_peak": round(trail_peak, 2),
+            "trail_exit_pnl": round(trail_exit_pnl, 2) if trail_exit_pnl is not None else None,
+            "trail_exit_bar": trail_exit_bar,
+            "trail_exit_ts": _iso(trail_exit_ts),
         }
     except Exception as e:
         print(f"[setups] absorption outcome error: {e}", flush=True)
@@ -6913,8 +6984,8 @@ def api_setup_log_outcome(log_id: int):
                 "abs_vol_ratio": row.get("abs_vol_ratio"),
                 # Outcome levels (ES prices)
                 "ten_pt": outcome.get("ten_pt_level"),
-                "target_es": outcome.get("target_level"),
-                "stop": outcome.get("stop_level"),
+                "target_es": None,  # absorption uses trail, no fixed target
+                "stop": outcome.get("initial_stop"),
             }
             return {
                 "entry": entry,
@@ -12139,8 +12210,9 @@ DASH_HTML_TEMPLATE = """
           ['Time', fmtDateTimeET(e.ts) + ' ET'],
           ['Pattern', absPattern],
           ['ES Entry', (lv.abs_es_price || e.abs_es_price)?.toFixed(2)],
-          ['10pt Target', lv.ten_pt?.toFixed(2) || '–'],
-          ['Stop (-12)', lv.stop?.toFixed(2) || '–'],
+          ['T1 (+10pt)', lv.ten_pt?.toFixed(2) || '–'],
+          ['T2', 'Trail (BE@10, gap=5)'],
+          ['Init Stop', lv.stop?.toFixed(2) || '–'],
           ['Vol Ratio', (e.abs_vol_ratio || 0).toFixed(1) + 'x'],
           ['Paradigm', e.paradigm || '–'],
           ['LIS (ES)', lv.lis?.toFixed(0) || '–'],
@@ -12180,28 +12252,29 @@ DASH_HTML_TEMPLATE = """
           if (o.no_data || o.error) {
             outcome.innerHTML = '<div style="color:var(--muted);text-align:center;padding:8px;font-size:11px">ES Absorption — ' + (o.error || 'no ES range bar data for outcome') + '</div>';
           } else {
-            const ac10 = o.hit_10pt ? '#22c55e' : '#888';
-            const acTgt = o.hit_target ? '#22c55e' : '#888';
-            const aStopIsLoss = o.hit_stop && o.first_event === 'stop';
-            const acStop = aStopIsLoss ? '#ef4444' : (o.hit_stop ? '#888' : '#22c55e');
-            const aStopLabel = o.hit_stop ? (aStopIsLoss ? '✗ STOPPED' : 'STOPPED (BE)') : '✓ SAFE';
             const isPending = o.first_event === 'pending';
-            const isBofaPara = o.is_bofa_paradigm;
+            // T1: +10pt fixed target
+            const t1c = o.t1_result === 'WIN' ? '#22c55e' : (o.t1_result === 'LOSS' ? '#ef4444' : '#888');
+            const t1Label = o.t1_result === 'WIN' ? '+10.0' : (o.t1_result === 'LOSS' ? (o.t1_pnl?.toFixed(1) || '0') : '⏳');
+            // T2: trail (BE@+10, gap=5)
+            const t2c = o.t2_result === 'WIN' ? '#22c55e' : (o.t2_result === 'LOSS' ? '#ef4444' : (o.t2_result === 'TRAILING' ? '#f59e0b' : '#888'));
+            const t2Label = o.t2_result === 'TRAILING' ? ('↗ ' + (o.trail_peak?.toFixed(1) || '0')) : (o.t2_pnl != null ? (o.t2_pnl >= 0 ? '+' : '') + o.t2_pnl.toFixed(1) : '⏳');
+            const t2Sub = o.t2_result === 'TRAILING' ? 'trailing...' : (o.trail_exit_ts ? fmtTimeET(o.trail_exit_ts) + ' ET' : '');
             outcome.innerHTML = `
               <div style="flex:1;text-align:center">
-                <div style="color:var(--muted);font-size:10px">10pt Target</div>
-                <div style="color:${isPending ? '#888' : ac10};font-size:18px;font-weight:700">${isPending ? '⏳' : (o.hit_10pt ? '✓ HIT' : '✗ MISS')}</div>
+                <div style="color:var(--muted);font-size:10px">T1: +10pt</div>
+                <div style="color:${isPending ? '#888' : t1c};font-size:18px;font-weight:700">${isPending ? '⏳' : t1Label}</div>
                 ${o.time_to_10pt ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.time_to_10pt) + ' ET</div>' : ''}
               </div>
               <div style="flex:1;text-align:center">
-                <div style="color:var(--muted);font-size:10px">${isBofaPara ? '10pt (BofA)' : 'Vol Target'}</div>
-                <div style="color:${isPending ? '#888' : acTgt};font-size:18px;font-weight:700">${isPending ? '⏳' : (o.hit_target ? '✓ HIT' : '✗ MISS')}</div>
-                ${o.time_to_target ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.time_to_target) + ' ET</div>' : ''}
+                <div style="color:var(--muted);font-size:10px">T2: Trail</div>
+                <div style="color:${isPending ? '#888' : t2c};font-size:18px;font-weight:700">${isPending ? '⏳' : t2Label}</div>
+                ${t2Sub ? '<div style="color:var(--muted);font-size:9px">' + t2Sub + '</div>' : ''}
               </div>
               <div style="flex:1;text-align:center">
-                <div style="color:var(--muted);font-size:10px">Stop</div>
-                <div style="color:${isPending ? '#888' : acStop};font-size:18px;font-weight:700">${isPending ? '⏳' : aStopLabel}</div>
-                ${o.time_to_stop ? '<div style="color:var(--muted);font-size:9px">' + fmtTimeET(o.time_to_stop) + ' ET</div>' : ''}
+                <div style="color:var(--muted);font-size:10px">Trail Peak</div>
+                <div style="color:#22c55e;font-size:18px;font-weight:700">+${o.trail_peak?.toFixed(1) || 0}</div>
+                ${o.trail_active ? '<div style="color:#f59e0b;font-size:9px">trail active</div>' : ''}
               </div>
               <div style="flex:1;text-align:center">
                 <div style="color:var(--muted);font-size:10px">Max Profit</div>
@@ -12485,7 +12558,21 @@ DASH_HTML_TEMPLATE = """
         const scoreRows = scoreLabels.map(([k, v]) => '<div>' + k + ': <span style="color:var(--text)">' + (v || '–') + '</span></div>').join('');
         const bonusRow = (isBofa || isAbs) ? '' : '<div>First Hour: <span style="color:var(--text)">' + (e.first_hour ? 'Yes (+10)' : 'No') + '</span></div>';
         let summaryLabel = '';
-        if (e.outcome_result) {
+        if (isAbs && o.is_absorption) {
+          // ES Absorption: show split-target summary (T1 + T2)
+          const t1 = o.t1_result || 'PENDING';
+          const t2 = o.t2_result || 'PENDING';
+          const t1p = o.t1_pnl || 0;
+          const t2p = o.t2_pnl || 0;
+          const combined = t1p + t2p;
+          if (t1 === 'WIN' && (t2 === 'WIN' || t2 === 'TRAILING')) {
+            summaryLabel = '<span style="color:#22c55e;font-weight:700;font-size:14px">T1:+10 T2:' + (t2 === 'TRAILING' ? '↗' + t2p.toFixed(1) : '+' + t2p.toFixed(1)) + '</span>';
+          } else if (t1 === 'LOSS') {
+            summaryLabel = '<span style="color:#ef4444;font-weight:700;font-size:14px">✗ STOPPED ' + t1p.toFixed(1) + '</span>';
+          } else {
+            summaryLabel = '<span style="color:#888;font-weight:700;font-size:14px">T1:' + t1 + ' T2:' + t2 + '</span>';
+          }
+        } else if (e.outcome_result) {
           if (e.outcome_result === 'WIN') summaryLabel = '<span style="color:#22c55e;font-weight:700;font-size:14px">✓ WINNER</span>';
           else if (e.outcome_result === 'LOSS') summaryLabel = '<span style="color:#ef4444;font-weight:700;font-size:14px">✗ LOSER</span>';
           else if (e.outcome_result === 'EXPIRED') {
@@ -12503,6 +12590,8 @@ DASH_HTML_TEMPLATE = """
         }
         const firstEvt = o.first_event || 'none';
         const evtColor = firstEvt === 'stop' ? '#ef4444' : (firstEvt === '10pt' || firstEvt === 'target') ? '#22c55e' : '#888';
+        // Trail info for ES Absorption
+        const trailInfo = (isAbs && o.trail_active) ? '<div>Trail: <span style="color:#f59e0b;font-weight:600">ACTIVE (peak +' + (o.trail_peak?.toFixed(1) || 0) + ', gap=5)</span></div>' : '';
         stats.innerHTML = `
           <div style="background:#1a1d21;padding:10px;border-radius:6px">
             <div style="font-weight:600;margin-bottom:6px;color:var(--muted)">Score Breakdown</div>
@@ -12516,6 +12605,7 @@ DASH_HTML_TEMPLATE = """
             <div style="font-size:10px">
               <div>First Event: <span style="color:${evtColor};font-weight:600">${(firstEvt.toUpperCase() || 'NONE')}</span></div>
               ${isAbs ? '<div>Bars After Signal: <span style="color:var(--text)">' + (o.bars_after || 0) + '</span></div>' : '<div>Data Points: <span style="color:var(--text)">' + (o.price_count || 0) + '</span></div>'}
+              ${trailInfo}
               <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
                 ${summaryLabel}
               </div>

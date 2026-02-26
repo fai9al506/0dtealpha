@@ -143,10 +143,10 @@ DEFAULT_CONFIG = {
     # target = fixed take-profit distance; null/"msg" = use Volland target from Telegram
     # Mirrors production system: same stops, same targets, smaller size
     "setup_rules": {
-        "GEX Long":          {"enabled": False, "stop": 8,  "target": "msg"},
+        "GEX Long":          {"enabled": True,  "stop": 8,  "target": None},
         "AG Short":          {"enabled": True,  "stop": 12, "target": None},
         "BofA Scalp":        {"enabled": False, "stop": 12, "target": "msg", "max_hold_min": 30},
-        "ES Absorption":     {"enabled": True,  "stop": 12, "target": 10},
+        "ES Absorption":     {"enabled": True,  "stop": 12, "target": None},
         "Paradigm Reversal": {"enabled": True,  "stop": 12, "target": 10},
         "DD Exhaustion":     {"enabled": True,  "stop": 12, "target": None},
     },
@@ -308,6 +308,8 @@ class APIPoller:
         raw_signals = data.get("signals", [])
         raw_outcomes = data.get("outcomes", [])
         es_price = data.get("es_price")  # current MES/ES price from Railway
+        if es_price is not None:
+            es_price = float(es_price)
 
         # Update last_id to highest seen
         if raw_signals:
@@ -865,14 +867,30 @@ class NT8Bridge:
         log.info(f"NT8 CHANGE stop: {order_id} → {_round_tick(new_stop_price)}")
 
     def cancel(self, order_id: str):
-        """Cancel an order by ID."""
-        self._write(f"CANCEL;{self.account};{self.symbol};{order_id}\n")
+        """Cancel an order by ID.
+
+        OIF CANCEL uses same 12-field format as PLACE — order ID in position 11:
+        CANCEL;;;;;;;;;;orderId;;
+        """
+        self._write(f"CANCEL;;;;;;;;;;{order_id};;\n")
         log.info(f"NT8 cancel: {order_id}")
 
-    def close_position(self):
-        """Flatten all positions for this symbol."""
-        self._write(f"CLOSEPOSITION;{self.account};{self.symbol}\n")
-        log.info(f"NT8 CLOSEPOSITION: {self.symbol}")
+    def close_position(self, direction: str = "long", qty: int = 0):
+        """Flatten position by placing a counter market order.
+
+        CLOSEPOSITION OIF command is unreliable in NT8 — use explicit
+        market order in opposite direction instead.
+        """
+        if not qty:
+            log.warning("close_position called with qty=0, skipping")
+            return
+        close_side = "SELL" if direction in ("long", "bullish") else "BUY"
+        close_oid = self._oid("x")
+        self._write(
+            f"PLACE;{self.account};{self.symbol};{close_side};{qty};"
+            f"MARKET;;;DAY;;{close_oid};;\n"
+        )
+        log.info(f"NT8 close: {close_side} {qty} {self.symbol} (oid={close_oid})")
 
     def cancel_all(self):
         """Cancel ALL working orders for this symbol (safety net)."""
@@ -901,6 +919,38 @@ class NT8Bridge:
             return {"status": status, "qty": qty, "price": price}
         except Exception:
             return None
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  NT8 POSITION STATE READER
+# ═════════════════════════════════════════════════════════════════════════════
+
+NT8_POSITION_STALE_SEC = 10  # consider NT8 data stale if older than this
+
+def read_nt8_position(nt8_incoming_folder: str) -> dict | None:
+    """Read position_state.json written by NT8 PositionReporter strategy.
+
+    Returns dict with {status, account, instrument, position, quantity,
+    avg_price, orders, timestamp} or None if file missing/unreadable/stale.
+    """
+    nt8_base = Path(nt8_incoming_folder).parent
+    pos_file = nt8_base / "position_state.json"
+    if not pos_file.exists():
+        return None
+    try:
+        data = json.loads(pos_file.read_text())
+        if data.get("status") != "online":
+            return None
+        # Check staleness
+        ts_str = data.get("timestamp", "")
+        if ts_str:
+            ts = datetime.fromisoformat(ts_str)
+            age = (datetime.now(ts.tzinfo) - ts).total_seconds()
+            if age > NT8_POSITION_STALE_SEC:
+                return None  # NT8 data too old
+        return data
+    except Exception:
+        return None
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1005,6 +1055,8 @@ class PositionTracker:
         # Use ES/MES price for stop/target calculation (SPX and MES differ by ~15-20 pts)
         # ES price comes from Railway API's quote stream; fall back to SPX spot if unavailable
         es_price = signal.get("es_price")
+        if es_price is not None:
+            es_price = float(es_price)
         if es_price:
             order_ref = es_price
             log.info(f"  Using ES price for orders: {es_price:.2f} (SPX spot: {spot:.2f})")
@@ -1071,17 +1123,15 @@ class PositionTracker:
         result = outcome["result"]
         trade_qty = self.position.get("qty", self.cfg["qty"])
 
-        # Cancel remaining orders (stop or target — whichever didn't trigger)
-        if result in ("WIN", "EXPIRED"):
-            # Target hit or expired — cancel stop
+        # Cancel ALL remaining orders — always cancel both stop and target
+        # (reconciler may resolve before NT8 fills, leaving orphaned orders)
+        if self.position.get("stop_oid"):
             self.nt8.cancel(self.position["stop_oid"])
-        if result in ("LOSS", "EXPIRED"):
-            # Stop hit or expired — cancel target (if exists)
-            if self.position.get("target_oid"):
-                self.nt8.cancel(self.position["target_oid"])
+        if self.position.get("target_oid"):
+            self.nt8.cancel(self.position["target_oid"])
         if result == "EXPIRED" or self.position.get("trail_only"):
             # Force close any remaining position (always close for trail-only)
-            self.nt8.close_position()
+            self.nt8.close_position(self.position["direction"], trade_qty)
 
         self.compliance.record_trade(pnl_pts, self.position["setup_name"], trade_qty)
 
@@ -1154,8 +1204,8 @@ class PositionTracker:
         self.compliance.record_trade(pnl_pts, old_name, old_qty)
         log.info(f"  Closed {old_name}: ~{pnl_pts:+.1f} pts (estimated from ES price)")
 
-        self.position = None
-        self._save()
+        # NOTE: do NOT clear position file here — keep old position on disk
+        # until new position is saved. Prevents orphan positions on crash.
 
         # Step 2: Resolve new position params
         new_rules = self.cfg["setup_rules"][new_name]
@@ -1177,8 +1227,9 @@ class PositionTracker:
         )
         log.info(f"  Net-off order: {net_side} {net_qty} (close {old_qty} + open {new_qty})")
 
-        # Step 4: Place new stop and target for the new position
+        # Step 4: Compute new stop/target prices
         es_ref = signal.get("es_price") or es_price or signal["spot"]
+        es_ref = float(es_ref)
         new_stop_price = _round_tick(es_ref - new_stop_pts) if new_is_long else _round_tick(es_ref + new_stop_pts)
 
         cfg_target = new_rules.get("target")
@@ -1191,28 +1242,11 @@ class PositionTracker:
             target_pts = float(cfg_target)
         new_target_price = _round_tick(es_ref + target_pts) if new_is_long else _round_tick(es_ref - target_pts)
 
-        time.sleep(0.5)
-        stop_oid = self.nt8._oid("s")
-        self.nt8._write(
-            f"PLACE;{self.nt8.account};{self.nt8.symbol};{exit_side};{new_qty};"
-            f"STOPMARKET;;{_round_tick(new_stop_price)};DAY;;{stop_oid};;\n"
-        )
-
-        target_oid = None
-        if not trail_only:
-            time.sleep(0.3)
-            target_oid = self.nt8._oid("t")
-            self.nt8._write(
-                f"PLACE;{self.nt8.account};{self.nt8.symbol};{exit_side};{new_qty};"
-                f"LIMIT;{_round_tick(new_target_price)};;DAY;;{target_oid};;\n"
-            )
-
-        log.info(f"NT8 reverse placed: {net_side} {net_qty} (net) + "
-                 f"stop={_round_tick(new_stop_price)}"
-                 f"{' target=' + str(_round_tick(new_target_price)) if not trail_only else ' (trail-only)'}")
-
-        # Step 5: Track new position
         es_entry = signal.get("es_price") or es_price
+
+        # Step 5: SAVE position immediately after net-off (crash resilience)
+        # If we crash before placing stop/target, startup recovery will place them.
+        # stop_oid/target_oid are None until placed — startup detects this.
         self.position = {
             "setup_name": new_name,
             "direction": signal["direction"],
@@ -1227,13 +1261,38 @@ class PositionTracker:
             "qty": new_qty,
             "ts": datetime.now(CT).isoformat(),
             "max_hold_min": new_rules.get("max_hold_min"),
-            "es_entry_price": es_entry,
+            "es_entry_price": float(es_entry) if es_entry else None,
             "be_triggered": False,
             "entry_oid": net_oid,
-            "stop_oid": stop_oid,
-            "target_oid": target_oid,
+            "stop_oid": None,   # not placed yet
+            "target_oid": None, # not placed yet
         }
         self._save()
+
+        # Step 6: Place stop and target orders
+        time.sleep(0.5)
+        stop_oid = self.nt8._oid("s")
+        self.nt8._write(
+            f"PLACE;{self.nt8.account};{self.nt8.symbol};{exit_side};{new_qty};"
+            f"STOPMARKET;;{_round_tick(new_stop_price)};DAY;;{stop_oid};;\n"
+        )
+        self.position["stop_oid"] = stop_oid
+        self._save()
+
+        target_oid = None
+        if not trail_only:
+            time.sleep(0.3)
+            target_oid = self.nt8._oid("t")
+            self.nt8._write(
+                f"PLACE;{self.nt8.account};{self.nt8.symbol};{exit_side};{new_qty};"
+                f"LIMIT;{_round_tick(new_target_price)};;DAY;;{target_oid};;\n"
+            )
+            self.position["target_oid"] = target_oid
+            self._save()
+
+        log.info(f"NT8 reverse placed: {net_side} {net_qty} (net) + "
+                 f"stop={_round_tick(new_stop_price)}"
+                 f"{' target=' + str(_round_tick(new_target_price)) if not trail_only else ' (trail-only)'}")
 
         log.info(f"TRADE OPENED: {new_name} {new_dir} [{signal.get('grade', '?')}]")
         log.info(f"  MES Entry: {es_ref:.2f} | Stop: {new_stop_price:.2f} "
@@ -1278,10 +1337,12 @@ class PositionTracker:
     # DD Exhaustion: continuous trail (activation=20, gap=5)
     # GEX Long: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
     # AG Short: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
+    # ES Absorption: hybrid trail (BE at +10, continuous trail activation=10 gap=5)
     _TRAIL_PARAMS = {
-        "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
-        "GEX Long":      {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
-        "AG Short":      {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
+        "DD Exhaustion":  {"mode": "continuous", "activation": 20, "gap": 5},
+        "GEX Long":       {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
+        "AG Short":       {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
+        "ES Absorption":  {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
     }
 
     def check_trail(self, es_price: float | None):
@@ -1418,6 +1479,114 @@ class PositionTracker:
                 self._save()
                 return
 
+    _RECONCILE_GRACE_S = 30  # don't reconcile within 30s of opening a trade
+
+    def reconcile_with_api(self, api_url: str, api_key: str):
+        """Periodic safety net: re-check Railway API for resolved outcomes.
+
+        Bypasses the normal _seen_outcomes filter. If Railway shows this setup
+        as resolved (WIN/LOSS/EXPIRED), clear the phantom position.
+        Only matches outcomes that were resolved AFTER the position was opened
+        (prevents stale outcomes from closing fresh trades).
+        """
+        if not self.position:
+            return
+        # Grace period: don't reconcile too soon after opening
+        pos_ts = self.position.get("ts")
+        if pos_ts:
+            try:
+                pos_dt = datetime.fromisoformat(pos_ts)
+                age_s = (datetime.now(CT) - pos_dt).total_seconds()
+                if age_s < self._RECONCILE_GRACE_S:
+                    return
+            except Exception:
+                pass
+        try:
+            resp = requests.get(
+                api_url.rstrip("/") + "/api/eval/signals",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=8,
+            )
+            if resp.status_code != 200:
+                return
+            outcomes = resp.json().get("outcomes", [])
+            pos_name = self.position["setup_name"]
+            for o in outcomes:
+                if (o.get("setup_name") == pos_name
+                        and o.get("outcome_result") in ("WIN", "LOSS", "EXPIRED")):
+                    # Only match outcomes resolved AFTER position opened
+                    outcome_ts = o.get("outcome_ts") or o.get("updated_at")
+                    if outcome_ts and pos_ts:
+                        try:
+                            o_dt = datetime.fromisoformat(outcome_ts)
+                            p_dt = datetime.fromisoformat(pos_ts)
+                            # Normalize: make both offset-aware for comparison
+                            if o_dt.tzinfo is None:
+                                o_dt = o_dt.replace(tzinfo=ET)
+                            if p_dt.tzinfo is None:
+                                p_dt = p_dt.replace(tzinfo=CT)
+                            if o_dt < p_dt:
+                                continue  # stale outcome from before this position
+                        except Exception:
+                            pass
+                    pnl = o.get("outcome_pnl", 0) or 0
+                    log.info(f"[RECONCILE] Railway shows {pos_name} resolved: "
+                             f"{o['outcome_result']} ({pnl:+.1f} pts) — clearing phantom position")
+                    self.close_on_outcome({
+                        "setup_name": pos_name,
+                        "result": o["outcome_result"],
+                        "pnl_pts": pnl,
+                    })
+                    return
+        except Exception as e:
+            log.debug(f"Reconcile API check failed: {e}")
+
+    def reconcile_with_nt8(self):
+        """Check NT8 position_state.json for phantom position detection.
+
+        If NT8 shows Flat but eval_trader thinks we're in a position,
+        the position was closed without our knowledge → clear phantom.
+        """
+        nt8_data = read_nt8_position(self.cfg["nt8_incoming_folder"])
+        if nt8_data is None:
+            return  # file missing, stale, or offline — can't reconcile
+
+        nt8_flat = nt8_data.get("position", "Flat") == "Flat"
+
+        if self.position and nt8_flat:
+            # Grace period: don't reconcile too soon after opening
+            # (NT8 may not have processed the entry order yet)
+            pos_ts = self.position.get("ts")
+            if pos_ts:
+                try:
+                    pos_dt = datetime.fromisoformat(pos_ts)
+                    age_s = (datetime.now(CT) - pos_dt).total_seconds()
+                    if age_s < self._RECONCILE_GRACE_S:
+                        return
+                except Exception:
+                    pass
+            # NT8 is flat but we think we have a position → phantom
+            log.warning(f"[NT8 RECONCILE] NT8 is FLAT but eval_trader has "
+                        f"{self.position['setup_name']} {self.position['direction']} — "
+                        f"clearing phantom position")
+            # Cancel ALL remaining orders to prevent orphans
+            if self.position.get("stop_oid"):
+                self.nt8.cancel(self.position["stop_oid"])
+            if self.position.get("target_oid"):
+                self.nt8.cancel(self.position["target_oid"])
+            trade_qty = self.position.get("qty", self.cfg["qty"])
+            self.compliance.record_trade(0, self.position["setup_name"], trade_qty)
+            self.position = None
+            self.compliance.has_open_position = False
+            self._save()
+
+        elif not self.position and not nt8_flat:
+            # NT8 has a position but we don't track it — warn user
+            nt8_dir = nt8_data.get("position", "?")
+            nt8_qty = nt8_data.get("quantity", 0)
+            log.warning(f"[NT8 RECONCILE] NT8 has {nt8_dir} {nt8_qty} but eval_trader "
+                        f"is not tracking it — manage manually or restart with position file")
+
     @property
     def is_open(self) -> bool:
         return self.position is not None
@@ -1528,6 +1697,33 @@ def main():
 
     # ── Startup reconciliation: verify restored position is still open ──
     if tracker.is_open:
+        # Layer 0: recover from mid-reverse crash (position saved but stop never placed)
+        if tracker.position.get("stop_oid") is None:
+            pos = tracker.position
+            is_long = pos["direction"] in ("long", "bullish")
+            exit_side = "SELL" if is_long else "BUY"
+            stop_oid = nt8._oid("s")
+            log.warning(f"CRASH RECOVERY: position has no stop order — placing now")
+            nt8._write(
+                f"PLACE;{nt8.account};{nt8.symbol};{exit_side};{pos['qty']};"
+                f"STOPMARKET;;{_round_tick(pos['stop_price'])};DAY;;{stop_oid};;\n"
+            )
+            tracker.position["stop_oid"] = stop_oid
+            tracker._save()
+            log.info(f"  Stop placed: {stop_oid} @ {pos['stop_price']:.2f}")
+
+            # Also place target if needed and missing
+            if not pos.get("trail_only") and pos.get("target_price") and pos.get("target_oid") is None:
+                time.sleep(0.3)
+                target_oid = nt8._oid("t")
+                nt8._write(
+                    f"PLACE;{nt8.account};{nt8.symbol};{exit_side};{pos['qty']};"
+                    f"LIMIT;{_round_tick(pos['target_price'])};;DAY;;{target_oid};;\n"
+                )
+                tracker.position["target_oid"] = target_oid
+                tracker._save()
+                log.info(f"  Target placed: {target_oid} @ {pos['target_price']:.2f}")
+
         log.info("Reconciling restored position against NT8 fills...")
         # Layer 1: check NT8 outgoing folder for fill files
         tracker.check_nt8_fills()
@@ -1556,14 +1752,26 @@ def main():
                             break
             except Exception as e:
                 log.warning(f"Railway reconciliation failed: {e}")
+        # Layer 3: check NT8 PositionReporter for flat/position mismatch
+        if tracker.is_open:
+            tracker.reconcile_with_nt8()
         if tracker.is_open:
             log.info(f"Position confirmed open: {tracker.position['setup_name']} "
                      f"{tracker.position['direction']}")
 
+    # Also check NT8 for untracked positions (we're flat but NT8 isn't)
+    if not tracker.is_open:
+        nt8_state = read_nt8_position(cfg["nt8_incoming_folder"])
+        if nt8_state and nt8_state.get("position", "Flat") != "Flat":
+            log.warning(f"[NT8] NT8 has {nt8_state['position']} {nt8_state.get('quantity', '?')} "
+                        f"but eval_trader is flat — manage in NT8 or create position file")
+
     poll_interval = cfg.get("telegram_poll_interval_s", 2)
     log.info(f"Polling every {poll_interval}s...")
     last_trail_check = 0.0
+    last_reconcile = time.time()  # don't reconcile immediately on startup
     TRAIL_CHECK_INTERVAL = 5.0  # seconds between trail/fill checks
+    RECONCILE_INTERVAL = 60.0   # seconds between Railway reconciliation checks
     latest_es_price = None  # updated from each API poll
 
     try:
@@ -1583,6 +1791,17 @@ def main():
                 tracker.check_nt8_fills()
                 tracker.check_trail(latest_es_price)
                 last_trail_check = time.time()
+
+            # Periodic reconciliation (every 60s when position open)
+            # Safety net: catches phantom positions when NT8 fill + normal outcome both missed
+            if (tracker.is_open
+                    and time.time() - last_reconcile >= RECONCILE_INTERVAL):
+                # NT8 position file check (fastest, no network)
+                tracker.reconcile_with_nt8()
+                # Railway API check (network, catches resolved outcomes)
+                if tracker.is_open and use_api:
+                    tracker.reconcile_with_api(cfg["railway_api_url"], cfg["eval_api_key"])
+                last_reconcile = time.time()
 
             # ── Poll for signals and outcomes ──
             if use_api:
@@ -1736,7 +1955,7 @@ def test_mode():
     # Step 3: Flatten
     log.info("[3/4] Flattening test position...")
     time.sleep(1)
-    nt8.close_position()
+    nt8.close_position(direction, qty)
     nt8.cancel(oids["stop_oid"])
 
     # Step 4: Verify close

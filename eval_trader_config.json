@@ -25,17 +25,6 @@
   "flatten_time_ct": "15:50",
   "e2t_daily_pnl_cap": 999999,
   "setup_rules": {
-    "GEX Long": {
-      "enabled": false,
-      "stop": 8,
-      "target": "msg"
-    },
-    "BofA Scalp": {
-      "enabled": false,
-      "stop": 12,
-      "target": "msg",
-      "max_hold_min": 30
-    },
     "Paradigm Reversal": {
       "enabled": true,
       "stop": 12,
@@ -44,17 +33,28 @@
     "ES Absorption": {
       "enabled": true,
       "stop": 12,
-      "target": 10
+      "target": null
     },
     "AG Short": {
       "enabled": true,
       "stop": 12,
       "target": "msg"
     },
+    "BofA Scalp": {
+      "enabled": false,
+      "stop": 12,
+      "target": "msg",
+      "max_hold_min": 30
+    },
     "DD Exhaustion": {
       "enabled": true,
       "stop": 12,
       "target": null
+    },
+    "GEX Long": {
+      "enabled": false,
+      "stop": 8,
+      "target": "msg"
     }
   },
   "enabled": true

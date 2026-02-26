@@ -87,7 +87,7 @@ _toggles: dict[str, bool] = {
 }
 
 # Setup → order flow mapping
-_SINGLE_TARGET_SETUPS = {"BofA Scalp", "ES Absorption", "Paradigm Reversal"}
+_SINGLE_TARGET_SETUPS = {"BofA Scalp", "Paradigm Reversal"}
 _SPLIT_TARGET_SETUPS = {"GEX Long", "AG Short", "DD Exhaustion"}
 _STRONG_SETUPS = {"AG Short", "GEX Long", "Paradigm Reversal", "ES Absorption"}
 _TIGHTEN_GAP_PTS = 5.0  # When DD fires vs strong: tighten SL to this many pts from spot
@@ -318,8 +318,8 @@ def _place_split_target(setup_log_id, setup_name, direction, is_long,
         t1_price = _round_mes(es_price - FIRST_TARGET_PTS)
         t2_price = _round_mes(es_price - full_target_pts) if full_target_pts else None
 
-    # DD Exhaustion / AG Short: trail-only T2 (no limit order)
-    is_trail_only_t2 = setup_name in ("DD Exhaustion", "AG Short")
+    # DD Exhaustion / AG Short / ES Absorption: trail-only T2 (no limit order)
+    is_trail_only_t2 = setup_name in ("DD Exhaustion", "AG Short", "ES Absorption")
     if is_trail_only_t2:
         t2_price = None
 

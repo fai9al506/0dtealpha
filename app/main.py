@@ -7782,7 +7782,7 @@ DASH_HTML_TEMPLATE = """
     .tl-header.tl-grid-eval, .tl-row.tl-grid-eval { grid-template-columns:32px 100px 32px 48px 72px 36px 72px 56px 56px 64px 44px 64px; }
 
     /* Playback View */
-    .playback-container { display:flex; flex-direction:column; height:calc(100vh - 180px); overflow-y:auto; }
+    .playback-container { display:flex; flex-direction:column; }
     .playback-info { padding:8px 0; display:flex; align-items:center; }
     .playback-detail-grid {
       display:grid;
@@ -7845,7 +7845,6 @@ DASH_HTML_TEMPLATE = """
     }
     @media (max-width: 900px) {
       .playback-detail-grid { grid-template-columns:1fr; height:auto; }
-      .playback-container { height:auto; }
     }
 
     .stats-box { margin-top:14px; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1216; }

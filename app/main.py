@@ -6867,14 +6867,19 @@ def api_setup_log_outcome(log_id: int):
             es_entry = row.get("abs_es_price") or row["spot"]
             spx_spot = row["spot"]
             offset = (es_entry - spx_spot) if (es_entry and spx_spot and es_entry != spx_spot) else 0
+            # Pre-convert SPX levels to ES price space
+            lis_es = round(row["lis"] + offset, 2) if row["lis"] and offset else None
+            gex_p_es = round(row["max_plus_gex"] + offset, 2) if row["max_plus_gex"] and offset else None
+            gex_m_es = round(row["max_minus_gex"] + offset, 2) if row["max_minus_gex"] and offset else None
             levels = {
                 "entry": es_entry,
                 "spot_spx": spx_spot,
                 "offset": round(offset, 2),
-                "lis": row["lis"],
+                "lis": lis_es,
+                "lis_spx": row["lis"],
                 "target": row["target"],
-                "max_plus_gex": row["max_plus_gex"],
-                "max_minus_gex": row["max_minus_gex"],
+                "max_plus_gex": gex_p_es,
+                "max_minus_gex": gex_m_es,
                 "abs_es_price": row.get("abs_es_price"),
                 "abs_vol_ratio": row.get("abs_vol_ratio"),
                 # Outcome levels (ES prices)
@@ -12101,7 +12106,7 @@ DASH_HTML_TEMPLATE = """
           ['Stop (-12)', lv.stop?.toFixed(2) || '–'],
           ['Vol Ratio', (e.abs_vol_ratio || 0).toFixed(1) + 'x'],
           ['Paradigm', e.paradigm || '–'],
-          ['LIS (SPX)', e.lis?.toFixed(0) || '–'],
+          ['LIS (ES)', lv.lis?.toFixed(0) || '–'],
           ['Score', e.score + '/100'],
           ['Div', e.support_score],
           ['Vol', e.upside_score],
@@ -12303,22 +12308,18 @@ DASH_HTML_TEMPLATE = """
             shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.stop, y1:lv.stop, line:{color:'#ef4444',width:2,dash:'dash'} });
             annots.push({ x:barLabels[barLabels.length-1], y:lv.stop, text:'Stop', showarrow:false, font:{color:'#ef4444',size:9}, xanchor:'right' });
           }
-          // SPX→ES converted levels (LIS, +GEX, -GEX)
-          const esOffset = lv.offset || 0;
-          if (lv.lis && esOffset) {
-            const esLIS = lv.lis + esOffset;
-            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:esLIS, y1:esLIS, line:{color:'#f97316',width:1,dash:'dot'} });
-            annots.push({ x:barLabels[0], y:esLIS, text:'LIS ' + esLIS.toFixed(0), showarrow:false, font:{color:'#f97316',size:9}, xanchor:'left' });
+          // LIS, +GEX, -GEX — already converted to ES price space by backend
+          if (lv.lis) {
+            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.lis, y1:lv.lis, line:{color:'#f97316',width:1,dash:'dot'} });
+            annots.push({ x:barLabels[0], y:lv.lis, text:'LIS ' + lv.lis.toFixed(0), showarrow:false, font:{color:'#f97316',size:9}, xanchor:'left' });
           }
-          if (lv.max_plus_gex && esOffset) {
-            const esGP = lv.max_plus_gex + esOffset;
-            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:esGP, y1:esGP, line:{color:'#22c55e',width:1,dash:'dot'} });
-            annots.push({ x:barLabels[0], y:esGP, text:'+G ' + esGP.toFixed(0), showarrow:false, font:{color:'#22c55e',size:9}, xanchor:'left' });
+          if (lv.max_plus_gex) {
+            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.max_plus_gex, y1:lv.max_plus_gex, line:{color:'#22c55e',width:1,dash:'dot'} });
+            annots.push({ x:barLabels[0], y:lv.max_plus_gex, text:'+G ' + lv.max_plus_gex.toFixed(0), showarrow:false, font:{color:'#22c55e',size:9}, xanchor:'left' });
           }
-          if (lv.max_minus_gex && esOffset) {
-            const esGM = lv.max_minus_gex + esOffset;
-            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:esGM, y1:esGM, line:{color:'#ef4444',width:1,dash:'dot'} });
-            annots.push({ x:barLabels[0], y:esGM, text:'-G ' + esGM.toFixed(0), showarrow:false, font:{color:'#ef4444',size:9}, xanchor:'left' });
+          if (lv.max_minus_gex) {
+            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.max_minus_gex, y1:lv.max_minus_gex, line:{color:'#ef4444',width:1,dash:'dot'} });
+            annots.push({ x:barLabels[0], y:lv.max_minus_gex, text:'-G ' + lv.max_minus_gex.toFixed(0), showarrow:false, font:{color:'#ef4444',size:9}, xanchor:'left' });
           }
 
           Plotly.react(chart, [priceTrace, cvdTrace], {

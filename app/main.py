@@ -6474,6 +6474,7 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
             "stop_level": round(stop_level, 2),
             "bars_after": bars_after,
             "is_bofa_paradigm": is_bofa_paradigm,
+            "signal_bar_idx": signal_bar_idx,
         }
     except Exception as e:
         print(f"[setups] absorption outcome error: {e}", flush=True)
@@ -12224,38 +12225,45 @@ DASH_HTML_TEMPLATE = """
           // ES Absorption: render ES range bar candlestick + CVD chart
           const esBars = data.es_bars;
 
-          // Find signal bar by closest price match (robust float comparison)
-          const sigPrice = e.abs_es_price || e.spot;
-          let sigBarIdx = -1;
-          if (sigPrice) {
-            let minDist = Infinity;
+          // Find signal bar — match by bar_idx from outcome, then fallback to timestamp
+          let sigPos = -1;  // position in esBars array
+          const outcomeBarIdx = o.signal_bar_idx;
+          if (outcomeBarIdx != null) {
             for (let i = 0; i < esBars.length; i++) {
-              const d = Math.abs(esBars[i].close - sigPrice);
-              if (d < minDist) { minDist = d; sigBarIdx = i; }
-            }
-            // Also try matching by timestamp (more reliable)
-            if (e.ts) {
-              const sigTs = new Date(e.ts).getTime();
-              let minTsDist = Infinity;
-              for (let i = 0; i < esBars.length; i++) {
-                const barTs = new Date(esBars[i].ts_end).getTime();
-                const d = Math.abs(barTs - sigTs);
-                if (d < minTsDist) { minTsDist = d; sigBarIdx = i; }
-              }
+              if (esBars[i].idx === outcomeBarIdx) { sigPos = i; break; }
             }
           }
+          if (sigPos < 0 && e.ts) {
+            // Fallback: find bar whose ts_end is closest to signal timestamp
+            const sigTs = new Date(e.ts).getTime();
+            let minD = Infinity;
+            for (let i = 0; i < esBars.length; i++) {
+              const d = Math.abs(new Date(esBars[i].ts_end).getTime() - sigTs);
+              if (d < minD) { minD = d; sigPos = i; }
+            }
+          }
+          if (sigPos < 0) sigPos = Math.floor(esBars.length / 2);  // last resort: center
 
-          // Window: show signal bar ± 30 bars for context, minimum 20 bars before
-          const contextBefore = 30, contextAfter = 30;
-          const winStart = Math.max(0, sigBarIdx - contextBefore);
-          const winEnd = Math.min(esBars.length, sigBarIdx + contextAfter + 1);
+          // Window: signal bar ± 30 bars
+          const ctxB = 30, ctxA = 30;
+          const winStart = Math.max(0, sigPos - ctxB);
+          const winEnd = Math.min(esBars.length, sigPos + ctxA + 1);
           const visibleBars = esBars.slice(winStart, winEnd);
-          const barLabels = visibleBars.map(b => b.idx.toString());
+          const sigWinPos = sigPos - winStart;  // signal position within visible window
+
+          // Use sequential integers for x-axis (0, 1, 2, ...) — guarantees no gaps
+          const xLabels = visibleBars.map((_, i) => i);
+          // Custom tick labels showing bar_idx at intervals
+          const tickVals = [], tickText = [];
+          for (let i = 0; i < visibleBars.length; i += 5) {
+            tickVals.push(i);
+            tickText.push('#' + visibleBars[i].idx);
+          }
 
           // Price candlestick trace
           const priceTrace = {
             type: 'candlestick',
-            x: barLabels,
+            x: xLabels,
             open: visibleBars.map(b => b.open),
             high: visibleBars.map(b => b.high),
             low: visibleBars.map(b => b.low),
@@ -12269,7 +12277,7 @@ DASH_HTML_TEMPLATE = """
           // CVD line trace (secondary y-axis)
           const cvdTrace = {
             type: 'scatter', mode: 'lines',
-            x: barLabels,
+            x: xLabels,
             y: visibleBars.map(b => b.cvd),
             line: { color: '#60a5fa', width: 1.5 },
             name: 'CVD',
@@ -12279,35 +12287,28 @@ DASH_HTML_TEMPLATE = """
           const shapes = [];
           const annots = [];
 
-          // Compute visible price range from candle data for clamping
-          const allHighs = visibleBars.map(b => b.high);
-          const allLows = visibleBars.map(b => b.low);
-          const priceMin = Math.min(...allLows);
-          const priceMax = Math.max(...allHighs);
+          // Compute visible price range for y-axis clamping
+          const priceMin = Math.min(...visibleBars.map(b => b.low));
+          const priceMax = Math.max(...visibleBars.map(b => b.high));
           const priceRange = priceMax - priceMin;
-          const yPad = Math.max(priceRange * 0.15, 5);  // 15% padding, min 5pts
+          const yPad = Math.max(priceRange * 0.15, 5);
           const yLo = priceMin - yPad;
           const yHi = priceMax + yPad;
 
-          // Helper: only draw horizontal line if it falls within visible y range
+          // Helper: draw horizontal line if within visible y range
           function addLevel(price, label, color, width, dash, side) {
             if (price == null || price < yLo || price > yHi) return;
-            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:price, y1:price, line:{color:color,width:width,dash:dash} });
-            const anchor = side === 'right' ? 'right' : 'left';
-            const xPos = side === 'right' ? barLabels[barLabels.length-1] : barLabels[0];
-            annots.push({ x:xPos, y:price, text:label, showarrow:false, font:{color:color,size:9}, xanchor:anchor });
+            shapes.push({ type:'line', x0:0, x1:xLabels.length-1, y0:price, y1:price, line:{color,width,dash} });
+            const xPos = side === 'right' ? xLabels.length-1 : 0;
+            annots.push({ x:xPos, y:price, text:label, showarrow:false, font:{color,size:9}, xanchor:side === 'right' ? 'right' : 'left' });
           }
 
-          // Mark signal bar with vertical line
-          if (sigBarIdx >= winStart && sigBarIdx < winEnd) {
-            const sigLabel = esBars[sigBarIdx].idx.toString();
-            shapes.push({ type:'line', x0:sigLabel, x1:sigLabel, y0:0, y1:1, yref:'paper', line:{color:'#f59e0b',width:3,dash:'solid'} });
-            const isBull = e.direction === 'bullish';
-            const arrow = isBull ? '▲ BUY' : '▼ SELL';
-            annots.push({ x:sigLabel, y:1, yref:'paper', text:arrow + ' ' + e.grade, showarrow:false, font:{color:'#f59e0b',size:11,weight:'bold'}, yanchor:'bottom' });
-          }
+          // Signal bar vertical marker
+          shapes.push({ type:'line', x0:sigWinPos, x1:sigWinPos, y0:0, y1:1, yref:'paper', line:{color:'#f59e0b',width:3,dash:'solid'} });
+          const isBull = e.direction === 'bullish';
+          annots.push({ x:sigWinPos, y:1, yref:'paper', text:(isBull ? '▲ BUY' : '▼ SELL') + ' ' + e.grade, showarrow:false, font:{color:'#f59e0b',size:11,weight:'bold'}, yanchor:'bottom' });
 
-          // Draw level lines — entry/10pt/stop always expand range, others clamped
+          // Level lines
           addLevel(lv.entry, 'Entry ' + lv.entry?.toFixed(2), '#f59e0b', 2, 'solid', 'left');
           addLevel(lv.ten_pt, '10pt', '#22c55e', 1, 'dash', 'right');
           if (lv.target_es && lv.target_es !== lv.ten_pt) addLevel(lv.target_es, 'Tgt', '#10b981', 1, 'dot', 'right');
@@ -12320,12 +12321,11 @@ DASH_HTML_TEMPLATE = """
             margin: { l:50, r:50, t:20, b:40 },
             paper_bgcolor: '#0f1115',
             plot_bgcolor: '#0a0c0f',
-            xaxis: { type:'category', gridcolor:'#1a1d21', tickfont:{size:9,color:'#888'}, tickangle:0, nticks:10, title:{text:'Bar #',font:{size:9,color:'#666'}} },
+            xaxis: { gridcolor:'#1a1d21', tickfont:{size:9,color:'#888'}, tickangle:0, tickvals:tickVals, ticktext:tickText, title:{text:'Bar #',font:{size:9,color:'#666'}} },
             yaxis: { range:[yLo, yHi], gridcolor:'#1a1d21', tickfont:{size:10,color:'#888'}, side:'left', title:{text:'ES Price',font:{size:9,color:'#666'}} },
             yaxis2: { overlaying:'y', side:'right', gridcolor:'transparent', tickfont:{size:9,color:'#60a5fa'}, title:{text:'CVD',font:{size:9,color:'#60a5fa'}}, showgrid:false },
             font: { color:'#e6e7e9' },
-            shapes: shapes,
-            annotations: annots,
+            shapes, annotations: annots,
             showlegend: true,
             legend: { x:0, y:1.1, orientation:'h', font:{size:10,color:'#888'} }
           }, { displayModeBar:false, responsive:true });

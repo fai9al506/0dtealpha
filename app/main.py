@@ -346,6 +346,12 @@ def db_init():
         EXCEPTION WHEN duplicate_column THEN NULL;
         END $$;
         """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE playback_snapshots ADD COLUMN delta_decay JSONB;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
 
         # Alert settings table
         conn.execute(text("""
@@ -2239,6 +2245,16 @@ def save_playback_snapshot():
         except Exception as e:
             print(f"[playback] charm fetch error: {e}", flush=True)
 
+        # Get Delta Decay data from Volland (same approach as charm)
+        dd_data = None
+        try:
+            dd_window = db_volland_delta_decay_window(limit=200)
+            if dd_window and dd_window.get("points"):
+                dd_by_strike = {p["strike"]: p["delta_decay"] for p in dd_window["points"]}
+                dd_data = [dd_by_strike.get(s, 0) for s in strikes]
+        except Exception as e:
+            print(f"[playback] delta_decay fetch error: {e}", flush=True)
+
         # Get Stats from Volland
         stats_data = None
         try:
@@ -2259,8 +2275,8 @@ def save_playback_snapshot():
         with engine.begin() as conn:
             conn.execute(
                 text("""INSERT INTO playback_snapshots
-                        (ts, spot, vix, strikes, net_gex, charm, call_vol, put_vol, stats, call_gex, put_gex, call_oi, put_oi)
-                        VALUES (:ts, :spot, :vix, :strikes, :net_gex, :charm, :call_vol, :put_vol, :stats, :call_gex, :put_gex, :call_oi, :put_oi)"""),
+                        (ts, spot, vix, strikes, net_gex, charm, delta_decay, call_vol, put_vol, stats, call_gex, put_gex, call_oi, put_oi)
+                        VALUES (:ts, :spot, :vix, :strikes, :net_gex, :charm, :delta_decay, :call_vol, :put_vol, :stats, :call_gex, :put_gex, :call_oi, :put_oi)"""),
                 {
                     "ts": now_et(),
                     "spot": spot,
@@ -2268,6 +2284,7 @@ def save_playback_snapshot():
                     "strikes": json.dumps(strikes),
                     "net_gex": json.dumps(net_gex),
                     "charm": json.dumps(charm_data) if charm_data else None,
+                    "delta_decay": json.dumps(dd_data) if dd_data else None,
                     "call_vol": json.dumps(call_vol),
                     "put_vol": json.dumps(put_vol),
                     "stats": json.dumps(stats_data) if stats_data else None,
@@ -4206,8 +4223,11 @@ def on_startup():
     Thread(target=_es_quote_stream_loop, daemon=True).start()
     print("[es-quote] streaming thread started", flush=True)
     # Start Rithmic ES stream (parallel pipeline — skips if RITHMIC_USER not set)
-    from rithmic_es_stream import start_rithmic_stream
+    from rithmic_es_stream import start_rithmic_stream, set_on_bar_complete
     start_rithmic_stream(engine, send_telegram)
+    # Register absorption detection callback on Rithmic bar completion
+    set_on_bar_complete(_on_rithmic_bar_complete)
+    print("[absorption] registered proactive callback on Rithmic bar completion", flush=True)
     # Initialize auto-trader (SIM ES execution — disabled by default)
     try:
         from app.auto_trader import init as auto_trader_init
@@ -5550,7 +5570,7 @@ def api_playback_range(start_date: str = Query(None, description="Start date YYY
             if load_all:
                 # Load all data for debugging
                 rows = conn.execute(text("""
-                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                    SELECT ts, spot, strikes, net_gex, charm, delta_decay, call_vol, put_vol, stats
                     FROM playback_snapshots
                     ORDER BY ts ASC
                     LIMIT 1000
@@ -5569,17 +5589,17 @@ def api_playback_range(start_date: str = Query(None, description="Start date YYY
                 end_dt = now_et() + pd.Timedelta(hours=1)
 
                 rows = conn.execute(text("""
-                    SELECT ts, spot, strikes, net_gex, charm, call_vol, put_vol, stats
+                    SELECT ts, spot, strikes, net_gex, charm, delta_decay, call_vol, put_vol, stats
                     FROM playback_snapshots
                     WHERE ts >= :start_ts AND ts < :end_ts
                     ORDER BY ts ASC
                 """), {"start_ts": start_dt, "end_ts": end_dt}).mappings().all()
 
-            # Fetch Delta Decay data from volland_exposure_points for the same time range
-            # Match each playback timestamp to nearest DD snapshot (within 3 min)
-            dd_grouped = {}  # {ts_utc: {strike: value}}
+            # Fallback: fetch DD from volland_exposure_points for old rows without delta_decay column
+            dd_grouped = {}
             dd_timestamps = []
-            if rows:
+            needs_dd_fallback = rows and any(r.get("delta_decay") is None for r in rows)
+            if needs_dd_fallback:
                 ts_min = rows[0]["ts"]
                 ts_max = rows[-1]["ts"]
                 dd_rows = conn.execute(text("""
@@ -5603,19 +5623,18 @@ def api_playback_range(start_date: str = Query(None, description="Start date YYY
             snap_ts = r["ts"]
             strikes = _json_load_maybe(r["strikes"]) or []
 
-            # Find nearest DD timestamp (within 3 min)
-            dd_data = None
-            if dd_timestamps:
+            # Use stored delta_decay if available, otherwise fallback to Volland lookup
+            dd_data = _json_load_maybe(r.get("delta_decay"))
+            if dd_data is None and dd_timestamps:
                 best_ts = None
                 best_diff = 999
-                # Binary-ish search: scan dd_timestamps for closest match
                 for dt in dd_timestamps:
                     diff = abs((dt - snap_ts).total_seconds())
                     if diff < best_diff:
                         best_diff = diff
                         best_ts = dt
                     elif diff > best_diff:
-                        break  # timestamps are sorted, past the closest
+                        break
                 if best_ts and best_diff <= 180 and dd_grouped.get(best_ts):
                     dd_map = dd_grouped[best_ts]
                     dd_data = [dd_map.get(s, 0) for s in strikes]

@@ -381,12 +381,9 @@ def run():
             page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
 
             if "/sign-in" in page.url:
-                login_if_needed(page, WORKSPACE_URL)
-                cycle["exposures"] = []
-                cycle["paradigm"] = None
-                cycle["spot_vol"] = None
-                cycle["zero_captures"] = 0
-                page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
+                # Session expired — force full browser restart for fresh cookies/context
+                print("[volland-v2] Session expired (sign-in detected) — forcing browser restart.", flush=True)
+                raise RuntimeError("session_expired_restart")
 
             # Wait for full page load (scripts, stylesheets) before data wait
             try:
@@ -576,12 +573,9 @@ def run():
                     _diag_cycle_count["n"] += 1
                     page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
                     if "/sign-in" in page.url:
-                        login_if_needed(page, WORKSPACE_URL)
-                        cycle["exposures"] = []
-                        cycle["paradigm"] = None
-                        cycle["spot_vol"] = None
-                        cycle["zero_captures"] = 0
-                        page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
+                        # Session expired — force full browser restart for fresh cookies/context
+                        print("[volland-v2] Session expired during sync — forcing browser restart.", flush=True)
+                        raise RuntimeError("session_expired_restart")
                     try:
                         page.wait_for_load_state("load", timeout=30000)
                     except Exception:
@@ -717,21 +711,49 @@ def run():
                 print(f"[volland-v2] error: {e}", flush=True)
                 traceback.print_exc()
 
-                # Session expiry recovery: try re-login if we're on sign-in page
-                try:
-                    if page and "/sign-in" in (page.url or ""):
-                        print("[volland-v2] Session expired — attempting re-login...", flush=True)
-                        login_if_needed(page, WORKSPACE_URL)
-                        last_known_modified = ""  # force re-sync
-                        print("[volland-v2] Re-login successful", flush=True)
-                except Exception as login_err:
-                    print(f"[volland-v2] Re-login failed: {login_err}", flush=True)
+                # Session expired — full browser restart (fresh context + cookies)
+                if "session_expired_restart" in str(e):
+                    print("[volland-v2] Tearing down browser for fresh restart...", flush=True)
                     if is_market_hours():
                         send_telegram(
-                            "🔑 <b>Volland Login Failed</b>\n\n"
-                            f"Error: <code>{str(login_err)[:200]}</code>\n"
-                            "Session may have expired. Check credentials."
+                            "🔑 <b>Volland Session Expired</b>\n\n"
+                            "Restarting browser with fresh context."
                         )
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
+                    browser = None
+                    page = None
+                    last_known_modified = ""
+                    consecutive_zero_pts = 0
+                    zero_pts_alerted = False
+                    time.sleep(5)
+                    continue
+
+                # Session expiry recovery (other errors): try re-login if on sign-in page
+                try:
+                    if page and "/sign-in" in (page.url or ""):
+                        print("[volland-v2] Sign-in page detected — forcing browser restart...", flush=True)
+                        try:
+                            browser.close()
+                        except Exception:
+                            pass
+                        browser = None
+                        page = None
+                        last_known_modified = ""
+                        consecutive_zero_pts = 0
+                        zero_pts_alerted = False
+                        if is_market_hours():
+                            send_telegram(
+                                "🔑 <b>Volland Session Expired</b>\n\n"
+                                f"Error: <code>{str(e)[:200]}</code>\n"
+                                "Restarting browser with fresh context."
+                            )
+                        time.sleep(5)
+                        continue
+                except Exception as login_err:
+                    print(f"[volland-v2] Recovery check failed: {login_err}", flush=True)
 
                 # Browser crash recovery — recreate browser
                 if "closed" in str(e).lower() or "Target" in str(e):

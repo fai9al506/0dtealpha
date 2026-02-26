@@ -3640,6 +3640,15 @@ def _on_rithmic_bar_complete(bars: list):
     if bar_idx <= _last_absorption_bar_idx:
         return
     _last_absorption_bar_idx = bar_idx
+    # Skip stale bars restored from DB after a deploy/restart.
+    # Only fire absorption when trigger bar was built from live ticks.
+    try:
+        from rithmic_es_stream import get_live_since_idx
+        live_idx = get_live_since_idx()
+        if bar_idx < live_idx:
+            return
+    except (ImportError, Exception):
+        pass
     try:
         _run_absorption_detection(bars)
     except Exception as e:

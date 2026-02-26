@@ -256,6 +256,7 @@ def _reset_session(engine):
             "_forming_bar": None,
             "_completed_bars": db_bars,
             "_completed_bars_flushed": len(db_bars),
+            "_live_since_idx": (db_bars[-1]["idx"] + 1) if db_bars else 0,
             "_cvd": db_bars[-1]["cvd_close"] if db_bars else 0,
             "_bar_idx": (db_bars[-1]["idx"] + 1) if db_bars else 0,
             "_flush_buffer": [],
@@ -360,6 +361,16 @@ def get_rithmic_bars():
             "status": "open",
         })
     return result
+
+
+def get_live_since_idx():
+    """Return the first bar index built from live ticks (not DB-restored).
+
+    Bars with idx < this value are from DB restore after a restart.
+    Absorption signals should only fire when trigger bar idx >= this value.
+    """
+    with _lock:
+        return _state.get("_live_since_idx", 0)
 
 
 def get_rithmic_state():

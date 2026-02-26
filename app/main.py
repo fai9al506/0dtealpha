@@ -1197,24 +1197,44 @@ def _restore_open_trades():
 
             # Query historical price extremes since entry to seed _seen_low/_seen_high
             # Without this, restored trades would miss target/stop hits before restart
-            seen_high = spot
-            seen_low = spot
-            dd_max_fav = 0.0
-            try:
-                with engine.begin() as conn:
-                    extremes = conn.execute(text("""
-                        SELECT MAX(spot) as hi, MIN(spot) as lo
-                        FROM playback_snapshots
-                        WHERE ts >= :entry_ts AND ts <= NOW()
-                    """), {"entry_ts": ts}).mappings().first()
-                if extremes and extremes["hi"] is not None:
-                    seen_high = extremes["hi"]
-                    seen_low = extremes["lo"]
-                    is_long = direction.lower() in ("long", "bullish")
-                    fav = (seen_high - spot) if is_long else (spot - seen_low)
-                    dd_max_fav = max(0.0, fav)
-            except Exception:
-                pass  # fall back to spot as default
+            is_long = direction.lower() in ("long", "bullish")
+            if setup_name == "ES Absorption":
+                # ES Absorption uses ES range bar H/L, not SPX playback
+                es_px = entry.get("abs_es_price") or spot
+                seen_high = es_px
+                seen_low = es_px
+                dd_max_fav = 0.0
+                try:
+                    with engine.begin() as conn:
+                        extremes = conn.execute(text("""
+                            SELECT MAX(bar_high) as hi, MIN(bar_low) as lo
+                            FROM es_range_bars
+                            WHERE trade_date = :td AND source = 'rithmic'
+                              AND ts_end >= :entry_ts AND ts_end <= NOW()
+                        """), {"td": ts.strftime("%Y-%m-%d"), "entry_ts": ts}).mappings().first()
+                    if extremes and extremes["hi"] is not None:
+                        seen_high = extremes["hi"]
+                        seen_low = extremes["lo"]
+                except Exception:
+                    pass  # fall back to es_px as default
+            else:
+                seen_high = spot
+                seen_low = spot
+                dd_max_fav = 0.0
+                try:
+                    with engine.begin() as conn:
+                        extremes = conn.execute(text("""
+                            SELECT MAX(spot) as hi, MIN(spot) as lo
+                            FROM playback_snapshots
+                            WHERE ts >= :entry_ts AND ts <= NOW()
+                        """), {"entry_ts": ts}).mappings().first()
+                    if extremes and extremes["hi"] is not None:
+                        seen_high = extremes["hi"]
+                        seen_low = extremes["lo"]
+                        fav = (seen_high - spot) if is_long else (spot - seen_low)
+                        dd_max_fav = max(0.0, fav)
+                except Exception:
+                    pass  # fall back to spot as default
 
             _setup_open_trades.append({
                 "setup_name": setup_name,
@@ -2636,13 +2656,25 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
     still_open = []
 
     # Get current ES price + bar H/L extremes for absorption outcome checks
+    # Primary: Rithmic bars (absorption signals fire from Rithmic, same bar_idx space)
+    # Fallback: TS quote stream bars (if Rithmic not available)
     es_price = None
     es_bars_snapshot = []
-    with _es_quote_lock:
-        if _es_quote["_completed_bars"]:
-            last_bar = _es_quote["_completed_bars"][-1]
+    try:
+        from rithmic_es_stream import get_rithmic_bars
+        rithmic_bars = get_rithmic_bars()
+        if rithmic_bars:
+            last_bar = rithmic_bars[-1]
             es_price = last_bar.get("close")
-            es_bars_snapshot = list(_es_quote["_completed_bars"])
+            es_bars_snapshot = rithmic_bars
+    except (ImportError, Exception):
+        pass
+    if not es_bars_snapshot:
+        with _es_quote_lock:
+            if _es_quote["_completed_bars"]:
+                last_bar = _es_quote["_completed_bars"][-1]
+                es_price = last_bar.get("close")
+                es_bars_snapshot = list(_es_quote["_completed_bars"])
 
     for trade in _setup_open_trades:
         setup_name = trade["setup_name"]
@@ -2770,8 +2802,10 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 pnl = (check_price - entry_price) if is_long else (entry_price - check_price)
         elif is_long:
             # Use all-time seen_high/seen_low for fixed SL/TP (never miss a breach)
-            price_high = trade.get("_seen_high", check_price)
-            price_low = trade.get("_seen_low", check_price)
+            # Fallback to entry_price (not check_price) to avoid false WIN on first cycle
+            _fallback = entry_price if setup_name == "ES Absorption" else check_price
+            price_high = trade.get("_seen_high", _fallback)
+            price_low = trade.get("_seen_low", _fallback)
             if price_high >= target_lvl:
                 result_type = "WIN"
                 pnl = target_lvl - entry_price
@@ -2782,8 +2816,9 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 result_type = "EXPIRED"
                 pnl = check_price - entry_price
         else:
-            price_high = trade.get("_seen_high", check_price)
-            price_low = trade.get("_seen_low", check_price)
+            _fallback = entry_price if setup_name == "ES Absorption" else check_price
+            price_high = trade.get("_seen_high", _fallback)
+            price_low = trade.get("_seen_low", _fallback)
             if price_low <= target_lvl:
                 result_type = "WIN"
                 pnl = entry_price - target_lvl
@@ -3537,11 +3572,16 @@ def _run_absorption_detection(bars: list) -> dict | None:
     # Uses reason="new" from gate, or "cooldown" — either way we track
     target_lvl, stop_lvl = _compute_setup_levels(result)
     if target_lvl is not None and stop_lvl is not None:
+        es_entry = result.get("abs_es_price", result["spot"])
         _setup_open_trades.append({
             "setup_name": "ES Absorption", "direction": result["direction"],
             "spot": result["spot"], "grade": result["grade"],
             "target_level": target_lvl, "stop_level": stop_lvl,
             "ts": now_et(), "result_data": result,
+            # Initialize seen_high/low to ES entry price so fallback never
+            # triggers false WIN/LOSS (bars will update these as they complete)
+            "_seen_high": es_entry, "_seen_low": es_entry,
+            "_es_last_bar_idx": result.get("bar_idx", 0),
             "max_hold_minutes": None,
             "_trade_date": now_et().date(),
             "setup_log_id": _current_setup_log.get("ES Absorption"),

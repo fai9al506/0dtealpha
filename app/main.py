@@ -1334,6 +1334,34 @@ def log_setup(result_wrapper):
                 insert_params.setdefault("abs_vol_ratio", r.get("abs_vol_ratio"))
                 insert_params.setdefault("abs_es_price", r.get("abs_es_price"))
                 insert_params["vix"] = _vix_last
+                insert_params.setdefault("comments", None)
+                # Auto-populate comments with trigger criteria for ES Absorption
+                if setup_name == "ES Absorption" and not insert_params.get("comments"):
+                    _pattern_labels = {
+                        "sell_exhaustion": "Sell Exhaustion", "sell_absorption": "Sell Absorption",
+                        "buy_exhaustion": "Buy Exhaustion", "buy_absorption": "Buy Absorption",
+                        "zone_sell_absorption": "Zone Sell Absorption", "zone_buy_absorption": "Zone Buy Absorption",
+                    }
+                    _pat = r.get("pattern", "unknown")
+                    _parts = [f"Pattern: {_pattern_labels.get(_pat, _pat)}"]
+                    _best = r.get("best_swing")
+                    if _best:
+                        _sw = _best.get("swing", {})
+                        _ref = _best.get("ref_swing", {})
+                        if _ref.get("type") == "Z":
+                            _bars_gap = _sw.get("bar_idx", 0) - _ref.get("bar_idx", 0)
+                            _parts.append(f"Zone: {_ref.get('price', 0):.2f} → bar #{_sw.get('bar_idx', '?')} ({_bars_gap} bars)")
+                            _parts.append(f"CVD: {_ref.get('cvd', 0):+,} → {_sw.get('cvd', 0):+,} (z={_best.get('cvd_z', 0):.2f})")
+                        elif _ref:
+                            _parts.append(f"Swings: {_ref.get('type', '?')}@{_ref.get('price', 0):.2f} → {_sw.get('type', '?')}@{_sw.get('price', 0):.2f}")
+                            _parts.append(f"CVD z: {_best.get('cvd_z', 0):.2f} | Price: {_best.get('price_atr', 0):.1f}x ATR")
+                    _n_divs = len(r.get("all_divergences", []))
+                    if _n_divs > 1:
+                        _parts.append(f"{_n_divs} confirming pairs")
+                    if r.get("dd_hedging"):
+                        _parts.append(f"DD: {r['dd_hedging']}")
+                    _parts.append(f"Lookback: {r.get('lookback', '?')}")
+                    insert_params["comments"] = " | ".join(_parts)
                 result = conn.execute(text("""
                     INSERT INTO setup_log
                         (setup_name, direction, grade, score, paradigm, spot, lis, target,
@@ -1341,14 +1369,14 @@ def log_setup(result_wrapper):
                          first_hour, support_score, upside_score, floor_cluster_score,
                          target_cluster_score, rr_score, notified,
                          bofa_stop_level, bofa_target_level, bofa_lis_width, bofa_max_hold_minutes, lis_upper,
-                         abs_vol_ratio, abs_es_price, vix)
+                         abs_vol_ratio, abs_es_price, vix, comments)
                     VALUES
                         (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
                          :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
                          :first_hour, :support_score, :upside_score, :floor_cluster_score,
                          :target_cluster_score, :rr_score, TRUE,
                          :bofa_stop_level, :bofa_target_level, :bofa_lis_width, :bofa_max_hold_minutes, :lis_upper_val,
-                         :abs_vol_ratio, :abs_es_price, :vix)
+                         :abs_vol_ratio, :abs_es_price, :vix, :comments)
                     RETURNING id
                 """), insert_params)
                 log_id = result.fetchone()[0]
@@ -12099,19 +12127,27 @@ DASH_HTML_TEMPLATE = """
         title.innerHTML = setupLabel + '<span style="color:' + dirColor + '">' + dir + '</span> ' + e.grade + ' ' + priceLabel + displayPrice;
 
         // Info grid
+        // Parse trigger criteria from comments for ES Absorption
+        const absComments = (isAbs && e.comments) ? e.comments.split(' | ') : [];
+        const absPattern = absComments.find(s => s.startsWith('Pattern:'))?.replace('Pattern: ', '') || '–';
+        const absSwings = absComments.find(s => s.startsWith('Swings:') || s.startsWith('Zone:')) || '';
+        const absCvd = absComments.find(s => s.startsWith('CVD')) || '';
+        const absLookback = absComments.find(s => s.startsWith('Lookback:'))?.replace('Lookback: ', '') || '';
+        const absDDH = absComments.find(s => s.startsWith('DD:'))?.replace('DD: ', '') || '';
+        const absConfirm = absComments.find(s => s.includes('confirming')) || '';
         const infoItems = isAbs ? [
           ['Time', fmtDateTimeET(e.ts) + ' ET'],
+          ['Pattern', absPattern],
           ['ES Entry', (lv.abs_es_price || e.abs_es_price)?.toFixed(2)],
           ['10pt Target', lv.ten_pt?.toFixed(2) || '–'],
-          ['Vol Target', lv.target_es?.toFixed(2) || '10pt only'],
           ['Stop (-12)', lv.stop?.toFixed(2) || '–'],
           ['Vol Ratio', (e.abs_vol_ratio || 0).toFixed(1) + 'x'],
           ['Paradigm', e.paradigm || '–'],
           ['LIS (ES)', lv.lis?.toFixed(0) || '–'],
           ['Score', e.score + '/100'],
-          ['Div', e.support_score],
-          ['Vol', e.upside_score],
-          ['DD', e.floor_cluster_score],
+          [absSwings ? 'Trigger' : 'Lookback', absSwings || absLookback || '–'],
+          [absCvd ? 'CVD Div' : 'Div Score', absCvd || e.support_score || '–'],
+          [absDDH ? 'DD Hedging' : 'DD', absDDH || e.floor_cluster_score || '–'],
         ] : isBofa ? [
           ['Time', fmtDateTimeET(e.ts) + ' ET'],
           ['Paradigm', e.paradigm || '–'],

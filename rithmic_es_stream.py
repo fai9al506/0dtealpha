@@ -48,6 +48,17 @@ _state = {
     "_front_month": None,
 }
 
+# Callback invoked (outside lock) whenever a range bar completes.
+# Signature: callback(all_completed_bars: list[dict])
+# Set by main.py via set_on_bar_complete().
+_on_bar_complete = None
+
+
+def set_on_bar_complete(callback):
+    """Register a callback that fires each time a range bar completes."""
+    global _on_bar_complete
+    _on_bar_complete = callback
+
 
 def _now_et():
     return datetime.now(ET)
@@ -116,7 +127,11 @@ def _new_range_bar(price, ts):
 
 
 def _process_trade(price, volume, aggressor, bid, ask, ts):
-    """Process a single trade tick into range bars. Must be called under _lock."""
+    """Process a single trade tick into range bars. Must be called under _lock.
+
+    Returns list snapshot of completed bars if a bar just closed (for callback),
+    or None if no bar completed.
+    """
     s = _state
     buy_vol, sell_vol, delta, used_agg = _classify_aggressor(
         aggressor, price, bid, ask, volume
@@ -182,6 +197,12 @@ def _process_trade(price, volume, aggressor, bid, ask, ts):
               f"vol={completed['volume']} delta={completed['delta']:+d} "
               f"cvd={completed['cvd']:+d} agg={agg_pct:.0f}%", flush=True)
         s["_forming_bar"] = _new_range_bar(price, ts)
+
+        # Return snapshot for caller to fire callback OUTSIDE the lock
+        if _on_bar_complete:
+            return list(s["_completed_bars"])
+
+    return None
 
 
 # ====== SESSION RESET ======
@@ -442,11 +463,12 @@ async def _rithmic_stream_async(engine, send_telegram_fn):
                 buf = _agg_buf
                 if buf["order_id"] is None or buf["size"] == 0:
                     return
+                bar_snapshot = None
                 with _lock:
                     new_session = _es_session_date()
                     if _state["trade_date"] != new_session:
                         pass  # Will be caught in outer loop
-                    _process_trade(buf["price"], buf["size"], buf["aggressor"],
+                    bar_snapshot = _process_trade(buf["price"], buf["size"], buf["aggressor"],
                                    buf["bid"], buf["ask"], buf["ts"])
                     tc = _state["trade_count"]
                     if tc <= 5 or tc % 1000 == 0:
@@ -460,6 +482,14 @@ async def _rithmic_stream_async(engine, send_telegram_fn):
                               f"agg_pct={agg_pct:.0f}%", flush=True)
                 buf["order_id"] = None
                 buf["size"] = 0
+
+                # Fire bar-complete callback OUTSIDE the lock to avoid deadlocks
+                # (indented to be inside _flush_agg_buf but outside `with _lock`)
+                if bar_snapshot and _on_bar_complete:
+                    try:
+                        _on_bar_complete(bar_snapshot)
+                    except Exception as e:
+                        print(f"[rithmic] bar_complete callback error: {e}", flush=True)
 
             # Tick callback
             async def on_tick(data):

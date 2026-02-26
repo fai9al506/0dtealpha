@@ -3246,6 +3246,9 @@ def _new_quote_range_bar(price: float, ts: str):
 def _es_quote_process_trade(last: float, bid: float, ask: float, volume: int, ts: str):
     """Process a single trade tick into the forming range bar.
     Must be called under _es_quote_lock.
+
+    Returns list snapshot of completed bars if a bar just closed (for fallback
+    absorption callback when Rithmic is unavailable), or None.
     """
     q = _es_quote
     buy_vol, sell_vol, delta = _classify_trade_delta(last, bid, ask, volume)
@@ -3307,6 +3310,10 @@ def _es_quote_process_trade(last: float, bid: float, ask: float, volume: int, ts
               f"cvd={completed['cvd']:+d}", flush=True)
         # Start new bar at the close price of the completed bar
         q["_forming_bar"] = _new_quote_range_bar(last, ts)
+        # Return snapshot for fallback absorption when Rithmic unavailable
+        return list(q["_completed_bars"])
+
+    return None
 
 # ====== ES ABSORPTION DETECTOR (via setup_detector) ======
 _absorption_signals = []  # detected signals for chart markers
@@ -3375,6 +3382,8 @@ def _es_quote_reset():
         print(f"[es-quote] fresh session {session_date} (no prior bars)", flush=True)
 
     # Reset absorption detector for new session
+    global _last_absorption_bar_idx
+    _last_absorption_bar_idx = -1
     from app.setup_detector import reset_absorption_session
     reset_absorption_session()
     _absorption_signals.clear()
@@ -3566,6 +3575,35 @@ def _run_absorption_detection(bars: list) -> dict | None:
             print(f"[auto-trader] absorption place error: {e}", flush=True)
 
     return signal
+
+
+# Track last bar idx to avoid re-evaluating same bar
+_last_absorption_bar_idx = -1
+
+
+def _on_rithmic_bar_complete(bars: list):
+    """Callback from Rithmic stream when a range bar completes.
+
+    Runs absorption detection proactively — no dashboard polling needed.
+    Called from Rithmic's tick processing thread (outside its lock).
+    """
+    global _last_absorption_bar_idx
+    if not bars:
+        return
+    # Only run during RTH market hours (10:00-16:00 ET, matching absorption time gate)
+    t = now_et()
+    if not (dtime(10, 0) <= t.time() <= dtime(16, 0)):
+        return
+    # Avoid re-evaluating the same bar
+    last_bar = bars[-1]
+    bar_idx = last_bar.get("idx", -1)
+    if bar_idx <= _last_absorption_bar_idx:
+        return
+    _last_absorption_bar_idx = bar_idx
+    try:
+        _run_absorption_detection(bars)
+    except Exception as e:
+        print(f"[absorption] proactive eval error: {e}", flush=True)
 
 
 def _es_session_date() -> str:
@@ -3813,8 +3851,9 @@ def _es_quote_stream_loop():
                     continue
 
                 ts_now = now_et().isoformat()
+                ts_bar_snapshot = None
                 with _es_quote_lock:
-                    _es_quote_process_trade(last_f, bid_f, ask_f, trade_vol, ts_now)
+                    ts_bar_snapshot = _es_quote_process_trade(last_f, bid_f, ask_f, trade_vol, ts_now)
                     tc = _es_quote["trade_count"]
                     # Log first 5 trades, then every 1000th for diagnostics
                     if tc <= 5 or tc % 1000 == 0:
@@ -3824,6 +3863,16 @@ def _es_quote_stream_loop():
                               f"completed={len(_es_quote['_completed_bars'])} "
                               f"forming_range={fb_range}/{_es_quote['_range_pts']}",
                               flush=True)
+
+                # Fallback absorption: run on TS bars only if Rithmic is not connected
+                if ts_bar_snapshot:
+                    try:
+                        from rithmic_es_stream import get_rithmic_state
+                        rithmic_ok = get_rithmic_state().get("connected", False)
+                    except Exception:
+                        rithmic_ok = False
+                    if not rithmic_ok:
+                        _on_rithmic_bar_complete(ts_bar_snapshot)
 
             try:
                 r.close()
@@ -4880,10 +4929,8 @@ def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, 
                     "status": "open",
                 })
 
-        # Run absorption detection on completed bars
-        completed_only = [b for b in result if b.get("status") != "open"]
-        if completed_only:
-            _run_absorption_detection(result)
+        # Absorption detection now runs proactively via Rithmic/TS bar callbacks
+        # (no longer depends on dashboard polling)
         return {"bars": result, "signals": _absorption_signals}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

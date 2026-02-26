@@ -250,9 +250,11 @@ _DEFAULT_SETUP_SETTINGS = {
     "abs_cooldown_bars": 10,
     "abs_weight_divergence": 25,
     "abs_weight_volume": 25,
-    "abs_weight_dd": 15,
-    "abs_weight_paradigm": 15,
-    "abs_weight_lis": 20,
+    "abs_weight_dd": 10,
+    "abs_weight_paradigm": 10,
+    "abs_weight_lis": 10,
+    "abs_weight_lis_side": 10,
+    "abs_weight_target_dir": 10,
     "abs_zone_min_away": 5,
     "abs_grade_thresholds": {"A+": 75, "A": 55, "B": 35},
     "brackets": {
@@ -804,9 +806,11 @@ def load_setup_settings():
                     "abs_cooldown_bars": abs_db.get("cooldown_bars", 10),
                     "abs_weight_divergence": abs_db.get("weight_divergence", 25),
                     "abs_weight_volume": abs_db.get("weight_volume", 25),
-                    "abs_weight_dd": abs_db.get("weight_dd", 15),
-                    "abs_weight_paradigm": abs_db.get("weight_paradigm", 15),
-                    "abs_weight_lis": abs_db.get("weight_lis", 20),
+                    "abs_weight_dd": abs_db.get("weight_dd", 10),
+                    "abs_weight_paradigm": abs_db.get("weight_paradigm", 10),
+                    "abs_weight_lis": abs_db.get("weight_lis", 10),
+                    "abs_weight_lis_side": abs_db.get("weight_lis_side", 10),
+                    "abs_weight_target_dir": abs_db.get("weight_target_dir", 10),
                     "abs_grade_thresholds": abs_db.get("grade_thresholds", {"A+": 75, "A": 55, "B": 35}),
                     "paradigm_rev_enabled": row["paradigm_rev_enabled"] if "paradigm_rev_enabled" in rk else True,
                     "pr_max_flip_age_s": pr_db.get("max_flip_age_s", 180),
@@ -854,9 +858,11 @@ def save_setup_settings():
                 "cooldown_bars": _setup_settings.get("abs_cooldown_bars", 10),
                 "weight_divergence": _setup_settings.get("abs_weight_divergence", 25),
                 "weight_volume": _setup_settings.get("abs_weight_volume", 25),
-                "weight_dd": _setup_settings.get("abs_weight_dd", 15),
-                "weight_paradigm": _setup_settings.get("abs_weight_paradigm", 15),
-                "weight_lis": _setup_settings.get("abs_weight_lis", 20),
+                "weight_dd": _setup_settings.get("abs_weight_dd", 10),
+                "weight_paradigm": _setup_settings.get("abs_weight_paradigm", 10),
+                "weight_lis": _setup_settings.get("abs_weight_lis", 10),
+                "weight_lis_side": _setup_settings.get("abs_weight_lis_side", 10),
+                "weight_target_dir": _setup_settings.get("abs_weight_target_dir", 10),
                 "grade_thresholds": _setup_settings.get("abs_grade_thresholds", {"A+": 75, "A": 55, "B": 35}),
             })
             pr_json = json.dumps({
@@ -3441,10 +3447,13 @@ def _run_absorption_detection(bars: list) -> dict | None:
         "dd_score": result["dd_raw"],
         "para_score": result["para_raw"],
         "lis_score": result["lis_raw"],
+        "lis_side_score": result.get("lis_side_raw", 0),
+        "target_dir_score": result.get("target_dir_raw", 0),
         "paradigm": result["paradigm"],
         "dd_hedging": result["dd_hedging"],
         "lis_val": result["lis_val"],
         "lis_dist": result.get("lis_dist"),
+        "target_val": result.get("target_val"),
         "ts": result.get("ts", ""),
         "pattern": result.get("pattern", "unknown"),
         "best_swing": result.get("best_swing"),
@@ -6040,6 +6049,8 @@ def api_setup_settings_post(
     abs_weight_dd: int = Query(None),
     abs_weight_paradigm: int = Query(None),
     abs_weight_lis: int = Query(None),
+    abs_weight_lis_side: int = Query(None),
+    abs_weight_target_dir: int = Query(None),
 ):
     """Update setup detector settings."""
     global _setup_settings
@@ -6115,6 +6126,10 @@ def api_setup_settings_post(
         _setup_settings["abs_weight_paradigm"] = abs_weight_paradigm
     if abs_weight_lis is not None:
         _setup_settings["abs_weight_lis"] = abs_weight_lis
+    if abs_weight_lis_side is not None:
+        _setup_settings["abs_weight_lis_side"] = abs_weight_lis_side
+    if abs_weight_target_dir is not None:
+        _setup_settings["abs_weight_target_dir"] = abs_weight_target_dir
 
     save_setup_settings()
     return {"status": "ok", "settings": _setup_settings}
@@ -8069,6 +8084,12 @@ DASH_HTML_TEMPLATE = """
               </label>
               <label style="font-size:11px">LIS Proximity
                 <input type="number" id="absWeightLIS" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">LIS Side
+                <input type="number" id="absWeightLISSide" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
+              </label>
+              <label style="font-size:11px">Target Dir
+                <input type="number" id="absWeightTargetDir" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
               </label>
             </div>
             <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">ES Absorption Parameters</div>
@@ -11199,9 +11220,11 @@ DASH_HTML_TEMPLATE = """
         // ES Absorption
         document.getElementById('absWeightDivergence').value = s.abs_weight_divergence ?? 25;
         document.getElementById('absWeightVolume').value = s.abs_weight_volume ?? 25;
-        document.getElementById('absWeightDD').value = s.abs_weight_dd ?? 15;
-        document.getElementById('absWeightParadigm').value = s.abs_weight_paradigm ?? 15;
-        document.getElementById('absWeightLIS').value = s.abs_weight_lis ?? 20;
+        document.getElementById('absWeightDD').value = s.abs_weight_dd ?? 10;
+        document.getElementById('absWeightParadigm').value = s.abs_weight_paradigm ?? 10;
+        document.getElementById('absWeightLIS').value = s.abs_weight_lis ?? 10;
+        document.getElementById('absWeightLISSide').value = s.abs_weight_lis_side ?? 10;
+        document.getElementById('absWeightTargetDir').value = s.abs_weight_target_dir ?? 10;
         document.getElementById('absPivotLeft').value = s.abs_pivot_left ?? 2;
         document.getElementById('absPivotRight').value = s.abs_pivot_right ?? 2;
         document.getElementById('absMinVolRatio').value = s.abs_min_vol_ratio ?? 1.4;
@@ -11305,6 +11328,8 @@ DASH_HTML_TEMPLATE = """
           abs_weight_dd: document.getElementById('absWeightDD').value,
           abs_weight_paradigm: document.getElementById('absWeightParadigm').value,
           abs_weight_lis: document.getElementById('absWeightLIS').value,
+          abs_weight_lis_side: document.getElementById('absWeightLISSide').value,
+          abs_weight_target_dir: document.getElementById('absWeightTargetDir').value,
           abs_pivot_left: document.getElementById('absPivotLeft').value,
           abs_pivot_right: document.getElementById('absPivotRight').value,
           abs_vol_window: document.getElementById('absVolWindow').value,

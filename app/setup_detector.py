@@ -926,9 +926,11 @@ DEFAULT_ABSORPTION_SETTINGS = {
     "abs_cooldown_bars": 10,
     "abs_weight_divergence": 25,
     "abs_weight_volume": 25,
-    "abs_weight_dd": 15,
-    "abs_weight_paradigm": 15,
-    "abs_weight_lis": 20,
+    "abs_weight_dd": 10,
+    "abs_weight_paradigm": 10,
+    "abs_weight_lis": 10,
+    "abs_weight_lis_side": 10,
+    "abs_weight_target_dir": 10,
     "abs_max_trigger_dist": 40,
     "abs_zone_min_away": 5,
     "abs_grade_thresholds": {"A+": 75, "A": 55, "B": 35},
@@ -1379,12 +1381,15 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
     else:
         vol_raw = 1
 
-    # --- Volland confluence (raw: dd 0-1, paradigm 0-1, lis 0-2) ---
+    # --- Volland confluence (raw: dd 0-1, paradigm 0-1, lis 0-2, lis_side 0-2, target_dir 0-2) ---
     dd_raw = 0
     para_raw = 0
     lis_raw = 0
+    lis_side_raw = 0   # price below LIS + bullish = bonus (buying at support)
+    target_dir_raw = 0  # Volland target confirms signal direction
     lis_val = None
     lis_dist = None
+    target_val = None
     paradigm_str = ""
     dd_str = ""
 
@@ -1392,6 +1397,7 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
         paradigm_str = (volland_stats.get("paradigm") or "").upper()
         dd_str = volland_stats.get("delta_decay_hedging") or ""
         lis_raw_str = volland_stats.get("lines_in_sand") or ""
+        target_raw_str = volland_stats.get("target") or ""
 
         if direction == "bullish" and "long" in dd_str.lower():
             dd_raw = 1
@@ -1403,6 +1409,7 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
         elif direction == "bearish" and "AG" in paradigm_str:
             para_raw = 1
 
+        # LIS proximity scoring (existing)
         lis_match = re.search(r'[\d,]+\.?\d*', lis_raw_str.replace(',', ''))
         if lis_match:
             lis_val = float(lis_match.group())
@@ -1414,20 +1421,50 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
             elif lis_dist <= 15:
                 lis_raw = 1
 
+            # LIS side scoring: buying below support or selling above resistance
+            # LIS acts as support (GEX/BofA) — below LIS + bullish = strong,
+            # above LIS + bearish = strong
+            if direction == "bullish" and price_for_lis < lis_val:
+                lis_side_raw = 2  # buying at/below support
+            elif direction == "bullish" and price_for_lis <= lis_val + 5:
+                lis_side_raw = 1  # just above support
+            elif direction == "bearish" and price_for_lis > lis_val:
+                lis_side_raw = 2  # selling above support (LIS becomes resistance)
+            elif direction == "bearish" and price_for_lis >= lis_val - 5:
+                lis_side_raw = 1  # just below resistance
+
+        # Target direction scoring: Volland target confirms signal direction
+        target_match = re.search(r'[\d,]+\.?\d*', str(target_raw_str).replace('$', '').replace(',', ''))
+        if target_match and spx_spot:
+            target_val = float(target_match.group())
+            target_above = target_val > spx_spot
+            if direction == "bullish" and target_above:
+                target_dir_raw = 2  # Volland expects higher, we're buying
+            elif direction == "bullish" and not target_above:
+                target_dir_raw = 0  # Volland expects lower, we're buying (conflict)
+            elif direction == "bearish" and not target_above:
+                target_dir_raw = 2  # Volland expects lower, we're selling
+            elif direction == "bearish" and target_above:
+                target_dir_raw = 0  # Volland expects higher, we're selling (conflict)
+
     # --- Normalize to 0-100 ---
     div_score = best["score"]  # already 0-100 from _divergence_score
     vol_score = {1: 33, 2: 67, 3: 100}.get(vol_raw, 33)
     dd_score = 100 if dd_raw else 0
     para_score = 100 if para_raw else 0
     lis_score = {0: 0, 1: 50, 2: 100}.get(lis_raw, 0)
+    lis_side_score = {0: 0, 1: 50, 2: 100}.get(lis_side_raw, 0)
+    target_dir_score = {0: 0, 2: 100}.get(target_dir_raw, 0)
 
     # --- Weighted composite (for grading/logging only — NOT gating) ---
     w_div = settings.get("abs_weight_divergence", 25)
     w_vol = settings.get("abs_weight_volume", 25)
-    w_dd = settings.get("abs_weight_dd", 15)
-    w_para = settings.get("abs_weight_paradigm", 15)
-    w_lis = settings.get("abs_weight_lis", 20)
-    total_weight = w_div + w_vol + w_dd + w_para + w_lis
+    w_dd = settings.get("abs_weight_dd", 10)
+    w_para = settings.get("abs_weight_paradigm", 10)
+    w_lis = settings.get("abs_weight_lis", 10)
+    w_lis_side = settings.get("abs_weight_lis_side", 10)
+    w_target_dir = settings.get("abs_weight_target_dir", 10)
+    total_weight = w_div + w_vol + w_dd + w_para + w_lis + w_lis_side + w_target_dir
 
     if total_weight == 0:
         composite = div_score
@@ -1438,6 +1475,8 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
             + dd_score * w_dd
             + para_score * w_para
             + lis_score * w_lis
+            + lis_side_score * w_lis_side
+            + target_dir_score * w_target_dir
         ) / total_weight
 
     composite = max(0, min(100, composite))
@@ -1494,9 +1533,12 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
         "dd_raw": dd_raw,
         "para_raw": para_raw,
         "lis_raw": lis_raw,
+        "lis_side_raw": lis_side_raw,
+        "target_dir_raw": target_dir_raw,
         "dd_hedging": dd_str,
         "lis_val": lis_val,
         "lis_dist": round(lis_dist, 1) if lis_dist is not None else None,
+        "target_val": target_val,
         "ts": trigger.get("ts_end", ""),
         "lookback": f"zone-revisit" if pattern.startswith("zone_") else f"swing ({len(swings)} tracked)",
     }
@@ -1584,12 +1626,20 @@ def format_absorption_message(result):
     if result.get("para_raw"):
         parts.append(f"Paradigm: {result['paradigm']} \u2713")
     if result.get("lis_raw") and result.get("lis_val") is not None:
-        parts.append(f"Near LIS: {result['lis_val']:.0f} ({result['lis_dist']:.1f} pts) \u2713")
+        lis_side_label = ""
+        if result.get("lis_side_raw", 0) >= 2:
+            lis_side_label = " (right side \u2713)"
+        elif result.get("lis_side_raw", 0) >= 1:
+            lis_side_label = " (near right side)"
+        parts.append(f"Near LIS: {result['lis_val']:.0f} ({result['lis_dist']:.1f} pts){lis_side_label}")
+    if result.get("target_dir_raw", 0) >= 2 and result.get("target_val") is not None:
+        parts.append(f"Target: {result['target_val']:.0f} (confirms direction \u2713)")
 
     parts.append("")
     parts.append(
         f"Vol {result['upside_score']:.0f} | DD {result['floor_cluster_score']:.0f} | "
-        f"Para {result['target_cluster_score']:.0f} | LIS {result['rr_score']:.0f}"
+        f"Para {result['target_cluster_score']:.0f} | LIS {result['rr_score']:.0f} | "
+        f"Side {result.get('lis_side_raw', 0)} | Tgt {result.get('target_dir_raw', 0)}"
     )
     parts.append(f"Swings: {result.get('swing_count', 0)} tracked")
 

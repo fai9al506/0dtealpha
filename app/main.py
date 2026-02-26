@@ -12279,6 +12279,25 @@ DASH_HTML_TEMPLATE = """
           const shapes = [];
           const annots = [];
 
+          // Compute visible price range from candle data for clamping
+          const allHighs = visibleBars.map(b => b.high);
+          const allLows = visibleBars.map(b => b.low);
+          const priceMin = Math.min(...allLows);
+          const priceMax = Math.max(...allHighs);
+          const priceRange = priceMax - priceMin;
+          const yPad = Math.max(priceRange * 0.15, 5);  // 15% padding, min 5pts
+          const yLo = priceMin - yPad;
+          const yHi = priceMax + yPad;
+
+          // Helper: only draw horizontal line if it falls within visible y range
+          function addLevel(price, label, color, width, dash, side) {
+            if (price == null || price < yLo || price > yHi) return;
+            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:price, y1:price, line:{color:color,width:width,dash:dash} });
+            const anchor = side === 'right' ? 'right' : 'left';
+            const xPos = side === 'right' ? barLabels[barLabels.length-1] : barLabels[0];
+            annots.push({ x:xPos, y:price, text:label, showarrow:false, font:{color:color,size:9}, xanchor:anchor });
+          }
+
           // Mark signal bar with vertical line
           if (sigBarIdx >= winStart && sigBarIdx < winEnd) {
             const sigLabel = esBars[sigBarIdx].idx.toString();
@@ -12288,46 +12307,21 @@ DASH_HTML_TEMPLATE = """
             annots.push({ x:sigLabel, y:1, yref:'paper', text:arrow + ' ' + e.grade, showarrow:false, font:{color:'#f59e0b',size:11,weight:'bold'}, yanchor:'bottom' });
           }
 
-          // Entry price level line
-          if (lv.entry) {
-            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.entry, y1:lv.entry, line:{color:'#f59e0b',width:2,dash:'solid'} });
-            annots.push({ x:barLabels[0], y:lv.entry, text:'Entry ' + lv.entry?.toFixed(2), showarrow:false, font:{color:'#f59e0b',size:10}, xanchor:'left' });
-          }
-          // 10pt target line
-          if (lv.ten_pt) {
-            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.ten_pt, y1:lv.ten_pt, line:{color:'#22c55e',width:1,dash:'dash'} });
-            annots.push({ x:barLabels[barLabels.length-1], y:lv.ten_pt, text:'10pt', showarrow:false, font:{color:'#22c55e',size:9}, xanchor:'right' });
-          }
-          // Volland target (ES converted)
-          if (lv.target_es && lv.target_es !== lv.ten_pt) {
-            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.target_es, y1:lv.target_es, line:{color:'#10b981',width:1,dash:'dot'} });
-            annots.push({ x:barLabels[barLabels.length-1], y:lv.target_es, text:'Tgt', showarrow:false, font:{color:'#10b981',size:9}, xanchor:'right' });
-          }
-          // Stop line
-          if (lv.stop) {
-            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.stop, y1:lv.stop, line:{color:'#ef4444',width:2,dash:'dash'} });
-            annots.push({ x:barLabels[barLabels.length-1], y:lv.stop, text:'Stop', showarrow:false, font:{color:'#ef4444',size:9}, xanchor:'right' });
-          }
-          // LIS, +GEX, -GEX — already converted to ES price space by backend
-          if (lv.lis) {
-            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.lis, y1:lv.lis, line:{color:'#f97316',width:1,dash:'dot'} });
-            annots.push({ x:barLabels[0], y:lv.lis, text:'LIS ' + lv.lis.toFixed(0), showarrow:false, font:{color:'#f97316',size:9}, xanchor:'left' });
-          }
-          if (lv.max_plus_gex) {
-            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.max_plus_gex, y1:lv.max_plus_gex, line:{color:'#22c55e',width:1,dash:'dot'} });
-            annots.push({ x:barLabels[0], y:lv.max_plus_gex, text:'+G ' + lv.max_plus_gex.toFixed(0), showarrow:false, font:{color:'#22c55e',size:9}, xanchor:'left' });
-          }
-          if (lv.max_minus_gex) {
-            shapes.push({ type:'line', x0:barLabels[0], x1:barLabels[barLabels.length-1], y0:lv.max_minus_gex, y1:lv.max_minus_gex, line:{color:'#ef4444',width:1,dash:'dot'} });
-            annots.push({ x:barLabels[0], y:lv.max_minus_gex, text:'-G ' + lv.max_minus_gex.toFixed(0), showarrow:false, font:{color:'#ef4444',size:9}, xanchor:'left' });
-          }
+          // Draw level lines — entry/10pt/stop always expand range, others clamped
+          addLevel(lv.entry, 'Entry ' + lv.entry?.toFixed(2), '#f59e0b', 2, 'solid', 'left');
+          addLevel(lv.ten_pt, '10pt', '#22c55e', 1, 'dash', 'right');
+          if (lv.target_es && lv.target_es !== lv.ten_pt) addLevel(lv.target_es, 'Tgt', '#10b981', 1, 'dot', 'right');
+          addLevel(lv.stop, 'Stop', '#ef4444', 2, 'dash', 'right');
+          addLevel(lv.lis, 'LIS ' + (lv.lis?.toFixed(0) || ''), '#f97316', 1, 'dot', 'left');
+          addLevel(lv.max_plus_gex, '+G ' + (lv.max_plus_gex?.toFixed(0) || ''), '#22c55e', 1, 'dot', 'left');
+          addLevel(lv.max_minus_gex, '-G ' + (lv.max_minus_gex?.toFixed(0) || ''), '#ef4444', 1, 'dot', 'left');
 
           Plotly.react(chart, [priceTrace, cvdTrace], {
             margin: { l:50, r:50, t:20, b:40 },
             paper_bgcolor: '#0f1115',
             plot_bgcolor: '#0a0c0f',
             xaxis: { type:'category', gridcolor:'#1a1d21', tickfont:{size:9,color:'#888'}, tickangle:0, nticks:10, title:{text:'Bar #',font:{size:9,color:'#666'}} },
-            yaxis: { gridcolor:'#1a1d21', tickfont:{size:10,color:'#888'}, side:'left', title:{text:'ES Price',font:{size:9,color:'#666'}} },
+            yaxis: { range:[yLo, yHi], gridcolor:'#1a1d21', tickfont:{size:10,color:'#888'}, side:'left', title:{text:'ES Price',font:{size:9,color:'#666'}} },
             yaxis2: { overlaying:'y', side:'right', gridcolor:'transparent', tickfont:{size:9,color:'#60a5fa'}, title:{text:'CVD',font:{size:9,color:'#60a5fa'}}, showgrid:false },
             font: { color:'#e6e7e9' },
             shapes: shapes,

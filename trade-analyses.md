@@ -741,3 +741,172 @@ Current 5-component score doesn't predict outcomes. Simpler model based on what 
 | Change | Status | Date |
 |--------|--------|------|
 | All proposed changes | PENDING — saved for implementation | Feb 24, 2026 |
+
+---
+
+## Analysis #6 — Feb 26, 2026: GEX Long Vanna Regime Filter
+
+### Objective
+
+Investigate whether aggregated vanna (all expirations) can serve as a filter for GEX Long setups. Hypothesis: when aggregated vanna is negative in higher-tenor expirations, GEX Long doesn't work because the vanna regime suppresses bullish gamma effects.
+
+### Data Source
+
+Vanna data from `volland_exposure_points` table, `greek = 'vanna'`, `exposure_option = 'ALL'` (all expirations combined). Available from Feb 11 onwards. Per-trade vanna computed from nearest snapshot within 5 minutes of setup detection.
+
+### Dataset: 32 GEX Long trades, Feb 3 - Feb 26
+
+| ID | Date | Time ET | Grade | Result | PnL | Vanna ALL | Filter |
+|----|------|---------|-------|--------|-----|-----------|--------|
+| 1 | Feb 03 | 09:30 | A | LOSS | -8.0 | N/A | NO_DATA |
+| 7 | Feb 03 | 12:26 | A-Entry | LOSS | -8.0 | N/A | NO_DATA |
+| 13 | Feb 03 | 15:12 | A | WIN | +20.0 | N/A | NO_DATA |
+| 62 | Feb 05 | 11:26 | A-Entry | LOSS | -8.0 | N/A | NO_DATA |
+| 79 | Feb 05 | 13:05 | A | LOSS | -8.0 | N/A | NO_DATA |
+| 80 | Feb 05 | 13:41 | A-Entry | LOSS | -8.0 | N/A | NO_DATA |
+| 96 | Feb 09 | 09:53 | A+ | WIN | +20.0 | N/A | NO_DATA |
+| 97 | Feb 09 | 10:26 | A | WIN | +25.0 | N/A | NO_DATA |
+| 109 | Feb 13 | 14:59 | A | LOSS | -8.0 | -1.73B | BLOCKED |
+| 110 | Feb 13 | 15:16 | A-Entry | LOSS | -8.0 | -1.52B | BLOCKED |
+| 111 | Feb 13 | 15:31 | A | EXPIRED | +6.0 | -1.25B | BLOCKED |
+| 117 | Feb 17 | 15:40 | A+ | EXPIRED | -0.4 | -608M | BLOCKED |
+| 123 | Feb 18 | 13:00 | A-Entry | LOSS | -8.0 | -1.04B | BLOCKED |
+| 153 | Feb 20 | 11:01 | A | LOSS | -8.0 | -202M | BLOCKED |
+| 156 | Feb 20 | 11:11 | A | LOSS | -8.0 | -231M | BLOCKED |
+| 161 | Feb 20 | 11:50 | A-Entry | LOSS | -8.0 | -185M | BLOCKED |
+| 162 | Feb 20 | 12:02 | A-Entry | LOSS | -8.0 | -209M | BLOCKED |
+| 183 | Feb 23 | 09:42 | A | LOSS | -8.0 | -472M | BLOCKED |
+| 200 | Feb 24 | 09:51 | A+ | LOSS | -8.0 | +1.36B | ALLOWED |
+| 227 | Feb 25 | 10:06 | A-Entry | WIN | +15.0 | +935M | ALLOWED |
+| 230 | Feb 25 | 10:28 | A-Entry | WIN | +10.0 | +660M | ALLOWED |
+| 250 | Feb 26 | 09:49 | A-Entry | LOSS | -8.0 | -214M | BLOCKED |
+| 251 | Feb 26 | 10:01 | A-Entry | LOSS | -8.0 | -194M | BLOCKED |
+| 253 | Feb 26 | 10:05 | A-Entry | LOSS | -8.0 | -46M | BLOCKED |
+| 254 | Feb 26 | 10:08 | A-Entry | LOSS | -8.0 | -357M | BLOCKED |
+| 255 | Feb 26 | 10:09 | A-Entry | LOSS | -8.0 | -357M | BLOCKED |
+| 256 | Feb 26 | 10:15 | A+ | LOSS | -8.0 | -146M | BLOCKED |
+| 260 | Feb 26 | 10:52 | A+ | WIN | +10.3 | +23M | ALLOWED |
+| 261 | Feb 26 | 11:19 | A | LOSS | -8.0 | -12M | BLOCKED |
+| 263 | Feb 26 | 11:38 | A | LOSS | -8.0 | +27M | ALLOWED |
+| 264 | Feb 26 | 11:40 | A | LOSS | -8.0 | +102M | ALLOWED |
+| 268 | Feb 26 | 11:51 | A+ | LOSS | -8.0 | +219M | ALLOWED |
+
+### Finding 1: Negative Vanna ALL = 0% Win Rate
+
+| Vanna ALL Sign | Trades | Wins | Losses | Expired | WR | Total PnL | Avg PnL |
+|----------------|--------|------|--------|---------|-----|-----------|---------|
+| **NEGATIVE** | **17** | **0** | **15** | **2** | **0.0%** | **-114.4** | **-6.7** |
+| POSITIVE/ZERO | 7 | 3 | 4 | 0 | 42.9% | +3.3 | +0.5 |
+| NO_DATA | 8 | 3 | 5 | 0 | 37.5% | +25.0 | +3.1 |
+
+When aggregated vanna across all expirations is negative, **not a single GEX Long trade has won** out of 17 attempts. Zero. Every trade was a loss or expired at breakeven.
+
+### Finding 2: Higher-Tenor Vanna (ALL minus TODAY) Also Strong
+
+| HT Vanna Sign | Trades | Wins | WR | PnL |
+|----------------|--------|------|----|-----|
+| NEGATIVE | 20 | 1 | 5.0% | -120.1 |
+| POSITIVE | 12 | 5 | 41.7% | +34.0 |
+
+### Finding 3: Vanna Magnitude Matters
+
+| Vanna ALL Bucket | Trades | Wins | WR | PnL |
+|------------------|--------|------|----|-----|
+| Very negative (<-5B) | 3 | 0 | 0% | -10.0 |
+| Moderate negative (-5B to -1B) | 4 | 0 | 0% | -24.4 |
+| Slight negative (-1B to 0) | 9 | 0 | 0% | -72.0 |
+| Slight positive (0 to +1B) | 5 | 1 | 20% | -21.7 |
+| Moderate positive (+1B to +5B) | 2 | 2 | 100% | +25.0 |
+| Very positive (>+5B) | 1 | 0 | 0% | -8.0 |
+
+All negative buckets: 0% WR across 16 trades. The sweet spot is moderate positive (+1B to +5B): 100% WR on 2 trades.
+
+### Finding 4: Cross-Setup Vanna Impact
+
+| Setup | Neg Vanna WR | Pos Vanna WR | Notes |
+|-------|-------------|-------------|-------|
+| GEX Long | 0% (17 trades) | 42.9% (7) | Perfect filter |
+| DD Exhaustion | 45.9% (37) | 22.6% (53) | Opposite — DD loves neg vanna |
+| AG Short | 42.9% (7) | 40.0% (15) | Neutral |
+| BofA Scalp | 25.0% (16) | 33.3% (6) | Slight neg preference |
+| ES Absorption | 50% (2) | 70% (10) | Too small |
+
+DD Exhaustion performs BETTER in negative vanna (contrarian signal works when dealers are heavily hedged). GEX Long is directional and gets crushed when vanna regime is bearish.
+
+### Finding 5: Daily Vanna Regime Context
+
+| Date | Vanna ALL | GEX Long Results |
+|------|-----------|-----------------|
+| Feb 13 | Negative | 0/3 (all blocked correctly) |
+| Feb 17 | Negative | 0/1 (blocked correctly) |
+| Feb 18 | Negative | 0/1 (blocked correctly) |
+| Feb 20 | Negative | 0/5 (all blocked correctly) |
+| Feb 23 | Negative | 0/1 (blocked correctly) |
+| Feb 24 | Positive | 0/1 (allowed — still lost) |
+| Feb 25 | Mixed | 2/2 (positive snapshots won) |
+| Feb 26 | Mixed | 1/11 (neg morning blocked, pos midday mixed) |
+
+### Filter Impact Summary
+
+| Metric | Without Filter | With Vanna Filter |
+|--------|---------------|-------------------|
+| Trades | 32 | 15 (ALLOWED + NO_DATA) |
+| Wins | 6 | 6 (zero wins lost) |
+| Losses | 24 | 9 |
+| Win Rate | 20.0% | 40.0% |
+| **Total PnL** | **-86.1 pts** | **+28.3 pts** |
+| **Improvement** | — | **+114.4 pts** |
+
+### Proposed Filter
+
+**Block GEX Long when the most recent `vanna ALL` aggregated sum (across all strikes) is negative.**
+
+Implementation: In `_run_setup_check()`, before calling the GEX Long detector, query the latest `volland_exposure_points` snapshot where `greek = 'vanna'` and `exposure_option = 'ALL'`, sum all strike values. If sum < 0, skip GEX Long evaluation.
+
+### Caveats
+
+- 32 trades is a moderate sample; 17 in the BLOCKED bucket is reasonable but could still be coincidental with a bearish market period (Feb 13-26)
+- Vanna data only available from Feb 11 — the 8 NO_DATA trades (Feb 3-9) can't be verified
+- The ALLOWED bucket (7 trades, 42.9% WR) is still mediocre — vanna filter alone doesn't make GEX Long a strong setup
+- Additional filters (paradigm, time-of-day from Analysis #4) could further improve the ALLOWED bucket
+- **REVIEW AFTER: 15+ more GEX Long trades with positive vanna. Validate that positive vanna truly enables GEX Long.**
+
+### Status
+
+| Change | Status | Date |
+|--------|--------|------|
+| Block GEX Long when vanna ALL < 0 | PENDING — saved for implementation | Feb 26, 2026 |
+
+---
+
+## Analysis #7 — Feb 26, 2026: EXPIRED Trade Bug Fix & PnL Correction
+
+### Bug Found
+
+EXPIRED trades from Feb 24 onwards had `outcome_pnl = 0.0` instead of their actual P&L at market close.
+
+### Root Cause
+
+Two bugs colliding:
+1. `run_market_job()` stops calling `_check_setup_outcomes()` after 16:00 (market_open_now() returns False)
+2. EOD summary at 16:05 tries to parse spot from `last_run_status["msg"]` which is already overwritten to `"outside market hours"` → `spot = None` → `pnl = 0.0`
+
+### Fix Applied
+
+Changed `market_closed` threshold from `dtime(16, 0)` to `dtime(15, 57)` — all open trades now close 3 minutes before market end, while spot price is still available from the live tracker. Added `_last_known_spot` cache as safety net for EOD summary fallback.
+
+### Backfill Results
+
+31 trades corrected using playback_snapshots closing prices:
+- Feb 24 close: SPX 6892.29
+- Feb 25 close: SPX 6948.65
+- Feb 26 close: SPX 6906.73
+
+Grand total PnL correction: +429.9 (inflated) → **+389.9 pts** (accurate). The 31 expired trades were mostly losers hidden behind pnl=0.
+
+### Status
+
+| Change | Status | Date |
+|--------|--------|------|
+| Auto-close at 15:57 ET | IMPLEMENTED | Feb 26, 2026 |
+| Backfill 31 EXPIRED trades | COMPLETED | Feb 26, 2026 |

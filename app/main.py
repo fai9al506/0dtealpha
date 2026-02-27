@@ -3682,7 +3682,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
     # Always track outcome for results validation (regardless of cooldown)
     # Uses reason="new" from gate, or "cooldown" — either way we track
     target_lvl, stop_lvl = _compute_setup_levels(result)
-    if target_lvl is not None and stop_lvl is not None:
+    if stop_lvl is not None:  # target_lvl=None is OK (trail mode)
         es_entry = result.get("abs_es_price", result["spot"])
         _setup_open_trades.append({
             "setup_name": "ES Absorption", "direction": result["direction"],
@@ -4624,6 +4624,15 @@ def api_auto_trade_test():
     try:
         from app import auto_trader
         return auto_trader.test_order()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api/auto-trade/flatten-now")
+def api_auto_trade_flatten_now():
+    """Emergency flatten: close ALL SIM positions + cancel open orders via TS API."""
+    try:
+        from app import auto_trader
+        return auto_trader.flatten_account_positions()
     except Exception as e:
         return {"error": str(e)}
 
@@ -7147,7 +7156,36 @@ def api_setup_log_with_outcomes(limit: int = Query(50)):
                 }
             else:
                 # Only compute in real-time for OPEN/unresolved trades
-                entry["outcome"] = _calculate_setup_outcome(dict(r))
+                outcome = _calculate_setup_outcome(dict(r))
+                # For ES Absorption: derive overall result from T1/T2 split-target
+                if outcome.get("is_absorption") and (outcome.get("t1_result") or outcome.get("trail_exit_pnl") is not None):
+                    t1r = outcome.get("t1_result", "PENDING")
+                    t2r = outcome.get("t2_result", "PENDING")
+                    t2_pnl = outcome.get("trail_exit_pnl")
+                    if t1r == "WIN":
+                        # T1 hit: overall WIN. P&L = average of T1 (+10) and T2 exit
+                        if t2_pnl is not None:
+                            overall_pnl = round((10.0 + t2_pnl) / 2, 1)
+                        else:
+                            overall_pnl = 10.0  # T2 still trailing, use T1 only
+                        outcome["result"] = "WIN"
+                        outcome["pnl"] = overall_pnl
+                        outcome["hit_target"] = True
+                        outcome["hit_stop"] = False
+                    elif t2_pnl is not None and t2_pnl > 0:
+                        # No T1 but trail exited positive
+                        outcome["result"] = "WIN"
+                        outcome["pnl"] = round(t2_pnl, 1)
+                        outcome["hit_target"] = True
+                        outcome["hit_stop"] = False
+                    elif outcome.get("hit_stop") and outcome.get("first_event") == "stop":
+                        # Stopped out before T1
+                        outcome["result"] = "LOSS"
+                        outcome["pnl"] = round(outcome.get("trail_exit_pnl") or outcome.get("max_loss", 0), 1)
+                        outcome["hit_target"] = False
+                    else:
+                        outcome["result"] = None  # still open
+                entry["outcome"] = outcome
             results.append(entry)
 
         return results

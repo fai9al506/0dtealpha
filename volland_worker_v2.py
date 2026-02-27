@@ -64,6 +64,20 @@ def market_open_now() -> bool:
         return False
     return dtime(9, 20) <= t.time() <= dtime(16, 10)
 
+def is_premarket_warmup() -> bool:
+    """Pre-market warmup window: 9:10-9:20 ET, Mon-Fri. Browser launched & session verified here."""
+    t = datetime.now(NY)
+    if t.weekday() >= 5:
+        return False
+    return dtime(9, 10) <= t.time() < dtime(9, 20)
+
+def is_early_market() -> bool:
+    """First 20 minutes after market open: 9:20-9:40 ET. Use faster recovery here."""
+    t = datetime.now(NY)
+    if t.weekday() >= 5:
+        return False
+    return dtime(9, 20) <= t.time() <= dtime(9, 40)
+
 def is_market_hours() -> bool:
     """Actual market hours: 9:30-16:00 ET, Mon-Fri only. Used for alert logic."""
     t = datetime.now(NY)
@@ -511,8 +525,10 @@ def run():
                     return lm
             return ""
 
+        _premarket_ready = False  # True once pre-market warmup verified session
+
         while True:
-            if not market_open_now():
+            if not market_open_now() and not is_premarket_warmup():
                 if _was_in_market:
                     # Market closed — tear down browser, sleep until next session
                     print("[volland-v2] Market closed. Closing browser for fresh start next session.", flush=True)
@@ -523,12 +539,115 @@ def run():
                     browser = None
                     page = None
                     _was_in_market = False
+                    _premarket_ready = False
                     consecutive_zero_pts = 0
                     zero_pts_alerted = False
                 # Pre-market: just wait
                 last_known_modified = ""
                 time.sleep(30)
                 continue
+
+            # ── PRE-MARKET WARMUP (9:10-9:20 ET) ─────────────────────
+            # Launch browser and verify session is alive BEFORE market
+            # open. Send Telegram immediately if session is dead.
+            if is_premarket_warmup() and not _premarket_ready:
+                print("[volland-v2] Pre-market warmup: verifying session...", flush=True)
+                # Ensure browser is running
+                if browser is None:
+                    try:
+                        print("[volland-v2] Launching browser for pre-market check...", flush=True)
+                        browser = p.chromium.launch(
+                            headless=True,
+                            args=["--no-sandbox", "--disable-dev-shm-usage"],
+                        )
+                        context = browser.new_context(
+                            viewport={"width": 1400, "height": 900},
+                            service_workers="block",
+                        )
+                        page = context.new_page()
+                        page.set_default_timeout(90000)
+                        setup_handlers(page)
+                    except Exception as e:
+                        print(f"[volland-v2] Pre-market browser launch failed: {e}", flush=True)
+                        send_telegram(
+                            "🚨 <b>Volland Pre-Market FAIL</b>\n\n"
+                            f"Browser launch failed at {datetime.now(NY).strftime('%H:%M ET')}.\n"
+                            f"Error: <code>{str(e)[:200]}</code>\n\n"
+                            "⚠️ Volland data will NOT be available at market open!"
+                        )
+                        browser = None
+                        page = None
+                        time.sleep(30)
+                        continue
+
+                # Navigate to workspace and check if session is alive
+                try:
+                    page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=60000)
+                    page.wait_for_timeout(3000)
+
+                    if "/sign-in" in page.url:
+                        print("[volland-v2] Pre-market: session expired, logging in...", flush=True)
+                        login_if_needed(page, WORKSPACE_URL)
+                        page.wait_for_timeout(2000)
+
+                        if "/sign-in" in page.url:
+                            # Login failed
+                            print("[volland-v2] Pre-market: LOGIN FAILED!", flush=True)
+                            send_telegram(
+                                "🚨 <b>Volland Pre-Market LOGIN FAILED</b>\n\n"
+                                f"Time: {datetime.now(NY).strftime('%H:%M ET')}\n"
+                                "Session expired and re-login failed.\n\n"
+                                "⚠️ Volland data will NOT be available at market open!\n"
+                                "Manual intervention needed."
+                            )
+                            # Try browser restart
+                            try:
+                                browser.close()
+                            except Exception:
+                                pass
+                            browser = None
+                            page = None
+                            time.sleep(30)
+                            continue
+                        else:
+                            print("[volland-v2] Pre-market: re-login successful!", flush=True)
+                            send_telegram(
+                                "✅ <b>Volland Pre-Market OK</b>\n\n"
+                                f"Session was expired, re-login successful at {datetime.now(NY).strftime('%H:%M ET')}.\n"
+                                "Ready for market open."
+                            )
+                            _premarket_ready = True
+                    else:
+                        print("[volland-v2] Pre-market: session is alive!", flush=True)
+                        _premarket_ready = True
+
+                except Exception as e:
+                    print(f"[volland-v2] Pre-market check error: {e}", flush=True)
+                    send_telegram(
+                        "🚨 <b>Volland Pre-Market ERROR</b>\n\n"
+                        f"Time: {datetime.now(NY).strftime('%H:%M ET')}\n"
+                        f"Error: <code>{str(e)[:200]}</code>\n\n"
+                        "⚠️ Volland may not be ready for market open!"
+                    )
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
+                    browser = None
+                    page = None
+                    time.sleep(30)
+                    continue
+
+                # Pre-market warmup done, wait for market_open_now()
+                if not market_open_now():
+                    time.sleep(15)
+                    continue
+
+            # Still in pre-market warmup window but already ready — just wait
+            if is_premarket_warmup() and _premarket_ready and not market_open_now():
+                time.sleep(15)
+                continue
+
             _was_in_market = True
 
             # Ensure browser is running (fresh launch after overnight)
@@ -651,23 +770,27 @@ def run():
                 # Track 0-point cycles during operating window (9:20+, not just 9:30+)
                 if _total_pts == 0 and market_open_now():
                     consecutive_zero_pts += 1
+                    # Faster recovery during early market (9:20-9:40): 2 cycles instead of 5
+                    _restart_threshold = 2 if is_early_market() else AUTO_RESTART_THRESHOLD
+                    _alert_threshold = 1 if is_early_market() else ZERO_POINTS_THRESHOLD
                     detail = f"exposures={len(exposures)}"
                     if _zero_exps:
                         detail += f" zero=[{', '.join(_zero_exps)}]"
-                    print(f"[volland-v2] WARNING: 0 total pts ({consecutive_zero_pts}/{ZERO_POINTS_THRESHOLD}): {detail}", flush=True)
-                    if consecutive_zero_pts >= ZERO_POINTS_THRESHOLD and not zero_pts_alerted:
+                    print(f"[volland-v2] WARNING: 0 total pts ({consecutive_zero_pts}/{_alert_threshold}): {detail}", flush=True)
+                    if consecutive_zero_pts >= _alert_threshold and not zero_pts_alerted:
                         zero_pts_alerted = True
                         diag = _get_page_diagnostic()
                         send_telegram(
                             "⚠️ <b>Volland 0-Point Exposures</b>\n\n"
                             f"{consecutive_zero_pts} consecutive cycles with 0 points.\n"
-                            f"Exposures captured: {len(exposures)}\n\n"
+                            f"Exposures captured: {len(exposures)}\n"
+                            f"{'⏰ Early market — fast recovery active' if is_early_market() else ''}\n\n"
                             f"<b>Diagnostic:</b>\n<code>{diag}</code>\n\n"
                             "Auto-restart will trigger after "
-                            f"{AUTO_RESTART_THRESHOLD} cycles."
+                            f"{_restart_threshold} cycles."
                         )
                     # Browser recreate: close and relaunch for fresh context
-                    if consecutive_zero_pts >= AUTO_RESTART_THRESHOLD:
+                    if consecutive_zero_pts >= _restart_threshold:
                         diag = _get_page_diagnostic()
                         print(
                             f"[volland-v2] BROWSER RECREATE: {consecutive_zero_pts} "
@@ -694,6 +817,13 @@ def run():
                 elif _total_pts > 0:
                     if consecutive_zero_pts > 0:
                         print(f"[volland-v2] recovered after {consecutive_zero_pts} zero-point cycles", flush=True)
+                        if zero_pts_alerted:
+                            send_telegram(
+                                "✅ <b>Volland Recovered</b>\n\n"
+                                f"Data flowing again after {consecutive_zero_pts} zero-point cycles.\n"
+                                f"Points: {_total_pts} | Exposures: {len(exposures)}\n"
+                                f"Paradigm: {_stats.get('paradigm', 'N/A')}"
+                            )
                     consecutive_zero_pts = 0
                     zero_pts_alerted = False
 
@@ -714,9 +844,10 @@ def run():
                 # Session expired — full browser restart (fresh context + cookies)
                 if "session_expired_restart" in str(e):
                     print("[volland-v2] Tearing down browser for fresh restart...", flush=True)
-                    if market_open_now():
+                    if market_open_now() or is_premarket_warmup():
                         send_telegram(
                             "🔑 <b>Volland Session Expired</b>\n\n"
+                            f"Time: {datetime.now(NY).strftime('%H:%M ET')}\n"
                             "Restarting browser with fresh context."
                         )
                     try:
@@ -744,9 +875,10 @@ def run():
                         last_known_modified = ""
                         consecutive_zero_pts = 0
                         zero_pts_alerted = False
-                        if market_open_now():
+                        if market_open_now() or is_premarket_warmup():
                             send_telegram(
                                 "🔑 <b>Volland Session Expired</b>\n\n"
+                                f"Time: {datetime.now(NY).strftime('%H:%M ET')}\n"
                                 f"Error: <code>{str(e)[:200]}</code>\n"
                                 "Restarting browser with fresh context."
                             )

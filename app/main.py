@@ -7158,9 +7158,9 @@ def api_setup_log_with_outcomes(limit: int = Query(50)):
                 # Only compute in real-time for OPEN/unresolved trades
                 outcome = _calculate_setup_outcome(dict(r))
                 # For ES Absorption: derive overall result from T1/T2 split-target
+                # and promote to top-level fields so dashboard JS can display them
                 if outcome.get("is_absorption") and (outcome.get("t1_result") or outcome.get("trail_exit_pnl") is not None):
                     t1r = outcome.get("t1_result", "PENDING")
-                    t2r = outcome.get("t2_result", "PENDING")
                     t2_pnl = outcome.get("trail_exit_pnl")
                     if t1r == "WIN":
                         # T1 hit: overall WIN. P&L = average of T1 (+10) and T2 exit
@@ -7168,23 +7168,33 @@ def api_setup_log_with_outcomes(limit: int = Query(50)):
                             overall_pnl = round((10.0 + t2_pnl) / 2, 1)
                         else:
                             overall_pnl = 10.0  # T2 still trailing, use T1 only
-                        outcome["result"] = "WIN"
-                        outcome["pnl"] = overall_pnl
+                        entry["outcome_result"] = "WIN"
+                        entry["outcome_pnl"] = overall_pnl
                         outcome["hit_target"] = True
                         outcome["hit_stop"] = False
                     elif t2_pnl is not None and t2_pnl > 0:
                         # No T1 but trail exited positive
-                        outcome["result"] = "WIN"
-                        outcome["pnl"] = round(t2_pnl, 1)
+                        entry["outcome_result"] = "WIN"
+                        entry["outcome_pnl"] = round(t2_pnl, 1)
                         outcome["hit_target"] = True
                         outcome["hit_stop"] = False
                     elif outcome.get("hit_stop") and outcome.get("first_event") == "stop":
                         # Stopped out before T1
-                        outcome["result"] = "LOSS"
-                        outcome["pnl"] = round(outcome.get("trail_exit_pnl") or outcome.get("max_loss", 0), 1)
+                        entry["outcome_result"] = "LOSS"
+                        entry["outcome_pnl"] = round(t2_pnl if t2_pnl is not None else outcome.get("max_loss", 0), 1)
                         outcome["hit_target"] = False
-                    else:
-                        outcome["result"] = None  # still open
+                    # Promote max profit/loss + compute elapsed
+                    entry["outcome_max_profit"] = outcome.get("max_profit")
+                    entry["outcome_max_loss"] = outcome.get("max_loss")
+                    # Elapsed: signal ts to trail exit ts (or last bar)
+                    _trail_exit_ts = outcome.get("trail_exit_ts")
+                    if _trail_exit_ts and entry.get("ts"):
+                        try:
+                            _sig_ts = datetime.fromisoformat(entry["ts"]) if isinstance(entry["ts"], str) else entry["ts"]
+                            _exit_ts = datetime.fromisoformat(_trail_exit_ts) if isinstance(_trail_exit_ts, str) else _trail_exit_ts
+                            entry["outcome_elapsed_min"] = int((_exit_ts - _sig_ts).total_seconds() / 60)
+                        except Exception:
+                            pass
                 entry["outcome"] = outcome
             results.append(entry)
 

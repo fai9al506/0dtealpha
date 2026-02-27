@@ -1343,6 +1343,15 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
     # this bar's CVD as the "previous visit" for this zone)
     _finalize_zone_tracker(trigger)
 
+    # --- Pattern priority tiers (from Volland order flow principles) ---
+    # Exhaustion = tier 2 (higher priority) — dominant move losing steam
+    # Absorption = tier 1 — ambiguous when competing with exhaustion
+    _PATTERN_TIER = {
+        "sell_exhaustion": 2, "buy_exhaustion": 2,
+        "sell_absorption": 1, "buy_absorption": 1,
+        "zone_sell_absorption": 1, "zone_buy_absorption": 1,
+    }
+
     # Evaluate each direction independently (per-direction gate, not shared)
     best_bull = max(bullish_divs, key=lambda d: d["score"]) if bullish_divs else None
     best_bear = max(bearish_divs, key=lambda d: d["score"]) if bearish_divs else None
@@ -1356,11 +1365,30 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
     if not best_bull and not best_bear:
         return None
 
+    # Direction resolution: tier priority beats score
+    rejected_divergence = None
+    resolution_reason = "single_direction"
+
     if best_bull and best_bear:
-        if best_bull["score"] >= best_bear["score"]:
+        bull_tier = _PATTERN_TIER.get(best_bull.get("pattern", ""), 1)
+        bear_tier = _PATTERN_TIER.get(best_bear.get("pattern", ""), 1)
+        if bull_tier > bear_tier:
             direction, best, all_divs = "bullish", best_bull, bullish_divs
-        else:
+            rejected_divergence = {"direction": "bearish", "pattern": best_bear.get("pattern"), "score": best_bear["score"], "tier": bear_tier}
+            resolution_reason = "tier_priority"
+        elif bear_tier > bull_tier:
             direction, best, all_divs = "bearish", best_bear, bearish_divs
+            rejected_divergence = {"direction": "bullish", "pattern": best_bull.get("pattern"), "score": best_bull["score"], "tier": bull_tier}
+            resolution_reason = "tier_priority"
+        else:
+            # Same tier — use score as tiebreaker
+            if best_bull["score"] >= best_bear["score"]:
+                direction, best, all_divs = "bullish", best_bull, bullish_divs
+                rejected_divergence = {"direction": "bearish", "pattern": best_bear.get("pattern"), "score": best_bear["score"], "tier": bear_tier}
+            else:
+                direction, best, all_divs = "bearish", best_bear, bearish_divs
+                rejected_divergence = {"direction": "bullish", "pattern": best_bull.get("pattern"), "score": best_bull["score"], "tier": bull_tier}
+            resolution_reason = "score_tiebreak"
     elif best_bull:
         direction, best, all_divs = "bullish", best_bull, bullish_divs
     else:
@@ -1543,6 +1571,16 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
         "target_val": target_val,
         "ts": trigger.get("ts_end", ""),
         "lookback": f"zone-revisit" if pattern.startswith("zone_") else f"swing ({len(swings)} tracked)",
+        # Tier-based resolution details
+        "pattern_tier": _PATTERN_TIER.get(pattern, 1),
+        "resolution_reason": resolution_reason,
+        "rejected_divergence": rejected_divergence,
+        "all_bull_divs": [{"pattern": d["pattern"], "score": d["score"], "cvd_z": d["cvd_z"],
+                           "swing_type": d.get("swing", {}).get("type"), "swing_price": d.get("swing", {}).get("price")}
+                          for d in bullish_divs],
+        "all_bear_divs": [{"pattern": d["pattern"], "score": d["score"], "cvd_z": d["cvd_z"],
+                           "swing_type": d.get("swing", {}).get("type"), "swing_price": d.get("swing", {}).get("price")}
+                          for d in bearish_divs],
     }
 
 

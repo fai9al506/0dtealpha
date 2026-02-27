@@ -493,6 +493,12 @@ def db_init():
         EXCEPTION WHEN duplicate_column THEN NULL;
         END $$;
         """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_log ADD COLUMN abs_details JSONB;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
 
         # Outcome tracking columns on setup_log
         for col, ctype in [
@@ -1351,7 +1357,8 @@ def log_setup(result_wrapper):
                 insert_params.setdefault("abs_es_price", r.get("abs_es_price"))
                 insert_params["vix"] = _vix_last
                 insert_params.setdefault("comments", None)
-                # Auto-populate comments with trigger criteria for ES Absorption
+                insert_params.setdefault("abs_details", None)
+                # Auto-populate comments and abs_details for ES Absorption
                 if setup_name == "ES Absorption" and not insert_params.get("comments"):
                     _pattern_labels = {
                         "sell_exhaustion": "Sell Exhaustion", "sell_absorption": "Sell Absorption",
@@ -1359,7 +1366,11 @@ def log_setup(result_wrapper):
                         "zone_sell_absorption": "Zone Sell Absorption", "zone_buy_absorption": "Zone Buy Absorption",
                     }
                     _pat = r.get("pattern", "unknown")
-                    _parts = [f"Pattern: {_pattern_labels.get(_pat, _pat)}"]
+                    _tier = r.get("pattern_tier", 1)
+                    _res_reason = r.get("resolution_reason", "single_direction")
+                    _n_bull = len(r.get("all_bull_divs", []))
+                    _n_bear = len(r.get("all_bear_divs", []))
+                    _parts = [f"Pattern: {_pattern_labels.get(_pat, _pat)} (T{_tier})"]
                     _best = r.get("best_swing")
                     if _best:
                         _sw = _best.get("swing", {})
@@ -1371,13 +1382,36 @@ def log_setup(result_wrapper):
                         elif _ref:
                             _parts.append(f"Swings: {_ref.get('type', '?')}@{_ref.get('price', 0):.2f} → {_sw.get('type', '?')}@{_sw.get('price', 0):.2f}")
                             _parts.append(f"CVD z: {_best.get('cvd_z', 0):.2f} | Price: {_best.get('price_atr', 0):.1f}x ATR")
-                    _n_divs = len(r.get("all_divergences", []))
-                    if _n_divs > 1:
-                        _parts.append(f"{_n_divs} confirming pairs")
+                    # Rejected divergence info
+                    _rej = r.get("rejected_divergence")
+                    if _rej:
+                        _rej_pat = _pattern_labels.get(_rej.get("pattern", ""), _rej.get("pattern", "?"))
+                        _parts.append(f"Rejected: {_rej_pat} (T{_rej.get('tier', '?')}, score={_rej.get('score', 0):.1f})")
+                    _parts.append(f"Resolution: {_res_reason} | {_n_bull} bull / {_n_bear} bear divs")
                     if r.get("dd_hedging"):
                         _parts.append(f"DD: {r['dd_hedging']}")
                     _parts.append(f"Lookback: {r.get('lookback', '?')}")
                     insert_params["comments"] = " | ".join(_parts)
+                    # Build abs_details JSONB for machine-readable logging
+                    insert_params["abs_details"] = json.dumps({
+                        "pattern": _pat, "pattern_tier": _tier,
+                        "resolution_reason": _res_reason,
+                        "rejected_divergence": _rej,
+                        "all_bull_divs": r.get("all_bull_divs", []),
+                        "all_bear_divs": r.get("all_bear_divs", []),
+                        "best_swing": {
+                            "swing": _best.get("swing") if _best else None,
+                            "ref_swing": _best.get("ref_swing") if _best else None,
+                            "cvd_z": _best.get("cvd_z") if _best else None,
+                            "price_atr": _best.get("price_atr") if _best else None,
+                            "score": _best.get("score") if _best else None,
+                        } if _best else None,
+                        "bar_idx": r.get("bar_idx"),
+                        "vol_ratio": r.get("abs_vol_ratio"),
+                        "cvd_std": r.get("cvd_std"),
+                        "atr": r.get("atr"),
+                        "swing_count": r.get("swing_count"),
+                    })
                 result = conn.execute(text("""
                     INSERT INTO setup_log
                         (setup_name, direction, grade, score, paradigm, spot, lis, target,
@@ -1385,14 +1419,14 @@ def log_setup(result_wrapper):
                          first_hour, support_score, upside_score, floor_cluster_score,
                          target_cluster_score, rr_score, notified,
                          bofa_stop_level, bofa_target_level, bofa_lis_width, bofa_max_hold_minutes, lis_upper,
-                         abs_vol_ratio, abs_es_price, vix, comments)
+                         abs_vol_ratio, abs_es_price, vix, comments, abs_details)
                     VALUES
                         (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
                          :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
                          :first_hour, :support_score, :upside_score, :floor_cluster_score,
                          :target_cluster_score, :rr_score, TRUE,
                          :bofa_stop_level, :bofa_target_level, :bofa_lis_width, :bofa_max_hold_minutes, :lis_upper_val,
-                         :abs_vol_ratio, :abs_es_price, :vix, :comments)
+                         :abs_vol_ratio, :abs_es_price, :vix, :comments, :abs_details)
                     RETURNING id
                 """), insert_params)
                 log_id = result.fetchone()[0]

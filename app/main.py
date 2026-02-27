@@ -1027,13 +1027,18 @@ def _backfill_outcomes():
             is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long", "AG Short")
             is_absorption = entry.get("setup_name") == "ES Absorption"
             if is_absorption:
-                # ES Absorption: split-target. Use trail_exit_pnl as primary P&L.
-                if outcome.get("trail_exit_pnl") is not None:
-                    pnl = outcome["trail_exit_pnl"]
-                    result_type = "WIN" if pnl > 0 else "LOSS"
-                elif outcome.get("hit_10pt"):
-                    pnl = 10.0  # T1 hit, trail still running → conservative
+                # ES Absorption: split-target. P&L = average of T1 (+10) and T2 (trail).
+                t1_hit = outcome.get("hit_10pt")
+                t2_exit = outcome.get("trail_exit_pnl")
+                if t1_hit and t2_exit is not None:
+                    pnl = round((10.0 + t2_exit) / 2, 1)  # average of T1 and T2
+                    result_type = "WIN"  # T1 always wins
+                elif t1_hit:
+                    pnl = 10.0  # T1 hit, trail still running
                     result_type = "WIN"
+                elif t2_exit is not None:
+                    pnl = round(t2_exit, 1)  # no T1, trail only
+                    result_type = "WIN" if t2_exit > 0 else "LOSS"
                 elif outcome.get("hit_stop"):
                     pnl = outcome.get("max_loss", -12)
                     result_type = "LOSS"
@@ -2850,6 +2855,9 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 while rung <= max_fav:
                     trail_lock = rung - _tp["lock_offset"]
                     rung += _tp["step"]
+            # ES Absorption: track T1 hit (+10pt) for split-target P&L
+            if setup_name == "ES Absorption" and max_fav >= 10 and not trade.get("_t1_hit"):
+                trade["_t1_hit"] = True
             if trail_lock is not None:
                 # Move stop to lock-in level
                 if is_long:
@@ -2918,7 +2926,12 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 pnl = entry_price - check_price
 
         if result_type:
-            pnl = round(pnl, 1)
+            # ES Absorption split-target: P&L = average of T1 (+10) and T2 (trail exit)
+            if setup_name == "ES Absorption" and trade.get("_t1_hit"):
+                pnl = round((10.0 + pnl) / 2, 1)  # T2 pnl already computed above
+                result_type = "WIN"  # T1 always hit → overall WIN
+            else:
+                pnl = round(pnl, 1)
             elapsed_min = int(elapsed)
             trade["close_price"] = check_price
 

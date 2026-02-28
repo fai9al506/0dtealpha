@@ -4233,6 +4233,18 @@ def _auto_trade_eod_flatten():
         print(f"[auto-trade-eod] flatten error: {e}", flush=True)
 
 
+def _auto_trade_orphan_check():
+    """Periodic orphan position check during market hours. Runs every 5 minutes."""
+    t = now_et().time()
+    if not (dtime(9, 30) <= t <= dtime(16, 0)):
+        return  # only during market hours
+    try:
+        from app import auto_trader
+        auto_trader.periodic_orphan_check()
+    except Exception as e:
+        print(f"[auto-trade-orphan] check error: {e}", flush=True)
+
+
 def _send_setup_eod_summary():
     """Send end-of-day summary of all setup outcomes via Telegram. Runs at 16:05 ET."""
     global _setup_open_trades, _setup_resolved_trades
@@ -4431,6 +4443,8 @@ def start_scheduler():
     sch.add_job(_save_rithmic_bars, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="rithmic_range_save", coalesce=True, max_instances=1)
     sch.add_job(_auto_trade_eod_flatten, "cron", hour=15, minute=55,
                 id="auto_trade_eod", coalesce=True, max_instances=1)
+    sch.add_job(_auto_trade_orphan_check, "interval", minutes=5,
+                id="auto_trade_orphan", coalesce=True, max_instances=1)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,
                 id="setup_eod", coalesce=True, max_instances=1)
     sch.add_job(fetch_economic_calendar, "cron", day_of_week="mon", hour=8, minute=0,

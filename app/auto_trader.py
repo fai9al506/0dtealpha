@@ -117,6 +117,12 @@ def init(engine, get_token_fn, send_telegram_fn):
         except Exception as e:
             print(f"[auto-trader] account check error: {e}", flush=True)
 
+        # Startup orphan check: detect and close any positions from previous session
+        try:
+            _close_broker_orphans(source="STARTUP")
+        except Exception as e:
+            print(f"[auto-trader] startup orphan check error: {e}", flush=True)
+
 
 # ====== MAIN ENTRY POINT ======
 
@@ -516,26 +522,81 @@ def _get_order_fill_price(order_id: str) -> float | None:
     return None
 
 
+def _get_broker_position() -> dict | None:
+    """Query broker for actual MES position on SIM account.
+    Returns {'qty': int, 'long_short': str, 'symbol': str} or None if flat/error."""
+    try:
+        pos_data = _sim_api("GET", f"/brokerage/accounts/{SIM_ACCOUNT_ID}/positions", None)
+        for pos in (pos_data or {}).get("Positions", []):
+            symbol = pos.get("Symbol", "")
+            qty = int(pos.get("Quantity", "0"))
+            if qty > 0 and "MES" in symbol.upper():
+                return {
+                    "qty": qty,
+                    "long_short": pos.get("LongShort", ""),
+                    "symbol": symbol,
+                }
+    except Exception as e:
+        print(f"[auto-trader] broker position query error: {e}", flush=True)
+    return None
+
+
 def _flatten_position(order):
-    """Market close remaining contracts + cancel all pending orders."""
+    """Market close remaining contracts + cancel all pending orders.
+    Checks broker position FIRST to prevent ghost positions from race conditions."""
     is_long = order["direction"].lower() in ("long", "bullish")
     close_side = "Sell" if is_long else "Buy"  # Futures: Buy/Sell only
 
-    # Cancel pending stop/t1/t2 orders
+    # Cancel pending stop/t1/t2 orders FIRST (before checking position)
     for oid_key in ("stop_order_id", "t1_order_id", "t2_order_id"):
         oid = order.get(oid_key)
         if oid:
             _sim_api("DELETE", f"/orderexecution/orders/{oid}", None)
 
-    # Market close remaining contracts
+    # Wait briefly for any in-flight fills to settle after cancellations
+    time.sleep(0.5)
+
+    # Market close remaining contracts — but CHECK BROKER POSITION FIRST
     if order["status"] == "filled":
         remaining = order.get("stop_qty", 0)
         if remaining <= 0:
             return
+
+        # === SAFETY: verify broker actually has a position before sending close ===
+        broker_pos = _get_broker_position()
+        if not broker_pos:
+            # Broker shows FLAT — stop/target already closed the position.
+            # Do NOT send a market order (would open a new ghost position).
+            print(f"[auto-trader] flatten SKIPPED: broker already flat "
+                  f"(stop/target filled). {order['setup_name']}", flush=True)
+            order["stop_qty"] = 0
+            return
+
+        # Verify the position matches our expected direction
+        broker_is_long = broker_pos["long_short"] == "Long"
+        if broker_is_long != is_long:
+            # Broker has opposite position — something is wrong, don't compound it
+            print(f"[auto-trader] flatten SKIPPED: broker position direction mismatch! "
+                  f"Expected={'Long' if is_long else 'Short'} "
+                  f"Actual={broker_pos['long_short']} qty={broker_pos['qty']}. "
+                  f"Needs manual review.", flush=True)
+            _alert_critical(f"[AUTO-TRADE] POSITION MISMATCH\n"
+                           f"Expected: {'Long' if is_long else 'Short'}\n"
+                           f"Broker: {broker_pos['long_short']} {broker_pos['qty']}\n"
+                           f"MANUAL REVIEW NEEDED")
+            order["stop_qty"] = 0
+            return
+
+        # Use actual broker qty (may differ from tracked qty if partial fills happened)
+        actual_qty = broker_pos["qty"]
+        if actual_qty != remaining:
+            print(f"[auto-trader] flatten qty adjusted: tracked={remaining} "
+                  f"broker={actual_qty}", flush=True)
+
         close_payload = {
             "AccountID": SIM_ACCOUNT_ID,
             "Symbol": MES_SYMBOL,
-            "Quantity": str(remaining),
+            "Quantity": str(actual_qty),
             "OrderType": "Market",
             "TradeAction": close_side,
             "TimeInForce": {"Duration": "DAY"},
@@ -543,7 +604,7 @@ def _flatten_position(order):
         }
         resp = _sim_api("POST", "/orderexecution/orders", close_payload)
         if resp:
-            order["close_qty"] = remaining
+            order["close_qty"] = actual_qty
             # Capture flatten fill price (SIM fills near-instantly)
             close_oid = None
             orders_list = resp.get("Orders", [])
@@ -554,11 +615,25 @@ def _flatten_position(order):
                 close_fp = _get_order_fill_price(close_oid)
                 if close_fp:
                     order["close_fill_price"] = close_fp
-            print(f"[auto-trader] flattened: {order['setup_name']} "
-                  f"qty={remaining} fill={order.get('close_fill_price')}", flush=True)
+
+            # === POST-FLATTEN VERIFICATION ===
+            time.sleep(0.5)
+            verify_pos = _get_broker_position()
+            if verify_pos:
+                print(f"[auto-trader] WARNING: position still open after flatten! "
+                      f"{verify_pos['long_short']} {verify_pos['qty']} "
+                      f"{verify_pos['symbol']}", flush=True)
+                _alert_critical(f"[AUTO-TRADE] FLATTEN INCOMPLETE\n"
+                               f"Still open: {verify_pos['long_short']} {verify_pos['qty']}\n"
+                               f"MANUAL REVIEW NEEDED")
+            else:
+                print(f"[auto-trader] flattened: {order['setup_name']} "
+                      f"qty={actual_qty} fill={order.get('close_fill_price')} "
+                      f"(verified flat)", flush=True)
         else:
-            _alert(f"[AUTO-TRADE] MANUAL INTERVENTION: flatten FAILED\n"
-                   f"{order['setup_name']} id={order['setup_log_id']} qty={remaining}")
+            _alert_critical(f"[AUTO-TRADE] FLATTEN FAILED\n"
+                           f"{order['setup_name']} id={order['setup_log_id']} qty={actual_qty}\n"
+                           f"MANUAL INTERVENTION NEEDED")
 
 
 # ====== POLL ORDER STATUS ======
@@ -1024,29 +1099,246 @@ def _load_active_orders():
 def flatten_all_eod():
     """Force-close all open SIM positions at end of day.
     Called by scheduler at 15:55 ET before market close."""
+    # ── Phase 1: close tracked positions ──
     with _lock:
         open_orders = [(lid, o) for lid, o in _active_orders.items()
                        if o["status"] in ("pending_entry", "filled")]
     if not open_orders:
-        print("[auto-trader] EOD flatten: no open positions", flush=True)
+        print("[auto-trader] EOD flatten: no tracked positions", flush=True)
+    else:
+        print(f"[auto-trader] EOD flatten: closing {len(open_orders)} tracked position(s)", flush=True)
+        for lid, order in open_orders:
+            try:
+                _flatten_position(order)
+                with _lock:
+                    order["status"] = "closed"
+                _persist_order(lid)
+                print(f"[auto-trader] EOD flattened: {order['setup_name']} id={lid}", flush=True)
+            except Exception as e:
+                print(f"[auto-trader] EOD flatten error id={lid}: {e}", flush=True)
+                _alert(f"[AUTO-TRADE] EOD FLATTEN FAILED\n"
+                       f"{order['setup_name']} id={lid}\nError: {e}")
+
+    # ── Phase 2: broker position check (catches orphaned positions) ──
+    _close_broker_orphans(source="EOD")
+
+    # ── Phase 3: final verification — confirm we are actually flat ──
+    time.sleep(1)
+    final_pos = _get_broker_position()
+    if final_pos:
+        print(f"[auto-trader] EOD CRITICAL: still have position after flatten! "
+              f"{final_pos['long_short']} {final_pos['qty']} {final_pos['symbol']}. "
+              f"Retrying...", flush=True)
+        # One more attempt via flatten_account_positions (nuclear option)
+        try:
+            flatten_account_positions()
+        except Exception as e:
+            print(f"[auto-trader] EOD retry flatten error: {e}", flush=True)
+        # Final check
+        time.sleep(1)
+        still_open = _get_broker_position()
+        if still_open:
+            _alert_critical(f"[AUTO-TRADE] EOD FLATTEN FAILED\n"
+                           f"STILL OPEN: {still_open['long_short']} {still_open['qty']}\n"
+                           f"MANUAL INTERVENTION REQUIRED")
+            print(f"[auto-trader] EOD FLATTEN FAILED: {still_open}", flush=True)
+        else:
+            print(f"[auto-trader] EOD retry flatten succeeded", flush=True)
+    else:
+        print(f"[auto-trader] EOD flatten complete (verified flat)", flush=True)
+
+
+def flatten_account_positions() -> dict:
+    """Query TS SIM account for real positions and orders, close everything.
+    Returns summary dict. Used by admin flatten-now endpoint and EOD orphan cleanup."""
+    result = {"positions_closed": [], "orders_cancelled": [], "errors": []}
+
+    # 1. Get actual positions from broker
+    try:
+        pos_data = _sim_api("GET", f"/brokerage/accounts/{SIM_ACCOUNT_ID}/positions", None)
+        positions = (pos_data or {}).get("Positions", [])
+    except Exception as e:
+        result["errors"].append(f"positions fetch: {e}")
+        positions = []
+
+    for pos in positions:
+        symbol = pos.get("Symbol", "")
+        qty = int(pos.get("Quantity", "0"))
+        long_short = pos.get("LongShort", "")
+        if qty <= 0:
+            continue
+
+        close_side = "Sell" if long_short == "Long" else "Buy"
+        close_payload = {
+            "AccountID": SIM_ACCOUNT_ID,
+            "Symbol": symbol,
+            "Quantity": str(qty),
+            "OrderType": "Market",
+            "TradeAction": close_side,
+            "TimeInForce": {"Duration": "DAY"},
+            "Route": "Intelligent",
+        }
+        try:
+            resp = _sim_api("POST", "/orderexecution/orders", close_payload)
+            fill_price = None
+            if resp:
+                oid = None
+                for o in resp.get("Orders", []):
+                    oid = o.get("OrderID")
+                if oid:
+                    time.sleep(1)
+                    fill_price = _get_order_fill_price(oid)
+            result["positions_closed"].append({
+                "symbol": symbol, "qty": qty, "side": close_side,
+                "long_short": long_short, "fill_price": fill_price,
+            })
+            print(f"[auto-trader] flatten-account: closed {long_short} {qty} {symbol} "
+                  f"fill={fill_price}", flush=True)
+        except Exception as e:
+            result["errors"].append(f"close {symbol}: {e}")
+
+    # 2. Cancel all open orders on the account
+    try:
+        ord_data = _sim_api("GET", f"/brokerage/accounts/{SIM_ACCOUNT_ID}/orders", None)
+        orders = (ord_data or {}).get("Orders", [])
+    except Exception as e:
+        result["errors"].append(f"orders fetch: {e}")
+        orders = []
+
+    for o in orders:
+        status = o.get("Status", "")
+        if status in ("FLL", "CAN", "REJ", "EXP", "BRO", "OUT", "TSC"):
+            continue  # already terminal
+        oid = o.get("OrderID")
+        if not oid:
+            continue
+        try:
+            _sim_api("DELETE", f"/orderexecution/orders/{oid}", None)
+            result["orders_cancelled"].append(oid)
+            print(f"[auto-trader] flatten-account: cancelled order {oid}", flush=True)
+        except Exception as e:
+            result["errors"].append(f"cancel {oid}: {e}")
+
+    print(f"[auto-trader] flatten-account: {len(result['positions_closed'])} positions closed, "
+          f"{len(result['orders_cancelled'])} orders cancelled", flush=True)
+    return result
+
+
+def _close_broker_orphans(source: str = "EOD"):
+    """Check broker for positions not tracked in _active_orders. Close any orphans."""
+    try:
+        pos_data = _sim_api("GET", f"/brokerage/accounts/{SIM_ACCOUNT_ID}/positions", None)
+        positions = (pos_data or {}).get("Positions", [])
+    except Exception as e:
+        print(f"[auto-trader] {source} orphan check failed: {e}", flush=True)
         return
 
-    print(f"[auto-trader] EOD flatten: closing {len(open_orders)} position(s)", flush=True)
-    for lid, order in open_orders:
-        try:
-            _flatten_position(order)
-            with _lock:
-                order["status"] = "closed"
-            _persist_order(lid)
-            print(f"[auto-trader] EOD flattened: {order['setup_name']} id={lid}", flush=True)
-        except Exception as e:
-            print(f"[auto-trader] EOD flatten error id={lid}: {e}", flush=True)
-            _alert(f"[AUTO-TRADE] EOD FLATTEN FAILED\n"
-                   f"{order['setup_name']} id={lid}\nError: {e}")
+    if not positions:
+        print(f"[auto-trader] {source} orphan check: no broker positions — clean", flush=True)
+        return
 
-    print(f"[auto-trader] EOD flatten complete", flush=True)
+    # Check which positions are tracked vs orphaned
+    with _lock:
+        tracked_directions = set()
+        for o in _active_orders.values():
+            if o["status"] in ("pending_entry", "filled"):
+                d = o["direction"].lower()
+                tracked_directions.add("Long" if d in ("long", "bullish") else "Short")
+
+    for pos in positions:
+        symbol = pos.get("Symbol", "")
+        qty = int(pos.get("Quantity", "0"))
+        long_short = pos.get("LongShort", "")
+        if qty <= 0:
+            continue
+
+        if long_short in tracked_directions:
+            print(f"[auto-trader] {source} orphan check: {long_short} {qty} {symbol} "
+                  f"— matches tracked position, OK", flush=True)
+            continue
+
+        print(f"[auto-trader] WARNING: {source} orphan detected — {long_short} {qty} {symbol}. "
+              f"Closing...", flush=True)
+        _alert_critical(f"[AUTO-TRADE] {source} ORPHAN DETECTED\n"
+                        f"{long_short} {qty} {symbol}\nAuto-closing...")
+        close_side = "Sell" if long_short == "Long" else "Buy"
+        close_payload = {
+            "AccountID": SIM_ACCOUNT_ID,
+            "Symbol": symbol,
+            "Quantity": str(qty),
+            "OrderType": "Market",
+            "TradeAction": close_side,
+            "TimeInForce": {"Duration": "DAY"},
+            "Route": "Intelligent",
+        }
+        try:
+            _sim_api("POST", "/orderexecution/orders", close_payload)
+            print(f"[auto-trader] {source} orphan closed: {long_short} {qty} {symbol}", flush=True)
+        except Exception as e:
+            print(f"[auto-trader] {source} orphan close FAILED {symbol}: {e}", flush=True)
+
+    # Also cancel any remaining open orders not tracked by us
+    try:
+        ord_data = _sim_api("GET", f"/brokerage/accounts/{SIM_ACCOUNT_ID}/orders", None)
+        tracked_oids = set()
+        with _lock:
+            for o in _active_orders.values():
+                for k in ("entry_order_id", "stop_order_id", "t1_order_id", "t2_order_id"):
+                    oid = o.get(k)
+                    if oid:
+                        tracked_oids.add(str(oid))
+        for o in (ord_data or {}).get("Orders", []):
+            status = o.get("Status", "")
+            if status in ("FLL", "CAN", "REJ", "EXP", "BRO", "OUT", "TSC"):
+                continue
+            oid = o.get("OrderID")
+            if oid and str(oid) not in tracked_oids:
+                _sim_api("DELETE", f"/orderexecution/orders/{oid}", None)
+                print(f"[auto-trader] {source} orphan cleanup: cancelled untracked order {oid}", flush=True)
+    except Exception as e:
+        print(f"[auto-trader] {source} orphan order cancel failed: {e}", flush=True)
+
+
+def periodic_orphan_check():
+    """Periodic safety check — detect orphaned broker positions during market hours.
+    Called by scheduler every 5 minutes. Only closes if no tracked positions exist."""
+    if not AUTO_TRADE_ENABLED or not _get_token:
+        return
+
+    broker_pos = _get_broker_position()
+    if not broker_pos:
+        return  # flat, nothing to do
+
+    # Check if any tracked order covers this position
+    with _lock:
+        has_tracked = any(
+            o["status"] in ("pending_entry", "filled")
+            for o in _active_orders.values()
+        )
+
+    if has_tracked:
+        return  # position is tracked, all good
+
+    # Orphan detected — broker has a position but we have no tracked orders
+    print(f"[auto-trader] PERIODIC: orphan position detected — "
+          f"{broker_pos['long_short']} {broker_pos['qty']} {broker_pos['symbol']}. "
+          f"Closing...", flush=True)
+    _alert_critical(f"[AUTO-TRADE] PERIODIC ORPHAN DETECTED\n"
+                    f"{broker_pos['long_short']} {broker_pos['qty']} "
+                    f"{broker_pos['symbol']}\nAuto-closing...")
+    _close_broker_orphans(source="PERIODIC")
 
 
 def _alert(msg: str):
-    """Auto-trade alerts moved to dashboard TS SIM Log tab. Telegram suppressed."""
+    """Non-critical auto-trade alerts — log only (Telegram suppressed for SIM)."""
     pass
+
+
+def _alert_critical(msg: str):
+    """Critical safety alerts — always send Telegram. For orphans, position mismatches, etc."""
+    if _send_telegram:
+        try:
+            _send_telegram(msg)
+        except Exception as e:
+            print(f"[auto-trader] critical alert send failed: {e}", flush=True)
+    print(f"[auto-trader] CRITICAL: {msg}", flush=True)

@@ -1159,14 +1159,16 @@ class PositionTracker:
         if not self.position:
             return
         is_long = self.position["direction"] in ("long", "bullish")
-        new_stop = _round_tick(es_price - gap_pts) if is_long else _round_tick(es_price + gap_pts)
+        raw_stop = (es_price - gap_pts) if is_long else (es_price + gap_pts)
+        # Round to tick size as a float (change_stop calls _round_tick internally)
+        new_stop = round(round(raw_stop / MES_TICK_SIZE) * MES_TICK_SIZE, 2)
         old_stop = self.position["stop_price"]
 
         self.nt8.change_stop(self.position["stop_oid"], new_stop, self.position.get("qty", self.cfg["qty"]))
         self.position["stop_price"] = new_stop
         self._save()
 
-        log.info(f"  Tightened SL: {old_stop:.2f} → {new_stop:.2f} "
+        log.info(f"  Tightened SL: {old_stop} → {new_stop:.2f} "
                  f"({gap_pts}pts from ES {es_price:.2f}), keeping {self.position['setup_name']} open")
 
     def reverse(self, signal: dict, es_price: float | None):
@@ -1230,7 +1232,8 @@ class PositionTracker:
         # Step 4: Compute new stop/target prices
         es_ref = signal.get("es_price") or es_price or signal["spot"]
         es_ref = float(es_ref)
-        new_stop_price = _round_tick(es_ref - new_stop_pts) if new_is_long else _round_tick(es_ref + new_stop_pts)
+        raw_stop = (es_ref - new_stop_pts) if new_is_long else (es_ref + new_stop_pts)
+        new_stop_price = round(round(raw_stop / MES_TICK_SIZE) * MES_TICK_SIZE, 2)
 
         cfg_target = new_rules.get("target")
         trail_only = cfg_target is None
@@ -1240,7 +1243,8 @@ class PositionTracker:
             target_pts = 0
         else:
             target_pts = float(cfg_target)
-        new_target_price = _round_tick(es_ref + target_pts) if new_is_long else _round_tick(es_ref - target_pts)
+        raw_target = (es_ref + target_pts) if new_is_long else (es_ref - target_pts)
+        new_target_price = round(round(raw_target / MES_TICK_SIZE) * MES_TICK_SIZE, 2)
 
         es_entry = signal.get("es_price") or es_price
 
@@ -1727,31 +1731,9 @@ def main():
         log.info("Reconciling restored position against NT8 fills...")
         # Layer 1: check NT8 outgoing folder for fill files
         tracker.check_nt8_fills()
-        # Layer 2: poll Railway API for outcomes (ignores _seen filter)
-        if tracker.is_open and use_api:
-            log.info("Checking Railway API for resolved outcomes...")
-            try:
-                resp = requests.get(
-                    cfg["railway_api_url"],
-                    headers={"Authorization": f"Bearer {cfg['eval_api_key']}"},
-                    timeout=8,
-                )
-                if resp.status_code == 200:
-                    outcomes = resp.json().get("outcomes", [])
-                    pos_name = tracker.position["setup_name"]
-                    for o in outcomes:
-                        if (o.get("setup_name") == pos_name
-                                and o.get("outcome_result") in ("WIN", "LOSS", "EXPIRED")):
-                            log.info(f"Railway shows {pos_name} already resolved: "
-                                     f"{o['outcome_result']} ({o.get('outcome_pnl', 0):+.1f} pts)")
-                            tracker.close_on_outcome({
-                                "setup_name": o["setup_name"],
-                                "result": o["outcome_result"],
-                                "pnl_pts": o.get("outcome_pnl", 0) or 0,
-                            })
-                            break
-            except Exception as e:
-                log.warning(f"Railway reconciliation failed: {e}")
+        # Layer 2: Railway API reconciliation DISABLED — SPX-based outcomes
+        # don't match our MES position's independent trailing stop.
+        # NT8 fills are the truth source for position state.
         # Layer 3: check NT8 PositionReporter for flat/position mismatch
         if tracker.is_open:
             tracker.reconcile_with_nt8()
@@ -1793,14 +1775,12 @@ def main():
                 last_trail_check = time.time()
 
             # Periodic reconciliation (every 60s when position open)
-            # Safety net: catches phantom positions when NT8 fill + normal outcome both missed
+            # NT8 fill detection only — Railway outcomes disabled (SPX-based,
+            # doesn't match our MES position's independent trailing stop)
             if (tracker.is_open
                     and time.time() - last_reconcile >= RECONCILE_INTERVAL):
                 # NT8 position file check (fastest, no network)
                 tracker.reconcile_with_nt8()
-                # Railway API check (network, catches resolved outcomes)
-                if tracker.is_open and use_api:
-                    tracker.reconcile_with_api(cfg["railway_api_url"], cfg["eval_api_key"])
                 last_reconcile = time.time()
 
             # ── Poll for signals and outcomes ──
@@ -1809,10 +1789,12 @@ def main():
                 if poll_es_price:
                     latest_es_price = poll_es_price
 
-                # Process outcomes first
-                for outcome in new_outcomes:
-                    if tracker.is_open:
-                        tracker.close_on_outcome(outcome)
+                # Railway outcomes disabled — SPX-based outcomes don't match
+                # our MES position's independent trailing stop. NT8 fills are
+                # the truth source (check_nt8_fills + check_trail handle exits).
+                # for outcome in new_outcomes:
+                #     if tracker.is_open:
+                #         tracker.close_on_outcome(outcome)
 
                 # Process signals
                 for signal in new_signals:

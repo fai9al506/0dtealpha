@@ -1,0 +1,61 @@
+=== volland_exposure_points schema ===
+  id                             bigint
+  ts_utc                         timestamp with time zone
+  ticker                         character varying
+  greek                          character varying
+  expiration_option              character varying
+  strike                         numeric
+  value                          numeric
+  current_price                  numeric
+  last_modified                  timestamp with time zone
+  expirations                    jsonb
+
+=== Distinct greek types ===
+  charm
+  deltaDecay
+  gamma
+  vanna
+
+=== DD data range ===
+  From: 2026-02-11 17:22:17.909893+00:00  To: 2026-02-25 21:00:04.927729+00:00  Total rows: 367461  Days: 10
+
+=== DD points per snapshot (recent) ===
+  ts=2026-02-25 21:00:04.927729+00:00  pts=219  strikes=2800-9000  val=-3961774838 to 109311392  total=-5228938317  spot=6950.0
+  ts=2026-02-25 20:57:46.457864+00:00  pts=219  strikes=2800-9000  val=-4095018655 to 194838594  total=-5589156630  spot=6950.2
+  ts=2026-02-25 20:55:27.986606+00:00  pts=219  strikes=2800-9000  val=-3490077736 to 296965597  total=-4728288752  spot=6951.4
+  ts=2026-02-25 20:53:09.777060+00:00  pts=219  strikes=2800-9000  val=-1682471580 to 4108845134  total=2118891081  spot=6948.9
+  ts=2026-02-25 20:50:51.531511+00:00  pts=219  strikes=2800-9000  val=-1538867029 to 4957556274  total=3306658889  spot=6949.6
+  ts=2026-02-25 20:48:33.053709+00:00  pts=219  strikes=2800-9000  val=-1995867258 to 3856169194  total=1193324013  spot=6948.2
+  ts=2026-02-25 20:46:15.318121+00:00  pts=219  strikes=2800-9000  val=-1748455536 to 3632338472  total=1321005765  spot=6948.2
+  ts=2026-02-25 20:43:56.800847+00:00  pts=219  strikes=2800-9000  val=-1841531477 to 3556479992  total=990972688  spot=6948.1
+  ts=2026-02-25 20:41:37.955792+00:00  pts=219  strikes=2800-9000  val=-2759053196 to 2642756739  total=-1963206933  spot=6946.1
+  ts=2026-02-25 20:39:19.642870+00:00  pts=219  strikes=2800-9000  val=-3015334694 to 2375417553  total=-2759887455  spot=6945.4
+
+=== DD values near spot (latest snapshot) ===
+  Strike     6905  DD=    -5284607  Spot=6950.0
+  Strike     6910  DD=    -3152790  Spot=6950.0
+  Strike     6915  DD=   -13353159  Spot=6950.0
+  Strike     6920  DD=    -5763032  Spot=6950.0
+  Strike     6925  DD=    -1412601  Spot=6950.0
+  Strike     6930  DD=    -4708341  Spot=6950.0
+  Strike     6935  DD=   -33374089  Spot=6950.0
+  Strike     6940  DD=  -276468650  Spot=6950.0
+  Strike     6945  DD=  -903614623  Spot=6950.0
+  Strike     6950  DD= -3961774838  Spot=6950.0
+  Strike     6955  DD=   109311392  Spot=6950.0
+  Strike     6960  DD=    18514378  Spot=6950.0
+  Strike     6965  DD=     5621424  Spot=6950.0
+  Strike     6970  DD=   -29675487  Spot=6950.0
+  Strike     6975  DD=   -18405586  Spot=6950.0
+  Strike     6980  DD=   -23181715  Spot=6950.0
+  Strike     6985  DD=   -15906712  Spot=6950.0
+  Strike     6990  DD=    -6903891  Spot=6950.0
+  Strike     6995  DD=    -3174378  Spot=6950.0
+  Strike     7000  DD=    -6534489  Spot=6950.0
+
+=== DD in volland_snapshots statistics (recent) ===
+
+=== Snapshot count with DD data ===
+  Snapshots with DD: 0  Days: 0
+
+=== DD value evolution (first 3 snapshots per day, last 5 days) ===

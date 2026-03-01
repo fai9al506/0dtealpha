@@ -1,0 +1,374 @@
+Loading DD exposure data...
+DD snapshots: 1467
+Total completed trades: 158
+Trades with DD data: 146
+Trades without DD data (pre-DD era): 12
+
+==================================================================================================================================
+BASELINE: Current Results (No Filter)
+==================================================================================================================================
+
+All trades (including pre-DD era):
+  TOTAL                     n=158  W=53 L=55 E=50  WR= 49.1%  PnL=  +397.0  Avg=  +2.5  PF= 1.56  MaxDD= -138.8
+  AG Short                  n= 25  W=11 L= 8 E= 6  WR= 57.9%  PnL=  +105.7  Avg=  +4.2  PF= 1.77  MaxDD=  -56.8
+  BofA Scalp                n= 21  W= 5 L= 5 E=11  WR= 50.0%  PnL=   +45.6  Avg=  +2.2  PF= 1.74  MaxDD=  -27.7
+  DD Exhaustion             n= 75  W=24 L=26 E=25  WR= 48.0%  PnL=  +219.6  Avg=  +2.9  PF= 1.61  MaxDD= -118.8
+  ES Absorption             n=  5  W= 3 L= 2 E= 0  WR= 60.0%  PnL=    +6.0  Avg=  +1.2  PF= 1.25  MaxDD=  -24.0
+  GEX Long                  n= 21  W= 5 L=14 E= 2  WR= 26.3%  PnL=   -16.4  Avg=  -0.8  PF= 0.85  MaxDD=  -66.4
+  Paradigm Reversal         n= 11  W= 5 L= 0 E= 6  WR=100.0%  PnL=   +36.5  Avg=  +3.3  PF= 3.70  MaxDD=  -13.5
+
+Trades WITH DD data only (DD era, Feb 11+):
+  TOTAL (DD era)            n=146  W=48 L=49 E=49  WR= 49.5%  PnL=  +357.7  Avg=  +2.4  PF= 1.55  MaxDD= -138.8
+  AG Short                  n= 22  W= 9 L= 7 E= 6  WR= 56.2%  PnL=   +99.3  Avg=  +4.5  PF= 1.85  MaxDD=  -56.8
+  BofA Scalp                n= 20  W= 5 L= 5 E=10  WR= 50.0%  PnL=   +37.6  Avg=  +1.9  PF= 1.62  MaxDD=  -27.7
+  DD Exhaustion             n= 75  W=24 L=26 E=25  WR= 48.0%  PnL=  +219.6  Avg=  +2.9  PF= 1.61  MaxDD= -118.8
+  ES Absorption             n=  5  W= 3 L= 2 E= 0  WR= 60.0%  PnL=    +6.0  Avg=  +1.2  PF= 1.25  MaxDD=  -24.0
+  GEX Long                  n= 13  W= 2 L= 9 E= 2  WR= 18.2%  PnL=   -41.4  Avg=  -3.2  PF= 0.43  MaxDD=  -66.4
+  Paradigm Reversal         n= 11  W= 5 L= 0 E= 6  WR=100.0%  PnL=   +36.5  Avg=  +3.3  PF= 3.70  MaxDD=  -13.5
+
+
+==================================================================================================================================
+FILTER 1: Block DD Exhaustion when DD Concentration > 75%
+==================================================================================================================================
+
+Blocked trades: 27
+   ID Date         Time   Dir        Spot   Result      PnL   Conc           DD
+------------------------------------------------------------------------------------------
+  126 2026-02-18 13:45  long     6888.8     LOSS    -12.0    79%        -1.0B
+  131 2026-02-18 14:34  long     6877.4     LOSS    -12.0    86%        +2.9B
+  132 2026-02-18 15:04  long     6870.7     LOSS    -12.0    86%        +0.1B
+  148 2026-02-19 14:02  short    6851.7  EXPIRED     -5.9    81%        -0.8B
+  151 2026-02-19 14:43  short    6839.5     LOSS    -12.0    80%        +1.2B
+  152 2026-02-19 15:17  short    6844.6     LOSS    -12.0    89%        +0.3B
+  169 2026-02-20 12:57  long     6888.1      WIN    +22.7    75%        -0.7B
+  174 2026-02-20 13:37  short    6899.4     LOSS    -12.0    77%        +0.6B
+  177 2026-02-20 14:18  short    6900.4  EXPIRED     -8.8    80%        -3.2B
+  179 2026-02-20 14:50  short    6897.6  EXPIRED    -11.5    86%        +0.1B
+  180 2026-02-20 14:59  short    6897.9  EXPIRED    -11.3    87%        +0.3B
+  181 2026-02-20 15:11  short    6907.8  EXPIRED     -1.4    85%        -2.7B
+  194 2026-02-23 13:58  long     6837.4     LOSS    -12.0    75%        +0.5B
+  197 2026-02-23 14:37  long     6826.7  EXPIRED    +10.4    85%        -1.4B
+  198 2026-02-23 15:07  long     6827.3  EXPIRED     +9.8    90%        -0.0B
+  199 2026-02-23 15:18  short    6825.1     LOSS    -12.0    92%        -0.8B
+  218 2026-02-24 13:08  long     6892.4  EXPIRED     +0.0    78%        -0.1B
+  219 2026-02-24 13:40  long     6893.7  EXPIRED     +0.0    83%        +1.8B
+  221 2026-02-24 14:10  long     6888.5  EXPIRED     +0.0    85%        +2.7B
+  222 2026-02-24 14:21  long     6884.6  EXPIRED     +0.0    84%        +1.6B
+  223 2026-02-24 14:40  long     6886.8  EXPIRED     +0.0    85%        +0.8B
+  225 2026-02-24 15:10  long     6884.4  EXPIRED     +0.0    91%        +1.3B
+  226 2026-02-24 15:20  long     6886.5  EXPIRED     +0.0    91%        +2.3B
+  242 2026-02-25 13:41  short    6941.6  EXPIRED     +0.0    76%        -0.6B
+  245 2026-02-25 14:16  short    6945.2  EXPIRED     +0.0    90%        -1.7B
+  248 2026-02-25 14:52  short    6948.5  EXPIRED     +0.0    94%        -0.3B
+  249 2026-02-25 15:25  short    6946.3  EXPIRED     +0.0    95%        -1.5B
+
+Blocked summary: W=1 L=8 PnL=-92.0
+
+AFTER Filter 1:
+  TOTAL (filtered)          n=119  W=47 L=41 E=31  WR= 53.4%  PnL=  +449.7  Avg=  +3.8  PF= 1.87  MaxDD= -134.9
+  AG Short                  n= 22  W= 9 L= 7 E= 6  WR= 56.2%  PnL=   +99.3  Avg=  +4.5  PF= 1.85  MaxDD=  -56.8
+  BofA Scalp                n= 20  W= 5 L= 5 E=10  WR= 50.0%  PnL=   +37.6  Avg=  +1.9  PF= 1.62  MaxDD=  -27.7
+  DD Exhaustion             n= 48  W=23 L=18 E= 7  WR= 56.1%  PnL=  +311.6  Avg=  +6.5  PF= 2.38  MaxDD=  -70.0
+  ES Absorption             n=  5  W= 3 L= 2 E= 0  WR= 60.0%  PnL=    +6.0  Avg=  +1.2  PF= 1.25  MaxDD=  -24.0
+  GEX Long                  n= 13  W= 2 L= 9 E= 2  WR= 18.2%  PnL=   -41.4  Avg=  -3.2  PF= 0.43  MaxDD=  -66.4
+  Paradigm Reversal         n= 11  W= 5 L= 0 E= 6  WR=100.0%  PnL=   +36.5  Avg=  +3.3  PF= 3.70  MaxDD=  -13.5
+
+
+==================================================================================================================================
+FILTER 2: Block ALL Setups when DD Concentration > 85%
+==================================================================================================================================
+
+Blocked trades: 26
+   ID Date         Time   Setup                Dir      Result      PnL   Conc
+------------------------------------------------------------------------------------------
+  104 2026-02-12 14:59  BofA Scalp           long    EXPIRED     +4.6    88%
+  116 2026-02-17 14:24  BofA Scalp           short   EXPIRED     +7.3    85%
+  117 2026-02-17 15:40  GEX Long             long    EXPIRED     -0.4    94%
+  128 2026-02-18 14:11  Paradigm Reversal    short       WIN    +10.0    89%
+  129 2026-02-18 14:28  BofA Scalp           long       LOSS    -11.4    87%
+  130 2026-02-18 14:32  BofA Scalp           long       LOSS     -7.7    86%
+  131 2026-02-18 14:34  DD Exhaustion        long       LOSS    -12.0    86%
+  132 2026-02-18 15:04  DD Exhaustion        long       LOSS    -12.0    86%
+  152 2026-02-19 15:17  DD Exhaustion        short      LOSS    -12.0    89%
+  179 2026-02-20 14:50  DD Exhaustion        short   EXPIRED    -11.5    86%
+  180 2026-02-20 14:59  DD Exhaustion        short   EXPIRED    -11.3    87%
+  181 2026-02-20 15:11  DD Exhaustion        short   EXPIRED     -1.4    85%
+  182 2026-02-20 15:49  AG Short             short   EXPIRED     +4.6    91%
+  197 2026-02-23 14:37  DD Exhaustion        long    EXPIRED    +10.4    85%
+  198 2026-02-23 15:07  DD Exhaustion        long    EXPIRED     +9.8    90%
+  199 2026-02-23 15:18  DD Exhaustion        short      LOSS    -12.0    92%
+  220 2026-02-24 14:01  ES Absorption        bullish     LOSS    -12.0    85%
+  221 2026-02-24 14:10  DD Exhaustion        long    EXPIRED     +0.0    85%
+  224 2026-02-24 14:42  Paradigm Reversal    long        WIN    +10.0    86%
+  225 2026-02-24 15:10  DD Exhaustion        long    EXPIRED     +0.0    91%
+  226 2026-02-24 15:20  DD Exhaustion        long    EXPIRED     +0.0    91%
+  245 2026-02-25 14:16  DD Exhaustion        short   EXPIRED     +0.0    90%
+  246 2026-02-25 14:32  Paradigm Reversal    short   EXPIRED     +0.0    92%
+  247 2026-02-25 14:52  BofA Scalp           short   EXPIRED     +2.1    94%
+  248 2026-02-25 14:52  DD Exhaustion        short   EXPIRED     +0.0    94%
+  249 2026-02-25 15:25  DD Exhaustion        short   EXPIRED     +0.0    95%
+
+Blocked summary: W=2 L=7 PnL=-45.0
+
+AFTER Filter 2:
+  TOTAL (filtered)          n=120  W=46 L=42 E=32  WR= 52.3%  PnL=  +402.6  Avg=  +3.4  PF= 1.74  MaxDD= -144.9
+  AG Short                  n= 21  W= 9 L= 7 E= 5  WR= 56.2%  PnL=   +94.7  Avg=  +4.5  PF= 1.81  MaxDD=  -56.8
+  BofA Scalp                n= 15  W= 5 L= 3 E= 7  WR= 62.5%  PnL=   +42.8  Avg=  +2.9  PF= 2.02  MaxDD=  -27.7
+  DD Exhaustion             n= 60  W=24 L=22 E=14  WR= 52.2%  PnL=  +271.6  Avg=  +4.5  PF= 1.94  MaxDD= -102.8
+  ES Absorption             n=  4  W= 3 L= 1 E= 0  WR= 75.0%  PnL=   +18.0  Avg=  +4.5  PF= 2.50  MaxDD=  -12.0
+  GEX Long                  n= 12  W= 2 L= 9 E= 1  WR= 18.2%  PnL=   -41.0  Avg=  -3.4  PF= 0.43  MaxDD=  -66.0
+  Paradigm Reversal         n=  8  W= 3 L= 0 E= 5  WR=100.0%  PnL=   +16.5  Avg=  +2.1  PF= 2.22  MaxDD=  -13.5
+
+
+==================================================================================================================================
+FILTER 3: Block ALL Setups when DD Total > +$2B (Bullish DD = Poor Setup Environment)
+==================================================================================================================================
+
+Blocked trades: 14
+   ID Date         Time   Setup                Dir      Result      PnL           DD
+----------------------------------------------------------------------------------------------------
+  106 2026-02-13 10:39  BofA Scalp           long       LOSS     -9.0        +2.6B
+  111 2026-02-13 15:31  GEX Long             long    EXPIRED     +6.0        +2.5B
+  129 2026-02-18 14:28  BofA Scalp           long       LOSS    -11.4        +2.1B
+  130 2026-02-18 14:32  BofA Scalp           long       LOSS     -7.7        +2.9B
+  131 2026-02-18 14:34  DD Exhaustion        long       LOSS    -12.0        +2.9B
+  158 2026-02-20 11:30  DD Exhaustion        long        WIN    +24.9        +3.2B
+  165 2026-02-20 12:17  Paradigm Reversal    short       WIN    +10.0        +3.7B
+  166 2026-02-20 12:29  DD Exhaustion        long        WIN    +15.6        +4.6B
+  167 2026-02-20 12:30  BofA Scalp           short      LOSS    -14.4        +4.8B
+  168 2026-02-20 12:33  AG Short             short      LOSS    -20.0        +4.3B
+  172 2026-02-20 13:21  DD Exhaustion        long        WIN    +17.2        +2.9B
+  220 2026-02-24 14:01  ES Absorption        bullish     LOSS    -12.0        +2.1B
+  221 2026-02-24 14:10  DD Exhaustion        long    EXPIRED     +0.0        +2.7B
+  226 2026-02-24 15:20  DD Exhaustion        long    EXPIRED     +0.0        +2.3B
+
+Blocked summary: W=4 L=7 PnL=-12.8
+
+AFTER Filter 3:
+  TOTAL (filtered)          n=132  W=44 L=42 E=46  WR= 51.2%  PnL=  +370.5  Avg=  +2.8  PF= 1.66  MaxDD= -126.8
+  AG Short                  n= 21  W= 9 L= 6 E= 6  WR= 60.0%  PnL=  +119.3  Avg=  +5.7  PF= 2.23  MaxDD=  -56.8
+  BofA Scalp                n= 16  W= 5 L= 1 E=10  WR= 83.3%  PnL=   +80.1  Avg=  +5.0  PF= 5.29  MaxDD=  -18.7
+  DD Exhaustion             n= 69  W=21 L=25 E=23  WR= 45.7%  PnL=  +173.9  Avg=  +2.5  PF= 1.50  MaxDD= -118.8
+  ES Absorption             n=  4  W= 3 L= 1 E= 0  WR= 75.0%  PnL=   +18.0  Avg=  +4.5  PF= 2.50  MaxDD=  -12.0
+  GEX Long                  n= 12  W= 2 L= 9 E= 1  WR= 18.2%  PnL=   -47.4  Avg=  -3.9  PF= 0.35  MaxDD=  -72.4
+  Paradigm Reversal         n= 10  W= 4 L= 0 E= 6  WR=100.0%  PnL=   +26.5  Avg=  +2.6  PF= 2.96  MaxDD=  -13.5
+
+
+==================================================================================================================================
+FILTER 4: COMBINED — Block DD Exhaustion Conc>75% + Block ALL when DD>+$2B
+==================================================================================================================================
+
+Blocked trades: 38
+   ID Date         Time   Setup                Dir      Result      PnL   Conc           DD       Reason
+------------------------------------------------------------------------------------------------------------------------
+  106 2026-02-13 10:39  BofA Scalp           long       LOSS     -9.0    27%        +2.6B       DD>+2B
+  111 2026-02-13 15:31  GEX Long             long    EXPIRED     +6.0    79%        +2.5B       DD>+2B
+  126 2026-02-18 13:45  DD Exhaustion        long       LOSS    -12.0    79%        -1.0B   DD_CONC>75
+  129 2026-02-18 14:28  BofA Scalp           long       LOSS    -11.4    87%        +2.1B       DD>+2B
+  130 2026-02-18 14:32  BofA Scalp           long       LOSS     -7.7    86%        +2.9B       DD>+2B
+  131 2026-02-18 14:34  DD Exhaustion        long       LOSS    -12.0    86%        +2.9B   DD_CONC>75
+  132 2026-02-18 15:04  DD Exhaustion        long       LOSS    -12.0    86%        +0.1B   DD_CONC>75
+  148 2026-02-19 14:02  DD Exhaustion        short   EXPIRED     -5.9    81%        -0.8B   DD_CONC>75
+  151 2026-02-19 14:43  DD Exhaustion        short      LOSS    -12.0    80%        +1.2B   DD_CONC>75
+  152 2026-02-19 15:17  DD Exhaustion        short      LOSS    -12.0    89%        +0.3B   DD_CONC>75
+  158 2026-02-20 11:30  DD Exhaustion        long        WIN    +24.9    53%        +3.2B       DD>+2B
+  165 2026-02-20 12:17  Paradigm Reversal    short       WIN    +10.0    54%        +3.7B       DD>+2B
+  166 2026-02-20 12:29  DD Exhaustion        long        WIN    +15.6    46%        +4.6B       DD>+2B
+  167 2026-02-20 12:30  BofA Scalp           short      LOSS    -14.4    46%        +4.8B       DD>+2B
+  168 2026-02-20 12:33  AG Short             short      LOSS    -20.0    47%        +4.3B       DD>+2B
+  169 2026-02-20 12:57  DD Exhaustion        long        WIN    +22.7    75%        -0.7B   DD_CONC>75
+  172 2026-02-20 13:21  DD Exhaustion        long        WIN    +17.2    68%        +2.9B       DD>+2B
+  174 2026-02-20 13:37  DD Exhaustion        short      LOSS    -12.0    77%        +0.6B   DD_CONC>75
+  177 2026-02-20 14:18  DD Exhaustion        short   EXPIRED     -8.8    80%        -3.2B   DD_CONC>75
+  179 2026-02-20 14:50  DD Exhaustion        short   EXPIRED    -11.5    86%        +0.1B   DD_CONC>75
+  180 2026-02-20 14:59  DD Exhaustion        short   EXPIRED    -11.3    87%        +0.3B   DD_CONC>75
+  181 2026-02-20 15:11  DD Exhaustion        short   EXPIRED     -1.4    85%        -2.7B   DD_CONC>75
+  194 2026-02-23 13:58  DD Exhaustion        long       LOSS    -12.0    75%        +0.5B   DD_CONC>75
+  197 2026-02-23 14:37  DD Exhaustion        long    EXPIRED    +10.4    85%        -1.4B   DD_CONC>75
+  198 2026-02-23 15:07  DD Exhaustion        long    EXPIRED     +9.8    90%        -0.0B   DD_CONC>75
+  199 2026-02-23 15:18  DD Exhaustion        short      LOSS    -12.0    92%        -0.8B   DD_CONC>75
+  218 2026-02-24 13:08  DD Exhaustion        long    EXPIRED     +0.0    78%        -0.1B   DD_CONC>75
+  219 2026-02-24 13:40  DD Exhaustion        long    EXPIRED     +0.0    83%        +1.8B   DD_CONC>75
+  220 2026-02-24 14:01  ES Absorption        bullish     LOSS    -12.0    85%        +2.1B       DD>+2B
+  221 2026-02-24 14:10  DD Exhaustion        long    EXPIRED     +0.0    85%        +2.7B   DD_CONC>75
+  222 2026-02-24 14:21  DD Exhaustion        long    EXPIRED     +0.0    84%        +1.6B   DD_CONC>75
+  223 2026-02-24 14:40  DD Exhaustion        long    EXPIRED     +0.0    85%        +0.8B   DD_CONC>75
+  225 2026-02-24 15:10  DD Exhaustion        long    EXPIRED     +0.0    91%        +1.3B   DD_CONC>75
+  226 2026-02-24 15:20  DD Exhaustion        long    EXPIRED     +0.0    91%        +2.3B   DD_CONC>75
+  242 2026-02-25 13:41  DD Exhaustion        short   EXPIRED     +0.0    76%        -0.6B   DD_CONC>75
+  245 2026-02-25 14:16  DD Exhaustion        short   EXPIRED     +0.0    90%        -1.7B   DD_CONC>75
+  248 2026-02-25 14:52  DD Exhaustion        short   EXPIRED     +0.0    94%        -0.3B   DD_CONC>75
+  249 2026-02-25 15:25  DD Exhaustion        short   EXPIRED     +0.0    95%        -1.5B   DD_CONC>75
+
+Blocked: 38 trades  W=5 L=14 E=19  PnL removed=-92.8
+
+AFTER Filter 4 (Combined):
+  TOTAL (filtered)          n=108  W=43 L=35 E=30  WR= 55.1%  PnL=  +450.5  Avg=  +4.2  PF= 2.02  MaxDD= -122.9
+  AG Short                  n= 21  W= 9 L= 6 E= 6  WR= 60.0%  PnL=  +119.3  Avg=  +5.7  PF= 2.23  MaxDD=  -56.8
+  BofA Scalp                n= 16  W= 5 L= 1 E=10  WR= 83.3%  PnL=   +80.1  Avg=  +5.0  PF= 5.29  MaxDD=  -18.7
+  DD Exhaustion             n= 45  W=20 L=18 E= 7  WR= 52.6%  PnL=  +253.9  Avg=  +5.6  PF= 2.12  MaxDD=  -70.0
+  ES Absorption             n=  4  W= 3 L= 1 E= 0  WR= 75.0%  PnL=   +18.0  Avg=  +4.5  PF= 2.50  MaxDD=  -12.0
+  GEX Long                  n= 12  W= 2 L= 9 E= 1  WR= 18.2%  PnL=   -47.4  Avg=  -3.9  PF= 0.35  MaxDD=  -72.4
+  Paradigm Reversal         n= 10  W= 4 L= 0 E= 6  WR=100.0%  PnL=   +26.5  Avg=  +2.6  PF= 2.96  MaxDD=  -13.5
+
+
+==================================================================================================================================
+FILTER 5: COMBINED — Block DD Exhaustion Conc>75% + Block ALL Setups Conc>85%
+==================================================================================================================================
+
+Blocked trades: 38
+   ID Date         Time   Setup                Dir      Result      PnL   Conc          Reason
+--------------------------------------------------------------------------------------------------------------
+  104 2026-02-12 14:59  BofA Scalp           long    EXPIRED     +4.6    88%     ALL_CONC>85
+  116 2026-02-17 14:24  BofA Scalp           short   EXPIRED     +7.3    85%     ALL_CONC>85
+  117 2026-02-17 15:40  GEX Long             long    EXPIRED     -0.4    94%     ALL_CONC>85
+  126 2026-02-18 13:45  DD Exhaustion        long       LOSS    -12.0    79%      DD_CONC>75
+  128 2026-02-18 14:11  Paradigm Reversal    short       WIN    +10.0    89%     ALL_CONC>85
+  129 2026-02-18 14:28  BofA Scalp           long       LOSS    -11.4    87%     ALL_CONC>85
+  130 2026-02-18 14:32  BofA Scalp           long       LOSS     -7.7    86%     ALL_CONC>85
+  131 2026-02-18 14:34  DD Exhaustion        long       LOSS    -12.0    86%      DD_CONC>75
+  132 2026-02-18 15:04  DD Exhaustion        long       LOSS    -12.0    86%      DD_CONC>75
+  148 2026-02-19 14:02  DD Exhaustion        short   EXPIRED     -5.9    81%      DD_CONC>75
+  151 2026-02-19 14:43  DD Exhaustion        short      LOSS    -12.0    80%      DD_CONC>75
+  152 2026-02-19 15:17  DD Exhaustion        short      LOSS    -12.0    89%      DD_CONC>75
+  169 2026-02-20 12:57  DD Exhaustion        long        WIN    +22.7    75%      DD_CONC>75
+  174 2026-02-20 13:37  DD Exhaustion        short      LOSS    -12.0    77%      DD_CONC>75
+  177 2026-02-20 14:18  DD Exhaustion        short   EXPIRED     -8.8    80%      DD_CONC>75
+  179 2026-02-20 14:50  DD Exhaustion        short   EXPIRED    -11.5    86%      DD_CONC>75
+  180 2026-02-20 14:59  DD Exhaustion        short   EXPIRED    -11.3    87%      DD_CONC>75
+  181 2026-02-20 15:11  DD Exhaustion        short   EXPIRED     -1.4    85%      DD_CONC>75
+  182 2026-02-20 15:49  AG Short             short   EXPIRED     +4.6    91%     ALL_CONC>85
+  194 2026-02-23 13:58  DD Exhaustion        long       LOSS    -12.0    75%      DD_CONC>75
+  197 2026-02-23 14:37  DD Exhaustion        long    EXPIRED    +10.4    85%      DD_CONC>75
+  198 2026-02-23 15:07  DD Exhaustion        long    EXPIRED     +9.8    90%      DD_CONC>75
+  199 2026-02-23 15:18  DD Exhaustion        short      LOSS    -12.0    92%      DD_CONC>75
+  218 2026-02-24 13:08  DD Exhaustion        long    EXPIRED     +0.0    78%      DD_CONC>75
+  219 2026-02-24 13:40  DD Exhaustion        long    EXPIRED     +0.0    83%      DD_CONC>75
+  220 2026-02-24 14:01  ES Absorption        bullish     LOSS    -12.0    85%     ALL_CONC>85
+  221 2026-02-24 14:10  DD Exhaustion        long    EXPIRED     +0.0    85%      DD_CONC>75
+  222 2026-02-24 14:21  DD Exhaustion        long    EXPIRED     +0.0    84%      DD_CONC>75
+  223 2026-02-24 14:40  DD Exhaustion        long    EXPIRED     +0.0    85%      DD_CONC>75
+  224 2026-02-24 14:42  Paradigm Reversal    long        WIN    +10.0    86%     ALL_CONC>85
+  225 2026-02-24 15:10  DD Exhaustion        long    EXPIRED     +0.0    91%      DD_CONC>75
+  226 2026-02-24 15:20  DD Exhaustion        long    EXPIRED     +0.0    91%      DD_CONC>75
+  242 2026-02-25 13:41  DD Exhaustion        short   EXPIRED     +0.0    76%      DD_CONC>75
+  245 2026-02-25 14:16  DD Exhaustion        short   EXPIRED     +0.0    90%      DD_CONC>75
+  246 2026-02-25 14:32  Paradigm Reversal    short   EXPIRED     +0.0    92%     ALL_CONC>85
+  247 2026-02-25 14:52  BofA Scalp           short   EXPIRED     +2.1    94%     ALL_CONC>85
+  248 2026-02-25 14:52  DD Exhaustion        short   EXPIRED     +0.0    94%      DD_CONC>75
+  249 2026-02-25 15:25  DD Exhaustion        short   EXPIRED     +0.0    95%      DD_CONC>75
+
+Blocked: 38 trades  W=3 L=11 E=24  PnL removed=-85.0
+
+AFTER Filter 5 (Combined):
+  TOTAL (filtered)          n=108  W=45 L=38 E=25  WR= 54.2%  PnL=  +442.6  Avg=  +4.1  PF= 1.92  MaxDD= -132.9
+  AG Short                  n= 21  W= 9 L= 7 E= 5  WR= 56.2%  PnL=   +94.7  Avg=  +4.5  PF= 1.81  MaxDD=  -56.8
+  BofA Scalp                n= 15  W= 5 L= 3 E= 7  WR= 62.5%  PnL=   +42.8  Avg=  +2.9  PF= 2.02  MaxDD=  -27.7
+  DD Exhaustion             n= 48  W=23 L=18 E= 7  WR= 56.1%  PnL=  +311.6  Avg=  +6.5  PF= 2.38  MaxDD=  -70.0
+  ES Absorption             n=  4  W= 3 L= 1 E= 0  WR= 75.0%  PnL=   +18.0  Avg=  +4.5  PF= 2.50  MaxDD=  -12.0
+  GEX Long                  n= 12  W= 2 L= 9 E= 1  WR= 18.2%  PnL=   -41.0  Avg=  -3.4  PF= 0.43  MaxDD=  -66.0
+  Paradigm Reversal         n=  8  W= 3 L= 0 E= 5  WR=100.0%  PnL=   +16.5  Avg=  +2.1  PF= 2.22  MaxDD=  -13.5
+
+
+==================================================================================================================================
+GRAND COMPARISON: All Filters Side-by-Side (DD era trades only)
+==================================================================================================================================
+
+  Filter                                             Trades   Blocked      W/L      WR        PnL     Delta      PF     MaxDD
+  ------------------------------------------------------------------------------------------------------------------------
+  BASELINE (no filter)                               n=146 (- 0)  W=48 L=49  WR= 49.5%  PnL=  +357.7 (   +0.0)  PF= 1.55  MaxDD= -138.8
+  F1: Block DD Exhaust when Conc > 75%               n=119 (-27)  W=47 L=41  WR= 53.4%  PnL=  +449.7 (  +92.0)  PF= 1.87  MaxDD= -134.9
+  F2: Block ALL when Conc > 85%                      n=120 (-26)  W=46 L=42  WR= 52.3%  PnL=  +402.6 (  +45.0)  PF= 1.74  MaxDD= -144.9
+  F3: Block ALL when DD > +$2B                       n=132 (-14)  W=44 L=42  WR= 51.2%  PnL=  +370.5 (  +12.8)  PF= 1.66  MaxDD= -126.8
+  F4: F1 + F3 (DD Exhaust Conc>75% + DD>+$2B)        n=108 (-38)  W=43 L=35  WR= 55.1%  PnL=  +450.5 (  +92.8)  PF= 2.02  MaxDD= -122.9
+  F5: F1 + F2 (DD Exhaust Conc>75% + ALL Conc>85%)   n=108 (-38)  W=45 L=38  WR= 54.2%  PnL=  +442.6 (  +85.0)  PF= 1.92  MaxDD= -132.9
+
+
+==================================================================================================================================
+GRAND TOTAL IMPACT (Including Pre-DD Era Trades)
+==================================================================================================================================
+Pre-DD trades (before Feb 11) are UNAFFECTED by filters.
+
+  Pre-DD trades: n=12  W=5 L=6  PnL=+39.3
+  DD-era trades: n=146  W=48 L=49  PnL=+357.7
+  Grand total baseline: n=158  PnL=+397.0
+  F1: DD Exhaust Conc>75%        n=131 (-27)  W=52 L=47  WR= 52.5%  GrandPnL=  +489.0 (delta=  +92.0)
+  F2: ALL Conc>85%               n=132 (-26)  W=51 L=48  WR= 51.5%  GrandPnL=  +441.9 (delta=  +45.0)
+  F3: ALL DD>+$2B                n=144 (-14)  W=49 L=48  WR= 50.5%  GrandPnL=  +409.8 (delta=  +12.8)
+  F4: F1+F3 Combined             n=120 (-38)  W=48 L=41  WR= 53.9%  GrandPnL=  +489.8 (delta=  +92.8)
+  F5: F1+F2 Combined             n=120 (-38)  W=50 L=44  WR= 53.2%  GrandPnL=  +481.9 (delta=  +85.0)
+
+
+--- Wins That Would Be KILLED By Each Filter ---
+
+  F1: blocks 27 trades  (kills 1W, saves 8L, removes 18E)
+    KILLED WIN: #169 2026-02-20 DD Exhaustion long PnL=+22.7 Conc=75% DD=-0.7B
+    SAVED LOSS: #126 2026-02-18 DD Exhaustion long PnL=-12.0 Conc=79% DD=-1.0B
+    SAVED LOSS: #131 2026-02-18 DD Exhaustion long PnL=-12.0 Conc=86% DD=+2.9B
+    SAVED LOSS: #132 2026-02-18 DD Exhaustion long PnL=-12.0 Conc=86% DD=+0.1B
+    SAVED LOSS: #151 2026-02-19 DD Exhaustion short PnL=-12.0 Conc=80% DD=+1.2B
+    SAVED LOSS: #152 2026-02-19 DD Exhaustion short PnL=-12.0 Conc=89% DD=+0.3B
+    SAVED LOSS: #174 2026-02-20 DD Exhaustion short PnL=-12.0 Conc=77% DD=+0.6B
+    SAVED LOSS: #194 2026-02-23 DD Exhaustion long PnL=-12.0 Conc=75% DD=+0.5B
+    SAVED LOSS: #199 2026-02-23 DD Exhaustion short PnL=-12.0 Conc=92% DD=-0.8B
+
+  F2: blocks 26 trades  (kills 2W, saves 7L, removes 17E)
+    KILLED WIN: #128 2026-02-18 Paradigm Reversal short PnL=+10.0 Conc=89% DD=+0.6B
+    KILLED WIN: #224 2026-02-24 Paradigm Reversal long PnL=+10.0 Conc=86% DD=+1.2B
+    SAVED LOSS: #129 2026-02-18 BofA Scalp long PnL=-11.4 Conc=87% DD=+2.1B
+    SAVED LOSS: #130 2026-02-18 BofA Scalp long PnL=-7.7 Conc=86% DD=+2.9B
+    SAVED LOSS: #131 2026-02-18 DD Exhaustion long PnL=-12.0 Conc=86% DD=+2.9B
+    SAVED LOSS: #132 2026-02-18 DD Exhaustion long PnL=-12.0 Conc=86% DD=+0.1B
+    SAVED LOSS: #152 2026-02-19 DD Exhaustion short PnL=-12.0 Conc=89% DD=+0.3B
+    SAVED LOSS: #199 2026-02-23 DD Exhaustion short PnL=-12.0 Conc=92% DD=-0.8B
+    SAVED LOSS: #220 2026-02-24 ES Absorption bullish PnL=-12.0 Conc=85% DD=+2.1B
+
+  F3: blocks 14 trades  (kills 4W, saves 7L, removes 3E)
+    KILLED WIN: #158 2026-02-20 DD Exhaustion long PnL=+24.9 Conc=53% DD=+3.2B
+    KILLED WIN: #165 2026-02-20 Paradigm Reversal short PnL=+10.0 Conc=54% DD=+3.7B
+    KILLED WIN: #166 2026-02-20 DD Exhaustion long PnL=+15.6 Conc=46% DD=+4.6B
+    KILLED WIN: #172 2026-02-20 DD Exhaustion long PnL=+17.2 Conc=68% DD=+2.9B
+    SAVED LOSS: #106 2026-02-13 BofA Scalp long PnL=-9.0 Conc=27% DD=+2.6B
+    SAVED LOSS: #129 2026-02-18 BofA Scalp long PnL=-11.4 Conc=87% DD=+2.1B
+    SAVED LOSS: #130 2026-02-18 BofA Scalp long PnL=-7.7 Conc=86% DD=+2.9B
+    SAVED LOSS: #131 2026-02-18 DD Exhaustion long PnL=-12.0 Conc=86% DD=+2.9B
+    SAVED LOSS: #167 2026-02-20 BofA Scalp short PnL=-14.4 Conc=46% DD=+4.8B
+    SAVED LOSS: #168 2026-02-20 AG Short short PnL=-20.0 Conc=47% DD=+4.3B
+    SAVED LOSS: #220 2026-02-24 ES Absorption bullish PnL=-12.0 Conc=85% DD=+2.1B
+
+  F4: blocks 38 trades  (kills 5W, saves 14L, removes 19E)
+    KILLED WIN: #158 2026-02-20 DD Exhaustion long PnL=+24.9 Conc=53% DD=+3.2B
+    KILLED WIN: #165 2026-02-20 Paradigm Reversal short PnL=+10.0 Conc=54% DD=+3.7B
+    KILLED WIN: #166 2026-02-20 DD Exhaustion long PnL=+15.6 Conc=46% DD=+4.6B
+    KILLED WIN: #169 2026-02-20 DD Exhaustion long PnL=+22.7 Conc=75% DD=-0.7B
+    KILLED WIN: #172 2026-02-20 DD Exhaustion long PnL=+17.2 Conc=68% DD=+2.9B
+    SAVED LOSS: #106 2026-02-13 BofA Scalp long PnL=-9.0 Conc=27% DD=+2.6B
+    SAVED LOSS: #126 2026-02-18 DD Exhaustion long PnL=-12.0 Conc=79% DD=-1.0B
+    SAVED LOSS: #129 2026-02-18 BofA Scalp long PnL=-11.4 Conc=87% DD=+2.1B
+    SAVED LOSS: #130 2026-02-18 BofA Scalp long PnL=-7.7 Conc=86% DD=+2.9B
+    SAVED LOSS: #131 2026-02-18 DD Exhaustion long PnL=-12.0 Conc=86% DD=+2.9B
+    SAVED LOSS: #132 2026-02-18 DD Exhaustion long PnL=-12.0 Conc=86% DD=+0.1B
+    SAVED LOSS: #151 2026-02-19 DD Exhaustion short PnL=-12.0 Conc=80% DD=+1.2B
+    SAVED LOSS: #152 2026-02-19 DD Exhaustion short PnL=-12.0 Conc=89% DD=+0.3B
+    SAVED LOSS: #167 2026-02-20 BofA Scalp short PnL=-14.4 Conc=46% DD=+4.8B
+    SAVED LOSS: #168 2026-02-20 AG Short short PnL=-20.0 Conc=47% DD=+4.3B
+    SAVED LOSS: #174 2026-02-20 DD Exhaustion short PnL=-12.0 Conc=77% DD=+0.6B
+    SAVED LOSS: #194 2026-02-23 DD Exhaustion long PnL=-12.0 Conc=75% DD=+0.5B
+    SAVED LOSS: #199 2026-02-23 DD Exhaustion short PnL=-12.0 Conc=92% DD=-0.8B
+    SAVED LOSS: #220 2026-02-24 ES Absorption bullish PnL=-12.0 Conc=85% DD=+2.1B
+
+  F5: blocks 38 trades  (kills 3W, saves 11L, removes 24E)
+    KILLED WIN: #128 2026-02-18 Paradigm Reversal short PnL=+10.0 Conc=89% DD=+0.6B
+    KILLED WIN: #169 2026-02-20 DD Exhaustion long PnL=+22.7 Conc=75% DD=-0.7B
+    KILLED WIN: #224 2026-02-24 Paradigm Reversal long PnL=+10.0 Conc=86% DD=+1.2B
+    SAVED LOSS: #126 2026-02-18 DD Exhaustion long PnL=-12.0 Conc=79% DD=-1.0B
+    SAVED LOSS: #129 2026-02-18 BofA Scalp long PnL=-11.4 Conc=87% DD=+2.1B
+    SAVED LOSS: #130 2026-02-18 BofA Scalp long PnL=-7.7 Conc=86% DD=+2.9B
+    SAVED LOSS: #131 2026-02-18 DD Exhaustion long PnL=-12.0 Conc=86% DD=+2.9B
+    SAVED LOSS: #132 2026-02-18 DD Exhaustion long PnL=-12.0 Conc=86% DD=+0.1B
+    SAVED LOSS: #151 2026-02-19 DD Exhaustion short PnL=-12.0 Conc=80% DD=+1.2B
+    SAVED LOSS: #152 2026-02-19 DD Exhaustion short PnL=-12.0 Conc=89% DD=+0.3B
+    SAVED LOSS: #174 2026-02-20 DD Exhaustion short PnL=-12.0 Conc=77% DD=+0.6B
+    SAVED LOSS: #194 2026-02-23 DD Exhaustion long PnL=-12.0 Conc=75% DD=+0.5B
+    SAVED LOSS: #199 2026-02-23 DD Exhaustion short PnL=-12.0 Conc=92% DD=-0.8B
+    SAVED LOSS: #220 2026-02-24 ES Absorption bullish PnL=-12.0 Conc=85% DD=+2.1B

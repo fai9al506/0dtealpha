@@ -165,9 +165,9 @@ Append new analysis sections to this file after each review session.
 - Auto browser restart after 5 consecutive 0-point cycles
 - Auto re-login on session expiry
 
-### ES Absorption Detector (Swing-Based CVD Divergence)
+### ES Absorption Detector (Swing-to-Swing CVD Divergence)
 
-Detects passive buyer/seller absorption by comparing CVD at current bar vs historical swing points. Rewritten 2026-02-15 to replace the old slope-based lookback window approach.
+Detects passive buyer/seller absorption and exhaustion by comparing CVD between consecutive same-type swing points. Rewritten 2026-02-25 to replace single-swing trigger-vs-swing logic with swing-to-swing pairs detecting 4 distinct patterns.
 
 **Architecture (3 components):**
 
@@ -179,15 +179,27 @@ Detects passive buyer/seller absorption by comparing CVD at current bar vs histo
 
 2. **Volume Trigger**: Fire only when trigger bar volume >= 1.4x of 10-bar rolling average. Only the trigger bar needs elevated volume; swing reference bars don't.
 
-3. **Divergence Scan** (`evaluate_absorption`):
-   - Bullish: `swing.low <= trigger.low AND trigger.cvd < swing.cvd` (price holding, CVD dropping = passive buyers absorbing)
-   - Bearish: `swing.high >= trigger.high AND trigger.cvd > swing.cvd` (price failing, CVD rising = passive sellers absorbing)
+3. **Swing-to-Swing Divergence Scan** (`evaluate_absorption`):
+   Compares consecutive same-type swings (low-vs-low, high-vs-high) to detect 4 patterns:
+
+   **Bullish patterns** (compare consecutive swing lows):
+   - **Sell Exhaustion**: lower low + higher CVD → BUY (sellers pushing price down but CVD rising = selling exhausted)
+   - **Sell Absorption**: higher low + lower CVD → BUY (price holding up while CVD drops = passive buyers absorbing)
+
+   **Bearish patterns** (compare consecutive swing highs):
+   - **Buy Exhaustion**: higher high + lower CVD → SELL (buyers pushing price up but CVD dropping = buying exhausted)
+   - **Buy Absorption**: lower high + higher CVD → SELL (price failing while CVD rises = passive sellers absorbing)
+
+   **Scoring:**
    - CVD gap scored as z-score: `cvd_gap / rolling_std_dev(bar-to-bar CVD changes, 20 bars)`
    - Price distance scored as ATR multiple: `price_dist / avg(|close-to-close|, 20 bars)`
+   - `abs_max_trigger_dist`: max bars between most recent swing in pair and current bar (default 40)
    - **Detection-first**: fires on ALL divergences with z >= 0.5 (no grade-based suppression)
-   - Grade defaults to "C" if composite score below thresholds (never returns None for qualifying divergences)
-   - Logs ALL confirming swings with full breakdown (cvd_z, price_atr, score)
-   - Best swing by score for primary display and Telegram
+   - Grade defaults to "C" if composite score below thresholds
+   - Best swing pair by score for primary display and Telegram
+   - Result includes `pattern` field (e.g. "sell_exhaustion") and `ref_swing` with swing pair details
+   - **Pattern priority tiers**: Exhaustion=T2 beats Absorption=T1 when both directions fire on same bar. Score tiebreak for same tier. Rejected divergence saved in `rejected_divergence` field.
+   - `abs_details` JSONB column on `setup_log`: stores all divergences (both directions), swing pairs, tier resolution for analysis
 
 **Key settings** (tunable via dashboard admin panel):
 - `abs_pivot_left/right`: 2 (pivot neighbor count)
@@ -195,6 +207,14 @@ Detects passive buyer/seller absorption by comparing CVD at current bar vs histo
 - `abs_cvd_z_min`: 0.5 (minimum z-score to fire)
 - `abs_cvd_std_window`: 20 (rolling window for CVD std dev)
 - `abs_vol_window`: 10 (rolling average for volume gate)
+- `abs_max_trigger_dist`: 40 (max bars from recent swing to current bar)
+
+**RM optimization (backtest 6 days, 2026-02-25):**
+- SL=5/T=5 best fixed strategy (+34 pts), all others negative
+- buy_absorption pattern toxic (23% WR) — candidate for blocking
+- Current deployed: SL=12/T=10 (from before rewrite). User deferred RM changes for deeper testing.
+
+**Data contamination warning:** `es_range_bars` table has overlapping `bar_idx` from `live` and `rithmic` sources on same dates. Always filter by `source = 'live'` (or `'rithmic'`) in backtest queries.
 
 ### DD Exhaustion Detector (Log-Only Mode)
 

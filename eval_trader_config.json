@@ -19,26 +19,21 @@
   "e2t_eod_trailing_drawdown": 999999,
   "e2t_max_contracts_es_equiv": 999,
   "e2t_starting_balance": 50000,
-  "e2t_peak_balance": 50307.5,
+  "e2t_peak_balance": 56972.5,
   "market_open_ct": "08:30",
   "no_new_trades_after_ct": "15:30",
   "flatten_time_ct": "15:50",
   "e2t_daily_pnl_cap": 999999,
   "setup_rules": {
-    "Paradigm Reversal": {
-      "enabled": true,
-      "stop": 12,
-      "target": 10
-    },
-    "ES Absorption": {
-      "enabled": true,
-      "stop": 12,
-      "target": null
-    },
     "AG Short": {
       "enabled": true,
       "stop": 12,
       "target": "msg"
+    },
+    "DD Exhaustion": {
+      "enabled": true,
+      "stop": 12,
+      "target": null
     },
     "BofA Scalp": {
       "enabled": false,
@@ -46,7 +41,7 @@
       "target": "msg",
       "max_hold_min": 30
     },
-    "DD Exhaustion": {
+    "ES Absorption": {
       "enabled": true,
       "stop": 12,
       "target": null
@@ -55,6 +50,11 @@
       "enabled": false,
       "stop": 8,
       "target": "msg"
+    },
+    "Paradigm Reversal": {
+      "enabled": true,
+      "stop": 12,
+      "target": 10
     }
   },
   "enabled": true

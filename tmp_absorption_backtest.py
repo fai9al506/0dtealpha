@@ -26,7 +26,7 @@ RTH_END = dtime(21, 0)
 SIGNAL_START = dtime(15, 0)
 COOLDOWN = 10
 
-TRIGGER_DISTANCES = [15, 40, 50, 60]
+TRIGGER_DISTANCES = [40]
 
 
 def detect_swings(closed, pivot_left, pivot_right):
@@ -206,7 +206,7 @@ def run_backtest():
             rows = conn.execute(text("""
                 SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
                        bar_volume, cumulative_delta, ts_start, ts_end, status
-                FROM es_range_bars WHERE trade_date = :d AND status = 'closed'
+                FROM es_range_bars WHERE trade_date = :d AND status = 'closed' AND source = 'live'
                 ORDER BY bar_idx
             """), {"d": trade_date}).mappings().all()
             if len(rows) < 25: continue

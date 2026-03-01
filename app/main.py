@@ -1326,6 +1326,7 @@ _spx_session = {"high": None, "low": None, "date": None}  # previous poll's sess
 _spx_cycle_high = None  # derived cycle high (max of spot & any new session high)
 _spx_cycle_low = None   # derived cycle low  (min of spot & any new session low)
 _last_known_spot = None  # cached spot for EOD summary fallback
+_vanna_all_cache = {"value": None, "ts": None}  # refreshed each 30s cycle
 
 def log_setup(result_wrapper):
     """
@@ -1767,6 +1768,26 @@ def db_volland_exposure_window(greek: str, expiration_option: str = None, limit:
         "mid_strike": float(mid_strike) if mid_strike is not None else None,
         "points": pts
     }
+
+def _get_vanna_all_sum() -> float | None:
+    """Get total vanna (ALL expiration) from latest volland snapshot."""
+    if not engine:
+        return None
+    try:
+        sql = text("""
+            SELECT SUM(value::numeric)::float as total
+            FROM volland_exposure_points
+            WHERE greek = 'vanna'
+              AND expiration_option = 'ALL'
+              AND ts_utc = (SELECT MAX(ts_utc) FROM volland_exposure_points
+                           WHERE greek = 'vanna' AND expiration_option = 'ALL')
+        """)
+        with engine.begin() as conn:
+            r = conn.execute(sql).mappings().first()
+        return float(r["total"]) if r and r["total"] is not None else None
+    except Exception as e:
+        print(f"[vanna] query error: {e}", flush=True)
+        return None
 
 def db_volland_stats() -> Optional[dict]:
     """
@@ -3125,6 +3146,10 @@ def _run_setup_check():
             max_plus_gex = float(strikes.loc[max_pos_idx]) if max_pos_idx is not None else None
             max_minus_gex = float(strikes.loc[max_neg_idx]) if max_neg_idx is not None else None
 
+    # Refresh vanna ALL cache each cycle (for GEX Long filter)
+    _vanna_all_cache["value"] = _get_vanna_all_sum()
+    _vanna_all_cache["ts"] = now_et()
+
     from app.setup_detector import check_setups as _check_setups_fn
     result_wrappers = _check_setups_fn(
         spot, paradigm, lis, target, max_plus_gex, max_minus_gex, _setup_settings,
@@ -3165,40 +3190,58 @@ def _run_setup_check():
                     })
                     tgt_str = "trail" if target_lvl is None else f"{target_lvl:.1f}"
                     print(f"[outcome] tracking {setup_name}: target={tgt_str} stop={stop_lvl:.1f}", flush=True)
-                    # Auto-trade: place MES SIM order
-                    try:
-                        from app import auto_trader
-                        es_px = None
-                        with _es_quote_lock:
-                            es_px = _es_quote.get("last_price")
-                        if not es_px:
-                            # Fallback: use ES delta stream price (1-min bars)
-                            with _es_delta_lock:
-                                es_px = _es_delta.get("last_price")
-                            if es_px:
-                                print(f"[auto-trader] using ES delta price fallback: {es_px}", flush=True)
-                        if es_px and stop_lvl is not None:
-                            stop_dist = abs(r["spot"] - stop_lvl)
-                            target_dist = abs(target_lvl - r["spot"]) if target_lvl else None
-                            # Compute Volland full target distance for split-target setups
-                            # AG Short and DD Exhaustion: trail-only T2 (no limit order)
-                            if setup_name in ("DD Exhaustion", "AG Short"):
-                                full_target_dist = None
-                            else:
-                                full_tgt = r.get("target") or r.get("bofa_target_level")
-                                full_target_dist = abs(full_tgt - r["spot"]) if full_tgt else target_dist
-                            auto_trader.place_trade(
-                                setup_log_id=_current_setup_log.get(setup_name),
-                                setup_name=setup_name, direction=r["direction"],
-                                es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
-                                full_target_pts=full_target_dist,
-                            )
-                        elif not es_px:
-                            print(f"[auto-trader] SKIPPED {setup_name}: no ES price available (quote stream and delta both None)", flush=True)
-                        elif stop_lvl is None:
-                            print(f"[auto-trader] SKIPPED {setup_name}: stop_lvl is None", flush=True)
-                    except Exception as e:
-                        print(f"[auto-trader] place error: {e}", flush=True)
+                    # Auto-trade filters (block execution but keep portal tracking)
+                    _skip_auto_trade = False
+                    if setup_name == "GEX Long":
+                        vanna = _vanna_all_cache.get("value")
+                        if vanna is None or vanna <= 0:
+                            print(f"[auto-trader] SKIPPED GEX Long: vanna ALL = {vanna} (need > 0)", flush=True)
+                            _skip_auto_trade = True
+                    if setup_name == "DD Exhaustion":
+                        _hour = now_et().hour
+                        if _hour >= 14:
+                            print(f"[auto-trader] SKIPPED DD Exhaustion: after 14:00 ET ({_hour}:xx)", flush=True)
+                            _skip_auto_trade = True
+                        elif paradigm:
+                            _p = paradigm.upper()
+                            if "BOFA" in _p and "PURE" in _p:
+                                print(f"[auto-trader] SKIPPED DD Exhaustion: BOFA-PURE paradigm", flush=True)
+                                _skip_auto_trade = True
+                    # Auto-trade: place MES SIM order (skip if filters blocked)
+                    if not _skip_auto_trade:
+                        try:
+                            from app import auto_trader
+                            es_px = None
+                            with _es_quote_lock:
+                                es_px = _es_quote.get("last_price")
+                            if not es_px:
+                                # Fallback: use ES delta stream price (1-min bars)
+                                with _es_delta_lock:
+                                    es_px = _es_delta.get("last_price")
+                                if es_px:
+                                    print(f"[auto-trader] using ES delta price fallback: {es_px}", flush=True)
+                            if es_px and stop_lvl is not None:
+                                stop_dist = abs(r["spot"] - stop_lvl)
+                                target_dist = abs(target_lvl - r["spot"]) if target_lvl else None
+                                # Compute Volland full target distance for split-target setups
+                                # AG Short and DD Exhaustion: trail-only T2 (no limit order)
+                                if setup_name in ("DD Exhaustion", "AG Short"):
+                                    full_target_dist = None
+                                else:
+                                    full_tgt = r.get("target") or r.get("bofa_target_level")
+                                    full_target_dist = abs(full_tgt - r["spot"]) if full_tgt else target_dist
+                                auto_trader.place_trade(
+                                    setup_log_id=_current_setup_log.get(setup_name),
+                                    setup_name=setup_name, direction=r["direction"],
+                                    es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
+                                    full_target_pts=full_target_dist,
+                                )
+                            elif not es_px:
+                                print(f"[auto-trader] SKIPPED {setup_name}: no ES price available (quote stream and delta both None)", flush=True)
+                            elif stop_lvl is None:
+                                print(f"[auto-trader] SKIPPED {setup_name}: stop_lvl is None", flush=True)
+                        except Exception as e:
+                            print(f"[auto-trader] place error: {e}", flush=True)
             elif reason == "grade_upgrade":
                 # Short upgrade notice
                 emoji = "⬆️"

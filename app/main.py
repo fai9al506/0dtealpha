@@ -6760,7 +6760,8 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         is_paradigm = setup_name == "Paradigm Reversal"
         is_gex = setup_name == "GEX Long"
         is_ag = setup_name == "AG Short"
-        is_trailing = is_dd or is_gex or is_ag  # setups with trailing stop, no fixed target
+        is_skew = setup_name == "Skew Charm"
+        is_trailing = is_dd or is_gex or is_ag or is_skew  # setups with trailing stop, no fixed target
 
         if not all([ts, spot]):
             return {}
@@ -6809,6 +6810,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5, "initial_sl": 12},
             "GEX Long": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5, "initial_sl": 8},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
+            "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8, "initial_sl": 20},
         }
 
         if is_trailing:
@@ -6888,7 +6890,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             if is_long:
                 profit = price - spot
 
-                # Trailing stop logic (DD Exhaustion, GEX Long, AG Short)
+                # Trailing stop logic (DD Exhaustion, GEX Long, AG Short, Skew Charm)
                 if is_trailing and not trail_stopped:
                     if profit > trail_max_fav:
                         trail_max_fav = profit
@@ -6942,7 +6944,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             else:  # SHORT
                 profit = spot - price
 
-                # Trailing stop logic (DD Exhaustion, GEX Long, AG Short)
+                # Trailing stop logic (DD Exhaustion, GEX Long, AG Short, Skew Charm)
                 if is_trailing and not trail_stopped:
                     if profit > trail_max_fav:
                         trail_max_fav = profit

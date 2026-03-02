@@ -1279,6 +1279,7 @@ class PositionTracker:
             "stop_oid": None,   # not placed yet
             "target_oid": None, # not placed yet
         }
+        self.compliance.has_open_position = True  # record_trade() cleared this — restore for new position
         self._save()
 
         # Step 6: Place stop and target orders
@@ -1355,6 +1356,7 @@ class PositionTracker:
         "GEX Long":       {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
         "AG Short":       {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
         "ES Absorption":  {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
+        "Skew Charm":     {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
     }
 
     def check_trail(self, es_price: float | None):

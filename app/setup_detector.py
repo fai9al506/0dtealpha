@@ -1,7 +1,7 @@
 """
 Trading Setup Detector — self-contained scoring module.
 Evaluates GEX Long, AG Short, BofA Scalp, ES Absorption, Paradigm Reversal,
-and DD Exhaustion (log-only) setups.
+DD Exhaustion (log-only), and Skew+Charm (log-only) setups.
 Receives all data as parameters; no imports from main.py.
 """
 from collections import deque
@@ -1738,6 +1738,261 @@ _dd_tracker = {
 }
 
 
+# ── Skew+Charm (log-only) — defaults and state ──────────────────────────────
+
+DEFAULT_SKEW_CHARM_SETTINGS = {
+    "skew_charm_enabled": True,
+    "skew_window": 20,              # snapshots to look back (~10 min at 30s cycle)
+    "skew_threshold_pct": 3.0,      # minimum % change to fire
+    "skew_cooldown_minutes": 30,    # per-direction cooldown
+    "skew_target_pts": 10,          # fixed target for outcome tracking
+    "skew_stop_pts": 20,            # fixed stop for outcome tracking
+    "skew_market_start": "09:45",
+    "skew_market_end": "15:45",
+}
+
+_cooldown_skew_charm = {
+    "last_long_time": None,
+    "last_short_time": None,
+    "last_date": None,
+}
+
+_skew_tracker = {
+    "buffer": [],      # list of (timestamp_iso, skew_value) tuples
+    "last_date": None,
+}
+
+
+def update_skew_tracker(skew_value, settings=None):
+    """Append skew reading to rolling buffer and compute % change.
+
+    Returns (skew_change_pct, window_skew) or (None, None) if insufficient data.
+    skew_change_pct is the % change from window-ago entry to current.
+    """
+    if settings is None:
+        settings = DEFAULT_SKEW_CHARM_SETTINGS
+    window = settings.get("skew_window", 20)
+
+    today = datetime.now(NY).date()
+    if _skew_tracker["last_date"] != today:
+        _skew_tracker["buffer"] = []
+        _skew_tracker["last_date"] = today
+
+    now_iso = datetime.now(NY).isoformat()
+    _skew_tracker["buffer"].append((now_iso, skew_value))
+
+    # Keep buffer bounded (2x window to allow flexibility)
+    max_buf = window * 2
+    if len(_skew_tracker["buffer"]) > max_buf:
+        _skew_tracker["buffer"] = _skew_tracker["buffer"][-max_buf:]
+
+    buf = _skew_tracker["buffer"]
+    if len(buf) < window:
+        return None, None
+
+    old_skew = buf[-window][1]
+    if old_skew is None or old_skew == 0:
+        return None, None
+
+    change_pct = ((skew_value - old_skew) / abs(old_skew)) * 100.0
+    return round(change_pct, 2), round(old_skew, 4)
+
+
+def evaluate_skew_charm(spot, skew_value, skew_change_pct, charm, paradigm, settings):
+    """
+    Evaluate Skew+Charm setup (log-only).
+    LONG: skew drops >threshold% AND charm > 0
+    SHORT: skew rises >threshold% AND charm < 0
+    Returns result dict or None.
+    """
+    if not settings.get("skew_charm_enabled", True):
+        return None
+    if spot is None or skew_value is None or skew_change_pct is None or charm is None:
+        return None
+
+    # Time window check
+    now = datetime.now(NY)
+    start_str = settings.get("skew_market_start", "09:45")
+    end_str = settings.get("skew_market_end", "15:45")
+    try:
+        h, m = map(int, start_str.split(":"))
+        market_start = dtime(h, m)
+        h, m = map(int, end_str.split(":"))
+        market_end = dtime(h, m)
+    except Exception:
+        market_start, market_end = dtime(9, 45), dtime(15, 45)
+    if not (market_start <= now.time() <= market_end):
+        return None
+
+    threshold = settings.get("skew_threshold_pct", 3.0)
+    target_pts = settings.get("skew_target_pts", 10)
+    stop_pts = settings.get("skew_stop_pts", 20)
+
+    # Signal detection
+    # LONG: skew drops (negative change) AND charm bullish (> 0)
+    # SHORT: skew rises (positive change) AND charm bearish (< 0)
+    if skew_change_pct <= -threshold and charm > 0:
+        direction = "long"
+    elif skew_change_pct >= threshold and charm < 0:
+        direction = "short"
+    else:
+        return None
+
+    is_long = direction == "long"
+    target_price = round(spot + target_pts, 2) if is_long else round(spot - target_pts, 2)
+    stop_price = round(spot - stop_pts, 2) if is_long else round(spot + stop_pts, 2)
+
+    # --- Scoring (5 components, max 100) ---
+
+    # 1. Skew magnitude (0-30): bigger skew change = stronger signal
+    abs_change = abs(skew_change_pct)
+    if abs_change >= 10:
+        skew_score = 30
+    elif abs_change >= 7:
+        skew_score = 25
+    elif abs_change >= 5:
+        skew_score = 20
+    elif abs_change >= 3:
+        skew_score = 15
+    else:
+        skew_score = 5
+
+    # 2. Charm alignment strength (0-25)
+    abs_charm = abs(charm)
+    if abs_charm < 20_000_000:
+        charm_score = 0
+    elif abs_charm < 50_000_000:
+        charm_score = 8
+    elif abs_charm < 100_000_000:
+        charm_score = 15
+    elif abs_charm < 250_000_000:
+        charm_score = 22
+    else:
+        charm_score = 25
+
+    # 3. Time-of-day (0-15)
+    t = now.time()
+    if t >= dtime(14, 0):
+        time_score = 15
+    elif t >= dtime(11, 30):
+        time_score = 12
+    elif t >= dtime(10, 30):
+        time_score = 8
+    else:
+        time_score = 3
+
+    # 4. Paradigm context (0-15)
+    para_score = 0
+    if paradigm:
+        p = str(paradigm).upper()
+        if "GEX" in p and direction == "long":
+            para_score = 15
+        elif "AG" in p and direction == "short":
+            para_score = 15
+        elif "BOFA" in p:
+            para_score = 10
+        elif "MESSY" in p:
+            para_score = 8
+        else:
+            para_score = 5
+
+    # 5. Skew level (0-15): extreme skew values strengthen the signal
+    # Low skew (<1.0) + dropping = strong compression momentum
+    # High skew (>1.1) + rising = strong expansion momentum
+    if (direction == "long" and skew_value < 0.95) or (direction == "short" and skew_value > 1.10):
+        level_score = 15
+    elif (direction == "long" and skew_value < 1.0) or (direction == "short" and skew_value > 1.05):
+        level_score = 10
+    else:
+        level_score = 5
+
+    total_score = skew_score + charm_score + time_score + para_score + level_score
+
+    # Grade — always LOG for log-only mode
+    grade = "LOG"
+
+    return {
+        "setup_name": "Skew Charm",
+        "direction": direction,
+        "grade": grade,
+        "score": 0,            # log-only: score=0 so it doesn't rank with real setups
+        "paradigm": str(paradigm) if paradigm else None,
+        "spot": round(spot, 2),
+        "target": round(target_price, 2),
+        "target_price": round(target_price, 2),
+        "stop_price": round(stop_price, 2),
+        "lis": None,
+        "max_plus_gex": None,
+        "max_minus_gex": None,
+        "gap_to_lis": None,
+        "upside": target_pts,
+        "rr_ratio": round(target_pts / stop_pts, 2) if stop_pts > 0 else None,
+        "first_hour": False,
+        # Sub-scores in existing columns
+        "support_score": skew_score,          # skew magnitude (0-30)
+        "upside_score": charm_score,          # charm strength (0-25)
+        "floor_cluster_score": time_score,    # time-of-day (0-15)
+        "target_cluster_score": para_score,   # paradigm context (0-15)
+        "rr_score": level_score,              # skew level (0-15)
+        # Skew-specific fields
+        "skew_value": round(skew_value, 4),
+        "skew_change_pct": round(skew_change_pct, 2),
+        "charm": charm,
+        "dd_shift": None,
+        "dd_current": None,
+        "detail_score": total_score,  # actual composite for analysis
+    }
+
+
+def should_notify_skew_charm(result):
+    """30-min cooldown per direction for Skew+Charm."""
+    if result is None:
+        return False, None
+
+    direction = result["direction"]
+    now = datetime.now(NY)
+    today = now.date()
+
+    if _cooldown_skew_charm.get("last_date") != today:
+        _cooldown_skew_charm["last_long_time"] = None
+        _cooldown_skew_charm["last_short_time"] = None
+        _cooldown_skew_charm["last_date"] = today
+
+    side_key = "last_long_time" if direction == "long" else "last_short_time"
+    last_fire = _cooldown_skew_charm.get(side_key)
+    if last_fire is not None:
+        elapsed = (now - last_fire).total_seconds() / 60
+        if elapsed < 30:
+            return False, None
+
+    _cooldown_skew_charm[side_key] = now
+    return True, "new"
+
+
+def format_skew_charm_message(result):
+    """Format Telegram HTML message for Skew+Charm (log-only)."""
+    direction = result["direction"]
+    dir_label = "LONG" if direction == "long" else "SHORT"
+    dir_emoji = "\U0001f535" if direction == "long" else "\U0001f534"
+    detail_score = result.get("detail_score", 0)
+
+    skew_val = result.get("skew_value", 0)
+    skew_chg = result.get("skew_change_pct", 0)
+    charm_m = (result.get("charm") or 0) / 1_000_000
+
+    msg = f"{dir_emoji} <b>[LOG-ONLY] Skew+Charm \u2014 {dir_label} ({detail_score}/100)</b>\n"
+    msg += "\u2501" * 18 + "\n"
+    msg += f"Skew: {skew_val:.4f} ({skew_chg:+.1f}% over 20 snapshots)\n"
+    msg += f"Charm: ${charm_m:+,.0f}M ({'bullish \u2713' if result.get('charm', 0) > 0 else 'bearish \u2713'})\n"
+    msg += f"Paradigm: {result.get('paradigm') or 'N/A'}\n"
+    msg += f"Entry: ${result['spot']:,.0f} | Target: ${result.get('target_price', 0):,.0f} (+10) | Stop: ${result.get('stop_price', 0):,.0f} (-20)\n"
+    msg += "\u2501" * 18 + "\n"
+    msg += f"Skew {result.get('support_score', 0)} | Charm {result.get('upside_score', 0)} | "
+    msg += f"Time {result.get('floor_cluster_score', 0)} | Para {result.get('target_cluster_score', 0)} | "
+    msg += f"Level {result.get('rr_score', 0)}"
+    return msg
+
+
 def update_dd_tracker(dd_value):
     """Track DD hedging changes across cycles. Returns shift or None."""
     today = datetime.now(NY).date()
@@ -2312,7 +2567,8 @@ def format_paradigm_reversal_message(result):
 def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings,
                  lis_lower=None, lis_upper=None, aggregated_charm=None,
                  dd_hedging=None, es_bars=None,
-                 dd_value=None, dd_shift=None):
+                 dd_value=None, dd_shift=None,
+                 skew_value=None, skew_change_pct=None):
     """
     Main entry point called from main.py.
     Returns a list of result wrappers (each has keys: result, notify, notify_reason, message).
@@ -2325,6 +2581,8 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
       es_bars: list of recent ES 1-min bar dicts from DB (Paradigm Reversal)
       dd_value: numeric DD hedging value (DD Exhaustion)
       dd_shift: change in DD hedging from previous cycle (DD Exhaustion)
+      skew_value: current IV skew ratio (put IV / call IV for near OTM strikes)
+      skew_change_pct: % change in skew over lookback window (Skew+Charm)
     """
     results = []
 
@@ -2409,6 +2667,19 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
             "message": format_dd_exhaustion_message(dd_exhaust_result),
         })
 
+    # ── Skew+Charm (log-only) ──
+    skew_charm_result = evaluate_skew_charm(
+        spot, skew_value, skew_change_pct, aggregated_charm, paradigm, settings,
+    )
+    if skew_charm_result is not None:
+        notify_sc, reason_sc = should_notify_skew_charm(skew_charm_result)
+        results.append({
+            "result": skew_charm_result,
+            "notify": notify_sc,
+            "notify_reason": reason_sc,
+            "message": format_skew_charm_message(skew_charm_result),
+        })
+
     return results
 
 
@@ -2438,6 +2709,8 @@ def export_cooldowns() -> dict:
         "paradigm_tracker": _serialize(_paradigm_tracker),
         "dd_exhaust": _serialize(_cooldown_dd_exhaust),
         "dd_tracker": _serialize(_dd_tracker),
+        "skew_charm": _serialize(_cooldown_skew_charm),
+        "skew_tracker": copy.deepcopy(_skew_tracker),
     }
 
 def import_cooldowns(data: dict):
@@ -2482,3 +2755,9 @@ def import_cooldowns(data: dict):
             dt_keys=("last_long_time", "last_short_time")))
     if "dd_tracker" in data:
         _dd_tracker.update(data["dd_tracker"])
+    if "skew_charm" in data:
+        _cooldown_skew_charm.update(_deserialize(
+            data["skew_charm"], has_datetimes=True,
+            dt_keys=("last_long_time", "last_short_time")))
+    if "skew_tracker" in data:
+        _skew_tracker.update(data["skew_tracker"])

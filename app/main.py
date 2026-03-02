@@ -257,6 +257,14 @@ _DEFAULT_SETUP_SETTINGS = {
     "abs_weight_target_dir": 10,
     "abs_zone_min_away": 5,
     "abs_grade_thresholds": {"A+": 75, "A": 55, "B": 35},
+    "skew_charm_enabled": True,
+    "skew_window": 20,
+    "skew_threshold_pct": 3.0,
+    "skew_cooldown_minutes": 30,
+    "skew_target_pts": 10,
+    "skew_stop_pts": 20,
+    "skew_market_start": "09:45",
+    "skew_market_end": "15:45",
     "brackets": {
         "support": [[5, 100], [10, 75], [15, 50], [20, 25]],
         "upside": [[25, 100], [15, 75], [10, 50]],
@@ -1313,6 +1321,7 @@ _current_setup_log = {
     "BofA Scalp": None,
     "ES Absorption": None,
     "DD Exhaustion": None,
+    "Skew Charm": None,
     "last_date": None,
 }
 
@@ -1345,7 +1354,7 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
@@ -2703,6 +2712,11 @@ def _compute_setup_levels(r: dict):
         stop_lvl = spot - 15 if is_long else spot + 15
         return round(target_lvl, 2), round(stop_lvl, 2)
 
+    if setup_name == "Skew Charm":
+        target_lvl = spot + 10 if is_long else spot - 10
+        stop_lvl = spot - 20 if is_long else spot + 20
+        return round(target_lvl, 2), round(stop_lvl, 2)
+
     # AG Short — trailing mode (hybrid: BE at +10, trail at +15 gap=5)
     lis = r.get("lis")
     target = r.get("target")
@@ -3129,8 +3143,9 @@ def _run_setup_check():
         except Exception:
             pass
 
-    # Calculate max +GEX / -GEX strikes from latest_df
+    # Calculate max +GEX / -GEX strikes and IV skew from latest_df
     max_plus_gex, max_minus_gex = None, None
+    skew_value = None
     with _df_lock:
         if latest_df is not None and not latest_df.empty:
             df = latest_df.copy()
@@ -3146,6 +3161,26 @@ def _run_setup_check():
             max_plus_gex = float(strikes.loc[max_pos_idx]) if max_pos_idx is not None else None
             max_minus_gex = float(strikes.loc[max_neg_idx]) if max_neg_idx is not None else None
 
+            # IV skew: avg put IV / avg call IV for 10-20pt OTM strikes
+            try:
+                if spot:
+                    c_iv = pd.to_numeric(sdf["C_IV"], errors="coerce")
+                    p_iv = pd.to_numeric(sdf["P_IV"], errors="coerce")
+                    otm_calls = (strikes > spot) & (strikes <= spot + 20) & (c_iv > 0)
+                    otm_puts = (strikes < spot) & (strikes >= spot - 20) & (p_iv > 0)
+                    avg_call_iv = float(c_iv[otm_calls].mean()) if otm_calls.any() else 0
+                    avg_put_iv = float(p_iv[otm_puts].mean()) if otm_puts.any() else 0
+                    if avg_call_iv > 0:
+                        skew_value = avg_put_iv / avg_call_iv
+            except Exception:
+                pass
+
+    # Update skew tracker and get % change
+    skew_change_pct = None
+    if skew_value is not None:
+        from app.setup_detector import update_skew_tracker
+        skew_change_pct, _ = update_skew_tracker(skew_value, _setup_settings)
+
     # Refresh vanna ALL cache each cycle (for GEX Long filter)
     _vanna_all_cache["value"] = _get_vanna_all_sum()
     _vanna_all_cache["ts"] = now_et()
@@ -3156,6 +3191,7 @@ def _run_setup_check():
         lis_lower=lis_lower, lis_upper=lis_upper, aggregated_charm=aggregated_charm,
         dd_hedging=dd_hedging, es_bars=es_bars,
         dd_value=dd_numeric, dd_shift=dd_shift,
+        skew_value=skew_value, skew_change_pct=skew_change_pct,
     )
     for rw in result_wrappers:
         setup_name = rw["result"]["setup_name"]
@@ -8837,7 +8873,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="eval">Eval Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
@@ -11764,7 +11800,7 @@ DASH_HTML_TEMPLATE = """
     let _tlActiveSubTab = 'portal';
     let _tsSimData = [];
     let _evalLogData = [];
-    const _tlPillColors = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4'};
+    const _tlPillColors = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899'};
     const _tlGradeColors = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308'};
 
     // Trade Log sub-tab switching

@@ -1032,7 +1032,7 @@ def _backfill_outcomes():
             es_price = entry.get("abs_es_price")
             entry_price = es_price if entry.get("setup_name") == "ES Absorption" and es_price else spot
 
-            is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long", "AG Short")
+            is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long", "AG Short", "Skew Charm")
             is_absorption = entry.get("setup_name") == "ES Absorption"
             if is_absorption:
                 # ES Absorption: split-target. P&L = average of T1 (+10) and T2 (trail).
@@ -2713,9 +2713,10 @@ def _compute_setup_levels(r: dict):
         return round(target_lvl, 2), round(stop_lvl, 2)
 
     if setup_name == "Skew Charm":
-        target_lvl = spot + 10 if is_long else spot - 10
+        # Trailing stop — no fixed target; initial SL = 20 pts
+        # Hybrid trail: BE at +10, continuous trail activation=10, gap=8
         stop_lvl = spot - 20 if is_long else spot + 20
-        return round(target_lvl, 2), round(stop_lvl, 2)
+        return None, round(stop_lvl, 2)
 
     # AG Short — trailing mode (hybrid: BE at +10, trail at +15 gap=5)
     lis = r.get("lis")
@@ -2859,6 +2860,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "GEX Long": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
             "ES Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
+            "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
         }
         _tp = _trail_params.get(setup_name)
         if _tp is not None:
@@ -2890,8 +2892,8 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 while rung <= max_fav:
                     trail_lock = rung - _tp["lock_offset"]
                     rung += _tp["step"]
-            # ES Absorption: track T1 hit (+10pt) for split-target P&L
-            if setup_name == "ES Absorption" and max_fav >= 10 and not trade.get("_t1_hit"):
+            # ES Absorption / Skew Charm: track T1 hit (+10pt) for split-target P&L
+            if setup_name in ("ES Absorption", "Skew Charm") and max_fav >= 10 and not trade.get("_t1_hit"):
                 trade["_t1_hit"] = True
             if trail_lock is not None:
                 # Move stop to lock-in level
@@ -2961,8 +2963,8 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 pnl = entry_price - check_price
 
         if result_type:
-            # ES Absorption split-target: P&L = average of T1 (+10) and T2 (trail exit)
-            if setup_name == "ES Absorption" and trade.get("_t1_hit"):
+            # ES Absorption / Skew Charm split-target: P&L = average of T1 (+10) and T2 (trail exit)
+            if setup_name in ("ES Absorption", "Skew Charm") and trade.get("_t1_hit"):
                 pnl = round((10.0 + pnl) / 2, 1)  # T2 pnl already computed above
                 result_type = "WIN"  # T1 always hit → overall WIN
             else:
@@ -2982,7 +2984,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             if log_id and engine:
                 try:
                     # Compute first_event
-                    is_trailing = setup_name in ("DD Exhaustion", "GEX Long", "AG Short", "ES Absorption")
+                    is_trailing = setup_name in ("DD Exhaustion", "GEX Long", "AG Short", "ES Absorption", "Skew Charm")
                     if result_type == "WIN":
                         first_event = "target" if is_trailing else "10pt"
                     elif result_type == "LOSS":

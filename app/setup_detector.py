@@ -1,7 +1,7 @@
 """
 Trading Setup Detector — self-contained scoring module.
 Evaluates GEX Long, AG Short, BofA Scalp, ES Absorption, Paradigm Reversal,
-DD Exhaustion (log-only), and Skew+Charm (log-only) setups.
+DD Exhaustion, and Skew Charm setups.
 Receives all data as parameters; no imports from main.py.
 """
 from collections import deque
@@ -1738,7 +1738,7 @@ _dd_tracker = {
 }
 
 
-# ── Skew+Charm (log-only) — defaults and state ──────────────────────────────
+# ── Skew+Charm — defaults and state ──────────────────────────────────────────
 
 DEFAULT_SKEW_CHARM_SETTINGS = {
     "skew_charm_enabled": True,
@@ -1800,7 +1800,7 @@ def update_skew_tracker(skew_value, settings=None):
 
 def evaluate_skew_charm(spot, skew_value, skew_change_pct, charm, paradigm, settings):
     """
-    Evaluate Skew+Charm setup (log-only).
+    Evaluate Skew+Charm setup.
     LONG: skew drops >threshold% AND charm > 0
     SHORT: skew rises >threshold% AND charm < 0
     Returns result dict or None.
@@ -1908,14 +1908,23 @@ def evaluate_skew_charm(spot, skew_value, skew_change_pct, charm, paradigm, sett
 
     total_score = skew_score + charm_score + time_score + para_score + level_score
 
-    # Grade — always LOG for log-only mode
-    grade = "LOG"
+    # Grade based on composite score (same thresholds as GEX Long / AG Short)
+    if total_score >= 90:
+        grade = "A+"
+    elif total_score >= 75:
+        grade = "A"
+    elif total_score >= 60:
+        grade = "A-Entry"
+    elif total_score >= 45:
+        grade = "B"
+    else:
+        grade = "C"
 
     return {
         "setup_name": "Skew Charm",
         "direction": direction,
         "grade": grade,
-        "score": 0,            # log-only: score=0 so it doesn't rank with real setups
+        "score": total_score,
         "paradigm": str(paradigm) if paradigm else None,
         "spot": round(spot, 2),
         "target": round(target_price, 2),
@@ -1945,7 +1954,7 @@ def evaluate_skew_charm(spot, skew_value, skew_change_pct, charm, paradigm, sett
 
 
 def should_notify_skew_charm(result):
-    """30-min cooldown per direction for Skew+Charm."""
+    """30-min cooldown per direction for Skew Charm."""
     if result is None:
         return False, None
 
@@ -1970,17 +1979,19 @@ def should_notify_skew_charm(result):
 
 
 def format_skew_charm_message(result):
-    """Format Telegram HTML message for Skew+Charm (log-only)."""
+    """Format Telegram HTML message for Skew+Charm setup."""
     direction = result["direction"]
     dir_label = "LONG" if direction == "long" else "SHORT"
-    dir_emoji = "\U0001f535" if direction == "long" else "\U0001f534"
-    detail_score = result.get("detail_score", 0)
+    grade = result.get("grade", "C")
+    grade_emoji = {"A+": "\U0001f7e2", "A": "\U0001f535", "A-Entry": "\U0001f7e1", "B": "\u26aa", "C": "\u26aa"}.get(grade, "\u26aa")
+    score = result.get("score", 0)
 
     skew_val = result.get("skew_value", 0)
     skew_chg = result.get("skew_change_pct", 0)
     charm_m = (result.get("charm") or 0) / 1_000_000
 
-    msg = f"{dir_emoji} <b>[LOG-ONLY] Skew+Charm \u2014 {dir_label} ({detail_score}/100)</b>\n"
+    msg = f"{grade_emoji} <b>Skew Charm \u2014 {dir_label} ({grade})</b>\n"
+    msg += f"Score: <b>{score}</b>/100\n"
     msg += "\u2501" * 18 + "\n"
     msg += f"Skew: {skew_val:.4f} ({skew_chg:+.1f}% over 20 snapshots)\n"
     msg += f"Charm: ${charm_m:+,.0f}M ({'bullish \u2713' if result.get('charm', 0) > 0 else 'bearish \u2713'})\n"
@@ -2667,7 +2678,7 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
             "message": format_dd_exhaustion_message(dd_exhaust_result),
         })
 
-    # ── Skew+Charm (log-only) ──
+    # ── Skew Charm ──
     skew_charm_result = evaluate_skew_charm(
         spot, skew_value, skew_change_pct, aggregated_charm, paradigm, settings,
     )

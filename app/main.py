@@ -2858,7 +2858,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
             "GEX Long": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
-            "ES Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
+            "ES Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
         }
         _tp = _trail_params.get(setup_name)
         if _tp is not None:

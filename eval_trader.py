@@ -149,6 +149,7 @@ DEFAULT_CONFIG = {
         "ES Absorption":     {"enabled": True,  "stop": 12, "target": None},
         "Paradigm Reversal": {"enabled": True,  "stop": 12, "target": 10},
         "DD Exhaustion":     {"enabled": True,  "stop": 12, "target": None},
+        "Skew Charm":        {"enabled": False, "stop": 12, "target": None},
     },
 
     # ── Master switch ──
@@ -1023,6 +1024,9 @@ class PositionTracker:
         name = signal["setup_name"]
         direction = signal["direction"]
         spot = signal["spot"]
+        if name not in self.cfg["setup_rules"]:
+            log.error(f"  ABORT OPEN: unknown setup '{name}' (not in setup_rules)")
+            return
         rules = self.cfg["setup_rules"][name]
         is_long = direction in ("long", "bullish")
 
@@ -1189,6 +1193,13 @@ class PositionTracker:
         new_dir = signal["direction"].upper()
         old_qty = self.position.get("qty", self.cfg["qty"])
 
+        # Step 0: Validate new setup rules BEFORE touching any orders
+        # (prevents orphan positions if new setup is unknown/misconfigured)
+        if new_name not in self.cfg["setup_rules"]:
+            log.error(f"  ABORT REVERSE: unknown setup '{new_name}' — keeping current position")
+            return
+        new_rules = self.cfg["setup_rules"][new_name]
+
         log.info(f"REVERSING: closing {old_name} {old_dir} for new {new_name} {new_dir}")
 
         # Step 1: Cancel old exit orders individually (known-working CANCEL command)
@@ -1208,9 +1219,6 @@ class PositionTracker:
 
         # NOTE: do NOT clear position file here — keep old position on disk
         # until new position is saved. Prevents orphan positions on crash.
-
-        # Step 2: Resolve new position params
-        new_rules = self.cfg["setup_rules"][new_name]
         new_stop_pts = new_rules["stop"]
         new_qty = _calc_qty(self.cfg, new_stop_pts)
         new_is_long = signal["direction"] in ("long", "bullish")
@@ -1341,12 +1349,12 @@ class PositionTracker:
     # DD Exhaustion: continuous trail (activation=20, gap=5)
     # GEX Long: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
     # AG Short: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
-    # ES Absorption: hybrid trail (BE at +10, continuous trail activation=10 gap=5)
+    # ES Absorption: hybrid trail (BE at +10, continuous trail activation=10 gap=8)
     _TRAIL_PARAMS = {
         "DD Exhaustion":  {"mode": "continuous", "activation": 20, "gap": 5},
         "GEX Long":       {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
         "AG Short":       {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
-        "ES Absorption":  {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
+        "ES Absorption":  {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
     }
 
     def check_trail(self, es_price: float | None):
@@ -1801,6 +1809,10 @@ def main():
                     log.info(f"Signal received: {signal['setup_name']} "
                              f"{signal['direction'].upper()} [{signal.get('grade', '?')}] "
                              f"@ {signal['spot']:.2f}")
+                    # Unknown setup guard: skip signals for setups not in config
+                    if signal["setup_name"] not in cfg["setup_rules"]:
+                        log.info(f"  SKIPPED: unknown setup '{signal['setup_name']}' (not in setup_rules)")
+                        continue
                     # Staleness check: skip signals older than 2 minutes
                     sig_ts = signal.get("signal_ts")
                     if sig_ts:

@@ -422,85 +422,115 @@ def generate_trades_chart(engine, trade_date):
         return None
 
     bar_idx_to_x = {b["idx"]: i for i, b in enumerate(bars)}
-    x = list(range(len(bars)))
 
-    # ── figure: 2 panels (price + cumulative PnL) ──
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(28, 14),
-                                    gridspec_kw={"height_ratios": [4, 1.2]},
-                                    sharex=True)
-    fig.patch.set_facecolor("#1a1a2e")
+    # ── pre-compute stats ──
+    wins = sum(1 for t in trades if t["outcome_result"] == "WIN")
+    losses = sum(1 for t in trades if t["outcome_result"] == "LOSS")
+    expired = len(trades) - wins - losses
+    net = sum(t["outcome_pnl"] for t in trades)
+    wr = f"{wins / len(trades) * 100:.0f}" if trades else "0"
+
+    setup_stats = {}
+    for t in trades:
+        n = t["setup_name"]
+        if n not in setup_stats:
+            setup_stats[n] = {"w": 0, "l": 0, "e": 0, "pnl": 0.0}
+        s = setup_stats[n]
+        s["pnl"] += t["outcome_pnl"]
+        if t["outcome_result"] == "WIN":
+            s["w"] += 1
+        elif t["outcome_result"] == "LOSS":
+            s["l"] += 1
+        else:
+            s["e"] += 1
+
+    # ── figure layout: price chart + PnL curve + stats sidebar ──
+    fig = plt.figure(figsize=(32, 16))
+    fig.patch.set_facecolor("#0f0f1a")
+
+    # GridSpec: left 80% = charts, right 20% = stats panel
+    gs = fig.add_gridspec(2, 2, width_ratios=[4, 1], height_ratios=[4, 1.2],
+                          hspace=0.06, wspace=0.02,
+                          left=0.03, right=0.97, top=0.92, bottom=0.05)
+    ax1 = fig.add_subplot(gs[0, 0])   # price
+    ax2 = fig.add_subplot(gs[1, 0], sharex=ax1)   # PnL curve
+    ax3 = fig.add_subplot(gs[:, 1])   # stats sidebar
+
     for ax in [ax1, ax2]:
-        ax.set_facecolor("#16213e")
-        ax.tick_params(colors="#e0e0e0", labelsize=7)
-        ax.grid(True, alpha=0.15, color="#555")
+        ax.set_facecolor("#141428")
+        ax.tick_params(colors="#b0b0c0", labelsize=8)
+        ax.grid(True, alpha=0.12, color="#3a3a5a", linestyle="-")
         for spine in ax.spines.values():
-            spine.set_color("#333")
+            spine.set_color("#2a2a4a")
+    ax3.set_facecolor("#141428")
+    ax3.axis("off")
+
+    # ── TITLE ──
+    pnl_color = "#00e676" if net >= 0 else "#ff1744"
+    fig.suptitle(f"0DTE ALPHA  |  {trade_date.strftime('%B %d, %Y')}  |  "
+                 f"{len(trades)} Trades  |  {wr}% WR  |  Net: {net:+.1f} pts",
+                 fontsize=16, fontweight="bold", color="#e8e8f0", y=0.97)
 
     # ── PRICE PANEL (candlesticks) ──
     for i, b in enumerate(bars):
-        color = "#26a69a" if b["close"] >= b["open"] else "#ef5350"
+        bullish = b["close"] >= b["open"]
+        color = "#26a69a" if bullish else "#ef5350"
         body_bottom = min(b["open"], b["close"])
         body_height = max(abs(b["close"] - b["open"]), 0.25)
-        ax1.plot([i, i], [b["low"], b["high"]], color=color, linewidth=0.7, alpha=0.8)
-        ax1.bar(i, body_height, bottom=body_bottom, width=0.6, color=color, alpha=0.85, edgecolor=color)
+        ax1.plot([i, i], [b["low"], b["high"]], color=color, linewidth=0.6, alpha=0.7)
+        ax1.bar(i, body_height, bottom=body_bottom, width=0.55, color=color, alpha=0.8, edgecolor=color)
 
     # ── MARK ALL TRADES ──
-    # Track label positions to avoid overlaps
-    used_labels = []
+    price_range = max(b["high"] for b in bars) - min(b["low"] for b in bars)
+    offset = price_range * 0.025  # 2.5% of price range for arrow offset
+    label_offset = price_range * 0.045
 
     for t in trades:
         name = t["setup_name"]
         abbrev = _SETUP_ABBREV.get(name, name[:3].upper())
-        marker = _SETUP_MARKER.get(name, "o")
         direction = t["direction"]
         result = t["outcome_result"]
         pnl = t["outcome_pnl"]
 
-        # Find x-position: ES Absorption uses bar_idx from abs_details, others use timestamp
-        xi = None
-        if name == "ES Absorption" and t.get("abs_es_price"):
-            # Try to find by matching abs_es_price to a bar close, or by timestamp
-            xi = _find_nearest_bar(bars, bar_idx_to_x, t["ts"])
-        else:
-            xi = _find_nearest_bar(bars, bar_idx_to_x, t["ts"])
-
+        xi = _find_nearest_bar(bars, bar_idx_to_x, t["ts"])
         if xi is None:
             continue
 
         bar = bars[xi]
-
-        # Y-position: place arrow below/above bar
         is_long = direction.lower() in ("long", "bullish")
-        if is_long:
-            arrow_y = bar["low"] - 3
-        else:
-            arrow_y = bar["high"] + 3
 
         # Color by result
         if result == "WIN":
             color, edge = "#00e676", "#00c853"
         elif result == "LOSS":
-            color, edge = "#ff1744", "#d50000"
+            color, edge = "#ff5252", "#d50000"
         else:
-            color, edge = "#ffab00", "#ff8f00"
+            color, edge = "#ffa726", "#ff8f00"
 
-        # Plot entry marker
-        ax1.scatter(xi, arrow_y, marker=marker, s=120, color=color,
-                    edgecolors=edge, linewidths=1.5, zorder=10)
+        # Arrow marker: triangle up for LONG, down for SHORT
+        if is_long:
+            marker = "^"
+            arrow_y = bar["low"] - offset
+            label_y = arrow_y - label_offset
+            va = "top"
+        else:
+            marker = "v"
+            arrow_y = bar["high"] + offset
+            label_y = arrow_y + label_offset
+            va = "bottom"
 
-        # Label: ABBREV #ID / result / pnl
-        label = f"{abbrev} #{t['id']}\n{result}\n{pnl:+.1f}"
-        label_y = arrow_y - 4 if is_long else arrow_y + 4
-        va = "top" if is_long else "bottom"
+        ax1.scatter(xi, arrow_y, marker=marker, s=150, color=color,
+                    edgecolors=edge, linewidths=1.2, zorder=10)
 
+        # Compact label: "DD +16.1" or "ABS -12.0"
+        label = f"{abbrev} {pnl:+.1f}"
         ax1.annotate(label, (xi, label_y), fontsize=5.5, fontweight="bold",
                      color=color, ha="center", va=va, zorder=11,
-                     bbox=dict(boxstyle="round,pad=0.2", facecolor="#1a1a2e",
-                               edgecolor=color, alpha=0.85, linewidth=0.5))
+                     bbox=dict(boxstyle="round,pad=0.15", facecolor="#0f0f1a",
+                               edgecolor=color, alpha=0.88, linewidth=0.4))
 
-    ax1.set_ylabel("ES Price", color="#e0e0e0", fontsize=10)
-    ax1.set_title(f"0DTE Alpha — All Setups — {trade_date.strftime('%B %d, %Y')}",
-                  color="#e0e0e0", fontsize=14, fontweight="bold", pad=10)
+    ax1.set_ylabel("ES Price", color="#b0b0c0", fontsize=10, fontweight="bold")
+    plt.setp(ax1.get_xticklabels(), visible=False)
 
     # ── CUMULATIVE PnL PANEL ──
     cum = 0.0
@@ -512,55 +542,104 @@ def generate_trades_chart(engine, trade_date):
             pnl_xs.append(xi)
             pnl_ys.append(cum)
             res = t["outcome_result"]
-            pnl_colors.append("#00e676" if res == "WIN" else "#ff1744" if res == "LOSS" else "#ffab00")
+            pnl_colors.append("#00e676" if res == "WIN" else "#ff5252" if res == "LOSS" else "#ffa726")
 
     if pnl_xs:
-        ax2.plot(pnl_xs, pnl_ys, color="#6366f1", linewidth=1.5, zorder=1)
-        ax2.scatter(pnl_xs, pnl_ys, c=pnl_colors, s=30, zorder=2,
-                    edgecolors="white", linewidths=0.5)
-        ax2.axhline(y=0, color="#94a3b8", linewidth=0.5, linestyle="--")
-        ax2.fill_between(pnl_xs, pnl_ys, alpha=0.15, color="#6366f1")
-    ax2.set_ylabel("Cum. P&L (pts)", color="#e0e0e0", fontsize=10)
+        ax2.plot(pnl_xs, pnl_ys, color="#7c7cf7", linewidth=2, zorder=1)
+        ax2.scatter(pnl_xs, pnl_ys, c=pnl_colors, s=35, zorder=2,
+                    edgecolors="#1a1a2e", linewidths=0.6)
+        ax2.axhline(y=0, color="#555", linewidth=0.6, linestyle="--", alpha=0.5)
+        # Green fill above 0, red fill below 0
+        pnl_arr = np.array(pnl_ys)
+        xs_arr = np.array(pnl_xs)
+        ax2.fill_between(xs_arr, pnl_arr, where=pnl_arr >= 0, alpha=0.15, color="#00e676", interpolate=True)
+        ax2.fill_between(xs_arr, pnl_arr, where=pnl_arr < 0, alpha=0.15, color="#ff5252", interpolate=True)
+        # End label
+        ax2.annotate(f"{cum:+.1f}", (pnl_xs[-1], pnl_ys[-1]),
+                     fontsize=9, fontweight="bold", color=pnl_color,
+                     xytext=(8, 0), textcoords="offset points", va="center")
+    ax2.set_ylabel("Cum. P&L", color="#b0b0c0", fontsize=10, fontweight="bold")
 
     # ── X-axis time labels ──
-    tick_positions, tick_labels = [], []
+    tick_positions, tick_labels_list = [], []
     for i, b in enumerate(bars):
-        if i % 30 == 0 and b["dt_et"]:
+        if i % 20 == 0 and b["dt_et"]:
             tick_positions.append(i)
-            tick_labels.append(b["dt_et"].strftime("%H:%M"))
+            tick_labels_list.append(b["dt_et"].strftime("%H:%M"))
     ax2.set_xticks(tick_positions)
-    ax2.set_xticklabels(tick_labels, rotation=45, fontsize=7, color="#e0e0e0")
-    ax2.set_xlabel("Time (ET)", color="#e0e0e0", fontsize=10)
+    ax2.set_xticklabels(tick_labels_list, fontsize=8, color="#b0b0c0")
+    ax2.set_xlabel("Time (ET)", color="#b0b0c0", fontsize=10, fontweight="bold")
 
-    # ── Legend ──
-    legend_elements = [
-        mpatches.Patch(facecolor="#00e676", edgecolor="#00c853", label="WIN"),
-        mpatches.Patch(facecolor="#ff1744", edgecolor="#d50000", label="LOSS"),
-        mpatches.Patch(facecolor="#ffab00", edgecolor="#ff8f00", label="EXPIRED"),
+    # ── STATS SIDEBAR ──
+    y = 0.95
+    line_h = 0.035
+
+    # Title
+    ax3.text(0.5, y, "DAILY SUMMARY", fontsize=13, fontweight="bold",
+             color="#e8e8f0", ha="center", va="top", transform=ax3.transAxes)
+    y -= 0.06
+
+    # Headline stats
+    ax3.text(0.5, y, f"{len(trades)} trades", fontsize=18, fontweight="bold",
+             color="#e8e8f0", ha="center", va="top", transform=ax3.transAxes)
+    y -= 0.055
+    ax3.text(0.5, y, f"{net:+.1f} pts", fontsize=22, fontweight="bold",
+             color=pnl_color, ha="center", va="top", transform=ax3.transAxes)
+    y -= 0.06
+
+    y -= 0.01
+    ax3.text(0.5, y, f"{wins}W  /  {losses}L  /  {expired}E   ({wr}%)",
+             fontsize=10, color="#b0b0c0", ha="center", va="top", transform=ax3.transAxes)
+    y -= 0.065
+
+    # Divider
+    ax3.plot([0.1, 0.9], [y + 0.015, y + 0.015], color="#3a3a5a", linewidth=0.5,
+             transform=ax3.transAxes, clip_on=False)
+
+    # Per-setup breakdown
+    ax3.text(0.5, y, "PER SETUP", fontsize=10, fontweight="bold",
+             color="#e8e8f0", ha="center", va="top", transform=ax3.transAxes)
+    y -= 0.045
+
+    sorted_setups = sorted(setup_stats.items(), key=lambda x: -x[1]["pnl"])
+    for sname, s in sorted_setups:
+        abbr = _SETUP_ABBREV.get(sname, sname[:4])
+        cnt = s["w"] + s["l"] + s["e"]
+        spnl = s["pnl"]
+        spnl_color = "#00e676" if spnl >= 0 else "#ff5252"
+        wle = f"{s['w']}W/{s['l']}L"
+        if s["e"]:
+            wle += f"/{s['e']}E"
+
+        ax3.text(0.05, y, f"{abbr}", fontsize=9, fontweight="bold",
+                 color="#e8e8f0", ha="left", va="top", transform=ax3.transAxes, family="monospace")
+        ax3.text(0.30, y, f"{cnt}t", fontsize=9,
+                 color="#888", ha="left", va="top", transform=ax3.transAxes)
+        ax3.text(0.48, y, wle, fontsize=9,
+                 color="#b0b0c0", ha="left", va="top", transform=ax3.transAxes)
+        ax3.text(0.95, y, f"{spnl:+.1f}", fontsize=9, fontweight="bold",
+                 color=spnl_color, ha="right", va="top", transform=ax3.transAxes)
+        y -= line_h
+
+    # Legend at bottom of sidebar
+    y -= 0.03
+    ax3.plot([0.1, 0.9], [y + 0.015, y + 0.015], color="#3a3a5a", linewidth=0.5,
+             transform=ax3.transAxes, clip_on=False)
+    ax3.text(0.5, y, "LEGEND", fontsize=9, fontweight="bold",
+             color="#e8e8f0", ha="center", va="top", transform=ax3.transAxes)
+    y -= 0.035
+    legend_items = [
+        ("\u25b2  Long entry", "#b0b0c0"), ("\u25bc  Short entry", "#b0b0c0"),
+        ("\u25cf  WIN", "#00e676"), ("\u25cf  LOSS", "#ff5252"), ("\u25cf  EXPIRED", "#ffa726"),
     ]
-    # Add per-setup markers to legend
-    for sname, mkr in _SETUP_MARKER.items():
-        abbr = _SETUP_ABBREV.get(sname, sname[:3])
-        legend_elements.append(
-            plt.Line2D([0], [0], marker=mkr, color="#aaa", label=abbr,
-                       markersize=7, linestyle="None", markeredgecolor="white", markeredgewidth=0.5))
+    for txt, c in legend_items:
+        ax3.text(0.08, y, txt, fontsize=8, color=c, ha="left", va="top",
+                 transform=ax3.transAxes)
+        y -= 0.028
 
-    ax1.legend(handles=legend_elements, loc="upper left", fontsize=7,
-               facecolor="#1a1a2e", edgecolor="#555", labelcolor="#e0e0e0", ncol=5)
-
-    # ── Summary text ──
-    wins = sum(1 for t in trades if t["outcome_result"] == "WIN")
-    losses = sum(1 for t in trades if t["outcome_result"] == "LOSS")
-    net = sum(t["outcome_pnl"] for t in trades)
-    wr = f"{wins / len(trades) * 100:.0f}%" if trades else "0%"
-    summary = f"{len(trades)} trades | {wins}W/{losses}L | WR {wr} | Net {net:+.1f} pts"
-    ax1.text(0.99, 0.98, summary, transform=ax1.transAxes, fontsize=9, fontweight="bold",
-             color="#e0e0e0", ha="right", va="top",
-             bbox=dict(boxstyle="round,pad=0.4", facecolor="#1a1a2e", edgecolor="#6366f1", alpha=0.9))
-
-    plt.tight_layout()
+    # Save
     tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-    fig.savefig(tmp.name, dpi=180, bbox_inches="tight", facecolor=fig.get_facecolor())
+    fig.savefig(tmp.name, dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
     tmp.close()
     print(f"[eod-chart] generated chart: {len(trades)} trades, {len(bars)} bars, {tmp.name}", flush=True)

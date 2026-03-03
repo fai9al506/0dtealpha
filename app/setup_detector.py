@@ -1631,59 +1631,127 @@ def format_absorption_message(result):
         "zone_sell_absorption": "Zone Sell Absorption",
         "zone_buy_absorption": "Zone Buy Absorption",
     }
+    tier_labels = {1: "T1", 2: "T2"}
+    tier = result.get("pattern_tier", 1)
     pattern_label = pattern_labels.get(pattern, pattern)
 
     parts = [
         f"<b>ES ABSORPTION {side_emoji} {side_label} [{grade}] ({score:.0f}/100){strong_tag}</b>",
-        f"Pattern: {pattern_label}",
-        "",
-        f"Price: {result['abs_es_price']:.2f} | CVD: {result['cvd']:+,}",
-        f"Vol spike: {result['vol_trigger']:,} ({result['abs_vol_ratio']:.1f}x avg)",
+        f"{pattern_label} ({tier_labels.get(tier, 'T1')})",
+        "\u2501" * 18,
     ]
 
     best = result.get("best_swing")
     if best:
         sw = best["swing"]
         ref = best.get("ref_swing")
-        if ref and ref.get("type") == "Z":
-            # Zone-revisit: show zone level and bars between visits
+        is_zone = ref and ref.get("type") == "Z"
+
+        if is_zone and ref:
+            # Zone-revisit format
             bars_gap = sw["bar_idx"] - ref["bar_idx"]
-            parts.append(f"Zone revisit: {ref['price']:.2f} (bar #{ref['bar_idx']}) -> bar #{sw['bar_idx']} ({bars_gap} bars apart)")
-            parts.append(f"  CVD: {ref['cvd']:+,} -> {sw['cvd']:+,} (z={best['cvd_z']:.2f})")
+            parts.append("")
+            parts.append(f"Visit 1 ({bars_gap} bars ago):")
+            parts.append(f"  Zone: {ref['price']:.2f} | Bar #{ref['bar_idx']}")
+            parts.append(f"  CVD: {ref['cvd']:+,}")
+            parts.append("")
+            parts.append("Visit 2 (now):")
+            parts.append(f"  Zone: {sw['price']:.2f} | Bar #{sw['bar_idx']}")
+            parts.append(f"  CVD: {sw['cvd']:+,}")
+
+            cvd_diff = sw["cvd"] - ref["cvd"]
+            cvd_desc = _cvd_interpretation_zone(pattern, cvd_diff)
+            parts.append("")
+            parts.append("Divergence:")
+            parts.append(f"  CVD: {abs(cvd_diff):,} {cvd_desc}")
+            parts.append(f"  Strength: {best['cvd_z']:.2f}\u03c3")
+
         elif ref:
-            parts.append(f"Swing pair: {ref['type']}@{ref['price']:.2f} \u2192 {sw['type']}@{sw['price']:.2f}")
-            parts.append(f"  CVD z: {best['cvd_z']:.2f} | Price: {best['price_atr']:.1f}x ATR")
-        else:
-            parts.append(f"Swing: {sw['type']}@{sw['price']:.2f} (bar #{sw['bar_idx']})")
-            parts.append(f"  CVD z: {best['cvd_z']:.2f} | Price: {best['price_atr']:.1f}x ATR")
+            # Swing pair format
+            swing_type_label = "Low" if ref["type"] == "L" else "High"
+            ref_vol = ref.get("volume", 0)
+            sw_vol = sw.get("volume", 0)
 
-    all_divs = result.get("all_divergences", [])
-    if len(all_divs) > 1:
-        parts.append(f"({len(all_divs)} confirming swing pairs)")
+            parts.append("")
+            parts.append("Swing 1 (reference):")
+            parts.append(f"  Price: {ref['price']:.2f} ({swing_type_label}) | Bar #{ref['bar_idx']}")
+            parts.append(f"  CVD: {ref['cvd']:+,} | Vol: {ref_vol:,}")
+            parts.append("")
+            parts.append("Swing 2 (current):")
+            parts.append(f"  Price: {sw['price']:.2f} ({swing_type_label}) | Bar #{sw['bar_idx']}")
+            parts.append(f"  CVD: {sw['cvd']:+,} | Vol: {sw_vol:,}")
 
+            price_diff = sw["price"] - ref["price"]
+            cvd_diff = sw["cvd"] - ref["cvd"]
+            price_desc = _price_interpretation(pattern, price_diff, ref["type"])
+            cvd_desc = _cvd_interpretation(pattern, cvd_diff)
+
+            parts.append("")
+            parts.append("Divergence:")
+            parts.append(f"  Price: {abs(price_diff):.2f} {price_desc}")
+            parts.append(f"  CVD: {abs(cvd_diff):,} {cvd_desc}")
+            parts.append(f"  Strength: {best['cvd_z']:.2f}\u03c3 ({best['price_atr']:.1f}x price move)")
+
+    parts.append("")
+    parts.append(f"Trigger bar: {result['abs_es_price']:.2f} | Vol: {result['vol_trigger']:,} ({result['abs_vol_ratio']:.1f}x avg)")
+
+    # Context line: DD + Paradigm + LIS
+    ctx = []
     if result.get("dd_raw"):
-        parts.append(f"DD Hedging: {result['dd_hedging']} \u2713")
+        ctx.append(f"DD: {result['dd_hedging']} \u2713")
     if result.get("para_raw"):
-        parts.append(f"Paradigm: {result['paradigm']} \u2713")
+        ctx.append(f"Paradigm: {result['paradigm']} \u2713")
+    if ctx:
+        parts.append(" | ".join(ctx))
+
     if result.get("lis_raw") and result.get("lis_val") is not None:
         lis_side_label = ""
         if result.get("lis_side_raw", 0) >= 2:
-            lis_side_label = " (right side \u2713)"
-        elif result.get("lis_side_raw", 0) >= 1:
-            lis_side_label = " (near right side)"
+            lis_side_label = " \u2713"
         parts.append(f"Near LIS: {result['lis_val']:.0f} ({result['lis_dist']:.1f} pts){lis_side_label}")
-    if result.get("target_dir_raw", 0) >= 2 and result.get("target_val") is not None:
-        parts.append(f"Target: {result['target_val']:.0f} (confirms direction \u2713)")
 
-    parts.append("")
-    parts.append(
-        f"Vol {result['upside_score']:.0f} | DD {result['floor_cluster_score']:.0f} | "
-        f"Para {result['target_cluster_score']:.0f} | LIS {result['rr_score']:.0f} | "
-        f"Side {result.get('lis_side_raw', 0)} | Tgt {result.get('target_dir_raw', 0)}"
-    )
-    parts.append(f"Swings: {result.get('swing_count', 0)} tracked")
+    # If both directions fired, mention rejected
+    rej = result.get("rejected_divergence")
+    if rej:
+        rej_pat = pattern_labels.get(rej.get("pattern", ""), rej.get("pattern", "?"))
+        parts.append(f"Rejected: {rej_pat} (lower tier)")
 
     return "\n".join(parts)
+
+
+def _price_interpretation(pattern, price_diff, swing_type):
+    """Plain-English interpretation for swing price movement."""
+    if pattern == "sell_exhaustion":
+        return "lower (new low \u2193)"
+    elif pattern == "sell_absorption":
+        return "higher (held up \u2191)"
+    elif pattern == "buy_exhaustion":
+        return "higher (new high \u2191)"
+    elif pattern == "buy_absorption":
+        return "lower (failed \u2193)"
+    return "moved"
+
+
+def _cvd_interpretation(pattern, cvd_diff):
+    """Plain-English interpretation for CVD divergence."""
+    if pattern == "sell_exhaustion":
+        return "higher (sellers weakening \u2191)"
+    elif pattern == "sell_absorption":
+        return "lower (buyers absorbing \u2193)"
+    elif pattern == "buy_exhaustion":
+        return "lower (buyers weakening \u2193)"
+    elif pattern == "buy_absorption":
+        return "higher (sellers absorbing \u2191)"
+    return "diverged"
+
+
+def _cvd_interpretation_zone(pattern, cvd_diff):
+    """Plain-English interpretation for zone-revisit CVD divergence."""
+    if pattern == "zone_sell_absorption":
+        return "lower (selling absorbed \u2193)"
+    elif pattern == "zone_buy_absorption":
+        return "higher (buying absorbed \u2191)"
+    return "diverged"
 
 
 # ── Paradigm Reversal — defaults and state ─────────────────────────────────

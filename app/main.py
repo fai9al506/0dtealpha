@@ -7068,7 +7068,7 @@ def api_setup_log_outcome(log_id: int):
                        gap_to_lis, upside, rr_ratio, first_hour, notified,
                        bofa_stop_level, bofa_target_level, bofa_lis_width,
                        bofa_max_hold_minutes, lis_upper, comments,
-                       abs_vol_ratio, abs_es_price,
+                       abs_vol_ratio, abs_es_price, abs_details,
                        support_score, upside_score, floor_cluster_score,
                        target_cluster_score, rr_score,
                        outcome_result, outcome_pnl, outcome_max_profit,
@@ -7140,12 +7140,16 @@ def api_setup_log_outcome(log_id: int):
                 "target_es": None,  # absorption uses trail, no fixed target
                 "stop": outcome.get("initial_stop"),
             }
+            # abs_details is already in entry (from JSONB column), but
+            # surface it at top level for easy JS access
+            abs_details = row.get("abs_details") if hasattr(row, "get") else row["abs_details"]
             return {
                 "entry": entry,
                 "outcome": outcome,
                 "prices": [],
                 "es_bars": es_bars,
                 "levels": levels,
+                "abs_details": abs_details,
             }
 
         # BofA Scalp: show entry ± 1hr for context, GEX/AG: full day
@@ -12389,29 +12393,61 @@ DASH_HTML_TEMPLATE = """
         const displayPrice = isAbs ? (e.abs_es_price || e.spot)?.toFixed(2) : e.spot?.toFixed(0);
         title.innerHTML = setupLabel + '<span style="color:' + dirColor + '">' + dir + '</span> ' + e.grade + ' ' + priceLabel + displayPrice;
 
-        // Info grid
-        // Parse trigger criteria from comments for ES Absorption
-        const absComments = (isAbs && e.comments) ? e.comments.split(' | ') : [];
-        const absPattern = absComments.find(s => s.startsWith('Pattern:'))?.replace('Pattern: ', '') || '–';
-        const absSwings = absComments.find(s => s.startsWith('Swings:') || s.startsWith('Zone:')) || '';
-        const absCvd = absComments.find(s => s.startsWith('CVD')) || '';
-        const absLookback = absComments.find(s => s.startsWith('Lookback:'))?.replace('Lookback: ', '') || '';
-        const absDDH = absComments.find(s => s.startsWith('DD:'))?.replace('DD: ', '') || '';
-        const absConfirm = absComments.find(s => s.includes('confirming')) || '';
+        // Info grid — ES Absorption uses abs_details JSONB for structured display
+        const ad = isAbs ? (data.abs_details || {}) : {};
+        const adBest = ad.best_swing || {};
+        const adSw = adBest.swing || {};
+        const adRef = adBest.ref_swing || {};
+        const isZone = adRef.type === 'Z';
+        const patternLabels = {
+          sell_exhaustion: 'Sell Exhaustion (T2)', sell_absorption: 'Sell Absorption (T1)',
+          buy_exhaustion: 'Buy Exhaustion (T2)', buy_absorption: 'Buy Absorption (T1)',
+          zone_sell_absorption: 'Zone Sell Absorption', zone_buy_absorption: 'Zone Buy Absorption',
+        };
+        const absPatternLabel = patternLabels[ad.pattern] || ad.pattern || '–';
+        // Build swing comparison rows
+        const fmtCvd = (v) => v != null ? (v >= 0 ? '+' : '') + Number(v).toLocaleString() : '–';
+        const fmtVol = (v) => v != null ? Number(v).toLocaleString() : '–';
+        const swLabel = isZone ? 'Visit' : 'Swing';
+        const swType = adRef.type === 'L' ? 'Low' : adRef.type === 'H' ? 'High' : 'Zone';
+        const s1Label = isZone
+          ? swType + ' @ ' + (adRef.price?.toFixed(2) || '–') + ' | CVD: ' + fmtCvd(adRef.cvd)
+          : swType + ' @ ' + (adRef.price?.toFixed(2) || '–') + ' | CVD: ' + fmtCvd(adRef.cvd) + ' | Vol: ' + fmtVol(adRef.volume);
+        const s2Label = isZone
+          ? swType + ' @ ' + (adSw.price?.toFixed(2) || '–') + ' | CVD: ' + fmtCvd(adSw.cvd)
+          : swType + ' @ ' + (adSw.price?.toFixed(2) || '–') + ' | CVD: ' + fmtCvd(adSw.cvd) + ' | Vol: ' + fmtVol(adSw.volume);
+        // Price/CVD diff descriptions
+        const priceDiff = (adSw.price != null && adRef.price != null) ? Math.abs(adSw.price - adRef.price).toFixed(2) : '–';
+        const cvdDiff = (adSw.cvd != null && adRef.cvd != null) ? Math.abs(adSw.cvd - adRef.cvd).toLocaleString() : '–';
+        const priceDir = {
+          sell_exhaustion: 'lower (new low)', sell_absorption: 'higher (held up)',
+          buy_exhaustion: 'higher (new high)', buy_absorption: 'lower (failed)',
+        }[ad.pattern] || '';
+        const cvdDir = {
+          sell_exhaustion: 'higher (sellers weakening)', sell_absorption: 'lower (buyers absorbing)',
+          buy_exhaustion: 'lower (buyers weakening)', buy_absorption: 'higher (sellers absorbing)',
+          zone_sell_absorption: 'lower (selling absorbed)', zone_buy_absorption: 'higher (buying absorbed)',
+        }[ad.pattern] || '';
+        const strengthLabel = (adBest.cvd_z != null ? adBest.cvd_z.toFixed(2) + 'σ' : '–')
+          + (!isZone && adBest.price_atr != null ? ' (' + adBest.price_atr.toFixed(1) + 'x price)' : '');
         const infoItems = isAbs ? [
           ['Time', fmtDateTimeET(e.ts) + ' ET'],
-          ['Pattern', absPattern],
+          ['Pattern', absPatternLabel],
           ['ES Entry', (lv.abs_es_price || e.abs_es_price)?.toFixed(2)],
           ['T1 (+10pt)', lv.ten_pt?.toFixed(2) || '–'],
-          ['T2', 'Trail (BE@10, gap=5)'],
           ['Init Stop', lv.stop?.toFixed(2) || '–'],
+          ['Score', e.score + '/100'],
+          ['──────', '──────────────────────'],
+          [swLabel + ' 1', s1Label + ' | Bar #' + (adRef.bar_idx ?? '–')],
+          [swLabel + ' 2', s2Label + ' | Bar #' + (adSw.bar_idx ?? '–')],
+          ['──────', '──────────────────────'],
+          ['Price diff', priceDiff + ' ' + priceDir],
+          ['CVD diff', cvdDiff + ' ' + cvdDir],
+          ['Strength', strengthLabel],
+          ['──────', '──────────────────────'],
           ['Vol Ratio', (e.abs_vol_ratio || 0).toFixed(1) + 'x'],
           ['Paradigm', e.paradigm || '–'],
           ['LIS (ES)', lv.lis?.toFixed(0) || '–'],
-          ['Score', e.score + '/100'],
-          [absSwings ? 'Trigger' : 'Lookback', absSwings || absLookback || '–'],
-          [absCvd ? 'CVD Div' : 'Div Score', absCvd || e.support_score || '–'],
-          [absDDH ? 'DD Hedging' : 'DD', absDDH || e.floor_cluster_score || '–'],
         ] : isBofa ? [
           ['Time', fmtDateTimeET(e.ts) + ' ET'],
           ['Paradigm', e.paradigm || '–'],
@@ -12608,6 +12644,34 @@ DASH_HTML_TEMPLATE = """
           shapes.push({ type:'line', x0:sigWinPos, x1:sigWinPos, y0:0, y1:1, yref:'paper', line:{color:'#f59e0b',width:3,dash:'solid'} });
           const isBull = e.direction === 'bullish';
           annots.push({ x:sigWinPos, y:1, yref:'paper', text:(isBull ? '▲ BUY' : '▼ SELL') + ' ' + e.grade, showarrow:false, font:{color:'#f59e0b',size:11,weight:'bold'}, yanchor:'bottom' });
+
+          // Swing markers from abs_details (S1/S2 or V1/V2 for zone-revisit)
+          if (data.abs_details && data.abs_details.best_swing) {
+            const bs = data.abs_details.best_swing;
+            const refSw = bs.ref_swing;
+            const curSw = bs.swing;
+            const isZoneChart = refSw && refSw.type === 'Z';
+            const label1 = isZoneChart ? 'V1' : 'S1';
+            const label2 = isZoneChart ? 'V2' : 'S2';
+            // Find x positions in visible window
+            [
+              [refSw, label1, '(ref)'],
+              [curSw, label2, '(cur)'],
+            ].forEach(([sw, lbl, suffix]) => {
+              if (!sw || sw.bar_idx == null) return;
+              const xIdx = visibleBars.findIndex(b => b.idx === sw.bar_idx);
+              if (xIdx < 0) return;
+              const yPrice = sw.price;
+              const isLow = sw.type === 'L' || sw.type === 'Z';
+              annots.push({
+                x: xIdx, y: yPrice, text: lbl,
+                showarrow: true, arrowhead: 2, arrowsize: 1, arrowwidth: 1.5, arrowcolor: '#38bdf8',
+                ax: 0, ay: isLow ? 25 : -25,
+                font: { color: '#38bdf8', size: 10, weight: 'bold' },
+                bgcolor: '#0f1115', bordercolor: '#38bdf8', borderwidth: 1, borderpad: 2,
+              });
+            });
+          }
 
           // Level lines
           addLevel(lv.entry, 'Entry ' + lv.entry?.toFixed(2), '#f59e0b', 2, 'solid', 'left');

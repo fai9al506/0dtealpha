@@ -4470,6 +4470,22 @@ def _send_setup_eod_summary():
     else:
         print("[eod-summary] no trades today, skipping summary", flush=True)
 
+    # PDF report (non-blocking — failure never blocks text summary)
+    try:
+        from app.eod_report import generate_eod_pdf, send_telegram_pdf
+        pdf_path = generate_eod_pdf(engine, now.date())
+        if pdf_path:
+            chat_id = TELEGRAM_CHAT_ID_SETUPS or TELEGRAM_CHAT_ID
+            caption = f"0DTE Alpha Daily Report - {now.strftime('%B %d, %Y')}"
+            send_telegram_pdf(pdf_path, caption, TELEGRAM_BOT_TOKEN, chat_id)
+            print(f"[eod-summary] PDF report sent", flush=True)
+            try:
+                os.unlink(pdf_path)
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[eod-summary] PDF report error: {e}", flush=True)
+
 
 ECON_CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 

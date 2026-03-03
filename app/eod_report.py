@@ -12,7 +12,9 @@ from datetime import datetime, timedelta
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import matplotlib.dates as mdates
+import numpy as np
 import requests
 from fpdf import FPDF
 from sqlalchemy import text
@@ -155,6 +157,11 @@ _LOSS_BG = (254, 226, 226)
 _EXP_BG = (243, 244, 246)
 
 
+def _sanitize(text):
+    """Replace non-latin-1 chars so fpdf2 Helvetica doesn't crash."""
+    return text.encode("latin-1", errors="replace").decode("latin-1")
+
+
 def _build_pdf(trades, chart_png, trade_date):
     """Assemble landscape A4 PDF with header, chart, summary, trade table."""
     pdf = FPDF(orientation="L", unit="mm", format="A4")
@@ -276,6 +283,7 @@ def _build_pdf(trades, chart_png, trade_date):
         line2 = f"  {stop_str} | {tgt_str} | {why}"
         if len(line2) > 110:
             line2 = line2[:107] + "..."
+        line2 = _sanitize(line2)
 
         pdf.set_font("Helvetica", "I", 7)
         total_w = sum(cw)
@@ -311,6 +319,262 @@ def send_telegram_pdf(pdf_path, caption, bot_token, chat_id):
         return True
     else:
         print(f"[eod-pdf] Telegram error {resp.status_code}: {resp.text[:200]}", flush=True)
+        return False
+
+
+# ── trades-on-chart picture ──────────────────────────────────────────────
+
+# Setup name → short label for chart markers
+_SETUP_ABBREV = {
+    "DD Exhaustion": "DD", "ES Absorption": "ABS", "GEX Long": "GEX",
+    "AG Short": "AG", "BofA Scalp": "BOFA", "Paradigm Reversal": "PAR",
+    "Skew Charm": "SKW",
+}
+
+# Setup name → marker symbol (so you can tell them apart even in grayscale)
+_SETUP_MARKER = {
+    "DD Exhaustion": "o", "ES Absorption": "s", "GEX Long": "^",
+    "AG Short": "v", "BofA Scalp": "D", "Paradigm Reversal": "P",
+    "Skew Charm": "*",
+}
+
+
+def _query_range_bars(engine, trade_date):
+    """Query ES 5-pt range bars for a given date (Rithmic preferred, fallback live)."""
+    date_str = trade_date.isoformat()
+    with engine.connect() as conn:
+        for source in ("rithmic", "live"):
+            rows = conn.execute(text("""
+                SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
+                       bar_volume, bar_delta, cvd_close, ts_start
+                FROM es_range_bars
+                WHERE trade_date = :d AND source = :src
+                ORDER BY bar_idx
+            """), {"d": date_str, "src": source}).fetchall()
+            if rows:
+                bars = []
+                for r in rows:
+                    ts_start = r[8]
+                    # convert to ET (UTC-5)
+                    if ts_start:
+                        try:
+                            if hasattr(ts_start, "utcoffset") and ts_start.utcoffset():
+                                from datetime import timezone
+                                dt_et = ts_start.astimezone(timezone(timedelta(hours=-4)))
+                            else:
+                                dt_et = ts_start - timedelta(hours=5)
+                        except Exception:
+                            dt_et = ts_start
+                    else:
+                        dt_et = None
+                    bars.append({
+                        "idx": r[0], "open": float(r[1]), "high": float(r[2]),
+                        "low": float(r[3]), "close": float(r[4]),
+                        "volume": int(r[5] or 0), "delta": int(r[6] or 0),
+                        "cvd": int(r[7] or 0), "dt_et": dt_et,
+                    })
+                # filter RTH (9:30 - 16:00 ET)
+                rth = [b for b in bars if b["dt_et"] and
+                       (b["dt_et"].hour > 9 or (b["dt_et"].hour == 9 and b["dt_et"].minute >= 30)) and
+                       b["dt_et"].hour < 16]
+                return rth if rth else bars
+    return []
+
+
+def _find_nearest_bar(bars, bar_idx_to_x, trade_ts):
+    """Find the x-position on the chart for a trade by timestamp."""
+    if not bars or not trade_ts:
+        return None
+    # trade_ts is in DB timezone — convert to naive for comparison
+    best_x, best_diff = None, None
+    for i, b in enumerate(bars):
+        if not b["dt_et"]:
+            continue
+        try:
+            b_naive = b["dt_et"].replace(tzinfo=None)
+            t_naive = trade_ts.replace(tzinfo=None) if hasattr(trade_ts, "replace") else trade_ts
+            diff = abs((t_naive - b_naive).total_seconds())
+            if best_diff is None or diff < best_diff:
+                best_diff = diff
+                best_x = i
+        except Exception:
+            continue
+    return best_x
+
+
+def generate_trades_chart(engine, trade_date):
+    """Generate ES range bar chart with ALL setup entries marked. Returns PNG path or None."""
+    trades = _query_trades(engine, trade_date)
+    bars = _query_range_bars(engine, trade_date)
+
+    if not trades:
+        print(f"[eod-chart] no trades for {trade_date}, skipping chart", flush=True)
+        return None
+    if not bars:
+        print(f"[eod-chart] no range bars for {trade_date}, skipping chart", flush=True)
+        return None
+
+    bar_idx_to_x = {b["idx"]: i for i, b in enumerate(bars)}
+    x = list(range(len(bars)))
+
+    # ── figure: 2 panels (price + cumulative PnL) ──
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(28, 14),
+                                    gridspec_kw={"height_ratios": [4, 1.2]},
+                                    sharex=True)
+    fig.patch.set_facecolor("#1a1a2e")
+    for ax in [ax1, ax2]:
+        ax.set_facecolor("#16213e")
+        ax.tick_params(colors="#e0e0e0", labelsize=7)
+        ax.grid(True, alpha=0.15, color="#555")
+        for spine in ax.spines.values():
+            spine.set_color("#333")
+
+    # ── PRICE PANEL (candlesticks) ──
+    for i, b in enumerate(bars):
+        color = "#26a69a" if b["close"] >= b["open"] else "#ef5350"
+        body_bottom = min(b["open"], b["close"])
+        body_height = max(abs(b["close"] - b["open"]), 0.25)
+        ax1.plot([i, i], [b["low"], b["high"]], color=color, linewidth=0.7, alpha=0.8)
+        ax1.bar(i, body_height, bottom=body_bottom, width=0.6, color=color, alpha=0.85, edgecolor=color)
+
+    # ── MARK ALL TRADES ──
+    # Track label positions to avoid overlaps
+    used_labels = []
+
+    for t in trades:
+        name = t["setup_name"]
+        abbrev = _SETUP_ABBREV.get(name, name[:3].upper())
+        marker = _SETUP_MARKER.get(name, "o")
+        direction = t["direction"]
+        result = t["outcome_result"]
+        pnl = t["outcome_pnl"]
+
+        # Find x-position: ES Absorption uses bar_idx from abs_details, others use timestamp
+        xi = None
+        if name == "ES Absorption" and t.get("abs_es_price"):
+            # Try to find by matching abs_es_price to a bar close, or by timestamp
+            xi = _find_nearest_bar(bars, bar_idx_to_x, t["ts"])
+        else:
+            xi = _find_nearest_bar(bars, bar_idx_to_x, t["ts"])
+
+        if xi is None:
+            continue
+
+        bar = bars[xi]
+
+        # Y-position: place arrow below/above bar
+        is_long = direction.lower() in ("long", "bullish")
+        if is_long:
+            arrow_y = bar["low"] - 3
+        else:
+            arrow_y = bar["high"] + 3
+
+        # Color by result
+        if result == "WIN":
+            color, edge = "#00e676", "#00c853"
+        elif result == "LOSS":
+            color, edge = "#ff1744", "#d50000"
+        else:
+            color, edge = "#ffab00", "#ff8f00"
+
+        # Plot entry marker
+        ax1.scatter(xi, arrow_y, marker=marker, s=120, color=color,
+                    edgecolors=edge, linewidths=1.5, zorder=10)
+
+        # Label: ABBREV #ID / result / pnl
+        label = f"{abbrev} #{t['id']}\n{result}\n{pnl:+.1f}"
+        label_y = arrow_y - 4 if is_long else arrow_y + 4
+        va = "top" if is_long else "bottom"
+
+        ax1.annotate(label, (xi, label_y), fontsize=5.5, fontweight="bold",
+                     color=color, ha="center", va=va, zorder=11,
+                     bbox=dict(boxstyle="round,pad=0.2", facecolor="#1a1a2e",
+                               edgecolor=color, alpha=0.85, linewidth=0.5))
+
+    ax1.set_ylabel("ES Price", color="#e0e0e0", fontsize=10)
+    ax1.set_title(f"0DTE Alpha — All Setups — {trade_date.strftime('%B %d, %Y')}",
+                  color="#e0e0e0", fontsize=14, fontweight="bold", pad=10)
+
+    # ── CUMULATIVE PnL PANEL ──
+    cum = 0.0
+    pnl_xs, pnl_ys, pnl_colors = [], [], []
+    for t in trades:
+        cum += t["outcome_pnl"]
+        xi = _find_nearest_bar(bars, bar_idx_to_x, t["ts"])
+        if xi is not None:
+            pnl_xs.append(xi)
+            pnl_ys.append(cum)
+            res = t["outcome_result"]
+            pnl_colors.append("#00e676" if res == "WIN" else "#ff1744" if res == "LOSS" else "#ffab00")
+
+    if pnl_xs:
+        ax2.plot(pnl_xs, pnl_ys, color="#6366f1", linewidth=1.5, zorder=1)
+        ax2.scatter(pnl_xs, pnl_ys, c=pnl_colors, s=30, zorder=2,
+                    edgecolors="white", linewidths=0.5)
+        ax2.axhline(y=0, color="#94a3b8", linewidth=0.5, linestyle="--")
+        ax2.fill_between(pnl_xs, pnl_ys, alpha=0.15, color="#6366f1")
+    ax2.set_ylabel("Cum. P&L (pts)", color="#e0e0e0", fontsize=10)
+
+    # ── X-axis time labels ──
+    tick_positions, tick_labels = [], []
+    for i, b in enumerate(bars):
+        if i % 30 == 0 and b["dt_et"]:
+            tick_positions.append(i)
+            tick_labels.append(b["dt_et"].strftime("%H:%M"))
+    ax2.set_xticks(tick_positions)
+    ax2.set_xticklabels(tick_labels, rotation=45, fontsize=7, color="#e0e0e0")
+    ax2.set_xlabel("Time (ET)", color="#e0e0e0", fontsize=10)
+
+    # ── Legend ──
+    legend_elements = [
+        mpatches.Patch(facecolor="#00e676", edgecolor="#00c853", label="WIN"),
+        mpatches.Patch(facecolor="#ff1744", edgecolor="#d50000", label="LOSS"),
+        mpatches.Patch(facecolor="#ffab00", edgecolor="#ff8f00", label="EXPIRED"),
+    ]
+    # Add per-setup markers to legend
+    for sname, mkr in _SETUP_MARKER.items():
+        abbr = _SETUP_ABBREV.get(sname, sname[:3])
+        legend_elements.append(
+            plt.Line2D([0], [0], marker=mkr, color="#aaa", label=abbr,
+                       markersize=7, linestyle="None", markeredgecolor="white", markeredgewidth=0.5))
+
+    ax1.legend(handles=legend_elements, loc="upper left", fontsize=7,
+               facecolor="#1a1a2e", edgecolor="#555", labelcolor="#e0e0e0", ncol=5)
+
+    # ── Summary text ──
+    wins = sum(1 for t in trades if t["outcome_result"] == "WIN")
+    losses = sum(1 for t in trades if t["outcome_result"] == "LOSS")
+    net = sum(t["outcome_pnl"] for t in trades)
+    wr = f"{wins / len(trades) * 100:.0f}%" if trades else "0%"
+    summary = f"{len(trades)} trades | {wins}W/{losses}L | WR {wr} | Net {net:+.1f} pts"
+    ax1.text(0.99, 0.98, summary, transform=ax1.transAxes, fontsize=9, fontweight="bold",
+             color="#e0e0e0", ha="right", va="top",
+             bbox=dict(boxstyle="round,pad=0.4", facecolor="#1a1a2e", edgecolor="#6366f1", alpha=0.9))
+
+    plt.tight_layout()
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    fig.savefig(tmp.name, dpi=180, bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.close(fig)
+    tmp.close()
+    print(f"[eod-chart] generated chart: {len(trades)} trades, {len(bars)} bars, {tmp.name}", flush=True)
+    return tmp.name
+
+
+def send_telegram_photo(photo_path, caption, bot_token, chat_id):
+    """Send PNG photo to Telegram via sendPhoto API."""
+    if not bot_token or not chat_id:
+        print("[eod-chart] no Telegram credentials, skipping send", flush=True)
+        return False
+    url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+    with open(photo_path, "rb") as f:
+        resp = requests.post(url, data={"chat_id": chat_id, "caption": caption},
+                             files={"photo": ("daily_chart.png", f, "image/png")},
+                             timeout=30)
+    if resp.status_code == 200:
+        print(f"[eod-chart] photo sent to Telegram", flush=True)
+        return True
+    else:
+        print(f"[eod-chart] Telegram error {resp.status_code}: {resp.text[:200]}", flush=True)
         return False
 
 

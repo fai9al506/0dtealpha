@@ -4470,21 +4470,33 @@ def _send_setup_eod_summary():
     else:
         print("[eod-summary] no trades today, skipping summary", flush=True)
 
-    # PDF report (non-blocking — failure never blocks text summary)
+    # PDF report + trades chart (non-blocking — failure never blocks text summary)
     try:
-        from app.eod_report import generate_eod_pdf, send_telegram_pdf
+        from app.eod_report import generate_eod_pdf, send_telegram_pdf, generate_trades_chart, send_telegram_photo
+        chat_id = TELEGRAM_CHAT_ID_SETUPS or TELEGRAM_CHAT_ID
+        date_str = now.strftime('%B %d, %Y')
+
+        # 1. Trades-on-chart picture
+        chart_path = generate_trades_chart(engine, now.date())
+        if chart_path:
+            send_telegram_photo(chart_path, f"0DTE Alpha — {date_str}", TELEGRAM_BOT_TOKEN, chat_id)
+            print(f"[eod-summary] trades chart sent", flush=True)
+            try:
+                os.unlink(chart_path)
+            except Exception:
+                pass
+
+        # 2. PDF report
         pdf_path = generate_eod_pdf(engine, now.date())
         if pdf_path:
-            chat_id = TELEGRAM_CHAT_ID_SETUPS or TELEGRAM_CHAT_ID
-            caption = f"0DTE Alpha Daily Report - {now.strftime('%B %d, %Y')}"
-            send_telegram_pdf(pdf_path, caption, TELEGRAM_BOT_TOKEN, chat_id)
+            send_telegram_pdf(pdf_path, f"0DTE Alpha Daily Report - {date_str}", TELEGRAM_BOT_TOKEN, chat_id)
             print(f"[eod-summary] PDF report sent", flush=True)
             try:
                 os.unlink(pdf_path)
             except Exception:
                 pass
     except Exception as e:
-        print(f"[eod-summary] PDF report error: {e}", flush=True)
+        print(f"[eod-summary] PDF/chart report error: {e}", flush=True)
 
 
 ECON_CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"

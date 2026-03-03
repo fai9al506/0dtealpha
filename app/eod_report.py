@@ -149,12 +149,19 @@ def _generate_pnl_chart(trades, trade_date):
 
 # ── PDF builder ──────────────────────────────────────────────────────────
 
-_COL_WIDTHS = [10, 16, 42, 16, 14, 18, 16, 20]  # total ~152mm (landscape usable ~277mm)
-_COL_WIDTHS_WIDE = [10, 16, 42, 16, 14, 18, 16, 20]
-
-_WIN_BG = (220, 252, 231)
-_LOSS_BG = (254, 226, 226)
-_EXP_BG = (243, 244, 246)
+# Dark theme color palette
+_BG = (20, 20, 40)
+_CARD = (30, 30, 55)
+_ACCENT = (99, 102, 241)
+_TXT = (230, 230, 240)
+_MUTED = (160, 160, 185)
+_WIN_C = (34, 197, 94)
+_LOSS_C = (239, 68, 68)
+_EXP_C = (251, 191, 36)
+_WIN_ROW = (20, 45, 30)
+_LOSS_ROW = (50, 20, 25)
+_EXP_ROW = (40, 35, 20)
+_HDR_ROW = (40, 40, 70)
 
 
 def _sanitize(text):
@@ -162,49 +169,38 @@ def _sanitize(text):
     return text.encode("latin-1", errors="replace").decode("latin-1")
 
 
+def _dark_bg(pdf):
+    pdf.set_fill_color(*_BG)
+    pdf.rect(0, 0, 297, 210, "F")
+
+
+def _draw_table_header(pdf, headers, cw, y):
+    """Draw table column headers at given y position."""
+    pdf.set_fill_color(*_HDR_ROW)
+    pdf.rect(8, y, 281, 5.5, "F")
+    pdf.set_font("Helvetica", "B", 7)
+    pdf.set_text_color(*_MUTED)
+    pdf.set_xy(8, y + 0.5)
+    for i, h in enumerate(headers):
+        pdf.cell(cw[i], 4.5, h, align="C")
+
+
 def _build_pdf(trades, chart_png, trade_date):
-    """Assemble landscape A4 PDF with header, chart, summary, trade table."""
+    """Assemble landscape A4 PDF with dark professional theme."""
     pdf = FPDF(orientation="L", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.set_auto_page_break(auto=False)
     pdf.add_page()
+    _dark_bg(pdf)
 
-    # ── header ──
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, f"0DTE ALPHA - DAILY REPORT - {trade_date.strftime('%B %d, %Y')}", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(2)
-
-    # ── chart ──
-    if chart_png:
-        tmp_chart = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-        tmp_chart.write(chart_png)
-        tmp_chart.close()
-        try:
-            pdf.image(tmp_chart.name, x=30, w=230)
-        finally:
-            try:
-                os.unlink(tmp_chart.name)
-            except Exception:
-                pass
-    pdf.ln(4)
-
-    # ── daily summary ──
+    # ── compute stats ──
     wins = sum(1 for t in trades if t["outcome_result"] == "WIN")
     losses = sum(1 for t in trades if t["outcome_result"] == "LOSS")
-    expired = sum(1 for t in trades if t["outcome_result"] not in ("WIN", "LOSS"))
+    expired = len(trades) - wins - losses
     total = len(trades)
     net_pnl = sum(t["outcome_pnl"] for t in trades)
     wr = f"{wins / total * 100:.0f}%" if total else "0%"
+    pnl_color = _WIN_C if net_pnl >= 0 else _LOSS_C
 
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.set_fill_color(230, 230, 250)
-    pdf.cell(0, 7, "  DAILY SUMMARY", fill=True, new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6,
-             f"  Trades: {total}  |  Wins: {wins}  |  Losses: {losses}  |  Expired: {expired}"
-             f"  |  Win Rate: {wr}  |  Net P&L: {net_pnl:+.1f} pts",
-             new_x="LMARGIN", new_y="NEXT")
-
-    # per-setup breakdown
     setup_stats = {}
     for t in trades:
         name = t["setup_name"]
@@ -219,83 +215,174 @@ def _build_pdf(trades, chart_png, trade_date):
             s["l"] += 1
         else:
             s["e"] += 1
+    sorted_setups = sorted(setup_stats.items(), key=lambda x: -x[1]["pnl"])
 
-    sorted_setups = sorted(setup_stats.items(), key=lambda x: -x[1]["count"])
-    pdf.set_font("Helvetica", "", 9)
-    for name, s in sorted_setups:
+    # ═══════════════════════════════════════════════════════════════════
+    # PAGE 1: Header + KPI cards + PnL chart + Setup breakdown
+    # ═══════════════════════════════════════════════════════════════════
+
+    # ── accent header bar ──
+    pdf.set_fill_color(*_ACCENT)
+    pdf.rect(0, 0, 297, 14, "F")
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_xy(10, 2)
+    pdf.cell(0, 10, f"0DTE ALPHA   |   Daily Report   |   {trade_date.strftime('%B %d, %Y')}")
+
+    # ── KPI cards ──
+    card_y, card_h, card_w, gap = 18, 20, 55, 5
+    x0 = 10
+    kpis = [
+        ("TOTAL TRADES", str(total), _ACCENT),
+        ("WIN RATE", wr, _WIN_C if wins >= losses else _LOSS_C),
+        ("NET P&L", f"{net_pnl:+.1f} pts", pnl_color),
+        ("W / L / E", f"{wins}  /  {losses}  /  {expired}", _TXT),
+    ]
+    for i, (label, value, vc) in enumerate(kpis):
+        cx = x0 + i * (card_w + gap)
+        pdf.set_fill_color(*_CARD)
+        pdf.rect(cx, card_y, card_w, card_h, "F")
+        pdf.set_font("Helvetica", "", 7)
+        pdf.set_text_color(*_MUTED)
+        pdf.set_xy(cx + 4, card_y + 2)
+        pdf.cell(card_w - 8, 4, label)
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.set_text_color(*vc)
+        pdf.set_xy(cx + 4, card_y + 8)
+        pdf.cell(card_w - 8, 8, value)
+
+    # ── setup breakdown card (right side) ──
+    bk_x = x0 + 4 * (card_w + gap)
+    bk_w = 287 - bk_x
+    pdf.set_fill_color(*_CARD)
+    pdf.rect(bk_x, card_y, bk_w, card_h, "F")
+    pdf.set_font("Helvetica", "B", 7)
+    pdf.set_text_color(*_MUTED)
+    pdf.set_xy(bk_x + 3, card_y + 1.5)
+    pdf.cell(bk_w - 6, 4, "SETUP BREAKDOWN")
+    sy = card_y + 6
+    for sname, s in sorted_setups:
+        abbr = _SETUP_ABBREV.get(sname, sname[:8])
+        cnt = s["w"] + s["l"] + s["e"]
         wle = f"{s['w']}W/{s['l']}L"
         if s["e"]:
             wle += f"/{s['e']}E"
-        trades_word = "trade" if s["count"] == 1 else "trades"
-        pdf.cell(0, 5,
-                 f"    {name:<22s} {s['count']:>2} {trades_word}  {s['pnl']:>+7.1f} pts  ({wle})",
-                 new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(4)
+        pdf.set_font("Helvetica", "B", 7)
+        pdf.set_text_color(*_TXT)
+        pdf.set_xy(bk_x + 3, sy)
+        pdf.cell(20, 3, abbr)
+        pdf.set_font("Helvetica", "", 7)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(8, 3, f"{cnt}t")
+        pdf.cell(22, 3, wle)
+        pdf.set_text_color(*(_WIN_C if s["pnl"] >= 0 else _LOSS_C))
+        pdf.set_font("Helvetica", "B", 7)
+        pdf.cell(16, 3, f"{s['pnl']:+.1f}", align="R")
+        sy += 3.3
+        if sy > card_y + card_h - 2:
+            break
 
-    # ── trade table ──
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.set_fill_color(230, 230, 250)
-    pdf.cell(0, 7, "  TRADE LOG", fill=True, new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(1)
+    # ── PnL chart ──
+    chart_y = card_y + card_h + 4
+    if chart_png:
+        tmp_chart = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        tmp_chart.write(chart_png)
+        tmp_chart.close()
+        try:
+            pdf.image(tmp_chart.name, x=10, y=chart_y, w=277)
+        finally:
+            try:
+                os.unlink(tmp_chart.name)
+            except Exception:
+                pass
 
-    # header row
-    headers = ["#", "Time", "Setup", "Dir", "Grade", "Entry", "Result", "P&L"]
-    cw = [10, 18, 48, 18, 16, 22, 18, 22]
-    pdf.set_font("Helvetica", "B", 8)
-    pdf.set_fill_color(200, 200, 220)
-    for i, h in enumerate(headers):
-        pdf.cell(cw[i], 5, h, border=1, fill=True, align="C")
-    pdf.ln()
+    # ── footer page 1 ──
+    pdf.set_font("Helvetica", "I", 6)
+    pdf.set_text_color(*_MUTED)
+    pdf.set_xy(10, 200)
+    pdf.cell(277, 4, "Generated by 0DTE Alpha", align="C")
 
-    # data rows
+    # ═══════════════════════════════════════════════════════════════════
+    # PAGE 2+: Trade log table
+    # ═══════════════════════════════════════════════════════════════════
+    pdf.add_page()
+    _dark_bg(pdf)
+
+    # Section header
+    pdf.set_fill_color(*_ACCENT)
+    pdf.rect(8, 6, 281, 8, "F")
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_xy(12, 7)
+    pdf.cell(0, 6, f"TRADE LOG   |   {total} trades   |   {trade_date.strftime('%B %d, %Y')}")
+
+    # Column setup
+    cw = [9, 14, 38, 14, 14, 20, 16, 18, 138]
+    headers = ["#", "Time", "Setup", "Dir", "Grade", "Entry", "Result", "P&L", "Reason"]
+
+    _draw_table_header(pdf, headers, cw, 15)
+    row_y = 21
+
     for idx, t in enumerate(trades, 1):
+        if row_y > 196:
+            pdf.add_page()
+            _dark_bg(pdf)
+            _draw_table_header(pdf, headers, cw, 6)
+            row_y = 12
+
         res = t["outcome_result"]
-        if res == "WIN":
-            pdf.set_fill_color(*_WIN_BG)
-        elif res == "LOSS":
-            pdf.set_fill_color(*_LOSS_BG)
-        else:
-            pdf.set_fill_color(*_EXP_BG)
+        pnl = t["outcome_pnl"]
+        row_bg = _WIN_ROW if res == "WIN" else _LOSS_ROW if res == "LOSS" else _EXP_ROW
+
+        pdf.set_fill_color(*row_bg)
+        pdf.rect(8, row_y, 281, 5.2, "F")
 
         ts_str = t["ts"].strftime("%H:%M") if hasattr(t["ts"], "strftime") else ""
         entry = t.get("abs_es_price") or t.get("spot") or 0
         entry_str = f"{entry:.1f}" if entry else ""
-        pnl_str = f"{t['outcome_pnl']:+.1f}"
         grade_str = (t["grade"] or "")[:5]
         setup_short = t["setup_name"]
-        if len(setup_short) > 18:
-            setup_short = setup_short[:17] + "."
+        if len(setup_short) > 16:
+            setup_short = setup_short[:15] + "."
+        why = _sanitize(_build_why(t))
+        if len(why) > 72:
+            why = why[:69] + "..."
 
-        # Row 1: main data
-        pdf.set_font("Helvetica", "", 8)
-        vals = [str(idx), ts_str, setup_short, t["direction"][:5], grade_str,
-                entry_str, res[:4], pnl_str]
-        for i, v in enumerate(vals):
-            pdf.cell(cw[i], 5, v, border="LR", fill=True, align="C")
-        pdf.ln()
+        pdf.set_xy(8, row_y + 0.3)
 
-        # Row 2: stop/target + why
-        stop = t.get("outcome_stop_level")
-        tgt = t.get("outcome_target_level")
-        stop_str = f"Stop: {stop:.0f}" if stop else "Stop: --"
-        tgt_str = f"Tgt: {tgt:.0f}" if tgt else "Tgt: trail"
-        why = _build_why(t)
-        line2 = f"  {stop_str} | {tgt_str} | {why}"
-        if len(line2) > 110:
-            line2 = line2[:107] + "..."
-        line2 = _sanitize(line2)
+        # Standard columns
+        pdf.set_font("Helvetica", "", 7.5)
+        pdf.set_text_color(*_TXT)
+        pdf.cell(cw[0], 4.5, str(idx), align="C")
+        pdf.cell(cw[1], 4.5, ts_str, align="C")
+        pdf.set_font("Helvetica", "B", 7.5)
+        pdf.cell(cw[2], 4.5, setup_short)
+        pdf.set_font("Helvetica", "", 7.5)
+        pdf.cell(cw[3], 4.5, t["direction"][:5], align="C")
+        pdf.cell(cw[4], 4.5, grade_str, align="C")
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(cw[5], 4.5, entry_str, align="C")
 
-        pdf.set_font("Helvetica", "I", 7)
-        total_w = sum(cw)
-        pdf.cell(total_w, 4, line2, border="LRB", fill=True)
-        pdf.ln()
+        # Result + P&L colored
+        rc = _WIN_C if res == "WIN" else _LOSS_C if res == "LOSS" else _EXP_C
+        pdf.set_text_color(*rc)
+        pdf.set_font("Helvetica", "B", 7.5)
+        pdf.cell(cw[6], 4.5, res[:3], align="C")
+        pdf.cell(cw[7], 4.5, f"{pnl:+.1f}", align="C")
 
-    # footer
-    pdf.ln(4)
-    pdf.set_font("Helvetica", "I", 8)
-    pdf.cell(0, 5, "Generated by 0DTE Alpha | github.com/0dtealpha", align="C")
+        # Reason
+        pdf.set_font("Helvetica", "", 6.5)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(cw[8], 4.5, why)
 
-    # save to temp file
+        row_y += 5.5
+
+    # Footer
+    pdf.set_font("Helvetica", "I", 6)
+    pdf.set_text_color(*_MUTED)
+    pdf.set_xy(10, 200)
+    pdf.cell(277, 4, "Generated by 0DTE Alpha", align="C")
+
     tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
     pdf.output(tmp.name)
     tmp.close()
@@ -647,17 +734,17 @@ def generate_trades_chart(engine, trade_date):
 
 
 def send_telegram_photo(photo_path, caption, bot_token, chat_id):
-    """Send PNG photo to Telegram via sendPhoto API."""
+    """Send PNG as document to Telegram (preserves full resolution, zoomable)."""
     if not bot_token or not chat_id:
         print("[eod-chart] no Telegram credentials, skipping send", flush=True)
         return False
-    url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+    url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
     with open(photo_path, "rb") as f:
         resp = requests.post(url, data={"chat_id": chat_id, "caption": caption},
-                             files={"photo": ("daily_chart.png", f, "image/png")},
+                             files={"document": ("daily_chart.png", f, "image/png")},
                              timeout=30)
     if resp.status_code == 200:
-        print(f"[eod-chart] photo sent to Telegram", flush=True)
+        print(f"[eod-chart] chart sent to Telegram (document)", flush=True)
         return True
     else:
         print(f"[eod-chart] Telegram error {resp.status_code}: {resp.text[:200]}", flush=True)

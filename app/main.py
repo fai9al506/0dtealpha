@@ -3769,7 +3769,10 @@ def _run_absorption_detection(bars: list) -> dict | None:
     # Send Telegram only when notification gate passes
     if fire:
         try:
-            send_telegram_setups(rw["message"])
+            msg = rw["message"]
+            if result.get("log_only"):
+                msg = "[LOG-ONLY] " + msg
+            send_telegram_setups(msg)
         except Exception as e:
             print(f"[absorption] telegram error: {e}", flush=True)
 
@@ -3792,32 +3795,35 @@ def _run_absorption_detection(bars: list) -> dict | None:
             "setup_log_id": _current_setup_log.get("ES Absorption"),
         })
         print(f"[outcome] tracking ES Absorption: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
-        # Auto-trade: ES Absorption uses ES price directly
-        try:
-            from app import auto_trader
-            es_px = result.get("abs_es_price")
-            if not es_px:
-                # Fallback: use quote stream or delta stream price
-                with _es_quote_lock:
-                    es_px = _es_quote.get("last_price")
+        # Auto-trade: ES Absorption uses ES price directly (skip log-only signals)
+        if result.get("log_only"):
+            print(f"[auto-trader] SKIPPED ES Absorption: log-only pattern ({result.get('pattern')})", flush=True)
+        else:
+            try:
+                from app import auto_trader
+                es_px = result.get("abs_es_price")
                 if not es_px:
-                    with _es_delta_lock:
-                        es_px = _es_delta.get("last_price")
-                if es_px:
-                    print(f"[auto-trader] ES Absorption using fallback price: {es_px}", flush=True)
-            if es_px and stop_lvl is not None:
-                stop_dist = abs(es_px - stop_lvl)
-                target_dist = abs(target_lvl - es_px) if target_lvl else None
-                auto_trader.place_trade(
-                    setup_log_id=_current_setup_log.get("ES Absorption"),
-                    setup_name="ES Absorption", direction=result["direction"],
-                    es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
-                    full_target_pts=target_dist,
-                )
-            elif not es_px:
-                print(f"[auto-trader] SKIPPED ES Absorption: no ES price available", flush=True)
-        except Exception as e:
-            print(f"[auto-trader] absorption place error: {e}", flush=True)
+                    # Fallback: use quote stream or delta stream price
+                    with _es_quote_lock:
+                        es_px = _es_quote.get("last_price")
+                    if not es_px:
+                        with _es_delta_lock:
+                            es_px = _es_delta.get("last_price")
+                    if es_px:
+                        print(f"[auto-trader] ES Absorption using fallback price: {es_px}", flush=True)
+                if es_px and stop_lvl is not None:
+                    stop_dist = abs(es_px - stop_lvl)
+                    target_dist = abs(target_lvl - es_px) if target_lvl else None
+                    auto_trader.place_trade(
+                        setup_log_id=_current_setup_log.get("ES Absorption"),
+                        setup_name="ES Absorption", direction=result["direction"],
+                        es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
+                        full_target_pts=target_dist,
+                    )
+                elif not es_px:
+                    print(f"[auto-trader] SKIPPED ES Absorption: no ES price available", flush=True)
+            except Exception as e:
+                print(f"[auto-trader] absorption place error: {e}", flush=True)
 
     return signal
 
@@ -4895,7 +4901,7 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 "max_plus_gex, max_minus_gex, "
                 "outcome_result, outcome_pnl "
                 "FROM setup_log "
-                "WHERE id > :since AND ts::date = :today "
+                "WHERE id > :since AND ts::date = :today AND grade != 'LOG' "
                 "ORDER BY id ASC"
             ), {"since": since_id, "today": today_str}).mappings().all()
 

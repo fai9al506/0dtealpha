@@ -921,7 +921,7 @@ DEFAULT_ABSORPTION_SETTINGS = {
     "abs_pivot_right": 2,
     "abs_vol_window": 10,
     "abs_min_vol_ratio": 1.4,
-    "abs_cvd_z_min": 0.5,
+    "abs_cvd_z_min": 0.75,
     "abs_cvd_std_window": 20,
     "abs_cooldown_bars": 10,
     "abs_weight_divergence": 25,
@@ -1343,11 +1343,36 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
     # this bar's CVD as the "previous visit" for this zone)
     _finalize_zone_tracker(trigger)
 
+    # --- Step 4c: Bearish CVD reversal flip (LOG-ONLY) ---
+    # When bearish divergences fire on swing HIGHS but CVD has already overshot
+    # below both swing CVDs, the predicted selling already happened.
+    # Flip to bullish as "exhaustion_reversal" (log-only to collect data).
+    if bearish_divs and not bullish_divs:
+        trigger_cvd = trigger["cvd"]
+        for bd in bearish_divs:
+            sw1_cvd = bd["ref_swing"]["cvd"]
+            sw2_cvd = bd["swing"]["cvd"]
+            min_swing_cvd = min(sw1_cvd, sw2_cvd)
+            if trigger_cvd < min_swing_cvd:
+                overshoot = (min_swing_cvd - trigger_cvd) / cvd_std if cvd_std > 0 else 0
+                flipped = dict(bd)
+                flipped["original_pattern"] = bd["pattern"]
+                flipped["pattern"] = "exhaustion_reversal"
+                flipped["cvd_reversal"] = {
+                    "trigger_cvd": round(trigger_cvd, 1),
+                    "min_swing_cvd": round(min_swing_cvd, 1),
+                    "overshoot_pct": round(overshoot, 2),
+                }
+                bullish_divs.append(flipped)
+        if bullish_divs:
+            bearish_divs = []  # Clear bearish — flipped to bullish
+
     # --- Pattern priority tiers (from Volland order flow principles) ---
     # Exhaustion = tier 2 (higher priority) — dominant move losing steam
     # Absorption = tier 1 — ambiguous when competing with exhaustion
     _PATTERN_TIER = {
         "sell_exhaustion": 2, "buy_exhaustion": 2,
+        "exhaustion_reversal": 2,
         "sell_absorption": 1, "buy_absorption": 1,
         "zone_sell_absorption": 1, "zone_buy_absorption": 1,
     }
@@ -1519,6 +1544,10 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
         grade = "C"
 
     pattern = best.get("pattern", "unknown")
+    is_log_only = pattern == "exhaustion_reversal"
+    if is_log_only:
+        grade = "LOG"
+        composite = 0
 
     return {
         "setup_name": "ES Absorption",
@@ -1535,6 +1564,7 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
         "upside": None,
         "rr_ratio": None,
         "first_hour": False,
+        "log_only": is_log_only,
         # Pattern classification
         "pattern": pattern,
         # Mapped component scores
@@ -1630,6 +1660,7 @@ def format_absorption_message(result):
         "buy_absorption": "Buy Absorption",
         "zone_sell_absorption": "Zone Sell Absorption",
         "zone_buy_absorption": "Zone Buy Absorption",
+        "exhaustion_reversal": "Exhaustion Reversal [LOG]",
     }
     tier_labels = {1: "T1", 2: "T2"}
     tier = result.get("pattern_tier", 1)

@@ -372,6 +372,7 @@ def _query_range_bars(engine, trade_date):
                         "low": float(r[3]), "close": float(r[4]),
                         "volume": int(r[5] or 0), "delta": int(r[6] or 0),
                         "cvd": int(r[7] or 0), "dt_et": dt_et,
+                        "ts_raw": ts_start,  # original UTC for timestamp matching
                     })
                 # filter RTH (9:30 - 16:00 ET)
                 rth = [b for b in bars if b["dt_et"] and
@@ -385,15 +386,21 @@ def _find_nearest_bar(bars, bar_idx_to_x, trade_ts):
     """Find the x-position on the chart for a trade by timestamp."""
     if not bars or not trade_ts:
         return None
-    # trade_ts is in DB timezone — convert to naive for comparison
+    # Compare in UTC — both ts_raw (bar) and trade_ts (setup_log) are TIMESTAMPTZ
     best_x, best_diff = None, None
     for i, b in enumerate(bars):
-        if not b["dt_et"]:
+        ts_raw = b.get("ts_raw")
+        if not ts_raw:
             continue
         try:
-            b_naive = b["dt_et"].replace(tzinfo=None)
-            t_naive = trade_ts.replace(tzinfo=None) if hasattr(trade_ts, "replace") else trade_ts
-            diff = abs((t_naive - b_naive).total_seconds())
+            # Use timezone-aware subtraction if both have tzinfo, else strip both
+            if hasattr(ts_raw, "utcoffset") and ts_raw.utcoffset() is not None and \
+               hasattr(trade_ts, "utcoffset") and trade_ts.utcoffset() is not None:
+                diff = abs((trade_ts - ts_raw).total_seconds())
+            else:
+                b_naive = ts_raw.replace(tzinfo=None) if hasattr(ts_raw, "replace") else ts_raw
+                t_naive = trade_ts.replace(tzinfo=None) if hasattr(trade_ts, "replace") else trade_ts
+                diff = abs((t_naive - b_naive).total_seconds())
             if best_diff is None or diff < best_diff:
                 best_diff = diff
                 best_x = i

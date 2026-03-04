@@ -535,6 +535,21 @@ def db_init():
             END $$;
             """))
 
+        # Greek context columns on setup_log
+        for col, dtype in [
+            ("vanna_all", "DOUBLE PRECISION"),
+            ("vanna_weekly", "DOUBLE PRECISION"),
+            ("vanna_monthly", "DOUBLE PRECISION"),
+            ("spot_vol_beta", "DOUBLE PRECISION"),
+            ("greek_alignment", "INTEGER"),
+        ]:
+            conn.execute(text(f"""
+            DO $$ BEGIN
+                ALTER TABLE setup_log ADD COLUMN {col} {dtype};
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
+            """))
+
         # Economic calendar events table
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS economic_events (
@@ -1357,7 +1372,7 @@ _spx_session = {"high": None, "low": None, "date": None}  # previous poll's sess
 _spx_cycle_high = None  # derived cycle high (max of spot & any new session high)
 _spx_cycle_low = None   # derived cycle low  (min of spot & any new session low)
 _last_known_spot = None  # cached spot for EOD summary fallback
-_vanna_all_cache = {"value": None, "ts": None}  # refreshed each 30s cycle
+_vanna_cache = {"all": None, "weekly": None, "monthly": None, "ts": None}  # refreshed each 30s cycle
 
 def log_setup(result_wrapper):
     """
@@ -1395,6 +1410,12 @@ def log_setup(result_wrapper):
                 insert_params["vix"] = _vix_last
                 insert_params.setdefault("comments", None)
                 insert_params.setdefault("abs_details", None)
+                # Greek context columns
+                insert_params.setdefault("vanna_all", None)
+                insert_params.setdefault("vanna_weekly", None)
+                insert_params.setdefault("vanna_monthly", None)
+                insert_params.setdefault("spot_vol_beta", None)
+                insert_params.setdefault("greek_alignment", None)
                 # Auto-populate comments and abs_details for ES Absorption
                 if setup_name == "ES Absorption" and not insert_params.get("comments"):
                     _pattern_labels = {
@@ -1456,14 +1477,16 @@ def log_setup(result_wrapper):
                          first_hour, support_score, upside_score, floor_cluster_score,
                          target_cluster_score, rr_score, notified,
                          bofa_stop_level, bofa_target_level, bofa_lis_width, bofa_max_hold_minutes, lis_upper,
-                         abs_vol_ratio, abs_es_price, vix, comments, abs_details)
+                         abs_vol_ratio, abs_es_price, vix, comments, abs_details,
+                         vanna_all, vanna_weekly, vanna_monthly, spot_vol_beta, greek_alignment)
                     VALUES
                         (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
                          :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
                          :first_hour, :support_score, :upside_score, :floor_cluster_score,
                          :target_cluster_score, :rr_score, TRUE,
                          :bofa_stop_level, :bofa_target_level, :bofa_lis_width, :bofa_max_hold_minutes, :lis_upper_val,
-                         :abs_vol_ratio, :abs_es_price, :vix, :comments, :abs_details)
+                         :abs_vol_ratio, :abs_es_price, :vix, :comments, :abs_details,
+                         :vanna_all, :vanna_weekly, :vanna_monthly, :spot_vol_beta, :greek_alignment)
                     RETURNING id
                 """), insert_params)
                 log_id = result.fetchone()[0]
@@ -1800,8 +1823,8 @@ def db_volland_exposure_window(greek: str, expiration_option: str = None, limit:
         "points": pts
     }
 
-def _get_vanna_all_sum() -> float | None:
-    """Get total vanna (ALL expiration) from latest volland snapshot."""
+def _get_vanna_sum(expiration_option: str = "ALL") -> float | None:
+    """Get total vanna for given expiration from latest volland snapshot."""
     if not engine:
         return None
     try:
@@ -1809,16 +1832,39 @@ def _get_vanna_all_sum() -> float | None:
             SELECT SUM(value::numeric)::float as total
             FROM volland_exposure_points
             WHERE greek = 'vanna'
-              AND expiration_option = 'ALL'
+              AND expiration_option = :exp
               AND ts_utc = (SELECT MAX(ts_utc) FROM volland_exposure_points
-                           WHERE greek = 'vanna' AND expiration_option = 'ALL')
+                           WHERE greek = 'vanna' AND expiration_option = :exp)
         """)
         with engine.begin() as conn:
-            r = conn.execute(sql).mappings().first()
+            r = conn.execute(sql, {"exp": expiration_option}).mappings().first()
         return float(r["total"]) if r and r["total"] is not None else None
     except Exception as e:
-        print(f"[vanna] query error: {e}", flush=True)
+        print(f"[vanna] query error ({expiration_option}): {e}", flush=True)
         return None
+
+
+def _get_vanna_all_sum() -> float | None:
+    """Backward-compatible wrapper."""
+    return _get_vanna_sum("ALL")
+
+
+def _compute_greek_alignment(direction, charm, vanna_all, spot, max_plus_gex):
+    """Score: +1 per Greek aligned with direction, -1 per opposed. Range -3 to +3."""
+    score = 0
+    is_long = direction in ("long", "bullish")
+    # Charm: positive = bullish
+    if charm is not None:
+        score += 1 if (charm > 0) == is_long else -1
+    # Vanna ALL: positive = bullish
+    if vanna_all is not None:
+        score += 1 if (vanna_all > 0) == is_long else -1
+    # GEX: spot below max_plus_gex = supportive floor (bullish)
+    if spot and max_plus_gex:
+        gex_bullish = spot <= max_plus_gex
+        score += 1 if gex_bullish == is_long else -1
+    return score
+
 
 def db_volland_stats() -> Optional[dict]:
     """
@@ -3206,9 +3252,20 @@ def _run_setup_check():
         from app.setup_detector import update_skew_tracker
         skew_change_pct, _ = update_skew_tracker(skew_value, _setup_settings)
 
-    # Refresh vanna ALL cache each cycle (for GEX Long filter)
-    _vanna_all_cache["value"] = _get_vanna_all_sum()
-    _vanna_all_cache["ts"] = now_et()
+    # Refresh vanna cache each cycle (ALL for GEX filter, weekly/monthly for logging)
+    _vanna_cache["all"] = _get_vanna_sum("ALL")
+    _vanna_cache["weekly"] = _get_vanna_sum("THIS_WEEK")
+    _vanna_cache["monthly"] = _get_vanna_sum("THIRTY_NEXT_DAYS")
+    _vanna_cache["ts"] = now_et()
+
+    # Extract spot-vol-beta correlation from statistics
+    svb_correlation = None
+    svb_raw = statistics_raw.get("spot_vol_beta") if statistics_raw and isinstance(statistics_raw, dict) else None
+    if svb_raw and isinstance(svb_raw, dict):
+        try:
+            svb_correlation = float(svb_raw.get("correlation"))
+        except (ValueError, TypeError):
+            pass
 
     from app.setup_detector import check_setups as _check_setups_fn
     result_wrappers = _check_setups_fn(
@@ -3224,6 +3281,15 @@ def _run_setup_check():
         score = rw["result"]["score"]
         reason = rw.get("notify_reason")
         r = rw["result"]
+
+        # Inject Greek context fields for logging
+        r["vanna_all"] = _vanna_cache.get("all")
+        r["vanna_weekly"] = _vanna_cache.get("weekly")
+        r["vanna_monthly"] = _vanna_cache.get("monthly")
+        r["spot_vol_beta"] = svb_correlation
+        r["greek_alignment"] = _compute_greek_alignment(
+            r.get("direction"), aggregated_charm, _vanna_cache.get("all"),
+            r.get("spot"), max_plus_gex)
 
         # Only log and notify on meaningful events
         if rw["notify"]:
@@ -3254,7 +3320,7 @@ def _run_setup_check():
                     # Auto-trade filters (block execution but keep portal tracking)
                     _skip_auto_trade = False
                     if setup_name == "GEX Long":
-                        vanna = _vanna_all_cache.get("value")
+                        vanna = _vanna_cache.get("all")
                         if vanna is None or vanna <= 0:
                             print(f"[auto-trader] SKIPPED GEX Long: vanna ALL = {vanna} (need > 0)", flush=True)
                             _skip_auto_trade = True
@@ -3711,6 +3777,33 @@ def _run_absorption_detection(bars: list) -> dict | None:
     result["target"] = target_spx
     result["max_plus_gex"] = gex_plus
     result["max_minus_gex"] = gex_minus
+
+    # Inject Greek context fields for logging (absorption runs on separate thread)
+    result["vanna_all"] = _vanna_cache.get("all")
+    result["vanna_weekly"] = _vanna_cache.get("weekly")
+    result["vanna_monthly"] = _vanna_cache.get("monthly")
+    # Extract SVB from volland_stats (already fetched above)
+    _abs_svb = None
+    if volland_stats and isinstance(volland_stats, dict):
+        _svb_raw = volland_stats.get("spot_vol_beta")
+        if _svb_raw and isinstance(_svb_raw, dict):
+            try:
+                _abs_svb = float(_svb_raw.get("correlation"))
+            except (ValueError, TypeError):
+                pass
+    result["spot_vol_beta"] = _abs_svb
+    # Charm for alignment: from volland_stats
+    _abs_charm = None
+    if volland_stats and isinstance(volland_stats, dict):
+        _charm_val = volland_stats.get("aggregatedCharm")
+        if _charm_val is not None:
+            try:
+                _abs_charm = float(_charm_val)
+            except (ValueError, TypeError):
+                pass
+    result["greek_alignment"] = _compute_greek_alignment(
+        result.get("direction"), _abs_charm, _vanna_cache.get("all"),
+        result.get("spot"), gex_plus)
 
     # Build signal dict for chart markers
     signal = {
@@ -4944,7 +5037,8 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 "SELECT id, ts, setup_name, direction, grade, score, spot, target, lis, "
                 "paradigm, bofa_stop_level, bofa_target_level, abs_es_price, "
                 "max_plus_gex, max_minus_gex, "
-                "outcome_result, outcome_pnl "
+                "outcome_result, outcome_pnl, "
+                "vanna_all, vanna_weekly, vanna_monthly, spot_vol_beta, greek_alignment "
                 "FROM setup_log "
                 "WHERE id > :since AND ts::date = :today AND grade != 'LOG' "
                 "ORDER BY id ASC"
@@ -4972,6 +5066,11 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 "stop_level": stop_lvl,
                 "target_level": tgt_lvl,
                 "outcome_result": row["outcome_result"],
+                "vanna_all": row.get("vanna_all"),
+                "vanna_weekly": row.get("vanna_weekly"),
+                "vanna_monthly": row.get("vanna_monthly"),
+                "spot_vol_beta": row.get("spot_vol_beta"),
+                "greek_alignment": row.get("greek_alignment"),
             }
             signals.append(entry)
             if row["outcome_result"]:

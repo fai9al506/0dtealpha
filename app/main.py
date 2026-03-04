@@ -7486,7 +7486,8 @@ def api_setup_log_with_outcomes(limit: int = Query(50)):
                        abs_vol_ratio, abs_es_price,
                        comments, outcome_result, outcome_pnl,
                        outcome_max_profit, outcome_max_loss,
-                       outcome_first_event, outcome_elapsed_min
+                       outcome_first_event, outcome_elapsed_min,
+                       greek_alignment
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim

@@ -155,15 +155,25 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
 
     is_long = direction.lower() in ("long", "bullish")
 
-    # Single-position mode: reject if ANY position is active (no reversals)
+    # Same-direction stacking: allow multiple positions in same direction, block opposite
     with _lock:
         active_filled = [(lid, o) for lid, o in _active_orders.items()
                          if o["status"] in ("pending_entry", "filled")]
     if active_filled:
+        has_opposite = any(
+            (is_long and o["direction"].lower() not in ("long", "bullish")) or
+            (not is_long and o["direction"].lower() in ("long", "bullish"))
+            for _, o in active_filled
+        )
+        if has_opposite:
+            active_names = ", ".join(f"{o['setup_name']}#{lid}" for lid, o in active_filled)
+            print(f"[auto-trader] skip {setup_name}: opposite direction active, "
+                  f"existing: {active_names}", flush=True)
+            return
+        # Same direction — stack it
         active_names = ", ".join(f"{o['setup_name']}#{lid}" for lid, o in active_filled)
-        print(f"[auto-trader] skip {setup_name}: single-position mode, "
+        print(f"[auto-trader] STACKING {setup_name} (same dir), "
               f"active: {active_names}", flush=True)
-        return
 
     # Determine order flow
     if setup_name in _SINGLE_TARGET_SETUPS:

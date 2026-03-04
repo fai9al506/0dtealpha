@@ -1183,7 +1183,7 @@ def _restore_open_trades():
                 SELECT id, ts, setup_name, direction, grade, score,
                        spot, lis, target, max_plus_gex, max_minus_gex,
                        bofa_stop_level, bofa_target_level, bofa_max_hold_minutes,
-                       abs_vol_ratio, abs_es_price
+                       abs_vol_ratio, abs_es_price, abs_details
                 FROM setup_log
                 WHERE outcome_result IS NULL
                   AND ts >= :today_start
@@ -1194,7 +1194,7 @@ def _restore_open_trades():
             print("[restore] no unresolved trades to restore", flush=True)
             return
 
-        _trailing_setups = ("DD Exhaustion", "GEX Long", "AG Short")
+        _trailing_setups = ("DD Exhaustion", "GEX Long", "AG Short", "ES Absorption", "Skew Charm")
         restored = 0
         for row in rows:
             entry = dict(row)
@@ -1205,6 +1205,17 @@ def _restore_open_trades():
                 continue
 
             # Rebuild the result_data dict needed by _compute_setup_levels
+            # For ES Absorption, extract bar_idx from abs_details JSONB
+            _abs_bar_idx = None
+            if setup_name == "ES Absorption":
+                _ad = entry.get("abs_details")
+                if isinstance(_ad, str):
+                    try:
+                        _ad = json.loads(_ad)
+                    except Exception:
+                        _ad = None
+                if isinstance(_ad, dict):
+                    _abs_bar_idx = _ad.get("bar_idx")
             r = {
                 "setup_name": setup_name,
                 "direction": direction,
@@ -1217,6 +1228,7 @@ def _restore_open_trades():
                 "bofa_target_level": entry.get("bofa_target_level"),
                 "bofa_max_hold_minutes": entry.get("bofa_max_hold_minutes"),
                 "abs_es_price": entry.get("abs_es_price"),
+                "bar_idx": _abs_bar_idx,
             }
             target_lvl, stop_lvl = _compute_setup_levels(r)
             if stop_lvl is None:
@@ -1238,10 +1250,12 @@ def _restore_open_trades():
                 seen_high = es_px
                 seen_low = es_px
                 dd_max_fav = 0.0
+                _max_bar_idx_db = _abs_bar_idx or 0  # fallback to trigger bar_idx
                 try:
                     with engine.begin() as conn:
                         extremes = conn.execute(text("""
-                            SELECT MAX(bar_high) as hi, MIN(bar_low) as lo
+                            SELECT MAX(bar_high) as hi, MIN(bar_low) as lo,
+                                   MAX(bar_idx) as max_idx
                             FROM es_range_bars
                             WHERE trade_date = :td AND source = 'rithmic'
                               AND ts_end >= :entry_ts AND ts_end <= NOW()
@@ -1249,6 +1263,8 @@ def _restore_open_trades():
                     if extremes and extremes["hi"] is not None:
                         seen_high = extremes["hi"]
                         seen_low = extremes["lo"]
+                        if extremes["max_idx"] is not None:
+                            _max_bar_idx_db = max(_max_bar_idx_db, extremes["max_idx"])
                 except Exception:
                     pass  # fall back to es_px as default
             else:
@@ -1270,7 +1286,7 @@ def _restore_open_trades():
                 except Exception:
                     pass  # fall back to spot as default
 
-            _setup_open_trades.append({
+            _trade_entry = {
                 "setup_name": setup_name,
                 "direction": direction,
                 "spot": spot,
@@ -1285,10 +1301,16 @@ def _restore_open_trades():
                 "_dd_max_fav": dd_max_fav,
                 "_seen_high": seen_high,
                 "_seen_low": seen_low,
-            })
+            }
+            # ES Absorption: set _es_last_bar_idx so live tracker doesn't re-scan
+            # bars before the entry (which would cause false stops/targets)
+            if setup_name == "ES Absorption":
+                _trade_entry["_es_last_bar_idx"] = _max_bar_idx_db
+            _setup_open_trades.append(_trade_entry)
             restored += 1
+            _extra = f" bar_idx={_max_bar_idx_db}" if setup_name == "ES Absorption" else ""
             print(f"[restore] {setup_name} {direction} id={entry['id']} spot={spot:.1f} "
-                  f"seen_lo={seen_low:.1f} seen_hi={seen_high:.1f}", flush=True)
+                  f"seen_lo={seen_low:.1f} seen_hi={seen_high:.1f}{_extra}", flush=True)
 
         print(f"[restore] restored {restored} open trades to live tracker", flush=True)
     except Exception as e:
@@ -2892,8 +2914,8 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 while rung <= max_fav:
                     trail_lock = rung - _tp["lock_offset"]
                     rung += _tp["step"]
-            # ES Absorption / Skew Charm: track T1 hit (+10pt) for split-target P&L
-            if setup_name in ("ES Absorption", "Skew Charm") and max_fav >= 10 and not trade.get("_t1_hit"):
+            # Track T1 hit (+10pt) for split-target P&L (all Flow B setups)
+            if max_fav >= 10 and not trade.get("_t1_hit"):
                 trade["_t1_hit"] = True
             if trail_lock is not None:
                 # Move stop to lock-in level
@@ -2963,8 +2985,9 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 pnl = entry_price - check_price
 
         if result_type:
-            # ES Absorption / Skew Charm split-target: P&L = average of T1 (+10) and T2 (trail exit)
-            if setup_name in ("ES Absorption", "Skew Charm") and trade.get("_t1_hit"):
+            # Split-target P&L: all trailing setups use Flow B (T1=+10, T2=trail)
+            # If T1 was hit, overall P&L = average of T1 (+10) and T2 (trail exit)
+            if trade.get("_t1_hit"):
                 pnl = round((10.0 + pnl) / 2, 1)  # T2 pnl already computed above
                 result_type = "WIN"  # T1 always hit → overall WIN
             else:
@@ -3129,18 +3152,18 @@ def _run_setup_check():
     dd_numeric = _parse_dd_numeric(dd_hedging)
     dd_shift = update_dd_tracker(dd_numeric) if dd_numeric is not None else None
 
-    # Query recent ES 1-min bars for Paradigm Reversal volume check
+    # Query recent ES range bars (Rithmic) for Paradigm Reversal volume check
     es_bars = []
     if engine:
         try:
             with engine.begin() as conn:
                 rows = conn.execute(text("""
-                    SELECT bar_volume, bar_buy_volume, bar_sell_volume, bar_delta,
-                           cumulative_delta, bar_close_price, ts
-                    FROM es_delta_bars
-                    WHERE trade_date = :td AND symbol = :sym
-                    ORDER BY ts DESC LIMIT 15
-                """), {"td": now_et().strftime("%Y-%m-%d"), "sym": ES_DELTA_SYMBOL}).mappings().all()
+                    SELECT bar_volume AS bar_volume, bar_buy_volume, bar_sell_volume, bar_delta,
+                           cumulative_delta, bar_close AS bar_close_price, ts_end AS ts
+                    FROM es_range_bars
+                    WHERE trade_date = :td AND source = 'rithmic'
+                    ORDER BY bar_idx DESC LIMIT 15
+                """), {"td": now_et().strftime("%Y-%m-%d")}).mappings().all()
                 es_bars = list(reversed(rows))  # oldest first
         except Exception:
             pass
@@ -3214,7 +3237,7 @@ def _run_setup_check():
                 # Record open trade for live outcome tracking
                 target_lvl, stop_lvl = _compute_setup_levels(r)
                 # Trailing setups use trailing stop (target_lvl=None is OK)
-                _trailing_setups = ("DD Exhaustion", "GEX Long", "AG Short")
+                _trailing_setups = ("DD Exhaustion", "GEX Long", "AG Short", "ES Absorption", "Skew Charm")
                 if stop_lvl is not None and (target_lvl is not None or setup_name in _trailing_setups):
                     _setup_open_trades.append({
                         "setup_name": setup_name, "direction": r["direction"],
@@ -3252,12 +3275,6 @@ def _run_setup_check():
                             es_px = None
                             with _es_quote_lock:
                                 es_px = _es_quote.get("last_price")
-                            if not es_px:
-                                # Fallback: use ES delta stream price (1-min bars)
-                                with _es_delta_lock:
-                                    es_px = _es_delta.get("last_price")
-                                if es_px:
-                                    print(f"[auto-trader] using ES delta price fallback: {es_px}", flush=True)
                             if es_px and stop_lvl is not None:
                                 stop_dist = abs(r["spot"] - stop_lvl)
                                 target_dist = abs(target_lvl - r["spot"]) if target_lvl else None
@@ -3521,7 +3538,7 @@ def _es_quote_process_trade(last: float, bid: float, ask: float, volume: int, ts
             "status": "closed",
         }
         q["_completed_bars"].append(completed)
-        q["_flush_buffer"].append(completed)
+        # TS range bars no longer saved to DB — Rithmic is sole source
         q["_bar_idx"] += 1
         print(f"[es-quote] bar #{completed['idx']} closed: "
               f"O={completed['open']:.2f} H={completed['high']:.2f} "
@@ -3794,7 +3811,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
             "_trade_date": now_et().date(),
             "setup_log_id": _current_setup_log.get("ES Absorption"),
         })
-        print(f"[outcome] tracking ES Absorption: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
+        print(f"[outcome] tracking ES Absorption: target={target_lvl} stop={stop_lvl:.1f}", flush=True)
         # Auto-trade: ES Absorption uses ES price directly (skip log-only signals)
         if result.get("log_only"):
             print(f"[auto-trader] SKIPPED ES Absorption: log-only pattern ({result.get('pattern')})", flush=True)
@@ -4553,8 +4570,10 @@ def start_scheduler():
     sch.add_job(run_market_job, "interval", seconds=PULL_EVERY, id="pull", coalesce=True, max_instances=1)
     sch.add_job(save_history_job, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="save", coalesce=True, max_instances=1)
     sch.add_job(save_playback_snapshot, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="playback", coalesce=True, max_instances=1)
-    sch.add_job(save_es_delta, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="es_delta_save", coalesce=True, max_instances=1)
-    sch.add_job(save_es_range_bars, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="es_range_save", coalesce=True, max_instances=1)
+    # TS 1-min delta bars no longer saved — Rithmic range bars are sole ES source
+    # sch.add_job(save_es_delta, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="es_delta_save", coalesce=True, max_instances=1)
+    # TS quote-stream range bars no longer saved — Rithmic is sole DB source
+    # sch.add_job(save_es_range_bars, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="es_range_save", coalesce=True, max_instances=1)
     sch.add_job(_save_rithmic_bars, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="rithmic_range_save", coalesce=True, max_instances=1)
     sch.add_job(_auto_trade_eod_flatten, "cron", hour=15, minute=55,
                 id="auto_trade_eod", coalesce=True, max_instances=1)
@@ -4587,9 +4606,9 @@ def on_startup():
     scheduler = start_scheduler()
     # Fetch economic calendar on startup (don't wait for Monday cron)
     Thread(target=fetch_economic_calendar, daemon=True).start()
-    # Start ES delta streaming thread (real-time barchart feed)
-    Thread(target=_es_delta_stream_loop, daemon=True).start()
-    print("[es-delta] streaming thread started", flush=True)
+    # TS 1-min delta stream disabled — Rithmic is sole ES data source
+    # Thread(target=_es_delta_stream_loop, daemon=True).start()
+    print("[es-delta] TS 1-min stream DISABLED — using Rithmic only", flush=True)
     # Start ES quote streaming thread (bid/ask delta classification)
     Thread(target=_es_quote_stream_loop, daemon=True).start()
     print("[es-quote] streaming thread started", flush=True)
@@ -4680,18 +4699,17 @@ def api_health():
     vol_status = freshness["volland"]["status"]
     vol_stale = is_open and vol_age is not None and vol_age > 600  # >10min
 
-    # ES delta stream
-    with _es_delta_lock:
-        es_delta_ok = _es_delta.get("stream_ok", False)
-    # ES quote stream
+    # ES quote stream (TS — for live price + fallback)
     with _es_quote_lock:
         es_quote_ok = _es_quote.get("stream_ok", False)
 
-    # Rithmic stream (optional — graceful if module not loaded)
+    # Rithmic stream (primary ES data source)
     rithmic_info = None
+    rithmic_ok = False
     try:
         from rithmic_es_stream import get_rithmic_state
         rithmic_info = get_rithmic_state()
+        rithmic_ok = rithmic_info.get("connected", False) if rithmic_info else False
     except ImportError:
         pass
 
@@ -4700,7 +4718,7 @@ def api_health():
         overall = "closed"
     elif chain_status == "error" or vol_status == "error":
         overall = "down"
-    elif chain_stale or vol_stale or (not es_delta_ok and is_open) or (not es_quote_ok and is_open):
+    elif chain_stale or vol_stale or (not rithmic_ok and not es_quote_ok and is_open):
         overall = "degraded"
     else:
         overall = "healthy"
@@ -4719,9 +4737,8 @@ def api_health():
                 "status": vol_status,
                 "stale": vol_stale,
             },
-            "es_delta_stream": {"connected": es_delta_ok},
             "es_quote_stream": {"connected": es_quote_ok},
-            **({"rithmic_stream": rithmic_info} if rithmic_info is not None else {}),
+            "rithmic_stream": rithmic_info or {"connected": False},
             **_auto_trader_health(),
         },
         "last": last_run_status,
@@ -5177,42 +5194,110 @@ def db_es_delta_bars(limit: int = 1400):
 
 @app.get("/api/es/delta/latest")
 def api_es_delta_latest():
-    """Get latest ES cumulative delta — reads from live in-memory state (real-time)."""
-    with _es_delta_lock:
-        if _es_delta["total_volume"] == 0:
-            return {"error": "No delta data available", "ts": None}
-        return {
-            "ts": fmt_et(now_et()),
-            "trade_date": _es_delta["trade_date"],
-            "symbol": ES_DELTA_SYMBOL,
-            "cumulative_delta": _es_delta["cumulative_delta"],
-            "total_volume": _es_delta["total_volume"],
-            "buy_volume": _es_delta["buy_volume"],
-            "sell_volume": _es_delta["sell_volume"],
-            "last_price": _es_delta["last_price"],
-            "tick_count": _es_delta["tick_count"],
-            "session_high": _es_delta["session_high"],
-            "session_low": _es_delta["session_low"],
-            "stream_ok": _es_delta["stream_ok"],
-        }
+    """Get latest ES cumulative delta — reads from Rithmic state (primary) or TS quote (fallback)."""
+    # Try Rithmic first (primary)
+    try:
+        from rithmic_es_stream import get_rithmic_state, get_rithmic_bars
+        state = get_rithmic_state()
+        bars = get_rithmic_bars()
+        if state and state.get("connected") and bars:
+            last_bar = bars[-1]
+            total_vol = sum(b.get("volume", 0) for b in bars)
+            total_buy = sum(b.get("buy_volume", 0) for b in bars)
+            total_sell = sum(b.get("sell_volume", 0) for b in bars)
+            return {
+                "ts": fmt_et(now_et()),
+                "trade_date": state.get("trade_date"),
+                "symbol": "@ES-R",
+                "cumulative_delta": last_bar.get("cvd", 0),
+                "total_volume": total_vol,
+                "buy_volume": total_buy,
+                "sell_volume": total_sell,
+                "last_price": last_bar.get("close", 0),
+                "tick_count": 0,
+                "session_high": max((b.get("high", 0) for b in bars), default=0),
+                "session_low": min((b.get("low", 999999) for b in bars), default=0),
+                "stream_ok": True,
+            }
+    except ImportError:
+        pass
+    # Fallback: TS quote stream
+    with _es_quote_lock:
+        if _es_quote.get("_completed_bars"):
+            bars = list(_es_quote["_completed_bars"])
+            last_bar = bars[-1]
+            return {
+                "ts": fmt_et(now_et()),
+                "trade_date": _es_quote.get("trade_date"),
+                "symbol": ES_DELTA_SYMBOL,
+                "cumulative_delta": last_bar.get("cvd", 0),
+                "total_volume": sum(b.get("volume", 0) for b in bars),
+                "buy_volume": sum(b.get("buy_volume", 0) for b in bars),
+                "sell_volume": sum(b.get("sell_volume", 0) for b in bars),
+                "last_price": _es_quote.get("last_price", 0),
+                "tick_count": 0,
+                "session_high": max((b.get("high", 0) for b in bars), default=0),
+                "session_low": min((b.get("low", 999999) for b in bars), default=0),
+                "stream_ok": _es_quote.get("stream_ok", False),
+            }
+    return {"error": "No delta data available", "ts": None}
 
 @app.get("/api/es/delta/history")
 def api_es_delta_history(limit: int = Query(500, ge=1, le=2000)):
-    """Get today's ES cumulative delta snapshots (time-series)."""
+    """Get today's ES delta history from Rithmic range bars (DB)."""
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        return db_es_delta_history(limit=limit)
+        today = datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d")
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT ts_end AS ts, trade_date, 'rithmic' AS symbol,
+                       cumulative_delta, bar_volume AS total_volume,
+                       bar_buy_volume AS buy_volume, bar_sell_volume AS sell_volume,
+                       bar_close AS last_price, 0 AS tick_count,
+                       bar_high AS session_high, bar_low AS session_low
+                FROM es_range_bars
+                WHERE trade_date = :today AND source = 'rithmic'
+                ORDER BY bar_idx ASC
+                LIMIT :lim
+            """), {"today": today, "lim": limit}).mappings().all()
+            result = []
+            for row in rows:
+                r = dict(row)
+                r["ts"] = r["ts"].isoformat() if r["ts"] else None
+                r["trade_date"] = str(r["trade_date"]) if r["trade_date"] else None
+                result.append(r)
+            return result
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/es/delta/bars")
 def api_es_delta_bars(limit: int = Query(1400, ge=1, le=2000)):
-    """Get current ES session's 1-minute delta bars."""
+    """Get today's ES range bars from Rithmic (replaces TS 1-min bars)."""
     try:
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
-        return db_es_delta_bars(limit=limit)
+        today = datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d")
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT ts_end AS ts, trade_date, 'rithmic' AS symbol,
+                       bar_delta, cumulative_delta,
+                       bar_volume, bar_buy_volume, bar_sell_volume,
+                       bar_open AS bar_open_price, bar_close AS bar_close_price,
+                       bar_high AS bar_high_price, bar_low AS bar_low_price,
+                       0 AS up_ticks, 0 AS down_ticks, 0 AS total_ticks
+                FROM es_range_bars
+                WHERE trade_date = :today AND source = 'rithmic'
+                ORDER BY bar_idx ASC
+                LIMIT :lim
+            """), {"today": today, "lim": limit}).mappings().all()
+            result = []
+            for row in rows:
+                r = dict(row)
+                r["ts"] = r["ts"].isoformat() if r["ts"] else None
+                r["trade_date"] = str(r["trade_date"]) if r["trade_date"] else None
+                result.append(r)
+            return result
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -6679,10 +6764,10 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
                 if profit_high > trail_peak:
                     trail_peak = profit_high
 
-                # Hybrid trail: BE at +10, then trail with gap=5
+                # Hybrid trail: BE at +10, then trail with gap=8 (matches live tracker)
                 if trail_peak >= 10:
                     trail_active = True
-                    trail_lock = max(trail_peak - 5, 0)  # gap=5, min=breakeven
+                    trail_lock = max(trail_peak - 8, 0)  # gap=8, min=breakeven
                     if is_long:
                         new_stop = es_entry + trail_lock
                         if new_stop > trail_stop:

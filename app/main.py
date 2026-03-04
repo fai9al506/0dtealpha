@@ -8404,8 +8404,8 @@ DASH_HTML_TEMPLATE = """
     .tl-filters select, .tl-filters input { background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:4px 8px; font-size:11px; }
     .tl-stats { display:flex; gap:16px; padding:8px 12px; border-bottom:1px solid var(--border); font-size:12px; color:var(--muted); }
     .tl-stats .stat-val { font-weight:700; color:var(--text); }
-    .tl-header { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:2px solid var(--border); color:var(--muted); font-size:10px; font-weight:600; position:sticky; top:0; background:var(--card); z-index:1; }
-    .tl-row { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:1px solid var(--border); cursor:pointer; }
+    .tl-header { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 36px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:2px solid var(--border); color:var(--muted); font-size:10px; font-weight:600; position:sticky; top:0; background:var(--card); z-index:1; }
+    .tl-row { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 36px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:1px solid var(--border); cursor:pointer; }
     .tl-row:hover { background:#1a1d21; }
     .tl-notes { padding:8px 12px 8px 44px; border-bottom:1px solid var(--border); display:none; }
     .tl-notes textarea { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:6px; font-size:12px; resize:vertical; min-height:60px; box-sizing:border-box; }
@@ -9136,7 +9136,7 @@ DASH_HTML_TEMPLATE = """
         <div class="tl-stats" id="tlStats"></div>
         <div style="overflow-y:auto;flex:1">
           <div id="tlHeaderRow" class="tl-header">
-            <span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>
+            <span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>Align</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>
           </div>
           <div id="tlBody"></div>
         </div>
@@ -12141,7 +12141,7 @@ DASH_HTML_TEMPLATE = """
       // Restore portal header/grid
       const hdr = document.getElementById('tlHeaderRow');
       hdr.className = 'tl-header';
-      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>';
+      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>Align</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>';
       const filtered = _tlGetFiltered();
 
       // Stats — prefer DB-stored outcome_result (always set for resolved trades)
@@ -12236,6 +12236,7 @@ DASH_HTML_TEMPLATE = """
           '<span style="color:var(--muted)">'+l.score+'</span>' +
           '<span style="color:var(--text)">'+(entry||'--')+'</span>' +
           '<span style="color:var(--muted);font-size:10px">'+gapRr+'</span>' +
+          '<span style="color:var(--muted);font-size:10px;text-align:center">'+(l.greek_alignment != null ? (l.greek_alignment > 0 ? '+' : '') + l.greek_alignment : '–')+'</span>' +
           '<span style="font-size:10px"><span style="color:'+c10+'">'+has10pt+'</span> <span style="color:'+cTgt+'">'+hasTgt+'</span> <span style="color:'+cStop+'">'+hasStop+'</span></span>' +
           '<span style="font-size:10px">'+result+'</span>' +
           '<span style="color:'+pnlC+';font-size:10px">'+pnl+'</span>' +

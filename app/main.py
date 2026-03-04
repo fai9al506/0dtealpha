@@ -7079,8 +7079,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     if max_plus_gex is not None and max_plus_gex > stop_level:
                         stop_level = max_plus_gex
                     stop_level = min(stop_level, spot + max_stop_dist)
-            rung_start = tp.get("rung_start") or tp.get("activation") or tp.get("be_trigger", 10)
-            ten_pt_level = spot + rung_start if is_long else spot - rung_start  # first trail activation
+            ten_pt_level = spot + 10 if is_long else spot - 10  # always +10 pts from entry
             target_level = None  # trailing — no fixed target
         elif is_paradigm:
             # Paradigm Reversal: fixed 10pt target, 15pt stop from spot

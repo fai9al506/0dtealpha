@@ -20,7 +20,7 @@ crashes, your stops and targets remain live. The script's job is signal
 reception, compliance gating, order placement, and P&L tracking.
 """
 
-import os, sys, json, re, time, logging, calendar
+import os, sys, json, re, time, logging, calendar, argparse
 from datetime import datetime, timedelta, time as dtime, date
 from pathlib import Path
 
@@ -40,23 +40,47 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("eval_trader.log", encoding="utf-8"),
-    ],
+    handlers=[logging.StreamHandler()],
 )
 log = logging.getLogger("eval_trader")
+
+
+def _init_log_file():
+    """Add file handler after LOG_FILE is resolved (deferred for --config support)."""
+    log.addHandler(logging.FileHandler(LOG_FILE, encoding="utf-8"))
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 MES_POINT_VALUE = 5.0   # $5 per point per MES contract
 MES_TICK_SIZE = 0.25     # MES minimum price increment
 MAX_SIGNAL_AGE_S = 120   # Skip signals older than 2 min (prevents stale entries after restart)
-_STRONG_SETUPS = {"AG Short", "GEX Long", "Paradigm Reversal", "ES Absorption"}
-_TIGHTEN_GAP_PTS = 5.0   # When DD fires vs strong: tighten SL to this many pts from spot
+_TIGHTEN_GAP_PTS = 5.0   # Low-conviction opposing signal: tighten SL to this many pts from spot
+_ENV_OVERRIDE_THRESHOLD = 2  # Conviction score needed to close/reverse against current position
 SCRIPT_DIR = Path(__file__).parent
 CONFIG_FILE = SCRIPT_DIR / "eval_trader_config.json"
 STATE_FILE = SCRIPT_DIR / "eval_trader_state.json"
 POSITION_FILE = SCRIPT_DIR / "eval_trader_position.json"
+API_STATE_FILE = SCRIPT_DIR / "eval_trader_api_state.json"
+LOG_FILE = "eval_trader.log"
+
+
+def _init_file_paths(config_path: str):
+    """Derive all state/position/api_state/log file paths from the config filename.
+
+    eval_trader_config.json       → suffix ""      (backward compatible)
+    eval_trader_config_real.json  → suffix "_real"
+    """
+    global CONFIG_FILE, STATE_FILE, POSITION_FILE, API_STATE_FILE, LOG_FILE
+    config_name = Path(config_path).stem  # e.g. "eval_trader_config_real"
+    # Extract suffix: strip "eval_trader_config" prefix
+    prefix = "eval_trader_config"
+    suffix = config_name[len(prefix):] if config_name.startswith(prefix) else ""
+    config_dir = Path(config_path).parent if Path(config_path).is_absolute() else SCRIPT_DIR
+
+    CONFIG_FILE = config_dir / f"eval_trader_config{suffix}.json"
+    STATE_FILE = config_dir / f"eval_trader_state{suffix}.json"
+    POSITION_FILE = config_dir / f"eval_trader_position{suffix}.json"
+    API_STATE_FILE = config_dir / f"eval_trader_api_state{suffix}.json"
+    LOG_FILE = f"eval_trader{suffix}.log"
 
 # ─── MES Contract Auto-Rollover ───────────────────────────────────────────────
 # MES quarterly cycle: H(Mar), M(Jun), U(Sep), Z(Dec)
@@ -246,7 +270,7 @@ class APIPoller:
         self._load_state()
 
     def _state_file(self) -> Path:
-        return SCRIPT_DIR / "eval_trader_api_state.json"
+        return API_STATE_FILE
 
     def _load_state(self):
         sf = self._state_file()
@@ -388,6 +412,9 @@ class APIPoller:
             "grade": s.get("grade", "?"),
             "msg_target_pts": msg_target_pts,
             "msg_stop_pts": msg_stop_pts,
+            "paradigm": s.get("paradigm"),
+            "greek_alignment": s.get("greek_alignment"),
+            "spot_vol_beta": s.get("spot_vol_beta"),
         }
 
 
@@ -656,15 +683,48 @@ class ComplianceGate:
         if not rules.get("enabled", True):
             return False, f"{signal['setup_name']} disabled"
 
+        # DD Exhaustion filters (enabled per-config)
+        if signal["setup_name"] == "DD Exhaustion":
+            if cfg.get("dd_block_after_14et"):
+                now_et = datetime.now(ET)
+                if now_et.time() >= dtime(14, 0):
+                    return False, "DD blocked after 14:00 ET (0% WR)"
+            if cfg.get("dd_block_bofa_pure"):
+                paradigm = signal.get("paradigm") or ""
+                if "BOFA" in paradigm and "PURE" in paradigm:
+                    return False, "DD blocked on BOFA-PURE paradigm (18% WR)"
+
+        # Greek context filters (Analysis #8 — enabled per-config)
+        if cfg.get("greek_filter_enabled"):
+            alignment = signal.get("greek_alignment")
+            svb = signal.get("spot_vol_beta")
+            is_long = signal["direction"].lower() in ("long", "bullish")
+            setup = signal["setup_name"]
+
+            # F1: Greek alignment gate — block when Greeks oppose trade direction (all setups)
+            # Alignment is direction-relative: negative = Greeks oppose, positive = Greeks support
+            if alignment is not None and alignment < 0:
+                return False, f"Greek filter: Greeks oppose {'LONG' if is_long else 'SHORT'} (alignment={alignment})"
+
+            # F2: AG Short — block at worst alignment (-3 = all Greeks opposed)
+            if setup == "AG Short" and alignment is not None:
+                if alignment == -3:
+                    return False, f"Greek filter: AG Short at alignment -3 (all Greeks opposed)"
+
+            # F3: DD Exhaustion — block weak-negative SVB (-0.5 to 0)
+            if setup == "DD Exhaustion" and svb is not None:
+                if -0.5 <= svb <= 0:
+                    return False, f"Greek filter: DD blocked on weak-neg SVB ({svb:.2f})"
+
         # Already in position?
         # Opposite-direction signals return "reverse" so main loop can close + reopen
         if self.has_open_position:
             return False, "already in position"
 
-        # 3-loss daily shutoff
-        max_losses = cfg.get("max_losses_per_day", 99)
-        if self.losses_today >= max_losses:
-            return False, f"daily loss limit reached ({self.losses_today}/{max_losses} losses)"
+        # Daily loss floor — stop trading when net P&L drops below threshold
+        daily_loss_floor = cfg.get("daily_loss_floor", -800)
+        if self.daily_pnl <= daily_loss_floor:
+            return False, f"daily loss floor reached (${self.daily_pnl:+.0f} <= ${daily_loss_floor})"
 
         # Daily P&L cap (E2T consistency rule: no single day > 30% of target)
         daily_cap = cfg.get("e2t_daily_pnl_cap", 0)
@@ -1155,10 +1215,10 @@ class PositionTracker:
         return pos_long != sig_long
 
     def tighten_stop(self, es_price: float, gap_pts: float = _TIGHTEN_GAP_PTS):
-        """Tighten SL to gap_pts from current ES price instead of reversing.
+        """Tighten SL to gap_pts from current ES price.
 
-        Used when DD Exhaustion fires against a strong setup — keep the strong
-        setup open but move stop closer. Mirrors Railway auto_trader logic.
+        Used on low-conviction opposing signals — keep position open but
+        move stop closer as a compromise.
         """
         if not self.position:
             return
@@ -1618,6 +1678,7 @@ def _banner(cfg: dict):
 
     log.info("=" * 60)
     log.info("  E2T EVALUATION AUTO-TRADER")
+    log.info(f"  Config:    {CONFIG_FILE.name}")
     log.info("=" * 60)
     sym = cfg['nt8_mes_symbol']
     if sym.lower() == "auto":
@@ -1630,7 +1691,8 @@ def _banner(cfg: dict):
     log.info(f"  Balance:   ${cfg['e2t_starting_balance']:,.0f} (peak: ${cfg['e2t_peak_balance']:,.0f})")
     log.info(f"  DD floor:  ${dd_floor:,.0f}")
     log.info(f"  Daily lim: ${cfg['e2t_daily_loss_limit']:,.0f} (buffer: ${cfg['e2t_daily_loss_buffer']:.0f})")
-    log.info(f"  Max losses: {cfg.get('max_losses_per_day', 99)}/day")
+    loss_floor = cfg.get("daily_loss_floor", -800)
+    log.info(f"  Loss floor: ${loss_floor}/day (stop trading below this)")
     log.info(f"  BE trigger: +{cfg.get('be_trigger_pts', 5.0)} pts")
     log.info(f"  Cutoff:    {cfg['no_new_trades_after_ct']} CT | Flatten: {cfg['flatten_time_ct']} CT")
     log.info("-" * 60)
@@ -1638,6 +1700,15 @@ def _banner(cfg: dict):
     daily_cap = cfg.get("e2t_daily_pnl_cap", 0)
     if daily_cap > 0:
         log.info(f"  P&L cap:   ${daily_cap:.0f}/day (E2T consistency rule)")
+
+    # DD filters
+    dd_filters = []
+    if cfg.get("dd_block_after_14et"):
+        dd_filters.append("block after 14:00 ET")
+    if cfg.get("dd_block_bofa_pure"):
+        dd_filters.append("block BOFA-PURE")
+    if dd_filters:
+        log.info(f"  DD filters: {', '.join(dd_filters)}")
 
     # Per-setup sizing breakdown
     log.info("  %-20s %5s %8s %4s %6s  %s" % ("Setup", "Stop", "Target", "Qty", "Risk", "Status"))
@@ -1830,25 +1901,52 @@ def main():
                             pass
                     # Check for reversal: opposite-direction signal while in position
                     if tracker.is_open and tracker.is_opposite(signal):
-                        # DD vs strong setup: tighten SL instead of reversing
-                        # (mirrors Railway auto_trader logic)
-                        existing_name = tracker.position["setup_name"]
-                        new_name = signal["setup_name"]
-                        if new_name == "DD Exhaustion" and existing_name in _STRONG_SETUPS:
+                        # Environment override: score conviction from multiple factors
+                        conviction = 1  # the opposing signal itself
+                        reasons = [f"{signal['setup_name']} {signal['direction'].upper()}"]
+                        pos_dir = tracker.position["direction"].lower()
+
+                        # +1 if Greek alignment opposes current position
+                        # Signal alignment is relative to signal direction (opposite to position)
+                        # So alignment > 0 = Greeks support opposing signal = Greeks oppose our position
+                        alignment = signal.get("greek_alignment")
+                        if alignment is not None and alignment > 0:
+                            conviction += 1
+                            reasons.append(f"greeks={alignment:+d} vs {pos_dir.upper()}")
+
+                        # +1 if paradigm/regime opposes current position
+                        paradigm = (signal.get("paradigm") or "").upper()
+                        if pos_dir in ("short", "bearish") and "GEX" in paradigm:
+                            conviction += 1
+                            reasons.append(f"regime=GEX vs SHORT")
+                        elif pos_dir in ("long", "bullish") and "AG" in paradigm:
+                            conviction += 1
+                            reasons.append(f"regime=AG vs LONG")
+
+                        log.info(f"  ENV CHECK: conviction={conviction}/{_ENV_OVERRIDE_THRESHOLD} "
+                                 f"[{', '.join(reasons)}]")
+
+                        if conviction >= _ENV_OVERRIDE_THRESHOLD:
+                            # Strong environment opposition — attempt reversal
+                            compliance.has_open_position = False
+                            allowed, reason = compliance.check(signal)
+                            compliance.has_open_position = True
+                            if allowed:
+                                log.info(f"  REVERSING: conviction {conviction}/3 — "
+                                         f"environment opposes {pos_dir.upper()} position")
+                                tracker.reverse(signal, latest_es_price)
+                            else:
+                                # Can't reverse (setup disabled etc.) but environment is against us
+                                log.info(f"  CLOSING FLAT: conviction {conviction}/3 "
+                                         f"but reverse blocked ({reason}) — flattening")
+                                tracker.flatten(reason=f"env_override conviction={conviction}")
+                        else:
+                            # Low conviction — tighten stop only
                             if latest_es_price:
                                 tracker.tighten_stop(latest_es_price)
-                                log.info(f"  DD vs {existing_name}: tightened SL, skipping DD trade")
+                                log.info(f"  LOW CONVICTION ({conviction}/3): tightened SL, holding position")
                             else:
-                                log.warning(f"  DD vs {existing_name}: no ES price, cannot tighten — skipping")
-                            continue
-                        # Run compliance on the new signal (skip "already in position")
-                        compliance.has_open_position = False
-                        allowed, reason = compliance.check(signal)
-                        compliance.has_open_position = True
-                        if not allowed:
-                            log.info(f"  BLOCKED (reverse): {reason}")
-                            continue
-                        tracker.reverse(signal, latest_es_price)
+                                log.warning(f"  LOW CONVICTION ({conviction}/3): no ES price, cannot tighten")
                         continue
 
                     allowed, reason = compliance.check(signal)
@@ -1890,7 +1988,7 @@ def main():
         log.info("State saved. Goodbye.")
 
 
-def test_mode():
+def test_mode(test_dir: str = "buy"):
     """Test the full OIF pipeline with a fake signal.
 
     Usage: python eval_trader.py --test [buy|sell]
@@ -1899,9 +1997,7 @@ def test_mode():
     then auto-flattens after 10 seconds. Tests the entire chain:
       signal → compliance → OIF write → NT8 fill detection → position close
     """
-    direction = "long"
-    if len(sys.argv) > 2 and sys.argv[2].lower() in ("sell", "short"):
-        direction = "short"
+    direction = "short" if test_dir.lower() in ("sell", "short") else "long"
 
     cfg = load_config()
     mes_symbol = cfg["nt8_mes_symbol"]
@@ -1951,7 +2047,7 @@ def test_mode():
     # Step 3: Flatten
     log.info("[3/4] Flattening test position...")
     time.sleep(1)
-    nt8.close_position(direction, qty)
+    nt8.close_position(direction, 1)
     nt8.cancel(oids["stop_oid"])
 
     # Step 4: Verify close
@@ -1967,7 +2063,17 @@ def test_mode():
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--test":
-        test_mode()
+    parser = argparse.ArgumentParser(description="E2T Evaluation Auto-Trader")
+    parser.add_argument("--config", default="eval_trader_config.json",
+                        help="Config file path (default: eval_trader_config.json)")
+    parser.add_argument("--test", nargs="?", const="buy",
+                        help="Test mode: place 1 MES, flatten. Optional: buy/sell (default: buy)")
+    args = parser.parse_args()
+
+    _init_file_paths(args.config)
+    _init_log_file()
+
+    if args.test:
+        test_mode(args.test)
     else:
         main()

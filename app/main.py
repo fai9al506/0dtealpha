@@ -3322,12 +3322,10 @@ def _run_setup_check():
                     _skip_auto_trade = False
                     _greek_align = r.get("greek_alignment", 0)
                     # F1: Charm alignment gate — block ALL setups when charm opposes direction
-                    if r.get("spot_vol_beta") is not None:  # have Greek data
-                        _charm_al = None
-                        if aggregated_charm is not None:
-                            _is_long = r["direction"] in ("long", "bullish")
-                            _charm_al = (aggregated_charm > 0) == _is_long
-                        if _charm_al is not None and not _charm_al:
+                    if aggregated_charm is not None:
+                        _is_long = r["direction"] in ("long", "bullish")
+                        _charm_al = (aggregated_charm > 0) == _is_long
+                        if not _charm_al:
                             print(f"[auto-trader] SKIPPED {setup_name}: charm opposes direction (align={_greek_align:+d})", flush=True)
                             _skip_auto_trade = True
                     # F2: GEX Long — require alignment >= +1

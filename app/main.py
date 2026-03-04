@@ -3317,14 +3317,33 @@ def _run_setup_check():
                     })
                     tgt_str = "trail" if target_lvl is None else f"{target_lvl:.1f}"
                     print(f"[outcome] tracking {setup_name}: target={tgt_str} stop={stop_lvl:.1f}", flush=True)
-                    # Auto-trade filters (block execution but keep portal tracking)
+                    # Auto-trade filters — Greek Optimal Filter
+                    # (block execution but keep portal tracking for data collection)
                     _skip_auto_trade = False
-                    if setup_name == "GEX Long":
-                        vanna = _vanna_cache.get("all")
-                        if vanna is None or vanna <= 0:
-                            print(f"[auto-trader] SKIPPED GEX Long: vanna ALL = {vanna} (need > 0)", flush=True)
+                    _greek_align = r.get("greek_alignment", 0)
+                    # F1: Charm alignment gate — block ALL setups when charm opposes direction
+                    if r.get("spot_vol_beta") is not None:  # have Greek data
+                        _charm_al = None
+                        if aggregated_charm is not None:
+                            _is_long = r["direction"] in ("long", "bullish")
+                            _charm_al = (aggregated_charm > 0) == _is_long
+                        if _charm_al is not None and not _charm_al:
+                            print(f"[auto-trader] SKIPPED {setup_name}: charm opposes direction (align={_greek_align:+d})", flush=True)
                             _skip_auto_trade = True
+                    # F2: GEX Long — require alignment >= +1
+                    if setup_name == "GEX Long" and _greek_align < 1:
+                        print(f"[auto-trader] SKIPPED GEX Long: alignment {_greek_align:+d} < +1", flush=True)
+                        _skip_auto_trade = True
+                    # F3: AG Short — block total misalignment
+                    if setup_name == "AG Short" and _greek_align == -3:
+                        print(f"[auto-trader] SKIPPED AG Short: alignment -3 (total misalignment)", flush=True)
+                        _skip_auto_trade = True
+                    # F4: DD Exhaustion — block weak-negative SVB + existing time/paradigm filters
                     if setup_name == "DD Exhaustion":
+                        _svb = r.get("spot_vol_beta")
+                        if _svb is not None and -0.5 <= _svb < 0:
+                            print(f"[auto-trader] SKIPPED DD Exhaustion: SVB weak-negative ({_svb:+.2f})", flush=True)
+                            _skip_auto_trade = True
                         _hour = now_et().hour
                         if _hour >= 14:
                             print(f"[auto-trader] SKIPPED DD Exhaustion: after 14:00 ET ({_hour}:xx)", flush=True)
@@ -3905,9 +3924,18 @@ def _run_absorption_detection(bars: list) -> dict | None:
             "setup_log_id": _current_setup_log.get("ES Absorption"),
         })
         print(f"[outcome] tracking ES Absorption: target={target_lvl} stop={stop_lvl:.1f}", flush=True)
-        # Auto-trade: ES Absorption uses ES price directly (skip log-only signals)
+        # Auto-trade: ES Absorption uses ES price directly
+        # Greek filter: charm alignment gate
+        _abs_skip_greek = False
+        if _abs_charm is not None:
+            _abs_is_long = result["direction"] in ("long", "bullish")
+            if (_abs_charm > 0) != _abs_is_long:
+                print(f"[auto-trader] SKIPPED ES Absorption: charm opposes direction (align={result.get('greek_alignment', 0):+d})", flush=True)
+                _abs_skip_greek = True
         if result.get("log_only"):
             print(f"[auto-trader] SKIPPED ES Absorption: log-only pattern ({result.get('pattern')})", flush=True)
+        elif _abs_skip_greek:
+            pass  # already logged above
         else:
             try:
                 from app import auto_trader

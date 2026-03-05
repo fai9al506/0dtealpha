@@ -415,6 +415,7 @@ class APIPoller:
             "paradigm": s.get("paradigm"),
             "greek_alignment": s.get("greek_alignment"),
             "spot_vol_beta": s.get("spot_vol_beta"),
+            "vanna_all": s.get("vanna_all"),
         }
 
 
@@ -615,9 +616,11 @@ class ComplianceGate:
         self.total_pnl = 0.0
         self.trades_today = 0
         self.losses_today = 0
+        self.daily_commissions = 0.0
         self.trade_days = set()
         self.has_open_position = False
         self.last_reset_date = None
+        self._first_spot_today = None  # Track first spot for momentum filter
         self._load()
 
     def _load(self):
@@ -628,12 +631,15 @@ class ComplianceGate:
                 self.total_pnl = s.get("total_pnl", 0.0)
                 self.trades_today = s.get("trades_today", 0)
                 self.losses_today = s.get("losses_today", 0)
+                self.daily_commissions = s.get("daily_commissions", 0.0)
                 self.trade_days = set(s.get("trade_days", []))
                 self.last_reset_date = s.get("last_reset_date")
                 self.cfg["e2t_peak_balance"] = s.get("peak_balance", self.cfg["e2t_peak_balance"])
-                log.info(f"State loaded: daily=${self.daily_pnl:+.0f} total=${self.total_pnl:+.0f} "
+                comm_rate = self.cfg.get("commission_per_contract", 0)
+                log.info(f"State loaded: daily=${self.daily_pnl:+.0f} (comm=${self.daily_commissions:.0f}) "
+                         f"total=${self.total_pnl:+.0f} "
                          f"peak=${self.cfg['e2t_peak_balance']:,.0f} losses={self.losses_today} "
-                         f"days={len(self.trade_days)}")
+                         f"days={len(self.trade_days)} comm/ct=${comm_rate:.2f}")
             except Exception as e:
                 log.warning(f"State load error: {e}")
 
@@ -643,6 +649,7 @@ class ComplianceGate:
             "total_pnl": self.total_pnl,
             "trades_today": self.trades_today,
             "losses_today": self.losses_today,
+            "daily_commissions": self.daily_commissions,
             "trade_days": list(self.trade_days),
             "last_reset_date": self.last_reset_date,
             "peak_balance": self.cfg["e2t_peak_balance"],
@@ -665,6 +672,8 @@ class ComplianceGate:
         self.daily_pnl = 0.0
         self.trades_today = 0
         self.losses_today = 0
+        self.daily_commissions = 0.0
+        self._first_spot_today = None
         self.last_reset_date = today
         self.save()
         log.info(f"Daily reset: {today}")
@@ -694,24 +703,74 @@ class ComplianceGate:
                 if "BOFA" in paradigm and "PURE" in paradigm:
                     return False, "DD blocked on BOFA-PURE paradigm (18% WR)"
 
-        # Greek context filters (Analysis #8 — enabled per-config)
+        # Greek context filters — HYBRID v2 (backtest composite score #1)
+        # Combines: SVB-aware vanna + paradigm cross-check + momentum override
         if cfg.get("greek_filter_enabled"):
             alignment = signal.get("greek_alignment")
             svb = signal.get("spot_vol_beta")
             is_long = signal["direction"].lower() in ("long", "bullish")
             setup = signal["setup_name"]
+            spot = signal.get("spot")
 
-            # F1: Greek alignment gate — block when Greeks oppose trade direction (all setups)
-            # Alignment is direction-relative: negative = Greeks oppose, positive = Greeks support
-            if alignment is not None and alignment < 0:
-                return False, f"Greek filter: Greeks oppose {'LONG' if is_long else 'SHORT'} (alignment={alignment})"
+            # Track first spot of day for momentum calculation
+            if self._first_spot_today is None and spot:
+                self._first_spot_today = spot
 
-            # F2: AG Short — block at worst alignment (-3 = all Greeks opposed)
-            if setup == "AG Short" and alignment is not None:
-                if alignment == -3:
-                    return False, f"Greek filter: AG Short at alignment -3 (all Greeks opposed)"
+            if alignment is not None:
+                effective_alignment = alignment
 
-            # F3: DD Exhaustion — block weak-negative SVB (-0.5 to 0)
+                # SVB-aware vanna: when SVB < 0.2 (vol stressed/transitional),
+                # vanna vote is unreliable — remove it from alignment.
+                # Vanna_all > 0 votes +1 for longs, -1 for shorts.
+                # To remove: subtract that vote.
+                if svb is not None and svb < 0.2:
+                    vanna_all = signal.get("vanna_all")
+                    if vanna_all is not None:
+                        vanna_positive = vanna_all > 0
+                        vanna_vote = 1 if (vanna_positive == is_long) else -1
+                        effective_alignment -= vanna_vote
+                        if effective_alignment != alignment:
+                            log.debug(f"  SVB-regime: SVB={svb:.2f} < 0.2, removed vanna vote "
+                                      f"({alignment:+d} -> {effective_alignment:+d})")
+
+                # Paradigm cross-check: if paradigm contradicts trade direction,
+                # downgrade alignment by 1. Paradigm was correct on Mar 5 crash.
+                paradigm = (signal.get("paradigm") or "").upper()
+                bearish_paradigms = {"AG-PURE", "AG-LIS", "AG-TARGET", "SIDIAL-EXTREME",
+                                     "SIDIAL-MESSY", "GEX-LIS", "GEX-TARGET"}
+                bullish_paradigms = {"GEX-PURE", "BOFA-PURE", "BOFA-LIS", "BOFA-TARGET",
+                                     "SIDIAL-BALANCE"}
+                paradigm_opposes = (paradigm in bearish_paradigms and is_long) or \
+                                   (paradigm in bullish_paradigms and not is_long)
+                if paradigm_opposes:
+                    effective_alignment -= 1
+                    log.debug(f"  Paradigm cross-check: {paradigm} opposes {'LONG' if is_long else 'SHORT'} "
+                              f"({alignment:+d} -> {effective_alignment:+d})")
+
+                # Momentum override: if price has moved 15+ pts against the Greek
+                # bias, let opposing trades through. Greek thesis overwhelmed.
+                spot_delta = 0
+                if self._first_spot_today and spot:
+                    spot_delta = spot - self._first_spot_today
+
+                momentum_override = False
+                if effective_alignment < 0:
+                    # Would block. Check if momentum contradicts Greek bias.
+                    if not is_long and spot_delta < -15:
+                        # Shorting into a crash — momentum supports even though Greeks oppose
+                        momentum_override = True
+                        log.info(f"  Momentum override: market down {spot_delta:+.0f}pts, allowing SHORT")
+                    elif is_long and spot_delta > 15:
+                        # Buying into a surge — momentum supports even though Greeks oppose
+                        momentum_override = True
+                        log.info(f"  Momentum override: market up {spot_delta:+.0f}pts, allowing LONG")
+
+                # Final gate
+                if effective_alignment < 0 and not momentum_override:
+                    return False, (f"Greek HYBRID: alignment {alignment:+d} -> effective {effective_alignment:+d} "
+                                   f"(SVB={svb}, paradigm={paradigm}, delta={spot_delta:+.0f})")
+
+            # DD Exhaustion — block weak-negative SVB (-0.5 to 0)
             if setup == "DD Exhaustion" and svb is not None:
                 if -0.5 <= svb <= 0:
                     return False, f"Greek filter: DD blocked on weak-neg SVB ({svb:.2f})"
@@ -720,6 +779,11 @@ class ComplianceGate:
         # Opposite-direction signals return "reverse" so main loop can close + reopen
         if self.has_open_position:
             return False, "already in position"
+
+        # Max losses per day — stop trading after N consecutive losses
+        max_losses = cfg.get("max_losses_per_day", 999)
+        if self.losses_today >= max_losses:
+            return False, f"max losses reached ({self.losses_today}/{max_losses})"
 
         # Daily loss floor — stop trading when net P&L drops below threshold
         daily_loss_floor = cfg.get("daily_loss_floor", -800)
@@ -769,11 +833,15 @@ class ComplianceGate:
         return True, "ok"
 
     def record_trade(self, pnl_pts: float, setup_name: str, qty: int = 0):
-        """Record completed trade P&L. Uses actual trade qty for dollar calculation."""
+        """Record completed trade P&L. Uses actual trade qty for dollar calculation.
+        Deducts round-trip commission per contract so daily_pnl tracks NET P&L."""
         trade_qty = qty or self.cfg["qty"]
-        pnl_dollars = pnl_pts * trade_qty * MES_POINT_VALUE
+        gross_dollars = pnl_pts * trade_qty * MES_POINT_VALUE
+        commission = trade_qty * self.cfg.get("commission_per_contract", 0)
+        pnl_dollars = gross_dollars - commission
         self.daily_pnl += pnl_dollars
         self.total_pnl += pnl_dollars
+        self.daily_commissions += commission
         self.trades_today += 1
         if pnl_dollars < 0:
             self.losses_today += 1
@@ -782,9 +850,11 @@ class ComplianceGate:
         self.has_open_position = False
 
         current_bal = self.cfg["e2t_starting_balance"] + self.total_pnl
-        log.info(f"Trade recorded: {setup_name} {pnl_pts:+.1f} pts x {trade_qty} (${pnl_dollars:+.0f})")
-        log.info(f"  Daily: ${self.daily_pnl:+.0f} | Total: ${self.total_pnl:+.0f} | "
-                 f"Balance: ${current_bal:,.0f} | Losses today: {self.losses_today}")
+        log.info(f"Trade recorded: {setup_name} {pnl_pts:+.1f} pts x {trade_qty} "
+                 f"(gross=${gross_dollars:+.0f} comm=${commission:.0f} net=${pnl_dollars:+.0f})")
+        log.info(f"  Daily: ${self.daily_pnl:+.0f} (comm=${self.daily_commissions:.0f}) | "
+                 f"Total: ${self.total_pnl:+.0f} | Balance: ${current_bal:,.0f} | "
+                 f"Losses today: {self.losses_today}")
         self.save()
 
 
@@ -834,14 +904,20 @@ class NT8Bridge:
         return f"{prefix}{self._counter}"
 
     def _write(self, cmd: str):
-        try:
-            self._write_seq += 1
-            f = self.incoming / f"oif{int(time.time() * 1000)}_{self._write_seq}.txt"
-            f.write_text(cmd)
-            log.debug(f"OIF: {cmd.strip()}")
-        except Exception as e:
-            log.error(f"OIF write FAILED: {e}")
-            raise
+        for attempt in range(2):
+            try:
+                self._write_seq += 1
+                f = self.incoming / f"oif{int(time.time() * 1000)}_{self._write_seq}.txt"
+                f.write_text(cmd)
+                log.debug(f"OIF: {cmd.strip()}")
+                return
+            except Exception as e:
+                if attempt == 0:
+                    log.warning(f"OIF write failed (retry in 0.5s): {e}")
+                    time.sleep(0.5)
+                else:
+                    log.error(f"OIF write FAILED after retry: {e}")
+                    raise
 
     def place_bracket(self, direction: str, qty: int,
                       stop_price: float, target_price: float) -> dict:
@@ -1373,10 +1449,11 @@ class PositionTracker:
                  f"{'Target: ' + str(_round_tick(new_target_price)) + ' (+' + str(target_pts) + 'pts)' if not trail_only else 'Target: TRAIL-ONLY'}"
                  f" | Qty: {new_qty}")
 
-    def flatten(self, reason: str = "EOD"):
+    def flatten(self, reason: str = "EOD", es_price: float = None):
         """Force-close position (e.g., EOD flatten).
 
         Uses explicit cancel + market exit order (not CLOSEPOSITION which is unreliable).
+        If es_price is provided, estimates P&L for accurate compliance tracking.
         """
         if not self.position:
             return
@@ -1398,11 +1475,23 @@ class PositionTracker:
             f"PLACE;{self.nt8.account};{self.nt8.symbol};{exit_side};{trade_qty};"
             f"MARKET;;;DAY;;{flat_oid};;\n"
         )
-        log.info(f"FLATTENED ({reason}): {self.position['setup_name']} — "
-                 f"{exit_side} {trade_qty} at market")
 
-        # Record 0 P&L for flatten (conservative — actual filled at market)
-        self.compliance.record_trade(0, self.position["setup_name"], trade_qty)
+        # Estimate P&L from ES price (if available) for accurate compliance tracking
+        pnl_pts = 0.0
+        if es_price and self.position.get("entry_price"):
+            entry = self.position["entry_price"]
+            if is_long:
+                pnl_pts = es_price - entry
+            else:
+                pnl_pts = entry - es_price
+            log.info(f"FLATTENED ({reason}): {self.position['setup_name']} — "
+                     f"{exit_side} {trade_qty} at market ~{es_price:.2f} "
+                     f"(est PnL: {pnl_pts:+.1f} pts)")
+        else:
+            log.info(f"FLATTENED ({reason}): {self.position['setup_name']} — "
+                     f"{exit_side} {trade_qty} at market (PnL unknown, recording 0)")
+
+        self.compliance.record_trade(pnl_pts, self.position["setup_name"], trade_qty)
         self.position = None
         self._save()
 
@@ -1847,7 +1936,7 @@ def main():
             # EOD flatten check
             flatten_time = datetime.strptime(cfg["flatten_time_ct"], "%H:%M").time()
             if now_ct.time() >= flatten_time and tracker.is_open:
-                tracker.flatten("EOD_FLATTEN")
+                tracker.flatten("EOD_FLATTEN", es_price=latest_es_price)
 
             # Check NT8 fills + trailing stop (every 5s when position open)
             if tracker.is_open and time.time() - last_trail_check >= TRAIL_CHECK_INTERVAL:
@@ -1939,7 +2028,8 @@ def main():
                                 # Can't reverse (setup disabled etc.) but environment is against us
                                 log.info(f"  CLOSING FLAT: conviction {conviction}/3 "
                                          f"but reverse blocked ({reason}) — flattening")
-                                tracker.flatten(reason=f"env_override conviction={conviction}")
+                                tracker.flatten(reason=f"env_override conviction={conviction}",
+                                               es_price=latest_es_price)
                         else:
                             # Low conviction — tighten stop only
                             if latest_es_price:

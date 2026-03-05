@@ -2001,6 +2001,7 @@ def db_volland_stats() -> Optional[dict]:
                 stats["lines_in_sand"] = statistics.get("lines_in_sand")
                 stats["delta_decay_hedging"] = statistics.get("delta_decay_hedging")
                 stats["opt_volume"] = statistics.get("opt_volume")
+                stats["aggregatedCharm"] = statistics.get("aggregatedCharm")
                 svb = statistics.get("spot_vol_beta")
                 if svb and isinstance(svb, dict):
                     stats["svb_correlation"] = svb.get("correlation")

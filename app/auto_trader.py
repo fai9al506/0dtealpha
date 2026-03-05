@@ -493,6 +493,9 @@ def close_trade(setup_log_id: int, result_type: str):
     print(f"[auto-trader] closed: {setup_name} id={setup_log_id} "
           f"result={result_type}", flush=True)
 
+    # Stacking integrity check: verify broker position matches remaining active trades
+    _verify_stacking_integrity()
+
 
 def _get_order_fill_price(order_id: str) -> float | None:
     """Get fill price for a specific order by polling broker."""
@@ -572,16 +575,19 @@ def _flatten_position(order):
             order["stop_qty"] = 0
             return
 
-        # Use actual broker qty (may differ from tracked qty if partial fills happened)
-        actual_qty = broker_pos["qty"]
-        if actual_qty != remaining:
-            print(f"[auto-trader] flatten qty adjusted: tracked={remaining} "
-                  f"broker={actual_qty}", flush=True)
+        # With stacking, broker position is the NET of all stacked trades.
+        # Close only THIS trade's qty, NOT the entire broker position.
+        # Cap at broker qty to avoid over-selling if broker has less than expected.
+        actual_broker_qty = broker_pos["qty"]
+        close_qty = min(remaining, actual_broker_qty)
+        if actual_broker_qty != remaining:
+            print(f"[auto-trader] flatten qty note: trade_qty={remaining} "
+                  f"broker_total={actual_broker_qty} closing={close_qty}", flush=True)
 
         close_payload = {
             "AccountID": SIM_ACCOUNT_ID,
             "Symbol": MES_SYMBOL,
-            "Quantity": str(actual_qty),
+            "Quantity": str(close_qty),
             "OrderType": "Market",
             "TradeAction": close_side,
             "TimeInForce": {"Duration": "DAY"},
@@ -589,7 +595,7 @@ def _flatten_position(order):
         }
         resp = _sim_api("POST", "/orderexecution/orders", close_payload)
         if resp:
-            order["close_qty"] = actual_qty
+            order["close_qty"] = close_qty
             # Capture flatten fill price (SIM fills near-instantly)
             close_oid = None
             orders_list = resp.get("Orders", [])
@@ -601,23 +607,11 @@ def _flatten_position(order):
                 if close_fp:
                     order["close_fill_price"] = close_fp
 
-            # === POST-FLATTEN VERIFICATION ===
-            time.sleep(0.5)
-            verify_pos = _get_broker_position()
-            if verify_pos:
-                print(f"[auto-trader] WARNING: position still open after flatten! "
-                      f"{verify_pos['long_short']} {verify_pos['qty']} "
-                      f"{verify_pos['symbol']}", flush=True)
-                _alert_critical(f"[AUTO-TRADE] FLATTEN INCOMPLETE\n"
-                               f"Still open: {verify_pos['long_short']} {verify_pos['qty']}\n"
-                               f"MANUAL REVIEW NEEDED")
-            else:
-                print(f"[auto-trader] flattened: {order['setup_name']} "
-                      f"qty={actual_qty} fill={order.get('close_fill_price')} "
-                      f"(verified flat)", flush=True)
+            print(f"[auto-trader] flattened: {order['setup_name']} "
+                  f"qty={close_qty} fill={order.get('close_fill_price')}", flush=True)
         else:
             _alert_critical(f"[AUTO-TRADE] FLATTEN FAILED\n"
-                           f"{order['setup_name']} id={order['setup_log_id']} qty={actual_qty}\n"
+                           f"{order['setup_name']} id={order['setup_log_id']} qty={close_qty}\n"
                            f"MANUAL INTERVENTION NEEDED")
 
 
@@ -777,6 +771,9 @@ def _check_order_fills(lid, order, broker_orders):
 
     if changed:
         _persist_order(lid)
+        # If order just closed (stop fill or all targets filled), run integrity check
+        if order["status"] == "closed":
+            _verify_stacking_integrity()
 
 
 def _adjust_stop_qty(lid, order):
@@ -1083,8 +1080,8 @@ def _load_active_orders():
 
 def flatten_all_eod():
     """Force-close all open SIM positions at end of day.
-    Called by scheduler at 15:55 ET before market close."""
-    # ── Phase 1: close tracked positions ──
+    Called by scheduler at 15:55 ET before market close.
+    With stacking: cancel ALL orders first, then close broker position once."""
     with _lock:
         open_orders = [(lid, o) for lid, o in _active_orders.items()
                        if o["status"] in ("pending_entry", "filled")]
@@ -1092,22 +1089,73 @@ def flatten_all_eod():
         print("[auto-trader] EOD flatten: no tracked positions", flush=True)
     else:
         print(f"[auto-trader] EOD flatten: closing {len(open_orders)} tracked position(s)", flush=True)
-        for lid, order in open_orders:
-            try:
-                _flatten_position(order)
-                with _lock:
-                    order["status"] = "closed"
-                _persist_order(lid)
-                print(f"[auto-trader] EOD flattened: {order['setup_name']} id={lid}", flush=True)
-            except Exception as e:
-                print(f"[auto-trader] EOD flatten error id={lid}: {e}", flush=True)
-                _alert(f"[AUTO-TRADE] EOD FLATTEN FAILED\n"
-                       f"{order['setup_name']} id={lid}\nError: {e}")
 
-    # ── Phase 2: broker position check (catches orphaned positions) ──
+        # Phase 1a: Cancel ALL orders across ALL tracked trades first
+        # This prevents orphaned stop/target orders from filling during flatten
+        cancelled = 0
+        for lid, order in open_orders:
+            for oid_key in ("stop_order_id", "t1_order_id", "t2_order_id"):
+                oid = order.get(oid_key)
+                if oid:
+                    try:
+                        _sim_api("DELETE", f"/orderexecution/orders/{oid}", None)
+                        cancelled += 1
+                    except Exception:
+                        pass
+        print(f"[auto-trader] EOD: cancelled {cancelled} orders", flush=True)
+
+        # Phase 1b: Wait for cancellations to process
+        time.sleep(1)
+
+        # Phase 1c: Close actual broker position once (not per-trade)
+        broker_pos = _get_broker_position()
+        if broker_pos:
+            close_side = "Sell" if broker_pos["long_short"] == "Long" else "Buy"
+            close_payload = {
+                "AccountID": SIM_ACCOUNT_ID,
+                "Symbol": MES_SYMBOL,
+                "Quantity": str(broker_pos["qty"]),
+                "OrderType": "Market",
+                "TradeAction": close_side,
+                "TimeInForce": {"Duration": "DAY"},
+                "Route": "Intelligent",
+            }
+            resp = _sim_api("POST", "/orderexecution/orders", close_payload)
+            if resp:
+                print(f"[auto-trader] EOD: closed {broker_pos['long_short']} "
+                      f"{broker_pos['qty']} MES", flush=True)
+            else:
+                _alert_critical(f"[AUTO-TRADE] EOD CLOSE FAILED\n"
+                               f"{broker_pos['long_short']} {broker_pos['qty']} MES")
+        else:
+            print("[auto-trader] EOD: broker already flat", flush=True)
+
+        # Phase 1d: Mark all tracked trades as closed
+        for lid, order in open_orders:
+            with _lock:
+                order["status"] = "closed"
+            _persist_order(lid)
+            print(f"[auto-trader] EOD marked closed: {order['setup_name']} id={lid}", flush=True)
+
+    # ── Phase 2: cancel ALL open orders on account (nuclear — catches orphans) ──
+    try:
+        ord_data = _sim_api("GET", f"/brokerage/accounts/{SIM_ACCOUNT_ID}/orders", None)
+        for o in (ord_data or {}).get("Orders", []):
+            status = o.get("Status", "")
+            if status in ("FLL", "CAN", "REJ", "EXP", "BRO", "OUT", "TSC"):
+                continue
+            oid = o.get("OrderID")
+            if oid:
+                _sim_api("DELETE", f"/orderexecution/orders/{oid}", None)
+                print(f"[auto-trader] EOD: cancelled remaining order {oid}", flush=True)
+    except Exception as e:
+        print(f"[auto-trader] EOD order cancel sweep error: {e}", flush=True)
+
+    # ── Phase 3: close any orphaned positions ──
+    time.sleep(1)
     _close_broker_orphans(source="EOD")
 
-    # ── Phase 3: final verification — confirm we are actually flat ──
+    # ── Phase 4: final verification — confirm we are actually flat ──
     time.sleep(1)
     final_pos = _get_broker_position()
     if final_pos:
@@ -1286,7 +1334,8 @@ def _close_broker_orphans(source: str = "EOD"):
 
 def periodic_orphan_check():
     """Periodic safety check — detect orphaned broker positions during market hours.
-    Called by scheduler every 5 minutes. Only closes if no tracked positions exist."""
+    Called by scheduler every 5 minutes.
+    With stacking: also detects direction mismatches (ghost positions from orphaned orders)."""
     if not AUTO_TRADE_ENABLED or not _get_token:
         return
 
@@ -1294,24 +1343,99 @@ def periodic_orphan_check():
     if not broker_pos:
         return  # flat, nothing to do
 
-    # Check if any tracked order covers this position
     with _lock:
-        has_tracked = any(
-            o["status"] in ("pending_entry", "filled")
-            for o in _active_orders.values()
-        )
+        active_filled = [(lid, o) for lid, o in _active_orders.items()
+                         if o["status"] in ("pending_entry", "filled")]
 
-    if has_tracked:
-        return  # position is tracked, all good
+    if not active_filled:
+        # No tracked trades but broker has position — orphan
+        print(f"[auto-trader] PERIODIC: orphan position detected — "
+              f"{broker_pos['long_short']} {broker_pos['qty']} {broker_pos['symbol']}. "
+              f"Closing...", flush=True)
+        _alert_critical(f"[AUTO-TRADE] PERIODIC ORPHAN DETECTED\n"
+                        f"{broker_pos['long_short']} {broker_pos['qty']} "
+                        f"{broker_pos['symbol']}\nAuto-closing...")
+        _close_broker_orphans(source="PERIODIC")
+        return
 
-    # Orphan detected — broker has a position but we have no tracked orders
-    print(f"[auto-trader] PERIODIC: orphan position detected — "
-          f"{broker_pos['long_short']} {broker_pos['qty']} {broker_pos['symbol']}. "
-          f"Closing...", flush=True)
-    _alert_critical(f"[AUTO-TRADE] PERIODIC ORPHAN DETECTED\n"
-                    f"{broker_pos['long_short']} {broker_pos['qty']} "
-                    f"{broker_pos['symbol']}\nAuto-closing...")
-    _close_broker_orphans(source="PERIODIC")
+    # With stacking: check direction matches tracked trades
+    tracked_long = any(o["direction"].lower() in ("long", "bullish") for _, o in active_filled)
+    tracked_short = any(o["direction"].lower() not in ("long", "bullish") for _, o in active_filled)
+    broker_is_long = broker_pos["long_short"] == "Long"
+
+    # Direction mismatch = ghost position (e.g., tracking longs but broker is short)
+    if broker_is_long and not tracked_long:
+        print(f"[auto-trader] PERIODIC: direction mismatch — broker Long but "
+              f"no tracked longs. Ghost position. Closing...", flush=True)
+        _alert_critical(f"[AUTO-TRADE] PERIODIC GHOST DETECTED\n"
+                        f"Broker: {broker_pos['long_short']} {broker_pos['qty']}\n"
+                        f"Tracked: {'Short only' if tracked_short else 'none'}\n"
+                        f"Auto-closing...")
+        _close_broker_orphans(source="PERIODIC")
+    elif not broker_is_long and not tracked_short:
+        print(f"[auto-trader] PERIODIC: direction mismatch — broker Short but "
+              f"no tracked shorts. Ghost position. Closing...", flush=True)
+        _alert_critical(f"[AUTO-TRADE] PERIODIC GHOST DETECTED\n"
+                        f"Broker: {broker_pos['long_short']} {broker_pos['qty']}\n"
+                        f"Tracked: {'Long only' if tracked_long else 'none'}\n"
+                        f"Auto-closing...")
+        _close_broker_orphans(source="PERIODIC")
+
+
+def _verify_stacking_integrity():
+    """After closing a stacked trade, verify broker position matches remaining trades.
+    Detects ghost positions from orphaned stop/target orders and closes them."""
+    try:
+        time.sleep(1)  # let any in-flight fills settle
+        broker_pos = _get_broker_position()
+
+        with _lock:
+            active_filled = [(lid, o) for lid, o in _active_orders.items()
+                             if o["status"] in ("pending_entry", "filled")]
+
+        if not active_filled:
+            # No remaining tracked trades — broker should be flat
+            if broker_pos:
+                print(f"[auto-trader] INTEGRITY: ghost position detected! "
+                      f"No tracked trades but broker has {broker_pos['long_short']} "
+                      f"{broker_pos['qty']} {broker_pos['symbol']}. Closing...", flush=True)
+                _alert_critical(f"[AUTO-TRADE] GHOST POSITION DETECTED\n"
+                               f"{broker_pos['long_short']} {broker_pos['qty']}\n"
+                               f"Auto-closing...")
+                _close_broker_orphans(source="INTEGRITY")
+            return
+
+        # Calculate expected position from remaining active trades
+        expected_qty = 0
+        expected_dir = None
+        for lid, o in active_filled:
+            d = o["direction"].lower()
+            is_long = d in ("long", "bullish")
+            qty = o.get("stop_qty", 0)
+            if expected_dir is None:
+                expected_dir = "Long" if is_long else "Short"
+            if is_long:
+                expected_qty += qty
+            else:
+                expected_qty -= qty
+
+        if broker_pos:
+            broker_is_long = broker_pos["long_short"] == "Long"
+            expected_is_long = expected_qty > 0
+            # Direction mismatch = ghost position
+            if broker_is_long != expected_is_long:
+                print(f"[auto-trader] INTEGRITY: direction mismatch! "
+                      f"Expected={'Long' if expected_is_long else 'Short'} "
+                      f"Broker={broker_pos['long_short']} {broker_pos['qty']}. "
+                      f"Closing ghost...", flush=True)
+                _alert_critical(f"[AUTO-TRADE] INTEGRITY: DIRECTION MISMATCH\n"
+                               f"Expected: {'Long' if expected_is_long else 'Short'} "
+                               f"{abs(expected_qty)}\n"
+                               f"Broker: {broker_pos['long_short']} {broker_pos['qty']}\n"
+                               f"Auto-closing excess...")
+                _close_broker_orphans(source="INTEGRITY")
+    except Exception as e:
+        print(f"[auto-trader] integrity check error: {e}", flush=True)
 
 
 def _alert(msg: str):

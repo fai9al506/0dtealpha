@@ -2672,13 +2672,391 @@ def format_paradigm_reversal_message(result):
     return msg
 
 
+# ── Vanna Pivot Bounce ────────────────────────────────────────────────────
+
+DEFAULT_VANNA_PIVOT_SETTINGS = {
+    "vanna_pivot_enabled": True,
+    "vp_proximity_pts": 15,        # max distance from dominant vanna level
+    "vp_dominant_pct": 12,         # min % concentration to qualify as dominant
+    "vp_cooldown_minutes": 15,     # per-direction cooldown
+    "vp_market_start": "10:00",    # skip first 30 min
+    "vp_market_end": "15:30",
+    "vp_stop_pts": 8,
+    "vp_target_pts": 10,
+}
+
+_cooldown_vanna_pivot = {
+    "last_long_time": None,
+    "last_short_time": None,
+    "last_date": None,
+}
+
+
+def _vp_find_swings(bars, pivot_n=2):
+    """Find swing highs and lows from range bars for Vanna Pivot Bounce.
+
+    Self-contained — does NOT share state with ES Absorption swing tracker.
+    bars: list of dicts with bar_low, bar_high, cvd, ts_start keys (DB column names).
+    """
+    swings = []
+    for i in range(pivot_n, len(bars) - pivot_n):
+        # Swing low: bar low <= all neighbors
+        is_low = True
+        for j in range(1, pivot_n + 1):
+            if bars[i]["bar_low"] > bars[i - j]["bar_low"] or bars[i]["bar_low"] > bars[i + j]["bar_low"]:
+                is_low = False
+                break
+        if is_low:
+            swings.append({
+                "type": "low", "price": bars[i]["bar_low"], "cvd": bars[i]["cvd"],
+                "ts": bars[i]["ts_start"], "bar_idx": i,
+            })
+
+        # Swing high: bar high >= all neighbors
+        is_high = True
+        for j in range(1, pivot_n + 1):
+            if bars[i]["bar_high"] < bars[i - j]["bar_high"] or bars[i]["bar_high"] < bars[i + j]["bar_high"]:
+                is_high = False
+                break
+        if is_high:
+            swings.append({
+                "type": "high", "price": bars[i]["bar_high"], "cvd": bars[i]["cvd"],
+                "ts": bars[i]["ts_start"], "bar_idx": i,
+            })
+
+    swings.sort(key=lambda s: s["ts"])
+    return swings
+
+
+def _vp_detect_divergences(bars, swings):
+    """Find CVD divergence points (exhaustion + absorption) from swings.
+
+    Returns list of divergence dicts sorted by timestamp.
+    """
+    divs = []
+    lows = [s for s in swings if s["type"] == "low"]
+    highs = [s for s in swings if s["type"] == "high"]
+
+    # Sell exhaustion: lower low + higher CVD -> LONG
+    for i in range(1, len(lows)):
+        prev, curr = lows[i - 1], lows[i]
+        if curr["price"] < prev["price"] and curr["cvd"] > prev["cvd"]:
+            divs.append({
+                "type": "sell_exhaustion", "direction": "long",
+                "price": curr["price"], "ts": curr["ts"], "bar_idx": curr["bar_idx"],
+                "price_diff": curr["price"] - prev["price"],
+                "cvd_diff": curr["cvd"] - prev["cvd"],
+            })
+
+    # Sell absorption: higher low + lower CVD -> LONG
+    for i in range(1, len(lows)):
+        prev, curr = lows[i - 1], lows[i]
+        if curr["price"] > prev["price"] and curr["cvd"] < prev["cvd"]:
+            divs.append({
+                "type": "sell_absorption", "direction": "long",
+                "price": curr["price"], "ts": curr["ts"], "bar_idx": curr["bar_idx"],
+                "price_diff": curr["price"] - prev["price"],
+                "cvd_diff": curr["cvd"] - prev["cvd"],
+            })
+
+    # Buy exhaustion: higher high + lower CVD -> SHORT
+    for i in range(1, len(highs)):
+        prev, curr = highs[i - 1], highs[i]
+        if curr["price"] > prev["price"] and curr["cvd"] < prev["cvd"]:
+            divs.append({
+                "type": "buy_exhaustion", "direction": "short",
+                "price": curr["price"], "ts": curr["ts"], "bar_idx": curr["bar_idx"],
+                "price_diff": curr["price"] - prev["price"],
+                "cvd_diff": curr["cvd"] - prev["cvd"],
+            })
+
+    # Buy absorption: lower high + higher CVD -> SHORT
+    for i in range(1, len(highs)):
+        prev, curr = highs[i - 1], highs[i]
+        if curr["price"] < prev["price"] and curr["cvd"] > prev["cvd"]:
+            divs.append({
+                "type": "buy_absorption", "direction": "short",
+                "price": curr["price"], "ts": curr["ts"], "bar_idx": curr["bar_idx"],
+                "price_diff": curr["price"] - prev["price"],
+                "cvd_diff": curr["cvd"] - prev["cvd"],
+            })
+
+    divs.sort(key=lambda d: d["ts"])
+    return divs
+
+
+def evaluate_vanna_pivot_bounce(spot, vanna_levels, range_bars, settings):
+    """
+    Evaluate Vanna Pivot Bounce setup.
+
+    Uses dominant vanna levels (THIS_WEEK + THIRTY_NEXT_DAYS) as directional bias
+    and CVD swing divergence as entry trigger.
+
+    Parameters:
+      spot: current SPX price
+      vanna_levels: list of dicts {strike, value, timeframe, pct, confluence}
+      range_bars: list of ES range bar dicts from DB (bar_low, bar_high, cvd, etc.)
+      settings: setup settings dict with vp_* keys
+
+    Returns result dict or None.
+    """
+    if not settings.get("vanna_pivot_enabled", True):
+        return None
+    if spot is None or not vanna_levels or not range_bars:
+        return None
+
+    # Time window check
+    now = datetime.now(NY)
+    start_str = settings.get("vp_market_start", "10:00")
+    end_str = settings.get("vp_market_end", "15:30")
+    try:
+        h, m = map(int, start_str.split(":"))
+        market_start = dtime(h, m)
+        h, m = map(int, end_str.split(":"))
+        market_end = dtime(h, m)
+    except Exception:
+        market_start, market_end = dtime(10, 0), dtime(15, 30)
+    if not (market_start <= now.time() <= market_end):
+        return None
+
+    proximity_pts = settings.get("vp_proximity_pts", 15)
+    target_pts = settings.get("vp_target_pts", 10)
+    stop_pts = settings.get("vp_stop_pts", 8)
+
+    # Need enough bars for swing detection (pivot_n=2 needs at least 5 bars)
+    if len(range_bars) < 10:
+        return None
+
+    # Normalize bar keys: DB uses bar_low/bar_high, ensure cvd exists
+    # Range bars from DB have: bar_open, bar_high, bar_low, bar_close, cvd (cumulative_delta alias)
+    # Check first bar for expected keys
+    sample = range_bars[0]
+    if "bar_low" not in sample or "bar_high" not in sample:
+        return None
+    if "cvd" not in sample and "cumulative_delta" not in sample:
+        return None
+    # Map cumulative_delta to cvd if needed
+    if "cvd" not in sample:
+        for b in range_bars:
+            b["cvd"] = b.get("cumulative_delta", 0)
+
+    # Find swings and divergences
+    swings = _vp_find_swings(range_bars, pivot_n=2)
+    if len(swings) < 2:
+        return None
+    divergences = _vp_detect_divergences(range_bars, swings)
+    if not divergences:
+        return None
+
+    # Only consider recent divergences (last 40 bars from the end)
+    last_bar_idx = len(range_bars) - 1
+    max_lookback = 40
+    recent_divs = [d for d in divergences if d["bar_idx"] >= last_bar_idx - max_lookback]
+    if not recent_divs:
+        return None
+
+    # Match divergences to dominant vanna levels
+    best_match = None
+    best_score = -1
+
+    for div in recent_divs:
+        div_price = div["price"]
+        div_direction = div["direction"]
+
+        for vl in vanna_levels:
+            strike = vl["strike"]
+            vanna_value = vl["value"]
+            vanna_pct = vl["pct"]
+            confluence = vl.get("confluence", False)
+
+            # Proximity check
+            dist = abs(div_price - strike)
+            if dist > proximity_pts:
+                continue
+
+            # Direction agreement: positive vanna + long, negative vanna + short
+            if vanna_value > 0 and div_direction != "long":
+                continue
+            if vanna_value < 0 and div_direction != "short":
+                continue
+
+            # ── Scoring (5 components, max 100) ──
+
+            # 1. Vanna concentration (0-25)
+            if vanna_pct >= 30:
+                conc_score = 25
+            elif vanna_pct >= 20:
+                conc_score = 18
+            elif vanna_pct >= 15:
+                conc_score = 14
+            else:
+                conc_score = 10  # at minimum vp_dominant_pct (12%)
+
+            # 2. Proximity (0-25)
+            if dist <= 3:
+                prox_score = 25
+            elif dist <= 8:
+                prox_score = 18
+            else:
+                prox_score = 10  # 8-15 pts
+
+            # 3. CVD pattern (0-20): exhaustion > absorption
+            pattern = div["type"]
+            if "exhaustion" in pattern:
+                cvd_score = 20
+            else:
+                cvd_score = 15  # absorption
+
+            # 4. Confluence (0-15): appears in both timeframes
+            conf_score = 15 if confluence else 5
+
+            # 5. Time-of-day (0-15)
+            t = now.time()
+            if dtime(10, 30) <= t <= dtime(14, 0):
+                time_score = 15
+            elif dtime(14, 0) < t <= dtime(15, 0):
+                time_score = 10
+            else:
+                time_score = 5  # 10:00-10:30 or 15:00-15:30
+
+            total_score = conc_score + prox_score + cvd_score + conf_score + time_score
+
+            if total_score > best_score:
+                best_score = total_score
+                best_match = {
+                    "div": div, "vanna_level": vl,
+                    "conc_score": conc_score, "prox_score": prox_score,
+                    "cvd_score": cvd_score, "conf_score": conf_score,
+                    "time_score": time_score, "total_score": total_score,
+                    "proximity": round(dist, 1),
+                }
+
+    if best_match is None:
+        return None
+
+    div = best_match["div"]
+    vl = best_match["vanna_level"]
+    direction = div["direction"]
+    is_long = direction == "long"
+    total_score = best_match["total_score"]
+
+    target_price = round(spot + target_pts, 2) if is_long else round(spot - target_pts, 2)
+    stop_price = round(spot - stop_pts, 2) if is_long else round(spot + stop_pts, 2)
+
+    # Grading: A+>=85, A>=70, B>=50, C<50
+    if total_score >= 85:
+        grade = "A+"
+    elif total_score >= 70:
+        grade = "A"
+    elif total_score >= 50:
+        grade = "B"
+    else:
+        grade = "C"
+
+    return {
+        "setup_name": "Vanna Pivot Bounce",
+        "direction": direction,
+        "grade": grade,
+        "score": total_score,
+        "paradigm": None,
+        "spot": round(spot, 2),
+        "target": round(target_price, 2),
+        "target_price": round(target_price, 2),
+        "stop_price": round(stop_price, 2),
+        "lis": None,
+        "max_plus_gex": None,
+        "max_minus_gex": None,
+        "gap_to_lis": None,
+        "upside": target_pts,
+        "rr_ratio": round(target_pts / stop_pts, 2) if stop_pts > 0 else None,
+        "first_hour": False,
+        # Sub-scores in existing columns
+        "support_score": best_match["conc_score"],       # vanna concentration (0-25)
+        "upside_score": best_match["prox_score"],         # proximity (0-25)
+        "floor_cluster_score": best_match["cvd_score"],   # CVD pattern (0-20)
+        "target_cluster_score": best_match["conf_score"], # confluence (0-15)
+        "rr_score": best_match["time_score"],             # time-of-day (0-15)
+        # Vanna-specific fields
+        "vanna_strike": vl["strike"],
+        "vanna_pct": round(vl["pct"], 1),
+        "vanna_tf": vl["timeframe"],
+        "vanna_value": vl["value"],
+        "confluence": vl.get("confluence", False),
+        "proximity": best_match["proximity"],
+        "pattern": div["type"],
+        "div_bar_idx": div["bar_idx"],
+        "dd_shift": None,
+        "dd_current": None,
+        "detail_score": total_score,
+    }
+
+
+def should_notify_vanna_pivot(result):
+    """15-min cooldown per direction for Vanna Pivot Bounce."""
+    if result is None:
+        return False, None
+
+    direction = result["direction"]
+    now = datetime.now(NY)
+    today = now.date()
+    cooldown_min = 15
+
+    if _cooldown_vanna_pivot.get("last_date") != today:
+        _cooldown_vanna_pivot["last_long_time"] = None
+        _cooldown_vanna_pivot["last_short_time"] = None
+        _cooldown_vanna_pivot["last_date"] = today
+
+    side_key = "last_long_time" if direction == "long" else "last_short_time"
+    last_fire = _cooldown_vanna_pivot.get(side_key)
+    if last_fire is not None:
+        elapsed = (now - last_fire).total_seconds() / 60
+        if elapsed < cooldown_min:
+            return False, None
+
+    _cooldown_vanna_pivot[side_key] = now
+    return True, "new"
+
+
+def format_vanna_pivot_message(result):
+    """Format Telegram HTML message for Vanna Pivot Bounce setup."""
+    direction = result["direction"]
+    dir_label = "LONG" if direction == "long" else "SHORT"
+    grade = result.get("grade", "C")
+    grade_emoji = {"A+": "\U0001f7e2", "A": "\U0001f535", "B": "\u26aa", "C": "\u26aa"}.get(grade, "\u26aa")
+    score = result.get("score", 0)
+
+    pattern = result.get("pattern", "unknown").replace("_", " ").title()
+    vanna_strike = result.get("vanna_strike", 0)
+    vanna_pct = result.get("vanna_pct", 0)
+    vanna_tf = result.get("vanna_tf", "?")
+    proximity = result.get("proximity", 0)
+    confluence = result.get("confluence", False)
+
+    tf_label = {"THIS_WEEK": "Weekly", "THIRTY_NEXT_DAYS": "Monthly"}.get(vanna_tf, vanna_tf)
+    conf_tag = " [CONFLUENCE]" if confluence else ""
+
+    msg = f"{grade_emoji} <b>Vanna Pivot Bounce \u2014 {dir_label} ({grade})</b>\n"
+    msg += f"Score: <b>{score}</b>/100\n"
+    msg += "\u2501" * 18 + "\n"
+    msg += f"Vanna Level: ${vanna_strike:,.0f} ({vanna_pct:.0f}% {tf_label}){conf_tag}\n"
+    msg += f"Pattern: {pattern}\n"
+    msg += f"Proximity: {proximity:.1f} pts\n"
+    msg += f"Entry: ${result['spot']:,.0f} | Target: ${result.get('target_price', 0):,.0f} (+{result.get('upside', 10)}) | Stop: ${result.get('stop_price', 0):,.0f} (-{int(abs(result['spot'] - result.get('stop_price', 0)))})\n"
+    msg += "\u2501" * 18 + "\n"
+    msg += f"Conc {result.get('support_score', 0)} | Prox {result.get('upside_score', 0)} | "
+    msg += f"CVD {result.get('floor_cluster_score', 0)} | Conf {result.get('target_cluster_score', 0)} | "
+    msg += f"Time {result.get('rr_score', 0)}"
+    return msg
+
+
 # ── Main entry point ───────────────────────────────────────────────────────
 
 def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings,
                  lis_lower=None, lis_upper=None, aggregated_charm=None,
                  dd_hedging=None, es_bars=None,
                  dd_value=None, dd_shift=None,
-                 skew_value=None, skew_change_pct=None):
+                 skew_value=None, skew_change_pct=None,
+                 vanna_levels=None, es_range_bars=None):
     """
     Main entry point called from main.py.
     Returns a list of result wrappers (each has keys: result, notify, notify_reason, message).
@@ -2693,6 +3071,8 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
       dd_shift: change in DD hedging from previous cycle (DD Exhaustion)
       skew_value: current IV skew ratio (put IV / call IV for near OTM strikes)
       skew_change_pct: % change in skew over lookback window (Skew+Charm)
+      vanna_levels: list of dominant vanna level dicts (Vanna Pivot Bounce)
+      es_range_bars: list of ES range bar dicts from DB (Vanna Pivot Bounce)
     """
     results = []
 
@@ -2790,6 +3170,17 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
             "message": format_skew_charm_message(skew_charm_result),
         })
 
+    # ── Vanna Pivot Bounce ──
+    vp_result = evaluate_vanna_pivot_bounce(spot, vanna_levels, es_range_bars, settings)
+    if vp_result is not None:
+        notify_vp, reason_vp = should_notify_vanna_pivot(vp_result)
+        results.append({
+            "result": vp_result,
+            "notify": notify_vp,
+            "notify_reason": reason_vp,
+            "message": format_vanna_pivot_message(vp_result),
+        })
+
     return results
 
 
@@ -2821,6 +3212,7 @@ def export_cooldowns() -> dict:
         "dd_tracker": _serialize(_dd_tracker),
         "skew_charm": _serialize(_cooldown_skew_charm),
         "skew_tracker": copy.deepcopy(_skew_tracker),
+        "vanna_pivot": _serialize(_cooldown_vanna_pivot),
     }
 
 def import_cooldowns(data: dict):
@@ -2871,3 +3263,7 @@ def import_cooldowns(data: dict):
             dt_keys=("last_long_time", "last_short_time")))
     if "skew_tracker" in data:
         _skew_tracker.update(data["skew_tracker"])
+    if "vanna_pivot" in data:
+        _cooldown_vanna_pivot.update(_deserialize(
+            data["vanna_pivot"], has_datetimes=True,
+            dt_keys=("last_long_time", "last_short_time")))

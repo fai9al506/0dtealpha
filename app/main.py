@@ -1368,6 +1368,7 @@ _current_setup_log = {
     "ES Absorption": None,
     "DD Exhaustion": None,
     "Skew Charm": None,
+    "Vanna Pivot Bounce": None,
     "last_date": None,
 }
 
@@ -1400,7 +1401,7 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
@@ -1856,6 +1857,76 @@ def _get_vanna_sum(expiration_option: str = "ALL") -> float | None:
 def _get_vanna_all_sum() -> float | None:
     """Backward-compatible wrapper."""
     return _get_vanna_sum("ALL")
+
+
+def _get_dominant_vanna_levels(min_pct: float = 12.0) -> list:
+    """Get dominant vanna strikes from THIS_WEEK + THIRTY_NEXT_DAYS exposures.
+
+    A strike is "dominant" if |value| / total >= min_pct%.
+    Returns list of dicts: {strike, value, timeframe, pct, confluence}.
+    Confluence=True when same strike appears in both timeframes.
+    """
+    if not engine:
+        return []
+    try:
+        sql = text("""
+            WITH latest AS (
+                SELECT expiration_option, MAX(ts_utc) AS ts
+                FROM volland_exposure_points
+                WHERE greek = 'vanna'
+                  AND expiration_option IN ('THIS_WEEK', 'THIRTY_NEXT_DAYS')
+                GROUP BY expiration_option
+            )
+            SELECT vep.strike, vep.value::float AS value, vep.expiration_option AS timeframe
+            FROM volland_exposure_points vep
+            JOIN latest l ON vep.expiration_option = l.expiration_option AND vep.ts_utc = l.ts
+            WHERE vep.greek = 'vanna'
+        """)
+        with engine.begin() as conn:
+            rows = conn.execute(sql).mappings().all()
+        if not rows:
+            return []
+
+        # Group by timeframe, compute total and per-strike pct
+        by_tf = {}
+        for r in rows:
+            tf = r["timeframe"]
+            if tf not in by_tf:
+                by_tf[tf] = []
+            by_tf[tf].append({"strike": float(r["strike"]), "value": float(r["value"])})
+
+        levels = []
+        strike_tfs = {}  # track which strikes appear in which timeframes
+
+        for tf, points in by_tf.items():
+            total = sum(abs(p["value"]) for p in points)
+            if total == 0:
+                continue
+            for p in points:
+                pct = abs(p["value"]) / total * 100.0
+                if pct >= min_pct:
+                    levels.append({
+                        "strike": p["strike"],
+                        "value": p["value"],
+                        "timeframe": tf,
+                        "pct": round(pct, 1),
+                        "confluence": False,
+                    })
+                    s_key = int(p["strike"])
+                    if s_key not in strike_tfs:
+                        strike_tfs[s_key] = set()
+                    strike_tfs[s_key].add(tf)
+
+        # Mark confluence (same strike in both timeframes)
+        for lv in levels:
+            s_key = int(lv["strike"])
+            if len(strike_tfs.get(s_key, set())) >= 2:
+                lv["confluence"] = True
+
+        return levels
+    except Exception as e:
+        print(f"[vanna] dominant levels query error: {e}", flush=True)
+        return []
 
 
 def _compute_greek_alignment(direction, charm, vanna_all, spot, max_plus_gex):
@@ -2795,6 +2866,11 @@ def _compute_setup_levels(r: dict):
         stop_lvl = spot - 20 if is_long else spot + 20
         return None, round(stop_lvl, 2)
 
+    if setup_name == "Vanna Pivot Bounce":
+        target_lvl = spot + 10 if is_long else spot - 10
+        stop_lvl = spot - 8 if is_long else spot + 8
+        return round(target_lvl, 2), round(stop_lvl, 2)
+
     # AG Short — trailing mode (hybrid: BE at +10, trail at +15 gap=5)
     lis = r.get("lis")
     target = r.get("target")
@@ -3288,6 +3364,25 @@ def _run_setup_check():
         except (ValueError, TypeError):
             pass
 
+    # Query dominant vanna levels + ES range bars for Vanna Pivot Bounce
+    vanna_levels = _get_dominant_vanna_levels(
+        min_pct=_setup_settings.get("vp_dominant_pct", 12))
+    es_range_bars_vp = []
+    if engine:
+        try:
+            with engine.begin() as conn:
+                rows = conn.execute(text("""
+                    SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
+                           bar_volume, bar_delta, cumulative_delta AS cvd,
+                           ts_start, ts_end, status
+                    FROM es_range_bars
+                    WHERE trade_date = :td AND source = 'live'
+                    ORDER BY bar_idx ASC
+                """), {"td": now_et().strftime("%Y-%m-%d")}).mappings().all()
+                es_range_bars_vp = [dict(r) for r in rows]
+        except Exception as e:
+            print(f"[vanna-pivot] range bars query error: {e}", flush=True)
+
     from app.setup_detector import check_setups as _check_setups_fn
     result_wrappers = _check_setups_fn(
         spot, paradigm, lis, target, max_plus_gex, max_minus_gex, _setup_settings,
@@ -3295,6 +3390,7 @@ def _run_setup_check():
         dd_hedging=dd_hedging, es_bars=es_bars,
         dd_value=dd_numeric, dd_shift=dd_shift,
         skew_value=skew_value, skew_change_pct=skew_change_pct,
+        vanna_levels=vanna_levels, es_range_bars=es_range_bars_vp,
     )
     for rw in result_wrappers:
         setup_name = rw["result"]["setup_name"]
@@ -7043,14 +7139,16 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         is_gex = setup_name == "GEX Long"
         is_ag = setup_name == "AG Short"
         is_skew = setup_name == "Skew Charm"
+        is_vanna = setup_name == "Vanna Pivot Bounce"
         is_trailing = is_dd or is_gex or is_ag or is_skew  # setups with trailing stop, no fixed target
+        _fixed_pt_setups = is_bofa or is_trailing or is_paradigm or is_vanna
 
         if not all([ts, spot]):
             return {}
-        # Trailing, BofA, Paradigm don't need lis/target — they use fixed pts from spot
-        if not is_bofa and not is_trailing and not is_paradigm and not lis:
+        # Fixed-pt setups don't need lis/target — they use fixed pts from spot
+        if not _fixed_pt_setups and not lis:
             return {}
-        if not is_bofa and not is_trailing and not is_paradigm and target is None:
+        if not _fixed_pt_setups and target is None:
             return {}
 
         # Get market close time for that day (4:00 PM ET)
@@ -7122,6 +7220,11 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             ten_pt_level = spot + 10 if is_long else spot - 10
             target_level = ten_pt_level
             stop_level = spot - 15 if is_long else spot + 15
+        elif setup_name == "Vanna Pivot Bounce":
+            # Fixed 10pt target, 8pt stop from spot
+            ten_pt_level = spot + 10 if is_long else spot - 10
+            target_level = ten_pt_level
+            stop_level = spot - 8 if is_long else spot + 8
         elif is_bofa:
             # BofA Scalp: fixed 10pt target, 12pt stop beyond LIS
             bofa_target_dist = entry.get("bofa_target_level") or (spot + 10 if is_long else spot - 10)

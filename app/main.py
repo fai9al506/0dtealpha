@@ -709,6 +709,15 @@ def db_init():
         );
         """))
 
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS options_trade_orders (
+            setup_log_id BIGINT PRIMARY KEY,
+            state JSONB NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """))
+
         # Create default admin user if no users exist
         existing = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
         if existing == 0:
@@ -2126,7 +2135,7 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
         "spreadType": "Single",
         "enableGreeks": "true",
         "priceCenter": f"{spot:.2f}" if spot else "",
-        "strikeProximity": 125,  # Increased: 125/5 = 25 strikes each direction = 50 total
+        "strikeProximity": 125,  # 125/5 = 25 strikes each direction = 50 total
         "optionType": "All",
         "strikeInterval": 5  # SPX uses $5 strike intervals
     }
@@ -2167,7 +2176,7 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
         "enableGreeks": "true",
         "optionType": "All",
         "priceCenter": f"{spot:.2f}" if spot else "",
-        "strikeProximity": 125,  # Increased: 125/5 = 25 strikes each direction = 50 total
+        "strikeProximity": 125,  # 125/5 = 25 strikes each direction = 50 total
         "strikeInterval": 5,  # SPX uses $5 strike intervals
         "spreadType": "Single",
     }
@@ -2825,6 +2834,11 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         auto_trader.poll_order_status()
     except Exception:
         pass
+    try:
+        from app import options_trader
+        options_trader.poll_order_status()
+    except Exception:
+        pass
 
     from app.setup_detector import format_setup_outcome
 
@@ -3104,6 +3118,13 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                     auto_trader.close_trade(log_id, result_type)
             except Exception:
                 pass
+            # Options trade: close option position on outcome
+            try:
+                from app import options_trader
+                if log_id:
+                    options_trader.close_trade(log_id, result_type)
+            except Exception:
+                pass
 
             # Move to resolved list
             resolved = {**trade, "result_type": result_type, "pnl": pnl, "elapsed_min": elapsed_min,
@@ -3380,6 +3401,17 @@ def _run_setup_check():
                                 print(f"[auto-trader] SKIPPED {setup_name}: stop_lvl is None", flush=True)
                         except Exception as e:
                             print(f"[auto-trader] place error: {e}", flush=True)
+                    # Options trader: buy SPXW 0DTE on Skew Charm
+                    if setup_name == "Skew Charm":
+                        try:
+                            from app import options_trader
+                            options_trader.place_trade(
+                                setup_log_id=_current_setup_log.get(setup_name),
+                                setup_name=setup_name, direction=r["direction"],
+                                spot=r["spot"],
+                            )
+                        except Exception as e:
+                            print(f"[options] place error: {e}", flush=True)
             elif reason == "grade_upgrade":
                 # Short upgrade notice
                 emoji = "⬆️"
@@ -4743,6 +4775,12 @@ def on_startup():
         auto_trader_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[auto-trader] init error (non-fatal): {e}", flush=True)
+    # Initialize options trader (SPX 0DTE options on equities SIM — disabled by default)
+    try:
+        from app.options_trader import init as options_trader_init
+        options_trader_init(engine, ts_access_token, send_telegram_setups)
+    except Exception as e:
+        print(f"[options] init error (non-fatal): {e}", flush=True)
 
 @app.on_event("shutdown")
 def on_shutdown():

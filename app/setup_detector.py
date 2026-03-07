@@ -1,6 +1,6 @@
 """
 Trading Setup Detector — self-contained scoring module.
-Evaluates GEX Long, AG Short, BofA Scalp, ES Absorption, Paradigm Reversal,
+Evaluates GEX Long, AG Short, BofA Scalp, CVD Divergence, Paradigm Reversal,
 DD Exhaustion, and Skew Charm setups.
 Receives all data as parameters; no imports from main.py.
 """
@@ -913,667 +913,217 @@ def format_bofa_scalp_message(result):
     return msg
 
 
-# ── ES Absorption — defaults and state ─────────────────────────────────────
+# ── CVD Divergence — defaults and state ─────────────────────────────────────
+# Replaced ES Absorption (over-filtered: volume gate + z-score removed good signals).
+# Simple swing-to-swing CVD divergence. Backtest: 83% WR, +536 pts (SL8/T10).
 
 DEFAULT_ABSORPTION_SETTINGS = {
     "absorption_enabled": True,
-    "abs_pivot_left": 2,
-    "abs_pivot_right": 2,
-    "abs_vol_window": 10,
-    "abs_min_vol_ratio": 1.4,
-    "abs_cvd_z_min": 0.75,
-    "abs_cvd_std_window": 20,
-    "abs_cooldown_bars": 10,
-    "abs_weight_divergence": 25,
-    "abs_weight_volume": 25,
-    "abs_weight_dd": 10,
-    "abs_weight_paradigm": 10,
-    "abs_weight_lis": 10,
-    "abs_weight_lis_side": 10,
-    "abs_weight_target_dir": 10,
+    "abs_pivot_n": 2,
     "abs_max_trigger_dist": 40,
-    "abs_zone_min_away": 5,
-    "abs_grade_thresholds": {"A+": 75, "A": 55, "B": 35},
+    "abs_cooldown_minutes": 15,
+    "abs_stop_pts": 8,
+    "abs_target_pts": 10,
 }
 
 _cooldown_absorption = {
-    "last_bullish_bar": -100,
-    "last_bearish_bar": -100,
-    "last_bullish_eval_idx": -1,
-    "last_bearish_eval_idx": -1,
+    "last_bullish_swing_idx": -1,
+    "last_bearish_swing_idx": -1,
+    "last_bullish_time": None,
+    "last_bearish_time": None,
     "last_date": None,
-}
-
-_swing_tracker = {
-    "swings": [],          # [{type, price, cvd, volume, bar_idx, ts}, ...]
-    "last_type": None,     # "L" or "H" for alternating enforcement
-    "last_pivot_idx": -1,  # last bar idx scanned for pivots
-}
-
-# Zone tracker: CVD at price zones for level-revisit divergence
-# Key = zone_key (int = bar_low // range_pts), value = {cvd, bar_idx, price}
-_zone_tracker = {
-    "zones": {},           # {str(zone_key): {"cvd": float, "bar_idx": int, "price": float}}
-    "last_update_idx": -1, # last bar idx processed for zone tracking
 }
 
 
 def reset_absorption_session():
-    """Reset absorption detector state for a new ES session."""
-    _cooldown_absorption["last_bullish_bar"] = -100
-    _cooldown_absorption["last_bearish_bar"] = -100
-    _cooldown_absorption["last_bullish_eval_idx"] = -1
-    _cooldown_absorption["last_bearish_eval_idx"] = -1
-    _swing_tracker["swings"] = []
-    _swing_tracker["last_type"] = None
-    _swing_tracker["last_pivot_idx"] = -1
-    _zone_tracker["zones"] = {}
-    _zone_tracker["last_update_idx"] = -1
+    """Reset CVD Divergence detector state for a new ES session."""
+    _cooldown_absorption["last_bullish_swing_idx"] = -1
+    _cooldown_absorption["last_bearish_swing_idx"] = -1
+    _cooldown_absorption["last_bullish_time"] = None
+    _cooldown_absorption["last_bearish_time"] = None
 
 
-def _add_swing(new_swing):
-    """Add swing with alternating enforcement and adaptive invalidation.
-
-    Rules:
-    - L-H-L-H alternation enforced
-    - Same direction: lower low replaces previous low, higher high replaces previous high
-    - Same direction but doesn't replace: skip
-    """
-    swings = _swing_tracker["swings"]
-    last_type = _swing_tracker["last_type"]
-
-    if not swings or last_type is None:
-        swings.append(new_swing)
-        _swing_tracker["last_type"] = new_swing["type"]
-        return
-
-    if new_swing["type"] == last_type:
-        # Same direction — adaptive invalidation only
-        if new_swing["type"] == "L" and new_swing["price"] <= swings[-1]["price"]:
-            swings[-1] = new_swing  # lower low replaces
-        elif new_swing["type"] == "H" and new_swing["price"] >= swings[-1]["price"]:
-            swings[-1] = new_swing  # higher high replaces
-        # else: skip — doesn't qualify for replacement
-    else:
-        # Different direction — alternation satisfied
-        swings.append(new_swing)
-        _swing_tracker["last_type"] = new_swing["type"]
-
-
-def _update_swings(closed, pivot_left, pivot_right):
-    """Detect pivot highs/lows and update swing tracker.
-
-    Pivot at position i requires:
-    - bar[i].low <= all neighbors within pivot_left/pivot_right (for lows)
-    - bar[i].high >= all neighbors within pivot_left/pivot_right (for highs)
-    Alternating L-H-L-H with adaptive invalidation.
-    """
-    last_scanned = _swing_tracker["last_pivot_idx"]
-    max_pos = len(closed) - 1 - pivot_right
-    if max_pos < pivot_left:
-        return
-
-    for pos in range(pivot_left, max_pos + 1):
-        bar = closed[pos]
-        if bar["idx"] <= last_scanned:
-            continue
-
-        # Check swing low: bar.low <= all neighbors
-        is_low = True
-        for j in range(1, pivot_left + 1):
-            if bar["low"] > closed[pos - j]["low"]:
-                is_low = False
-                break
-        if is_low:
-            for j in range(1, pivot_right + 1):
-                if bar["low"] > closed[pos + j]["low"]:
-                    is_low = False
-                    break
-
-        # Check swing high: bar.high >= all neighbors
-        is_high = True
-        for j in range(1, pivot_left + 1):
-            if bar["high"] < closed[pos - j]["high"]:
-                is_high = False
-                break
-        if is_high:
-            for j in range(1, pivot_right + 1):
-                if bar["high"] < closed[pos + j]["high"]:
-                    is_high = False
-                    break
-
-        if not is_low and not is_high:
-            continue
-
-        # If both qualify on same bar, prefer alternation
-        if is_low and is_high:
-            lt = _swing_tracker["last_type"]
-            if lt == "L":
-                is_low = False
-            elif lt == "H":
-                is_high = False
-            else:
-                is_high = False  # default: low first
-
-        if is_low:
-            _add_swing({
-                "type": "L", "price": bar["low"], "cvd": bar["cvd"],
-                "volume": bar["volume"], "bar_idx": bar["idx"],
-                "ts": bar.get("ts_end", ""),
-            })
-        elif is_high:
-            _add_swing({
-                "type": "H", "price": bar["high"], "cvd": bar["cvd"],
-                "volume": bar["volume"], "bar_idx": bar["idx"],
-                "ts": bar.get("ts_end", ""),
-            })
-
-    # Update last scanned to the highest bar idx we checked
-    if max_pos >= pivot_left and closed[max_pos]["idx"] > last_scanned:
-        _swing_tracker["last_pivot_idx"] = closed[max_pos]["idx"]
-
-
-def _divergence_score(cvd_z, price_atr):
-    """Score a divergence for logging (NOT used for gating).
-
-    cvd_z: z-score of CVD gap (higher = stronger divergence)
-    price_atr: price distance as ATR multiple (higher = more significant swing)
-    Returns score 0-100.
-    """
-    # Base from CVD z-score: z=0.5->17, z=1->33, z=2->67, z=3+->100
-    base = min(100, cvd_z / 3.0 * 100)
-    # Price ATR multiplier: atr=0->0.5x, atr=1->1.0x, atr=2+->1.5-2.0x
-    mult = min(2.0, 0.5 + price_atr * 0.5)
-    return min(100, base * mult)
-
-
-def _update_zone_tracker(closed, range_pts=5.0):
-    """Track CVD at each price zone for level-revisit detection.
-
-    Called on every bar (before volume gate) so zones are tracked even during
-    quiet periods. Updates all bars EXCEPT the last (trigger) bar — the trigger
-    bar is updated after zone-revisit check so we can compare against the
-    previous visit's CVD.
-    """
-    last_idx = _zone_tracker["last_update_idx"]
-    zones = _zone_tracker["zones"]
-
-    # Update all bars except the last one (trigger bar updated later)
-    for bar in closed[:-1]:
-        if bar["idx"] <= last_idx:
-            continue
-        zone_key = str(int(bar["low"] // range_pts))
-        zones[zone_key] = {
-            "cvd": bar["cvd"],
-            "bar_idx": bar["idx"],
-            "price": bar["low"],
-        }
-
-    if len(closed) >= 2:
-        _zone_tracker["last_update_idx"] = closed[-2]["idx"]
-
-    # Prune old zones (keep only zones visited in last 200 bars)
-    if closed:
-        cutoff = closed[-1]["idx"] - 200
-        stale = [k for k, v in zones.items() if v["bar_idx"] < cutoff]
-        for k in stale:
-            del zones[k]
-
-
-def _finalize_zone_tracker(trigger, range_pts=5.0):
-    """Update zone tracker with the trigger bar (called after zone-revisit check)."""
-    zone_key = str(int(trigger["low"] // range_pts))
-    _zone_tracker["zones"][zone_key] = {
-        "cvd": trigger["cvd"],
-        "bar_idx": trigger["idx"],
-        "price": trigger["low"],
-    }
-    _zone_tracker["last_update_idx"] = trigger["idx"]
 
 
 def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
     """
-    Evaluate ES Absorption using swing-to-swing CVD divergence.
+    CVD Divergence detector — simple swing-to-swing CVD divergence.
 
-    Architecture:
-    1. Swing Tracker — pivot detection (left=2, right=2, <=/>= comparison),
-       alternating L-H-L-H, adaptive invalidation.
-    2. Volume Trigger — fire only when bar volume >= 1.4x of 10-bar avg.
-    3. Swing-to-Swing Divergence — compare consecutive same-type swings
-       (low-vs-low, high-vs-high) for 4 patterns:
-       - Sell exhaustion: lower low + higher CVD → BUY
-       - Sell absorption: higher low + lower CVD → BUY
-       - Buy exhaustion: higher high + lower CVD → SELL
-       - Buy absorption: lower high + higher CVD → SELL
-       Trigger bar must be within abs_max_trigger_dist (40) bars of recent swing.
+    Finds pivot swings (no alternating enforcement, no volume gate, no z-score)
+    and compares consecutive same-type swings (low-vs-low, high-vs-high).
+    When price and CVD disagree, that's a divergence signal.
+
+    4 patterns:
+    - Sell exhaustion: lower low + higher CVD -> BUY
+    - Sell absorption: higher low + lower CVD -> BUY
+    - Buy exhaustion: higher high + lower CVD -> SELL
+    - Buy absorption: lower high + higher CVD -> SELL
+
+    Backtest: 83% WR, +536 pts on rithmic data (SL=8/T=10).
 
     Parameters:
       bars: list of bar dicts with idx, open, high, low, close, volume, cvd, status
-      volland_stats: dict with keys paradigm, delta_decay_hedging, lines_in_sand (or None)
+      volland_stats: (unused, kept for API compat)
       settings: setup settings dict with abs_* keys
+      spx_spot: (unused, kept for API compat)
 
     Returns result dict or None.
     """
     if not settings.get("absorption_enabled", True):
         return None
 
-    pivot_left = settings.get("abs_pivot_left", 2)
-    pivot_right = settings.get("abs_pivot_right", 2)
-    vol_window = settings.get("abs_vol_window", 10)
-    min_vol_ratio = settings.get("abs_min_vol_ratio", 1.4)
-    cvd_z_min = settings.get("abs_cvd_z_min", 0.5)
-    cvd_std_window = settings.get("abs_cvd_std_window", 20)
-
-    min_bars = max(vol_window, cvd_std_window, pivot_left + pivot_right + 1) + 1
+    pivot_n = settings.get("abs_pivot_n", 2)
+    max_lookback = settings.get("abs_max_trigger_dist", 40)
 
     closed = [b for b in bars if b.get("status") == "closed"]
-    if len(closed) < min_bars:
+    if len(closed) < 10:
         return None
 
     trigger = closed[-1]
     trigger_idx = trigger["idx"]
 
-    # --- Step 1: Update swing tracker and zone tracker (always, even pre-10AM) ---
-    _update_swings(closed, pivot_left, pivot_right)
-    _update_zone_tracker(closed)
-
-    # --- No signals before 10:00 AM ET ---
-    # Opening bars (9:30-10:00) have inflated volume from premarket→regular
-    # session transition, causing false volume triggers. Swings are still
-    # tracked above so they're available as reference points after 10:00.
+    # No signals before 10:00 or after 15:30 ET
     now_et = datetime.now(NY)
-    if now_et.time() < dtime(10, 0):
+    if now_et.time() < dtime(10, 0) or now_et.time() > dtime(15, 30):
         return None
 
-    # --- Step 2: Volume gate ---
-    recent_vols = [b["volume"] for b in closed[-(vol_window + 1):-1]]
-    if not recent_vols:
-        return None
-    vol_avg = sum(recent_vols) / len(recent_vols)
-    if vol_avg <= 0:
-        return None
-    vol_ratio = trigger["volume"] / vol_avg
-    if vol_ratio < min_vol_ratio:
+    # Find ALL swings (no alternating enforcement — allows consecutive lows/highs)
+    swings = []
+    for i in range(pivot_n, len(closed) - pivot_n):
+        bar = closed[i]
+        is_low = all(bar["low"] <= closed[i - j]["low"] and bar["low"] <= closed[i + j]["low"]
+                     for j in range(1, pivot_n + 1))
+        if is_low:
+            swings.append({"type": "L", "price": bar["low"], "cvd": bar["cvd"],
+                          "bar_idx": bar["idx"], "volume": bar["volume"]})
+        is_high = all(bar["high"] >= closed[i - j]["high"] and bar["high"] >= closed[i + j]["high"]
+                      for j in range(1, pivot_n + 1))
+        if is_high:
+            swings.append({"type": "H", "price": bar["high"], "cvd": bar["cvd"],
+                          "bar_idx": bar["idx"], "volume": bar["volume"]})
+
+    if len(swings) < 2:
         return None
 
-    # --- Step 3: CVD stats for z-score ---
-    start_i = max(1, len(closed) - cvd_std_window)
-    deltas = [closed[i]["cvd"] - closed[i - 1]["cvd"] for i in range(start_i, len(closed))]
-    if len(deltas) < 5:
-        return None
-    mean_d = sum(deltas) / len(deltas)
-    cvd_std = (sum((d - mean_d) ** 2 for d in deltas) / len(deltas)) ** 0.5
-    if cvd_std < 1:
-        cvd_std = 1  # floor to avoid extreme z-scores
-
-    # ATR proxy: avg |close-to-close| over recent bars
-    atr_moves = [abs(closed[i]["close"] - closed[i - 1]["close"])
-                 for i in range(start_i, len(closed))]
-    atr = sum(atr_moves) / len(atr_moves) if atr_moves else 1.0
-    if atr < 0.01:
-        atr = 0.01
-
-    # --- Step 4: Swing-to-swing divergence scan ---
-    # Compare consecutive same-type swings (low-vs-low, high-vs-high).
-    # Trigger bar is volume confirmation only — must be within max_trigger_dist
-    # bars of the most recent swing in the pair.
-    # 4 patterns:
-    #   Bullish sell_exhaustion: lower low + higher CVD → sellers giving up
-    #   Bullish sell_absorption: higher low + lower CVD → passive buyers absorbing
-    #   Bearish buy_exhaustion: higher high + lower CVD → buyers giving up
-    #   Bearish buy_absorption: lower high + higher CVD → passive sellers absorbing
-    swings = _swing_tracker["swings"]
-
-    max_trigger_dist = settings.get("abs_max_trigger_dist", 40)
+    # Find divergences within lookback window
+    swing_lows = [s for s in swings if s["type"] == "L"]
+    swing_highs = [s for s in swings if s["type"] == "H"]
 
     bullish_divs = []
     bearish_divs = []
 
-    # --- Step 4a: Swing-to-swing divergence scan ---
-    # Collect same-type swing pairs
-    swing_lows = [s for s in swings if s["type"] == "L"]
-    swing_highs = [s for s in swings if s["type"] == "H"]
-
-    # Bullish patterns: compare consecutive swing lows
     for i in range(1, len(swing_lows)):
         s1, s2 = swing_lows[i - 1], swing_lows[i]
-        # Trigger bar must be within max_trigger_dist of the more recent swing
-        if trigger_idx - s2["bar_idx"] > max_trigger_dist:
+        if trigger_idx - s2["bar_idx"] > max_lookback:
             continue
-
-        cvd_gap = abs(s2["cvd"] - s1["cvd"])
-        cvd_z = cvd_gap / cvd_std
-        if cvd_z < cvd_z_min:
-            continue
-
-        price_dist = abs(s2["price"] - s1["price"])
-        price_atr = price_dist / atr
-        score = _divergence_score(cvd_z, price_atr)
-
-        # Sell exhaustion: lower low + higher CVD → sellers exhausted → BUY
         if s2["price"] < s1["price"] and s2["cvd"] > s1["cvd"]:
             bullish_divs.append({
-                "swing": s2, "ref_swing": s1, "pattern": "sell_exhaustion",
-                "cvd_gap": round(cvd_gap, 1), "cvd_z": round(cvd_z, 2),
-                "price_dist": round(price_dist, 2), "price_atr": round(price_atr, 2),
-                "score": round(score, 1),
+                "pattern": "sell_exhaustion", "swing": s2, "ref_swing": s1,
+                "cvd_gap": round(abs(s2["cvd"] - s1["cvd"]), 1),
+                "price_dist": round(abs(s2["price"] - s1["price"]), 2),
             })
-        # Sell absorption: higher low + lower CVD → passive buyers absorbing → BUY
-        elif s2["price"] >= s1["price"] and s2["cvd"] < s1["cvd"]:
+        elif s2["price"] > s1["price"] and s2["cvd"] < s1["cvd"]:
             bullish_divs.append({
-                "swing": s2, "ref_swing": s1, "pattern": "sell_absorption",
-                "cvd_gap": round(cvd_gap, 1), "cvd_z": round(cvd_z, 2),
-                "price_dist": round(price_dist, 2), "price_atr": round(price_atr, 2),
-                "score": round(score, 1),
+                "pattern": "sell_absorption", "swing": s2, "ref_swing": s1,
+                "cvd_gap": round(abs(s2["cvd"] - s1["cvd"]), 1),
+                "price_dist": round(abs(s2["price"] - s1["price"]), 2),
             })
 
-    # Bearish patterns: compare consecutive swing highs
     for i in range(1, len(swing_highs)):
         s1, s2 = swing_highs[i - 1], swing_highs[i]
-        if trigger_idx - s2["bar_idx"] > max_trigger_dist:
+        if trigger_idx - s2["bar_idx"] > max_lookback:
             continue
-
-        cvd_gap = abs(s2["cvd"] - s1["cvd"])
-        cvd_z = cvd_gap / cvd_std
-        if cvd_z < cvd_z_min:
-            continue
-
-        price_dist = abs(s2["price"] - s1["price"])
-        price_atr = price_dist / atr
-        score = _divergence_score(cvd_z, price_atr)
-
-        # Buy exhaustion: higher high + lower CVD → buyers exhausted → SELL
         if s2["price"] > s1["price"] and s2["cvd"] < s1["cvd"]:
             bearish_divs.append({
-                "swing": s2, "ref_swing": s1, "pattern": "buy_exhaustion",
-                "cvd_gap": round(cvd_gap, 1), "cvd_z": round(cvd_z, 2),
-                "price_dist": round(price_dist, 2), "price_atr": round(price_atr, 2),
-                "score": round(score, 1),
+                "pattern": "buy_exhaustion", "swing": s2, "ref_swing": s1,
+                "cvd_gap": round(abs(s2["cvd"] - s1["cvd"]), 1),
+                "price_dist": round(abs(s2["price"] - s1["price"]), 2),
             })
-        # Buy absorption: lower high + higher CVD → passive sellers absorbing → SELL
-        elif s2["price"] <= s1["price"] and s2["cvd"] > s1["cvd"]:
+        elif s2["price"] < s1["price"] and s2["cvd"] > s1["cvd"]:
             bearish_divs.append({
-                "swing": s2, "ref_swing": s1, "pattern": "buy_absorption",
-                "cvd_gap": round(cvd_gap, 1), "cvd_z": round(cvd_z, 2),
-                "price_dist": round(price_dist, 2), "price_atr": round(price_atr, 2),
-                "score": round(score, 1),
+                "pattern": "buy_absorption", "swing": s2, "ref_swing": s1,
+                "cvd_gap": round(abs(s2["cvd"] - s1["cvd"]), 1),
+                "price_dist": round(abs(s2["price"] - s1["price"]), 2),
             })
 
-    # --- Step 4b: Zone-revisit divergence scan ---
-    # Compare CVD at the same price zone between current visit and previous visit.
-    # Lower CVD at same zone → selling absorbed by passive buyers → bullish
-    # Higher CVD at same zone → buying absorbed by passive sellers → bearish
-    zone_min_away = settings.get("abs_zone_min_away", 5)
-    zone_key = str(int(trigger["low"] // 5.0))
-    zones = _zone_tracker["zones"]
-
-    if zone_key in zones:
-        prev = zones[zone_key]
-        bars_away = trigger_idx - prev["bar_idx"]
-        if bars_away >= zone_min_away:
-            cvd_diff = trigger["cvd"] - prev["cvd"]
-            cvd_z = abs(cvd_diff) / cvd_std if cvd_std > 0 else 0
-            if cvd_z >= cvd_z_min:
-                # Score: use CVD z-score with a 1.0x multiplier (no price_atr
-                # for zone revisits since price is approximately the same)
-                zone_score = round(min(100, cvd_z / 3.0 * 100), 1)
-                zone_div = {
-                    "swing": {"type": "Z", "price": trigger["low"],
-                              "cvd": trigger["cvd"], "bar_idx": trigger_idx},
-                    "ref_swing": {"type": "Z", "price": prev["price"],
-                                  "cvd": prev["cvd"], "bar_idx": prev["bar_idx"]},
-                    "cvd_gap": round(abs(cvd_diff), 1),
-                    "cvd_z": round(cvd_z, 2),
-                    "price_dist": round(abs(trigger["low"] - prev["price"]), 2),
-                    "price_atr": 0.0,
-                    "score": zone_score,
-                }
-                if cvd_diff < 0:
-                    # Lower CVD at same level → selling couldn't push price down
-                    # → passive buyers absorbed it → bullish
-                    zone_div["pattern"] = "zone_sell_absorption"
-                    bullish_divs.append(zone_div)
-                else:
-                    # Higher CVD at same level → buying couldn't push price up
-                    # → passive sellers absorbed it → bearish
-                    zone_div["pattern"] = "zone_buy_absorption"
-                    bearish_divs.append(zone_div)
-
-    # Finalize zone tracker with trigger bar (after check, so next call sees
-    # this bar's CVD as the "previous visit" for this zone)
-    _finalize_zone_tracker(trigger)
-
-    # --- Step 4c: Bearish CVD reversal flip (LOG-ONLY) ---
-    # When bearish divergences fire on swing HIGHS but CVD has already overshot
-    # below both swing CVDs, the predicted selling already happened.
-    # Flip to bullish as "exhaustion_reversal" (log-only to collect data).
-    if bearish_divs and not bullish_divs:
-        trigger_cvd = trigger["cvd"]
-        for bd in bearish_divs:
-            sw1_cvd = bd["ref_swing"]["cvd"]
-            sw2_cvd = bd["swing"]["cvd"]
-            min_swing_cvd = min(sw1_cvd, sw2_cvd)
-            if trigger_cvd < min_swing_cvd:
-                overshoot = (min_swing_cvd - trigger_cvd) / cvd_std if cvd_std > 0 else 0
-                flipped = dict(bd)
-                flipped["original_pattern"] = bd["pattern"]
-                flipped["pattern"] = "exhaustion_reversal"
-                flipped["cvd_reversal"] = {
-                    "trigger_cvd": round(trigger_cvd, 1),
-                    "min_swing_cvd": round(min_swing_cvd, 1),
-                    "overshoot_pct": round(overshoot, 2),
-                }
-                bullish_divs.append(flipped)
-        if bullish_divs:
-            bearish_divs = []  # Clear bearish — flipped to bullish
-
-    # --- Pattern priority tiers (from Volland order flow principles) ---
-    # Exhaustion = tier 2 (higher priority) — dominant move losing steam
-    # Absorption = tier 1 — ambiguous when competing with exhaustion
-    _PATTERN_TIER = {
-        "sell_exhaustion": 2, "buy_exhaustion": 2,
-        "exhaustion_reversal": 2,
-        "sell_absorption": 1, "buy_absorption": 1,
-        "zone_sell_absorption": 1, "zone_buy_absorption": 1,
-    }
-
-    # Evaluate each direction independently (per-direction gate, not shared)
-    best_bull = max(bullish_divs, key=lambda d: d["score"]) if bullish_divs else None
-    best_bear = max(bearish_divs, key=lambda d: d["score"]) if bearish_divs else None
-
-    # Skip directions already evaluated for this trigger bar
-    if best_bull and trigger_idx <= _cooldown_absorption.get("last_bullish_eval_idx", -1):
-        best_bull = None
-    if best_bear and trigger_idx <= _cooldown_absorption.get("last_bearish_eval_idx", -1):
-        best_bear = None
-
-    if not best_bull and not best_bear:
+    if not bullish_divs and not bearish_divs:
         return None
 
-    # Direction resolution: tier priority beats score
+    # Direction resolution: pick most recent divergence
     rejected_divergence = None
-    resolution_reason = "single_direction"
-
-    if best_bull and best_bear:
-        bull_tier = _PATTERN_TIER.get(best_bull.get("pattern", ""), 1)
-        bear_tier = _PATTERN_TIER.get(best_bear.get("pattern", ""), 1)
-        if bull_tier > bear_tier:
-            direction, best, all_divs = "bullish", best_bull, bullish_divs
-            rejected_divergence = {"direction": "bearish", "pattern": best_bear.get("pattern"), "score": best_bear["score"], "tier": bear_tier}
-            resolution_reason = "tier_priority"
-        elif bear_tier > bull_tier:
-            direction, best, all_divs = "bearish", best_bear, bearish_divs
-            rejected_divergence = {"direction": "bullish", "pattern": best_bull.get("pattern"), "score": best_bull["score"], "tier": bull_tier}
-            resolution_reason = "tier_priority"
+    if bullish_divs and not bearish_divs:
+        direction = "bullish"
+        best = max(bullish_divs, key=lambda d: d["swing"]["bar_idx"])
+        all_divs = bullish_divs
+    elif bearish_divs and not bullish_divs:
+        direction = "bearish"
+        best = max(bearish_divs, key=lambda d: d["swing"]["bar_idx"])
+        all_divs = bearish_divs
+    else:
+        last_bull = max(bullish_divs, key=lambda d: d["swing"]["bar_idx"])
+        last_bear = max(bearish_divs, key=lambda d: d["swing"]["bar_idx"])
+        if last_bull["swing"]["bar_idx"] >= last_bear["swing"]["bar_idx"]:
+            direction = "bullish"
+            best = last_bull
+            all_divs = bullish_divs
+            rejected_divergence = {"direction": "bearish", "pattern": last_bear["pattern"]}
         else:
-            # Same tier — use score as tiebreaker
-            if best_bull["score"] >= best_bear["score"]:
-                direction, best, all_divs = "bullish", best_bull, bullish_divs
-                rejected_divergence = {"direction": "bearish", "pattern": best_bear.get("pattern"), "score": best_bear["score"], "tier": bear_tier}
-            else:
-                direction, best, all_divs = "bearish", best_bear, bearish_divs
-                rejected_divergence = {"direction": "bullish", "pattern": best_bull.get("pattern"), "score": best_bull["score"], "tier": bull_tier}
-            resolution_reason = "score_tiebreak"
-    elif best_bull:
-        direction, best, all_divs = "bullish", best_bull, bullish_divs
+            direction = "bearish"
+            best = last_bear
+            all_divs = bearish_divs
+            rejected_divergence = {"direction": "bullish", "pattern": last_bull["pattern"]}
+
+    # Dedup: skip if we already fired for this exact swing pair
+    today = now_et.date()
+    if _cooldown_absorption.get("last_date") != today:
+        _cooldown_absorption["last_bullish_swing_idx"] = -1
+        _cooldown_absorption["last_bearish_swing_idx"] = -1
+        _cooldown_absorption["last_bullish_time"] = None
+        _cooldown_absorption["last_bearish_time"] = None
+        _cooldown_absorption["last_date"] = today
+
+    swing_idx = best["swing"]["bar_idx"]
+    side_key = "last_bullish_swing_idx" if direction == "bullish" else "last_bearish_swing_idx"
+    if swing_idx <= _cooldown_absorption.get(side_key, -1):
+        return None
+    _cooldown_absorption[side_key] = swing_idx
+
+    pattern = best["pattern"]
+    # Simple grading: exhaustion patterns get higher score
+    if "exhaustion" in pattern:
+        score = 65
+        grade = "A"
     else:
-        direction, best, all_divs = "bearish", best_bear, bearish_divs
+        score = 45
+        grade = "B"
 
-    # Mark this direction as evaluated for this trigger bar
-    if direction == "bullish":
-        _cooldown_absorption["last_bullish_eval_idx"] = trigger_idx
-    else:
-        _cooldown_absorption["last_bearish_eval_idx"] = trigger_idx
-
-    # Sort all divergences by score descending
-    all_divs = sorted(all_divs, key=lambda d: d["score"], reverse=True)
-
-    # --- Volume spike score (raw 1-3) ---
-    if vol_ratio >= 3.0:
-        vol_raw = 3
-    elif vol_ratio >= 2.0:
-        vol_raw = 2
-    else:
-        vol_raw = 1
-
-    # --- Volland confluence (raw: dd 0-1, paradigm 0-1, lis 0-2, lis_side 0-2, target_dir 0-2) ---
-    dd_raw = 0
-    para_raw = 0
-    lis_raw = 0
-    lis_side_raw = 0   # price below LIS + bullish = bonus (buying at support)
-    target_dir_raw = 0  # Volland target confirms signal direction
-    lis_val = None
-    lis_dist = None
-    target_val = None
-    paradigm_str = ""
-    dd_str = ""
-
-    if volland_stats and volland_stats.get("has_statistics"):
-        paradigm_str = (volland_stats.get("paradigm") or "").upper()
-        dd_str = volland_stats.get("delta_decay_hedging") or ""
-        lis_raw_str = volland_stats.get("lines_in_sand") or ""
-        target_raw_str = volland_stats.get("target") or ""
-
-        if direction == "bullish" and "long" in dd_str.lower():
-            dd_raw = 1
-        elif direction == "bearish" and "short" in dd_str.lower():
-            dd_raw = 1
-
-        if direction == "bullish" and "GEX" in paradigm_str:
-            para_raw = 1
-        elif direction == "bearish" and "AG" in paradigm_str:
-            para_raw = 1
-
-        # LIS proximity scoring (existing)
-        lis_match = re.search(r'[\d,]+\.?\d*', lis_raw_str.replace(',', ''))
-        if lis_match:
-            lis_val = float(lis_match.group())
-            # LIS is SPX-based — use SPX spot for distance (not ES price)
-            price_for_lis = spx_spot if spx_spot else trigger["close"]
-            lis_dist = abs(price_for_lis - lis_val)
-            if lis_dist <= 5:
-                lis_raw = 2
-            elif lis_dist <= 15:
-                lis_raw = 1
-
-            # LIS side scoring: buying below support or selling above resistance
-            # LIS acts as support (GEX/BofA) — below LIS + bullish = strong,
-            # above LIS + bearish = strong
-            if direction == "bullish" and price_for_lis < lis_val:
-                lis_side_raw = 2  # buying at/below support
-            elif direction == "bullish" and price_for_lis <= lis_val + 5:
-                lis_side_raw = 1  # just above support
-            elif direction == "bearish" and price_for_lis > lis_val:
-                lis_side_raw = 2  # selling above support (LIS becomes resistance)
-            elif direction == "bearish" and price_for_lis >= lis_val - 5:
-                lis_side_raw = 1  # just below resistance
-
-        # Target direction scoring: Volland target confirms signal direction
-        target_match = re.search(r'[\d,]+\.?\d*', str(target_raw_str).replace('$', '').replace(',', ''))
-        if target_match and spx_spot:
-            target_val = float(target_match.group())
-            target_above = target_val > spx_spot
-            if direction == "bullish" and target_above:
-                target_dir_raw = 2  # Volland expects higher, we're buying
-            elif direction == "bullish" and not target_above:
-                target_dir_raw = 0  # Volland expects lower, we're buying (conflict)
-            elif direction == "bearish" and not target_above:
-                target_dir_raw = 2  # Volland expects lower, we're selling
-            elif direction == "bearish" and target_above:
-                target_dir_raw = 0  # Volland expects higher, we're selling (conflict)
-
-    # --- Normalize to 0-100 ---
-    div_score = best["score"]  # already 0-100 from _divergence_score
-    vol_score = {1: 33, 2: 67, 3: 100}.get(vol_raw, 33)
-    dd_score = 100 if dd_raw else 0
-    para_score = 100 if para_raw else 0
-    lis_score = {0: 0, 1: 50, 2: 100}.get(lis_raw, 0)
-    lis_side_score = {0: 0, 1: 50, 2: 100}.get(lis_side_raw, 0)
-    target_dir_score = {0: 0, 2: 100}.get(target_dir_raw, 0)
-
-    # --- Weighted composite (for grading/logging only — NOT gating) ---
-    w_div = settings.get("abs_weight_divergence", 25)
-    w_vol = settings.get("abs_weight_volume", 25)
-    w_dd = settings.get("abs_weight_dd", 10)
-    w_para = settings.get("abs_weight_paradigm", 10)
-    w_lis = settings.get("abs_weight_lis", 10)
-    w_lis_side = settings.get("abs_weight_lis_side", 10)
-    w_target_dir = settings.get("abs_weight_target_dir", 10)
-    total_weight = w_div + w_vol + w_dd + w_para + w_lis + w_lis_side + w_target_dir
-
-    if total_weight == 0:
-        composite = div_score
-    else:
-        composite = (
-            div_score * w_div
-            + vol_score * w_vol
-            + dd_score * w_dd
-            + para_score * w_para
-            + lis_score * w_lis
-            + lis_side_score * w_lis_side
-            + target_dir_score * w_target_dir
-        ) / total_weight
-
-    composite = max(0, min(100, composite))
-
-    # --- Grade (detection-first: always fire, "C" fallback) ---
-    abs_thresholds = settings.get("abs_grade_thresholds",
-                                  DEFAULT_ABSORPTION_SETTINGS["abs_grade_thresholds"])
-    grade = compute_grade(composite, abs_thresholds)
-    if grade is None:
-        grade = "C"
-
-    pattern = best.get("pattern", "unknown")
-    is_log_only = pattern == "exhaustion_reversal"
-    if is_log_only:
-        grade = "LOG"
-        composite = 0
+    # Volume ratio for logging (informational, not gating)
+    recent_vols = [b["volume"] for b in closed[-11:-1]] if len(closed) >= 11 else [b["volume"] for b in closed[:-1]]
+    vol_avg = sum(recent_vols) / len(recent_vols) if recent_vols else 1
+    vol_ratio = trigger["volume"] / max(1, vol_avg)
 
     return {
-        "setup_name": "ES Absorption",
+        "setup_name": "CVD Divergence",
         "direction": direction,
         "grade": grade,
-        "score": round(composite, 1),
-        "paradigm": paradigm_str,
+        "score": score,
+        "paradigm": "",
         "spot": round(trigger["close"], 2),
-        "lis": round(lis_val, 2) if lis_val is not None else None,
+        "lis": None,
         "target": None,
         "max_plus_gex": None,
         "max_minus_gex": None,
-        "gap_to_lis": round(lis_dist, 2) if lis_dist is not None else None,
+        "gap_to_lis": None,
         "upside": None,
         "rr_ratio": None,
         "first_hour": False,
-        "log_only": is_log_only,
-        # Pattern classification
+        "log_only": False,
         "pattern": pattern,
-        # Mapped component scores
-        "support_score": div_score,
-        "upside_score": vol_score,
-        "floor_cluster_score": dd_score,
-        "target_cluster_score": para_score,
-        "rr_score": lis_score,
-        # Bar data
+        "support_score": score,
+        "upside_score": 0,
+        "floor_cluster_score": 0,
+        "target_cluster_score": 0,
+        "rr_score": 0,
         "bar_idx": trigger_idx,
         "abs_vol_ratio": round(vol_ratio, 1),
         "abs_es_price": round(trigger["close"], 2),
@@ -1581,76 +1131,64 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
         "high": trigger["high"],
         "low": trigger["low"],
         "vol_trigger": trigger["volume"],
-        # Swing-specific
         "best_swing": best,
         "all_divergences": all_divs,
         "swing_count": len(swings),
-        "cvd_std": round(cvd_std, 1),
-        "atr": round(atr, 3),
-        # Backward-compat raw scores
-        "div_raw": round(best["cvd_z"], 2),
-        "vol_raw": vol_raw,
-        "dd_raw": dd_raw,
-        "para_raw": para_raw,
-        "lis_raw": lis_raw,
-        "lis_side_raw": lis_side_raw,
-        "target_dir_raw": target_dir_raw,
-        "dd_hedging": dd_str,
-        "lis_val": lis_val,
-        "lis_dist": round(lis_dist, 1) if lis_dist is not None else None,
-        "target_val": target_val,
+        "cvd_std": 0,
+        "atr": 0,
+        "div_raw": round(best["cvd_gap"], 1),
+        "vol_raw": 1,
+        "dd_raw": 0,
+        "para_raw": 0,
+        "lis_raw": 0,
+        "lis_side_raw": 0,
+        "target_dir_raw": 0,
+        "dd_hedging": "",
+        "lis_val": None,
+        "lis_dist": None,
+        "target_val": None,
         "ts": trigger.get("ts_end", ""),
-        "lookback": f"zone-revisit" if pattern.startswith("zone_") else f"swing ({len(swings)} tracked)",
-        # Tier-based resolution details
-        "pattern_tier": _PATTERN_TIER.get(pattern, 1),
-        "resolution_reason": resolution_reason,
+        "lookback": f"swing ({len(swings)} tracked)",
+        "pattern_tier": 2 if "exhaustion" in pattern else 1,
+        "resolution_reason": "single_direction" if not rejected_divergence else "recency",
         "rejected_divergence": rejected_divergence,
-        "all_bull_divs": [{"pattern": d["pattern"], "score": d["score"], "cvd_z": d["cvd_z"],
-                           "swing_type": d.get("swing", {}).get("type"), "swing_price": d.get("swing", {}).get("price")}
+        "all_bull_divs": [{"pattern": d["pattern"], "cvd_gap": d["cvd_gap"],
+                           "swing_type": d["swing"]["type"], "swing_price": d["swing"]["price"]}
                           for d in bullish_divs],
-        "all_bear_divs": [{"pattern": d["pattern"], "score": d["score"], "cvd_z": d["cvd_z"],
-                           "swing_type": d.get("swing", {}).get("type"), "swing_price": d.get("swing", {}).get("price")}
+        "all_bear_divs": [{"pattern": d["pattern"], "cvd_gap": d["cvd_gap"],
+                           "swing_type": d["swing"]["type"], "swing_price": d["swing"]["price"]}
                           for d in bearish_divs],
     }
 
 
 def should_notify_absorption(result):
-    """Cooldown gate for ES Absorption. Returns (fire, reason).
+    """15-min time-based cooldown per direction for CVD Divergence."""
+    direction = result["direction"]
+    now = datetime.now(NY)
+    today = now.date()
 
-    Absorption uses bar-index-based cooldown (not time-based like other setups).
-    """
-    today = datetime.now(NY).date()
-    if _cooldown_absorption["last_date"] != today:
-        _cooldown_absorption["last_bullish_bar"] = -100
-        _cooldown_absorption["last_bearish_bar"] = -100
+    if _cooldown_absorption.get("last_date") != today:
+        _cooldown_absorption["last_bullish_time"] = None
+        _cooldown_absorption["last_bearish_time"] = None
         _cooldown_absorption["last_date"] = today
 
-    bar_idx = result["bar_idx"]
-    direction = result["direction"]
-    # evaluate_absorption uses per-direction eval gates (last_bullish_eval_idx,
-    # last_bearish_eval_idx) so both directions can fire on the same trigger bar.
-    # This function gates on bar distance for notification dedup.
-    cooldown = 10  # default; caller can check settings but evaluate already gates
-
-    if direction == "bullish":
-        if bar_idx - _cooldown_absorption["last_bullish_bar"] < cooldown:
+    time_key = "last_bullish_time" if direction == "bullish" else "last_bearish_time"
+    last_fire = _cooldown_absorption.get(time_key)
+    if last_fire is not None:
+        elapsed = (now - last_fire).total_seconds() / 60
+        if elapsed < 15:
             return False, None
-        _cooldown_absorption["last_bullish_bar"] = bar_idx
-    else:
-        if bar_idx - _cooldown_absorption["last_bearish_bar"] < cooldown:
-            return False, None
-        _cooldown_absorption["last_bearish_bar"] = bar_idx
 
+    _cooldown_absorption[time_key] = now
     return True, "new"
 
 
 def format_absorption_message(result):
-    """Format a Telegram HTML message for ES Absorption setup."""
+    """Format a Telegram HTML message for CVD Divergence setup."""
     side_emoji = "\U0001f7e2" if result["direction"] == "bullish" else "\U0001f534"
     side_label = "BUY" if result["direction"] == "bullish" else "SELL"
     grade = result["grade"]
     score = result["score"]
-    strong_tag = " STRONG" if grade == "A+" else ""
 
     pattern = result.get("pattern", "unknown")
     pattern_labels = {
@@ -1658,17 +1196,12 @@ def format_absorption_message(result):
         "sell_absorption": "Sell Absorption",
         "buy_exhaustion": "Buy Exhaustion",
         "buy_absorption": "Buy Absorption",
-        "zone_sell_absorption": "Zone Sell Absorption",
-        "zone_buy_absorption": "Zone Buy Absorption",
-        "exhaustion_reversal": "Exhaustion Reversal [LOG]",
     }
-    tier_labels = {1: "T1", 2: "T2"}
-    tier = result.get("pattern_tier", 1)
     pattern_label = pattern_labels.get(pattern, pattern)
 
     parts = [
-        f"<b>ES ABSORPTION {side_emoji} {side_label} [{grade}] ({score:.0f}/100){strong_tag}</b>",
-        f"{pattern_label} ({tier_labels.get(tier, 'T1')})",
+        f"<b>CVD DIVERGENCE {side_emoji} {side_label} [{grade}] ({score}/100)</b>",
+        f"{pattern_label}",
         "\u2501" * 18,
     ]
 
@@ -1676,113 +1209,17 @@ def format_absorption_message(result):
     if best:
         sw = best["swing"]
         ref = best.get("ref_swing")
-        is_zone = ref and ref.get("type") == "Z"
-
-        if is_zone and ref:
-            # Zone-revisit format
-            bars_gap = sw["bar_idx"] - ref["bar_idx"]
-            parts.append("")
-            parts.append(f"Visit 1 ({bars_gap} bars ago):")
-            parts.append(f"  Zone: {ref['price']:.2f} | Bar #{ref['bar_idx']}")
-            parts.append(f"  CVD: {ref['cvd']:+,}")
-            parts.append("")
-            parts.append("Visit 2 (now):")
-            parts.append(f"  Zone: {sw['price']:.2f} | Bar #{sw['bar_idx']}")
-            parts.append(f"  CVD: {sw['cvd']:+,}")
-
-            cvd_diff = sw["cvd"] - ref["cvd"]
-            cvd_desc = _cvd_interpretation_zone(pattern, cvd_diff)
-            parts.append("")
-            parts.append("Divergence:")
-            parts.append(f"  CVD: {abs(cvd_diff):,} {cvd_desc}")
-            parts.append(f"  Strength: {best['cvd_z']:.2f}\u03c3")
-
-        elif ref:
-            # Swing pair format
+        if ref:
             swing_type_label = "Low" if ref["type"] == "L" else "High"
-            ref_vol = ref.get("volume", 0)
-            sw_vol = sw.get("volume", 0)
-
             parts.append("")
-            parts.append("Swing 1 (reference):")
-            parts.append(f"  Price: {ref['price']:.2f} ({swing_type_label}) | Bar #{ref['bar_idx']}")
-            parts.append(f"  CVD: {ref['cvd']:+,} | Vol: {ref_vol:,}")
-            parts.append("")
-            parts.append("Swing 2 (current):")
-            parts.append(f"  Price: {sw['price']:.2f} ({swing_type_label}) | Bar #{sw['bar_idx']}")
-            parts.append(f"  CVD: {sw['cvd']:+,} | Vol: {sw_vol:,}")
-
-            price_diff = sw["price"] - ref["price"]
-            cvd_diff = sw["cvd"] - ref["cvd"]
-            price_desc = _price_interpretation(pattern, price_diff, ref["type"])
-            cvd_desc = _cvd_interpretation(pattern, cvd_diff)
-
-            parts.append("")
-            parts.append("Divergence:")
-            parts.append(f"  Price: {abs(price_diff):.2f} {price_desc}")
-            parts.append(f"  CVD: {abs(cvd_diff):,} {cvd_desc}")
-            parts.append(f"  Strength: {best['cvd_z']:.2f}\u03c3 ({best['price_atr']:.1f}x price move)")
+            parts.append(f"Swing 1: {ref['price']:.2f} ({swing_type_label}) Bar #{ref['bar_idx']} CVD={ref['cvd']:+,}")
+            parts.append(f"Swing 2: {sw['price']:.2f} ({swing_type_label}) Bar #{sw['bar_idx']} CVD={sw['cvd']:+,}")
+            parts.append(f"CVD Gap: {best['cvd_gap']:,} | Price: {best['price_dist']:.2f}")
 
     parts.append("")
-    parts.append(f"Trigger bar: {result['abs_es_price']:.2f} | Vol: {result['vol_trigger']:,} ({result['abs_vol_ratio']:.1f}x avg)")
-
-    # Context line: DD + Paradigm + LIS
-    ctx = []
-    if result.get("dd_raw"):
-        ctx.append(f"DD: {result['dd_hedging']} \u2713")
-    if result.get("para_raw"):
-        ctx.append(f"Paradigm: {result['paradigm']} \u2713")
-    if ctx:
-        parts.append(" | ".join(ctx))
-
-    if result.get("lis_raw") and result.get("lis_val") is not None:
-        lis_side_label = ""
-        if result.get("lis_side_raw", 0) >= 2:
-            lis_side_label = " \u2713"
-        parts.append(f"Near LIS: {result['lis_val']:.0f} ({result['lis_dist']:.1f} pts){lis_side_label}")
-
-    # If both directions fired, mention rejected
-    rej = result.get("rejected_divergence")
-    if rej:
-        rej_pat = pattern_labels.get(rej.get("pattern", ""), rej.get("pattern", "?"))
-        parts.append(f"Rejected: {rej_pat} (lower tier)")
+    parts.append(f"Entry: {result['abs_es_price']:.2f} | SL: 8pt | T: 10pt")
 
     return "\n".join(parts)
-
-
-def _price_interpretation(pattern, price_diff, swing_type):
-    """Plain-English interpretation for swing price movement."""
-    if pattern == "sell_exhaustion":
-        return "lower (new low \u2193)"
-    elif pattern == "sell_absorption":
-        return "higher (held up \u2191)"
-    elif pattern == "buy_exhaustion":
-        return "higher (new high \u2191)"
-    elif pattern == "buy_absorption":
-        return "lower (failed \u2193)"
-    return "moved"
-
-
-def _cvd_interpretation(pattern, cvd_diff):
-    """Plain-English interpretation for CVD divergence."""
-    if pattern == "sell_exhaustion":
-        return "higher (sellers weakening \u2191)"
-    elif pattern == "sell_absorption":
-        return "lower (buyers absorbing \u2193)"
-    elif pattern == "buy_exhaustion":
-        return "lower (buyers weakening \u2193)"
-    elif pattern == "buy_absorption":
-        return "higher (sellers absorbing \u2191)"
-    return "diverged"
-
-
-def _cvd_interpretation_zone(pattern, cvd_diff):
-    """Plain-English interpretation for zone-revisit CVD divergence."""
-    if pattern == "zone_sell_absorption":
-        return "lower (selling absorbed \u2193)"
-    elif pattern == "zone_buy_absorption":
-        return "higher (buying absorbed \u2191)"
-    return "diverged"
 
 
 # ── Paradigm Reversal — defaults and state ─────────────────────────────────
@@ -2675,7 +2112,7 @@ def format_paradigm_reversal_message(result):
 # ── Vanna Pivot Bounce ────────────────────────────────────────────────────
 
 DEFAULT_VANNA_PIVOT_SETTINGS = {
-    "vanna_pivot_enabled": True,
+    "vanna_pivot_enabled": False,  # Disabled: vanna levels have no edge (random levels bounce equally)
     "vp_proximity_pts": 15,        # max distance from dominant vanna level
     "vp_dominant_pct": 12,         # min % concentration to qualify as dominant
     "vp_cooldown_minutes": 15,     # per-direction cooldown
@@ -2695,7 +2132,7 @@ _cooldown_vanna_pivot = {
 def _vp_find_swings(bars, pivot_n=2):
     """Find swing highs and lows from range bars for Vanna Pivot Bounce.
 
-    Self-contained — does NOT share state with ES Absorption swing tracker.
+    Self-contained — does NOT share state with CVD Divergence swing detection.
     bars: list of dicts with bar_low, bar_high, cvd, ts_start keys (DB column names).
     """
     swings = []
@@ -3204,8 +2641,6 @@ def export_cooldowns() -> dict:
         "ag": _serialize(_cooldown_ag),
         "bofa": _serialize(_cooldown_bofa),
         "absorption": _serialize(_cooldown_absorption),
-        "swing_tracker": copy.deepcopy(_swing_tracker),
-        "zone_tracker": copy.deepcopy(_zone_tracker),
         "paradigm_rev": _serialize(_cooldown_paradigm_rev),
         "paradigm_tracker": _serialize(_paradigm_tracker),
         "dd_exhaust": _serialize(_cooldown_dd_exhaust),
@@ -3238,11 +2673,9 @@ def import_cooldowns(data: dict):
     if "bofa" in data:
         _cooldown_bofa.update(_deserialize(data["bofa"], has_datetimes=True))
     if "absorption" in data:
-        _cooldown_absorption.update(_deserialize(data["absorption"]))
-    if "swing_tracker" in data:
-        _swing_tracker.update(data["swing_tracker"])
-    if "zone_tracker" in data:
-        _zone_tracker.update(data["zone_tracker"])
+        _cooldown_absorption.update(_deserialize(
+            data["absorption"], has_datetimes=True,
+            dt_keys=("last_bullish_time", "last_bearish_time")))
     if "paradigm_rev" in data:
         _cooldown_paradigm_rev.update(_deserialize(
             data["paradigm_rev"], has_datetimes=True,

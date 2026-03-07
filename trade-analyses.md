@@ -1075,10 +1075,40 @@ Why OPTIMAL over AGGRESSIVE:
 
 | Change | Status | Date |
 |--------|--------|------|
-| Add 5 Greek context columns to setup_log | CODED | Mar 4, 2026 |
-| Generalize vanna cache (ALL/weekly/monthly) | CODED | Mar 4, 2026 |
-| Greek alignment computation per signal | CODED | Mar 4, 2026 |
-| SVB extraction per signal | CODED | Mar 4, 2026 |
-| /api/eval/signals returns Greek fields | CODED | Mar 4, 2026 |
+| Add 5 Greek context columns to setup_log | DEPLOYED | Mar 4, 2026 |
+| Generalize vanna cache (ALL/weekly/monthly) | DEPLOYED | Mar 4, 2026 |
+| Greek alignment computation per signal | DEPLOYED | Mar 4, 2026 |
+| SVB extraction per signal | DEPLOYED | Mar 4, 2026 |
+| /api/eval/signals returns Greek fields | DEPLOYED | Mar 4, 2026 |
+| Backfill all 334 historical rows | COMPLETED | Mar 4, 2026 |
 | Charm alignment gate (auto-trade level) | PENDING | -- |
-| Deploy and validate live data | PENDING | -- |
+
+### Financial Projections (with Greek Optimal Filter)
+
+Based on 17 trading days, 176 filtered trades, 60.8% WR, PF 1.80, Sharpe 0.610.
+
+| Scale | Daily | Monthly | Yearly | Max DD | DD % Acct | Acct Size |
+|-------|-------|---------|--------|--------|-----------|-----------|
+| **10 MES** | $1,772 | $37,210 | $446,514 | $1,751 | 7.0% | $25K |
+| **2 ES** | $3,544 | $74,419 | $893,029 | $3,502 | 7.0% | $50K |
+| **4 ES** | $7,088 | $148,838 | $1,786,057 | $7,004 | 7.0% | $100K |
+| **6 ES** | $10,631 | $223,257 | $2,679,086 | $10,506 | 7.0% | $150K |
+
+Risk metrics (all sizes): Recovery factor 17.2x | Kelly 27.1% | Max loss streak 5 | 71% winning days
+
+**E2T 50K Sizing Analysis:**
+
+| MES Qty | Daily $ | Max DD $ | Worst Day $ | vs $2K DD Limit | vs $1.1K Daily Limit | Status |
+|---------|---------|----------|-------------|-----------------|---------------------|--------|
+| 6 MES | $1,063 | $1,051 | -$780 | SAFE | SAFE | **SAFE** |
+| 8 MES | $1,418 | $1,401 | -$1,040 | SAFE | SAFE | **SAFE** |
+| 10 MES | $1,772 | $1,751 | -$1,300 | SAFE | RISKY | RISKY |
+| 15 MES | $2,658 | $2,626 | -$1,950 | DANGER | DANGER | DANGER |
+
+**Recommendation: 8 MES for E2T** -- max safe size, $1,418/day, passes eval in ~2 days ($3K target).
+
+**Equity Curve (4 ES = $200/pt):**
+- Baseline: $+74,742 final, max DD $17,246 (Feb 24-26 drop)
+- **Filtered: $+120,488 final, max DD $7,004 (Feb 13 only)**
+- Filter turns the Feb 24-26 drawdown from -$14,660 into a **flat/positive stretch**
+- After Feb 19, filtered equity curve **never draws down** -- pure upward trajectory

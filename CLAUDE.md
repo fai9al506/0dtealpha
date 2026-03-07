@@ -45,7 +45,7 @@ Supported formats: `.md`, `.txt`, `.pdf`, `.png`, `.jpg`
 
 0DTE Alpha is a real-time options trading dashboard for SPX/SPXW 0DTE (zero days to expiration) options. It combines:
 - **FastAPI web service** (`app/main.py`) - serves live options chain data, charts, and a dashboard
-- **Setup detector** (`app/setup_detector.py`) - scoring module for GEX Long, AG Short, BofA Scalp, ES Absorption, Paradigm Reversal, DD Exhaustion, Skew Charm, and Vanna Pivot Bounce setups
+- **Setup detector** (`app/setup_detector.py`) - scoring module for GEX Long, AG Short, BofA Scalp, CVD Divergence, Paradigm Reversal, DD Exhaustion, and Skew Charm setups (Vanna Pivot Bounce disabled)
 - **Volland scraper worker** (`volland_worker_v2.py`) - Playwright route-based scraper for charm/vanna/gamma exposure data from vol.land
 - **ES cumulative delta** (integrated in `app/main.py`) - scheduler job pulls ES 1-min bars from TradeStation API
 - **ES quote stream** (integrated in `app/main.py`) - WebSocket stream builds bid/ask delta range bars from TradeStation ES quotes
@@ -151,7 +151,7 @@ Append new analysis sections to this file after each review session.
 - **GEX Long**: Scores support proximity, upside range, floor cluster, target cluster, risk/reward
 - **AG Short**: Bearish counterpart to GEX Long
 - **BofA Scalp**: LIS-based scalp with charm/stability/width scoring
-- **ES Absorption** (swing-based, rewritten 2026-02-15): See "ES Absorption Detector" section below
+- **CVD Divergence** (replaced ES Absorption 2026-03-07): See "CVD Divergence Detector" section below
 - **DD Exhaustion** (log-only, added 2026-02-18): See "DD Exhaustion Detector" section below
 - Cooldown persistence: `export_cooldowns()` / `import_cooldowns()` serialize state to/from DB
 
@@ -165,56 +165,39 @@ Append new analysis sections to this file after each review session.
 - Auto browser restart after 5 consecutive 0-point cycles
 - Auto re-login on session expiry
 
-### ES Absorption Detector (Swing-to-Swing CVD Divergence)
+### CVD Divergence Detector (Replaced ES Absorption 2026-03-07)
 
-Detects passive buyer/seller absorption and exhaustion by comparing CVD between consecutive same-type swing points. Rewritten 2026-02-25 to replace single-swing trigger-vs-swing logic with swing-to-swing pairs detecting 4 distinct patterns.
+Simple swing-to-swing CVD divergence. Replaced ES Absorption which was over-filtered (volume gate + z-score removed good signals, resulting in -14.6 pts on 89 production trades). The simple approach backtested at 83% WR, +536 pts on rithmic data.
 
-**Architecture (3 components):**
+**Architecture (simple, no quality gates):**
 
-1. **Swing Tracker** (`_update_swings`, `_add_swing`):
-   - Pivot detection: left=2, right=2, using `<=` for lows and `>=` for highs (not strict)
-   - Alternating enforcement: L-H-L-H — after a low, next must be a high and vice versa
-   - Adaptive invalidation: lower low replaces previous swing low, higher high replaces previous swing high
-   - State persists across calls within a session (`_swing_tracker` dict)
+1. **Swing Detection**: Pivot detection (left=2, right=2), `<=` for lows, `>=` for highs. NO alternating enforcement (allows consecutive lows/highs). Rescans all closed bars each call.
 
-2. **Volume Trigger**: Fire only when trigger bar volume >= 1.4x of 10-bar rolling average. Only the trigger bar needs elevated volume; swing reference bars don't.
+2. **Divergence Scan** (`evaluate_absorption`):
+   Compares consecutive same-type swings (low-vs-low, high-vs-high) for 4 patterns:
+   - **Sell Exhaustion**: lower low + higher CVD → BUY
+   - **Sell Absorption**: higher low + lower CVD → BUY
+   - **Buy Exhaustion**: higher high + lower CVD → SELL
+   - **Buy Absorption**: lower high + higher CVD → SELL
 
-3. **Swing-to-Swing Divergence Scan** (`evaluate_absorption`):
-   Compares consecutive same-type swings (low-vs-low, high-vs-high) to detect 4 patterns:
+3. **Direction Resolution**: If both bullish and bearish divergences exist, pick the one with the most recent swing.
 
-   **Bullish patterns** (compare consecutive swing lows):
-   - **Sell Exhaustion**: lower low + higher CVD → BUY (sellers pushing price down but CVD rising = selling exhausted)
-   - **Sell Absorption**: higher low + lower CVD → BUY (price holding up while CVD drops = passive buyers absorbing)
+**What was removed (all proven to hurt performance):**
+- Volume gate (1.4x) — filtered out 56 of 77 signals, removed signals had HIGHER WR
+- Z-score minimum (0.5) — over-filtered good signals
+- Alternating swing enforcement (L-H-L-H) — reduced swing pair detection
+- Zone tracker / zone-revisit divergence
+- Exhaustion reversal flip logic
+- Pattern priority tiers
+- Volland confluence scoring (DD, paradigm, LIS weights)
 
-   **Bearish patterns** (compare consecutive swing highs):
-   - **Buy Exhaustion**: higher high + lower CVD → SELL (buyers pushing price up but CVD dropping = buying exhausted)
-   - **Buy Absorption**: lower high + higher CVD → SELL (price failing while CVD rises = passive sellers absorbing)
+**Risk Management:** Fixed SL=8pt / T=10pt (not trailing). Entry at ES price from Rithmic range bars.
 
-   **Scoring:**
-   - CVD gap scored as z-score: `cvd_gap / rolling_std_dev(bar-to-bar CVD changes, 20 bars)`
-   - Price distance scored as ATR multiple: `price_dist / avg(|close-to-close|, 20 bars)`
-   - `abs_max_trigger_dist`: max bars between most recent swing in pair and current bar (default 40)
-   - **Detection-first**: fires on ALL divergences with z >= 0.5 (no grade-based suppression)
-   - Grade defaults to "C" if composite score below thresholds
-   - Best swing pair by score for primary display and Telegram
-   - Result includes `pattern` field (e.g. "sell_exhaustion") and `ref_swing` with swing pair details
-   - **Pattern priority tiers**: Exhaustion=T2 beats Absorption=T1 when both directions fire on same bar. Score tiebreak for same tier. Rejected divergence saved in `rejected_divergence` field.
-   - `abs_details` JSONB column on `setup_log`: stores all divergences (both directions), swing pairs, tier resolution for analysis
+**Cooldown:** 15-min time-based per direction + dedup by swing bar_idx (same divergence won't re-fire).
 
-**Key settings** (tunable via dashboard admin panel):
-- `abs_pivot_left/right`: 2 (pivot neighbor count)
-- `abs_min_vol_ratio`: 1.4 (volume trigger threshold)
-- `abs_cvd_z_min`: 0.5 (minimum z-score to fire)
-- `abs_cvd_std_window`: 20 (rolling window for CVD std dev)
-- `abs_vol_window`: 10 (rolling average for volume gate)
-- `abs_max_trigger_dist`: 40 (max bars from recent swing to current bar)
+**Grading:** Exhaustion patterns = grade A (score 65), Absorption = grade B (score 45).
 
-**RM optimization (backtest 6 days, 2026-02-25):**
-- SL=5/T=5 best fixed strategy (+34 pts), all others negative
-- buy_absorption pattern toxic (23% WR) — candidate for blocking
-- Current deployed: SL=12/T=10 (from before rewrite). User deferred RM changes for deeper testing.
-
-**Data contamination warning:** `es_range_bars` table has overlapping `bar_idx` from `live` and `rithmic` sources on same dates. Always filter by `source = 'live'` (or `'rithmic'`) in backtest queries.
+**Data contamination warning:** `es_range_bars` table has overlapping `bar_idx` from `live` and `rithmic` sources on same dates. Always filter by `source = 'rithmic'` in queries.
 
 ### DD Exhaustion Detector (Log-Only Mode)
 
@@ -256,7 +239,7 @@ Self-contained module (`app/auto_trader.py`) that auto-trades **10 MES** futures
 - SIM account: `SIM2609239F`, hardcoded
 
 **Two order flows:**
-- **Flow A — Single target** (BofA Scalp, ES Absorption, Paradigm Reversal): Bracket (BRK group) — 10 MES market entry + Limit 10 @ +10pts + StopMarket 10
+- **Flow A — Single target** (BofA Scalp, CVD Divergence, Paradigm Reversal): Bracket (BRK group) — 10 MES market entry + Limit 10 @ +10pts + StopMarket 10
 - **Flow B — Split target** (GEX Long, AG Short, DD Exhaustion): Market entry 10 MES + separate orders:
   - T1: Limit 5 @ +10pts (first target)
   - T2: Limit 5 @ full Volland target (DD: trail-only, no T2 limit)
@@ -271,7 +254,7 @@ Self-contained module (`app/auto_trader.py`) that auto-trades **10 MES** futures
 **Integration points in main.py (7):**
 1. Startup init after Rithmic
 2. `auto_trade_orders` table in `db_init()`
-3. `place_trade()` after setup fires (both main loop and ES Absorption path) — passes `full_target_pts`
+3. `place_trade()` after setup fires (both main loop and CVD Divergence path) — passes `full_target_pts`
 4. `update_stop()` after trail advances
 5. `close_trade()` on outcome resolution
 6. `poll_order_status()` at top of `_check_setup_outcomes()`
@@ -442,7 +425,7 @@ See `Backup_tags.md` for the full list of backup tags.
 - GEX calculation: `call_gex = gamma * OI * 100`, `put_gex = -gamma * OI * 100`
 - Volland v2 uses Playwright `page.route()` to intercept exposure API calls (route handlers survive `page.goto()` navigations)
 - ES quote stream: WebSocket to TradeStation, builds 5-pt range bars with bid/ask delta. Bars have `{idx, open, high, low, close, volume, delta, buy_volume, sell_volume, cvd, cvd_open, cvd_high, cvd_low, cvd_close, ts_start, ts_end, status}`
-- ES absorption: swing-based CVD divergence detector runs on each new completed range bar (see "ES Absorption Detector" section)
+- CVD Divergence: simple swing-to-swing CVD divergence detector runs on each new completed range bar (see "CVD Divergence Detector" section)
 - Thread safety: `_es_delta_lock` for ES 1-min delta state, `_es_quote_lock` for ES quote stream range bars
 - Dashboard: no page reload — uses per-tab polling timers with `Plotly.react()`, tab persisted via `sessionStorage`
 - Setup cooldowns: saved to DB after each evaluation via `setup_cooldowns` table (JSONB), loaded on startup

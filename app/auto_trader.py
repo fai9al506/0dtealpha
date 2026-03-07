@@ -175,6 +175,18 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         print(f"[auto-trader] STACKING {setup_name} (same dir), "
               f"active: {active_names}", flush=True)
 
+    # ── Margin/buying-power pre-check ──
+    # Prevents spam rejections when account can't afford new positions
+    bp = _get_buying_power()
+    if bp is not None:
+        # MES margin requirement: ~$2,737/contract, TOTAL_QTY contracts
+        margin_needed = TOTAL_QTY * 2737
+        if bp < margin_needed:
+            print(f"[auto-trader] skip {setup_name}: insufficient buying power "
+                  f"(${bp:,.0f} < ${margin_needed:,.0f} needed for {TOTAL_QTY} MES)",
+                  flush=True)
+            return
+
     # Determine order flow
     if setup_name in _SINGLE_TARGET_SETUPS:
         # Flow A: single target, all 10 contracts
@@ -508,6 +520,27 @@ def _get_order_fill_price(order_id: str) -> float | None:
     except Exception:
         pass
     return None
+
+
+def _get_buying_power() -> float | None:
+    """Query account buying power (purchasing power) from broker.
+    Returns dollar amount or None on error."""
+    try:
+        data = _sim_api("GET", f"/brokerage/accounts/{SIM_ACCOUNT_ID}/balances", None)
+        if not data:
+            return None
+        balances = data.get("Balances", [])
+        if isinstance(balances, list) and balances:
+            b = balances[0]
+        elif isinstance(balances, dict):
+            b = balances
+        else:
+            return None
+        bp = b.get("BuyingPower") or b.get("CashBalance")
+        return float(bp) if bp else None
+    except Exception as e:
+        print(f"[auto-trader] buying power query error: {e}", flush=True)
+        return None
 
 
 def _get_broker_position() -> dict | None:
@@ -1104,29 +1137,58 @@ def flatten_all_eod():
                         pass
         print(f"[auto-trader] EOD: cancelled {cancelled} orders", flush=True)
 
-        # Phase 1b: Wait for cancellations to process
-        time.sleep(1)
+        # Phase 1b: Wait for cancellations to settle (margin freed)
+        # TS SIM needs time to release margin from cancelled orders
+        time.sleep(3)
 
-        # Phase 1c: Close actual broker position once (not per-trade)
+        # Phase 1c: Close actual broker position with retry on rejection
+        # Margin may not be fully released yet — retry with increasing waits
         broker_pos = _get_broker_position()
         if broker_pos:
             close_side = "Sell" if broker_pos["long_short"] == "Long" else "Buy"
-            close_payload = {
-                "AccountID": SIM_ACCOUNT_ID,
-                "Symbol": MES_SYMBOL,
-                "Quantity": str(broker_pos["qty"]),
-                "OrderType": "Market",
-                "TradeAction": close_side,
-                "TimeInForce": {"Duration": "DAY"},
-                "Route": "Intelligent",
-            }
-            resp = _sim_api("POST", "/orderexecution/orders", close_payload)
-            if resp:
-                print(f"[auto-trader] EOD: closed {broker_pos['long_short']} "
-                      f"{broker_pos['qty']} MES", flush=True)
-            else:
-                _alert_critical(f"[AUTO-TRADE] EOD CLOSE FAILED\n"
-                               f"{broker_pos['long_short']} {broker_pos['qty']} MES")
+            closed = False
+            for attempt, wait in enumerate([0, 3, 5, 10], start=1):
+                if attempt > 1:
+                    print(f"[auto-trader] EOD close retry #{attempt} after {wait}s wait...",
+                          flush=True)
+                    time.sleep(wait)
+                    # Re-check position (may have been closed by a delayed fill)
+                    broker_pos = _get_broker_position()
+                    if not broker_pos:
+                        print(f"[auto-trader] EOD: position closed during wait", flush=True)
+                        closed = True
+                        break
+                    close_side = "Sell" if broker_pos["long_short"] == "Long" else "Buy"
+
+                close_payload = {
+                    "AccountID": SIM_ACCOUNT_ID,
+                    "Symbol": broker_pos["symbol"],
+                    "Quantity": str(broker_pos["qty"]),
+                    "OrderType": "Market",
+                    "TradeAction": close_side,
+                    "TimeInForce": {"Duration": "DAY"},
+                    "Route": "Intelligent",
+                }
+                resp = _sim_api("POST", "/orderexecution/orders", close_payload)
+                if resp:
+                    # Check if order was accepted (not rejected)
+                    orders = resp.get("Orders", [])
+                    if orders and orders[0].get("Error") == "FAILED":
+                        msg = orders[0].get("Message", "")
+                        print(f"[auto-trader] EOD close rejected (attempt {attempt}): {msg}",
+                              flush=True)
+                        continue  # retry
+                    print(f"[auto-trader] EOD: closed {broker_pos['long_short']} "
+                          f"{broker_pos['qty']} MES (attempt {attempt})", flush=True)
+                    closed = True
+                    break
+                else:
+                    print(f"[auto-trader] EOD close API error (attempt {attempt})", flush=True)
+
+            if not closed:
+                _alert_critical(f"[AUTO-TRADE] EOD CLOSE FAILED after 4 attempts\n"
+                               f"{broker_pos['long_short']} {broker_pos['qty']} MES\n"
+                               f"MANUAL CLOSE REQUIRED")
         else:
             print("[auto-trader] EOD: broker already flat", flush=True)
 
@@ -1214,19 +1276,29 @@ def flatten_account_positions() -> dict:
         try:
             resp = _sim_api("POST", "/orderexecution/orders", close_payload)
             fill_price = None
+            rejected = False
             if resp:
-                oid = None
-                for o in resp.get("Orders", []):
-                    oid = o.get("OrderID")
-                if oid:
-                    time.sleep(1)
-                    fill_price = _get_order_fill_price(oid)
-            result["positions_closed"].append({
-                "symbol": symbol, "qty": qty, "side": close_side,
-                "long_short": long_short, "fill_price": fill_price,
-            })
-            print(f"[auto-trader] flatten-account: closed {long_short} {qty} {symbol} "
-                  f"fill={fill_price}", flush=True)
+                orders_list = resp.get("Orders", [])
+                if orders_list and orders_list[0].get("Error") == "FAILED":
+                    msg = orders_list[0].get("Message", "")
+                    result["errors"].append(f"close {symbol} rejected: {msg}")
+                    print(f"[auto-trader] flatten-account: REJECTED {long_short} "
+                          f"{qty} {symbol}: {msg}", flush=True)
+                    rejected = True
+                else:
+                    oid = None
+                    for o in orders_list:
+                        oid = o.get("OrderID")
+                    if oid:
+                        time.sleep(1)
+                        fill_price = _get_order_fill_price(oid)
+            if not rejected:
+                result["positions_closed"].append({
+                    "symbol": symbol, "qty": qty, "side": close_side,
+                    "long_short": long_short, "fill_price": fill_price,
+                })
+                print(f"[auto-trader] flatten-account: closed {long_short} {qty} {symbol} "
+                      f"fill={fill_price}", flush=True)
         except Exception as e:
             result["errors"].append(f"close {symbol}: {e}")
 

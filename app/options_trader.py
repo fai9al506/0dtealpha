@@ -16,6 +16,8 @@ SIM_ACCOUNT_ID = os.getenv("OPTIONS_SIM_ACCOUNT", "SIM2609238M")
 OPTIONS_TRADE_ENABLED = os.getenv("OPTIONS_TRADE_ENABLED", "false").lower() == "true"
 OPTIONS_QTY = int(os.getenv("OPTIONS_QTY", "1"))
 TARGET_DELTA = float(os.getenv("OPTIONS_TARGET_DELTA", "0.30"))
+STOP_LOSS_PCT = float(os.getenv("OPTIONS_STOP_LOSS_PCT", "0.40"))   # close if option drops 40%
+MAX_HOLD_MINUTES = int(os.getenv("OPTIONS_MAX_HOLD_MIN", "20"))     # close after 20 min
 
 # Chain column indices (CANONICAL_COLS from main.py)
 # C_Volume(0), C_OI(1), C_IV(2), C_Gamma(3), C_Delta(4), C_Bid(5), C_BidSize(6), C_Ask(7), C_AskSize(8), C_Last(9),
@@ -91,12 +93,18 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float)
     cp = "C" if is_long else "P"
     symbol = f"SPXW {today.strftime('%y%m%d')}{cp}{strike}"
 
-    # Place market buy order
+    # Place limit buy at ask price (avoid terrible SIM market fills)
+    limit_price = round(ask, 2) if ask > 0 else None
+    if not limit_price:
+        print(f"[options] skip {setup_name}: ask price is 0", flush=True)
+        return
+
     payload = {
         "AccountID": SIM_ACCOUNT_ID,
         "Symbol": symbol,
         "Quantity": str(OPTIONS_QTY),
-        "OrderType": "Market",
+        "OrderType": "Limit",
+        "LimitPrice": str(limit_price),
         "TradeAction": "BUYTOOPEN",
         "TimeInForce": {"Duration": "DAY"},
         "Route": "Intelligent",
@@ -132,10 +140,10 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float)
     _persist_order(setup_log_id)
 
     print(f"[options] placed: {setup_name} BUYTOOPEN {OPTIONS_QTY} {symbol} "
-          f"delta={delta:.3f} ask=${ask:.2f} spot={spot:.0f}", flush=True)
+          f"delta={delta:.3f} limit=${limit_price:.2f} spot={spot:.0f}", flush=True)
     _alert(f"[OPTIONS] {setup_name} placed\n"
            f"BUYTOOPEN {OPTIONS_QTY} {symbol}\n"
-           f"Delta: {delta:.3f} | Ask: ${ask:.2f} | SPX: {spot:.0f}")
+           f"Delta: {delta:.3f} | Limit: ${limit_price:.2f} | SPX: {spot:.0f}")
 
 
 def close_trade(setup_log_id: int, result_type: str = ""):
@@ -150,17 +158,22 @@ def close_trade(setup_log_id: int, result_type: str = ""):
     setup_name = order["setup_name"]
     symbol = order["symbol"]
 
-    # Sell to close at market
+    # Sell to close at bid price (avoid terrible SIM market fills)
     if order["status"] == "filled":
+        # Get current bid for limit exit
+        bid_price = _get_option_bid(symbol)
+        close_order_type = "Limit" if bid_price and bid_price > 0 else "Market"
         close_payload = {
             "AccountID": SIM_ACCOUNT_ID,
             "Symbol": symbol,
             "Quantity": str(order["qty"]),
-            "OrderType": "Market",
+            "OrderType": close_order_type,
             "TradeAction": "SELLTOCLOSE",
             "TimeInForce": {"Duration": "DAY"},
             "Route": "Intelligent",
         }
+        if close_order_type == "Limit":
+            close_payload["LimitPrice"] = str(round(bid_price, 2))
         resp = _sim_api("POST", "/orderexecution/orders", close_payload)
         close_ok, close_oid = _order_ok(resp)
         if close_ok:
@@ -190,7 +203,7 @@ def close_trade(setup_log_id: int, result_type: str = ""):
 
 
 def poll_order_status():
-    """Check order fills via TS API. Called each ~30s cycle."""
+    """Check order fills, stop-loss, and time exit via TS API. Called each ~30s cycle."""
     if not OPTIONS_TRADE_ENABLED:
         return
     with _lock:
@@ -218,6 +231,72 @@ def poll_order_status():
 
     for lid, order in pending:
         _check_fills(lid, order, broker_orders)
+
+    # ── Stop-loss and time-based exit for filled positions ──
+    with _lock:
+        filled = [(lid, o) for lid, o in _active_orders.items()
+                  if o["status"] == "filled" and o.get("entry_price")]
+    if not filled:
+        return
+
+    # Get current positions to check mark price
+    try:
+        pos_data = _sim_api("GET",
+            f"/brokerage/accounts/{SIM_ACCOUNT_ID}/positions", None)
+    except Exception:
+        pos_data = None
+
+    positions_by_symbol = {}
+    if pos_data:
+        for p in pos_data.get("Positions", []):
+            sym = p.get("Symbol", "")
+            positions_by_symbol[sym] = p
+
+    now = datetime.utcnow()
+    for lid, order in filled:
+        symbol = order["symbol"]
+        entry_price = order["entry_price"]
+        placed_ts = order.get("ts_placed")
+
+        # Get current mark/last price from position
+        pos = positions_by_symbol.get(symbol)
+        current_price = None
+        if pos:
+            last = pos.get("Last") or pos.get("MarketValue")
+            if last:
+                try:
+                    current_price = float(str(last).replace(",", ""))
+                except (ValueError, TypeError):
+                    pass
+
+        should_close = False
+        reason = ""
+
+        # Stop-loss: close if option dropped STOP_LOSS_PCT from entry
+        if current_price and entry_price and entry_price > 0:
+            loss_pct = (entry_price - current_price) / entry_price
+            if loss_pct >= STOP_LOSS_PCT:
+                should_close = True
+                reason = f"stop-loss ({loss_pct:.0%} drop, limit {STOP_LOSS_PCT:.0%})"
+
+        # Time exit: close if held > MAX_HOLD_MINUTES
+        if not should_close and placed_ts:
+            try:
+                placed = datetime.fromisoformat(placed_ts)
+                held_min = (now - placed).total_seconds() / 60
+                if held_min >= MAX_HOLD_MINUTES:
+                    should_close = True
+                    reason = f"time-exit ({held_min:.0f} min > {MAX_HOLD_MINUTES} min)"
+            except (ValueError, TypeError):
+                pass
+
+        if should_close:
+            print(f"[options] auto-close: {order['setup_name']} {symbol} — {reason}",
+                  flush=True)
+            _alert(f"[OPTIONS] AUTO-CLOSE: {order['setup_name']}\n"
+                   f"{symbol} | {reason}\n"
+                   f"Entry: ${entry_price:.2f} | Current: ${current_price or '?'}")
+            close_trade(lid, result_type=reason)
 
 
 # ====== STRIKE SELECTION ======
@@ -421,6 +500,30 @@ def _get_order_fill_price(order_id: str) -> float | None:
                     return _extract_fill_price(o)
     except Exception:
         pass
+    return None
+
+
+def _get_option_bid(symbol: str) -> float | None:
+    """Get current bid price for an option symbol from TS quote API.
+    Uses live API (not SIM) since marketdata endpoints are read-only."""
+    try:
+        if not _get_token:
+            return None
+        token = _get_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        import urllib.parse
+        encoded = urllib.parse.quote(symbol)
+        r = requests.get(
+            f"https://api.tradestation.com/v3/marketdata/quotes/{encoded}",
+            headers=headers, timeout=10)
+        if r.status_code == 200:
+            quotes = r.json().get("Quotes", [])
+            if quotes:
+                bid = quotes[0].get("Bid")
+                if bid:
+                    return float(str(bid).replace(",", ""))
+    except Exception as e:
+        print(f"[options] bid query error for {symbol}: {e}", flush=True)
     return None
 
 

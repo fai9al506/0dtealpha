@@ -45,7 +45,7 @@ Supported formats: `.md`, `.txt`, `.pdf`, `.png`, `.jpg`
 
 0DTE Alpha is a real-time options trading dashboard for SPX/SPXW 0DTE (zero days to expiration) options. It combines:
 - **FastAPI web service** (`app/main.py`) - serves live options chain data, charts, and a dashboard
-- **Setup detector** (`app/setup_detector.py`) - scoring module for GEX Long, AG Short, BofA Scalp, ES Absorption, Paradigm Reversal, and DD Exhaustion (log-only) setups
+- **Setup detector** (`app/setup_detector.py`) - scoring module for GEX Long, AG Short, BofA Scalp, ES Absorption, Paradigm Reversal, DD Exhaustion, Skew Charm, and Vanna Pivot Bounce setups
 - **Volland scraper worker** (`volland_worker_v2.py`) - Playwright route-based scraper for charm/vanna/gamma exposure data from vol.land
 - **ES cumulative delta** (integrated in `app/main.py`) - scheduler job pulls ES 1-min bars from TradeStation API
 - **ES quote stream** (integrated in `app/main.py`) - WebSocket stream builds bid/ask delta range bars from TradeStation ES quotes
@@ -278,6 +278,29 @@ Self-contained module (`app/auto_trader.py`) that auto-trades **10 MES** futures
 7. Health endpoint + admin API (`/api/auto-trade/status`, `/api/auto-trade/toggle`)
 
 **Crash recovery:** Active orders persisted to `auto_trade_orders` table (JSONB), restored on startup.
+
+**Margin pre-check (2026-03-07):** `_get_buying_power()` queries account balance before `place_trade()`. Skips if buying power < TOTAL_QTY × $2,737/MES. Prevents cascade of rejected orders when margin consumed.
+
+**EOD flatten retry (2026-03-07):** Phase 1b waits 3s (was 1s) for margin release. Phase 1c retries close order up to 4 times with increasing waits (0/3/5/10s). Each retry re-checks position, detects explicit rejection in TS response (Error=FAILED), sends `_alert_critical` if all attempts fail.
+
+### SPX 0DTE Options Trader (`app/options_trader.py`)
+
+Self-contained module that buys SPXW 0DTE options at ~0.30 delta when Skew Charm fires. Same init pattern as auto_trader.py — receives `engine`, `get_token_fn`, `send_telegram_fn` via `init()`.
+
+**Safety:** Hardcoded to `sim-api.tradestation.com`. Equities SIM account `SIM2609238M` (separate from futures SIM).
+
+**Config:** `OPTIONS_TRADE_ENABLED` (master switch, default OFF), `OPTIONS_SIM_ACCOUNT`, `OPTIONS_QTY` (default 1), `OPTIONS_TARGET_DELTA` (0.30), `OPTIONS_STOP_LOSS_PCT` (0.40), `OPTIONS_MAX_HOLD_MIN` (20).
+
+**Order flow:** Limit orders only (no Market) to avoid terrible SIM fills. Entry at ask price, exit at bid price. `_get_option_bid()` uses live TS API (`api.tradestation.com`) for quotes since SIM API may not serve marketdata.
+
+**Risk management:**
+- Stop-loss: `poll_order_status()` checks filled positions each ~30s cycle. If option drops ≥40% from entry, auto-closes.
+- Time exit: If held >20 minutes with no resolution, auto-closes.
+- Both configurable via env vars.
+
+**Key functions:** `place_trade()`, `close_trade()`, `poll_order_status()`, `_find_strike()`, `_get_option_bid()`, `_check_fills()`.
+
+**DB table:** `options_trade_orders` (setup_log_id PK, JSONB state, crash recovery).
 
 ### Eval Trader (`eval_trader.py` — Local E2T Auto-Trader)
 

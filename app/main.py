@@ -3377,7 +3377,7 @@ def _run_setup_check():
                            bar_volume, bar_delta, cumulative_delta AS cvd,
                            ts_start, ts_end, status
                     FROM es_range_bars
-                    WHERE trade_date = :td AND source = 'live'
+                    WHERE trade_date = :td AND source = 'rithmic'
                     ORDER BY bar_idx ASC
                 """), {"td": now_et().strftime("%Y-%m-%d")}).mappings().all()
                 es_range_bars_vp = [dict(r) for r in rows]

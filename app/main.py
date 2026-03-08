@@ -222,6 +222,10 @@ _vix_last: float | None = None  # latest VIX value from TS quotes
 # ====== SETUP DETECTOR DEFAULTS ======
 _DEFAULT_SETUP_SETTINGS = {
     "gex_long_enabled": True,
+    "gex_max_gap": 5,
+    "gex_min_upside": 10,
+    "gex_target_pts": 15,
+    "gex_stop_pts": 12,
     "ag_short_enabled": True,
     "bofa_scalp_enabled": True,
     "absorption_enabled": True,
@@ -2851,9 +2855,9 @@ def _compute_setup_levels(r: dict):
         return None, round(stop_lvl, 2)
 
     if setup_name == "GEX Long":
-        # Trailing stop — no fixed target; initial SL = 8 pts
+        # Trailing stop — no fixed target; initial SL = 12 pts
         # Hybrid trail: BE at +10, continuous trail activation=15, gap=5
-        stop_lvl = spot - 8 if is_long else spot + 8
+        stop_lvl = spot - 12 if is_long else spot + 12
         return None, round(stop_lvl, 2)
 
     if setup_name == "Paradigm Reversal":
@@ -7183,7 +7187,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         # AG Short: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
         _trail_params = {
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5, "initial_sl": 12},
-            "GEX Long": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5, "initial_sl": 8},
+            "GEX Long": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5, "initial_sl": 12},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8, "initial_sl": 20},
         }

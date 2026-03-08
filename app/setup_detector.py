@@ -14,6 +14,11 @@ NY = pytz.timezone("US/Eastern")
 # ── Default settings (exported so main.py can seed its global) ──────────────
 DEFAULT_SETUP_SETTINGS = {
     "gex_long_enabled": True,
+    "gex_max_gap": 5,           # max |spot - LIS| to enter (was 20)
+    "gex_min_upside": 10,       # min pts to +GEX and target above spot
+    "gex_target_pts": 15,       # outcome tracking target (was 10)
+    "gex_stop_pts": 12,         # outcome tracking stop (was 8)
+    # AG Short still uses these weights/brackets
     "weight_support": 20,
     "weight_upside": 20,
     "weight_floor_cluster": 20,
@@ -36,7 +41,7 @@ DEFAULT_SETUP_SETTINGS = {
             [3, 100], [2, 75], [1.5, 50], [1, 25]
         ],
     },
-    "grade_thresholds": {"A+": 90, "A": 75, "A-Entry": 60},
+    "grade_thresholds": {"A+": 85, "A": 70, "A-Entry": 50},
 }
 
 # ── Cooldown state (module-level, resets daily) ─────────────────────────────
@@ -100,9 +105,18 @@ def is_first_hour():
 
 def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings):
     """
-    Evaluate GEX Long setup.  Returns a result dict or None.
+    Evaluate GEX Long setup using force alignment framework.
 
-    Parameters are plain floats/strings — caller is responsible for parsing.
+    Forces pushing price UP:
+    - LIS below spot (within gap): support floor
+    - LIS above spot (within gap): magnet pulling up
+    - -GEX below spot: support floor
+    - -GEX above spot: magnet pulling up
+    - +GEX above spot: magnet pulling up
+    - Target above spot: magnet pulling up
+
+    A+ = all forces aligned bullish and close.
+    Returns a result dict or None.
     """
     if not settings.get("gex_long_enabled", True):
         return None
@@ -114,61 +128,99 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
         return None
     if max_plus_gex is None or max_minus_gex is None:
         return None
-    if spot < lis:
+
+    max_gap = settings.get("gex_max_gap", 5)
+    min_upside = settings.get("gex_min_upside", 10)
+
+    # Gap: absolute distance to LIS (allow above OR below)
+    gap = abs(spot - lis)
+    if gap > max_gap:
         return None
 
-    gap = spot - lis
-    upside_target = target - spot
+    # +GEX must be above spot with room (magnet up)
     upside_gex = max_plus_gex - spot
-
-    if upside_target < 10:
-        return None
-    if upside_gex < 10:
-        return None
-    if gap > 20:
+    if upside_gex < min_upside:
         return None
 
-    # ── Component scores ────────────────────────────────────────────────
-    brackets = settings.get("brackets", DEFAULT_SETUP_SETTINGS["brackets"])
+    # Target must be above spot with room (magnet up)
+    upside_target = target - spot
+    if upside_target < min_upside:
+        return None
 
-    support_score = score_component_max(gap, brackets.get("support", DEFAULT_SETUP_SETTINGS["brackets"]["support"]))
     upside = min(upside_target, upside_gex)
-    upside_score = score_component_min(upside, brackets.get("upside", DEFAULT_SETUP_SETTINGS["brackets"]["upside"]))
-    floor_cluster_score = score_component_max(abs(lis - max_minus_gex), brackets.get("floor_cluster", DEFAULT_SETUP_SETTINGS["brackets"]["floor_cluster"]))
-    target_cluster_score = score_component_max(abs(target - max_plus_gex), brackets.get("target_cluster", DEFAULT_SETUP_SETTINGS["brackets"]["target_cluster"]))
 
-    # If minimum upside is excellent (both targets give 15+ pts), target clustering doesn't matter
-    # You'll easily hit your 10pt first target regardless of cluster distance
-    if upside >= 15:
-        target_cluster_score = max(target_cluster_score, 100)  # Override to 100 if upside is great
-    elif upside >= 10:
-        target_cluster_score = max(target_cluster_score, 75)   # At least 75 if 10+ pts upside
+    # ── Force scoring (6 forces, max 100) ────────────────────────────────
+    # Each force scores based on proximity and direction
 
-    rr_ratio = upside / gap if gap > 0 else 99
-    rr_score = score_component_min(rr_ratio, brackets.get("rr", DEFAULT_SETUP_SETTINGS["brackets"]["rr"]))
+    # 1. LIS proximity (0-25): closer = stronger support/magnet
+    if gap <= 2:
+        lis_score = 25
+    elif gap <= 3:
+        lis_score = 20
+    elif gap <= 5:
+        lis_score = 15
+    else:
+        lis_score = 5
 
-    # ── Weighted composite ──────────────────────────────────────────────
-    w_support = settings.get("weight_support", 20)
-    w_upside = settings.get("weight_upside", 20)
-    w_floor = settings.get("weight_floor_cluster", 20)
-    w_target = settings.get("weight_target_cluster", 20)
-    w_rr = settings.get("weight_rr", 20)
-    total_weight = w_support + w_upside + w_floor + w_target + w_rr
+    # 2. -GEX force (0-20): above spot = magnet up, below spot = support floor
+    neg_gex_dist = max_minus_gex - spot
+    if neg_gex_dist > 0:
+        # -GEX above spot: magnet pulling up (strong bullish)
+        neg_gex_score = 20 if neg_gex_dist <= 15 else 15
+    elif neg_gex_dist >= -10:
+        # -GEX close below: strong support floor
+        neg_gex_score = 15
+    elif neg_gex_dist >= -20:
+        # -GEX moderate below: weaker support
+        neg_gex_score = 8
+    else:
+        # -GEX far below: minimal support effect
+        neg_gex_score = 3
 
-    if total_weight == 0:
-        return None
+    # 3. +GEX magnet (0-20): above spot pulling up, closer = stronger
+    if upside_gex >= 20:
+        pos_gex_score = 12
+    elif upside_gex >= 15:
+        pos_gex_score = 16
+    elif upside_gex >= 10:
+        pos_gex_score = 20    # close magnet = strongest pull
+    else:
+        pos_gex_score = 5
 
-    composite = (
-        support_score * w_support
-        + upside_score * w_upside
-        + floor_cluster_score * w_floor
-        + target_cluster_score * w_target
-        + rr_score * w_rr
-    ) / total_weight
+    # 4. Target magnet (0-15): closer reachable target = better
+    if upside_target >= 30:
+        target_score = 8
+    elif upside_target >= 20:
+        target_score = 12
+    elif upside_target >= 10:
+        target_score = 15
+    else:
+        target_score = 5
 
+    # 5. LIS type bonus (0-10): support (below) vs magnet (above)
+    lis_type = "magnet" if lis > spot else "support"
+    if lis_type == "support" and neg_gex_dist > 0:
+        # Best combo: LIS supporting from below + -GEX pulling from above
+        lis_type_score = 10
+    elif lis_type == "magnet":
+        # LIS above pulling up
+        lis_type_score = 8
+    else:
+        lis_type_score = 5
+
+    # 6. Time of day (0-10)
     first_hour = is_first_hour()
-    if first_hour:
-        composite = min(composite + 10, 100)
+    t = datetime.now(NY).time()
+    if t >= dtime(14, 0):
+        time_score = 10
+    elif t >= dtime(11, 30):
+        time_score = 8
+    elif first_hour:
+        time_score = 6
+    else:
+        time_score = 4
+
+    composite = lis_score + neg_gex_score + pos_gex_score + target_score + lis_type_score + time_score
 
     # ── Grade ───────────────────────────────────────────────────────────
     thresholds = settings.get("grade_thresholds", DEFAULT_SETUP_SETTINGS["grade_thresholds"])
@@ -176,6 +228,8 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
 
     if grade is None:
         return None
+
+    rr_ratio = upside / gap if gap > 0 else 99
 
     return {
         "setup_name": "GEX Long",
@@ -192,11 +246,13 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
         "upside": round(upside, 2),
         "rr_ratio": round(rr_ratio, 2),
         "first_hour": first_hour,
-        "support_score": support_score,
-        "upside_score": upside_score,
-        "floor_cluster_score": floor_cluster_score,
-        "target_cluster_score": target_cluster_score,
-        "rr_score": rr_score,
+        "lis_type": lis_type,
+        # Sub-scores repurposed for force components
+        "support_score": lis_score,             # LIS proximity (0-25)
+        "upside_score": neg_gex_score,          # -GEX force (0-20)
+        "floor_cluster_score": pos_gex_score,   # +GEX magnet (0-20)
+        "target_cluster_score": target_score,   # Target magnet (0-15)
+        "rr_score": lis_type_score + time_score, # LIS type + time (0-20)
     }
 
 
@@ -356,7 +412,7 @@ def should_notify(result):
 
 
 def mark_setup_expired():
-    """Call when paradigm loses GEX or gap > 20."""
+    """Call when paradigm loses GEX or gap > 5."""
     _cooldown["setup_expired"] = True
     _cooldown["last_grade"] = None
     _cooldown["last_gap_to_lis"] = None
@@ -409,26 +465,29 @@ def mark_ag_expired():
 # ── Message formatting ─────────────────────────────────────────────────────
 
 def format_setup_message(result):
-    """Format a Telegram HTML message with score breakdown."""
+    """Format a Telegram HTML message with force alignment breakdown."""
     grade_emoji = {"A+": "🟢", "A": "🔵", "A-Entry": "🟡"}.get(result["grade"], "⚪")
+
+    lis_type = result.get("lis_type", "support")
+    lis_label = "MAGNET" if lis_type == "magnet" else "SUPPORT"
 
     msg = f"{grade_emoji} <b>GEX Long Setup — {result['grade']}</b>\n"
     msg += f"Score: <b>{result['score']}</b>/100\n\n"
     msg += f"SPX: {result['spot']:.0f}\n"
     msg += f"Paradigm: {result['paradigm']}\n"
-    msg += f"LIS: {result['lis']:.0f}  |  Target: {result['target']:.0f}\n"
-    msg += f"+GEX: {result['max_plus_gex']:.0f}  |  −GEX: {result['max_minus_gex']:.0f}\n\n"
+    msg += f"LIS: {result['lis']:.0f} ({lis_label})  |  Target: {result['target']:.0f}\n"
+    msg += f"+GEX: {result['max_plus_gex']:.0f}  |  -GEX: {result['max_minus_gex']:.0f}\n\n"
     msg += f"Gap to LIS: {result['gap_to_lis']:.1f}\n"
     msg += f"Upside: {result['upside']:.1f}\n"
     msg += f"R:R: {result['rr_ratio']:.1f}x\n\n"
-    msg += "<b>Scores:</b>\n"
-    msg += f"  Support: {result['support_score']}\n"
-    msg += f"  Upside: {result['upside_score']}\n"
-    msg += f"  Floor cluster: {result['floor_cluster_score']}\n"
-    msg += f"  Target cluster: {result['target_cluster_score']}\n"
-    msg += f"  R:R: {result['rr_score']}\n"
+    msg += "<b>Forces:</b>\n"
+    msg += f"  LIS proximity: {result['support_score']}/25\n"
+    msg += f"  -GEX force: {result['upside_score']}/20\n"
+    msg += f"  +GEX magnet: {result['floor_cluster_score']}/20\n"
+    msg += f"  Target magnet: {result['target_cluster_score']}/15\n"
+    msg += f"  LIS type + time: {result['rr_score']}/20\n"
     if result["first_hour"]:
-        msg += "\n⏰ First hour bonus applied"
+        msg += "\n⏰ First hour"
     return msg
 
 
@@ -2519,7 +2578,7 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
     # ── GEX Long cooldown expiry tracking ──
     if paradigm and "GEX" not in str(paradigm).upper():
         mark_setup_expired()
-    elif spot is not None and lis is not None and (spot - lis) > 20:
+    elif spot is not None and lis is not None and abs(spot - lis) > 5:
         mark_setup_expired()
 
     gex_result = evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings)

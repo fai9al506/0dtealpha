@@ -10,7 +10,7 @@
   "nt8_mes_symbol": "auto",
   "qty": 8,
   "max_trade_risk": 300,
-  "dynamic_sizing": true,
+  "dynamic_sizing": false,
   "be_trigger_pts": 5.0,
   "max_stop_loss_pts": 12,
   "max_losses_per_day": 3,
@@ -35,21 +35,10 @@
       "stop": 12,
       "target": null
     },
-    "Vanna Pivot Bounce": {
-      "enabled": true,
-      "stop": 8,
-      "target": 10
-    },
     "AG Short": {
       "enabled": true,
       "stop": 12,
-      "target": "msg"
-    },
-    "BofA Scalp": {
-      "enabled": false,
-      "stop": 12,
-      "target": "msg",
-      "max_hold_min": 30
+      "target": null
     },
     "Skew Charm": {
       "enabled": true,
@@ -59,12 +48,23 @@
     "GEX Long": {
       "enabled": false,
       "stop": 8,
-      "target": "msg"
+      "target": null
     },
-    "ES Absorption": {
+    "CVD Divergence": {
+      "enabled": false,
+      "stop": 8,
+      "target": 10
+    },
+    "BofA Scalp": {
       "enabled": false,
       "stop": 12,
-      "target": null
+      "target": "msg",
+      "max_hold_min": 30
+    },
+    "Vanna Pivot Bounce": {
+      "enabled": false,
+      "stop": 8,
+      "target": 10
     }
   },
   "enabled": true,

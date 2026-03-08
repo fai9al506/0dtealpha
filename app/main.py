@@ -2855,9 +2855,9 @@ def _compute_setup_levels(r: dict):
         return None, round(stop_lvl, 2)
 
     if setup_name == "GEX Long":
-        # Trailing stop — no fixed target; initial SL = 12 pts
-        # Hybrid trail: BE at +10, continuous trail activation=15, gap=5
-        stop_lvl = spot - 12 if is_long else spot + 12
+        # Trailing stop — no fixed target; initial SL = 8 pts
+        # Hybrid trail: BE at +8, continuous trail activation=10, gap=5
+        stop_lvl = spot - 8 if is_long else spot + 8
         return None, round(stop_lvl, 2)
 
     if setup_name == "Paradigm Reversal":
@@ -3016,11 +3016,11 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
 
         # Trailing stop setups: DD Exhaustion, GEX Long, AG Short
         # DD: continuous trail (activation=20, gap=5) — waits for confirmed move before trailing
-        # GEX/AG: hybrid trail (BE at +10, continuous trail activation=15, gap=5)
+        # GEX/AG: hybrid trail (BE, continuous trail)
         # Uses cycle low/high (not all-time) since trail level changes each cycle
         _trail_params = {
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
-            "GEX Long": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
+            "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
         }
@@ -7183,11 +7183,11 @@ def _calculate_setup_outcome(entry: dict) -> dict:
 
         # Trailing stop parameters
         # DD Exhaustion: continuous trail (activation=20, gap=5, initial_sl=12)
-        # GEX Long: hybrid trail (BE at +10, continuous trail activation=15 gap=5, initial_sl=8)
+        # GEX Long: hybrid trail (BE at +8, continuous trail activation=10 gap=5, initial_sl=8)
         # AG Short: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
         _trail_params = {
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5, "initial_sl": 12},
-            "GEX Long": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5, "initial_sl": 12},
+            "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8, "initial_sl": 20},
         }

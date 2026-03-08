@@ -1497,12 +1497,12 @@ class PositionTracker:
 
     # Trail params — mirrors Railway's _trail_params in main.py
     # DD Exhaustion: continuous trail (activation=20, gap=5)
-    # GEX Long: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
+    # GEX Long: hybrid trail (BE at +8, continuous trail activation=10 gap=5)
     # AG Short: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
     # CVD Divergence: fixed target (SL=8/T=10), no trailing
     _TRAIL_PARAMS = {
         "DD Exhaustion":  {"mode": "continuous", "activation": 20, "gap": 5},
-        "GEX Long":       {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
+        "GEX Long":       {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
         "AG Short":       {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
         "Skew Charm":     {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
     }

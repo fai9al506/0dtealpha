@@ -17,7 +17,7 @@ DEFAULT_SETUP_SETTINGS = {
     "gex_max_gap": 5,           # max |spot - LIS| to enter (was 20)
     "gex_min_upside": 10,       # min pts to +GEX and target above spot
     "gex_target_pts": 15,       # outcome tracking target (was 10)
-    "gex_stop_pts": 12,         # outcome tracking stop (was 8)
+    "gex_stop_pts": 8,          # outcome tracking stop (trail backtest optimal)
     # AG Short still uses these weights/brackets
     "weight_support": 20,
     "weight_upside": 20,

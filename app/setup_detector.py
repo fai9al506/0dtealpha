@@ -124,6 +124,10 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
     # Base conditions
     if not paradigm or "GEX" not in str(paradigm).upper():
         return None
+    # Block toxic paradigm subtypes (GEX-TARGET=no upside room, GEX-MESSY=not clean)
+    paradigm_upper = str(paradigm).upper()
+    if "TARGET" in paradigm_upper or "MESSY" in paradigm_upper:
+        return None
     if spot is None or lis is None or target is None:
         return None
     if max_plus_gex is None or max_minus_gex is None:

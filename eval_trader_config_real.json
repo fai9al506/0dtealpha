@@ -8,7 +8,7 @@
   "nt8_incoming_folder": "C:\\Users\\Faisal\\Documents\\NinjaTrader 8\\incoming",
   "nt8_account_id": "falde5482tcp50d070084",
   "nt8_mes_symbol": "auto",
-  "qty": 10,
+  "qty": 8,
   "max_trade_risk": 300,
   "dynamic_sizing": true,
   "be_trigger_pts": 5.0,

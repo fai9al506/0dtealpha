@@ -16,8 +16,7 @@ SIM_ACCOUNT_ID = os.getenv("OPTIONS_SIM_ACCOUNT", "SIM2609238M")
 OPTIONS_TRADE_ENABLED = os.getenv("OPTIONS_TRADE_ENABLED", "false").lower() == "true"
 OPTIONS_QTY = int(os.getenv("OPTIONS_QTY", "1"))
 TARGET_DELTA = float(os.getenv("OPTIONS_TARGET_DELTA", "0.30"))
-STOP_LOSS_PCT = float(os.getenv("OPTIONS_STOP_LOSS_PCT", "0.40"))   # close if option drops 40%
-MAX_HOLD_MINUTES = int(os.getenv("OPTIONS_MAX_HOLD_MIN", "20"))     # close after 20 min
+MAX_HOLD_MINUTES = int(os.getenv("OPTIONS_MAX_HOLD_MIN", "90"))     # close after 90 min (no SL — 91% WR, SL kills too many winners)
 
 # Chain column indices (CANONICAL_COLS from main.py)
 # C_Volume(0), C_OI(1), C_IV(2), C_Gamma(3), C_Delta(4), C_Bid(5), C_BidSize(6), C_Ask(7), C_AskSize(8), C_Last(9),
@@ -272,12 +271,8 @@ def poll_order_status():
         should_close = False
         reason = ""
 
-        # Stop-loss: close if option dropped STOP_LOSS_PCT from entry
-        if current_price and entry_price and entry_price > 0:
-            loss_pct = (entry_price - current_price) / entry_price
-            if loss_pct >= STOP_LOSS_PCT:
-                should_close = True
-                reason = f"stop-loss ({loss_pct:.0%} drop, limit {STOP_LOSS_PCT:.0%})"
+        # No stop-loss: 91% WR setup, SL kills too many winners (40% dip 5+ pts before winning)
+        # Max risk is just the option premium ($3-8), which is tiny.
 
         # Time exit: close if held > MAX_HOLD_MINUTES
         if not should_close and placed_ts:

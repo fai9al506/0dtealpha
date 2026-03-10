@@ -219,6 +219,12 @@ _last_saved_at = 0.0
 _df_lock = Lock()
 _vix_last: float | None = None  # latest VIX value from TS quotes
 
+# SPY chain state
+latest_spy_df: pd.DataFrame | None = None
+_last_spy_run_status = {"ts": None, "ok": False, "msg": "boot"}
+_last_spy_saved_at = 0.0
+_spy_df_lock = Lock()
+
 # ====== SETUP DETECTOR DEFAULTS ======
 _DEFAULT_SETUP_SETTINGS = {
     "gex_long_enabled": True,
@@ -297,6 +303,19 @@ def db_init():
             rows JSONB NOT NULL
         );
         CREATE INDEX IF NOT EXISTS ix_chain_snapshots_ts ON chain_snapshots (ts DESC);
+        """))
+
+        # SPY chain snapshots — separate table, same schema as chain_snapshots
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS spy_chain_snapshots (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL,
+            exp DATE,
+            spot DOUBLE PRECISION,
+            columns JSONB NOT NULL,
+            rows JSONB NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_spy_chain_snapshots_ts ON spy_chain_snapshots (ts DESC);
         """))
 
         conn.execute(text(f"""
@@ -2148,16 +2167,31 @@ def get_spx_quote() -> dict:
 def get_spx_last() -> float:
     return get_spx_quote()["last"]
 
-def get_0dte_exp() -> str:
+def get_spy_quote() -> dict:
+    """Return {last} from TS API quote for SPY."""
+    js = api_get("/marketdata/quotes/SPY", timeout=8).json()
+    result = {"last": 0.0}
+    for q in js.get("Quotes", []):
+        sym = q.get("Symbol", "")
+        if sym == "SPY":
+            v = q.get("Last") or q.get("Close")
+            try:
+                result["last"] = float(v)
+            except Exception:
+                pass
+    return result
+
+def get_0dte_exp(symbol: str = "$SPXW.X") -> str:
     ymd = now_et().date().isoformat()
     try:
-        js = api_get("/marketdata/options/expirations/%24SPXW.X", timeout=10).json()
+        encoded = symbol.replace("$", "%24")
+        js = api_get(f"/marketdata/options/expirations/{encoded}", timeout=10).json()
         for e in js.get("Expirations", []):
             d = str(e.get("Date") or e.get("Expiration") or "")[:10]
             if d == ymd:
                 return d
     except Exception as e:
-        print("[exp] lookup failed; using today", ymd, "|", e, flush=True)
+        print(f"[exp] {symbol} lookup failed; using today", ymd, "|", e, flush=True)
     return ymd
 
 def _expiration_variants(ymd: str):
@@ -2207,20 +2241,22 @@ def _consume_chain_stream(r, max_seconds: float) -> list[dict]:
         print(f"[stream] completed normally with {len(out)} items in {time.time()-start:.1f}s", flush=True)
     return out
 
-def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
+def get_chain_rows(exp_ymd: str, spot: float, symbol: str = "$SPXW.X",
+                    strike_interval: int = 5, strike_proximity: int = 125) -> list[dict]:
+    encoded = symbol.replace("$", "%24")
     params_stream = {
         "spreadType": "Single",
         "enableGreeks": "true",
         "priceCenter": f"{spot:.2f}" if spot else "",
-        "strikeProximity": 125,  # 125/5 = 25 strikes each direction = 50 total
+        "strikeProximity": strike_proximity,
         "optionType": "All",
-        "strikeInterval": 5  # SPX uses $5 strike intervals
+        "strikeInterval": strike_interval
     }
     last_err = None
     for exp in _expiration_variants(exp_ymd):
         try:
             p = dict(params_stream); p["expiration"] = exp
-            r = api_get("/marketdata/stream/options/chains/%24SPXW.X", params=p, stream=True, timeout=8)
+            r = api_get(f"/marketdata/stream/options/chains/{encoded}", params=p, stream=True, timeout=8)
             objs = _consume_chain_stream(r, max_seconds=STREAM_SECONDS)
             if objs:
                 rows = []
@@ -2249,12 +2285,12 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
             continue
 
     params_snap = {
-        "symbol": "$SPXW.X",
+        "symbol": symbol,
         "enableGreeks": "true",
         "optionType": "All",
         "priceCenter": f"{spot:.2f}" if spot else "",
-        "strikeProximity": 125,  # 125/5 = 25 strikes each direction = 50 total
-        "strikeInterval": 5,  # SPX uses $5 strike intervals
+        "strikeProximity": strike_proximity,
+        "strikeInterval": strike_interval,
         "spreadType": "Single",
     }
     for exp in _expiration_variants(exp_ymd):
@@ -2286,7 +2322,7 @@ def get_chain_rows(exp_ymd: str, spot: float) -> list[dict]:
             last_err = e
             continue
 
-    raise RuntimeError(f"SPXW chain fetch failed; last_err={last_err}")
+    raise RuntimeError(f"{symbol} chain fetch failed; last_err={last_err}")
 
 # ====== shaping ======
 CANONICAL_COLS = [
@@ -2443,6 +2479,45 @@ def run_market_job():
             except Exception as health_err:
                 print(f"[pipeline] health check error: {health_err}", flush=True)
 
+def run_spy_market_job():
+    """Fetch SPY options chain on same interval as SPX."""
+    global latest_spy_df, _last_spy_run_status
+    try:
+        if not market_open_now():
+            _last_spy_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
+            return
+        spy_quote = get_spy_quote()
+        spy_spot = spy_quote["last"]
+        if not spy_spot:
+            _last_spy_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": "SPY quote failed"}
+            print("[spy-pull] ERROR: SPY quote returned 0", flush=True)
+            return
+
+        exp = get_0dte_exp(symbol="SPY")
+        rows = get_chain_rows(exp, spy_spot, symbol="SPY",
+                              strike_interval=1, strike_proximity=25)
+        raw_count = len(rows)
+        df = pick_centered(to_side_by_side(rows), spy_spot, TARGET_STRIKES)
+        final_count = len(df)
+
+        if final_count < MIN_REQUIRED_STRIKES:
+            _last_spy_run_status = {
+                "ts": fmt_et(now_et()),
+                "ok": False,
+                "msg": f"INCOMPLETE: exp={exp} spot={round(spy_spot,2)} raw={raw_count} final={final_count}"
+            }
+            print("[spy-pull] REJECTED - insufficient rows:", _last_spy_run_status["msg"], flush=True)
+            return
+
+        with _spy_df_lock:
+            latest_spy_df = df.copy()
+        _last_spy_run_status = {"ts": fmt_et(now_et()), "ok": True,
+                                "msg": f"exp={exp} spot={round(spy_spot,2)} rows={final_count}"}
+        print("[spy-pull] OK", _last_spy_run_status["msg"], flush=True)
+    except Exception as e:
+        _last_spy_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}
+        print("[spy-pull] ERROR", e, flush=True)
+
 def save_history_job():
     global _last_saved_at
     if not engine:
@@ -2476,6 +2551,43 @@ def save_history_job():
         print("[save] snapshot inserted", flush=True)
     except Exception as e:
         print("[save] failed:", e, flush=True)
+
+    # Save SPY snapshot
+    _save_spy_history()
+
+def _save_spy_history():
+    global _last_spy_saved_at
+    if not engine:
+        return
+    with _spy_df_lock:
+        if latest_spy_df is None or latest_spy_df.empty:
+            return
+        df_copy = latest_spy_df.copy()
+    if time.time() - _last_spy_saved_at < 60:
+        return
+    try:
+        df = df_copy
+        df.columns = DISPLAY_COLS
+        payload = {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
+        msg = (_last_spy_run_status.get("msg") or "")
+        spot = None; exp = None
+        try:
+            parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+            spot = float(parts.get("spot", ""))
+            exp  = parts.get("exp")
+        except:
+            pass
+        with engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO spy_chain_snapshots (ts, exp, spot, columns, rows) VALUES (:ts, :exp, :spot, :columns, :rows)"),
+                {"ts": now_et(), "exp": exp, "spot": spot,
+                 "columns": json.dumps(payload["columns"]),
+                 "rows": json.dumps(payload["rows"])}
+            )
+        _last_spy_saved_at = time.time()
+        print("[save] SPY snapshot inserted", flush=True)
+    except Exception as e:
+        print("[save-spy] failed:", e, flush=True)
 
 _last_playback_saved_at = 0.0
 
@@ -4857,6 +4969,7 @@ def fetch_economic_calendar():
 def start_scheduler():
     sch = BackgroundScheduler(timezone="US/Eastern")
     sch.add_job(run_market_job, "interval", seconds=PULL_EVERY, id="pull", coalesce=True, max_instances=1)
+    sch.add_job(run_spy_market_job, "interval", seconds=PULL_EVERY, id="spy_pull", coalesce=True, max_instances=1)
     sch.add_job(save_history_job, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="save", coalesce=True, max_instances=1)
     sch.add_job(save_playback_snapshot, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="playback", coalesce=True, max_instances=1)
     # TS 1-min delta bars no longer saved — Rithmic range bars are sole ES source
@@ -5291,21 +5404,26 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/snapshot")
-def snapshot():
-    with _df_lock:
-        df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+def snapshot(symbol: str = Query("SPXW")):
+    if symbol.upper() == "SPY":
+        with _spy_df_lock:
+            df = None if (latest_spy_df is None or latest_spy_df.empty) else latest_spy_df.copy()
+    else:
+        with _df_lock:
+            df = None if (latest_df is None or latest_df.empty) else latest_df.copy()
     if df is None or df.empty:
         return {"columns": DISPLAY_COLS, "rows": []}
     df.columns = DISPLAY_COLS
     return {"columns": df.columns.tolist(), "rows": df.fillna("").values.tolist()}
 
 @app.get("/api/history")
-def api_history(limit: int = Query(288, ge=1, le=5000)):
+def api_history(limit: int = Query(288, ge=1, le=5000), symbol: str = Query("SPXW")):
     if not engine:
         return {"error": "DATABASE_URL not set"}
+    table = "spy_chain_snapshots" if symbol.upper() == "SPY" else "chain_snapshots"
     with engine.begin() as conn:
         rows = conn.execute(text(
-            "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
+            f"SELECT ts, exp, spot, columns, rows FROM {table} ORDER BY ts DESC LIMIT :lim"
         ), {"lim": limit}).mappings().all()
     for r in rows:
         r["columns"] = json.loads(r["columns"]) if isinstance(r["columns"], str) else r["columns"]
@@ -5314,12 +5432,13 @@ def api_history(limit: int = Query(288, ge=1, le=5000)):
     return rows
 
 @app.get("/download/history.csv")
-def download_history_csv(limit: int = Query(288, ge=1, le=5000)):
+def download_history_csv(limit: int = Query(288, ge=1, le=5000), symbol: str = Query("SPXW")):
     if not engine:
         return Response("DATABASE_URL not set", media_type="text/plain", status_code=500)
+    table = "spy_chain_snapshots" if symbol.upper() == "SPY" else "chain_snapshots"
     with engine.begin() as conn:
         recs = conn.execute(text(
-            "SELECT ts, exp, spot, columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT :lim"
+            f"SELECT ts, exp, spot, columns, rows FROM {table} ORDER BY ts DESC LIMIT :lim"
         ), {"lim": limit}).mappings().all()
     out = []
     for r in recs:
@@ -8062,25 +8181,33 @@ TABLE_HTML_TEMPLATE = """
   .table td:nth-child(7), .table th:nth-child(7) { background:#111; text-align:center; }
   .table td:first-child, .table th:first-child { text-align:center; }
   .table tr.atm td { background:#1a2634; }
+  .toggle-bar { margin:0 0 12px 0; display:flex; gap:8px; align-items:center; }
+  .toggle-btn { padding:6px 16px; border:1px solid #444; border-radius:6px;
+    background:#181818; color:#9ca3af; cursor:pointer; font-size:13px; }
+  .toggle-btn.active { background:#1a2634; color:#60a5fa; border-color:#60a5fa; }
 </style>
 </head><body>
-  <h2>SPXW 0DTE - Live Table</h2>
+  <div class="toggle-bar">
+    <button class="toggle-btn __SPXW_ACTIVE__" onclick="switchSymbol('SPXW')">SPXW</button>
+    <button class="toggle-btn __SPY_ACTIVE__" onclick="switchSymbol('SPY')">SPY</button>
+  </div>
+  <h2>__SYMBOL_TITLE__ 0DTE - Live Table</h2>
   <div class="last">
     Last run: __TS__<br>exp=__EXP__<br>spot=__SPOT__<br>rows=__ROWS__
   </div>
   __BODY__
   <script>
-  // Auto-refresh: update data in-place without page reload.
-  // Each tab already has its own polling timer (startCharts, startEsDelta, etc.)
-  // We just need to refresh the Table iframe and the footer status line.
+  function switchSymbol(sym) {
+    const url = new URL(window.location);
+    url.searchParams.set('symbol', sym);
+    window.location = url.toString();
+  }
   (function(){
     const REFRESH_MS = __PULL_MS__;
-    // Refresh table iframe when Table tab is visible
     setInterval(()=>{
       const tf = document.getElementById('tableFrame');
       if(tf && tf.offsetParent !== null) tf.src = tf.src;
     }, REFRESH_MS);
-    // Update footer status line
     setInterval(async ()=>{
       try {
         const r = await fetch('/api/health', {cache:'no-store'});
@@ -13386,21 +13513,33 @@ DASH_HTML_TEMPLATE = """
 
 # ====== TABLE ENDPOINT ======
 @app.get("/table")
-def html_table(session: str = Cookie(default=None)):
+def html_table(session: str = Cookie(default=None), symbol: str = Query("SPXW")):
     # Require authentication
     user = get_current_user(session)
     if not user:
         return HTMLResponse("<html><body style='background:#0b0c10;color:#e6e7e9;font-family:system-ui;padding:20px'>Please <a href='/' style='color:#60a5fa'>login</a> to view data.</body></html>")
 
-    ts  = last_run_status.get("ts") or ""
-    msg = last_run_status.get("msg") or ""
+    sym = symbol.upper()
+    is_spy = (sym == "SPY")
+
+    if is_spy:
+        status = _last_spy_run_status
+    else:
+        status = last_run_status
+
+    ts  = status.get("ts") or ""
+    msg = status.get("msg") or ""
     parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
     exp  = parts.get("exp", "")
     spot_str = parts.get("spot", "")
     rows = parts.get("rows", "")
 
-    with _df_lock:
-        df_src = None if (latest_df is None or latest_df.empty) else latest_df.copy()
+    if is_spy:
+        with _spy_df_lock:
+            df_src = None if (latest_spy_df is None or latest_spy_df.empty) else latest_spy_df.copy()
+    else:
+        with _df_lock:
+            df_src = None if (latest_df is None or latest_df.empty) else latest_df.copy()
 
     if df_src is None or df_src.empty:
         body_html = "<p>No data yet. If market is open, it will appear within ~30s.</p>"
@@ -13448,13 +13587,17 @@ def html_table(session: str = Cookie(default=None)):
             trs.append(f"<tr{cls}>" + "".join(tds) + "</tr>")
         body_html = f'<table class="table"><thead>{thead}</thead><tbody>{"".join(trs)}</tbody></table>'
 
+    sym_title = "SPY" if is_spy else "SPXW"
     html = (TABLE_HTML_TEMPLATE
             .replace("__TS__", ts)
             .replace("__EXP__", exp)
             .replace("__SPOT__", spot_str)
             .replace("__ROWS__", rows)
             .replace("__BODY__", body_html)
-            .replace("__PULL_MS__", str(PULL_EVERY * 1000)))
+            .replace("__PULL_MS__", str(PULL_EVERY * 1000))
+            .replace("__SYMBOL_TITLE__", sym_title)
+            .replace("__SPXW_ACTIVE__", "active" if not is_spy else "")
+            .replace("__SPY_ACTIVE__", "active" if is_spy else ""))
     return Response(content=html, media_type="text/html")
 
 # ====== AUTHENTICATION ENDPOINTS ======

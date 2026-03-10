@@ -1131,7 +1131,7 @@ def _backfill_outcomes():
                     "res": result_type,
                     "pnl": round(pnl, 2) if pnl is not None else None,
                     "tgt": outcome.get("target_level") or outcome.get("ten_pt_level") or outcome.get("bofa_target_level"),
-                    "sl": outcome.get("stop_level") or outcome.get("initial_stop"),
+                    "sl": outcome.get("initial_stop") or outcome.get("stop_level"),
                     "mp": outcome.get("max_profit"),
                     "ml": outcome.get("max_loss"),
                     "fe": fe,
@@ -1321,6 +1321,7 @@ def _restore_open_trades():
                 "grade": entry.get("grade", ""),
                 "target_level": target_lvl,
                 "stop_level": stop_lvl,
+                "initial_stop_level": stop_lvl,  # preserve initial SL (trail overwrites stop_level)
                 "ts": ts,
                 "result_data": r,
                 "max_hold_minutes": entry.get("bofa_max_hold_minutes"),
@@ -3165,6 +3166,14 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                         max_profit = round(entry_price - seen_low, 2)
                         max_loss = round(entry_price - seen_high, 2)
 
+                    # outcome_stop_level = INITIAL stop (not trailed)
+                    # outcome_target_level = trail exit price for trailing WINs, else original target
+                    _initial_sl = trade.get("initial_stop_level") or stop_lvl
+                    if is_trailing and result_type == "WIN":
+                        _outcome_tgt = stop_lvl  # trail exit = final stop level (T2)
+                    else:
+                        _outcome_tgt = target_lvl
+
                     with engine.begin() as conn:
                         conn.execute(text("""
                             UPDATE setup_log SET
@@ -3180,8 +3189,8 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                         """), {
                             "res": result_type,
                             "pnl": pnl,
-                            "tgt": target_lvl,
-                            "sl": stop_lvl,
+                            "tgt": _outcome_tgt,
+                            "sl": _initial_sl,
                             "em": elapsed_min,
                             "fe": first_event,
                             "mp": max_profit,
@@ -3430,6 +3439,7 @@ def _run_setup_check():
                         "setup_name": setup_name, "direction": r["direction"],
                         "spot": r["spot"], "grade": grade,
                         "target_level": target_lvl, "stop_level": stop_lvl,
+                        "initial_stop_level": stop_lvl,  # preserve initial SL (trail overwrites stop_level)
                         "ts": now_et(), "result_data": r,
                         "max_hold_minutes": r.get("bofa_max_hold_minutes"),
                         "_trade_date": now_et().date(),
@@ -4043,6 +4053,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
             "setup_name": "CVD Divergence", "direction": result["direction"],
             "spot": result["spot"], "grade": result["grade"],
             "target_level": target_lvl, "stop_level": stop_lvl,
+            "initial_stop_level": stop_lvl,  # preserve initial SL (trail overwrites stop_level)
             "ts": now_et(), "result_data": result,
             # Initialize seen_high/low to ES entry price so fallback never
             # triggers false WIN/LOSS (bars will update these as they complete)
@@ -4697,7 +4708,7 @@ def _send_setup_eod_summary():
                     """), {
                         "pnl": pnl,
                         "tgt": trade.get("target_level"),
-                        "sl": trade.get("stop_level"),
+                        "sl": trade.get("initial_stop_level") or trade.get("stop_level"),
                         "em": elapsed_min,
                         "mp": max_profit,
                         "ml": max_loss,
@@ -7287,6 +7298,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
 
         trail_max_fav = 0.0  # Trailing setups: track max favorable excursion
         trail_stopped = False
+        initial_stop_level = stop_level  # preserve before trail mutates stop_level
 
         for price_ts, price in prices:
             if is_long:
@@ -7433,7 +7445,8 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             "first_event": first_event,
             "ten_pt_level": round(ten_pt_level, 2),
             "target_level": round(target_level, 2) if target_level is not None else None,
-            "stop_level": round(stop_level, 2),
+            "stop_level": round(initial_stop_level, 2),  # always initial stop
+            "initial_stop": round(initial_stop_level, 2),
             "price_count": len(prices),
         }
         if is_bofa:
@@ -7445,7 +7458,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             result["is_trailing"] = True
             result["timeout_pnl"] = timeout_pnl
             result["trail_max_fav"] = round(trail_max_fav, 2)
-            result["trail_final_stop"] = round(stop_level, 2)
+            result["trail_final_stop"] = round(stop_level, 2)  # final trailed stop (exit price)
             # Keep legacy keys for backward compat
             result["dd_max_fav"] = result["trail_max_fav"]
             result["dd_final_stop"] = result["trail_final_stop"]

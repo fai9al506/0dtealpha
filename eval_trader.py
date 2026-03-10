@@ -55,6 +55,8 @@ MES_TICK_SIZE = 0.25     # MES minimum price increment
 MAX_SIGNAL_AGE_S = 120   # Skip signals older than 2 min (prevents stale entries after restart)
 _TIGHTEN_GAP_PTS = 5.0   # Low-conviction opposing signal: tighten SL to this many pts from spot
 _ENV_OVERRIDE_THRESHOLD = 2  # Conviction score needed to close/reverse against current position
+TICK_TRADE_TIME_ET = dtime(15, 30)  # Place tick trade at 15:30 ET if no trades today
+TICK_TRADE_TICKS = 2     # 2 ticks (0.50 pts) TP and SL — avoids race condition rejections
 SCRIPT_DIR = Path(__file__).parent
 CONFIG_FILE = SCRIPT_DIR / "eval_trader_config.json"
 STATE_FILE = SCRIPT_DIR / "eval_trader_state.json"
@@ -621,6 +623,7 @@ class ComplianceGate:
         self.has_open_position = False
         self.last_reset_date = None
         self._first_spot_today = None  # Track first spot for momentum filter
+        self.tick_trade_done = False    # E2T day-count tick trade placed today
         self._load()
 
     def _load(self):
@@ -674,6 +677,7 @@ class ComplianceGate:
         self.losses_today = 0
         self.daily_commissions = 0.0
         self._first_spot_today = None
+        self.tick_trade_done = False
         self.last_reset_date = today
         self.save()
         log.info(f"Daily reset: {today}")
@@ -1931,6 +1935,46 @@ def main():
 
             # Daily reset
             compliance.daily_reset()
+
+            # ── E2T Tick Trade: count trading day even with no signals ──
+            # At 15:30 ET, if no trades today and no position open, place 1 MES
+            # with 2-tick TP/SL just to register the day for E2T's 10-day minimum.
+            now_et = datetime.now(ET)
+            if (cfg.get("tick_trade_enabled", True)
+                    and now_et.time() >= TICK_TRADE_TIME_ET
+                    and not compliance.tick_trade_done
+                    and compliance.trades_today == 0
+                    and not tracker.is_open
+                    and latest_es_price):
+                tick_pts = TICK_TRADE_TICKS * MES_TICK_SIZE  # 0.50 pts
+                stop_px = latest_es_price - tick_pts
+                target_px = latest_es_price + tick_pts
+                log.info(f"TICK TRADE: No trades today, placing 1 MES BUY "
+                         f"@ ~{latest_es_price:.2f} TP={target_px:.2f} SL={stop_px:.2f}")
+                oids = tracker.nt8.place_bracket("long", 1, stop_px, target_px)
+                # Track as position so flatten/fill detection works
+                tracker.position = {
+                    "setup_name": "TickTrade",
+                    "direction": "long",
+                    "grade": "TICK",
+                    "entry_price": latest_es_price,
+                    "spx_spot": latest_es_price,
+                    "stop_price": stop_px,
+                    "target_price": target_px,
+                    "stop_pts": tick_pts,
+                    "target_pts": tick_pts,
+                    "trail_only": False,
+                    "qty": 1,
+                    "ts": datetime.now(CT).isoformat(),
+                    "max_hold_min": 5,  # auto-close quickly
+                    "es_entry_price": latest_es_price,
+                    "be_triggered": False,
+                    **oids,
+                }
+                tracker.compliance.has_open_position = True
+                tracker._save()
+                compliance.tick_trade_done = True
+                compliance.save()
 
             # EOD flatten check
             flatten_time = datetime.strptime(cfg["flatten_time_ct"], "%H:%M").time()

@@ -12555,13 +12555,27 @@ DASH_HTML_TEMPLATE = """
         }
         if (l.outcome_pnl != null) { pagePnl += l.outcome_pnl; pagePnlCount++; }
       });
+      const fWr = (pageWins+pageLosses)>0 ? ((pageWins/(pageWins+pageLosses))*100).toFixed(0) : '--';
+      const fPnlColor = pagePnl >= 0 ? '#22c55e' : '#ef4444';
+      const fPnlStr = pagePnlCount > 0 ? ((pagePnl >= 0 ? '+' : '') + pagePnl.toFixed(1)) : '--';
+      const showFiltered = filtered.length !== gTotal;
       document.getElementById('tlStats').innerHTML =
-        '<span>All-Time: <span class="stat-val">'+gTotal+'</span></span>' +
-        '<span>Wins: <span class="stat-val" style="color:#22c55e">'+gWins+'</span></span>' +
-        '<span>Losses: <span class="stat-val" style="color:#ef4444">'+gLosses+'</span></span>' +
-        '<span>WR: <span class="stat-val">'+gWr+'%</span></span>' +
-        '<span>Net P&L: <span class="stat-val" style="color:'+gPnlColor+'">'+gPnlStr+'</span></span>' +
-        (gTotal > _tlPageSize ? '<span style="color:var(--muted);margin-left:8px">| Page: '+filtered.length+' shown</span>' : '');
+        '<div style="display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center">' +
+        '<span style="color:var(--muted);font-size:10px">ALL-TIME:</span>' +
+        '<span>'+gTotal+' trades</span>' +
+        '<span style="color:#22c55e">'+gWins+'W</span>' +
+        '<span style="color:#ef4444">'+gLosses+'L</span>' +
+        '<span>'+gWr+'%</span>' +
+        '<span style="color:'+gPnlColor+';font-weight:700">'+gPnlStr+'</span>' +
+        '</div>' +
+        (showFiltered ? '<div style="display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;margin-top:2px;padding-top:3px;border-top:1px solid #333">' +
+        '<span style="color:var(--muted);font-size:10px">SHOWN:</span>' +
+        '<span>'+filtered.length+' trades</span>' +
+        '<span style="color:#22c55e">'+pageWins+'W</span>' +
+        '<span style="color:#ef4444">'+pageLosses+'L</span>' +
+        '<span>'+fWr+'%</span>' +
+        '<span style="color:'+fPnlColor+';font-weight:700">'+fPnlStr+'</span>' +
+        '</div>' : '');
 
       // Table body
       const body = document.getElementById('tlBody');

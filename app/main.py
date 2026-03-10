@@ -8044,6 +8044,8 @@ def api_data_freshness():
     result = {
         "spot": spot,
         "vix": _vix_last,
+        "market_open": is_open,
+        "server_time": now_et.isoformat(),
         "ts_api": {"last_update": None, "age_seconds": None, "status": "closed"},
         "volland": {"last_update": None, "age_seconds": None, "status": "closed"},
     }
@@ -8845,10 +8847,10 @@ DASH_HTML_TEMPLATE = """
       <div class="brand">SPXW 0DTE</div>
       <div class="small">Live chain + charts</div>
       <div class="status">
-        <span class="dot"></span>
+        <span class="dot" id="statusDot"></span>
         <div>
-          <div style="font-weight:600; font-size:12px;">__STATUS_TEXT__</div>
-          <div class="small">Last run: __LAST_TS__</div>
+          <div style="font-weight:600; font-size:12px;" id="statusText">__STATUS_TEXT__</div>
+          <div class="small" id="lastRunTs">Last run: __LAST_TS__</div>
           <div class="small" id="dataFreshness" style="margin-top:4px">Loading...</div>
         </div>
       </div>
@@ -9546,6 +9548,28 @@ DASH_HTML_TEMPLATE = """
         '<span style="color:' + tsColor + '">TS:' + fmtTimeET(ts.last_update) + '</span>' +
         '<span style="margin:0 6px;color:#555">|</span>' +
         '<span style="color:' + vlColor + '">Vol:' + fmtTimeET(vl.last_update) + '</span>';
+
+      // Update "Last run" timestamp from server
+      const lastRunEl = document.getElementById('lastRunTs');
+      if (lastRunEl && data.server_time) {
+        try {
+          const d = new Date(data.server_time);
+          const dt = d.toLocaleDateString('en-US', { timeZone: ET_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
+          const tm = d.toLocaleTimeString('en-US', { timeZone: ET_TIMEZONE, hour: '2-digit', minute: '2-digit', hour12: false });
+          const tz = d.toLocaleTimeString('en-US', { timeZone: ET_TIMEZONE, timeZoneName: 'short' }).split(' ').pop();
+          lastRunEl.textContent = 'Last run: ' + dt + ' ' + tm + ' ' + tz;
+        } catch(e) {}
+      }
+
+      // Update market status text + dot color
+      const statusEl = document.getElementById('statusText');
+      if (statusEl) {
+        statusEl.textContent = data.market_open ? 'Market OPEN' : 'Market CLOSED';
+      }
+      const dotEl = document.getElementById('statusDot');
+      if (dotEl) {
+        dotEl.style.background = data.market_open ? '#22c55e' : '#6b7280';
+      }
     }
     fetchDataFreshness();
     setInterval(fetchDataFreshness, PULL_EVERY);

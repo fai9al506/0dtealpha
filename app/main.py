@@ -3427,8 +3427,22 @@ def _run_setup_check():
 
             # Different telegram messages based on reason
             if reason in ("new", "reformed"):
-                # Full setup alert for new/reformed setups
-                send_telegram_setups(rw["message"])
+                # Rebuild message with alignment (alignment computed after check_setups)
+                from app.setup_detector import (
+                    format_setup_message, format_ag_short_message, format_bofa_scalp_message,
+                    format_paradigm_reversal_message, format_dd_exhaustion_message,
+                    format_skew_charm_message, format_vanna_pivot_message,
+                )
+                _fmt_map = {
+                    "GEX Long": format_setup_message, "AG Short": format_ag_short_message,
+                    "BofA Scalp": format_bofa_scalp_message, "Paradigm Reversal": format_paradigm_reversal_message,
+                    "DD Exhaustion": format_dd_exhaustion_message, "Skew Charm": format_skew_charm_message,
+                    "Vanna Pivot Bounce": format_vanna_pivot_message,
+                }
+                _fmt_fn = _fmt_map.get(setup_name)
+                _align = r.get("greek_alignment")
+                _msg = _fmt_fn(r, alignment=_align) if _fmt_fn else rw["message"]
+                send_telegram_setups(_msg)
                 print(f"[setups] {setup_name} NEW: {grade} ({score})", flush=True)
                 # Record open trade for live outcome tracking
                 target_lvl, stop_lvl = _compute_setup_levels(r)
@@ -3522,10 +3536,7 @@ def _run_setup_check():
                         except Exception as e:
                             print(f"[options] place error: {e}", flush=True)
             elif reason == "grade_upgrade":
-                # Short upgrade notice
-                emoji = "⬆️"
-                msg = f"{emoji} <b>{setup_name} upgraded to {grade}</b>\n"
-                msg += f"Score: {score} | SPX: {r['spot']:.0f} | Gap: {r['gap_to_lis']:.1f} | R:R: {r['rr_ratio']:.1f}x"
+                msg = f"⬆️ <b>{setup_name} → {grade}</b> ({score}) | {r['spot']:.0f}"
                 send_telegram_setups(msg)
                 print(f"[setups] {setup_name} UPGRADED: {grade} ({score})", flush=True)
             elif reason == "gap_improvement":
@@ -4030,7 +4041,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
         "result": result,
         "notify": fire,
         "notify_reason": reason or "cooldown",
-        "message": format_absorption_message(result),
+        "message": format_absorption_message(result, alignment=result.get("greek_alignment")),
     }
     log_setup(rw)
 
@@ -4729,7 +4740,8 @@ def _send_setup_eod_summary():
             with engine.connect() as conn:
                 rows = conn.execute(text("""
                     SELECT setup_name, direction, grade, ts,
-                           outcome_result, outcome_pnl, outcome_elapsed_min
+                           outcome_result, outcome_pnl, outcome_elapsed_min,
+                           greek_alignment
                     FROM setup_log
                     WHERE ts >= :today_start
                       AND outcome_result IS NOT NULL
@@ -4746,6 +4758,7 @@ def _send_setup_eod_summary():
                     "result_type": row[4],
                     "pnl": float(row[5]) if row[5] is not None else 0.0,
                     "elapsed_min": int(row[6]) if row[6] is not None else 0,
+                    "alignment": row[7],
                 })
             print(f"[eod-summary] loaded {len(trades_for_summary)} trades from DB", flush=True)
         except Exception as db_err:

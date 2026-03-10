@@ -468,54 +468,23 @@ def mark_ag_expired():
 
 # ── Message formatting ─────────────────────────────────────────────────────
 
-def format_setup_message(result):
-    """Format a Telegram HTML message with force alignment breakdown."""
+def format_setup_message(result, alignment=None):
+    """Format a concise Telegram HTML message for GEX Long."""
     grade_emoji = {"A+": "🟢", "A": "🔵", "A-Entry": "🟡"}.get(result["grade"], "⚪")
-
-    lis_type = result.get("lis_type", "support")
-    lis_label = "MAGNET" if lis_type == "magnet" else "SUPPORT"
-
-    msg = f"{grade_emoji} <b>GEX Long Setup — {result['grade']}</b>\n"
-    msg += f"Score: <b>{result['score']}</b>/100\n\n"
-    msg += f"SPX: {result['spot']:.0f}\n"
-    msg += f"Paradigm: {result['paradigm']}\n"
-    msg += f"LIS: {result['lis']:.0f} ({lis_label})  |  Target: {result['target']:.0f}\n"
-    msg += f"+GEX: {result['max_plus_gex']:.0f}  |  -GEX: {result['max_minus_gex']:.0f}\n\n"
-    msg += f"Gap to LIS: {result['gap_to_lis']:.1f}\n"
-    msg += f"Upside: {result['upside']:.1f}\n"
-    msg += f"R:R: {result['rr_ratio']:.1f}x\n\n"
-    msg += "<b>Forces:</b>\n"
-    msg += f"  LIS proximity: {result['support_score']}/25\n"
-    msg += f"  -GEX force: {result['upside_score']}/20\n"
-    msg += f"  +GEX magnet: {result['floor_cluster_score']}/20\n"
-    msg += f"  Target magnet: {result['target_cluster_score']}/15\n"
-    msg += f"  LIS type + time: {result['rr_score']}/20\n"
-    if result["first_hour"]:
-        msg += "\n⏰ First hour"
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
+    msg = f"{grade_emoji} <b>GEX Long LONG [{result['grade']}]{align_str}</b>\n"
+    msg += f"{result['spot']:.0f} → {result['target']:.0f} | SL {result['spot'] - 8:.0f} (8pt) | Trail\n"
+    msg += f"{result['paradigm']} | LIS {result['lis']:.0f} | +GEX {result['max_plus_gex']:.0f} | -GEX {result['max_minus_gex']:.0f}"
     return msg
 
 
-def format_ag_short_message(result):
-    """Format a Telegram HTML message for AG Short with direction-specific labels."""
+def format_ag_short_message(result, alignment=None):
+    """Format a concise Telegram HTML message for AG Short."""
     grade_emoji = {"A+": "🟢", "A": "🔵", "A-Entry": "🟡"}.get(result["grade"], "⚪")
-
-    msg = f"{grade_emoji} <b>AG Short Setup — {result['grade']}</b>\n"
-    msg += f"Score: <b>{result['score']}</b>/100\n\n"
-    msg += f"SPX: {result['spot']:.0f}\n"
-    msg += f"Paradigm: {result['paradigm']}\n"
-    msg += f"LIS (resistance): {result['lis']:.0f}  |  Target: {result['target']:.0f}\n"
-    msg += f"+GEX: {result['max_plus_gex']:.0f}  |  −GEX: {result['max_minus_gex']:.0f}\n\n"
-    msg += f"Gap to LIS: {result['gap_to_lis']:.1f}\n"
-    msg += f"Downside: {result['upside']:.1f}\n"
-    msg += f"R:R: {result['rr_ratio']:.1f}x\n\n"
-    msg += "<b>Scores:</b>\n"
-    msg += f"  Resistance: {result['support_score']}\n"
-    msg += f"  Downside: {result['upside_score']}\n"
-    msg += f"  Ceiling cluster: {result['floor_cluster_score']}\n"
-    msg += f"  Target cluster: {result['target_cluster_score']}\n"
-    msg += f"  R:R: {result['rr_score']}\n"
-    if result["first_hour"]:
-        msg += "\n⏰ First hour bonus applied"
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
+    msg = f"{grade_emoji} <b>AG Short [{result['grade']}]{align_str}</b>\n"
+    msg += f"{result['spot']:.0f} → {result['target']:.0f} | SL {result['spot'] + 10:.0f} (10pt) | Trail\n"
+    msg += f"{result['paradigm']} | LIS {result['lis']:.0f} | +GEX {result['max_plus_gex']:.0f} | -GEX {result['max_minus_gex']:.0f}"
     return msg
 
 
@@ -946,33 +915,17 @@ def mark_bofa_expired():
 
 # ── BofA Scalp message formatting ────────────────────────────────────────
 
-def format_bofa_scalp_message(result):
-    """Format a Telegram HTML message for BofA Scalp setup."""
-    grade_emoji = {"A+": "🟢", "A": "🔵", "A-Entry": "🟡"}.get(result["grade"], "⚪")
-    dir_label = "LONG at Lower LIS" if result["direction"] == "long" else "SHORT at Upper LIS"
+def format_bofa_scalp_message(result, alignment=None):
+    """Format a concise Telegram HTML message for BofA Scalp."""
     dir_emoji = "🔵" if result["direction"] == "long" else "🔴"
-
+    dir_label = "LONG" if result["direction"] == "long" else "SHORT"
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
     lis_lo = result.get("lis_lower", 0)
     lis_hi = result.get("lis_upper", 0)
     width = result.get("bofa_lis_width", 0)
-
-    msg = f"{dir_emoji} <b>BofA Scalp — {dir_label}</b>\n"
-    msg += f"Grade: {grade_emoji} {result['grade']} (Score: {result['score']})\n"
-    msg += "━━━━━━━━━━━━━━━━━━\n"
-    msg += f"📍 Spot: {result['spot']:.1f}\n"
-    msg += f"📏 LIS: {lis_lo:.0f} — {lis_hi:.0f} ({width:.0f}pt width)\n"
-    msg += f"🎯 Target: {result.get('bofa_target_level', 0):.1f} (+{result.get('upside', 15):.0f}pts)\n"
-    msg += f"🛡 Stop: {result.get('bofa_stop_level', 0):.1f} (-12pts beyond LIS)\n"
-    msg += f"⏱ Max Hold: {result.get('bofa_max_hold_minutes', 30)} minutes\n\n"
-    msg += "<b>Scoring:</b>\n"
-    msg += f"  🧱 Stability: {result['support_score']} ({result.get('bofa_stability_bars', 0) * 5}min stable)\n"
-    msg += f"  ↔ Width: {result['upside_score']} ({width:.0f}pt range)\n"
-    msg += f"  ⚖ Charm: {result['floor_cluster_score']}\n"
-    msg += f"  🕐 Time: {result['target_cluster_score']}\n"
-    msg += f"  🎯 Midpoint: {result['rr_score']}\n"
-
-    stab_min = result.get("bofa_stability_bars", 6) * 5
-    msg += f"\n⚡ LIS stable for {stab_min} minutes — dealers defending"
+    msg = f"{dir_emoji} <b>BofA {dir_label} [{result['grade']}]{align_str}</b>\n"
+    msg += f"{result['spot']:.0f} → {result.get('bofa_target_level', 0):.0f} (+10) | SL {result.get('bofa_stop_level', 0):.0f} | {result.get('bofa_max_hold_minutes', 30)}m hold\n"
+    msg += f"LIS {lis_lo:.0f}–{lis_hi:.0f} ({width:.0f}pt)"
     return msg
 
 
@@ -1246,43 +1199,26 @@ def should_notify_absorption(result):
     return True, "new"
 
 
-def format_absorption_message(result):
-    """Format a Telegram HTML message for CVD Divergence setup."""
+def format_absorption_message(result, alignment=None):
+    """Format a concise Telegram HTML message for CVD Divergence setup."""
     side_emoji = "\U0001f7e2" if result["direction"] == "bullish" else "\U0001f534"
     side_label = "BUY" if result["direction"] == "bullish" else "SELL"
-    grade = result["grade"]
-    score = result["score"]
-
-    pattern = result.get("pattern", "unknown")
     pattern_labels = {
         "sell_exhaustion": "Sell Exhaustion",
         "sell_absorption": "Sell Absorption",
         "buy_exhaustion": "Buy Exhaustion",
         "buy_absorption": "Buy Absorption",
     }
-    pattern_label = pattern_labels.get(pattern, pattern)
-
-    parts = [
-        f"<b>CVD DIVERGENCE {side_emoji} {side_label} [{grade}] ({score}/100)</b>",
-        f"{pattern_label}",
-        "\u2501" * 18,
-    ]
-
+    pattern_label = pattern_labels.get(result.get("pattern", ""), result.get("pattern", "?"))
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
+    cvd_gap_str = ""
     best = result.get("best_swing")
     if best:
-        sw = best["swing"]
-        ref = best.get("ref_swing")
-        if ref:
-            swing_type_label = "Low" if ref["type"] == "L" else "High"
-            parts.append("")
-            parts.append(f"Swing 1: {ref['price']:.2f} ({swing_type_label}) Bar #{ref['bar_idx']} CVD={ref['cvd']:+,}")
-            parts.append(f"Swing 2: {sw['price']:.2f} ({swing_type_label}) Bar #{sw['bar_idx']} CVD={sw['cvd']:+,}")
-            parts.append(f"CVD Gap: {best['cvd_gap']:,} | Price: {best['price_dist']:.2f}")
-
-    parts.append("")
-    parts.append(f"Entry: {result['abs_es_price']:.2f} | SL: 8pt | T: 10pt")
-
-    return "\n".join(parts)
+        cvd_gap_str = f" | CVD gap {best['cvd_gap']:+,}"
+    msg = f"{side_emoji} <b>CVD Div {side_label} [{result['grade']}]{align_str}</b>\n"
+    msg += f"ES {result['abs_es_price']:.2f} | SL 8pt | T 10pt\n"
+    msg += f"{pattern_label}{cvd_gap_str}"
+    return msg
 
 
 # ── Paradigm Reversal — defaults and state ─────────────────────────────────
@@ -1577,29 +1513,19 @@ def should_notify_skew_charm(result):
     return True, "new"
 
 
-def format_skew_charm_message(result):
-    """Format Telegram HTML message for Skew+Charm setup."""
+def format_skew_charm_message(result, alignment=None):
+    """Format a concise Telegram HTML message for Skew Charm."""
     direction = result["direction"]
     dir_label = "LONG" if direction == "long" else "SHORT"
     grade = result.get("grade", "C")
-    grade_emoji = {"A+": "\U0001f7e2", "A": "\U0001f535", "A-Entry": "\U0001f7e1", "B": "\u26aa", "C": "\u26aa"}.get(grade, "\u26aa")
-    score = result.get("score", 0)
-
-    skew_val = result.get("skew_value", 0)
+    grade_emoji = {"A+": "\U0001f7e2", "A": "\U0001f535", "A-Entry": "\U0001f7e1"}.get(grade, "\u26aa")
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
     skew_chg = result.get("skew_change_pct", 0)
     charm_m = (result.get("charm") or 0) / 1_000_000
-
-    msg = f"{grade_emoji} <b>Skew Charm \u2014 {dir_label} ({grade})</b>\n"
-    msg += f"Score: <b>{score}</b>/100\n"
-    msg += "\u2501" * 18 + "\n"
-    msg += f"Skew: {skew_val:.4f} ({skew_chg:+.1f}% over 20 snapshots)\n"
-    msg += f"Charm: ${charm_m:+,.0f}M ({'bullish \u2713' if result.get('charm', 0) > 0 else 'bearish \u2713'})\n"
-    msg += f"Paradigm: {result.get('paradigm') or 'N/A'}\n"
-    msg += f"Entry: ${result['spot']:,.0f} | Target: ${result.get('target_price', 0):,.0f} (+10) | Stop: ${result.get('stop_price', 0):,.0f} (-20)\n"
-    msg += "\u2501" * 18 + "\n"
-    msg += f"Skew {result.get('support_score', 0)} | Charm {result.get('upside_score', 0)} | "
-    msg += f"Time {result.get('floor_cluster_score', 0)} | Para {result.get('target_cluster_score', 0)} | "
-    msg += f"Level {result.get('rr_score', 0)}"
+    charm_dir = "bullish" if result.get("charm", 0) > 0 else "bearish"
+    msg = f"{grade_emoji} <b>Skew Charm {dir_label} [{grade}]{align_str}</b>\n"
+    msg += f"{result['spot']:.0f} \u2192 Trail | SL {result.get('stop_price', 0):.0f} (20pt)\n"
+    msg += f"Skew {skew_chg:+.1f}% | Charm {charm_m:+,.0f}M {charm_dir}"
     return msg
 
 
@@ -1796,80 +1722,54 @@ def should_notify_dd_exhaust(result):
     return True, "new"
 
 
-def format_dd_exhaustion_message(result):
-    """Format Telegram HTML message for DD Exhaustion."""
+def format_dd_exhaustion_message(result, alignment=None):
+    """Format a concise Telegram HTML message for DD Exhaustion."""
     direction = result["direction"]
     dir_label = "LONG" if direction == "long" else "SHORT"
     dir_emoji = "\U0001f535" if direction == "long" else "\U0001f534"
     grade = result.get("grade", "?")
-    score = result.get("score", 0)
-
-    shift = result["dd_shift"]
-    shift_m = shift / 1_000_000
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
+    shift_m = result["dd_shift"] / 1_000_000
     charm_m = result["charm"] / 1_000_000
-
-    if direction == "long":
-        exhaust_label = "bearish exhaust"
-    else:
-        exhaust_label = "bullish exhaust"
-
-    msg = f"{dir_emoji} <b>DD EXHAUSTION \u2014 {dir_label} ({grade} / {score})</b>\n"
-    msg += "\u2501" * 18 + "\n"
-    msg += f"DD Shift: ${shift_m:+,.0f}M ({exhaust_label})\n"
-    msg += f"Charm: ${charm_m:+,.0f}M ({'bullish \u2713' if result['charm'] > 0 else 'bearish \u2713'})\n"
-    msg += f"Paradigm: {result['paradigm'] or 'N/A'}\n"
-    msg += f"Entry: ${result['spot']:,.0f} | SL: ${result['stop_price']:,.0f} | Trail: +7\u2192SL+5, +12\u2192SL+10"
+    exhaust_label = "bearish exhaust" if direction == "long" else "bullish exhaust"
+    charm_dir = "bullish" if result["charm"] > 0 else "bearish"
+    msg = f"{dir_emoji} <b>DD Exhaust {dir_label} [{grade}]{align_str}</b>\n"
+    msg += f"{result['spot']:.0f} \u2192 Trail | SL {result['stop_price']:.0f} (12pt)\n"
+    msg += f"DD {shift_m:+,.0f}M {exhaust_label} | Charm {charm_m:+,.0f}M {charm_dir}"
     return msg
 
 
 def format_setup_outcome(trade: dict, result_type: str, pnl: float, elapsed_min: int) -> str:
-    """Format a Telegram HTML message for a setup outcome (WIN/LOSS/EXPIRED).
-
-    Args:
-        trade: open trade dict with setup_name, direction, spot, target_level, stop_level, grade, result_data
-        result_type: "WIN", "LOSS", or "EXPIRED"
-        pnl: points gained/lost
-        elapsed_min: minutes from entry to resolution
-    """
+    """Format a concise Telegram HTML message for a setup outcome."""
     emoji = {"WIN": "\u2705", "LOSS": "\u274c", "EXPIRED": "\u23f9"}.get(result_type, "\u2753")
     setup_name = trade["setup_name"]
-    direction = trade["direction"].upper()
+    # Shorten names
+    name_short = {"Paradigm Reversal": "Paradigm", "DD Exhaustion": "DD Exhaust",
+                  "CVD Divergence": "CVD Div", "BofA Scalp": "BofA"}.get(setup_name, setup_name)
+    direction = trade["direction"].upper()[:1]  # L or S/B
     grade = trade.get("grade", "?")
     spot = trade["spot"]
     r = trade.get("result_data", {})
+    alignment = r.get("greek_alignment")
+    align_str = f" {alignment:+d}" if alignment is not None else ""
 
-    is_dd = setup_name == "DD Exhaustion"
-
-    msg = f"{emoji} <b>{setup_name} \u2014 {direction} \u2192 {result_type}</b> ({pnl:+.1f} pts, {elapsed_min} min)\n"
+    msg = f"{emoji} <b>{name_short} {direction} {pnl:+.1f}pts</b> ({elapsed_min}m) [{grade}]{align_str}\n"
 
     if result_type == "WIN":
-        tgt = trade.get('target_level')
-        tgt_str = f"${tgt:,.0f}" if tgt is not None else "trail"
-        msg += f"Entry: ${spot:,.0f} | Target: {tgt_str} | Grade: {grade}"
+        exit_price = trade.get("close_price") or spot
+        msg += f"{spot:.0f} \u2192 exit {exit_price:.0f}"
     elif result_type == "LOSS":
-        sl = trade.get('stop_level')
-        sl_str = f"${sl:,.0f}" if sl is not None else "?"
-        msg += f"Entry: ${spot:,.0f} | Stop: {sl_str} | Grade: {grade}"
+        sl = trade.get("initial_stop_level") or trade.get("stop_level")
+        msg += f"{spot:.0f} \u2192 stopped {sl:.0f}" if sl else f"{spot:.0f}"
     else:  # EXPIRED
-        close_price = trade.get("close_price") or (spot + pnl if direction == "LONG" else spot - pnl)
-        msg += f"Entry: ${spot:,.0f} | Close: ${close_price:,.0f} | Grade: {grade}"
-
-    # DD Exhaustion extra context
-    if is_dd and r:
-        shift_m = (r.get("dd_shift") or 0) / 1_000_000
-        charm_m = (r.get("charm") or 0) / 1_000_000
-        msg += f"\nDD Shift: ${shift_m:+,.0f}M | Charm: ${charm_m:+,.0f}M"
+        close_price = trade.get("close_price") or spot
+        msg += f"{spot:.0f} \u2192 close {close_price:.0f}"
 
     return msg
 
 
 def format_setup_daily_summary(trades_list: list) -> str:
-    """Format EOD summary Telegram message with all resolved trades.
-
-    Args:
-        trades_list: list of resolved trade dicts, each with:
-            setup_name, direction, grade, pnl, result_type, elapsed_min, ts
-    """
+    """Format a concise EOD summary Telegram message."""
     if not trades_list:
         return ""
 
@@ -1880,28 +1780,23 @@ def format_setup_daily_summary(trades_list: list) -> str:
     net_pnl = sum(t["pnl"] for t in trades_list)
     win_rate = round(100 * wins / total) if total > 0 else 0
 
-    msg = "\U0001f4ca <b>Setup Alerts \u2014 Daily Summary</b>\n"
-    msg += "\u2501" * 18 + "\n"
-    msg += f"Trades: {total} | Wins: {wins} | Losses: {losses} | Expired: {expired}\n"
-    msg += f"Net P&L: {net_pnl:+.1f} pts | Win Rate: {win_rate}%\n\n"
+    msg = f"\U0001f4ca <b>Daily Summary</b>\n"
+    msg += f"{wins}W {losses}L {expired}E | {net_pnl:+.1f} pts | {win_rate}%\n\n"
 
     for t in trades_list:
         emoji = {"WIN": "\u2705", "LOSS": "\u274c", "EXPIRED": "\u23f9"}.get(t["result_type"], "\u2753")
         ts_str = t.get("ts_str", "")
         name = t["setup_name"]
-        # Shorten some names for the summary line
-        name_short = {"Paradigm Reversal": "Paradigm Rev", "DD Exhaustion": "DD Exhaust"}.get(name, name)
-        direction = t["direction"].upper()
+        name_short = {"Paradigm Reversal": "Paradigm", "DD Exhaustion": "DD Exhaust",
+                      "CVD Divergence": "CVD Div", "BofA Scalp": "BofA",
+                      "Skew Charm": "Skew Charm", "GEX Long": "GEX Long"}.get(name, name)
+        direction = t["direction"].upper()[:1]  # L/S/B
         grade = t.get("grade", "?")
+        alignment = t.get("alignment")
+        align_str = f"{alignment:+d}" if alignment is not None else ""
         pnl = t["pnl"]
-        elapsed = t.get("elapsed_min", 0)
-        if t["result_type"] == "EXPIRED":
-            elapsed_str = "(expired)"
-        else:
-            elapsed_str = f"({elapsed} min)"
-        msg += f"{emoji} {ts_str} {name_short} {direction} {grade} {pnl:+.1f} pts {elapsed_str}\n"
+        msg += f"{emoji} {ts_str} {name_short} {direction} {pnl:+.1f} [{grade}]{align_str}\n"
 
-    msg += "\u2501" * 18
     return msg
 
 
@@ -2139,36 +2034,17 @@ def should_notify_paradigm_rev(result):
     return True, "new"
 
 
-def format_paradigm_reversal_message(result):
-    """Format a Telegram HTML message for Paradigm Reversal."""
+def format_paradigm_reversal_message(result, alignment=None):
+    """Format a concise Telegram HTML message for Paradigm Reversal."""
     dir_emoji = "\U0001f535" if result["direction"] == "long" else "\U0001f534"
     dir_label = "LONG" if result["direction"] == "long" else "SHORT"
-    grade_emoji = {"A+": "\U0001f7e2", "A": "\U0001f535", "A-Entry": "\U0001f7e1"}.get(result["grade"], "\u26aa")
-
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
     prev = result.get("pr_prev_paradigm", "?")
     curr = result.get("pr_curr_paradigm", "?")
-
-    msg = f"{dir_emoji} <b>Paradigm Reversal — {dir_label}</b>\n"
-    msg += f"Grade: {grade_emoji} {result['grade']} (Score: {result['score']})\n"
-    msg += "\u2501" * 18 + "\n"
-    msg += f"\U0001f504 {prev} \u2192 {curr}\n"
-    msg += f"\U0001f4cd Spot: {result['spot']:.1f}\n"
-    msg += f"\U0001f4cf LIS: {result.get('lis_lower', 0):.0f} \u2014 {result.get('lis_upper', 0):.0f}"
-    msg += f" ({result.get('pr_lis_width', 0):.0f}pt width)\n"
-    msg += f"Gap to LIS: {result['gap_to_lis']:.1f}pts\n\n"
-    msg += "<b>Scoring:</b>\n"
-    msg += f"  \U0001f4cd Proximity: {result['support_score']}\n"
-    msg += f"  \U0001f4ca ES Volume: {result['upside_score']}"
-    if result.get("pr_vol_ratio"):
-        msg += f" ({result['pr_vol_ratio']:.1f}x)"
-    msg += "\n"
-    msg += f"  \u2696 Charm: {result['floor_cluster_score']}\n"
-    msg += f"  \U0001f6e1 DD Hedging: {result['target_cluster_score']}"
-    if result.get("pr_dd_hedging"):
-        msg += f" ({result['pr_dd_hedging']})"
-    msg += "\n"
-    msg += f"  \U0001f552 Time: {result['rr_score']}\n"
-    msg += f"\n\u26a1 Paradigm just flipped {int(result.get('pr_flip_age_s', 0))}s ago"
+    msg = f"{dir_emoji} <b>Paradigm {dir_label} [{result['grade']}]{align_str}</b>\n"
+    msg += f"{result['spot']:.0f} \u2192 {result['spot'] + 10:.0f} (+10) | SL {result['spot'] - 15:.0f} (15pt)\n" if result["direction"] == "long" else ""
+    msg += f"{result['spot']:.0f} \u2192 {result['spot'] - 10:.0f} (+10) | SL {result['spot'] + 15:.0f} (15pt)\n" if result["direction"] != "long" else ""
+    msg += f"{prev} \u2192 {curr}"
     return msg
 
 
@@ -2517,35 +2393,17 @@ def should_notify_vanna_pivot(result):
     return True, "new"
 
 
-def format_vanna_pivot_message(result):
-    """Format Telegram HTML message for Vanna Pivot Bounce setup."""
+def format_vanna_pivot_message(result, alignment=None):
+    """Format a concise Telegram HTML message for Vanna Pivot Bounce."""
     direction = result["direction"]
     dir_label = "LONG" if direction == "long" else "SHORT"
     grade = result.get("grade", "C")
-    grade_emoji = {"A+": "\U0001f7e2", "A": "\U0001f535", "B": "\u26aa", "C": "\u26aa"}.get(grade, "\u26aa")
-    score = result.get("score", 0)
-
-    pattern = result.get("pattern", "unknown").replace("_", " ").title()
+    grade_emoji = {"A+": "\U0001f7e2", "A": "\U0001f535"}.get(grade, "\u26aa")
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
     vanna_strike = result.get("vanna_strike", 0)
-    vanna_pct = result.get("vanna_pct", 0)
-    vanna_tf = result.get("vanna_tf", "?")
-    proximity = result.get("proximity", 0)
-    confluence = result.get("confluence", False)
-
-    tf_label = {"THIS_WEEK": "Weekly", "THIRTY_NEXT_DAYS": "Monthly"}.get(vanna_tf, vanna_tf)
-    conf_tag = " [CONFLUENCE]" if confluence else ""
-
-    msg = f"{grade_emoji} <b>Vanna Pivot Bounce \u2014 {dir_label} ({grade})</b>\n"
-    msg += f"Score: <b>{score}</b>/100\n"
-    msg += "\u2501" * 18 + "\n"
-    msg += f"Vanna Level: ${vanna_strike:,.0f} ({vanna_pct:.0f}% {tf_label}){conf_tag}\n"
-    msg += f"Pattern: {pattern}\n"
-    msg += f"Proximity: {proximity:.1f} pts\n"
-    msg += f"Entry: ${result['spot']:,.0f} | Target: ${result.get('target_price', 0):,.0f} (+{result.get('upside', 10)}) | Stop: ${result.get('stop_price', 0):,.0f} (-{int(abs(result['spot'] - result.get('stop_price', 0)))})\n"
-    msg += "\u2501" * 18 + "\n"
-    msg += f"Conc {result.get('support_score', 0)} | Prox {result.get('upside_score', 0)} | "
-    msg += f"CVD {result.get('floor_cluster_score', 0)} | Conf {result.get('target_cluster_score', 0)} | "
-    msg += f"Time {result.get('rr_score', 0)}"
+    msg = f"{grade_emoji} <b>Vanna Pivot {dir_label} [{grade}]{align_str}</b>\n"
+    msg += f"{result['spot']:.0f} \u2192 {result.get('target_price', 0):.0f} | SL {result.get('stop_price', 0):.0f}\n"
+    msg += f"Vanna {vanna_strike:.0f}"
     return msg
 
 

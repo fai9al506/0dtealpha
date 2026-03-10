@@ -27,3 +27,4 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 21 | 2026-02-25 pre | `stable-20260225-pre-playback-redesign` | Pre-playback tab redesign (rollback point) |
 | 22 | 2026-02-25 20:56 | `stable-20260225-205654` | ES Absorption swing-to-swing rewrite (4 patterns, d=40, +161pts backtest) |
 | 23 | 2026-03-01 12:00 | `stable-20260301-120000` | Single-position mode + vanna filter + DD filters for auto-trader |
+| 24 | 2026-03-10 18:45 | `stable-20260310-184500` | Alignment +3 gate live (81% WR backtest). Day 1: futures +$1,242, options +$4,724. Tick trade for E2T. Options on all setups. |

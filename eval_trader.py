@@ -707,77 +707,15 @@ class ComplianceGate:
                 if "BOFA" in paradigm and "PURE" in paradigm:
                     return False, "DD blocked on BOFA-PURE paradigm (18% WR)"
 
-        # Greek context filters — HYBRID v2 (backtest composite score #1)
-        # Combines: SVB-aware vanna + paradigm cross-check + momentum override
+        # Greek filter — Alignment +3 gate (simple, matches main.py)
+        # Raw alignment from setup_detector: all 3 Greeks must agree strongly.
+        # Previous HYBRID adjustments (SVB vanna removal, paradigm cross-check,
+        # momentum override) were designed for the old <0 threshold and over-filter
+        # at +3. Use raw alignment directly — it already captures macro context.
         if cfg.get("greek_filter_enabled"):
-            alignment = signal.get("greek_alignment")
-            svb = signal.get("spot_vol_beta")
-            is_long = signal["direction"].lower() in ("long", "bullish")
-            setup = signal["setup_name"]
-            spot = signal.get("spot")
-
-            # Track first spot of day for momentum calculation
-            if self._first_spot_today is None and spot:
-                self._first_spot_today = spot
-
-            if alignment is not None:
-                effective_alignment = alignment
-
-                # SVB-aware vanna: when SVB < 0.2 (vol stressed/transitional),
-                # vanna vote is unreliable — remove it from alignment.
-                # Vanna_all > 0 votes +1 for longs, -1 for shorts.
-                # To remove: subtract that vote.
-                if svb is not None and svb < 0.2:
-                    vanna_all = signal.get("vanna_all")
-                    if vanna_all is not None:
-                        vanna_positive = vanna_all > 0
-                        vanna_vote = 1 if (vanna_positive == is_long) else -1
-                        effective_alignment -= vanna_vote
-                        if effective_alignment != alignment:
-                            log.debug(f"  SVB-regime: SVB={svb:.2f} < 0.2, removed vanna vote "
-                                      f"({alignment:+d} -> {effective_alignment:+d})")
-
-                # Paradigm cross-check: if paradigm contradicts trade direction,
-                # downgrade alignment by 1. Paradigm was correct on Mar 5 crash.
-                paradigm = (signal.get("paradigm") or "").upper()
-                bearish_paradigms = {"AG-PURE", "AG-LIS", "AG-TARGET", "SIDIAL-EXTREME",
-                                     "SIDIAL-MESSY", "GEX-LIS", "GEX-TARGET"}
-                bullish_paradigms = {"GEX-PURE", "BOFA-PURE", "BOFA-LIS", "BOFA-TARGET",
-                                     "SIDIAL-BALANCE"}
-                paradigm_opposes = (paradigm in bearish_paradigms and is_long) or \
-                                   (paradigm in bullish_paradigms and not is_long)
-                if paradigm_opposes:
-                    effective_alignment -= 1
-                    log.debug(f"  Paradigm cross-check: {paradigm} opposes {'LONG' if is_long else 'SHORT'} "
-                              f"({alignment:+d} -> {effective_alignment:+d})")
-
-                # Momentum override: if price has moved 15+ pts against the Greek
-                # bias, let opposing trades through. Greek thesis overwhelmed.
-                spot_delta = 0
-                if self._first_spot_today and spot:
-                    spot_delta = spot - self._first_spot_today
-
-                momentum_override = False
-                if effective_alignment < 0:
-                    # Would block. Check if momentum contradicts Greek bias.
-                    if not is_long and spot_delta < -15:
-                        # Shorting into a crash — momentum supports even though Greeks oppose
-                        momentum_override = True
-                        log.info(f"  Momentum override: market down {spot_delta:+.0f}pts, allowing SHORT")
-                    elif is_long and spot_delta > 15:
-                        # Buying into a surge — momentum supports even though Greeks oppose
-                        momentum_override = True
-                        log.info(f"  Momentum override: market up {spot_delta:+.0f}pts, allowing LONG")
-
-                # Final gate: require alignment +3 or -3 (all Greeks agree strongly)
-                if abs(effective_alignment) < 3 and not momentum_override:
-                    return False, (f"Greek HYBRID: alignment {alignment:+d} -> effective {effective_alignment:+d} "
-                                   f"(need >=+3 or <=-3, SVB={svb}, paradigm={paradigm}, delta={spot_delta:+.0f})")
-
-            # DD Exhaustion — block weak-negative SVB (-0.5 to 0)
-            if setup == "DD Exhaustion" and svb is not None:
-                if -0.5 <= svb <= 0:
-                    return False, f"Greek filter: DD blocked on weak-neg SVB ({svb:.2f})"
+            alignment = signal.get("greek_alignment", 0)
+            if abs(alignment) < 3:
+                return False, (f"Greek filter: alignment {alignment:+d} (need >=+3 or <=-3)")
 
         # Already in position?
         # Opposite-direction signals return "reverse" so main loop can close + reopen

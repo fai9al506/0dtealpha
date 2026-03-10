@@ -3467,6 +3467,10 @@ def _run_setup_check():
                     if setup_name == "ES Absorption" and _greek_align < 0:
                         print(f"[auto-trader] SKIPPED ES Absorption: alignment {_greek_align:+d} < 0", flush=True)
                         _skip_auto_trade = True
+                    # F6: Alignment +3 gate — only trade when all Greeks agree strongly
+                    if abs(_greek_align) < 3:
+                        print(f"[auto-trader] SKIPPED {setup_name}: alignment {_greek_align:+d} (need >=+3 or <=-3)", flush=True)
+                        _skip_auto_trade = True
                     # Auto-trade: place MES SIM order (skip if filters blocked)
                     if not _skip_auto_trade:
                         try:
@@ -4050,13 +4054,18 @@ def _run_absorption_detection(bars: list) -> dict | None:
         })
         print(f"[outcome] tracking CVD Divergence: target={target_lvl} stop={stop_lvl:.1f}", flush=True)
         # Auto-trade: CVD Divergence uses ES price directly
-        # Greek filter: charm alignment gate
+        # Greek filter: charm alignment gate + alignment +3 gate
         _abs_skip_greek = False
+        _abs_align = result.get("greek_alignment", 0)
         if _abs_charm is not None:
             _abs_is_long = result["direction"] in ("long", "bullish")
             if (_abs_charm > 0) != _abs_is_long:
-                print(f"[auto-trader] SKIPPED CVD Divergence: charm opposes direction (align={result.get('greek_alignment', 0):+d})", flush=True)
+                print(f"[auto-trader] SKIPPED CVD Divergence: charm opposes direction (align={_abs_align:+d})", flush=True)
                 _abs_skip_greek = True
+        # F6: Alignment +3 gate
+        if abs(_abs_align) < 3:
+            print(f"[auto-trader] SKIPPED CVD Divergence: alignment {_abs_align:+d} (need >=+3 or <=-3)", flush=True)
+            _abs_skip_greek = True
         if result.get("log_only"):
             print(f"[auto-trader] SKIPPED CVD Divergence: log-only pattern ({result.get('pattern')})", flush=True)
         elif _abs_skip_greek:

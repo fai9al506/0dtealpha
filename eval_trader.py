@@ -769,10 +769,10 @@ class ComplianceGate:
                         momentum_override = True
                         log.info(f"  Momentum override: market up {spot_delta:+.0f}pts, allowing LONG")
 
-                # Final gate
-                if effective_alignment < 0 and not momentum_override:
+                # Final gate: require alignment +3 or -3 (all Greeks agree strongly)
+                if abs(effective_alignment) < 3 and not momentum_override:
                     return False, (f"Greek HYBRID: alignment {alignment:+d} -> effective {effective_alignment:+d} "
-                                   f"(SVB={svb}, paradigm={paradigm}, delta={spot_delta:+.0f})")
+                                   f"(need >=+3 or <=-3, SVB={svb}, paradigm={paradigm}, delta={spot_delta:+.0f})")
 
             # DD Exhaustion — block weak-negative SVB (-0.5 to 0)
             if setup == "DD Exhaustion" and svb is not None:

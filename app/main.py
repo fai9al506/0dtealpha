@@ -7769,8 +7769,35 @@ async def api_setup_log_comment(log_id: int, request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.get("/api/setup/stats")
+def api_setup_stats():
+    """Return aggregate stats across ALL trades (no limit). Used by portal for totals."""
+    if not engine:
+        return {}
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(text("""
+                SELECT
+                    COUNT(*) FILTER (WHERE outcome_result IS NOT NULL) as total,
+                    COUNT(*) FILTER (WHERE outcome_result = 'WIN') as wins,
+                    COUNT(*) FILTER (WHERE outcome_result = 'LOSS') as losses,
+                    COUNT(*) FILTER (WHERE outcome_result = 'EXPIRED') as expired,
+                    COALESCE(SUM(outcome_pnl) FILTER (WHERE outcome_result IS NOT NULL), 0) as net_pnl,
+                    COUNT(*) FILTER (WHERE outcome_result IS NULL) as open_trades
+                FROM setup_log
+                WHERE grade != 'LOG'
+            """)).mappings().first()
+        r = dict(row)
+        total_resolved = r["wins"] + r["losses"]
+        r["win_rate"] = round(r["wins"] / total_resolved * 100, 1) if total_resolved > 0 else 0
+        r["net_pnl"] = round(float(r["net_pnl"]), 1)
+        return r
+    except Exception as e:
+        print(f"[stats] error: {e}", flush=True)
+        return {}
+
 @app.get("/api/setup/log_with_outcomes")
-def api_setup_log_with_outcomes(limit: int = Query(50)):
+def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, ge=0)):
     """Get recent setup detection log entries with basic outcome indicators."""
     if not engine:
         return []
@@ -7791,8 +7818,8 @@ def api_setup_log_with_outcomes(limit: int = Query(50)):
                        greek_alignment
                 FROM setup_log
                 ORDER BY ts DESC
-                LIMIT :lim
-            """), {"lim": min(int(limit), 500)}).mappings().all()
+                LIMIT :lim OFFSET :off
+            """), {"lim": min(int(limit), 500), "off": offset}).mappings().all()
 
         results = []
         for r in rows:
@@ -9452,6 +9479,7 @@ DASH_HTML_TEMPLATE = """
             <span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>Align</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>
           </div>
           <div id="tlBody"></div>
+          <div id="tlPagination" style="display:flex;gap:6px;justify-content:center;padding:10px 0;font-size:12px"></div>
         </div>
       </div>
 
@@ -12407,13 +12435,21 @@ DASH_HTML_TEMPLATE = """
       else if (_tlActiveSubTab === 'eval') loadEvalLog();
     }
 
+    let _tlPage = 0;
+    const _tlPageSize = 500;
+    let _tlGlobalStats = null;
+
     async function loadTradeLogFull() {
       try {
-        const r = await fetch('/api/setup/log_with_outcomes?limit=500', {cache:'no-store'});
+        const [r, sr] = await Promise.all([
+          fetch('/api/setup/log_with_outcomes?limit='+_tlPageSize+'&offset='+(_tlPage*_tlPageSize), {cache:'no-store'}),
+          _tlGlobalStats ? Promise.resolve(null) : fetch('/api/setup/stats', {cache:'no-store'})
+        ]);
         _tradeLogData = await r.json();
         if (!Array.isArray(_tradeLogData)) _tradeLogData = [];
+        if (sr) _tlGlobalStats = await sr.json();
         renderTradeLog();
-        document.getElementById('tlStatus').textContent = _tradeLogData.length + ' signals loaded';
+        document.getElementById('tlStatus').textContent = 'Page '+(_tlPage+1)+' ('+_tradeLogData.length+' signals)';
       } catch(err) {
         console.error('loadTradeLogFull error:', err);
         document.getElementById('tlBody').innerHTML = '<div style="color:var(--red);padding:12px">Error loading trade log</div>';
@@ -12481,31 +12517,37 @@ DASH_HTML_TEMPLATE = """
       hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>Align</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>';
       const filtered = _tlGetFiltered();
 
-      // Stats — prefer DB-stored outcome_result (always set for resolved trades)
-      let wins=0, losses=0, totalPnl=0, pnlCount=0;
+      // Stats — use global stats from /api/setup/stats (all trades, not just current page)
+      const gs = _tlGlobalStats || {};
+      const gWins = gs.wins || 0;
+      const gLosses = gs.losses || 0;
+      const gPnl = gs.net_pnl || 0;
+      const gWr = gs.win_rate != null ? gs.win_rate.toFixed(0) : '--';
+      const gTotal = gs.total || 0;
+      const gPnlColor = gPnl >= 0 ? '#22c55e' : '#ef4444';
+      const gPnlStr = gTotal > 0 ? ((gPnl >= 0 ? '+' : '') + gPnl.toFixed(1)) : '--';
+      // Page stats for filtered view
+      let pageWins=0, pageLosses=0, pagePnl=0, pagePnlCount=0;
       filtered.forEach(l => {
-        if (l.outcome_result === 'WIN') wins++;
-        else if (l.outcome_result === 'LOSS') losses++;
+        if (l.outcome_result === 'WIN') pageWins++;
+        else if (l.outcome_result === 'LOSS') pageLosses++;
         else if (l.outcome_result === 'EXPIRED') {
           const epnl = l.outcome_pnl || 0;
-          if (epnl > 0) wins++; else if (epnl < 0) losses++;
+          if (epnl > 0) pageWins++; else if (epnl < 0) pageLosses++;
         } else {
-          // Fallback: use historical calculator hit_target/hit_stop (not first_event)
           const oo = l.outcome || {};
-          if (oo.hit_target) wins++;
-          else if (oo.hit_stop) losses++;
+          if (oo.hit_target) pageWins++;
+          else if (oo.hit_stop) pageLosses++;
         }
-        if (l.outcome_pnl != null) { totalPnl += l.outcome_pnl; pnlCount++; }
+        if (l.outcome_pnl != null) { pagePnl += l.outcome_pnl; pagePnlCount++; }
       });
-      const wr = (wins+losses) > 0 ? ((wins/(wins+losses))*100).toFixed(0) : '--';
-      const pnlColor = totalPnl >= 0 ? '#22c55e' : '#ef4444';
-      const pnlStr = pnlCount > 0 ? ((totalPnl >= 0 ? '+' : '') + totalPnl.toFixed(1)) : '--';
       document.getElementById('tlStats').innerHTML =
-        '<span>Total: <span class="stat-val">'+filtered.length+'</span></span>' +
-        '<span>Wins: <span class="stat-val" style="color:#22c55e">'+wins+'</span></span>' +
-        '<span>Losses: <span class="stat-val" style="color:#ef4444">'+losses+'</span></span>' +
-        '<span>WR: <span class="stat-val">'+wr+'%</span></span>' +
-        '<span>Net P&L: <span class="stat-val" style="color:'+pnlColor+'">'+pnlStr+'</span></span>';
+        '<span>All-Time: <span class="stat-val">'+gTotal+'</span></span>' +
+        '<span>Wins: <span class="stat-val" style="color:#22c55e">'+gWins+'</span></span>' +
+        '<span>Losses: <span class="stat-val" style="color:#ef4444">'+gLosses+'</span></span>' +
+        '<span>WR: <span class="stat-val">'+gWr+'%</span></span>' +
+        '<span>Net P&L: <span class="stat-val" style="color:'+gPnlColor+'">'+gPnlStr+'</span></span>' +
+        (gTotal > _tlPageSize ? '<span style="color:var(--muted);margin-left:8px">| Page: '+filtered.length+' shown</span>' : '');
 
       // Table body
       const body = document.getElementById('tlBody');
@@ -12624,6 +12666,25 @@ DASH_HTML_TEMPLATE = """
           setTimeout(() => { status.textContent = ''; }, 2000);
         });
       });
+
+      // Pagination
+      const totalPages = Math.max(1, Math.ceil((gs.total || filtered.length) / _tlPageSize));
+      const pgEl = document.getElementById('tlPagination');
+      if (totalPages > 1) {
+        let pgHtml = '';
+        if (_tlPage > 0) pgHtml += '<button class="tl-pg-btn" data-pg="'+(_tlPage-1)+'" style="padding:4px 10px;background:#181818;border:1px solid #444;border-radius:4px;color:#9ca3af;cursor:pointer;font-size:11px">&lt; Prev</button>';
+        for (let p = 0; p < totalPages; p++) {
+          const active = p === _tlPage ? 'background:#1a2634;color:#60a5fa;border-color:#60a5fa' : 'background:#181818;color:#9ca3af';
+          pgHtml += '<button class="tl-pg-btn" data-pg="'+p+'" style="padding:4px 10px;border:1px solid #444;border-radius:4px;cursor:pointer;font-size:11px;'+active+'">'+(p+1)+'</button>';
+        }
+        if (_tlPage < totalPages - 1) pgHtml += '<button class="tl-pg-btn" data-pg="'+(_tlPage+1)+'" style="padding:4px 10px;background:#181818;border:1px solid #444;border-radius:4px;color:#9ca3af;cursor:pointer;font-size:11px">Next &gt;</button>';
+        pgEl.innerHTML = pgHtml;
+        pgEl.querySelectorAll('.tl-pg-btn').forEach(btn => {
+          btn.addEventListener('click', () => { _tlPage = parseInt(btn.dataset.pg); loadTradeLogFull(); });
+        });
+      } else {
+        pgEl.innerHTML = '';
+      }
     }
 
     // ===== TS SIM Log =====

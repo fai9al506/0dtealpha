@@ -148,7 +148,7 @@ Append new analysis sections to this file after each review session.
 
 **app/setup_detector.py** (Setup scoring module):
 - Self-contained module — receives all data as parameters, no imports from main.py
-- **GEX Long**: Scores support proximity, upside range, floor cluster, target cluster, risk/reward
+- **GEX Long**: Force alignment framework — LIS as support/magnet (±5 pts), -GEX as support/magnet, +GEX/target as magnets up. SL=8, trail BE@8/activation=10/gap=5. Blocks GEX-TARGET and GEX-MESSY paradigm subtypes.
 - **AG Short**: Bearish counterpart to GEX Long
 - **BofA Scalp**: LIS-based scalp with charm/stability/width scoring
 - **CVD Divergence** (replaced ES Absorption 2026-03-07): See "CVD Divergence Detector" section below

@@ -1,12 +1,12 @@
 {
-  "daily_pnl": 265.38,
+  "daily_pnl": 0.0,
   "total_pnl": 265.38,
-  "trades_today": 5,
-  "losses_today": 4,
-  "daily_commissions": 69.12,
+  "trades_today": 0,
+  "losses_today": 0,
+  "daily_commissions": 0.0,
   "trade_days": [
     "2026-03-09"
   ],
-  "last_reset_date": "2026-03-09",
+  "last_reset_date": "2026-03-10",
   "peak_balance": 50265.38
 }

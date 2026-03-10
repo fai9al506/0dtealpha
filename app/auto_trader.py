@@ -153,6 +153,25 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         if setup_log_id in _active_orders:
             print(f"[auto-trader] skip {setup_name} id={setup_log_id}: already active", flush=True)
             return
+        # DEDUP: block if same setup_name+direction placed within last 90s (deploy overlap guard)
+        from datetime import timezone as _utc
+        _now = datetime.now(_utc.utc)
+        for _lid, _o in _active_orders.items():
+            if (_o.get("setup_name") == setup_name and
+                _o.get("direction", "").lower() == direction.lower()):
+                _placed = _o.get("ts_placed", "")
+                if _placed:
+                    try:
+                        _placed_dt = datetime.fromisoformat(_placed)
+                        if _placed_dt.tzinfo is None:
+                            _placed_dt = _placed_dt.replace(tzinfo=_utc.utc)
+                        if (_now - _placed_dt).total_seconds() < 90:
+                            print(f"[auto-trader] DEDUP {setup_name} id={setup_log_id}: "
+                                  f"same setup placed {(_now - _placed_dt).total_seconds():.0f}s ago "
+                                  f"(id={_lid})", flush=True)
+                            return
+                    except (ValueError, TypeError):
+                        pass
 
     is_long = direction.lower() in ("long", "bullish")
 

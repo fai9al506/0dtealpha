@@ -1430,6 +1430,18 @@ def log_setup(result_wrapper):
     try:
         with engine.begin() as conn:
             if reason in ("new", "reformed") or _current_setup_log.get(setup_name) is None:
+                # DEDUP: skip if same setup+direction inserted recently (deploy overlap guard)
+                dup_check = conn.execute(text("""
+                    SELECT id FROM setup_log
+                    WHERE setup_name = :name AND direction = :dir
+                      AND ts > NOW() - INTERVAL '90 seconds'
+                    ORDER BY id DESC LIMIT 1
+                """), {"name": setup_name, "dir": r["direction"]}).first()
+                if dup_check:
+                    _current_setup_log[setup_name] = dup_check[0]
+                    print(f"[setups] {setup_name} DEDUP: skipped INSERT, existing id={dup_check[0]}", flush=True)
+                    return
+
                 # INSERT new row
                 insert_params = dict(r)
                 # BofA Scalp extra columns (NULL for GEX/AG/Absorption)

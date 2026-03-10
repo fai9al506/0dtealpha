@@ -53,6 +53,8 @@ def _init_log_file():
 MES_POINT_VALUE = 5.0   # $5 per point per MES contract
 MES_TICK_SIZE = 0.25     # MES minimum price increment
 MAX_SIGNAL_AGE_S = 120   # Skip signals older than 2 min (prevents stale entries after restart)
+TRADE_DEDUP_WINDOW = 120  # Block duplicate setup+direction within 2 min (deploy overlap guard)
+_trade_dedup: dict[tuple[str, str], float] = {}  # (setup_name, direction) → timestamp
 _TIGHTEN_GAP_PTS = 5.0   # Low-conviction opposing signal: tighten SL to this many pts from spot
 _ENV_OVERRIDE_THRESHOLD = 2  # Conviction score needed to close/reverse against current position
 TICK_TRADE_TIME_ET = dtime(15, 30)  # Place tick trade at 15:30 ET if no trades today
@@ -2020,10 +2022,19 @@ def main():
                                 log.warning(f"  LOW CONVICTION ({conviction}/3): no ES price, cannot tighten")
                         continue
 
+                    # DEDUP: block if same setup+direction traded recently (deploy overlap guard)
+                    dedup_key = (signal["setup_name"], signal["direction"].lower())
+                    now_ts = time.time()
+                    if dedup_key in _trade_dedup and (now_ts - _trade_dedup[dedup_key]) < TRADE_DEDUP_WINDOW:
+                        log.info(f"  DEDUP: {signal['setup_name']} {signal['direction']} already traded "
+                                 f"{now_ts - _trade_dedup[dedup_key]:.0f}s ago, skipping")
+                        continue
+
                     allowed, reason = compliance.check(signal)
                     if not allowed:
                         log.info(f"  BLOCKED: {reason}")
                         continue
+                    _trade_dedup[dedup_key] = now_ts
                     tracker.open_trade(signal)
             else:
                 messages = telegram_poller.poll()

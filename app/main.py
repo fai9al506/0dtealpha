@@ -9279,6 +9279,7 @@ DASH_HTML_TEMPLATE = """
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
+          <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
         </div>
         <div class="tl-stats" id="tlStats"></div>
@@ -12238,6 +12239,7 @@ DASH_HTML_TEMPLATE = """
       const fResult = document.getElementById('tlFilterResult').value;
       const fGrade = document.getElementById('tlFilterGrade').value;
       const fDate = document.getElementById('tlFilterDate').value;
+      const fAlign = document.getElementById('tlFilterAlign').value;
       const fSearch = document.getElementById('tlSearch').value.toLowerCase().trim();
       const now = new Date();
       const todayET = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
@@ -12246,6 +12248,7 @@ DASH_HTML_TEMPLATE = """
       return _tradeLogData.filter(l => {
         if (fSetup && l.setup_name !== fSetup) return false;
         if (fGrade && l.grade !== fGrade) return false;
+        if (fAlign !== '' && (l.greek_alignment == null || String(l.greek_alignment) !== fAlign)) return false;
 
         // Result filter — prefer DB-stored outcome_result (consistent with outcome_pnl)
         if (fResult) {
@@ -12455,6 +12458,7 @@ DASH_HTML_TEMPLATE = """
       const fResult = document.getElementById('tlFilterResult').value;
       const fGrade = document.getElementById('tlFilterGrade').value;
       const fDate = document.getElementById('tlFilterDate').value;
+      const fAlign = document.getElementById('tlFilterAlign').value;
       const fSearch = document.getElementById('tlSearch').value.toLowerCase().trim();
       const now = new Date();
       const todayET = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
@@ -12462,6 +12466,7 @@ DASH_HTML_TEMPLATE = """
       return _tsSimData.filter(l => {
         if (fSetup && l.setup_name !== fSetup) return false;
         if (fGrade && l.grade !== fGrade) return false;
+        if (fAlign !== '' && (l.greek_alignment == null || String(l.greek_alignment) !== fAlign)) return false;
         if (fResult) {
           let res = l.outcome_result || (l.status === 'closed' ? '' : 'OPEN');
           if (res !== fResult) return false;
@@ -12577,6 +12582,7 @@ DASH_HTML_TEMPLATE = """
       const fResult = document.getElementById('tlFilterResult').value;
       const fGrade = document.getElementById('tlFilterGrade').value;
       const fDate = document.getElementById('tlFilterDate').value;
+      const fAlign = document.getElementById('tlFilterAlign').value;
       const fSearch = document.getElementById('tlSearch').value.toLowerCase().trim();
       const now = new Date();
       const todayET = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
@@ -12584,6 +12590,7 @@ DASH_HTML_TEMPLATE = """
       return _evalLogData.filter(l => {
         if (fSetup && l.setup_name !== fSetup) return false;
         if (fGrade && l.grade !== fGrade) return false;
+        if (fAlign !== '' && (l.greek_alignment == null || String(l.greek_alignment) !== fAlign)) return false;
         if (fResult) {
           const res = l.outcome_result || 'OPEN';
           if (res !== fResult) return false;
@@ -12673,7 +12680,7 @@ DASH_HTML_TEMPLATE = """
       else if (_tlActiveSubTab === 'tssim') renderTsSimLog();
       else if (_tlActiveSubTab === 'eval') renderEvalLog();
     }
-    ['tlFilterSetup','tlFilterResult','tlFilterGrade','tlFilterDate'].forEach(id => {
+    ['tlFilterSetup','tlFilterResult','tlFilterGrade','tlFilterDate','tlFilterAlign'].forEach(id => {
       document.getElementById(id).addEventListener('change', _tlRerender);
     });
     document.getElementById('tlSearch').addEventListener('input', _tlRerender);

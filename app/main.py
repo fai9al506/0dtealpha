@@ -3496,8 +3496,8 @@ def _run_setup_check():
                                 print(f"[auto-trader] SKIPPED {setup_name}: stop_lvl is None", flush=True)
                         except Exception as e:
                             print(f"[auto-trader] place error: {e}", flush=True)
-                    # Options trader: buy SPXW 0DTE on Skew Charm
-                    if setup_name == "Skew Charm":
+                    # Options trader: buy SPXW 0DTE on all setups (behind Greek filter)
+                    if not _skip_auto_trade:
                         try:
                             from app import options_trader
                             options_trader.place_trade(
@@ -4087,6 +4087,16 @@ def _run_absorption_detection(bars: list) -> dict | None:
                     print(f"[auto-trader] SKIPPED CVD Divergence: no ES price available", flush=True)
             except Exception as e:
                 print(f"[auto-trader] absorption place error: {e}", flush=True)
+            # Options trader: buy SPXW 0DTE on CVD Divergence (behind Greek filter)
+            try:
+                from app import options_trader
+                options_trader.place_trade(
+                    setup_log_id=_current_setup_log.get("CVD Divergence"),
+                    setup_name="CVD Divergence", direction=result["direction"],
+                    spot=result["spot"],
+                )
+            except Exception as e:
+                print(f"[options] CVD place error: {e}", flush=True)
 
     return signal
 

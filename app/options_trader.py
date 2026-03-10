@@ -2,9 +2,10 @@
 # Self-contained — receives engine, token fn, and telegram fn via init()
 # Hardcoded to SIM API — cannot hit live.
 #
-# Buys SPXW 0DTE options at ~0.30 delta when Skew Charm fires.
+# Buys SPXW 0DTE options at ~0.30 delta on ALL setups (behind Greek filter).
 # Single-leg only, no splits, no trailing — exit on outcome resolution.
 # Options are cash-settled at 4:00 PM ET if not closed earlier.
+# No stop-loss needed — max risk = premium paid ($3-15 typical).
 
 import os, json, time, requests
 from datetime import datetime, date

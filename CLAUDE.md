@@ -312,8 +312,23 @@ Standalone local script that polls Railway for setup signals and places MES orde
 - `eval_trader_api_state.json` — `last_id`, `seen_signals`, `seen_outcomes` (daily reset)
 - `eval_trader_position.json` — open position for crash recovery
 
+### SPY Option Chain (added 2026-03-10)
+
+Completely isolated from SPX — separate table, globals, scheduler job, lock.
+
+- **DB table:** `spy_chain_snapshots` (same schema as `chain_snapshots`, NO shared columns/migration)
+- **Globals:** `latest_spy_df`, `_spy_df_lock`, `_last_spy_run_status`, `_last_spy_saved_at`
+- **Scheduler:** `run_spy_market_job()` at same interval as SPX, independent thread
+- **SPY params:** symbol=`SPY`, strike_interval=1, strike_proximity=25 (50 strikes ±$25)
+- **Functions parameterized:** `get_0dte_exp(symbol="$SPXW.X")`, `get_chain_rows(exp, spot, symbol="$SPXW.X", strike_interval=5, strike_proximity=125)` — backward-compatible defaults
+- **API:** `/api/snapshot?symbol=SPY`, `/api/history?symbol=SPY`, `/download/history.csv?symbol=SPY`
+- **Portal:** `/table` has SPXW/SPY toggle buttons
+- **NOT used by:** setup detection, auto-trader, eval trader, pipeline health — analysis/portal only
+- **Rollback:** `stable-20260310-spy-before-push` tag
+
 ### Database Tables
-- `chain_snapshots` - options chain data with Greeks
+- `chain_snapshots` - SPX/SPXW options chain data with Greeks
+- `spy_chain_snapshots` - SPY options chain data (same schema, isolated table)
 - `volland_snapshots` - raw scraped data with statistics (paradigm, LIS, charm, etc.)
 - `volland_exposure_points` - parsed exposure points by strike (charm, vanna, gamma, deltaDecay)
 - `es_delta_snapshots` - ES cumulative delta state (every 30s, from TradeStation @ES bars)

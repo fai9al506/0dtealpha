@@ -5291,29 +5291,42 @@ def api_auto_trade_log(limit: int = Query(200)):
 
 @app.get("/api/eval/log")
 def api_eval_log(limit: int = Query(200)):
-    """Return eval-eligible setup_log entries with computed MES qty and $ P&L."""
+    """Return eval-eligible setup_log entries matching eval trader REAL config.
+
+    Mirrors the exact filters the eval_trader_config_real.json applies:
+    - Enabled setups only: Skew Charm, DD Exhaustion, Paradigm Reversal, AG Short
+    - Greek filter: |alignment| >= 3
+    - Qty: 8 MES, stop from config
+    """
     if not engine:
         return []
-    _EVAL_SETUPS = ("AG Short", "DD Exhaustion", "CVD Divergence", "Paradigm Reversal")
+    # ── Eval Real config (mirrors eval_trader_config_real.json) ──
+    _EVAL_SETUPS = ("Skew Charm", "DD Exhaustion", "Paradigm Reversal", "AG Short")
+    _EVAL_QTY = 8
+    _EVAL_STOPS = {"Skew Charm": 12, "DD Exhaustion": 12, "Paradigm Reversal": 12, "AG Short": 12}
+    _GREEK_FILTER = True   # require |alignment| >= 3
     try:
         with engine.begin() as conn:
             rows = conn.execute(text("""
                 SELECT id, ts, setup_name, direction, grade, score, spot,
                        abs_es_price, outcome_result, outcome_pnl,
-                       outcome_max_profit, outcome_max_loss, outcome_elapsed_min
+                       outcome_max_profit, outcome_max_loss, outcome_elapsed_min,
+                       greek_alignment
                 FROM setup_log
-                WHERE setup_name = ANY(:setups)
+                WHERE setup_name = ANY(:setups) AND grade != 'LOG'
                 ORDER BY ts DESC
                 LIMIT :lim
-            """), {"setups": list(_EVAL_SETUPS), "lim": min(int(limit), 500)}).mappings().all()
+            """), {"setups": list(_EVAL_SETUPS), "lim": min(int(limit), 2000)}).mappings().all()
 
         results = []
         for r in rows:
+            # Greek filter: skip if |alignment| < 3
+            align = r["greek_alignment"]
+            if _GREEK_FILTER and align is not None and abs(align) < 3:
+                continue
+
             entry_price = r["abs_es_price"] or r["spot"] or 0
-            # Compute qty based on $200 max risk / (stop_pts * $5/pt)
-            stop_map = {"AG Short": 25, "DD Exhaustion": 20, "CVD Divergence": 15, "Paradigm Reversal": 25}
-            stop_pts = stop_map.get(r["setup_name"], 20)
-            qty = max(1, int(200 / (stop_pts * 5)))  # $200 risk / ($5 * stop)
+            stop_pts = _EVAL_STOPS.get(r["setup_name"], 12)
 
             results.append({
                 "id": r["id"],
@@ -5325,12 +5338,13 @@ def api_eval_log(limit: int = Query(200)):
                 "spot": r["spot"],
                 "entry_price": entry_price,
                 "stop_pts": stop_pts,
-                "qty": qty,
+                "qty": _EVAL_QTY,
                 "outcome_result": r["outcome_result"],
                 "outcome_pnl": r["outcome_pnl"],
                 "outcome_elapsed_min": r["outcome_elapsed_min"],
+                "greek_alignment": align,
             })
-        return results
+        return results[:min(int(limit), 500)]
     except Exception as e:
         print(f"[eval] log query error: {e}", flush=True)
         return []

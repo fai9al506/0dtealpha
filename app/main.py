@@ -9514,7 +9514,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="eval">Eval Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>CVD Divergence</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>CVD Divergence</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
@@ -12465,7 +12465,7 @@ DASH_HTML_TEMPLATE = """
     let _tlActiveSubTab = 'portal';
     let _tsSimData = [];
     let _evalLogData = [];
-    const _tlPillColors = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','CVD Divergence':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899'};
+    const _tlPillColors = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','CVD Divergence':'#f59e0b','ES Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899'};
     const _tlGradeColors = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308'};
 
     // Trade Log sub-tab switching

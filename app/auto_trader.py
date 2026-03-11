@@ -81,7 +81,7 @@ _toggles: dict[str, bool] = {
     "GEX Long": True,
     "AG Short": True,
     "BofA Scalp": True,
-    "CVD Divergence": True,
+    "CVD Divergence": False,
     "Paradigm Reversal": True,
     "DD Exhaustion": True,
     "Skew Charm": True,

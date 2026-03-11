@@ -234,7 +234,7 @@ _DEFAULT_SETUP_SETTINGS = {
     "gex_stop_pts": 12,
     "ag_short_enabled": True,
     "bofa_scalp_enabled": True,
-    "absorption_enabled": True,
+    "absorption_enabled": False,
     "weight_support": 20,
     "weight_upside": 20,
     "weight_floor_cluster": 20,

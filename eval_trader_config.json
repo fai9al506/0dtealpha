@@ -37,7 +37,7 @@
       "target": 10
     },
     "CVD Divergence": {
-      "enabled": true,
+      "enabled": false,
       "stop": 8,
       "target": 10
     },

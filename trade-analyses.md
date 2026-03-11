@@ -1112,3 +1112,159 @@ Risk metrics (all sizes): Recovery factor 17.2x | Kelly 27.1% | Max loss streak 
 - **Filtered: $+120,488 final, max DD $7,004 (Feb 13 only)**
 - Filter turns the Feb 24-26 drawdown from -$14,660 into a **flat/positive stretch**
 - After Feb 19, filtered equity curve **never draws down** -- pure upward trajectory
+
+---
+
+## Analysis #9 — Mar 11, 2026: Asymmetric Short Filter
+
+### Problem: Greek Alignment is Structurally Biased Against Shorts
+
+**Trigger:** Mar 11 was a -39.8 pt day (33 trades). With alignment +3 filter, PnL was WORSE (-54.3 pts) because the filter concentrated ALL trades into longs on a down day.
+
+**Root Cause Discovery:**
+
+The `_compute_greek_alignment()` function scores 3 components:
+1. **Charm**: positive = bullish (+1 for longs, -1 for shorts)
+2. **Vanna_all**: positive = bullish (+1 for longs, -1 for shorts)
+3. **GEX position**: spot below +GEX = bullish (+1 for longs, -1 for shorts)
+
+**Critical finding:** Since Feb 24 (10 consecutive trading days), ALL THREE components have been permanently bullish:
+- Vanna: positive every day (971M to 6.6B range, never negative)
+- GEX position: spot almost always below +GEX
+- Result: max possible short alignment = -1 (only if charm opposes)
+
+**Impact on alignment distribution:**
+
+| Alignment | Long trades | Short trades | Notes |
+|-----------|------------|-------------|-------|
+| +3 | 85 (100% long) | 0 | All 3 bullish = impossible for shorts |
+| +2 | 88 (100% long) | 0 | 2/3 bullish = impossible for shorts |
+| +1 | 60 (79%) | 16 (21%) | Rare for shorts |
+| 0 | 26 (36%) | 47 (64%) | First alignment where shorts appear |
+| -1 | 11 (5%) | 197 (95%) | **Where most shorts live** |
+| -2 | 1 (2%) | 47 (98%) | |
+| -3 | 0 | 42 (100%) | All 3 oppose = current filter passes these |
+
+**98.8% of alignment +3 trades are long.** The filter `abs(align) >= 3` effectively means:
+- Longs: Keep only +3 (73% WR, +444.2 pts) — GREAT
+- Shorts: Keep only -3 (48% WR, -47.6 pts) — TERRIBLE (selects worst shorts)
+
+### Winning Short Trade Analysis (144 wins analyzed)
+
+**Alignment of winning shorts:**
+- align -1: 80 wins (55.6%) — **majority of winners**
+- align -2: 22 wins (15.3%)
+- align -3: 16 wins (11.1%)
+- align 0: 22 wins (15.3%)
+- align +1: 4 wins (2.8%)
+
+**Per-setup short performance (all-time):**
+
+| Setup | Trades | WR% | PnL | Verdict |
+|-------|--------|-----|-----|---------|
+| Skew Charm shorts | 66 | 75% | +153.8 | MVP — allow all |
+| DD Exhaustion shorts | 116 | 49% | +72.1 | Workhorse — block align=0 |
+| AG Short | 34 | 57% | +50.2 | Good — block align=-3 |
+| Paradigm Reversal shorts | 16 | 70% | -2.2 | Small sample, allow |
+| ES Absorption shorts | 69 | 42% | **-175.6** | TOXIC — block all |
+| BofA Scalp shorts | 21 | 42% | **-26.3** | TOXIC — block all |
+
+**ES Absorption shorts by alignment (all negative):**
+- align -3: 22t, -44.4 pts, 47% WR
+- align -2: 16t, -11.0 pts, 50% WR
+- align -1: 30t, -124.0 pts, 36% WR
+- align +1: 1t, +3.8 pts
+- **Verdict: negative at EVERY alignment level. Unredeemable.**
+
+**DD Exhaustion shorts by alignment:**
+- align -1: ~70 trades, positive (bulk of DD shorts)
+- align 0: 28% WR, -97 pts — **specific toxic combo**
+- align +1/+2: positive (contrarian edge — more Greek opposition = better for DD)
+
+**AG Short by alignment:**
+- align -3: 14t, 46% WR, -13.2 pts — worst bucket
+- align -1: bulk of AG shorts, positive
+- align +1/+3: small sample but positive (contrarian)
+
+### Paradigm Impact on Shorts
+
+| Paradigm | Short trades | WR% | PnL | Notes |
+|----------|------------|-----|-----|-------|
+| SIDIAL-EXTREME | ~20 | 65% | positive | Best paradigm for shorts |
+| BofA-LIS | ~15 | 68% | positive | Good for shorts |
+| AG-PURE | ~30 | 55% | positive | Natural short paradigm |
+| GEX-LIS | ~10 | 30% | -73 pts | Toxic — bullish paradigm |
+| BOFA-PURE | 63 | 48% | -120 pts | Worst paradigm for shorts |
+
+### SVB (Spot-Vol-Beta) Impact on Shorts
+
+| SVB Range | Short WR% | Notes |
+|-----------|----------|-------|
+| < -1.5 | 58% | Decent |
+| -1.5 to -0.5 | 64% | **Best** — strong inverse correlation |
+| -0.5 to 0 | 38% | **Worst** — weak signal zone |
+| 0 to +0.5 | 55% | OK |
+| > +1.5 | 47% | Bad |
+
+### Discord/Reference Insights for Shorts
+
+**Apollo:** "Bearish charm won't effect much with elevated skew. IF skew comes down then you can realize the bearishness."
+- Charm alone isn't enough for shorts — need skew compression
+
+**Wizard of Ops:** "Play extremes for reversion."
+- Best shorts are at daily extremes, not mid-range
+
+**Dark Matter:** "Break past level, break below it — new 30 min candle retests it and you enter on that retest."
+- Retest entries, not chase entries
+
+**Key Discord rule:** "Post-2 PM is dealer o'clock where charm moves come in" — afternoon shorts can work for Skew Charm
+
+**Messy paradigm insight:** SIDIAL-MESSY (100% WR) and GEX-MESSY (100% WR) are goldmine for shorts. When structure breaks, ALL short setups fire and win.
+
+### Strategy Comparison (24 trading days, 620 total trades)
+
+| Strategy | N | PnL | WR% | Max DD | PnL/day | Sharpe |
+|----------|---|-----|-----|--------|---------|--------|
+| Baseline (unfiltered) | 620 | +847 | 58% | 239 | +35.3 | 0.47 |
+| **Current PROD (abs≥3)** | **122** | **+397** | **66%** | **113** | **+28.3** | **0.44** |
+| +3L + all shorts (no filter) | 407 | +516 | 59% | 344 | +23.5 | 0.30 |
+| +3L + SVB<-0.5 shorts | 190 | +572 | 68% | 135 | +40.9 | 0.57 |
+| +3L + vanna<0 shorts | 136 | +635 | 74% | 130 | +37.4 | 0.69 |
+| **Option B: +3L + per-setup shorts** | **253** | **+852** | **69%** | **128** | **+44.8** | **0.63** |
+| Option B + SVB<-0.5 (Option C) | 169 | +613 | 70% | 96 | +40.9 | — |
+| +3L + SC+DD(a!=0) only | 232 | +768 | 70% | 128 | +51.2 | 0.64 |
+| Long+2 + V7 shorts | 320 | +1063 | 69% | 128 | +66.4 | 0.83 |
+
+### Critical Risk Case: March 9 (Rally Day)
+
+March 9 had 32 trades. Under current filter: +132.2 pts (10 trades, 1 short). Under wide-open shorts: -56.0 pts (28 trades, 19 shorts all lost).
+
+This shows that opening shorts completely can have brutal drawdown days when market rallies. The per-setup blocks (Option B) reduce this risk by blocking the worst combos while still capturing the winning shorts.
+
+### Decision: Asymmetric Filter (Option B for SIM, Option C for E2T)
+
+**Option B — Per-Setup Toxic Combo Blocks (SIM auto-trader + options trader):**
+- Longs: alignment +3 (unchanged)
+- Shorts:
+  - Block ES Absorption shorts (ALL) — toxic at every alignment, -175.6 pts
+  - Block BofA Scalp shorts (ALL) — net negative, -26.3 pts
+  - Block DD Exhaustion shorts at align=0 — 28% WR, -97 pts toxic combo
+  - Block AG Short at align=-3 — 46% WR, -13.2 pts toxic combo
+  - Allow everything else (Skew Charm, DD at any other align, AG at any other align, Paradigm Rev)
+- Expected: 253 trades, +852 pts, 69% WR, DD=128, Sharpe=0.63
+
+**Option C — Option B + SVB < -0.5 (E2T eval trader):**
+- Same per-setup rules as Option B
+- Additional gate: shorts only when SVB < -0.5
+- Expected: 169 trades, +613 pts, 70% WR, DD=96
+- Safest for funded account — DD well within E2T $2K limit
+
+**Why NOT use alignment as general short filter:**
+- Alignment is structurally biased bullish (vanna+GEX permanently positive)
+- Best winning shorts cluster at alignment -1 (55.6% of wins)
+- -3 filter selects the WORST shorts (48% WR, -47.6 pts)
+- Per-setup blocks target specific toxic combos, not alignment as a concept
+
+**Net improvement over current:**
+- Option B: +455 pts more, DD only +15 pts more, Sharpe +0.19
+- Option C: +216 pts more, DD actually -17 pts LESS, even safer

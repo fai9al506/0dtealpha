@@ -20,7 +20,7 @@ crashes, your stops and targets remain live. The script's job is signal
 reception, compliance gating, order placement, and P&L tracking.
 """
 
-import os, sys, json, re, time, logging, calendar, argparse
+import os, sys, json, re, time, logging, calendar, argparse, atexit
 from datetime import datetime, timedelta, time as dtime, date
 from pathlib import Path
 
@@ -65,6 +65,54 @@ STATE_FILE = SCRIPT_DIR / "eval_trader_state.json"
 POSITION_FILE = SCRIPT_DIR / "eval_trader_position.json"
 API_STATE_FILE = SCRIPT_DIR / "eval_trader_api_state.json"
 LOG_FILE = "eval_trader.log"
+LOCK_FILE = SCRIPT_DIR / "eval_trader.lock"
+
+
+def _acquire_singleton_lock():
+    """Ensure only one instance runs per config suffix. Kills the process if another is alive."""
+    global LOCK_FILE
+    suffix = CONFIG_FILE.stem.replace("eval_trader_config", "")
+    LOCK_FILE = SCRIPT_DIR / f"eval_trader{suffix}.lock"
+
+    if LOCK_FILE.exists():
+        try:
+            old_pid = int(LOCK_FILE.read_text().strip())
+            # Check if the old process is still alive
+            if sys.platform == "win32":
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                handle = kernel32.OpenProcess(0x1000, False, old_pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+                if handle:
+                    kernel32.CloseHandle(handle)
+                    print(f"\n{'='*60}")
+                    print(f"  BLOCKED: Another eval_trader instance is already running!")
+                    print(f"  PID: {old_pid}  |  Lock: {LOCK_FILE.name}")
+                    print(f"  Kill it first, or stop it in PyCharm, then retry.")
+                    print(f"{'='*60}\n")
+                    sys.exit(1)
+            else:
+                os.kill(old_pid, 0)  # signal 0 = check if alive (Unix)
+                print(f"\n{'='*60}")
+                print(f"  BLOCKED: Another eval_trader instance is already running!")
+                print(f"  PID: {old_pid}  |  Lock: {LOCK_FILE.name}")
+                print(f"  Kill it first, then retry.")
+                print(f"{'='*60}\n")
+                sys.exit(1)
+        except (OSError, ValueError):
+            pass  # Old process is dead — stale lock file, safe to take over
+
+    # Write our PID
+    LOCK_FILE.write_text(str(os.getpid()))
+    atexit.register(_release_singleton_lock)
+
+
+def _release_singleton_lock():
+    """Remove lock file on clean exit."""
+    try:
+        if LOCK_FILE.exists() and LOCK_FILE.read_text().strip() == str(os.getpid()):
+            LOCK_FILE.unlink()
+    except Exception:
+        pass
 
 
 def _init_file_paths(config_path: str):
@@ -277,6 +325,7 @@ class APIPoller:
         return API_STATE_FILE
 
     def _load_state(self):
+        global _trade_dedup
         sf = self._state_file()
         if sf.exists():
             try:
@@ -288,6 +337,14 @@ class APIPoller:
                     self._seen_signals = set(data.get("seen_signals", []))
                     self._seen_outcomes = set(data.get("seen_outcomes", []))
                     self._state_date = today
+                    # Restore trade dedup dict (survives restart)
+                    saved_dedup = data.get("trade_dedup", {})
+                    now = time.time()
+                    for key_str, ts in saved_dedup.items():
+                        if (now - ts) < TRADE_DEDUP_WINDOW:
+                            parts = key_str.split("|", 1)
+                            if len(parts) == 2:
+                                _trade_dedup[(parts[0], parts[1])] = ts
                     log.info(f"API poller state restored: last_id={self.last_id}")
                 else:
                     log.info(f"API poller: new day (was {saved_date}), resetting state")
@@ -296,11 +353,18 @@ class APIPoller:
                 pass
 
     def _save_state(self):
+        # Serialize _trade_dedup: tuple keys → "setup|direction" string keys
+        dedup_serialized = {}
+        now = time.time()
+        for (setup, direction), ts in _trade_dedup.items():
+            if (now - ts) < TRADE_DEDUP_WINDOW:  # Only save entries still within window
+                dedup_serialized[f"{setup}|{direction}"] = ts
         self._state_file().write_text(json.dumps({
             "date": date.today().isoformat(),
             "last_id": self.last_id,
             "seen_signals": list(self._seen_signals),
             "seen_outcomes": list(self._seen_outcomes),
+            "trade_dedup": dedup_serialized,
         }))
 
     def poll(self) -> tuple[list[dict], list[dict], float | None]:
@@ -1547,7 +1611,16 @@ class PositionTracker:
         if entry_oid:
             entry_state = self.nt8.check_order_state(entry_oid)
             if entry_state and entry_state["status"] == "REJECTED":
-                log.warning(f"NT8: entry REJECTED — clearing position")
+                log.warning(f"NT8: entry REJECTED — cancelling orphan orders and clearing position")
+                # Cancel stop and target orders that were placed after the entry.
+                # These are now orphans — if left alive they could fill and create
+                # an untracked position in NT8.
+                if stop_oid:
+                    self.nt8.cancel(stop_oid)
+                    log.info(f"  Cancelled orphan stop: {stop_oid}")
+                if target_oid:
+                    self.nt8.cancel(target_oid)
+                    log.info(f"  Cancelled orphan target: {target_oid}")
                 self.position = None
                 self.compliance.has_open_position = False
                 self._save()
@@ -2153,6 +2226,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     _init_file_paths(args.config)
+    _acquire_singleton_lock()
     _init_log_file()
 
     if args.test:

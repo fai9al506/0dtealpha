@@ -4011,9 +4011,13 @@ def _run_absorption_detection(bars: list) -> dict | None:
     except Exception:
         pass
 
+    closed_count = sum(1 for b in bars if b.get("status") == "closed")
     result = evaluate_absorption(bars, volland_stats, _setup_settings, spx_spot=spx_spot)
     if result is None:
+        print(f"[absorption] no signal (closed_bars={closed_count}, enabled={_setup_settings.get('absorption_enabled', True)})", flush=True)
         return None
+    print(f"[absorption] SIGNAL: {result.get('direction')} {result.get('pattern')} "
+          f"score={result.get('score')} bar_idx={result.get('best_swing', {}).get('swing', {}).get('bar_idx', '?')}", flush=True)
 
     # Freshness check: compare trigger bar price to CURRENT Rithmic price.
     # If the market moved significantly while the callback was queued/processing,
@@ -4287,12 +4291,14 @@ def _on_rithmic_bar_complete(bars: list):
         from rithmic_es_stream import get_live_since_idx
         live_idx = get_live_since_idx()
         if bar_idx < live_idx:
+            print(f"[absorption] bar #{bar_idx} skipped: stale (live_since={live_idx})", flush=True)
             return
     except (ImportError, Exception):
         pass
     # Offload to thread so Rithmic tick processing isn't blocked.
     # The bars snapshot is already a copy (list of dicts) so thread-safe.
     bars_copy = list(bars)
+    print(f"[absorption] evaluating bar #{bar_idx} ({len(bars_copy)} bars total)", flush=True)
     Thread(
         target=_run_absorption_in_thread,
         args=(bars_copy,),

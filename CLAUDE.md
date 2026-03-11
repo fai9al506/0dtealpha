@@ -192,7 +192,7 @@ Volume-gated price vs CVD divergence on ES 5-pt range bars, with Volland conflue
 
 **Risk Management:** Fixed SL=8pt / T=10pt. Entry at ES price from Rithmic range bars.
 
-**Greek filter (F5):** Block when alignment < 0 (turns -11 pts into +117 pts). F6 (alignment +/-3) gates auto-trading.
+**Greek filter (F5+F6):** Asymmetric alignment filter (Analysis #9). Longs: alignment >= +3. Shorts: block ALL ES Absorption shorts (toxic), block ALL BofA Scalp shorts (toxic), block DD Exhaustion shorts at align=0 (28% WR), AG Short at align=-3 already blocked by F3. No general alignment filter on shorts — alignment is structurally biased bullish.
 
 **Data contamination warning:** `es_range_bars` table has overlapping `bar_idx` from `live` and `rithmic` sources on same dates. Always filter by `source = 'rithmic'` in queries.
 

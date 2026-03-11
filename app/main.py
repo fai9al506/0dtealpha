@@ -3580,14 +3580,25 @@ def _run_setup_check():
                         if _svb is not None and -0.5 <= _svb < 0:
                             print(f"[auto-trader] SKIPPED DD Exhaustion: SVB weak-negative ({_svb:+.2f})", flush=True)
                             _skip_auto_trade = True
-                    # F5: ES Absorption — block when Greek alignment < 0
-                    if setup_name == "ES Absorption" and _greek_align < 0:
-                        print(f"[auto-trader] SKIPPED ES Absorption: alignment {_greek_align:+d} < 0", flush=True)
-                        _skip_auto_trade = True
-                    # F6: Alignment +3 gate — only trade when all Greeks agree strongly
-                    if abs(_greek_align) < 3:
-                        print(f"[auto-trader] SKIPPED {setup_name}: alignment {_greek_align:+d} (need >=+3 or <=-3)", flush=True)
-                        _skip_auto_trade = True
+                    # F5+F6: Asymmetric alignment filter (Analysis #9)
+                    # Longs: require alignment >= +3
+                    # Shorts: per-setup toxic combo blocks (no general alignment filter)
+                    _is_long_dir = r["direction"] in ("long", "bullish")
+                    if _is_long_dir:
+                        if _greek_align < 3:
+                            print(f"[auto-trader] SKIPPED {setup_name}: long alignment {_greek_align:+d} < +3", flush=True)
+                            _skip_auto_trade = True
+                    else:
+                        # Block toxic short setups/combos
+                        if setup_name == "ES Absorption":
+                            print(f"[auto-trader] SKIPPED ES Absorption short: blocked (toxic -175.6 pts all-time)", flush=True)
+                            _skip_auto_trade = True
+                        elif setup_name == "BofA Scalp":
+                            print(f"[auto-trader] SKIPPED BofA Scalp short: blocked (toxic -26.3 pts)", flush=True)
+                            _skip_auto_trade = True
+                        elif setup_name == "DD Exhaustion" and _greek_align == 0:
+                            print(f"[auto-trader] SKIPPED DD Exhaustion short: alignment 0 (28% WR, toxic combo)", flush=True)
+                            _skip_auto_trade = True
                     # Auto-trade: place MES SIM order (skip if filters blocked)
                     if not _skip_auto_trade:
                         try:
@@ -4173,7 +4184,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
         })
         print(f"[outcome] tracking ES Absorption: target={target_lvl} stop={stop_lvl:.1f}", flush=True)
         # Auto-trade: ES Absorption uses ES price directly
-        # Greek filter: charm alignment gate + alignment +3 gate
+        # Greek filter: charm alignment gate + asymmetric filter (Analysis #9)
         _abs_skip_greek = False
         _abs_align = result.get("greek_alignment", 0)
         if _abs_charm is not None:
@@ -4181,9 +4192,15 @@ def _run_absorption_detection(bars: list) -> dict | None:
             if (_abs_charm > 0) != _abs_is_long:
                 print(f"[auto-trader] SKIPPED ES Absorption: charm opposes direction (align={_abs_align:+d})", flush=True)
                 _abs_skip_greek = True
-        # F6: Alignment +3 gate
-        if abs(_abs_align) < 3:
-            print(f"[auto-trader] SKIPPED ES Absorption: alignment {_abs_align:+d} (need >=+3 or <=-3)", flush=True)
+        # F5+F6: Asymmetric filter for ES Absorption (Analysis #9)
+        _abs_is_long_dir = result["direction"] in ("long", "bullish")
+        if _abs_is_long_dir:
+            if _abs_align < 3:
+                print(f"[auto-trader] SKIPPED ES Absorption long: alignment {_abs_align:+d} < +3", flush=True)
+                _abs_skip_greek = True
+        else:
+            # Block ALL ES Absorption shorts (toxic: -175.6 pts all-time)
+            print(f"[auto-trader] SKIPPED ES Absorption short: blocked (toxic setup)", flush=True)
             _abs_skip_greek = True
         if result.get("log_only"):
             print(f"[auto-trader] SKIPPED ES Absorption: log-only pattern ({result.get('pattern')})", flush=True)
@@ -5297,24 +5314,26 @@ def api_eval_log(limit: int = Query(200)):
     """Return eval-eligible setup_log entries matching eval trader REAL config.
 
     Mirrors the exact filters the eval_trader_config_real.json applies:
-    - Enabled setups only: Skew Charm, DD Exhaustion, Paradigm Reversal, AG Short
-    - Greek filter: |alignment| >= 3
+    - Enabled setups only: Skew Charm, DD Exhaustion, Paradigm Reversal, AG Short, ES Absorption
+    - Greek filter: Asymmetric (Analysis #9, Option C for E2T)
+      - Longs: alignment >= +3
+      - Shorts: per-setup toxic blocks + SVB < -0.5
     - Qty: 8 MES, stop from config
     """
     if not engine:
         return []
     # ── Eval Real config (mirrors eval_trader_config_real.json) ──
-    _EVAL_SETUPS = ("Skew Charm", "DD Exhaustion", "Paradigm Reversal", "AG Short")
+    _EVAL_SETUPS = ("Skew Charm", "DD Exhaustion", "Paradigm Reversal", "AG Short", "ES Absorption")
     _EVAL_QTY = 8
-    _EVAL_STOPS = {"Skew Charm": 12, "DD Exhaustion": 12, "Paradigm Reversal": 12, "AG Short": 12}
-    _GREEK_FILTER = True   # require |alignment| >= 3
+    _EVAL_STOPS = {"Skew Charm": 12, "DD Exhaustion": 12, "Paradigm Reversal": 12, "AG Short": 12, "ES Absorption": 8}
+    _GREEK_FILTER = True   # asymmetric: +3 longs, per-setup+SVB shorts
     try:
         with engine.begin() as conn:
             rows = conn.execute(text("""
                 SELECT id, ts, setup_name, direction, grade, score, spot,
                        abs_es_price, outcome_result, outcome_pnl,
                        outcome_max_profit, outcome_max_loss, outcome_elapsed_min,
-                       greek_alignment
+                       greek_alignment, spot_vol_beta
                 FROM setup_log
                 WHERE setup_name = ANY(:setups) AND grade != 'LOG'
                 ORDER BY ts DESC
@@ -5323,10 +5342,27 @@ def api_eval_log(limit: int = Query(200)):
 
         results = []
         for r in rows:
-            # Greek filter: skip if |alignment| < 3
+            # Greek filter: Asymmetric (Analysis #9, Option C for E2T)
             align = r["greek_alignment"]
-            if _GREEK_FILTER and align is not None and abs(align) < 3:
-                continue
+            if _GREEK_FILTER and align is not None:
+                _is_long = r["direction"] in ("long", "bullish")
+                if _is_long:
+                    # Longs: require alignment >= +3
+                    if align < 3:
+                        continue
+                else:
+                    # Shorts: per-setup toxic combo blocks + SVB < -0.5
+                    if r["setup_name"] == "ES Absorption":
+                        continue
+                    if r["setup_name"] == "BofA Scalp":
+                        continue
+                    if r["setup_name"] == "DD Exhaustion" and align == 0:
+                        continue
+                    if r["setup_name"] == "AG Short" and align == -3:
+                        continue
+                    _svb = r.get("spot_vol_beta")
+                    if _svb is not None and float(_svb) >= -0.5:
+                        continue
 
             entry_price = r["abs_es_price"] or r["spot"] or 0
             stop_pts = _EVAL_STOPS.get(r["setup_name"], 12)

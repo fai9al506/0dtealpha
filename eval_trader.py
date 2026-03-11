@@ -773,15 +773,30 @@ class ComplianceGate:
                 if "BOFA" in paradigm and "PURE" in paradigm:
                     return False, "DD blocked on BOFA-PURE paradigm (18% WR)"
 
-        # Greek filter — Alignment +3 gate (simple, matches main.py)
-        # Raw alignment from setup_detector: all 3 Greeks must agree strongly.
-        # Previous HYBRID adjustments (SVB vanna removal, paradigm cross-check,
-        # momentum override) were designed for the old <0 threshold and over-filter
-        # at +3. Use raw alignment directly — it already captures macro context.
+        # Greek filter — Asymmetric (Analysis #9, Option C for E2T)
+        # Longs: require alignment >= +3
+        # Shorts: per-setup toxic combo blocks + SVB < -0.5
         if cfg.get("greek_filter_enabled"):
             alignment = signal.get("greek_alignment", 0)
-            if abs(alignment) < 3:
-                return False, (f"Greek filter: alignment {alignment:+d} (need >=+3 or <=-3)")
+            _is_long = signal.get("direction", "") in ("long", "bullish")
+            if _is_long:
+                if alignment < 3:
+                    return False, f"Greek filter: long alignment {alignment:+d} < +3"
+            else:
+                # Block toxic short setups/combos
+                sname = signal.get("setup_name", "")
+                if sname == "ES Absorption":
+                    return False, "Greek filter: ES Absorption short blocked (toxic)"
+                if sname == "BofA Scalp":
+                    return False, "Greek filter: BofA Scalp short blocked (toxic)"
+                if sname == "DD Exhaustion" and alignment == 0:
+                    return False, "Greek filter: DD Exhaustion short align=0 blocked (28% WR)"
+                if sname == "AG Short" and alignment == -3:
+                    return False, "Greek filter: AG Short align=-3 blocked (46% WR)"
+                # Option C: SVB gate — only allow shorts when SVB < -0.5
+                _svb = signal.get("spot_vol_beta")
+                if _svb is not None and _svb >= -0.5:
+                    return False, f"Greek filter: short SVB {_svb:+.2f} >= -0.5 (need < -0.5)"
 
         # Already in position?
         # Opposite-direction signals return "reverse" so main loop can close + reopen

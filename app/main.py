@@ -7087,12 +7087,8 @@ def api_setup_log(limit: int = Query(50)):
 def _calculate_absorption_outcome(entry: dict) -> dict:
     """Calculate outcome for ES Absorption using ES range bars.
 
-    Split-target tracking:
-      T1 = +10pt fixed target (tracked as hit_10pt / first_event)
-      T2 = trailing stop (BE@+10, gap=5) — trail_exit_pnl
-    Both tracked independently so we can compare strategies:
-      - 10pt only, trail only, or split (partial TP + trail)
-    Initial stop: -12pt fixed (before trail activates).
+    Flow A (single target): SL=8pt, T=10pt (matches live tracker + auto_trader).
+    Also tracks trail stats for analysis: BE@+10, gap=8.
     """
     try:
         ts = entry.get("ts")
@@ -7103,14 +7099,15 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
 
         es_entry = entry.get("abs_es_price")
         if not es_entry:
+            # Fallback: try to get ES price from abs_details bar_idx
             return {"no_data": True}
 
         direction = entry.get("direction", "bullish")
         is_long = direction.lower() in ("long", "bullish")
 
-        # Levels
+        # Levels — SL=8, T=10 (matches _compute_setup_levels and auto_trader Flow A)
         ten_pt_level = es_entry + 10 if is_long else es_entry - 10
-        initial_stop = es_entry - 12 if is_long else es_entry + 12
+        initial_stop = es_entry - 8 if is_long else es_entry + 8
 
         # Get ES range bars for that session date
         alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
@@ -7141,7 +7138,7 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
 
         # Walk bars after the signal bar — track T1 (+10) and T2 (trail)
         hit_10pt = False
-        hit_stop = False  # initial -12 stop (before trail activates)
+        hit_stop = False  # initial -8 stop
         time_to_10pt = None
         time_to_stop = None
         max_profit = 0.0
@@ -7151,9 +7148,9 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
         first_event = None
         bars_after = 0
 
-        # Trail state (hybrid: BE@+10, activation=10, gap=5)
+        # Trail state (for analysis only — live uses Flow A fixed SL=8/T=10)
         trail_active = False
-        trail_stop = initial_stop  # starts as initial fixed stop
+        trail_stop = initial_stop  # starts as initial fixed -8 stop
         trail_peak = 0.0  # max favorable excursion in pts
         trail_exit_pnl = None  # P&L when trail stop hit
         trail_exit_bar = None
@@ -7273,7 +7270,7 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
             # T1: fixed +10pt target
             "t1_result": t1_result,
             "t1_pnl": t1_pnl,
-            # T2: trailing stop (BE@+10, gap=5)
+            # T2: trailing stop (analysis only — BE@+10, gap=8)
             "t2_result": t2_result,
             "t2_pnl": t2_pnl,
             "trail_active": trail_active,

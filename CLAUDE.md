@@ -45,7 +45,7 @@ Supported formats: `.md`, `.txt`, `.pdf`, `.png`, `.jpg`
 
 0DTE Alpha is a real-time options trading dashboard for SPX/SPXW 0DTE (zero days to expiration) options. It combines:
 - **FastAPI web service** (`app/main.py`) - serves live options chain data, charts, and a dashboard
-- **Setup detector** (`app/setup_detector.py`) - scoring module for GEX Long, AG Short, BofA Scalp, CVD Divergence, Paradigm Reversal, DD Exhaustion, and Skew Charm setups (Vanna Pivot Bounce disabled)
+- **Setup detector** (`app/setup_detector.py`) - scoring module for GEX Long, AG Short, BofA Scalp, ES Absorption, Paradigm Reversal, DD Exhaustion, and Skew Charm setups (Vanna Pivot Bounce disabled)
 - **Volland scraper worker** (`volland_worker_v2.py`) - Playwright route-based scraper for charm/vanna/gamma exposure data from vol.land
 - **ES cumulative delta** (integrated in `app/main.py`) - scheduler job pulls ES 1-min bars from TradeStation API
 - **ES quote stream** (integrated in `app/main.py`) - WebSocket stream builds bid/ask delta range bars from TradeStation ES quotes
@@ -151,7 +151,7 @@ Append new analysis sections to this file after each review session.
 - **GEX Long**: Force alignment framework — LIS as support/magnet (±5 pts), -GEX as support/magnet, +GEX/target as magnets up. SL=8, trail BE@8/activation=10/gap=5. Blocks GEX-TARGET and GEX-MESSY paradigm subtypes.
 - **AG Short**: Bearish counterpart to GEX Long
 - **BofA Scalp**: LIS-based scalp with charm/stability/width scoring
-- **CVD Divergence** (replaced ES Absorption 2026-03-07): See "CVD Divergence Detector" section below
+- **ES Absorption**: Volume-gated CVD divergence with Volland confluence scoring. See "ES Absorption Detector" section below
 - **DD Exhaustion** (log-only, added 2026-02-18): See "DD Exhaustion Detector" section below
 - Cooldown persistence: `export_cooldowns()` / `import_cooldowns()` serialize state to/from DB
 
@@ -165,37 +165,34 @@ Append new analysis sections to this file after each review session.
 - Auto browser restart after 5 consecutive 0-point cycles
 - Auto re-login on session expiry
 
-### CVD Divergence Detector (Replaced ES Absorption 2026-03-07)
+### ES Absorption Detector (Restored 2026-03-11)
 
-Simple swing-to-swing CVD divergence. Replaced ES Absorption which was over-filtered (volume gate + z-score removed good signals, resulting in -14.6 pts on 89 production trades). The simple approach backtested at 83% WR, +536 pts on rithmic data.
+Volume-gated price vs CVD divergence on ES 5-pt range bars, with Volland confluence scoring. Originally replaced by "CVD Divergence" (simple swing-to-swing, no quality gates) on Mar 7, but CVD Divergence was net negative (39% WR, -140 pts across 11 dates). Original restored because with alignment filter: 76% WR, +88.1 pts at alignment +3; 67% WR, +117.6 pts at alignment >= 0.
 
-**Architecture (simple, no quality gates):**
+**Architecture:**
 
-1. **Swing Detection**: Pivot detection (left=2, right=2), `<=` for lows, `>=` for highs. NO alternating enforcement (allows consecutive lows/highs). Rescans all closed bars each call.
+1. **Volume Gate**: Trigger bar volume must be >= 1.5x the 20-bar average. This filters out low-quality signals.
 
-2. **Divergence Scan** (`evaluate_absorption`):
-   Compares consecutive same-type swings (low-vs-low, high-vs-high) for 4 patterns:
-   - **Sell Exhaustion**: lower low + higher CVD → BUY
-   - **Sell Absorption**: higher low + lower CVD → BUY
-   - **Buy Exhaustion**: higher high + lower CVD → SELL
-   - **Buy Absorption**: lower high + higher CVD → SELL
+2. **Lookback Divergence** (`evaluate_absorption`):
+   Over an 8-bar lookback window, compares normalized CVD slope vs price slope:
+   - **Bullish**: CVD falling (norm < -0.15) while price holds/rises (gap > 0.2)
+   - **Bearish**: CVD rising (norm > 0.15) while price stalls/falls (gap > 0.2)
+   - Divergence raw score: 1-4 based on gap magnitude (0.2, 0.4, 0.8, 1.2 thresholds)
 
-3. **Direction Resolution**: If both bullish and bearish divergences exist, pick the one with the most recent swing.
+3. **Volland Confluence** (weighted scoring):
+   - DD Hedging: +1 if DD aligns with direction (long+long or short+short)
+   - Paradigm: +1 if paradigm aligns (GEX for bullish, AG for bearish)
+   - LIS proximity: +2 if within 5 pts, +1 if within 15 pts
 
-**What was removed (all proven to hurt performance):**
-- Volume gate (1.4x) — filtered out 56 of 77 signals, removed signals had HIGHER WR
-- Z-score minimum (0.5) — over-filtered good signals
-- Alternating swing enforcement (L-H-L-H) — reduced swing pair detection
-- Zone tracker / zone-revisit divergence
-- Exhaustion reversal flip logic
-- Pattern priority tiers
-- Volland confluence scoring (DD, paradigm, LIS weights)
+4. **Weighted Composite** (0-100): Divergence 25% + Volume 25% + DD 15% + Paradigm 15% + LIS 20%
 
-**Risk Management:** Fixed SL=8pt / T=10pt (not trailing). Entry at ES price from Rithmic range bars.
+**Grading:** A+ >= 75, A >= 55, B >= 35. Below B = no signal.
 
-**Cooldown:** 15-min time-based per direction + dedup by swing bar_idx (same divergence won't re-fire).
+**Cooldown:** Bar-index based (10 bars between same-direction signals) + checked_idx dedup.
 
-**Grading:** Exhaustion patterns = grade A (score 65), Absorption = grade B (score 45).
+**Risk Management:** Fixed SL=8pt / T=10pt. Entry at ES price from Rithmic range bars.
+
+**Greek filter (F5):** Block when alignment < 0 (turns -11 pts into +117 pts). F6 (alignment +/-3) gates auto-trading.
 
 **Data contamination warning:** `es_range_bars` table has overlapping `bar_idx` from `live` and `rithmic` sources on same dates. Always filter by `source = 'rithmic'` in queries.
 
@@ -239,7 +236,7 @@ Self-contained module (`app/auto_trader.py`) that auto-trades **10 MES** futures
 - SIM account: `SIM2609239F`, hardcoded
 
 **Two order flows:**
-- **Flow A — Single target** (BofA Scalp, CVD Divergence, Paradigm Reversal): Bracket (BRK group) — 10 MES market entry + Limit 10 @ +10pts + StopMarket 10
+- **Flow A — Single target** (BofA Scalp, ES Absorption, Paradigm Reversal): Bracket (BRK group) — 10 MES market entry + Limit 10 @ +10pts + StopMarket 10
 - **Flow B — Split target** (GEX Long, AG Short, DD Exhaustion): Market entry 10 MES + separate orders:
   - T1: Limit 5 @ +10pts (first target)
   - T2: Limit 5 @ full Volland target (DD: trail-only, no T2 limit)
@@ -254,7 +251,7 @@ Self-contained module (`app/auto_trader.py`) that auto-trades **10 MES** futures
 **Integration points in main.py (7):**
 1. Startup init after Rithmic
 2. `auto_trade_orders` table in `db_init()`
-3. `place_trade()` after setup fires (both main loop and CVD Divergence path) — passes `full_target_pts`
+3. `place_trade()` after setup fires (both main loop and ES Absorption path) — passes `full_target_pts`
 4. `update_stop()` after trail advances
 5. `close_trade()` on outcome resolution
 6. `poll_order_status()` at top of `_check_setup_outcomes()`
@@ -440,7 +437,7 @@ See `Backup_tags.md` for the full list of backup tags.
 - GEX calculation: `call_gex = gamma * OI * 100`, `put_gex = -gamma * OI * 100`
 - Volland v2 uses Playwright `page.route()` to intercept exposure API calls (route handlers survive `page.goto()` navigations)
 - ES quote stream: WebSocket to TradeStation, builds 5-pt range bars with bid/ask delta. Bars have `{idx, open, high, low, close, volume, delta, buy_volume, sell_volume, cvd, cvd_open, cvd_high, cvd_low, cvd_close, ts_start, ts_end, status}`
-- CVD Divergence: simple swing-to-swing CVD divergence detector runs on each new completed range bar (see "CVD Divergence Detector" section)
+- ES Absorption: simple swing-to-swing CVD divergence detector runs on each new completed range bar (see "ES Absorption Detector" section)
 - Thread safety: `_es_delta_lock` for ES 1-min delta state, `_es_quote_lock` for ES quote stream range bars
 - Dashboard: no page reload — uses per-tab polling timers with `Plotly.react()`, tab persisted via `sessionStorage`
 - Setup cooldowns: saved to DB after each evaluation via `setup_cooldowns` table (JSONB), loaded on startup

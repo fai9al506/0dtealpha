@@ -234,7 +234,7 @@ _DEFAULT_SETUP_SETTINGS = {
     "gex_stop_pts": 12,
     "ag_short_enabled": True,
     "bofa_scalp_enabled": True,
-    "absorption_enabled": False,
+    "absorption_enabled": True,
     "weight_support": 20,
     "weight_upside": 20,
     "weight_floor_cluster": 20,
@@ -1077,12 +1077,12 @@ def _backfill_outcomes():
             is_long = entry.get("direction", "long").lower() in ("long", "bullish")
             spot = entry.get("spot") or 0
             es_price = entry.get("abs_es_price")
-            entry_price = es_price if entry.get("setup_name") == "CVD Divergence" and es_price else spot
+            entry_price = es_price if entry.get("setup_name") == "ES Absorption" and es_price else spot
 
             is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long", "AG Short", "Skew Charm")
-            is_absorption = entry.get("setup_name") == "CVD Divergence"
+            is_absorption = entry.get("setup_name") == "ES Absorption"
             if is_absorption:
-                # CVD Divergence: split-target. P&L = average of T1 (+10) and T2 (trail).
+                # ES Absorption: split-target. P&L = average of T1 (+10) and T2 (trail).
                 t1_hit = outcome.get("hit_10pt")
                 t2_exit = outcome.get("trail_exit_pnl")
                 if t1_hit and t2_exit is not None:
@@ -1252,9 +1252,9 @@ def _restore_open_trades():
                 continue
 
             # Rebuild the result_data dict needed by _compute_setup_levels
-            # For CVD Divergence, extract bar_idx from abs_details JSONB
+            # For ES Absorption, extract bar_idx from abs_details JSONB
             _abs_bar_idx = None
-            if setup_name == "CVD Divergence":
+            if setup_name == "ES Absorption":
                 _ad = entry.get("abs_details")
                 if isinstance(_ad, str):
                     try:
@@ -1291,8 +1291,8 @@ def _restore_open_trades():
             # Query historical price extremes since entry to seed _seen_low/_seen_high
             # Without this, restored trades would miss target/stop hits before restart
             is_long = direction.lower() in ("long", "bullish")
-            if setup_name == "CVD Divergence":
-                # CVD Divergence uses ES range bar H/L, not SPX playback
+            if setup_name == "ES Absorption":
+                # ES Absorption uses ES range bar H/L, not SPX playback
                 es_px = entry.get("abs_es_price") or spot
                 seen_high = es_px
                 seen_low = es_px
@@ -1350,13 +1350,13 @@ def _restore_open_trades():
                 "_seen_high": seen_high,
                 "_seen_low": seen_low,
             }
-            # CVD Divergence: set _es_last_bar_idx so live tracker doesn't re-scan
+            # ES Absorption: set _es_last_bar_idx so live tracker doesn't re-scan
             # bars before the entry (which would cause false stops/targets)
-            if setup_name == "CVD Divergence":
+            if setup_name == "ES Absorption":
                 _trade_entry["_es_last_bar_idx"] = _max_bar_idx_db
             _setup_open_trades.append(_trade_entry)
             restored += 1
-            _extra = f" bar_idx={_max_bar_idx_db}" if setup_name == "CVD Divergence" else ""
+            _extra = f" bar_idx={_max_bar_idx_db}" if setup_name == "ES Absorption" else ""
             print(f"[restore] {setup_name} {direction} id={entry['id']} spot={spot:.1f} "
                   f"seen_lo={seen_low:.1f} seen_hi={seen_high:.1f}{_extra}", flush=True)
 
@@ -1389,7 +1389,7 @@ _current_setup_log = {
     "GEX Long": None,
     "AG Short": None,
     "BofA Scalp": None,
-    "CVD Divergence": None,
+    "ES Absorption": None,
     "DD Exhaustion": None,
     "Skew Charm": None,
     "Vanna Pivot Bounce": None,
@@ -1425,7 +1425,7 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "CVD Divergence": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
@@ -1462,59 +1462,28 @@ def log_setup(result_wrapper):
                 insert_params.setdefault("vanna_monthly", None)
                 insert_params.setdefault("spot_vol_beta", None)
                 insert_params.setdefault("greek_alignment", None)
-                # Auto-populate comments and abs_details for CVD Divergence
-                if setup_name == "CVD Divergence" and not insert_params.get("comments"):
-                    _pattern_labels = {
-                        "sell_exhaustion": "Sell Exhaustion", "sell_absorption": "Sell Absorption",
-                        "buy_exhaustion": "Buy Exhaustion", "buy_absorption": "Buy Absorption",
-                        "zone_sell_absorption": "Zone Sell Absorption", "zone_buy_absorption": "Zone Buy Absorption",
-                    }
-                    _pat = r.get("pattern", "unknown")
-                    _tier = r.get("pattern_tier", 1)
-                    _res_reason = r.get("resolution_reason", "single_direction")
-                    _n_bull = len(r.get("all_bull_divs", []))
-                    _n_bear = len(r.get("all_bear_divs", []))
-                    _parts = [f"Pattern: {_pattern_labels.get(_pat, _pat)} (T{_tier})"]
-                    _best = r.get("best_swing")
-                    if _best:
-                        _sw = _best.get("swing", {})
-                        _ref = _best.get("ref_swing", {})
-                        if _ref.get("type") == "Z":
-                            _bars_gap = _sw.get("bar_idx", 0) - _ref.get("bar_idx", 0)
-                            _parts.append(f"Zone: {_ref.get('price', 0):.2f} → bar #{_sw.get('bar_idx', '?')} ({_bars_gap} bars)")
-                            _parts.append(f"CVD: {_ref.get('cvd', 0):+,} → {_sw.get('cvd', 0):+,} (z={_best.get('cvd_z', 0):.2f})")
-                        elif _ref:
-                            _parts.append(f"Swings: {_ref.get('type', '?')}@{_ref.get('price', 0):.2f} → {_sw.get('type', '?')}@{_sw.get('price', 0):.2f}")
-                            _parts.append(f"CVD z: {_best.get('cvd_z', 0):.2f} | Price: {_best.get('price_atr', 0):.1f}x ATR")
-                    # Rejected divergence info
-                    _rej = r.get("rejected_divergence")
-                    if _rej:
-                        _rej_pat = _pattern_labels.get(_rej.get("pattern", ""), _rej.get("pattern", "?"))
-                        _parts.append(f"Rejected: {_rej_pat} (T{_rej.get('tier', '?')}, score={_rej.get('score', 0):.1f})")
-                    _parts.append(f"Resolution: {_res_reason} | {_n_bull} bull / {_n_bear} bear divs")
-                    if r.get("dd_hedging"):
-                        _parts.append(f"DD: {r['dd_hedging']}")
-                    _parts.append(f"Lookback: {r.get('lookback', '?')}")
+                # Auto-populate comments and abs_details for ES Absorption
+                if setup_name == "ES Absorption" and not insert_params.get("comments"):
+                    _parts = [
+                        f"Vol {r.get('abs_vol_ratio', 0):.1f}x",
+                        f"Div {r.get('div_raw', 0)}/4",
+                    ]
+                    if r.get("dd_raw"):
+                        _parts.append(f"DD: {r.get('dd_hedging', '')}")
+                    if r.get("para_raw"):
+                        _parts.append(f"Para: {r.get('paradigm', '')}")
+                    if r.get("lis_raw") and r.get("lis_val") is not None:
+                        _parts.append(f"LIS: {r['lis_val']:.0f} ({r.get('lis_dist', 0):.0f}pt)")
                     insert_params["comments"] = " | ".join(_parts)
-                    # Build abs_details JSONB for machine-readable logging
                     insert_params["abs_details"] = json.dumps({
-                        "pattern": _pat, "pattern_tier": _tier,
-                        "resolution_reason": _res_reason,
-                        "rejected_divergence": _rej,
-                        "all_bull_divs": r.get("all_bull_divs", []),
-                        "all_bear_divs": r.get("all_bear_divs", []),
-                        "best_swing": {
-                            "swing": _best.get("swing") if _best else None,
-                            "ref_swing": _best.get("ref_swing") if _best else None,
-                            "cvd_z": _best.get("cvd_z") if _best else None,
-                            "price_atr": _best.get("price_atr") if _best else None,
-                            "score": _best.get("score") if _best else None,
-                        } if _best else None,
                         "bar_idx": r.get("bar_idx"),
                         "vol_ratio": r.get("abs_vol_ratio"),
-                        "cvd_std": r.get("cvd_std"),
-                        "atr": r.get("atr"),
-                        "swing_count": r.get("swing_count"),
+                        "div_raw": r.get("div_raw"),
+                        "vol_raw": r.get("vol_raw"),
+                        "dd_raw": r.get("dd_raw"),
+                        "para_raw": r.get("para_raw"),
+                        "lis_raw": r.get("lis_raw"),
+                        "lookback": r.get("lookback"),
                     })
                 result = conn.execute(text("""
                     INSERT INTO setup_log
@@ -2964,7 +2933,7 @@ def _compute_setup_levels(r: dict):
         stop_lvl = r.get("bofa_stop_level")
         return target_lvl, stop_lvl
 
-    if setup_name == "CVD Divergence":
+    if setup_name == "ES Absorption":
         es_price = r.get("abs_es_price")
         if not es_price:
             return None, None
@@ -3027,7 +2996,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
     """Check open trades for target/stop hits. Called each cycle (~30s).
 
     Uses session-derived cycle high/low to catch SL/TP breaches between checks.
-    For CVD Divergence, uses ES price (abs_es_price) instead of SPX spot.
+    For ES Absorption, uses ES price (abs_es_price) instead of SPX spot.
     Sends Telegram outcome for each resolved trade and moves to resolved list.
     """
     global _setup_open_trades, _setup_resolved_trades
@@ -3094,7 +3063,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         is_long = direction.lower() in ("long", "bullish")
 
         # Use ES price for absorption, SPX spot for everything else
-        if setup_name == "CVD Divergence":
+        if setup_name == "ES Absorption":
             if not es_price:
                 still_open.append(trade)
                 continue  # Skip — no ES data; never fall back to SPX
@@ -3103,7 +3072,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             check_price = spot
 
         # Determine entry price for P&L calc (ES price for absorption, SPX for others)
-        if setup_name == "CVD Divergence":
+        if setup_name == "ES Absorption":
             entry_price = trade.get("result_data", {}).get("abs_es_price", entry_spot)
         else:
             entry_price = entry_spot
@@ -3118,8 +3087,8 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         pnl = None
 
         # Update per-trade price tracking with cycle extremes
-        if setup_name == "CVD Divergence":
-            # CVD Divergence: scan completed ES range bar H/L since entry bar
+        if setup_name == "ES Absorption":
+            # ES Absorption: scan completed ES range bar H/L since entry bar
             # This catches intra-bar target/stop hits that bar-close checks miss
             entry_bar_idx = trade.get("result_data", {}).get("bar_idx", 0)
             last_scanned = trade.get("_es_last_bar_idx", entry_bar_idx)
@@ -3152,8 +3121,8 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         _tp = _trail_params.get(setup_name)
         if _tp is not None:
             # Advance trail using cycle high (long) or cycle low (short)
-            # CVD Divergence: use ES seen_high/low from range bars (not SPX cycle)
-            if setup_name == "CVD Divergence":
+            # ES Absorption: use ES seen_high/low from range bars (not SPX cycle)
+            if setup_name == "ES Absorption":
                 fav_price = trade.get("_seen_high", entry_price) if is_long else trade.get("_seen_low", entry_price)
             else:
                 fav_price = spx_cycle_high if is_long else spx_cycle_low
@@ -3206,8 +3175,8 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 except Exception:
                     pass
             # Check trailing stop hit using cycle extreme (not just current price)
-            # CVD Divergence: use ES seen_low/high from range bars
-            if setup_name == "CVD Divergence":
+            # ES Absorption: use ES seen_low/high from range bars
+            if setup_name == "ES Absorption":
                 stop_check = trade.get("_seen_low", entry_price) if is_long else trade.get("_seen_high", entry_price)
             else:
                 stop_check = spx_cycle_low if is_long else spx_cycle_high
@@ -3223,7 +3192,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         elif is_long:
             # Use all-time seen_high/seen_low for fixed SL/TP (never miss a breach)
             # Fallback to entry_price (not check_price) to avoid false WIN on first cycle
-            _fallback = entry_price if setup_name == "CVD Divergence" else check_price
+            _fallback = entry_price if setup_name == "ES Absorption" else check_price
             price_high = trade.get("_seen_high", _fallback)
             price_low = trade.get("_seen_low", _fallback)
             if price_high >= target_lvl:
@@ -3236,7 +3205,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 result_type = "EXPIRED"
                 pnl = check_price - entry_price
         else:
-            _fallback = entry_price if setup_name == "CVD Divergence" else check_price
+            _fallback = entry_price if setup_name == "ES Absorption" else check_price
             price_high = trade.get("_seen_high", _fallback)
             price_low = trade.get("_seen_low", _fallback)
             if price_low <= target_lvl:
@@ -4016,8 +3985,8 @@ def _run_absorption_detection(bars: list) -> dict | None:
     if result is None:
         print(f"[absorption] no signal (closed_bars={closed_count}, enabled={_setup_settings.get('absorption_enabled', True)})", flush=True)
         return None
-    print(f"[absorption] SIGNAL: {result.get('direction')} {result.get('pattern')} "
-          f"score={result.get('score')} bar_idx={result.get('best_swing', {}).get('swing', {}).get('bar_idx', '?')}", flush=True)
+    print(f"[absorption] SIGNAL: {result.get('direction')} "
+          f"score={result.get('score')} vol={result.get('abs_vol_ratio')}x div={result.get('div_raw')}/4 bar_idx={result.get('bar_idx')}", flush=True)
 
     # Freshness check: compare trigger bar price to CURRENT Rithmic price.
     # If the market moved significantly while the callback was queued/processing,
@@ -4189,7 +4158,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
     if stop_lvl is not None:  # target_lvl=None is OK (trail mode)
         es_entry = result.get("abs_es_price", result["spot"])
         _setup_open_trades.append({
-            "setup_name": "CVD Divergence", "direction": result["direction"],
+            "setup_name": "ES Absorption", "direction": result["direction"],
             "spot": result["spot"], "grade": result["grade"],
             "target_level": target_lvl, "stop_level": stop_lvl,
             "initial_stop_level": stop_lvl,  # preserve initial SL (trail overwrites stop_level)
@@ -4200,24 +4169,24 @@ def _run_absorption_detection(bars: list) -> dict | None:
             "_es_last_bar_idx": result.get("bar_idx", 0),
             "max_hold_minutes": None,
             "_trade_date": now_et().date(),
-            "setup_log_id": _current_setup_log.get("CVD Divergence"),
+            "setup_log_id": _current_setup_log.get("ES Absorption"),
         })
-        print(f"[outcome] tracking CVD Divergence: target={target_lvl} stop={stop_lvl:.1f}", flush=True)
-        # Auto-trade: CVD Divergence uses ES price directly
+        print(f"[outcome] tracking ES Absorption: target={target_lvl} stop={stop_lvl:.1f}", flush=True)
+        # Auto-trade: ES Absorption uses ES price directly
         # Greek filter: charm alignment gate + alignment +3 gate
         _abs_skip_greek = False
         _abs_align = result.get("greek_alignment", 0)
         if _abs_charm is not None:
             _abs_is_long = result["direction"] in ("long", "bullish")
             if (_abs_charm > 0) != _abs_is_long:
-                print(f"[auto-trader] SKIPPED CVD Divergence: charm opposes direction (align={_abs_align:+d})", flush=True)
+                print(f"[auto-trader] SKIPPED ES Absorption: charm opposes direction (align={_abs_align:+d})", flush=True)
                 _abs_skip_greek = True
         # F6: Alignment +3 gate
         if abs(_abs_align) < 3:
-            print(f"[auto-trader] SKIPPED CVD Divergence: alignment {_abs_align:+d} (need >=+3 or <=-3)", flush=True)
+            print(f"[auto-trader] SKIPPED ES Absorption: alignment {_abs_align:+d} (need >=+3 or <=-3)", flush=True)
             _abs_skip_greek = True
         if result.get("log_only"):
-            print(f"[auto-trader] SKIPPED CVD Divergence: log-only pattern ({result.get('pattern')})", flush=True)
+            print(f"[auto-trader] SKIPPED ES Absorption: log-only pattern ({result.get('pattern')})", flush=True)
         elif _abs_skip_greek:
             pass  # already logged above
         else:
@@ -4232,26 +4201,26 @@ def _run_absorption_detection(bars: list) -> dict | None:
                         with _es_delta_lock:
                             es_px = _es_delta.get("last_price")
                     if es_px:
-                        print(f"[auto-trader] CVD Divergence using fallback price: {es_px}", flush=True)
+                        print(f"[auto-trader] ES Absorption using fallback price: {es_px}", flush=True)
                 if es_px and stop_lvl is not None:
                     stop_dist = abs(es_px - stop_lvl)
                     target_dist = abs(target_lvl - es_px) if target_lvl else None
                     auto_trader.place_trade(
-                        setup_log_id=_current_setup_log.get("CVD Divergence"),
-                        setup_name="CVD Divergence", direction=result["direction"],
+                        setup_log_id=_current_setup_log.get("ES Absorption"),
+                        setup_name="ES Absorption", direction=result["direction"],
                         es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
                         full_target_pts=target_dist,
                     )
                 elif not es_px:
-                    print(f"[auto-trader] SKIPPED CVD Divergence: no ES price available", flush=True)
+                    print(f"[auto-trader] SKIPPED ES Absorption: no ES price available", flush=True)
             except Exception as e:
                 print(f"[auto-trader] absorption place error: {e}", flush=True)
-            # Options trader: buy SPXW 0DTE on CVD Divergence (behind Greek filter)
+            # Options trader: buy SPXW 0DTE on ES Absorption (behind Greek filter)
             try:
                 from app import options_trader
                 options_trader.place_trade(
-                    setup_log_id=_current_setup_log.get("CVD Divergence"),
-                    setup_name="CVD Divergence", direction=result["direction"],
+                    setup_log_id=_current_setup_log.get("ES Absorption"),
+                    setup_name="ES Absorption", direction=result["direction"],
                     spot=result["spot"],
                 )
             except Exception as e:
@@ -4811,7 +4780,7 @@ def _send_setup_eod_summary():
         is_long = direction.lower() in ("long", "bullish")
         ts_entry = trade["ts"]
 
-        if setup_name == "CVD Divergence":
+        if setup_name == "ES Absorption":
             check_price = es_price if es_price else spot
             entry_price = trade.get("result_data", {}).get("abs_es_price", trade["spot"])
         else:
@@ -7116,7 +7085,7 @@ def api_setup_log(limit: int = Query(50)):
 
 
 def _calculate_absorption_outcome(entry: dict) -> dict:
-    """Calculate outcome for CVD Divergence using ES range bars.
+    """Calculate outcome for ES Absorption using ES range bars.
 
     Split-target tracking:
       T1 = +10pt fixed target (tracked as hit_10pt / first_event)
@@ -7323,13 +7292,13 @@ def _calculate_setup_outcome(entry: dict) -> dict:
     Calculate outcome for a setup alert by querying price history.
     Returns dict with hit_10pt, hit_target, hit_stop, max_profit, max_loss, etc.
     BofA Scalp uses different parameters: 10pt target, 12pt stop, 30-min max hold.
-    CVD Divergence uses ES range bars: 10pt first target, converted Volland target, 12pt stop.
+    ES Absorption uses ES range bars: 10pt first target, converted Volland target, 12pt stop.
     """
     if not engine:
         return {}
 
-    # CVD Divergence: outcome tracking using ES range bars
-    if entry.get("setup_name") == "CVD Divergence":
+    # ES Absorption: outcome tracking using ES range bars
+    if entry.get("setup_name") == "ES Absorption":
         return _calculate_absorption_outcome(entry)
 
     try:
@@ -7679,13 +7648,13 @@ def api_setup_log_outcome(log_id: int):
         # Get price history
         ts = row["ts"]
         is_bofa = row["setup_name"] == "BofA Scalp"
-        is_abs = row["setup_name"] == "CVD Divergence"
+        is_abs = row["setup_name"] == "ES Absorption"
         alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
         market_open = NY.localize(datetime.combine(alert_date, dtime(9, 30)))
         market_close = NY.localize(datetime.combine(alert_date, dtime(16, 0)))
 
         if is_abs:
-            # CVD Divergence: fetch ES range bars from es_range_bars table
+            # ES Absorption: fetch ES range bars from es_range_bars table
             with engine.begin() as conn:
                 es_rows = conn.execute(text("""
                     SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
@@ -7894,7 +7863,7 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
             else:
                 # Only compute in real-time for OPEN/unresolved trades
                 outcome = _calculate_setup_outcome(dict(r))
-                # For CVD Divergence: derive overall result from T1/T2 split-target
+                # For ES Absorption: derive overall result from T1/T2 split-target
                 # and promote to top-level fields so dashboard JS can display them
                 if outcome.get("is_absorption") and (outcome.get("t1_result") or outcome.get("trail_exit_pnl") is not None):
                     t1r = outcome.get("t1_result", "PENDING")
@@ -9074,7 +9043,7 @@ DASH_HTML_TEMPLATE = """
                 </label>
                 <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
                   <input type="checkbox" id="setupAbsorptionEnabled" style="width:16px;height:16px">
-                  <span style="font-size:12px">CVD Divergence</span>
+                  <span style="font-size:12px">ES Absorption</span>
                 </label>
               </div>
             </div>
@@ -9086,7 +9055,7 @@ DASH_HTML_TEMPLATE = """
               <div>Paradigm contains "AG" &bull; Spot &lt; LIS &bull; Spot-Target &ge; 10 &bull; Spot-(-GEX) &ge; 10 &bull; Gap (LIS-Spot) &le; 20</div>
               <div style="font-weight:600;margin-bottom:4px;margin-top:8px">BofA Scalp — Base Conditions:</div>
               <div>Paradigm = BofA (not MISSY) &bull; 10:00-15:30 ET &bull; Spot within 3pts of LIS &bull; LIS width &ge; 15 &bull; LIS stable 30min</div>
-              <div style="font-weight:600;margin-bottom:4px;margin-top:8px">CVD Divergence — Base Conditions:</div>
+              <div style="font-weight:600;margin-bottom:4px;margin-top:8px">ES Absorption — Base Conditions:</div>
               <div>Volume spike &ge; 1.5x avg &bull; Price vs CVD divergence over lookback &bull; Volland confluence (DD, paradigm, LIS)</div>
             </div>
 
@@ -9156,7 +9125,7 @@ DASH_HTML_TEMPLATE = """
               </label>
             </div>
 
-            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">CVD Divergence Weights (0-100)</div>
+            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">ES Absorption Weights (0-100)</div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
               <label style="font-size:11px">Divergence
                 <input type="number" id="absWeightDivergence" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
@@ -9180,7 +9149,7 @@ DASH_HTML_TEMPLATE = """
                 <input type="number" id="absWeightTargetDir" min="0" max="100" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
               </label>
             </div>
-            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">CVD Divergence Parameters</div>
+            <div style="font-weight:600;color:var(--muted);margin-bottom:8px;font-size:12px">ES Absorption Parameters</div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
               <label style="font-size:11px">Pivot Left
                 <input type="number" id="absPivotLeft" min="1" max="5" style="width:100%;padding:4px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-top:2px">
@@ -9245,7 +9214,7 @@ DASH_HTML_TEMPLATE = """
                   <span style="font-size:9px;color:var(--muted)">(10 @ +10)</span>
                 </label>
                 <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
-                  <input type="checkbox" id="atAbsorption" style="width:16px;height:16px"> CVD Divergence
+                  <input type="checkbox" id="atAbsorption" style="width:16px;height:16px"> ES Absorption
                   <span style="font-size:9px;color:var(--muted)">(10 @ +10)</span>
                 </label>
                 <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
@@ -9514,7 +9483,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="eval">Eval Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>CVD Divergence</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
@@ -12329,7 +12298,7 @@ DASH_HTML_TEMPLATE = """
         document.getElementById('bofaTargetDistance').value = s.bofa_target_distance ?? 10;
         document.getElementById('bofaMaxHold').value = s.bofa_max_hold_minutes ?? 30;
         document.getElementById('bofaCooldown').value = s.bofa_cooldown_minutes ?? 40;
-        // CVD Divergence
+        // ES Absorption
         document.getElementById('absWeightDivergence').value = s.abs_weight_divergence ?? 25;
         document.getElementById('absWeightVolume').value = s.abs_weight_volume ?? 25;
         document.getElementById('absWeightDD').value = s.abs_weight_dd ?? 10;
@@ -12353,7 +12322,7 @@ DASH_HTML_TEMPLATE = """
     // ====== Auto Trade Status ======
     const _atToggleMap = {
       'atGexLong': 'GEX Long', 'atAgShort': 'AG Short', 'atBofaScalp': 'BofA Scalp',
-      'atAbsorption': 'CVD Divergence', 'atParadigm': 'Paradigm Reversal', 'atDDExhaust': 'DD Exhaustion',
+      'atAbsorption': 'ES Absorption', 'atParadigm': 'Paradigm Reversal', 'atDDExhaust': 'DD Exhaustion',
     };
 
     async function loadAutoTradeStatus() {
@@ -12465,7 +12434,7 @@ DASH_HTML_TEMPLATE = """
     let _tlActiveSubTab = 'portal';
     let _tsSimData = [];
     let _evalLogData = [];
-    const _tlPillColors = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','CVD Divergence':'#f59e0b','ES Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899'};
+    const _tlPillColors = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899'};
     const _tlGradeColors = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308'};
 
     // Trade Log sub-tab switching
@@ -12620,7 +12589,7 @@ DASH_HTML_TEMPLATE = """
 
       let html = '';
       filtered.forEach((l, i) => {
-        const isAbs = l.setup_name === 'CVD Divergence';
+        const isAbs = l.setup_name === 'ES Absorption';
         const isBofa = l.setup_name === 'BofA Scalp';
         const pillColor = _tlPillColors[l.setup_name] || '#888';
         const dir = isAbs ? (l.direction === 'bullish' ? '▲' : '▼') : (l.direction === 'long' ? '▲' : '▼');
@@ -13015,7 +12984,7 @@ DASH_HTML_TEMPLATE = """
           const color = gradeColor[l.grade] || '#888';
           const bell = l.notified ? '&#128276;' : '';
           const isBofa = l.setup_name === 'BofA Scalp';
-          const isAbs = l.setup_name === 'CVD Divergence';
+          const isAbs = l.setup_name === 'ES Absorption';
           const dir = isAbs ? (l.direction === 'bullish' ? '▲' : '▼') : (l.direction === 'long' ? '▲' : '▼');
           const dirColor = (l.direction === 'long' || l.direction === 'bullish') ? '#22c55e' : '#ef4444';
           const o = l.outcome || {};
@@ -13096,15 +13065,15 @@ DASH_HTML_TEMPLATE = """
 
         // Title
         const isBofa = e.setup_name === 'BofA Scalp';
-        const isAbs = e.setup_name === 'CVD Divergence';
+        const isAbs = e.setup_name === 'ES Absorption';
         const dir = isAbs ? (e.direction === 'bullish' ? 'BUY ▲' : 'SELL ▼') : (e.direction === 'long' ? 'LONG ▲' : 'SHORT ▼');
         const dirColor = (e.direction === 'long' || e.direction === 'bullish') ? '#22c55e' : '#ef4444';
-        const setupLabel = isBofa ? 'BofA Scalp ' : isAbs ? 'CVD Divergence ' : '';
+        const setupLabel = isBofa ? 'BofA Scalp ' : isAbs ? 'ES Absorption ' : '';
         const priceLabel = isAbs ? '@ ES ' : '@ SPX ';
         const displayPrice = isAbs ? (e.abs_es_price || e.spot)?.toFixed(2) : e.spot?.toFixed(0);
         title.innerHTML = setupLabel + '<span style="color:' + dirColor + '">' + dir + '</span> ' + e.grade + ' ' + priceLabel + displayPrice;
 
-        // Info grid — CVD Divergence uses abs_details JSONB for structured display
+        // Info grid — ES Absorption uses abs_details JSONB for structured display
         const ad = isAbs ? (data.abs_details || {}) : {};
         const adBest = ad.best_swing || {};
         const adSw = adBest.swing || {};
@@ -13189,7 +13158,7 @@ DASH_HTML_TEMPLATE = """
         // Outcome row
         if (isAbs) {
           if (o.no_data || o.error) {
-            outcome.innerHTML = '<div style="color:var(--muted);text-align:center;padding:8px;font-size:11px">CVD Divergence — ' + (o.error || 'no ES range bar data for outcome') + '</div>';
+            outcome.innerHTML = '<div style="color:var(--muted);text-align:center;padding:8px;font-size:11px">ES Absorption — ' + (o.error || 'no ES range bar data for outcome') + '</div>';
           } else {
             const isPending = o.first_event === 'pending';
             // T1: +10pt fixed target
@@ -13270,7 +13239,7 @@ DASH_HTML_TEMPLATE = """
 
         // Draw chart
         if (isAbs && data.es_bars && data.es_bars.length > 0) {
-          // CVD Divergence: render ES range bar candlestick + CVD chart
+          // ES Absorption: render ES range bar candlestick + CVD chart
           const esBars = data.es_bars;
 
           // Find signal bar — match by bar_idx from outcome, then fallback to timestamp
@@ -13526,7 +13495,7 @@ DASH_HTML_TEMPLATE = """
         const bonusRow = (isBofa || isAbs) ? '' : '<div>First Hour: <span style="color:var(--text)">' + (e.first_hour ? 'Yes (+10)' : 'No') + '</span></div>';
         let summaryLabel = '';
         if (isAbs && o.is_absorption) {
-          // CVD Divergence: show split-target summary (T1 + T2)
+          // ES Absorption: show split-target summary (T1 + T2)
           const t1 = o.t1_result || 'PENDING';
           const t2 = o.t2_result || 'PENDING';
           const t1p = o.t1_pnl || 0;
@@ -13557,7 +13526,7 @@ DASH_HTML_TEMPLATE = """
         }
         const firstEvt = o.first_event || 'none';
         const evtColor = firstEvt === 'stop' ? '#ef4444' : (firstEvt === '10pt' || firstEvt === 'target') ? '#22c55e' : '#888';
-        // Trail info for CVD Divergence
+        // Trail info for ES Absorption
         const trailInfo = (isAbs && o.trail_active) ? '<div>Trail: <span style="color:#f59e0b;font-weight:600">ACTIVE (peak +' + (o.trail_peak?.toFixed(1) || 0) + ', gap=5)</span></div>' : '';
         stats.innerHTML = `
           <div style="background:#1a1d21;padding:10px;border-radius:6px">

@@ -36,8 +36,8 @@
       "stop": 12,
       "target": 10
     },
-    "CVD Divergence": {
-      "enabled": false,
+    "ES Absorption": {
+      "enabled": true,
       "stop": 8,
       "target": 10
     },

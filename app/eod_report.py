@@ -87,7 +87,7 @@ def _build_why(t):
         width = f"{t['bofa_lis_width']:.0f}" if t.get("bofa_lis_width") else "?"
         return f"LIS scalp, {paradigm}, width {width}pt"
 
-    if name == "CVD Divergence":
+    if name == "ES Absorption":
         c = t.get("comments", "")
         if c:
             return c[:90] + ("..." if len(c) > 90 else "")
@@ -413,14 +413,14 @@ def send_telegram_pdf(pdf_path, caption, bot_token, chat_id):
 
 # Setup name → short label for chart markers
 _SETUP_ABBREV = {
-    "DD Exhaustion": "DD", "CVD Divergence": "CVD", "GEX Long": "GEX",
+    "DD Exhaustion": "DD", "ES Absorption": "CVD", "GEX Long": "GEX",
     "AG Short": "AG", "BofA Scalp": "BOFA", "Paradigm Reversal": "PAR",
     "Skew Charm": "SKW",
 }
 
 # Setup name → marker symbol (so you can tell them apart even in grayscale)
 _SETUP_MARKER = {
-    "DD Exhaustion": "o", "CVD Divergence": "s", "GEX Long": "^",
+    "DD Exhaustion": "o", "ES Absorption": "s", "GEX Long": "^",
     "AG Short": "v", "BofA Scalp": "D", "Paradigm Reversal": "P",
     "Skew Charm": "*",
 }

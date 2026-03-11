@@ -174,7 +174,7 @@ DEFAULT_CONFIG = {
         "GEX Long":          {"enabled": True,  "stop": 8,  "target": None},
         "AG Short":          {"enabled": True,  "stop": 12, "target": None},
         "BofA Scalp":        {"enabled": False, "stop": 12, "target": "msg", "max_hold_min": 30},
-        "CVD Divergence":    {"enabled": True,  "stop": 8,  "target": 10},
+        "ES Absorption":    {"enabled": True,  "stop": 8,  "target": 10},
         "Paradigm Reversal": {"enabled": True,  "stop": 12, "target": 10},
         "DD Exhaustion":     {"enabled": True,  "stop": 12, "target": None},
         "Skew Charm":        {"enabled": False, "stop": 12, "target": None},
@@ -388,8 +388,8 @@ class APIPoller:
         direction = s.get("direction", "long")
         is_long = direction.lower() in ("long", "bullish")
 
-        # CVD Divergence uses ES price as spot
-        if setup == "CVD Divergence":
+        # ES Absorption uses ES price as spot
+        if setup == "ES Absorption":
             spot = s.get("abs_es_price") or s.get("spot")
         else:
             spot = s.get("spot")
@@ -560,14 +560,14 @@ def parse_signal(text: str) -> dict | None:
                     "spot": spot, "grade": grade or "?",
                     "msg_target_pts": msg_target, "msg_stop_pts": msg_stop}
 
-    # ── CVD Divergence ──
+    # ── ES Absorption ──
     if "ES ABSORPTION" in text:
         direction = "long" if "BUY" in text else "short"
-        # CVD Divergence uses ES price, not SPX
+        # ES Absorption uses ES price, not SPX
         price = _xf(text, r"Price:\s*([\d,.]+)")
         grade = _xs(text, r"\[(\S+?)\]")
         if price:
-            return {"setup_name": "CVD Divergence", "direction": direction,
+            return {"setup_name": "ES Absorption", "direction": direction,
                     "spot": price, "grade": grade or "?"}
 
     # ── DD Exhaustion ──
@@ -600,7 +600,7 @@ def parse_outcome(text: str) -> dict | None:
         if result_type not in text:
             continue
         # Try to extract setup name and P&L
-        setup = _xs(text, r"(GEX Long|AG Short|BofA Scalp|CVD Divergence|Paradigm Reversal|DD Exhaustion)")
+        setup = _xs(text, r"(GEX Long|AG Short|BofA Scalp|ES Absorption|Paradigm Reversal|DD Exhaustion)")
         pnl = _xf(text, r"([+-]?[\d.]+)\s*pts")
         if setup and pnl is not None:
             return {"setup_name": setup, "result": result_type, "pnl_pts": pnl}
@@ -1443,7 +1443,7 @@ class PositionTracker:
     # DD Exhaustion: continuous trail (activation=20, gap=5)
     # GEX Long: hybrid trail (BE at +8, continuous trail activation=10 gap=5)
     # AG Short: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
-    # CVD Divergence: fixed target (SL=8/T=10), no trailing
+    # ES Absorption: fixed target (SL=8/T=10), no trailing
     _TRAIL_PARAMS = {
         "DD Exhaustion":  {"mode": "continuous", "activation": 20, "gap": 5},
         "GEX Long":       {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},

@@ -127,7 +127,8 @@ def init(engine, get_token_fn, send_telegram_fn):
 
 def place_trade(setup_log_id: int, setup_name: str, direction: str,
                 es_price: float, target_pts: float | None, stop_pts: float,
-                full_target_pts: float | None = None):
+                full_target_pts: float | None = None,
+                limit_entry_price: float | None = None):
     """Place MES SIM trade when a setup fires.
 
     Args:
@@ -138,6 +139,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         target_pts: distance in points to first target (None for trailing setups)
         stop_pts: distance in points to stop
         full_target_pts: distance to Volland full target for T2. None = same as target_pts.
+        limit_entry_price: MES limit entry price (charm S/R). None = market order.
     """
     if not AUTO_TRADE_ENABLED:
         print(f"[auto-trader] skip {setup_name}: master switch OFF", flush=True)
@@ -178,7 +180,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     # Same-direction stacking: allow multiple positions in same direction, block opposite
     with _lock:
         active_filled = [(lid, o) for lid, o in _active_orders.items()
-                         if o["status"] in ("pending_entry", "filled")]
+                         if o["status"] in ("pending_entry", "pending_limit", "filled")]
     if active_filled:
         has_opposite = any(
             (is_long and o["direction"].lower() not in ("long", "bullish")) or
@@ -207,6 +209,13 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                   flush=True)
             return
 
+    # Charm S/R limit entry: use deferred two-phase flow
+    if limit_entry_price is not None:
+        _place_limit_entry(setup_log_id, setup_name, direction, is_long,
+                           es_price, stop_pts, target_pts, full_target_pts,
+                           limit_entry_price)
+        return
+
     # Determine order flow
     if setup_name in _SINGLE_TARGET_SETUPS:
         # Flow A: single target, all 10 contracts
@@ -219,6 +228,160 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
 
 
 # ====== ORDER PLACEMENT ======
+
+_LIMIT_ENTRY_TIMEOUT_S = 1800  # 30 min timeout for limit entries
+
+
+def _place_limit_entry(setup_log_id, setup_name, direction, is_long,
+                       es_price, stop_pts, target_pts, full_target_pts,
+                       limit_entry_price):
+    """Charm S/R: place LIMIT entry only. Stop/target placed after fill (Phase 2)."""
+    side = "Buy" if is_long else "Sell"
+    limit_price = _round_mes(limit_entry_price)
+
+    entry_payload = {
+        "AccountID": SIM_ACCOUNT_ID, "Symbol": MES_SYMBOL,
+        "Quantity": str(TOTAL_QTY), "OrderType": "Limit",
+        "LimitPrice": str(limit_price),
+        "TradeAction": side, "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+    resp = _sim_api("POST", "/orderexecution/orders", entry_payload)
+    ok, entry_oid = _order_ok(resp)
+    if not ok:
+        _alert(f"[AUTO-TRADE] FAILED limit entry for {setup_name}\n"
+               f"Side: {side} {TOTAL_QTY} {MES_SYMBOL} LIMIT @ {limit_price:.2f}")
+        return
+
+    order = {
+        "setup_log_id": setup_log_id,
+        "setup_name": setup_name,
+        "direction": direction,
+        "entry_order_id": entry_oid,
+        "t1_order_id": None,
+        "t2_order_id": None,
+        "stop_order_id": None,
+        "stop_qty": TOTAL_QTY,
+        "t1_qty": 0,
+        "t2_qty": 0,
+        "current_stop": None,
+        "first_target_price": None,
+        "full_target_price": None,
+        "status": "pending_limit",
+        "t1_filled": False,
+        "t2_filled": False,
+        "fill_price": None,
+        "ts_placed": datetime.utcnow().isoformat(),
+        "limit_entry_price": limit_price,
+        "limit_placed_at": datetime.utcnow().isoformat(),
+        "deferred_stop_pts": stop_pts,
+        "deferred_target_pts": target_pts,
+        "deferred_full_target_pts": full_target_pts,
+        "deferred_es_price": es_price,
+    }
+
+    with _lock:
+        _active_orders[setup_log_id] = order
+    _persist_order(setup_log_id)
+
+    print(f"[auto-trader] LIMIT placed: {setup_name} {side} {TOTAL_QTY} {MES_SYMBOL} "
+          f"LIMIT @ {limit_price:.2f} (market was {es_price:.2f}) "
+          f"id={entry_oid}", flush=True)
+    _alert(f"[AUTO-TRADE] {setup_name} LIMIT entry\n"
+           f"Side: {side} | {TOTAL_QTY} {MES_SYMBOL} LIMIT @ {limit_price:.2f}\n"
+           f"[CHARM S/R] Waiting for fill (market @ {es_price:.2f})")
+
+
+def _place_deferred_protective_orders(lid, order, fill_price):
+    """Phase 2: place stop + target orders after limit entry fills."""
+    is_long = order["direction"].lower() in ("long", "bullish")
+    exit_side = "Sell" if is_long else "Buy"
+    stop_pts = order["deferred_stop_pts"]
+    target_pts = order.get("deferred_target_pts")
+    full_target_pts = order.get("deferred_full_target_pts")
+    setup_name = order["setup_name"]
+
+    if is_long:
+        es_stop = _round_mes(fill_price - stop_pts)
+        t1_price = _round_mes(fill_price + FIRST_TARGET_PTS)
+        t2_price = _round_mes(fill_price + full_target_pts) if full_target_pts else None
+    else:
+        es_stop = _round_mes(fill_price + stop_pts)
+        t1_price = _round_mes(fill_price - FIRST_TARGET_PTS)
+        t2_price = _round_mes(fill_price - full_target_pts) if full_target_pts else None
+
+    # DD Exhaustion / AG Short: trail-only T2
+    if setup_name in ("DD Exhaustion", "AG Short"):
+        t2_price = None
+
+    # Determine flow: single target (BofA, Paradigm) vs split target
+    is_single = setup_name in _SINGLE_TARGET_SETUPS
+
+    # 1. Stop order
+    stop_payload = {
+        "AccountID": SIM_ACCOUNT_ID, "Symbol": MES_SYMBOL,
+        "Quantity": str(TOTAL_QTY), "OrderType": "StopMarket",
+        "StopPrice": str(es_stop), "TradeAction": exit_side,
+        "TimeInForce": {"Duration": "DAY"}, "Route": "Intelligent",
+    }
+    stop_resp = _sim_api("POST", "/orderexecution/orders", stop_payload)
+    stop_ok, stop_oid = _order_ok(stop_resp)
+    if not stop_ok:
+        stop_oid = None
+        _alert(f"[AUTO-TRADE] MANUAL INTERVENTION: {setup_name} limit FILLED "
+               f"@ {fill_price:.2f} but STOP FAILED!")
+
+    # 2. T1 limit order
+    t1_oid = None
+    t1_qty = TOTAL_QTY if is_single else T1_QTY
+    if t1_qty > 0:
+        t1_payload = {
+            "AccountID": SIM_ACCOUNT_ID, "Symbol": MES_SYMBOL,
+            "Quantity": str(t1_qty), "OrderType": "Limit",
+            "LimitPrice": str(t1_price), "TradeAction": exit_side,
+            "TimeInForce": {"Duration": "DAY"}, "Route": "Intelligent",
+        }
+        t1_resp = _sim_api("POST", "/orderexecution/orders", t1_payload)
+        t1_ok, t1_oid = _order_ok(t1_resp)
+        if not t1_ok:
+            t1_oid = None
+
+    # 3. T2 limit order (split target only)
+    t2_oid = None
+    if not is_single and t2_price is not None and T2_QTY > 0:
+        t2_payload = {
+            "AccountID": SIM_ACCOUNT_ID, "Symbol": MES_SYMBOL,
+            "Quantity": str(T2_QTY), "OrderType": "Limit",
+            "LimitPrice": str(t2_price), "TradeAction": exit_side,
+            "TimeInForce": {"Duration": "DAY"}, "Route": "Intelligent",
+        }
+        t2_resp = _sim_api("POST", "/orderexecution/orders", t2_payload)
+        t2_ok, t2_oid = _order_ok(t2_resp)
+        if not t2_ok:
+            t2_oid = None
+
+    # Update order state
+    with _lock:
+        order["stop_order_id"] = stop_oid
+        order["t1_order_id"] = t1_oid
+        order["t2_order_id"] = t2_oid
+        order["current_stop"] = es_stop
+        order["first_target_price"] = t1_price
+        order["full_target_price"] = t2_price
+        order["t1_qty"] = t1_qty
+        order["t2_qty"] = 0 if is_single else T2_QTY
+    _persist_order(lid)
+
+    imp_pts = abs(fill_price - order.get("deferred_es_price", fill_price))
+    t2_str = f"T2={t2_price:.2f}" if t2_price else "T2=trail"
+    print(f"[auto-trader] DEFERRED orders placed: {setup_name} "
+          f"stop={es_stop:.2f} T1={t1_price:.2f} {t2_str} "
+          f"(entry improved {imp_pts:.1f}pts from market)", flush=True)
+    _alert(f"[AUTO-TRADE] {setup_name} LIMIT FILLED @ {fill_price:.2f}\n"
+           f"[CHARM S/R] Improved {imp_pts:+.1f}pts from market "
+           f"({order.get('deferred_es_price', 0):.2f})\n"
+           f"Stop: {es_stop:.2f} | T1: {t1_price:.2f} | {t2_str}")
+
 
 def _place_single_target(setup_log_id, setup_name, direction, is_long,
                           es_price, stop_pts):
@@ -594,6 +757,12 @@ def _flatten_position(order):
         if oid:
             _sim_api("DELETE", f"/orderexecution/orders/{oid}", None)
 
+    # Cancel pending limit entry order if not yet filled
+    if order.get("status") == "pending_limit" and order.get("entry_order_id"):
+        _sim_api("DELETE", f"/orderexecution/orders/{order['entry_order_id']}", None)
+        print(f"[auto-trader] cancelled pending limit entry: {order['setup_name']}", flush=True)
+        return
+
     # Wait briefly for any in-flight fills to settle after cancellations
     time.sleep(0.5)
 
@@ -678,7 +847,7 @@ def poll_order_status():
         if not _active_orders:
             return
         pending = [(lid, o) for lid, o in _active_orders.items()
-                   if o["status"] in ("pending_entry", "filled")]
+                   if o["status"] in ("pending_entry", "pending_limit", "filled")]
     if not pending:
         return
 
@@ -705,6 +874,47 @@ def poll_order_status():
 def _check_order_fills(lid, order, broker_orders):
     """Check individual order fills and update state."""
     changed = False
+
+    # Check pending limit entry (Phase 2: deferred stop/target)
+    if order["status"] == "pending_limit" and order.get("entry_order_id"):
+        entry = broker_orders.get(order["entry_order_id"], {})
+        entry_status = entry.get("Status", "")
+        if entry_status == "FLL":
+            fill_price = _extract_fill_price(entry)
+            with _lock:
+                order["status"] = "filled"
+                order["fill_price"] = fill_price
+            changed = True
+            # Place deferred stop + target orders using actual fill price
+            _place_deferred_protective_orders(lid, order, fill_price)
+        elif entry_status in ("REJ", "CAN", "EXP"):
+            with _lock:
+                order["status"] = "closed"
+            changed = True
+            print(f"[auto-trader] limit entry {entry_status}: {order['setup_name']}", flush=True)
+            _alert(f"[AUTO-TRADE] {order['setup_name']} LIMIT {entry_status}\n"
+                   f"[CHARM S/R] Entry not filled — trade skipped")
+        else:
+            # Check timeout (30 min)
+            placed_at = order.get("limit_placed_at")
+            if placed_at:
+                try:
+                    placed_dt = datetime.fromisoformat(placed_at)
+                    if placed_dt.tzinfo is None:
+                        placed_dt = placed_dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+                    elapsed = (datetime.utcnow() - placed_dt.replace(tzinfo=None)).total_seconds()
+                    if elapsed > _LIMIT_ENTRY_TIMEOUT_S:
+                        _sim_api("DELETE", f"/orderexecution/orders/{order['entry_order_id']}", None)
+                        with _lock:
+                            order["status"] = "closed"
+                        changed = True
+                        print(f"[auto-trader] LIMIT TIMEOUT: {order['setup_name']} cancelled "
+                              f"after {elapsed/60:.0f} min", flush=True)
+                        _alert(f"[AUTO-TRADE] {order['setup_name']} LIMIT EXPIRED\n"
+                               f"[CHARM S/R] {order.get('limit_entry_price', 0):.2f} not reached "
+                               f"in {elapsed/60:.0f} min — trade skipped")
+                except (ValueError, TypeError):
+                    pass
 
     # Check entry fill
     if order["status"] == "pending_entry" and order.get("entry_order_id"):
@@ -1137,7 +1347,7 @@ def flatten_all_eod():
     With stacking: cancel ALL orders first, then close broker position once."""
     with _lock:
         open_orders = [(lid, o) for lid, o in _active_orders.items()
-                       if o["status"] in ("pending_entry", "filled")]
+                       if o["status"] in ("pending_entry", "pending_limit", "filled")]
     if not open_orders:
         print("[auto-trader] EOD flatten: no tracked positions", flush=True)
     else:
@@ -1147,8 +1357,11 @@ def flatten_all_eod():
         # This prevents orphaned stop/target orders from filling during flatten
         cancelled = 0
         for lid, order in open_orders:
-            for oid_key in ("stop_order_id", "t1_order_id", "t2_order_id"):
+            for oid_key in ("entry_order_id", "stop_order_id", "t1_order_id", "t2_order_id"):
                 oid = order.get(oid_key)
+                # Cancel entry order only for pending_limit (not yet filled)
+                if oid_key == "entry_order_id" and order.get("status") != "pending_limit":
+                    continue
                 if oid:
                     try:
                         _sim_api("DELETE", f"/orderexecution/orders/{oid}", None)

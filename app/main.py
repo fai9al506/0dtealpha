@@ -573,6 +573,14 @@ def db_init():
             END $$;
             """))
 
+        # Charm S/R limit entry column on setup_log
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_log ADD COLUMN charm_limit_entry DOUBLE PRECISION;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+
         # Economic calendar events table
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS economic_events (
@@ -1408,6 +1416,68 @@ _spx_cycle_low = None   # derived cycle low  (min of spot & any new session low)
 _last_known_spot = None  # cached spot for EOD summary fallback
 _vanna_cache = {"all": None, "weekly": None, "monthly": None, "ts": None}  # refreshed each 30s cycle
 
+def _compute_charm_limit_entry(spot: float, direction: str) -> dict | None:
+    """Compute charm S/R limit entry for SHORT trades.
+
+    For shorts, find the strongest positive charm strike above spot (resistance)
+    and strongest negative below (support). If short entry is NOT already near
+    resistance (top 30% of range), return a limit entry price at
+    resistance - range * 0.3 instead of market.
+
+    Returns dict with limit_price and S/R details, or None.
+    """
+    if not engine:
+        return None
+    if direction.lower() in ("long", "bullish"):
+        return None
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT strike, value FROM volland_exposure_points
+                WHERE greek = 'charm'
+                  AND ts_utc > NOW() - INTERVAL '5 minutes'
+                  AND strike BETWEEN :lo AND :hi
+                  AND value != 0
+                ORDER BY ts_utc DESC, abs(value) DESC
+            """), {"lo": spot - 25, "hi": spot + 25}).fetchall()
+        if not rows:
+            return None
+        # Dedupe strikes (keep most recent value per strike)
+        seen = set()
+        strikes = []
+        for r in rows:
+            sk = float(r.strike)
+            if sk not in seen:
+                seen.add(sk)
+                strikes.append({"strike": sk, "value": float(r.value)})
+        # Find resistance (strongest positive above spot) and support (strongest negative below)
+        pos_above = [x for x in strikes if x["strike"] > spot and x["value"] > 0]
+        neg_below = [x for x in strikes if x["strike"] <= spot and x["value"] < 0]
+        if not pos_above or not neg_below:
+            return None
+        resistance = max(pos_above, key=lambda x: abs(x["value"]))
+        support = max(neg_below, key=lambda x: abs(x["value"]))
+        sr_range = resistance["strike"] - support["strike"]
+        if sr_range < 10:
+            return None
+        pos_pct = (spot - support["strike"]) / sr_range * 100
+        # Already near resistance (good zone) — use market order
+        if pos_pct >= 70:
+            return None
+        # Ideal entry: 30% from resistance
+        ideal_entry = resistance["strike"] - sr_range * 0.3
+        return {
+            "limit_price": round(ideal_entry, 1),
+            "resistance": resistance["strike"],
+            "support": support["strike"],
+            "sr_range": round(sr_range, 1),
+            "pos_pct": round(pos_pct, 1),
+        }
+    except Exception as e:
+        print(f"[charm-sr] query error: {e}", flush=True)
+        return None
+
+
 def log_setup(result_wrapper):
     """
     Insert or update a detection in setup_log table.
@@ -1462,6 +1532,8 @@ def log_setup(result_wrapper):
                 insert_params.setdefault("vanna_monthly", None)
                 insert_params.setdefault("spot_vol_beta", None)
                 insert_params.setdefault("greek_alignment", None)
+                # Charm S/R limit entry
+                insert_params.setdefault("charm_limit_entry", None)
                 # Auto-populate comments and abs_details for ES Absorption
                 if setup_name == "ES Absorption" and not insert_params.get("comments"):
                     _parts = [
@@ -1493,7 +1565,8 @@ def log_setup(result_wrapper):
                          target_cluster_score, rr_score, notified,
                          bofa_stop_level, bofa_target_level, bofa_lis_width, bofa_max_hold_minutes, lis_upper,
                          abs_vol_ratio, abs_es_price, vix, comments, abs_details,
-                         vanna_all, vanna_weekly, vanna_monthly, spot_vol_beta, greek_alignment)
+                         vanna_all, vanna_weekly, vanna_monthly, spot_vol_beta, greek_alignment,
+                         charm_limit_entry)
                     VALUES
                         (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
                          :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
@@ -1501,7 +1574,8 @@ def log_setup(result_wrapper):
                          :target_cluster_score, :rr_score, TRUE,
                          :bofa_stop_level, :bofa_target_level, :bofa_lis_width, :bofa_max_hold_minutes, :lis_upper_val,
                          :abs_vol_ratio, :abs_es_price, :vix, :comments, :abs_details,
-                         :vanna_all, :vanna_weekly, :vanna_monthly, :spot_vol_beta, :greek_alignment)
+                         :vanna_all, :vanna_weekly, :vanna_monthly, :spot_vol_beta, :greek_alignment,
+                         :charm_limit_entry)
                     RETURNING id
                 """), insert_params)
                 log_id = result.fetchone()[0]
@@ -3514,6 +3588,14 @@ def _run_setup_check():
             r.get("direction"), aggregated_charm, _vanna_cache.get("all"),
             r.get("spot"), max_plus_gex)
 
+        # Charm S/R limit entry for shorts
+        _charm_sr = None
+        if r["direction"] not in ("long", "bullish"):
+            _charm_sr = _compute_charm_limit_entry(r["spot"], r["direction"])
+            r["charm_limit_entry"] = _charm_sr["limit_price"] if _charm_sr else None
+        else:
+            r["charm_limit_entry"] = None
+
         # Only log and notify on meaningful events
         if rw["notify"]:
             log_setup(rw)
@@ -3535,6 +3617,11 @@ def _run_setup_check():
                 _fmt_fn = _fmt_map.get(setup_name)
                 _align = r.get("greek_alignment")
                 _msg = _fmt_fn(r, alignment=_align) if _fmt_fn else rw["message"]
+                # Append charm S/R info for shorts with limit entry
+                if _charm_sr:
+                    _msg += (f"\n\n[CHARM S/R] Limit entry @ {_charm_sr['limit_price']:.1f} "
+                             f"(R={_charm_sr['resistance']:.0f} S={_charm_sr['support']:.0f} "
+                             f"range={_charm_sr['sr_range']:.0f}pt pos={_charm_sr['pos_pct']:.0f}%)")
                 send_telegram_setups(_msg)
                 print(f"[setups] {setup_name} NEW: {grade} ({score})", flush=True)
                 # Record open trade for live outcome tracking
@@ -3616,11 +3703,19 @@ def _run_setup_check():
                                 else:
                                     full_tgt = r.get("target") or r.get("bofa_target_level")
                                     full_target_dist = abs(full_tgt - r["spot"]) if full_tgt else target_dist
+                                # Charm S/R: convert SPX limit price to MES space
+                                _mes_charm_limit = None
+                                _charm_limit_spx = r.get("charm_limit_entry")
+                                if _charm_limit_spx and not _is_long_dir:
+                                    _mes_charm_limit = es_px + (_charm_limit_spx - r["spot"])
+                                    print(f"[charm-sr] {setup_name}: MES limit {_mes_charm_limit:.2f} "
+                                          f"(SPX {_charm_limit_spx:.1f})", flush=True)
                                 auto_trader.place_trade(
                                     setup_log_id=_current_setup_log.get(setup_name),
                                     setup_name=setup_name, direction=r["direction"],
                                     es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
                                     full_target_pts=full_target_dist,
+                                    limit_entry_price=_mes_charm_limit,
                                 )
                             elif not es_px:
                                 print(f"[auto-trader] SKIPPED {setup_name}: no ES price available (quote stream and delta both None)", flush=True)
@@ -4144,6 +4239,14 @@ def _run_absorption_detection(bars: list) -> dict | None:
     # Notification gate
     fire, reason = should_notify_absorption(result)
 
+    # Charm S/R limit entry for shorts (ES Absorption shorts blocked by F5+F6, but wire for consistency)
+    _abs_charm_sr = None
+    if result["direction"] not in ("long", "bullish"):
+        _abs_charm_sr = _compute_charm_limit_entry(result["spot"], result["direction"])
+        result["charm_limit_entry"] = _abs_charm_sr["limit_price"] if _abs_charm_sr else None
+    else:
+        result["charm_limit_entry"] = None
+
     # Always log signal to setup_log for history (regardless of cooldown)
     rw = {
         "result": result,
@@ -4222,11 +4325,17 @@ def _run_absorption_detection(bars: list) -> dict | None:
                 if es_px and stop_lvl is not None:
                     stop_dist = abs(es_px - stop_lvl)
                     target_dist = abs(target_lvl - es_px) if target_lvl else None
+                    # Charm S/R: convert SPX limit price to MES space
+                    _abs_mes_charm = None
+                    _abs_charm_limit = result.get("charm_limit_entry")
+                    if _abs_charm_limit and not _abs_is_long_dir:
+                        _abs_mes_charm = es_px + (_abs_charm_limit - result["spot"])
                     auto_trader.place_trade(
                         setup_log_id=_current_setup_log.get("ES Absorption"),
                         setup_name="ES Absorption", direction=result["direction"],
                         es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
                         full_target_pts=target_dist,
+                        limit_entry_price=_abs_mes_charm,
                     )
                 elif not es_px:
                     print(f"[auto-trader] SKIPPED ES Absorption: no ES price available", flush=True)
@@ -5406,7 +5515,8 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 "paradigm, bofa_stop_level, bofa_target_level, abs_es_price, "
                 "max_plus_gex, max_minus_gex, "
                 "outcome_result, outcome_pnl, "
-                "vanna_all, vanna_weekly, vanna_monthly, spot_vol_beta, greek_alignment "
+                "vanna_all, vanna_weekly, vanna_monthly, spot_vol_beta, greek_alignment, "
+                "charm_limit_entry "
                 "FROM setup_log "
                 "WHERE id > :since AND ts::date = :today AND grade != 'LOG' "
                 "ORDER BY id ASC"
@@ -5439,6 +5549,7 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 "vanna_monthly": row.get("vanna_monthly"),
                 "spot_vol_beta": row.get("spot_vol_beta"),
                 "greek_alignment": row.get("greek_alignment"),
+                "charm_limit_entry": row.get("charm_limit_entry"),
             }
             signals.append(entry)
             if row["outcome_result"]:

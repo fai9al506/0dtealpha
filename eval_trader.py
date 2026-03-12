@@ -484,6 +484,7 @@ class APIPoller:
             "greek_alignment": s.get("greek_alignment"),
             "spot_vol_beta": s.get("spot_vol_beta"),
             "vanna_all": s.get("vanna_all"),
+            "charm_limit_entry": s.get("charm_limit_entry"),
         }
 
 
@@ -1018,6 +1019,59 @@ class NT8Bridge:
 
         return {"entry_oid": entry_oid, "stop_oid": stop_oid, "target_oid": None}
 
+    def place_limit_entry_only(self, direction: str, qty: int,
+                               limit_price: float) -> dict:
+        """Place LIMIT entry only (no stop/target). Used for charm S/R deferred entry.
+
+        Stop and target are placed AFTER the entry fills to prevent
+        creating unintended positions from orphan exit orders.
+        """
+        is_long = direction in ("long", "bullish")
+        entry_side = "BUY" if is_long else "SELL"
+        entry_oid = self._oid("L")  # L for limit
+
+        self._write(
+            f"PLACE;{self.account};{self.symbol};{entry_side};{qty};"
+            f"LIMIT;{_round_tick(limit_price)};;DAY;;{entry_oid};;\n"
+        )
+
+        log.info(f"NT8 LIMIT entry placed: {entry_side} {qty} {self.symbol} "
+                 f"LIMIT @ {_round_tick(limit_price)}")
+
+        return {"entry_oid": entry_oid, "stop_oid": None, "target_oid": None}
+
+    def place_deferred_exits(self, direction: str, qty: int,
+                             stop_price: float, target_price: float | None = None) -> dict:
+        """Place stop + optional target after a limit entry fills.
+
+        Returns dict with {stop_oid, target_oid}.
+        """
+        is_long = direction in ("long", "bullish")
+        exit_side = "SELL" if is_long else "BUY"
+
+        stop_oid = self._oid("s")
+        target_oid = None
+
+        # 1. Stop-market
+        self._write(
+            f"PLACE;{self.account};{self.symbol};{exit_side};{qty};"
+            f"STOPMARKET;;{_round_tick(stop_price)};DAY;;{stop_oid};;\n"
+        )
+
+        # 2. Limit target (optional)
+        if target_price is not None:
+            target_oid = self._oid("t")
+            time.sleep(0.3)
+            self._write(
+                f"PLACE;{self.account};{self.symbol};{exit_side};{qty};"
+                f"LIMIT;{_round_tick(target_price)};;DAY;;{target_oid};;\n"
+            )
+
+        log.info(f"NT8 deferred exits placed: stop={_round_tick(stop_price)} "
+                 f"target={_round_tick(target_price) if target_price else 'trail-only'}")
+
+        return {"stop_oid": stop_oid, "target_oid": target_oid}
+
     def change_stop(self, order_id: str, new_stop_price: float, qty: int):
         """Modify an existing stop order price via OIF CHANGE command."""
         self._write(
@@ -1237,43 +1291,84 @@ class PositionTracker:
         if es_entry:
             log.info(f"  ES entry price: {es_entry:.2f} (for breakeven tracking)")
 
-        # Place orders in NT8
-        if trail_only:
-            oids = self.nt8.place_entry_and_stop(direction, qty, stop_price)
-        else:
-            oids = self.nt8.place_bracket(direction, qty, stop_price, target_price)
+        # Charm S/R limit entry for shorts
+        charm_limit = signal.get("charm_limit_entry")
+        use_limit_entry = charm_limit is not None and not is_long
 
-        self.position = {
-            "setup_name": name,
-            "direction": direction,
-            "grade": signal.get("grade", "?"),
-            "entry_price": order_ref,
-            "spx_spot": spot,
-            "stop_price": stop_price,
-            "target_price": target_price if not trail_only else None,
-            "stop_pts": stop_pts,
-            "target_pts": target_pts if not trail_only else None,
-            "trail_only": trail_only,
-            "qty": qty,
-            "ts": datetime.now(CT).isoformat(),
-            "max_hold_min": rules.get("max_hold_min"),
-            "es_entry_price": es_entry,
-            "be_triggered": False,
-            **oids,
-        }
-        self.compliance.has_open_position = True
-        self._save()
+        if use_limit_entry:
+            # Convert SPX charm limit to MES space
+            spx_to_mes = order_ref - spot
+            mes_limit = charm_limit + spx_to_mes
+            oids = self.nt8.place_limit_entry_only(direction, qty, mes_limit)
 
-        pnl_risk = stop_pts * qty * MES_POINT_VALUE
-        if trail_only:
-            log.info(f"TRADE OPENED: {name} {direction.upper()} [{signal.get('grade', '?')}]")
-            log.info(f"  MES Entry: {order_ref:.2f} | Stop: {stop_price:.2f} (-{stop_pts}pts / -${pnl_risk:.0f}) | "
-                     f"Target: TRAIL-ONLY (breakeven @ +{self.cfg.get('be_trigger_pts', 5)}pts) | Qty: {qty}")
+            self.position = {
+                "setup_name": name,
+                "direction": direction,
+                "grade": signal.get("grade", "?"),
+                "entry_price": order_ref,
+                "spx_spot": spot,
+                "stop_price": stop_price,
+                "target_price": target_price if not trail_only else None,
+                "stop_pts": stop_pts,
+                "target_pts": target_pts if not trail_only else None,
+                "trail_only": trail_only,
+                "qty": qty,
+                "ts": datetime.now(CT).isoformat(),
+                "max_hold_min": rules.get("max_hold_min"),
+                "es_entry_price": es_entry,
+                "be_triggered": False,
+                "pending_limit": True,
+                "limit_entry_price": _round_tick(mes_limit),
+                "limit_placed_at": datetime.now(CT).isoformat(),
+                "deferred_stop": stop_price,
+                "deferred_target": target_price if not trail_only else None,
+                **oids,
+            }
+            self.compliance.has_open_position = True
+            self._save()
+
+            log.info(f"TRADE OPENED (LIMIT): {name} {direction.upper()} [{signal.get('grade', '?')}]")
+            log.info(f"  MES LIMIT Entry: {_round_tick(mes_limit):.2f} (market @ {order_ref:.2f})")
+            log.info(f"  [CHARM S/R] Deferred stop={stop_price:.2f} target={target_price:.2f}")
+            log.info(f"  Waiting for limit fill (30 min timeout)")
         else:
-            pnl_reward = target_pts * qty * MES_POINT_VALUE
-            log.info(f"TRADE OPENED: {name} {direction.upper()} [{signal.get('grade', '?')}]")
-            log.info(f"  MES Entry: {order_ref:.2f} | Stop: {stop_price:.2f} (-{stop_pts}pts / -${pnl_risk:.0f}) | "
-                     f"Target: {target_price:.2f} (+{target_pts:.1f}pts / +${pnl_reward:.0f}) | Qty: {qty}")
+            # Standard market entry
+            if trail_only:
+                oids = self.nt8.place_entry_and_stop(direction, qty, stop_price)
+            else:
+                oids = self.nt8.place_bracket(direction, qty, stop_price, target_price)
+
+            self.position = {
+                "setup_name": name,
+                "direction": direction,
+                "grade": signal.get("grade", "?"),
+                "entry_price": order_ref,
+                "spx_spot": spot,
+                "stop_price": stop_price,
+                "target_price": target_price if not trail_only else None,
+                "stop_pts": stop_pts,
+                "target_pts": target_pts if not trail_only else None,
+                "trail_only": trail_only,
+                "qty": qty,
+                "ts": datetime.now(CT).isoformat(),
+                "max_hold_min": rules.get("max_hold_min"),
+                "es_entry_price": es_entry,
+                "be_triggered": False,
+                **oids,
+            }
+            self.compliance.has_open_position = True
+            self._save()
+
+            pnl_risk = stop_pts * qty * MES_POINT_VALUE
+            if trail_only:
+                log.info(f"TRADE OPENED: {name} {direction.upper()} [{signal.get('grade', '?')}]")
+                log.info(f"  MES Entry: {order_ref:.2f} | Stop: {stop_price:.2f} (-{stop_pts}pts / -${pnl_risk:.0f}) | "
+                         f"Target: TRAIL-ONLY (breakeven @ +{self.cfg.get('be_trigger_pts', 5)}pts) | Qty: {qty}")
+            else:
+                pnl_reward = target_pts * qty * MES_POINT_VALUE
+                log.info(f"TRADE OPENED: {name} {direction.upper()} [{signal.get('grade', '?')}]")
+                log.info(f"  MES Entry: {order_ref:.2f} | Stop: {stop_price:.2f} (-{stop_pts}pts / -${pnl_risk:.0f}) | "
+                         f"Target: {target_price:.2f} (+{target_pts:.1f}pts / +${pnl_reward:.0f}) | Qty: {qty}")
 
     def close_on_outcome(self, outcome: dict):
         """Close position when Railway sends outcome via Telegram."""
@@ -1361,8 +1456,22 @@ class PositionTracker:
 
         log.info(f"REVERSING: closing {old_name} {old_dir} for new {new_name} {new_dir}")
 
+        # If current position is a pending limit, just cancel entry and open new trade
+        if self.position.get("pending_limit"):
+            entry_oid = self.position.get("entry_oid")
+            if entry_oid:
+                self.nt8.cancel(entry_oid)
+            log.info(f"  Cancelled pending limit entry for {old_name}")
+            self.compliance.record_trade(0.0, old_name, old_qty)
+            self.position = None
+            self.compliance.has_open_position = False
+            self._save()
+            self.open_trade(signal)
+            return
+
         # Step 1: Cancel old exit orders individually (known-working CANCEL command)
-        self.nt8.cancel(self.position["stop_oid"])
+        if self.position.get("stop_oid"):
+            self.nt8.cancel(self.position["stop_oid"])
         if self.position.get("target_oid"):
             time.sleep(0.3)
             self.nt8.cancel(self.position["target_oid"])
@@ -1481,12 +1590,26 @@ class PositionTracker:
         if not self.position:
             return
 
+        # If pending limit entry, just cancel the entry order
+        if self.position.get("pending_limit"):
+            entry_oid = self.position.get("entry_oid")
+            if entry_oid:
+                self.nt8.cancel(entry_oid)
+            log.info(f"FLATTEN: cancelled pending limit entry ({reason})")
+            self.compliance.record_trade(0.0, self.position["setup_name"],
+                                         self.position.get("qty", self.cfg["qty"]))
+            self.position = None
+            self.compliance.has_open_position = False
+            self._save()
+            return
+
         trade_qty = self.position.get("qty", self.cfg["qty"])
         is_long = self.position["direction"] in ("long", "bullish")
         exit_side = "SELL" if is_long else "BUY"
 
         # Cancel old exit orders
-        self.nt8.cancel(self.position["stop_oid"])
+        if self.position.get("stop_oid"):
+            self.nt8.cancel(self.position["stop_oid"])
         if self.position.get("target_oid"):
             time.sleep(0.3)
             self.nt8.cancel(self.position["target_oid"])
@@ -1540,6 +1663,8 @@ class PositionTracker:
         """
         if not self.position or not es_price:
             return
+        if self.position.get("pending_limit"):
+            return  # No trail until limit entry fills
         if not self.position.get("es_entry_price"):
             return
 
@@ -1607,6 +1732,8 @@ class PositionTracker:
                 log.info(f"  {trail_type}: stop {old_stop:.2f} → {new_stop:.2f} "
                          f"(profit={profit:+.1f} max={max_fav:+.1f})")
 
+    _LIMIT_ENTRY_TIMEOUT_S = 1800  # 30 min timeout for limit entries
+
     def check_nt8_fills(self):
         """Poll NT8 outgoing folder to detect stop/target fills or rejections.
 
@@ -1621,6 +1748,78 @@ class PositionTracker:
         entry_oid = self.position.get("entry_oid")
         trade_qty = self.position.get("qty", self.cfg["qty"])
         is_long = self.position["direction"] in ("long", "bullish")
+
+        # Check pending limit entry (charm S/R deferred flow)
+        if self.position.get("pending_limit") and entry_oid:
+            entry_state = self.nt8.check_order_state(entry_oid)
+            if entry_state and entry_state["status"] == "FILLED":
+                fill_price = entry_state["price"]
+                log.info(f"NT8: LIMIT entry FILLED @ {fill_price:.2f}")
+                imp = abs(fill_price - self.position.get("entry_price", fill_price))
+                log.info(f"  [CHARM S/R] Improved {imp:.1f}pts from market")
+
+                # Update entry price to actual fill for breakeven tracking
+                self.position["entry_price"] = fill_price
+                self.position["es_entry_price"] = fill_price
+                self.position["pending_limit"] = False
+
+                # Place deferred stop + target
+                deferred_stop = self.position.get("deferred_stop")
+                deferred_target = self.position.get("deferred_target")
+                # Recalculate stop/target relative to actual fill price
+                stop_pts = self.position["stop_pts"]
+                if is_long:
+                    new_stop = fill_price - stop_pts
+                else:
+                    new_stop = fill_price + stop_pts
+                new_target = None
+                if deferred_target is not None:
+                    target_pts = self.position.get("target_pts")
+                    if target_pts:
+                        new_target = (fill_price + target_pts) if is_long else (fill_price - target_pts)
+
+                self.position["stop_price"] = new_stop
+                if new_target is not None:
+                    self.position["target_price"] = new_target
+
+                if self.position.get("trail_only"):
+                    exit_oids = self.nt8.place_deferred_exits(
+                        self.position["direction"], trade_qty, new_stop)
+                else:
+                    exit_oids = self.nt8.place_deferred_exits(
+                        self.position["direction"], trade_qty, new_stop, new_target)
+
+                self.position["stop_oid"] = exit_oids["stop_oid"]
+                self.position["target_oid"] = exit_oids["target_oid"]
+                self._save()
+                return
+
+            elif entry_state and entry_state["status"] == "REJECTED":
+                log.warning(f"NT8: LIMIT entry REJECTED — clearing position")
+                log.info(f"  [CHARM S/R] Limit entry not filled — trade skipped")
+                self.position = None
+                self.compliance.has_open_position = False
+                self._save()
+                return
+
+            # Check timeout
+            placed_at = self.position.get("limit_placed_at")
+            if placed_at:
+                try:
+                    placed_dt = datetime.fromisoformat(placed_at)
+                    elapsed = (datetime.now(CT) - placed_dt).total_seconds()
+                    if elapsed > self._LIMIT_ENTRY_TIMEOUT_S:
+                        self.nt8.cancel(entry_oid)
+                        log.info(f"NT8: LIMIT TIMEOUT — cancelled {entry_oid} after {elapsed/60:.0f}min")
+                        log.info(f"  [CHARM S/R] {self.position.get('limit_entry_price', 0):.2f} "
+                                 f"not reached — trade skipped")
+                        self.position = None
+                        self.compliance.has_open_position = False
+                        self._save()
+                        return
+                except (ValueError, TypeError):
+                    pass
+            return  # Still waiting for fill, skip normal fill checks
 
         # Check if entry was rejected
         if entry_oid:

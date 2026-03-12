@@ -194,6 +194,17 @@ Volume-gated price vs CVD divergence on ES 5-pt range bars, with Volland conflue
 
 **Greek filter (F5+F6):** Asymmetric alignment filter (Analysis #9). Longs: alignment >= +3. Shorts: block ALL ES Absorption shorts (toxic), block ALL BofA Scalp shorts (toxic), block DD Exhaustion shorts at align=0 (28% WR), AG Short at align=-3 already blocked by F3. No general alignment filter on shorts — alignment is structurally biased bullish.
 
+**Charm S/R Limit Entry (shorts only, added 2026-03-12):** For short setups, uses charm per-strike S/R levels to improve entry price. Queries `volland_exposure_points` for strongest positive charm strike above spot (resistance) and strongest negative below (support). If entry is NOT in the top 30% of the S/R range, places a LIMIT order at `resistance - range × 0.3` instead of MARKET. Backtest: +822 pts improvement, WR 69%→81%, DD halved.
+
+- **Two-phase order flow:** Phase 1 places LIMIT entry only. Phase 2 (on fill) places stop+target using actual fill price.
+- **30-min timeout:** Unfilled limit entries auto-cancelled after 30 min.
+- **DB column:** `setup_log.charm_limit_entry` stores SPX limit price for shorts.
+- **SPX→MES conversion:** `mes_limit = es_price + (charm_limit_spx - spot)` in main.py before passing to auto_trader/eval_trader.
+- **Longs unchanged:** Only shorts use charm S/R. Long entries remain MARKET.
+- **Status:** `pending_limit` in auto_trader `_active_orders`, `pending_limit: True` in eval_trader position dict.
+- **Telegram:** Shows `[CHARM S/R]` tags on limit placement, fill, timeout.
+- **EOD:** `flatten_all_eod()` cancels pending limit entries. Eval trader `flatten()` handles pending_limit gracefully.
+
 **Data contamination warning:** `es_range_bars` table has overlapping `bar_idx` from `live` and `rithmic` sources on same dates. Always filter by `source = 'rithmic'` in queries.
 
 ### DD Exhaustion Detector (Log-Only Mode)
@@ -246,12 +257,12 @@ Self-contained module (`app/auto_trader.py`) that auto-trades **10 MES** futures
 
 **MES price conversion:** SPX point distances applied to current MES price from quote stream (same tick size as ES).
 
-**place_trade() signature:** `place_trade(setup_log_id, setup_name, direction, es_price, target_pts, stop_pts, full_target_pts=None)` — `full_target_pts` is the Volland full target distance for T2.
+**place_trade() signature:** `place_trade(setup_log_id, setup_name, direction, es_price, target_pts, stop_pts, full_target_pts=None, limit_entry_price=None)` — `full_target_pts` is the Volland full target distance for T2. `limit_entry_price` is MES-space charm S/R limit entry (shorts only, None = market).
 
 **Integration points in main.py (7):**
 1. Startup init after Rithmic
 2. `auto_trade_orders` table in `db_init()`
-3. `place_trade()` after setup fires (both main loop and ES Absorption path) — passes `full_target_pts`
+3. `place_trade()` after setup fires (both main loop and ES Absorption path) — passes `full_target_pts` + `limit_entry_price` (charm S/R)
 4. `update_stop()` after trail advances
 5. `close_trade()` on outcome resolution
 6. `poll_order_status()` at top of `_check_setup_outcomes()`

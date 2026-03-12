@@ -1,11 +1,14 @@
-# Options Trader: SPX 0DTE options SIM execution module
+# Options Trader: 0DTE options SIM execution module
 # Self-contained — receives engine, token fn, and telegram fn via init()
 # Hardcoded to SIM API — cannot hit live.
 #
-# Buys SPXW 0DTE options at ~0.30 delta on ALL setups (behind Greek filter).
+# Buys SPY (or SPXW) 0DTE options at ~0.30 delta on ALL setups (behind Greek filter).
 # Single-leg only, no splits, no trailing — exit on outcome resolution.
-# Options are cash-settled at 4:00 PM ET if not closed earlier.
-# No stop-loss needed — max risk = premium paid ($3-15 typical).
+# No stop-loss needed — max risk = premium paid.
+#
+# Tracks BOTH:
+#   - SIM P&L (actual broker fills — may be unreliable for index options)
+#   - Theoretical P&L (live API bid/ask at entry/exit — accurate market prices)
 
 import os, json, time, requests
 from datetime import datetime, date
@@ -17,7 +20,8 @@ SIM_ACCOUNT_ID = os.getenv("OPTIONS_SIM_ACCOUNT", "SIM2609238M")
 OPTIONS_TRADE_ENABLED = os.getenv("OPTIONS_TRADE_ENABLED", "false").lower() == "true"
 OPTIONS_QTY = int(os.getenv("OPTIONS_QTY", "1"))
 TARGET_DELTA = float(os.getenv("OPTIONS_TARGET_DELTA", "0.30"))
-MAX_HOLD_MINUTES = int(os.getenv("OPTIONS_MAX_HOLD_MIN", "90"))     # close after 90 min (no SL — 91% WR, SL kills too many winners)
+MAX_HOLD_MINUTES = int(os.getenv("OPTIONS_MAX_HOLD_MIN", "90"))     # close after 90 min
+OPTIONS_UNDERLYING = os.getenv("OPTIONS_UNDERLYING", "SPY")         # "SPY" or "SPXW"
 
 # Chain column indices (CANONICAL_COLS from main.py)
 # C_Volume(0), C_OI(1), C_IV(2), C_Gamma(3), C_Delta(4), C_Bid(5), C_BidSize(6), C_Ask(7), C_AskSize(8), C_Last(9),
@@ -49,13 +53,13 @@ def init(engine, get_token_fn, send_telegram_fn):
     _load_active_orders()
     n = len(_active_orders)
     print(f"[options] init: enabled={OPTIONS_TRADE_ENABLED} account={SIM_ACCOUNT_ID} "
-          f"qty={OPTIONS_QTY} delta={TARGET_DELTA} active={n}", flush=True)
+          f"underlying={OPTIONS_UNDERLYING} qty={OPTIONS_QTY} delta={TARGET_DELTA} active={n}", flush=True)
 
 
 # ====== MAIN ENTRY POINT ======
 
 def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float):
-    """Buy SPXW 0DTE option when a setup fires.
+    """Buy 0DTE option when a setup fires.
 
     Args:
         setup_log_id: DB id from setup_log table
@@ -88,10 +92,10 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float)
     bid = strike_info["bid"]
     ask = strike_info["ask"]
 
-    # Build SPXW symbol for TS v3 API: "SPXW 260305C5880"
+    # Build option symbol: "SPY 260313C670" or "SPXW 260305C5880"
     today = date.today()
     cp = "C" if is_long else "P"
-    symbol = f"SPXW {today.strftime('%y%m%d')}{cp}{strike}"
+    symbol = f"{OPTIONS_UNDERLYING} {today.strftime('%y%m%d')}{cp}{strike}"
 
     # Place limit buy at ask price (avoid terrible SIM market fills)
     limit_price = round(ask, 2) if ask > 0 else None
@@ -126,8 +130,10 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float)
         "entry_order_id": entry_oid,
         "close_order_id": None,
         "qty": OPTIONS_QTY,
-        "entry_price": None,  # filled on poll
-        "close_price": None,
+        "entry_price": None,        # SIM fill price (may be unreliable)
+        "close_price": None,        # SIM fill price (may be unreliable)
+        "theo_entry_price": ask,    # theoretical: buy at ask (accurate)
+        "theo_close_price": None,   # theoretical: sell at bid (set on close)
         "status": "pending_entry",
         "spot_at_entry": spot,
         "bid_at_entry": bid,
@@ -160,8 +166,18 @@ def close_trade(setup_log_id: int, result_type: str = ""):
 
     # Sell to close at bid price (avoid terrible SIM market fills)
     if order["status"] == "filled":
-        # Get current bid for limit exit
+        # Get current bid for limit exit — this IS the theoretical close price
         bid_price = _get_option_bid(symbol)
+
+        # Save theoretical close price (live API bid — accurate market price)
+        if bid_price and bid_price > 0:
+            with _lock:
+                order["theo_close_price"] = bid_price
+            theo_entry = order.get("theo_entry_price") or order.get("ask_at_entry") or 0
+            theo_pnl = (bid_price - theo_entry) * 100 * order["qty"]
+            print(f"[options] theo close: {setup_name} theo_bid=${bid_price:.2f} "
+                  f"theo_pnl=${theo_pnl:+.0f}", flush=True)
+
         close_order_type = "Limit" if bid_price and bid_price > 0 else "Market"
         close_payload = {
             "AccountID": SIM_ACCOUNT_ID,
@@ -179,6 +195,7 @@ def close_trade(setup_log_id: int, result_type: str = ""):
         if close_ok:
             with _lock:
                 order["close_order_id"] = close_oid
+                order["ts_closed"] = datetime.utcnow().isoformat()
             # Try to capture fill price
             if close_oid:
                 time.sleep(1)
@@ -187,7 +204,8 @@ def close_trade(setup_log_id: int, result_type: str = ""):
                     with _lock:
                         order["close_price"] = fp
             print(f"[options] closed: {setup_name} {symbol} "
-                  f"result={result_type} close_price={order.get('close_price')}", flush=True)
+                  f"result={result_type} sim_close=${order.get('close_price')} "
+                  f"theo_close=${order.get('theo_close_price')}", flush=True)
         else:
             print(f"[options] close FAILED: {setup_name} {symbol} — "
                   f"will expire cash-settled", flush=True)
@@ -232,7 +250,7 @@ def poll_order_status():
     for lid, order in pending:
         _check_fills(lid, order, broker_orders)
 
-    # ── Stop-loss and time-based exit for filled positions ──
+    # ── Time-based exit for filled positions ──
     with _lock:
         filled = [(lid, o) for lid, o in _active_orders.items()
                   if o["status"] == "filled" and o.get("entry_price")]
@@ -272,8 +290,7 @@ def poll_order_status():
         should_close = False
         reason = ""
 
-        # No stop-loss: 91% WR setup, SL kills too many winners (40% dip 5+ pts before winning)
-        # Max risk is just the option premium ($3-8), which is tiny.
+        # No stop-loss: max risk is just the option premium, which is tiny.
 
         # Time exit: close if held > MAX_HOLD_MINUTES
         if not should_close and placed_ts:
@@ -298,18 +315,21 @@ def poll_order_status():
 # ====== STRIKE SELECTION ======
 
 def _find_strike(is_long: bool) -> dict | None:
-    """Find SPXW strike nearest to TARGET_DELTA from latest chain snapshot."""
+    """Find option strike nearest to TARGET_DELTA from latest chain snapshot."""
     if not _engine:
         return None
+
+    # Use SPY chain for SPY, SPX chain for SPXW
+    table = "spy_chain_snapshots" if OPTIONS_UNDERLYING == "SPY" else "chain_snapshots"
 
     try:
         from sqlalchemy import text
         with _engine.begin() as conn:
             row = conn.execute(text(
-                "SELECT columns, rows FROM chain_snapshots ORDER BY ts DESC LIMIT 1"
+                f"SELECT columns, rows FROM {table} ORDER BY ts DESC LIMIT 1"
             )).mappings().first()
         if not row:
-            print("[options] no chain snapshot available", flush=True)
+            print(f"[options] no {table} snapshot available", flush=True)
             return None
 
         cols = json.loads(row["columns"]) if isinstance(row["columns"], str) else row["columns"]
@@ -319,7 +339,7 @@ def _find_strike(is_long: bool) -> dict | None:
         return None
 
     if not rows:
-        print("[options] chain snapshot has no rows", flush=True)
+        print(f"[options] {table} snapshot has no rows", flush=True)
         return None
 
     # For LONG: buy call → scan C_Delta (idx 4), target ~0.30
@@ -359,8 +379,9 @@ def _find_strike(is_long: bool) -> dict | None:
             continue
 
     if best:
-        print(f"[options] strike selected: {best['strike']} delta={best['delta']:.3f} "
-              f"bid={best['bid']:.2f} ask={best['ask']:.2f}", flush=True)
+        print(f"[options] strike selected: {OPTIONS_UNDERLYING} {best['strike']} "
+              f"delta={best['delta']:.3f} bid={best['bid']:.2f} ask={best['ask']:.2f}",
+              flush=True)
     return best
 
 
@@ -380,10 +401,12 @@ def _check_fills(lid, order, broker_orders):
                 order["status"] = "filled"
                 order["entry_price"] = fp
             changed = True
+            # Log both SIM fill and theoretical entry
+            theo = order.get("theo_entry_price") or order.get("ask_at_entry")
             print(f"[options] FILLED: {order['setup_name']} {order['symbol']} "
-                  f"@ ${fp}", flush=True)
+                  f"sim=${fp} theo=${theo}", flush=True)
             _alert(f"[OPTIONS] {order['setup_name']} FILLED\n"
-                   f"{order['symbol']} @ ${fp}\n"
+                   f"{order['symbol']} sim=${fp} theo=${theo}\n"
                    f"Delta: {order['delta_at_entry']:.3f}")
         elif status in ("REJ", "CAN", "EXP"):
             with _lock:
@@ -402,9 +425,13 @@ def _check_fills(lid, order, broker_orders):
                 order["close_price"] = fp
                 order["status"] = "closed"
             changed = True
-            pnl = (fp - (order.get("entry_price") or 0)) * 100 * order["qty"]
+            sim_pnl = (fp - (order.get("entry_price") or 0)) * 100 * order["qty"]
+            theo_entry = order.get("theo_entry_price") or order.get("ask_at_entry") or 0
+            theo_close = order.get("theo_close_price") or 0
+            theo_pnl = (theo_close - theo_entry) * 100 * order["qty"] if theo_close else None
+            theo_str = f" theo=${theo_pnl:+.0f}" if theo_pnl is not None else ""
             print(f"[options] CLOSE FILLED: {order['setup_name']} {order['symbol']} "
-                  f"@ ${fp} P&L=${pnl:.0f}", flush=True)
+                  f"sim=${fp} sim_pnl=${sim_pnl:.0f}{theo_str}", flush=True)
 
     if changed:
         _persist_order(lid)

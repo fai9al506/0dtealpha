@@ -5470,6 +5470,71 @@ def api_eval_log(limit: int = Query(200)):
         print(f"[eval] log query error: {e}", flush=True)
         return []
 
+@app.get("/api/options/log")
+def api_options_log(limit: int = Query(200)):
+    """Return options trade log with both SIM and theoretical P&L."""
+    if not engine:
+        return []
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT o.setup_log_id, o.state,
+                       s.setup_name, s.direction, s.grade, s.ts, s.spot,
+                       s.outcome_result, s.outcome_pnl, s.greek_alignment
+                FROM options_trade_orders o
+                LEFT JOIN setup_log s ON o.setup_log_id = s.id
+                ORDER BY o.created_at DESC
+                LIMIT :lim
+            """), {"lim": min(int(limit), 500)}).mappings().all()
+
+        results = []
+        for r in rows:
+            st = r["state"]
+            if isinstance(st, str):
+                st = json.loads(st)
+            entry_p = st.get("entry_price")
+            close_p = st.get("close_price")
+            theo_entry = st.get("theo_entry_price") or st.get("ask_at_entry")
+            theo_close = st.get("theo_close_price")
+            sim_pnl = ((close_p or 0) - (entry_p or 0)) * 100 * st.get("qty", 1) if entry_p and close_p else None
+            theo_pnl = ((theo_close or 0) - (theo_entry or 0)) * 100 * st.get("qty", 1) if theo_entry and theo_close else None
+            # Hold time in minutes
+            hold_min = None
+            ts_placed = st.get("ts_placed")
+            ts_closed = st.get("ts_closed")
+            if ts_placed and ts_closed:
+                try:
+                    t1 = datetime.fromisoformat(ts_placed)
+                    t2 = datetime.fromisoformat(ts_closed)
+                    hold_min = (t2 - t1).total_seconds() / 60
+                except Exception:
+                    pass
+            results.append({
+                "setup_log_id": r["setup_log_id"],
+                "setup_name": r["setup_name"] or st.get("setup_name", "?"),
+                "direction": r["direction"] or st.get("direction", "?"),
+                "grade": r["grade"],
+                "ts": r["ts"].isoformat() if r["ts"] and hasattr(r["ts"], "isoformat") else st.get("ts_placed"),
+                "symbol": st.get("symbol", ""),
+                "strike": st.get("strike"),
+                "qty": st.get("qty", 1),
+                "status": st.get("status", "?"),
+                "entry_price": entry_p,
+                "close_price": close_p,
+                "sim_pnl": round(sim_pnl, 0) if sim_pnl is not None else None,
+                "theo_entry": round(theo_entry, 2) if theo_entry else None,
+                "theo_close": round(theo_close, 2) if theo_close else None,
+                "theo_pnl": round(theo_pnl, 0) if theo_pnl is not None else None,
+                "hold_min": round(hold_min, 0) if hold_min is not None else None,
+                "greek_alignment": r["greek_alignment"],
+                "portal_result": r["outcome_result"],
+                "portal_pnl": r["outcome_pnl"],
+            })
+        return results
+    except Exception as e:
+        print(f"[options] log query error: {e}", flush=True)
+        return []
+
 @app.get("/api/eval/signals")
 def api_eval_signals(since_id: int = Query(0, ge=0)):
     """Return today's setup signals and outcomes for the eval trader.
@@ -8889,6 +8954,8 @@ DASH_HTML_TEMPLATE = """
     .tl-header.tl-grid-sim, .tl-row.tl-grid-sim { grid-template-columns:32px 100px 32px 48px 72px 72px 72px 40px 40px 56px 64px 44px 64px; }
     /* Eval Log grid: #, Setup, Dir, Grade, Time, Qty, Entry, Stop, Result, P&L($), Dur, Status */
     .tl-header.tl-grid-eval, .tl-row.tl-grid-eval { grid-template-columns:32px 100px 32px 48px 72px 36px 72px 56px 56px 64px 44px 64px; }
+    /* Options Log grid: #, Setup, Dir, Symbol, TheoIn, TheoOut, TheoPnl, SIMIn, SIMOut, SIMPnl, Hold, Time */
+    .tl-header.tl-grid-options, .tl-row.tl-grid-options { grid-template-columns:32px 100px 32px 130px 52px 52px 64px 52px 52px 64px 44px 72px; }
 
     /* Playback View */
     .playback-container { display:flex; flex-direction:column; }
@@ -9598,6 +9665,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn active" data-subtab="portal">Portal Log</button>
           <button class="subtab-btn" data-subtab="tssim">TS SIM Log</button>
           <button class="subtab-btn" data-subtab="eval">Eval Log</button>
+          <button class="subtab-btn" data-subtab="options">Options Log</button>
         </div>
         <div class="tl-filters">
           <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option></select>
@@ -12552,6 +12620,7 @@ DASH_HTML_TEMPLATE = """
     let _tlActiveSubTab = 'portal';
     let _tsSimData = [];
     let _evalLogData = [];
+    let _optionsLogData = [];
     const _tlPillColors = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899'};
     const _tlGradeColors = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308'};
 
@@ -12568,6 +12637,7 @@ DASH_HTML_TEMPLATE = """
       if (_tlActiveSubTab === 'portal') loadTradeLogFull();
       else if (_tlActiveSubTab === 'tssim') loadTsSimLog();
       else if (_tlActiveSubTab === 'eval') loadEvalLog();
+      else if (_tlActiveSubTab === 'options') loadOptionsLog();
     }
 
     let _tlPage = 0;
@@ -13111,11 +13181,122 @@ DASH_HTML_TEMPLATE = """
       body.innerHTML = html;
     }
 
+    // ===== Options Log =====
+    async function loadOptionsLog() {
+      try {
+        const r = await fetch('/api/options/log?limit=200', {cache:'no-store'});
+        _optionsLogData = await r.json();
+        if (!Array.isArray(_optionsLogData)) _optionsLogData = [];
+        renderOptionsLog();
+        document.getElementById('tlStatus').textContent = _optionsLogData.length + ' options trades loaded';
+      } catch(err) {
+        console.error('loadOptionsLog error:', err);
+        document.getElementById('tlBody').innerHTML = '<div style="color:var(--red);padding:12px">Error loading options log</div>';
+      }
+    }
+    function _optionsGetFiltered() {
+      const fSetup = document.getElementById('tlFilterSetup').value;
+      const fResult = document.getElementById('tlFilterResult').value;
+      const fGrade = document.getElementById('tlFilterGrade').value;
+      const fDate = document.getElementById('tlFilterDate').value;
+      const fAlign = document.getElementById('tlFilterAlign').value;
+      const fStrat = document.getElementById('tlFilterStrategy').value;
+      const fSearch = document.getElementById('tlSearch').value.toLowerCase().trim();
+      const now = new Date();
+      const todayET = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
+      const todayStr = todayET.getFullYear()+'-'+String(todayET.getMonth()+1).padStart(2,'0')+'-'+String(todayET.getDate()).padStart(2,'0');
+      return _optionsLogData.filter(l => {
+        if (fSetup && l.setup_name !== fSetup) return false;
+        if (fGrade && l.grade !== fGrade) return false;
+        if (fAlign !== '' && (l.greek_alignment == null || String(l.greek_alignment) !== fAlign)) return false;
+        if (!_tlPassesStrategy(l, fStrat)) return false;
+        if (fResult) {
+          const res = l.portal_result || l.status || 'OPEN';
+          if (res !== fResult) return false;
+        }
+        if (fDate && l.ts) {
+          const d = new Date(l.ts);
+          const dET = new Date(d.toLocaleString('en-US',{timeZone:'America/New_York'}));
+          if (fDate === 'today') { const dStr = dET.getFullYear()+'-'+String(dET.getMonth()+1).padStart(2,'0')+'-'+String(dET.getDate()).padStart(2,'0'); if (dStr !== todayStr) return false; }
+          else if (fDate === 'week') { if ((todayET - dET)/86400000 > 7) return false; }
+          else if (fDate === 'month') { if (dET.getMonth()!==todayET.getMonth()||dET.getFullYear()!==todayET.getFullYear()) return false; }
+        }
+        if (fSearch) {
+          const hay = [l.setup_name, l.symbol, l.direction].filter(Boolean).join(' ').toLowerCase();
+          if (!hay.includes(fSearch)) return false;
+        }
+        return true;
+      });
+    }
+    function renderOptionsLog() {
+      const hdr = document.getElementById('tlHeaderRow');
+      hdr.className = 'tl-header tl-grid-options';
+      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Symbol</span><span>Theo In</span><span>Theo Out</span><span>Theo P&L</span><span>SIM In</span><span>SIM Out</span><span>SIM P&L</span><span>Hold</span><span>Time</span>';
+      const filtered = _optionsGetFiltered();
+      let theoPnlTotal=0,simPnlTotal=0,theoCount=0,simCount=0,trades=0;
+      filtered.forEach(l => {
+        trades++;
+        if (l.theo_pnl!=null) { theoPnlTotal += l.theo_pnl; theoCount++; }
+        if (l.sim_pnl!=null) { simPnlTotal += l.sim_pnl; simCount++; }
+      });
+      const theoColor = theoPnlTotal>=0 ? '#22c55e' : '#ef4444';
+      const simColor = simPnlTotal>=0 ? '#22c55e' : '#ef4444';
+      const theoStr = theoCount>0 ? '$'+(theoPnlTotal>=0?'+':'')+theoPnlTotal.toFixed(0) : '--';
+      const simStr = simCount>0 ? '$'+(simPnlTotal>=0?'+':'')+simPnlTotal.toFixed(0) : '--';
+      document.getElementById('tlStats').innerHTML =
+        '<span>Trades: <span class="stat-val">'+trades+'</span></span>' +
+        '<span>Theo P&L: <span class="stat-val" style="color:'+theoColor+'">'+theoStr+'</span></span>' +
+        '<span>SIM P&L: <span class="stat-val" style="color:'+simColor+'">'+simStr+'</span></span>' +
+        '<span style="color:var(--muted);font-size:8px;font-style:italic;margin-left:8px">SIM fills unreliable for 0DTE \u2014 use Theo P&L</span>';
+      const body = document.getElementById('tlBody');
+      if (filtered.length===0) { body.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px">No options trades</div>'; return; }
+      let html='';
+      filtered.forEach((l,i) => {
+        const pillColor = _tlPillColors[l.setup_name]||'#888';
+        const dir = (l.direction==='long'||l.direction==='bullish') ? '\u25B2' : '\u25BC';
+        const dirColor = (l.direction==='long'||l.direction==='bullish') ? '#22c55e' : '#ef4444';
+        const theoIn = l.theo_entry!=null ? '$'+l.theo_entry.toFixed(2) : '--';
+        const theoOut = l.theo_close!=null ? '$'+l.theo_close.toFixed(2) : '--';
+        let theoPnl='--', theoPnlC='#888';
+        if (l.theo_pnl!=null) {
+          theoPnl = '$'+(l.theo_pnl>=0?'+':'')+l.theo_pnl.toFixed(0);
+          theoPnlC = l.theo_pnl>=0 ? '#22c55e' : '#ef4444';
+        }
+        const simIn = l.entry_price!=null ? '$'+l.entry_price.toFixed(2) : '--';
+        const simOut = l.close_price!=null ? '$'+l.close_price.toFixed(2) : '--';
+        let simPnl='--', simPnlC='#888';
+        if (l.sim_pnl!=null) {
+          simPnl = '$'+(l.sim_pnl>=0?'+':'')+l.sim_pnl.toFixed(0);
+          simPnlC = l.sim_pnl>=0 ? '#22c55e' : '#ef4444';
+        }
+        const holdStr = l.hold_min!=null ? (l.hold_min>=60?Math.floor(l.hold_min/60)+'h'+String(Math.round(l.hold_min%60)).padStart(2,'0'):Math.round(l.hold_min)+'m') : '--';
+        const time = fmtTimeET(l.ts);
+        const date = fmtDateShortET(l.ts);
+        const sym = l.symbol || '--';
+        html += '<div class="tl-row tl-grid-options">' +
+          '<span style="color:var(--muted)">'+(i+1)+'</span>' +
+          '<span class="setup-pill" style="background:'+pillColor+'22;color:'+pillColor+'">'+l.setup_name+'</span>' +
+          '<span style="color:'+dirColor+';font-weight:700;text-align:center">'+dir+'</span>' +
+          '<span style="color:var(--text);font-size:9px;overflow:hidden;text-overflow:ellipsis" title="'+sym+'">'+sym+'</span>' +
+          '<span style="color:var(--text);font-size:10px">'+theoIn+'</span>' +
+          '<span style="color:var(--text);font-size:10px">'+theoOut+'</span>' +
+          '<span style="color:'+theoPnlC+';font-weight:700;font-size:10px">'+theoPnl+'</span>' +
+          '<span style="color:var(--muted);font-size:10px">'+simIn+'</span>' +
+          '<span style="color:var(--muted);font-size:10px">'+simOut+'</span>' +
+          '<span style="color:'+simPnlC+';font-size:10px">'+simPnl+'</span>' +
+          '<span style="color:var(--muted);font-size:9px">'+holdStr+'</span>' +
+          '<span style="color:var(--muted);font-size:9px">'+date+' '+time+'</span>' +
+        '</div>';
+      });
+      body.innerHTML = html;
+    }
+
     // Wire up filter changes
     function _tlRerender() {
       if (_tlActiveSubTab === 'portal') renderTradeLog();
       else if (_tlActiveSubTab === 'tssim') renderTsSimLog();
       else if (_tlActiveSubTab === 'eval') renderEvalLog();
+      else if (_tlActiveSubTab === 'options') renderOptionsLog();
     }
     ['tlFilterSetup','tlFilterResult','tlFilterGrade','tlFilterDate','tlFilterAlign','tlFilterStrategy'].forEach(id => {
       document.getElementById(id).addEventListener('change', _tlRerender);

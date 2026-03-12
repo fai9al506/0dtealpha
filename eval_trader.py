@@ -774,30 +774,27 @@ class ComplianceGate:
                 if "BOFA" in paradigm and "PURE" in paradigm:
                     return False, "DD blocked on BOFA-PURE paradigm (18% WR)"
 
-        # Greek filter — Asymmetric (Analysis #9, Option C for E2T)
-        # Longs: require alignment >= +3
-        # Shorts: per-setup toxic combo blocks + SVB < -0.5
+        # Greek filter — V7+AG (Analysis #11)
+        # Longs: alignment >= +2
+        # Shorts: whitelist SC + DD(align!=0) + AG only
         if cfg.get("greek_filter_enabled"):
             alignment = signal.get("greek_alignment", 0)
             _is_long = signal.get("direction", "") in ("long", "bullish")
+            sname = signal.get("setup_name", "")
             if _is_long:
-                if alignment < 3:
-                    return False, f"Greek filter: long alignment {alignment:+d} < +3"
+                if alignment < 2:
+                    return False, f"Greek filter: long alignment {alignment:+d} < +2"
             else:
-                # Block toxic short setups/combos
-                sname = signal.get("setup_name", "")
-                if sname == "ES Absorption":
-                    return False, "Greek filter: ES Absorption short blocked (toxic)"
-                if sname == "BofA Scalp":
-                    return False, "Greek filter: BofA Scalp short blocked (toxic)"
-                if sname == "DD Exhaustion" and alignment == 0:
-                    return False, "Greek filter: DD Exhaustion short align=0 blocked (28% WR)"
-                if sname == "AG Short" and alignment == -3:
-                    return False, "Greek filter: AG Short align=-3 blocked (46% WR)"
-                # Option C: SVB gate — only allow shorts when SVB < -0.5
-                _svb = signal.get("spot_vol_beta")
-                if _svb is not None and _svb >= -0.5:
-                    return False, f"Greek filter: short SVB {_svb:+.2f} >= -0.5 (need < -0.5)"
+                # V7+AG short whitelist
+                _short_allowed = False
+                if sname == "Skew Charm":
+                    _short_allowed = True
+                elif sname == "AG Short":
+                    _short_allowed = True
+                elif sname == "DD Exhaustion" and alignment != 0:
+                    _short_allowed = True
+                if not _short_allowed:
+                    return False, f"Greek filter: {sname} short not in V7+AG whitelist (align={alignment:+d})"
 
         # Already in position?
         # Opposite-direction signals return "reverse" so main loop can close + reopen

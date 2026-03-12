@@ -30,3 +30,4 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 24 | 2026-03-10 18:45 | `stable-20260310-184500` | Alignment +3 gate live (81% WR backtest). Day 1: futures +$1,242, options +$4,724. Tick trade for E2T. Options on all setups. |
 | 25 | 2026-03-10 pre-SPY | `stable-20260310-spy-before-push` | Pre-SPY integration. Rollback point if SPY chain fetch causes any issues. |
 | 26 | 2026-03-11 pre-asym | `stable-20260311-asymmetric-filter-pre` | Pre-asymmetric short filter. Analysis #9 saved. Rollback if new filter causes issues. |
+| 27 | 2026-03-12 pre-v7ag | `stable-20260312-pre-v7ag` | Pre-V7+AG filter upgrade. Charm S/R implemented. Analysis #11 saved. Rollback if V7+AG causes issues. |

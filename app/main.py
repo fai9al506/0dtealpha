@@ -3643,49 +3643,27 @@ def _run_setup_check():
                     })
                     tgt_str = "trail" if target_lvl is None else f"{target_lvl:.1f}"
                     print(f"[outcome] tracking {setup_name}: target={tgt_str} stop={stop_lvl:.1f}", flush=True)
-                    # Auto-trade filters — Greek Optimal Filter
+                    # Auto-trade filters — V7+AG Filter (Analysis #11)
                     # (block execution but keep portal tracking for data collection)
                     _skip_auto_trade = False
                     _greek_align = r.get("greek_alignment", 0)
-                    # F1: Charm alignment gate — block ALL setups when charm opposes direction
-                    if aggregated_charm is not None:
-                        _is_long = r["direction"] in ("long", "bullish")
-                        _charm_al = (aggregated_charm > 0) == _is_long
-                        if not _charm_al:
-                            print(f"[auto-trader] SKIPPED {setup_name}: charm opposes direction (align={_greek_align:+d})", flush=True)
-                            _skip_auto_trade = True
-                    # F2: GEX Long — require alignment >= +1
-                    if setup_name == "GEX Long" and _greek_align < 1:
-                        print(f"[auto-trader] SKIPPED GEX Long: alignment {_greek_align:+d} < +1", flush=True)
-                        _skip_auto_trade = True
-                    # F3: AG Short — block total misalignment
-                    if setup_name == "AG Short" and _greek_align == -3:
-                        print(f"[auto-trader] SKIPPED AG Short: alignment -3 (total misalignment)", flush=True)
-                        _skip_auto_trade = True
-                    # F4: DD Exhaustion — block weak-negative SVB only
-                    if setup_name == "DD Exhaustion":
-                        _svb = r.get("spot_vol_beta")
-                        if _svb is not None and -0.5 <= _svb < 0:
-                            print(f"[auto-trader] SKIPPED DD Exhaustion: SVB weak-negative ({_svb:+.2f})", flush=True)
-                            _skip_auto_trade = True
-                    # F5+F6: Asymmetric alignment filter (Analysis #9)
-                    # Longs: require alignment >= +3
-                    # Shorts: per-setup toxic combo blocks (no general alignment filter)
                     _is_long_dir = r["direction"] in ("long", "bullish")
                     if _is_long_dir:
-                        if _greek_align < 3:
-                            print(f"[auto-trader] SKIPPED {setup_name}: long alignment {_greek_align:+d} < +3", flush=True)
+                        # Longs: require alignment >= +2
+                        if _greek_align < 2:
+                            print(f"[auto-trader] SKIPPED {setup_name}: long alignment {_greek_align:+d} < +2", flush=True)
                             _skip_auto_trade = True
                     else:
-                        # Block toxic short setups/combos
-                        if setup_name == "ES Absorption":
-                            print(f"[auto-trader] SKIPPED ES Absorption short: blocked (toxic -175.6 pts all-time)", flush=True)
-                            _skip_auto_trade = True
-                        elif setup_name == "BofA Scalp":
-                            print(f"[auto-trader] SKIPPED BofA Scalp short: blocked (toxic -26.3 pts)", flush=True)
-                            _skip_auto_trade = True
-                        elif setup_name == "DD Exhaustion" and _greek_align == 0:
-                            print(f"[auto-trader] SKIPPED DD Exhaustion short: alignment 0 (28% WR, toxic combo)", flush=True)
+                        # Shorts: whitelist SC + DD(align!=0) + AG only
+                        if setup_name == "Skew Charm":
+                            pass  # allow all
+                        elif setup_name == "AG Short":
+                            pass  # allow all (no alignment filter)
+                        elif setup_name == "DD Exhaustion" and _greek_align != 0:
+                            pass  # allow DD shorts except align=0
+                        else:
+                            # Block everything else (ES Absorption, BofA, Paradigm Rev, DD align=0)
+                            print(f"[auto-trader] SKIPPED {setup_name} short: not in V7+AG whitelist (align={_greek_align:+d})", flush=True)
                             _skip_auto_trade = True
                     # Auto-trade: place MES SIM order (skip if filters blocked)
                     if not _skip_auto_trade:
@@ -4240,7 +4218,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
     # Notification gate
     fire, reason = should_notify_absorption(result)
 
-    # Charm S/R limit entry for shorts (ES Absorption shorts blocked by F5+F6, but wire for consistency)
+    # Charm S/R limit entry for shorts (ES Absorption shorts blocked by V7+AG, but wire for consistency)
     _abs_charm_sr = None
     if result["direction"] not in ("long", "bullish"):
         _abs_charm_sr = _compute_charm_limit_entry(result["spot"], result["direction"])
@@ -4288,23 +4266,17 @@ def _run_absorption_detection(bars: list) -> dict | None:
         })
         print(f"[outcome] tracking ES Absorption: target={target_lvl} stop={stop_lvl:.1f}", flush=True)
         # Auto-trade: ES Absorption uses ES price directly
-        # Greek filter: charm alignment gate + asymmetric filter (Analysis #9)
+        # V7+AG filter (Analysis #11): ES Absorption not in short whitelist
         _abs_skip_greek = False
         _abs_align = result.get("greek_alignment", 0)
-        if _abs_charm is not None:
-            _abs_is_long = result["direction"] in ("long", "bullish")
-            if (_abs_charm > 0) != _abs_is_long:
-                print(f"[auto-trader] SKIPPED ES Absorption: charm opposes direction (align={_abs_align:+d})", flush=True)
-                _abs_skip_greek = True
-        # F5+F6: Asymmetric filter for ES Absorption (Analysis #9)
         _abs_is_long_dir = result["direction"] in ("long", "bullish")
         if _abs_is_long_dir:
-            if _abs_align < 3:
-                print(f"[auto-trader] SKIPPED ES Absorption long: alignment {_abs_align:+d} < +3", flush=True)
+            if _abs_align < 2:
+                print(f"[auto-trader] SKIPPED ES Absorption long: alignment {_abs_align:+d} < +2", flush=True)
                 _abs_skip_greek = True
         else:
-            # Block ALL ES Absorption shorts (toxic: -175.6 pts all-time)
-            print(f"[auto-trader] SKIPPED ES Absorption short: blocked (toxic setup)", flush=True)
+            # ES Absorption shorts not in V7+AG whitelist (toxic: -175.6 pts all-time)
+            print(f"[auto-trader] SKIPPED ES Absorption short: not in V7+AG whitelist", flush=True)
             _abs_skip_greek = True
         if result.get("log_only"):
             print(f"[auto-trader] SKIPPED ES Absorption: log-only pattern ({result.get('pattern')})", flush=True)

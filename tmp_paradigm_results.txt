@@ -1,0 +1,670 @@
+====================================================================================================
+PART 1: Volland paradigm today 2026-03-11 around 12:30-14:00 ET (17:00-19:30 UTC)
+====================================================================================================
+ts                           paradigm           charm          vanna_all          svb        dd_hedg     
+----------------------------------------------------------------------------------------------------
+2026-03-11 17:00:37.964922+00:00 AG-PURE            35188743                          {'vixEve   $-1,852,02  
+2026-03-11 17:02:56.263015+00:00 AG-PURE            22862373                          {'vixEve   $-1,624,23  
+2026-03-11 17:05:14.953104+00:00 AG-PURE            19631573                          {'vixEve   $-72,177,4  
+2026-03-11 17:07:33.478145+00:00 AG-PURE            30658290                          {'vixEve   $-61,637,5  
+2026-03-11 17:09:52.052142+00:00 AG-PURE            25603637                          {'vixEve   $-1,681,45  
+2026-03-11 17:12:10.721742+00:00 AG-PURE            29615988                          {'vixEve   $-1,623,37  
+2026-03-11 17:14:29.259740+00:00 AG-PURE            29750374                          {'vixEve   $-1,589,52  
+2026-03-11 17:16:47.821792+00:00 AG-PURE            24418876                          {'vixEve   $-1,519,38  
+2026-03-11 17:19:06.072843+00:00 AG-PURE            26027169                          {'vixEve   $-1,603,07  
+2026-03-11 17:21:24.796533+00:00 AG-PURE            26418209                          {'vixEve   $-229,786,  
+2026-03-11 17:23:43.113661+00:00 AG-LIS             26729757                          {'vixEve   $-1,613,05  
+2026-03-11 17:26:02.600174+00:00 AG-LIS             32183515                          {'vixEve   $-1,743,26  
+2026-03-11 17:28:21.555431+00:00 AG-PURE            36691337                          {'vixEve   $-1,795,82  
+2026-03-11 17:30:44.581297+00:00 AG-PURE            27031525                          {'vixEve   $227,795,4  
+2026-03-11 17:33:05.891395+00:00 AG-LIS             30831454                          {'vixEve   $-1,710,63  
+2026-03-11 17:35:24.386764+00:00 AG-LIS             31824106                          {'vixEve   $-1,690,28  
+2026-03-11 17:37:42.818898+00:00 AG-LIS             29954282                          {'vixEve   $-148,001,  
+2026-03-11 17:40:01.409738+00:00 AG-LIS             -10833886                         {'vixEve   $-287,702,  
+2026-03-11 17:42:19.782531+00:00 BOFA-PURE          -26128631                         {'vixEve   $3,473,374  
+2026-03-11 17:44:38.076277+00:00 BOFA-PURE          -13667278                         {'vixEve   $223,485,8  
+2026-03-11 17:46:56.237867+00:00 BOFA-PURE          -1902782                          {'vixEve   $172,432,4  
+2026-03-11 17:49:15.258078+00:00 BOFA-PURE          -12867401                         {'vixEve   $214,780,7  
+2026-03-11 17:51:33.458694+00:00 BOFA-PURE          -25282087                         {'vixEve   $493,392,5  
+2026-03-11 17:53:51.802946+00:00 BOFA-PURE          -38302157                         {'vixEve   $803,180,5  
+2026-03-11 17:56:10.429866+00:00 BOFA-PURE          -25396049                         {'vixEve   $785,057,7  
+2026-03-11 17:58:28.973219+00:00 BOFA-PURE          -32669145                         {'vixEve   $197,202,6  
+2026-03-11 18:00:47.504138+00:00 BOFA-PURE          -42958286                         {'vixEve   $995,572,9  
+2026-03-11 18:03:06.135147+00:00 BOFA-PURE          -34140368                         {'vixEve   $1,047,452  
+2026-03-11 18:05:24.338866+00:00 BOFA-PURE          -41709556                         {'vixEve   $800,341,1  
+2026-03-11 18:07:42.546692+00:00 BOFA-PURE          -55632203                         {'vixEve   $134,925,6  
+2026-03-11 18:10:01.079712+00:00 BOFA-PURE          -55191761                         {'vixEve   $398,950,6  
+2026-03-11 18:12:19.407601+00:00 BOFA-PURE          -45928188                         {'vixEve   $315,494,1  
+2026-03-11 18:14:38.165624+00:00 BOFA-PURE          -38243597                         {'vixEve   $290,514,0  
+2026-03-11 18:16:56.583945+00:00 BOFA-PURE          -45964870                         {'vixEve   $184,343,6  
+2026-03-11 18:19:15.133854+00:00 BOFA-PURE          -48696891                         {'vixEve   $247,455,0  
+2026-03-11 18:21:33.567690+00:00 BOFA-PURE          -50066272                         {'vixEve   $763,067,0  
+2026-03-11 18:23:51.827709+00:00 BOFA-PURE          -38689667                         {'vixEve   $-175,680,  
+2026-03-11 18:26:09.967964+00:00 BOFA-PURE          -45164394                         {'vixEve   $94,920,41  
+2026-03-11 18:28:28.304450+00:00 BOFA-PURE          -45203512                         {'vixEve   $514,954,2  
+2026-03-11 18:30:47.004032+00:00 BOFA-PURE          -37815235                         {'vixEve   $279,976,1  
+2026-03-11 18:33:05.480523+00:00 BOFA-PURE          -29384625                         {'vixEve   $18,587,62  
+2026-03-11 18:35:23.979578+00:00 BOFA-PURE          -44957206                         {'vixEve   $291,590,6  
+2026-03-11 18:37:42.462574+00:00 BOFA-PURE          -61466849                         {'vixEve   $359,264,8  
+2026-03-11 18:40:01.113910+00:00 BOFA-PURE          -47540128                         {'vixEve   $390,315,6  
+2026-03-11 18:42:19.392052+00:00 BOFA-PURE          -35895150                         {'vixEve   $551,842,6  
+2026-03-11 18:44:37.540102+00:00 BOFA-PURE          -51031670                         {'vixEve   $683,114,5  
+2026-03-11 18:46:55.896835+00:00 BOFA-PURE          -36854596                         {'vixEve   $429,377,6  
+2026-03-11 18:49:14.069524+00:00 BOFA-PURE          -37320650                         {'vixEve   $400,507,8  
+2026-03-11 18:51:32.396908+00:00 BOFA-PURE          -49539045                         {'vixEve   $785,565,7  
+2026-03-11 18:53:50.466651+00:00 BOFA-PURE          -16207777                         {'vixEve   $32,305,73  
+2026-03-11 18:56:08.804358+00:00 BOFA-PURE          -49637871                         {'vixEve   $79,962,61  
+2026-03-11 18:58:26.929808+00:00 BOFA-PURE          -24125611                         {'vixEve   $192,577,7  
+2026-03-11 19:00:45.424191+00:00 BOFA-PURE          16893761                          {'vixEve   $-160,892,  
+2026-03-11 19:03:03.782467+00:00 BOFA-PURE          24446205                          {'vixEve   $346,748,4  
+2026-03-11 19:05:22.078190+00:00 BOFA-PURE          -57118534                         {'vixEve   $-152,677,  
+2026-03-11 19:07:40.407687+00:00 BOFA-PURE          -64048957                         {'vixEve   $-234,910,  
+2026-03-11 19:09:59.059953+00:00 BOFA-PURE          -72009992                         {'vixEve   $-381,674,  
+2026-03-11 19:12:17.869904+00:00 BOFA-PURE          -75881559                         {'vixEve   $1,034,983  
+2026-03-11 19:14:36.309193+00:00 BOFA-PURE          -60859704                         {'vixEve   $334,706,4  
+2026-03-11 19:16:54.895184+00:00 BOFA-PURE          -66772978                         {'vixEve   $400,405,0  
+2026-03-11 19:19:12.933408+00:00 BOFA-PURE          -81024409                         {'vixEve   $1,020,412  
+2026-03-11 19:21:31.525294+00:00 BOFA-PURE          -19213268                         {'vixEve   $874,778,7  
+2026-03-11 19:23:49.906598+00:00 BOFA-PURE          -62674392                         {'vixEve   $-114,614,  
+2026-03-11 19:26:09.343451+00:00 BOFA-PURE          -116471910                        {'vixEve   $-664,552,  
+2026-03-11 19:28:27.942067+00:00 BOFA-PURE          -10030845                         {'vixEve   $619,343,7  
+
+Total snapshots in range: 65
+
+====================================================================================================
+PART 2: Pulling all setup_log entries with outcomes...
+====================================================================================================
+Total trades with outcomes: 620
+
+Unique paradigm values in setup_log: ['AG-LIS', 'AG-PURE', 'AG-TARGET', 'BOFA-LIS', 'BOFA-MESSY', 'BOFA-PURE', 'BofA-LIS', 'GEX-LIS', 'GEX-MESSY', 'GEX-PURE', 'GEX-TARGET', 'SIDIAL-BALANCE', 'SIDIAL-EXTREME', 'SIDIAL-MESSY']
+
+Paradigm distribution:
+  BOFA-PURE: 172
+  GEX-PURE: 54
+  BofA-LIS: 49
+  AG-PURE: 46
+  AG-LIS: 44
+  BOFA-LIS: 41
+  SIDIAL-MESSY: 40
+  GEX-LIS: 39
+  SIDIAL-EXTREME: 36
+  GEX-TARGET: 34
+  AG-TARGET: 33
+  GEX-MESSY: 18
+  BOFA-MESSY: 10
+  NULL: 2
+  SIDIAL-BALANCE: 2
+
+Direction distribution: {'LONG': 298, 'SHORT': 322}
+Outcome distribution: {'LOSS': 225, 'WIN': 312, 'EXPIRED': 83}
+
+====================================================================================================
+PART 3: PARADIGM GATE ANALYSIS
+====================================================================================================
+
+Trades with paradigm data: 620
+Trades without paradigm data: 0
+
+Scenario                             Trades  Blocked
+-------------------------------------------------------
+No gate (all trades)                    620        0
+No gate (with paradigm only)            620        0
+Strict gate (with paradigm only)        328      292
+Soft gate (with paradigm only)          535       85
+
+--- Overall Stats ---
+  No gate (ALL)                        620 trades  WR= 50.3%  PnL=  +847.1  PF=  1.29
+  No gate (w/ paradigm)                620 trades  WR= 50.3%  PnL=  +847.1  PF=  1.29
+  Strict gate PASSED                   328 trades  WR= 45.7%  PnL=  +115.2  PF=  1.07
+  Strict gate BLOCKED                  292 trades  WR= 55.5%  PnL=  +731.9  PF=  1.60
+  Soft gate PASSED                     535 trades  WR= 49.9%  PnL=  +690.4  PF=  1.28
+  Soft gate BLOCKED                     85 trades  WR= 52.9%  PnL=  +156.6  PF=  1.38
+
+--- Breakdown by Setup (No Gate — all trades) ---
+  AG Short                              34 trades  WR= 50.0%  PnL=   +50.2  PF=  1.27
+  BofA Scalp                            47 trades  WR= 29.8%  PnL=   +11.9  PF=  1.06
+  DD Exhaustion                        200 trades  WR= 48.5%  PnL=  +415.1  PF=  1.43
+  ES Absorption                        156 trades  WR= 50.6%  PnL=   -64.1  PF=  0.91
+  GEX Long                              48 trades  WR= 35.4%  PnL=   -50.8  PF=  0.78
+  Paradigm Reversal                     24 trades  WR= 41.7%  PnL=   -10.7  PF=  0.91
+  Skew Charm                           111 trades  WR= 70.3%  PnL=  +495.4  PF=  2.09
+
+--- Breakdown by Setup (Strict Gate — PASSED) ---
+  AG Short                              34 trades  WR= 50.0%  PnL=   +50.2  PF=  1.27
+  BofA Scalp                            21 trades  WR= 23.8%  PnL=   -26.3  PF=  0.75
+  DD Exhaustion                         96 trades  WR= 45.8%  PnL=  +104.9  PF=  1.22
+  ES Absorption                         61 trades  WR= 37.7%  PnL=  -170.1  PF=  0.53
+  GEX Long                              48 trades  WR= 35.4%  PnL=   -50.8  PF=  0.78
+  Paradigm Reversal                     16 trades  WR= 43.8%  PnL=    -2.2  PF=  0.97
+  Skew Charm                            52 trades  WR= 71.2%  PnL=  +209.4  PF=  1.89
+
+--- Breakdown by Setup (Strict Gate — BLOCKED) ---
+  BofA Scalp                            26 trades  WR= 34.6%  PnL=   +38.2  PF=  1.43
+  DD Exhaustion                        104 trades  WR= 51.0%  PnL=  +310.2  PF=  1.63
+  ES Absorption                         95 trades  WR= 58.9%  PnL=  +106.0  PF=  1.28
+  Paradigm Reversal                      8 trades  WR= 37.5%  PnL=    -8.5  PF=  0.81
+  Skew Charm                            59 trades  WR= 69.5%  PnL=  +286.0  PF=  2.30
+
+--- Breakdown by Setup (Soft Gate — PASSED) ---
+  AG Short                              34 trades  WR= 50.0%  PnL=   +50.2  PF=  1.27
+  BofA Scalp                            47 trades  WR= 29.8%  PnL=   +11.9  PF=  1.06
+  DD Exhaustion                        160 trades  WR= 48.1%  PnL=  +314.6  PF=  1.40
+  ES Absorption                        131 trades  WR= 51.1%  PnL=   -67.0  PF=  0.89
+  GEX Long                              48 trades  WR= 35.4%  PnL=   -50.8  PF=  0.78
+  Paradigm Reversal                     24 trades  WR= 41.7%  PnL=   -10.7  PF=  0.91
+  Skew Charm                            91 trades  WR= 71.4%  PnL=  +442.2  PF=  2.31
+
+--- Breakdown by Setup (Soft Gate — BLOCKED) ---
+  DD Exhaustion                         40 trades  WR= 50.0%  PnL=  +100.5  PF=  1.59
+  ES Absorption                         25 trades  WR= 48.0%  PnL=    +2.9  PF=  1.02
+  Skew Charm                            20 trades  WR= 65.0%  PnL=   +53.3  PF=  1.44
+
+====================================================================================================
+PART 4: BLOCKED TRADES — What would we have missed?
+====================================================================================================
+
+--- STRICT GATE: Blocked trades detail ---
+   id date         setup                dir    paradigm           grade  outcome         pts
+------------------------------------------------------------------------------------------
+   98 2026-02-11   BofA Scalp           LONG   BOFA-PURE          A-Entry EXPIRED        +7.9
+  100 2026-02-11   BofA Scalp           LONG   BOFA-PURE          A-Entry EXPIRED        +3.0
+  101 2026-02-12   BofA Scalp           LONG   BOFA-PURE          A-Entry EXPIRED       +12.6
+  104 2026-02-12   BofA Scalp           LONG   BOFA-PURE          A      EXPIRED        +4.6
+  105 2026-02-13   BofA Scalp           LONG   BofA-LIS           A-Entry WIN           +10.0
+  106 2026-02-13   BofA Scalp           LONG   BofA-LIS           A-Entry LOSS           -9.0
+  115 2026-02-17   BofA Scalp           LONG   BOFA-PURE          A      WIN           +10.0
+  129 2026-02-18   BofA Scalp           LONG   BOFA-PURE          A      LOSS          -11.4
+  130 2026-02-18   BofA Scalp           LONG   BOFA-PURE          A-Entry LOSS           -7.7
+  131 2026-02-18   DD Exhaustion        LONG   BOFA-PURE          A+     LOSS           -1.0
+  154 2026-02-20   DD Exhaustion        SHORT  GEX-MESSY          A-Entry WIN           +16.5
+  155 2026-02-20   DD Exhaustion        SHORT  GEX-MESSY          A      WIN           +14.8
+  158 2026-02-20   DD Exhaustion        LONG   AG-TARGET          A      WIN           +17.4
+  160 2026-02-20   DD Exhaustion        SHORT  GEX-MESSY          A      WIN           +24.8
+  163 2026-02-20   DD Exhaustion        SHORT  GEX-MESSY          A+     WIN           +25.4
+  166 2026-02-20   DD Exhaustion        LONG   BOFA-PURE          A      WIN           +12.8
+  169 2026-02-20   DD Exhaustion        LONG   AG-LIS             A      WIN           +16.4
+  171 2026-02-20   DD Exhaustion        LONG   AG-LIS             A      WIN           +17.6
+  172 2026-02-20   DD Exhaustion        LONG   AG-LIS             A-Entry WIN           +13.6
+  173 2026-02-20   DD Exhaustion        LONG   AG-LIS             A-Entry WIN           +12.8
+  184 2026-02-23   DD Exhaustion        LONG   AG-TARGET          A-Entry LOSS          -12.0
+  186 2026-02-23   DD Exhaustion        LONG   AG-TARGET          A-Entry LOSS          -12.0
+  188 2026-02-23   DD Exhaustion        LONG   AG-PURE            A      WIN           +13.6
+  189 2026-02-23   DD Exhaustion        LONG   AG-PURE            A-Entry LOSS          -12.0
+  190 2026-02-23   DD Exhaustion        LONG   AG-PURE            A-Entry LOSS          -12.0
+  191 2026-02-23   DD Exhaustion        LONG   AG-PURE            A      WIN           +18.1
+  192 2026-02-23   DD Exhaustion        LONG   AG-LIS             A      LOSS          -12.0
+  194 2026-02-23   DD Exhaustion        LONG   AG-LIS             A-Entry LOSS          -12.0
+  195 2026-02-23   Paradigm Reversal    LONG   BOFA-PURE          A      EXPIRED       -13.5
+  197 2026-02-23   DD Exhaustion        LONG   BOFA-PURE          A+     WIN           +10.2
+  198 2026-02-23   DD Exhaustion        LONG   BOFA-PURE          A      WIN            +9.9
+  203 2026-02-24   DD Exhaustion        LONG   SIDIAL-MESSY       A-Entry WIN           +11.1
+  207 2026-02-24   DD Exhaustion        LONG   AG-TARGET          A-Entry WIN           +12.8
+  210 2026-02-24   DD Exhaustion        LONG   AG-TARGET          A      LOSS          -12.0
+  213 2026-02-24   DD Exhaustion        LONG   AG-TARGET          A-Entry WIN           +13.1
+  215 2026-02-24   DD Exhaustion        LONG   AG-PURE            A-Entry WIN           +10.7
+  217 2026-02-24   DD Exhaustion        LONG   AG-PURE            A-Entry EXPIRED        -0.8
+  218 2026-02-24   DD Exhaustion        LONG   AG-LIS             A      EXPIRED        -0.1
+  219 2026-02-24   DD Exhaustion        LONG   AG-PURE            A-Entry EXPIRED        -1.4
+  220 2026-02-24   ES Absorption        LONG   AG-PURE            B      LOSS          -12.0
+  221 2026-02-24   DD Exhaustion        LONG   AG-PURE            A+     WIN            +6.9
+  222 2026-02-24   DD Exhaustion        LONG   AG-LIS             A+     WIN            +8.9
+  223 2026-02-24   DD Exhaustion        LONG   AG-PURE            A      WIN            +7.8
+  224 2026-02-24   Paradigm Reversal    LONG   BOFA-PURE          A      WIN           +10.0
+  225 2026-02-24   DD Exhaustion        LONG   BOFA-PURE          A+     WIN            +9.0
+  226 2026-02-24   DD Exhaustion        LONG   BOFA-PURE          A+     WIN            +7.9
+  228 2026-02-25   DD Exhaustion        SHORT  GEX-MESSY          A      LOSS          -12.0
+  229 2026-02-25   ES Absorption        SHORT  GEX-MESSY          C      WIN           +16.4
+  232 2026-02-25   DD Exhaustion        SHORT  GEX-MESSY          A-Entry LOSS          -12.0
+  233 2026-02-25   DD Exhaustion        SHORT  GEX-MESSY          A      LOSS          -12.0
+  236 2026-02-25   DD Exhaustion        SHORT  GEX-MESSY          A-Entry LOSS          -12.0
+  238 2026-02-25   DD Exhaustion        SHORT  GEX-MESSY          A      EXPIRED        -7.4
+  239 2026-02-25   DD Exhaustion        SHORT  GEX-PURE           A      EXPIRED        -7.2
+  252 2026-02-26   DD Exhaustion        SHORT  GEX-PURE           A+     WIN           +29.2
+  257 2026-02-26   DD Exhaustion        LONG   SIDIAL-MESSY       A-Entry LOSS          -12.0
+  259 2026-02-26   DD Exhaustion        SHORT  GEX-MESSY          A      LOSS          -12.0
+  262 2026-02-26   DD Exhaustion        SHORT  GEX-PURE           A      WIN           +12.9
+  266 2026-02-26   DD Exhaustion        SHORT  GEX-PURE           A      WIN           +13.2
+  269 2026-02-26   Paradigm Reversal    LONG   SIDIAL-EXTREME     A-Entry LOSS          -15.0
+  274 2026-02-26   DD Exhaustion        LONG   SIDIAL-EXTREME     A-Entry WIN           +13.5
+  276 2026-02-26   DD Exhaustion        LONG   AG-LIS             A-Entry WIN           +16.6
+  277 2026-02-26   Paradigm Reversal    LONG   BOFA-PURE          A      WIN           +10.0
+  279 2026-02-26   BofA Scalp           LONG   BOFA-PURE          A      WIN           +10.0
+  280 2026-02-26   ES Absorption        LONG   BOFA-LIS           C      WIN           +10.0
+  283 2026-02-26   ES Absorption        LONG   BOFA-LIS           C      WIN           +10.0
+  285 2026-02-26   BofA Scalp           LONG   BofA-LIS           A      EXPIRED        +3.0
+  288 2026-02-26   Paradigm Reversal    LONG   BOFA-PURE          A-Entry EXPIRED        +2.0
+  290 2026-02-26   Paradigm Reversal    LONG   BOFA-PURE          A-Entry EXPIRED        +3.0
+  291 2026-02-26   ES Absorption        LONG   AG-LIS             B      WIN            +4.3
+  292 2026-02-26   ES Absorption        LONG   AG-LIS             B      WIN           +18.2
+  293 2026-02-27   ES Absorption        LONG   BOFA-LIS           C      WIN            +8.7
+  294 2026-02-27   ES Absorption        LONG   BOFA-LIS           C      WIN            +8.1
+  296 2026-02-27   DD Exhaustion        LONG   BofA-LIS           A-Entry LOSS          -12.0
+  297 2026-02-27   ES Absorption        LONG   BOFA-LIS           B      WIN            +8.1
+  298 2026-02-27   ES Absorption        LONG   BOFA-LIS           C      WIN           +10.1
+  300 2026-02-27   DD Exhaustion        LONG   BofA-LIS           A-Entry LOSS          -12.0
+  303 2026-02-27   DD Exhaustion        LONG   BofA-LIS           A-Entry LOSS          -12.0
+  302 2026-02-27   BofA Scalp           LONG   BofA-LIS           A      WIN           +10.0
+  305 2026-02-27   DD Exhaustion        LONG   BOFA-MESSY         A      LOSS          -12.0
+  307 2026-02-27   BofA Scalp           LONG   BOFA-MESSY         A      WIN           +10.0
+  309 2026-02-27   ES Absorption        SHORT  GEX-LIS            C      WIN            +9.8
+  311 2026-02-27   DD Exhaustion        LONG   BOFA-MESSY         A+     LOSS          -12.0
+  315 2026-02-27   DD Exhaustion        LONG   BOFA-PURE          A+     WIN           +15.4
+  314 2026-02-27   ES Absorption        LONG   BOFA-PURE          C      WIN           +10.5
+  317 2026-02-27   DD Exhaustion        LONG   BOFA-PURE          A+     WIN           +13.2
+  318 2026-02-27   ES Absorption        LONG   BOFA-PURE          C      WIN           +10.6
+  319 2026-02-27   ES Absorption        LONG   BOFA-PURE          C      WIN            +8.4
+  322 2026-03-02   DD Exhaustion        LONG   SIDIAL-MESSY       A-Entry WIN           +13.1
+  323 2026-03-02   ES Absorption        LONG   SIDIAL-MESSY       B      WIN            +8.0
+  326 2026-03-02   ES Absorption        SHORT  GEX-TARGET         B      LOSS          -12.0
+  327 2026-03-02   ES Absorption        LONG   SIDIAL-MESSY       C      WIN            +8.9
+  328 2026-03-02   DD Exhaustion        SHORT  GEX-PURE           A      LOSS          -12.0
+  329 2026-03-02   ES Absorption        SHORT  GEX-PURE           B      WIN            +8.3
+  333 2026-03-02   ES Absorption        SHORT  GEX-PURE           C      LOSS          -12.0
+  335 2026-03-02   DD Exhaustion        SHORT  GEX-PURE           A-Entry LOSS           -1.0
+  337 2026-03-02   Skew Charm           SHORT  GEX-LIS            LOG    LOSS          -20.0
+  339 2026-03-02   Skew Charm           SHORT  GEX-PURE           LOG    LOSS          -20.0
+  341 2026-03-02   DD Exhaustion        SHORT  GEX-PURE           A      LOSS          -12.0
+  338 2026-03-02   ES Absorption        SHORT  GEX-PURE           B      LOSS          -12.0
+  342 2026-03-02   DD Exhaustion        SHORT  GEX-PURE           A      LOSS           -1.0
+  343 2026-03-02   Skew Charm           SHORT  GEX-PURE           LOG    WIN            +8.7
+  345 2026-03-02   Skew Charm           SHORT  GEX-PURE           LOG    WIN            +9.3
+  347 2026-03-02   DD Exhaustion        SHORT  GEX-PURE           A      LOSS           -1.0
+  344 2026-03-02   ES Absorption        SHORT  GEX-PURE           B      WIN           +10.1
+  349 2026-03-02   ES Absorption        SHORT  GEX-LIS            B      LOSS          -12.0
+  351 2026-03-02   DD Exhaustion        SHORT  GEX-LIS            A+     LOSS          -12.0
+  352 2026-03-02   Skew Charm           SHORT  GEX-LIS            LOG    WIN           +10.2
+  354 2026-03-02   BofA Scalp           LONG   BOFA-PURE          A-Entry LOSS          -16.4
+  358 2026-03-02   DD Exhaustion        LONG   BOFA-PURE          A      WIN           +10.4
+  359 2026-03-02   Skew Charm           LONG   BOFA-PURE          LOG    WIN           +11.2
+  362 2026-03-02   ES Absorption        SHORT  GEX-LIS            B      LOSS          -12.0
+  365 2026-03-02   Skew Charm           LONG   BOFA-PURE          A      WIN           +10.8
+  364 2026-03-02   ES Absorption        SHORT  GEX-LIS            A      EXPIRED        -7.2
+  367 2026-03-03   Skew Charm           LONG   BofA-LIS           A-Entry LOSS          -20.0
+  369 2026-03-03   ES Absorption        LONG   AG-PURE            B      WIN            +8.6
+  370 2026-03-03   ES Absorption        LONG   AG-PURE            B      WIN            +8.1
+  372 2026-03-03   ES Absorption        LONG   AG-PURE            C      WIN            +8.9
+  373 2026-03-03   ES Absorption        LONG   AG-PURE            B      LOSS          -12.0
+  375 2026-03-03   DD Exhaustion        LONG   AG-PURE            A-Entry LOSS          -12.0
+  376 2026-03-03   ES Absorption        LONG   AG-PURE            B      WIN            +8.4
+  377 2026-03-03   Skew Charm           LONG   AG-PURE            B      WIN           +16.4
+  378 2026-03-03   ES Absorption        LONG   AG-PURE            B      WIN            +8.9
+  381 2026-03-03   DD Exhaustion        LONG   AG-PURE            A-Entry WIN           +25.4
+  382 2026-03-03   ES Absorption        LONG   AG-PURE            B      WIN            +8.4
+  384 2026-03-03   Skew Charm           LONG   AG-PURE            B      WIN           +46.2
+  385 2026-03-03   ES Absorption        LONG   AG-PURE            B      WIN            +9.1
+  387 2026-03-03   ES Absorption        LONG   AG-TARGET          A      LOSS          -12.0
+  388 2026-03-03   ES Absorption        LONG   BOFA-LIS           C      WIN            +8.6
+  390 2026-03-03   DD Exhaustion        LONG   BofA-LIS           A      WIN           +16.6
+  391 2026-03-03   ES Absorption        LONG   BOFA-LIS           LOG    WIN            +8.3
+  392 2026-03-03   Skew Charm           LONG   BofA-LIS           A-Entry WIN            +4.7
+  393 2026-03-03   ES Absorption        LONG   BOFA-LIS           LOG    WIN            +8.8
+  394 2026-03-03   ES Absorption        LONG   BOFA-LIS           LOG    WIN            +9.1
+  397 2026-03-03   DD Exhaustion        LONG   BofA-LIS           A      LOSS          -12.0
+  400 2026-03-03   Skew Charm           LONG   BofA-LIS           A-Entry WIN            +5.6
+  399 2026-03-03   ES Absorption        LONG   BOFA-LIS           C      WIN            +8.6
+  401 2026-03-03   ES Absorption        LONG   BOFA-LIS           C      LOSS          -12.0
+  402 2026-03-03   ES Absorption        LONG   BOFA-LIS           B      WIN            +8.7
+  403 2026-03-03   DD Exhaustion        LONG   BofA-LIS           A      WIN           +12.8
+  404 2026-03-03   Skew Charm           LONG   BofA-LIS           A-Entry WIN            +8.5
+  405 2026-03-03   ES Absorption        LONG   BOFA-LIS           C      WIN            +8.2
+  407 2026-03-03   DD Exhaustion        LONG   BofA-LIS           A      WIN           +17.8
+  408 2026-03-03   Skew Charm           LONG   BofA-LIS           A-Entry WIN           +26.9
+  410 2026-03-03   DD Exhaustion        LONG   BOFA-PURE          A-Entry LOSS          -12.0
+  411 2026-03-03   Skew Charm           LONG   BOFA-PURE          B      WIN            +8.2
+  413 2026-03-03   DD Exhaustion        LONG   BOFA-PURE          A      LOSS          -12.0
+  414 2026-03-03   Skew Charm           LONG   BOFA-PURE          A-Entry WIN            +8.8
+  415 2026-03-03   ES Absorption        LONG   BOFA-PURE          C      LOSS          -12.0
+  416 2026-03-03   ES Absorption        LONG   BOFA-PURE          B      LOSS          -12.0
+  419 2026-03-03   DD Exhaustion        LONG   BOFA-PURE          A      LOSS          -12.0
+  420 2026-03-03   Skew Charm           LONG   BOFA-PURE          A-Entry EXPIRED       -12.1
+  421 2026-03-03   ES Absorption        LONG   BOFA-PURE          B      LOSS          -12.0
+  423 2026-03-03   ES Absorption        LONG   BOFA-PURE          C      LOSS          -12.0
+  412 2026-03-03   BofA Scalp           LONG   BOFA-PURE          A+     EXPIRED        -4.9
+  424 2026-03-03   Skew Charm           LONG   BOFA-PURE          A      EXPIRED        -4.0
+  430 2026-03-04   Skew Charm           LONG   SIDIAL-MESSY       C      WIN            +8.1
+  431 2026-03-04   DD Exhaustion        LONG   SIDIAL-MESSY       A-Entry LOSS          -12.0
+  435 2026-03-04   Skew Charm           LONG   SIDIAL-MESSY       C      WIN           +16.0
+  434 2026-03-04   ES Absorption        LONG   SIDIAL-MESSY       C      LOSS          -12.0
+  441 2026-03-04   Skew Charm           LONG   SIDIAL-MESSY       C      WIN           +12.3
+  450 2026-03-04   Skew Charm           SHORT  GEX-TARGET         B      EXPIRED        -4.4
+  451 2026-03-04   DD Exhaustion        SHORT  GEX-TARGET         A-Entry LOSS          -12.0
+  452 2026-03-04   ES Absorption        SHORT  GEX-TARGET         B      WIN            +7.0
+  454 2026-03-04   Skew Charm           SHORT  GEX-TARGET         B      WIN            +7.7
+  455 2026-03-04   DD Exhaustion        SHORT  GEX-TARGET         A-Entry WIN            +6.8
+  453 2026-03-04   ES Absorption        SHORT  GEX-TARGET         C      WIN            +6.2
+  459 2026-03-04   Skew Charm           SHORT  GEX-TARGET         B      EXPIRED        +0.8
+  460 2026-03-04   DD Exhaustion        SHORT  GEX-TARGET         A      EXPIRED        +2.6
+  461 2026-03-04   ES Absorption        SHORT  GEX-TARGET         B      LOSS          -12.0
+  462 2026-03-04   ES Absorption        SHORT  GEX-TARGET         B      EXPIRED        +6.5
+  463 2026-03-04   DD Exhaustion        SHORT  GEX-TARGET         A      EXPIRED        +4.3
+  464 2026-03-04   Skew Charm           SHORT  GEX-TARGET         A-Entry EXPIRED        +4.1
+  465 2026-03-04   ES Absorption        SHORT  GEX-TARGET         B      EXPIRED        +4.0
+  467 2026-03-04   Skew Charm           SHORT  GEX-TARGET         A-Entry EXPIRED        +0.1
+  466 2026-03-04   ES Absorption        SHORT  GEX-PURE           B      LOSS          -12.0
+  468 2026-03-04   DD Exhaustion        SHORT  GEX-TARGET         A      EXPIRED        +4.9
+  469 2026-03-04   DD Exhaustion        SHORT  GEX-PURE           A      WIN            +8.4
+  471 2026-03-04   Skew Charm           SHORT  GEX-PURE           A-Entry WIN            +7.0
+  472 2026-03-04   DD Exhaustion        SHORT  GEX-PURE           A      WIN            +9.6
+  473 2026-03-04   Skew Charm           SHORT  GEX-PURE           A-Entry WIN            +7.7
+  474 2026-03-04   Skew Charm           SHORT  GEX-PURE           A-Entry WIN            +7.9
+  470 2026-03-04   ES Absorption        SHORT  GEX-PURE           A      EXPIRED        +6.8
+  477 2026-03-04   Skew Charm           SHORT  GEX-LIS            A-Entry EXPIRED        +3.1
+  479 2026-03-05   Skew Charm           LONG   SIDIAL-EXTREME     C      WIN           +11.2
+  482 2026-03-05   DD Exhaustion        LONG   SIDIAL-BALANCE     A-Entry LOSS          -12.0
+  485 2026-03-05   ES Absorption        LONG   AG-LIS             B      LOSS          -12.0
+  486 2026-03-05   ES Absorption        LONG   AG-TARGET          C      WIN            +8.1
+  487 2026-03-05   ES Absorption        LONG   SIDIAL-EXTREME     C      WIN            +6.2
+  493 2026-03-05   ES Absorption        LONG   BOFA-LIS           C      WIN            +6.2
+  497 2026-03-05   ES Absorption        LONG   BOFA-LIS           C      WIN            +6.1
+  498 2026-03-05   ES Absorption        LONG   BOFA-LIS           B      WIN            +6.8
+  501 2026-03-05   ES Absorption        LONG   SIDIAL-EXTREME     C      LOSS          -12.0
+  502 2026-03-05   ES Absorption        LONG   BOFA-LIS           C      LOSS          -12.0
+  505 2026-03-05   ES Absorption        LONG   BOFA-LIS           B      LOSS          -12.0
+  503 2026-03-05   BofA Scalp           LONG   BofA-LIS           A      LOSS           -9.7
+  507 2026-03-05   ES Absorption        LONG   BOFA-PURE          C      WIN            +7.6
+  508 2026-03-05   Skew Charm           LONG   BOFA-PURE          B      WIN           +10.8
+  509 2026-03-05   DD Exhaustion        LONG   BOFA-PURE          A      WIN           +22.4
+  510 2026-03-05   ES Absorption        LONG   BOFA-PURE          B      WIN            +6.5
+  512 2026-03-05   ES Absorption        LONG   BOFA-PURE          B      LOSS          -12.0
+  514 2026-03-05   Skew Charm           LONG   BOFA-PURE          B      WIN            +8.5
+  515 2026-03-05   DD Exhaustion        LONG   BOFA-PURE          A-Entry WIN           +24.5
+  516 2026-03-05   ES Absorption        LONG   BOFA-PURE          C      WIN            +6.1
+  519 2026-03-05   Skew Charm           LONG   BOFA-PURE          B      WIN            +7.7
+  520 2026-03-05   DD Exhaustion        LONG   BOFA-PURE          A      WIN           +23.0
+  518 2026-03-05   ES Absorption        LONG   BOFA-PURE          B      WIN            +7.6
+  522 2026-03-05   ES Absorption        LONG   BOFA-PURE          B      WIN            +6.6
+  524 2026-03-05   DD Exhaustion        LONG   BOFA-PURE          A      WIN           +22.5
+  525 2026-03-05   Skew Charm           LONG   BOFA-PURE          B      WIN            +8.7
+  523 2026-03-05   ES Absorption        LONG   BOFA-PURE          C      WIN            +6.6
+  526 2026-03-05   ES Absorption        LONG   BOFA-PURE          C      WIN            +6.2
+  528 2026-03-05   Skew Charm           LONG   BOFA-PURE          A      WIN           +13.2
+  529 2026-03-05   DD Exhaustion        LONG   BOFA-PURE          A+     WIN           +16.6
+  532 2026-03-05   BofA Scalp           LONG   BOFA-PURE          A-Entry WIN           +10.0
+  530 2026-03-05   ES Absorption        LONG   BOFA-PURE          C      WIN            +6.0
+  539 2026-03-05   ES Absorption        LONG   AG-LIS             B      EXPIRED        +4.2
+  543 2026-03-06   ES Absorption        LONG   AG-TARGET          B      LOSS          -12.0
+  545 2026-03-06   ES Absorption        LONG   SIDIAL-MESSY       A      WIN            +6.0
+  546 2026-03-06   ES Absorption        LONG   SIDIAL-MESSY       C      WIN            +7.8
+  548 2026-03-06   ES Absorption        LONG   SIDIAL-MESSY       C      WIN            +7.5
+  559 2026-03-06   ES Absorption        LONG   AG-TARGET          C      LOSS          -12.0
+  561 2026-03-06   ES Absorption        LONG   BOFA-LIS           B      WIN            +7.9
+  562 2026-03-06   ES Absorption        LONG   BOFA-LIS           C      WIN            +7.6
+  564 2026-03-06   ES Absorption        LONG   BOFA-LIS           C      LOSS          -12.0
+  566 2026-03-06   ES Absorption        LONG   BOFA-LIS           B      WIN            +7.5
+  569 2026-03-06   ES Absorption        LONG   BOFA-LIS           C      WIN            +7.2
+  571 2026-03-06   ES Absorption        LONG   BOFA-LIS           C      LOSS          -12.0
+  573 2026-03-06   ES Absorption        LONG   BOFA-LIS           C      LOSS          -12.0
+  574 2026-03-06   Skew Charm           SHORT  GEX-PURE           A      WIN           +17.2
+  575 2026-03-06   ES Absorption        LONG   BOFA-LIS           C      LOSS          -12.0
+  579 2026-03-06   ES Absorption        LONG   BOFA-LIS           C      LOSS          -12.0
+  585 2026-03-06   ES Absorption        LONG   BOFA-LIS           B      WIN            +6.1
+  588 2026-03-06   ES Absorption        LONG   BOFA-PURE          LOG    WIN            +7.1
+  589 2026-03-06   ES Absorption        LONG   BOFA-PURE          LOG    EXPIRED        -3.0
+  591 2026-03-09   Skew Charm           LONG   BOFA-PURE          B      WIN           +10.1
+  593 2026-03-09   DD Exhaustion        LONG   BofA-LIS           A-Entry LOSS          -12.0
+  595 2026-03-09   BofA Scalp           LONG   BofA-LIS           A-Entry WIN           +10.0
+  596 2026-03-09   Skew Charm           LONG   BofA-LIS           B      WIN           +11.5
+  597 2026-03-09   Skew Charm           SHORT  GEX-LIS            B      LOSS          -20.0
+  598 2026-03-09   DD Exhaustion        SHORT  GEX-LIS            A-Entry LOSS          -12.0
+  600 2026-03-09   BofA Scalp           LONG   BOFA-PURE          A-Entry WIN           +10.0
+  602 2026-03-09   Skew Charm           SHORT  GEX-LIS            B      LOSS          -20.0
+  612 2026-03-09   BofA Scalp           LONG   BOFA-PURE          A      WIN           +10.0
+  614 2026-03-09   DD Exhaustion        LONG   BOFA-PURE          A-Entry WIN           +28.0
+  615 2026-03-09   Skew Charm           LONG   BOFA-PURE          B      WIN            +7.1
+  618 2026-03-09   DD Exhaustion        LONG   BOFA-PURE          A      WIN           +26.4
+  619 2026-03-09   Skew Charm           LONG   BOFA-PURE          A-Entry WIN           +27.1
+  623 2026-03-10   Skew Charm           SHORT  GEX-TARGET         B      WIN           +12.4
+  625 2026-03-10   DD Exhaustion        LONG   SIDIAL-MESSY       A-Entry WIN           +28.2
+  626 2026-03-10   Skew Charm           LONG   SIDIAL-MESSY       B      WIN           +32.2
+  627 2026-03-10   Skew Charm           SHORT  GEX-TARGET         C      LOSS          -20.0
+  628 2026-03-10   DD Exhaustion        SHORT  GEX-TARGET         A-Entry LOSS          -12.0
+  629 2026-03-10   Skew Charm           SHORT  GEX-PURE           B      WIN            +7.8
+  631 2026-03-10   DD Exhaustion        SHORT  GEX-PURE           A      LOSS          -12.0
+  633 2026-03-10   BofA Scalp           LONG   BofA-LIS           A-Entry EXPIRED        -0.5
+  634 2026-03-10   Skew Charm           SHORT  GEX-PURE           B      WIN            +7.8
+  639 2026-03-10   DD Exhaustion        SHORT  GEX-PURE           A-Entry LOSS          -12.0
+  644 2026-03-10   BofA Scalp           LONG   BOFA-PURE          A-Entry EXPIRED        +6.6
+  652 2026-03-10   BofA Scalp           LONG   BOFA-PURE          A+     LOSS          -10.9
+  653 2026-03-10   BofA Scalp           LONG   BOFA-PURE          A+     LOSS           -7.4
+  654 2026-03-10   Skew Charm           LONG   BOFA-PURE          A      WIN            +8.7
+  655 2026-03-10   DD Exhaustion        LONG   BOFA-PURE          A+     WIN           +13.2
+  656 2026-03-10   DD Exhaustion        LONG   BOFA-PURE          A+     WIN            -1.0
+  659 2026-03-10   Skew Charm           LONG   BOFA-PURE          A      WIN            +6.0
+  663 2026-03-10   BofA Scalp           LONG   BOFA-PURE          A+     EXPIRED        -3.8
+  664 2026-03-10   DD Exhaustion        LONG   BOFA-PURE          A      LOSS          -12.0
+  665 2026-03-10   DD Exhaustion        LONG   BOFA-PURE          A-Entry LOSS          -12.0
+  666 2026-03-10   BofA Scalp           LONG   BOFA-PURE          A+     LOSS           -7.8
+  667 2026-03-10   Skew Charm           LONG   BOFA-PURE          A-Entry LOSS          -20.0
+  670 2026-03-10   DD Exhaustion        SHORT  GEX-LIS            A      WIN           +15.2
+  676 2026-03-11   ES Absorption        LONG   SIDIAL-EXTREME     B      LOSS           -8.0
+  678 2026-03-11   Skew Charm           LONG   SIDIAL-EXTREME     C      WIN           +11.6
+  680 2026-03-11   Paradigm Reversal    LONG   SIDIAL-EXTREME     A-Entry LOSS          -15.0
+  682 2026-03-11   ES Absorption        LONG   SIDIAL-EXTREME     B      LOSS           -8.0
+  685 2026-03-11   DD Exhaustion        LONG   SIDIAL-EXTREME     A-Entry LOSS          -12.0
+  686 2026-03-11   Skew Charm           LONG   SIDIAL-EXTREME     B      LOSS          -20.0
+  687 2026-03-11   Paradigm Reversal    LONG   SIDIAL-EXTREME     A-Entry WIN           +10.0
+  688 2026-03-11   ES Absorption        LONG   AG-LIS             B      LOSS           -8.0
+  690 2026-03-11   DD Exhaustion        LONG   AG-PURE            A-Entry WIN           +13.1
+  691 2026-03-11   Skew Charm           LONG   AG-PURE            B      WIN           +11.6
+  692 2026-03-11   ES Absorption        LONG   AG-PURE            B      LOSS           -8.0
+  694 2026-03-11   Skew Charm           LONG   AG-PURE            B      WIN           +12.4
+  695 2026-03-11   DD Exhaustion        LONG   AG-PURE            A-Entry WIN            -1.0
+  696 2026-03-11   Skew Charm           LONG   AG-PURE            B      LOSS          -20.0
+  697 2026-03-11   DD Exhaustion        LONG   AG-PURE            A      LOSS          -12.0
+  698 2026-03-11   Skew Charm           LONG   AG-LIS             B      LOSS          -20.0
+  699 2026-03-11   DD Exhaustion        LONG   AG-LIS             A      LOSS          -12.0
+  703 2026-03-11   ES Absorption        LONG   BOFA-PURE          B      WIN           +10.0
+  707 2026-03-11   DD Exhaustion        LONG   BOFA-PURE          A-Entry WIN            +9.2
+  708 2026-03-11   Skew Charm           LONG   BOFA-PURE          B      WIN            +9.2
+  713 2026-03-11   Skew Charm           LONG   BOFA-PURE          A-Entry EXPIRED        +3.4
+  714 2026-03-11   ES Absorption        LONG   BOFA-PURE          B      EXPIRED        -1.0
+
+Blocked summary: 292 total
+  Winners blocked: 162 (+1866.0 pts)
+  Losers blocked:  95 (-1150.3 pts)
+  Expired blocked: 35 (+16.2 pts)
+  Net saved by blocking: -731.9 pts
+
+--- SOFT GATE: Blocked trades (85 total, showing summary) ---
+
+Blocked summary: 85 total
+  Winners blocked: 45 (+550.2 pts)
+  Losers blocked:  32 (-391.0 pts)
+  Expired blocked: 8 (-2.6 pts)
+  Net saved by blocking: -156.6 pts
+
+====================================================================================================
+PART 5: WIN RATE BY PARADIGM x DIRECTION
+====================================================================================================
+
+--- By BASE paradigm ---
+Paradigm     Direction  Trades   Wins     WR%       PnL      PF
+------------------------------------------------------------
+AG           LONG          55     31   56.4%   +155.2    1.62
+AG           SHORT         68     28   41.2%    -68.4    0.84
+BOFA         LONG         139     86   61.9%   +496.6    2.07
+BOFA         SHORT        133     56   42.1%    -51.8    0.93
+GEX          LONG          75     33   44.0%    +40.6    1.12
+GEX          SHORT         70     28   40.0%     +6.3    1.02
+SIDIAL       LONG          28     17   60.7%    +73.7    1.53
+SIDIAL       SHORT         50     31   62.0%   +175.3    1.99
+
+--- By FULL paradigm subtype ---
+Paradigm Subtype     Dir    Trades  Wins     WR%       PnL      PF
+--------------------------------------------------------------------
+AG-LIS               LONG       16     8   50.0%    +36.4    1.48
+AG-LIS               SHORT      28     9   32.1%    -28.8    0.83
+AG-PURE              LONG       29    19   65.5%   +139.4    2.35
+AG-PURE              SHORT      17     7   41.2%    -21.5    0.78
+AG-TARGET            LONG       10     4   40.0%    -20.6    0.71
+AG-TARGET            SHORT      23    12   52.2%    -18.0    0.89
+BOFA-LIS             LONG       29    21   72.4%    +74.7    1.78
+BOFA-LIS             SHORT      12     7   58.3%     -1.0    0.98
+BOFA-MESSY           LONG        3     1   33.3%    -14.0    0.42
+BOFA-MESSY           SHORT       7     2   28.6%    -18.0    0.51
+BOFA-PURE            LONG       86    53   61.6%   +397.8    2.62
+BOFA-PURE            SHORT      86    30   34.9%   -137.7    0.73
+BofA-LIS             LONG       21    11   52.4%    +38.2    1.38
+BofA-LIS             SHORT      28    17   60.7%   +104.8    1.93
+GEX-LIS              LONG       27    14   51.9%    +85.7    1.91
+GEX-LIS              SHORT      12     3   25.0%    -76.9    0.33
+GEX-MESSY            LONG        7     2   28.6%    -21.5    0.51
+GEX-MESSY            SHORT      11     5   45.5%    +30.5    1.45
+GEX-PURE             LONG       26     8   30.8%    -76.7    0.50
+GEX-PURE             SHORT      28    15   53.6%    +57.7    1.51
+GEX-TARGET           LONG       15     9   60.0%    +53.1    2.02
+GEX-TARGET           SHORT      19     5   26.3%     -5.0    0.93
+SIDIAL-BALANCE       LONG        1     0    0.0%    -12.0    0.00
+SIDIAL-BALANCE       SHORT       1     1  100.0%    +21.6     inf
+SIDIAL-EXTREME       LONG       12     5   41.7%    -37.5    0.58
+SIDIAL-EXTREME       SHORT      24    15   62.5%   +132.2    3.00
+SIDIAL-MESSY         LONG       15    12   80.0%   +123.2    4.42
+SIDIAL-MESSY         SHORT      25    15   60.0%    +21.5    1.19
+
+--- By BASE paradigm (all directions combined) ---
+Paradigm      Trades   Wins     WR%       PnL      PF
+--------------------------------------------------
+AG               123     59   48.0%    +86.8    1.13
+BOFA             272    142   52.2%   +444.9    1.37
+GEX              145     61   42.1%    +46.9    1.07
+SIDIAL            78     48   61.5%   +249.0    1.79
+
+====================================================================================================
+PART 6: PARADIGM DIRECTION AFFINITY — Which paradigm favors which direction?
+====================================================================================================
+
+Paradigm     | LONG trades  LONG WR  LONG PnL | SHORT trades  SHORT WR  SHORT PnL | Verdict
+----------------------------------------------------------------------------------------------------
+AG           |          55    56.4%   +155.2 |           68     41.2%     -68.4 | FAVORS LONG
+BOFA         |         139    61.9%   +496.6 |          133     42.1%     -51.8 | FAVORS LONG
+GEX          |          75    44.0%    +40.6 |           70     40.0%      +6.3 | NEUTRAL
+SIDIAL       |          28    60.7%    +73.7 |           50     62.0%    +175.3 | NEUTRAL
+
+====================================================================================================
+PART 7: VANNA SIGN x DIRECTION ANALYSIS
+====================================================================================================
+
+--- VANNA ALL EXPIRIES ---
+  Trades with vanna_all data: 608
+
+  LONG:
+    vanna_all > 0 (positive):  253 trades  WR= 60.9%  PnL=  +769.6  PF=1.77
+    vanna_all < 0 (negative):   36 trades  WR= 25.0%  PnL=   -28.1  PF=0.84
+    --> Aligned: WR=60.9%, PnL=+769.6 | Opposed: WR=25.0%, PnL=-28.1 | Delta: WR=+35.9%, PnL=+797.7
+
+  SHORT:
+    vanna_all > 0 (positive):  268 trades  WR= 45.5%  PnL=  -121.9  PF=0.92
+    vanna_all < 0 (negative):   51 trades  WR= 39.2%  PnL=  +190.8  PF=2.18
+    --> Aligned: WR=39.2%, PnL=+190.8 | Opposed: WR=45.5%, PnL=-121.9 | Delta: WR=-6.3%, PnL=+312.7
+
+--- VANNA WEEKLY ---
+  Trades with vanna_weekly data: 608
+
+  LONG:
+    vanna_weekly > 0 (positive):  150 trades  WR= 52.0%  PnL=  +201.6  PF=1.31
+    vanna_weekly < 0 (negative):  139 trades  WR= 61.2%  PnL=  +540.0  PF=2.04
+    --> Aligned: WR=52.0%, PnL=+201.6 | Opposed: WR=61.2%, PnL=+540.0 | Delta: WR=-9.2%, PnL=-338.4
+
+  SHORT:
+    vanna_weekly > 0 (positive):  221 trades  WR= 46.6%  PnL=  +301.6  PF=1.29
+    vanna_weekly < 0 (negative):   98 trades  WR= 39.8%  PnL=  -232.7  PF=0.64
+    --> Aligned: WR=39.8%, PnL=-232.7 | Opposed: WR=46.6%, PnL=+301.6 | Delta: WR=-6.8%, PnL=-534.4
+
+--- VANNA MONTHLY ---
+  Trades with vanna_monthly data: 608
+
+  LONG:
+    vanna_monthly > 0 (positive):  258 trades  WR= 57.4%  PnL=  +652.7  PF=1.61
+    vanna_monthly < 0 (negative):   31 trades  WR= 48.4%  PnL=   +88.8  PF=1.91
+    --> Aligned: WR=57.4%, PnL=+652.7 | Opposed: WR=48.4%, PnL=+88.8 | Delta: WR=+9.0%, PnL=+563.8
+
+  SHORT:
+    vanna_monthly > 0 (positive):  286 trades  WR= 42.3%  PnL=  -110.8  PF=0.93
+    vanna_monthly < 0 (negative):   33 trades  WR= 63.6%  PnL=  +179.7  PF=2.51
+    --> Aligned: WR=63.6%, PnL=+179.7 | Opposed: WR=42.3%, PnL=-110.8 | Delta: WR=+21.3%, PnL=+290.5
+
+====================================================================================================
+PART 8: SPOT-VOL BETA x DIRECTION ANALYSIS
+====================================================================================================
+Trades with SVB data: 527
+
+  LONG:
+    SVB > 0 (positive):           152 trades  WR= 58.6%  PnL=  +432.9  PF=1.66
+    SVB < 0 (negative):            93 trades  WR= 53.8%  PnL=  +328.6  PF=2.01
+    SVB -0.5 to 0 (weak-neg):     22 trades  WR= 50.0%  PnL=   +72.5  PF=2.06
+
+  SHORT:
+    SVB > 0 (positive):           156 trades  WR= 49.4%  PnL=  +147.3  PF=1.18
+    SVB < 0 (negative):           126 trades  WR= 42.1%  PnL=   +27.8  PF=1.04
+    SVB -0.5 to 0 (weak-neg):     21 trades  WR= 23.8%  PnL=  -100.2  PF=0.39
+
+====================================================================================================
+PART 9: COMBINED GATES — Paradigm + Vanna
+====================================================================================================
+Trades with BOTH paradigm and vanna_all data: 608
+
+Combined gate: 90 passed, 518 blocked
+  No gate (both data)                  608 trades  WR= 50.2%  PnL=  +810.4  PF=  1.28
+  Combined gate PASSED                  90 trades  WR= 47.8%  PnL=  +257.1  PF=  1.83
+  Combined gate BLOCKED                518 trades  WR= 50.6%  PnL=  +553.4  PF=  1.22
+
+--- Vanna-only gate (block LONG when vanna_all<0, SHORT when vanna_all>0) ---
+Trades with vanna_all: 608, passed: 304, blocked: 304
+  No gate                              608 trades  WR= 50.2%  PnL=  +810.4  PF=  1.28
+  Vanna gate PASSED                    304 trades  WR= 57.2%  PnL=  +960.4  PF=  1.83
+  Vanna gate BLOCKED                   304 trades  WR= 43.1%  PnL=  -150.0  PF=  0.91
+
+====================================================================================================
+PART 10: PER-SETUP PARADIGM GATE IMPACT (strict gate)
+====================================================================================================
+
+  BofA Scalp:
+    No gate:   47 trades  WR= 29.8%  PnL=   +11.9  PF=1.06
+    Passed:    21 trades  WR= 23.8%  PnL=   -26.3  PF=0.75
+    Blocked:   26 trades  WR= 34.6%  PnL=   +38.2  PF=1.43
+    Impact: -38.2 pts (removed +38.2 from blocked)
+
+  DD Exhaustion:
+    No gate:  200 trades  WR= 48.5%  PnL=  +415.1  PF=1.43
+    Passed:    96 trades  WR= 45.8%  PnL=  +104.9  PF=1.22
+    Blocked:  104 trades  WR= 51.0%  PnL=  +310.2  PF=1.63
+    Impact: -310.2 pts (removed +310.2 from blocked)
+
+  ES Absorption:
+    No gate:  156 trades  WR= 50.6%  PnL=   -64.1  PF=0.91
+    Passed:    61 trades  WR= 37.7%  PnL=  -170.1  PF=0.53
+    Blocked:   95 trades  WR= 58.9%  PnL=  +106.0  PF=1.28
+    Impact: -106.0 pts (removed +106.0 from blocked)
+
+  Paradigm Reversal:
+    No gate:   24 trades  WR= 41.7%  PnL=   -10.7  PF=0.91
+    Passed:    16 trades  WR= 43.8%  PnL=    -2.2  PF=0.97
+    Blocked:    8 trades  WR= 37.5%  PnL=    -8.5  PF=0.81
+    Impact: +8.5 pts (removed -8.5 from blocked)
+
+  Skew Charm:
+    No gate:  111 trades  WR= 70.3%  PnL=  +495.4  PF=2.09
+    Passed:    52 trades  WR= 71.2%  PnL=  +209.4  PF=1.89
+    Blocked:   59 trades  WR= 69.5%  PnL=  +286.0  PF=2.30
+    Impact: -286.0 pts (removed +286.0 from blocked)
+
+====================================================================================================
+PART 11: SUMMARY COMPARISON — ALL GATE SCENARIOS
+====================================================================================================
+
+Scenario                             Trades     WR%        PnL      PF  pts/trade
+----------------------------------------------------------------------------------
+Baseline (all trades)                   620   50.3%    +847.1    1.29     +1.37
+Baseline (w/ paradigm)                  620   50.3%    +847.1    1.29     +1.37
+Strict paradigm gate                    328   45.7%    +115.2    1.07     +0.35
+Soft paradigm gate                      535   49.9%    +690.4    1.28     +1.29
+Vanna-all gate                          304   57.2%    +960.4    1.83     +3.16
+Combined (paradigm+vanna)                90   47.8%    +257.1    1.83     +2.86
+
+--- Comparison with existing Greek alignment filter ---
+  No filter (all)                      620 trades  WR= 50.3%  PnL=  +847.1  PF=  1.29
+  Greek align >= 0                     381 trades  WR= 53.8%  PnL= +1025.7  PF=  1.68
+  Strict paradigm gate                 328 trades  WR= 45.7%  PnL=  +115.2  PF=  1.07
+  Greek>=0 + Strict paradigm           136 trades  WR= 44.9%  PnL=  +277.2  PF=  1.54
+
+Done.

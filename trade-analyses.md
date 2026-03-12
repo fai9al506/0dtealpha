@@ -1400,3 +1400,100 @@ Late-day SHORT with charm_sum < -100M = **8.3% WR** (nearly all losers).
 **Recommended F7:** Block SHORT when sum of charm exposure points at strikes within 20 pts below spot < -100M.
 
 **NOT recommended for LONG:** Positive charm above spot acts as a magnet (price drifts toward it as charm decays), not resistance. This is the opposite of the initial hypothesis.
+
+---
+
+## Analysis #11 — Mar 12, 2026: V7+AG Filter Upgrade
+
+### Trigger
+
+Mar 12 was a -13.2 pt SPX down day. Unfiltered PnL = +47 pts (shorts carried). Filtered PnL (current deployed Option B) = -36 pts. The filter concentrated 100% of trades into longs on a sell-off day, missing +83 pts in profitable shorts.
+
+### Root Cause: Current Filter Has Two Problems
+
+1. **Longs too strict (align >= 3):** Alignment 2 longs have 66% WR and +316 pts historically — solid edge being left on the table.
+2. **Missing AG Short:** Currently blocked at alignment = -3 (F3 rule). But AG Short is the only short setup that fires on pure sell-offs without skew/DD signals. Today AG Short went 5W/1L, +51 pts — all blocked.
+
+### Filter Naming Conventions (for future reference)
+
+| Name | Long Rule | Short Rule | Origin |
+|------|-----------|-----------|--------|
+| **R1** | Basic Greek filter (GEX>=1, AG!=-3, DD SVB block, ESA<0 block) | Same basic blocks | Mar 8, Analysis #5 |
+| **Option B** | align >= 3 | Block ES Abs (all), BofA (all), DD (align=0), AG (align=-3) | Mar 11, Analysis #9 (deployed) |
+| **Option C** | align >= 3 | Option B + SVB < -0.5 gate | Mar 11, Analysis #9 (E2T) |
+| **V7** | align >= 2 | Only Skew Charm + DD Exhaustion (align!=0) | Mar 11, Analysis #9 (backtest only) |
+| **V7+AG** | align >= 2 | Skew Charm + DD Exhaustion (align!=0) + AG Short (all) | **Mar 12, Analysis #11 (new)** |
+
+### Full Comparison (all data, Feb 5 → Mar 12, 373+ trades)
+
+| Filter | Trades | WR | PnL | PnL/day | PF | Max DD | Sharpe | Losing Days |
+|--------|--------|-----|------|---------|------|--------|--------|-------------|
+| Current (Option B) | 281 | 59% | +809 | +40.5 | 1.64 | 92.5 | 0.56 | 7/20 |
+| V7 (L2 + SC+DD) | 332 | 61% | +1023 | +60.2 | 1.71 | 50.1 | 0.76 | 5/17 |
+| V7-L3 (L3 + SC+DD) | 244 | 61% | +728 | +45.5 | 1.67 | 92.5 | 0.58 | 6/16 |
+| **V7+AG (L2 + SC+DD+AG)** | **373** | **60%** | **+1104** | **+52.6** | **1.66** | **50.1** | **0.73** | **7/21** |
+
+### Drawdown Deep Dive
+
+| Risk Metric | Current (Option B) | V7+AG |
+|-------------|-------------------|-------|
+| Max trailing DD | 92.5 pts ($3,698 @ 8 MES) | **50.1 pts ($2,005)** |
+| Worst single day | -80.5 pts | **-50.1 pts** |
+| Worst 2-day streak | -92.5 pts | **-35.0 pts** |
+| Avg losing day | -34.8 pts | **-24.9 pts** |
+| Avg winning day | +81.0 pts | **+91.3 pts** |
+| Days worse than -27.5 | 4 | **3** |
+| Worst intraday DD | 143 pts | **128 pts** |
+| Max consecutive losing days | 2 | 2 |
+
+**V7+AG is safer on every single DD metric.** Max trailing DD nearly halved (50 vs 93 pts).
+
+### Why V7+AG Has LESS Drawdown Than Current
+
+Current's worst day was Feb 25: -80.5 pts (13 shorts including toxic ES Absorption and BofA). V7+AG only took 8 shorts that day (SC+DD+AG) = -50.1 pts. The toxic setups it blocks (ES Absorption -176 pts all-time, BofA -26 pts) were causing the big DD spikes.
+
+### Worst Days Analysis
+
+| Date | SPX Move | Current | V7+AG | What Happened |
+|------|----------|---------|-------|---------------|
+| Feb 25 | +22.3 | -80.5 | **-50.1** | Rally day, shorts hammered — V7+AG took fewer toxic shorts |
+| Mar 9 | +157.3 | -56.0 | **-41.0** | Huge rally, shorts lost — V7+AG had same exposure |
+| Mar 12 | -13.2 | -40.1 | **-8.9** | Sell-off, longs lost — AG Short hedged in V7+AG |
+| Mar 11 | -16.5 | -34.4 | **-29.4** | Sell-off — V7+AG had more shorts to hedge |
+
+### What V7+AG Changes vs Current Deployed
+
+| Component | Current (Option B) | V7+AG |
+|-----------|-------------------|-------|
+| **Longs** | alignment >= 3 | **alignment >= 2** (adds 66% WR longs) |
+| **Skew Charm shorts** | Allow (except BofA/ES blocks) | Allow all (unchanged) |
+| **DD Exhaustion shorts** | Allow (block align=0) | Allow (block align=0) (unchanged) |
+| **AG Short** | Block at align=-3 | **Allow all** (removes F3 block) |
+| **ES Absorption shorts** | Block all | Block all (unchanged) |
+| **BofA Scalp shorts** | Block all | Block all (unchanged) |
+| **Paradigm Reversal shorts** | Allow | **Block** (net -2.2 pts, not worth including) |
+
+### Charm S/R Interaction
+
+Charm S/R limit entry (implemented same day) is **separate and stacks on top**:
+1. V7+AG decides WHICH trades to take (filter)
+2. Charm S/R improves HOW shorts are entered (limit vs market order)
+
+The charm S/R backtest showed +822 pts improvement on Option B shorts. Same improvement applies to V7+AG shorts since it uses the same short setups (SC, DD, AG).
+
+### E2T Safety
+
+At 8 MES ($40/pt), V7+AG max trailing DD = $2,005 — right at the $2K E2T limit. Options:
+- Reduce to 7 MES ($35/pt): DD = $1,754, safely within limit
+- Add SVB < -0.5 gate on shorts (Option C style) for extra safety
+
+### Decision: Deploy V7+AG
+
+**SIM auto-trader:** V7+AG (full)
+**Eval trader:** V7+AG (consider 7 MES for E2T safety)
+
+**Why AG Short should never be alignment-filtered:**
+- AG Short is the ONLY short setup that fires on pure sell-off days (no skew/DD signals)
+- Alignment is structurally biased bullish — AG Short at align=-3 is normal, not bad
+- Historical: 53% WR at align=-3, +13.7 pts. Feb 24 disaster was early data anomaly
+- Today (Mar 12): 5W/1L, +51.2 pts at align=-3 — all blocked by current filter

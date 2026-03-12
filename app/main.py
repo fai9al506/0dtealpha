@@ -3086,6 +3086,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
     try:
         from app import options_trader
         options_trader.poll_order_status()
+        options_trader.reconcile_with_broker()
     except Exception:
         pass
 

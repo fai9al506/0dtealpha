@@ -571,6 +571,88 @@ def _load_active_orders():
         print(f"[options] load error (non-fatal): {e}", flush=True)
 
 
+# ====== RECONCILIATION ======
+
+_last_reconcile = 0.0  # epoch timestamp
+
+def reconcile_with_broker():
+    """Backfill missing entry/close prices from TS API. Called every ~60s.
+
+    Purely additive — only READS from broker and UPDATES our DB state
+    where data is missing. Does NOT change any trading logic or status flow.
+    """
+    global _last_reconcile
+    if not OPTIONS_TRADE_ENABLED or not _get_token:
+        return
+
+    now = time.time()
+    if now - _last_reconcile < 55:  # run at most every ~60s
+        return
+    _last_reconcile = now
+
+    # Collect orders that need backfill
+    with _lock:
+        needs_backfill = [
+            (lid, o) for lid, o in _active_orders.items()
+            if (o.get("status") == "closed" and o.get("close_price") is None
+                and o.get("close_order_id"))
+            or (o.get("status") == "closed" and o.get("entry_price") is None
+                and o.get("entry_order_id"))
+        ]
+    if not needs_backfill:
+        return
+
+    # Pull all orders from broker
+    try:
+        data = _sim_api("GET", f"/brokerage/accounts/{SIM_ACCOUNT_ID}/orders", None)
+    except Exception:
+        return
+    if not data:
+        return
+
+    broker_orders = {}
+    for o in data.get("Orders", []):
+        oid = o.get("OrderID")
+        if oid:
+            broker_orders[oid] = o
+
+    updated = 0
+    for lid, order in needs_backfill:
+        changed = False
+
+        # Backfill missing entry_price
+        if order.get("entry_price") is None and order.get("entry_order_id"):
+            entry = broker_orders.get(order["entry_order_id"], {})
+            if entry.get("Status") == "FLL":
+                fp = _extract_fill_price(entry)
+                if fp:
+                    with _lock:
+                        order["entry_price"] = fp
+                    changed = True
+
+        # Backfill missing close_price
+        if order.get("close_price") is None and order.get("close_order_id"):
+            close = broker_orders.get(order["close_order_id"], {})
+            if close.get("Status") == "FLL":
+                fp = _extract_fill_price(close)
+                if fp:
+                    with _lock:
+                        order["close_price"] = fp
+                    changed = True
+                    entry_p = order.get("entry_price") or 0
+                    pnl = (fp - entry_p) * 100 * order.get("qty", 1)
+                    print(f"[options] reconcile: #{lid} {order.get('setup_name')} "
+                          f"close_price=${fp:.2f} backfilled (P&L=${pnl:+.0f})",
+                          flush=True)
+
+        if changed:
+            _persist_order(lid)
+            updated += 1
+
+    if updated:
+        print(f"[options] reconcile: backfilled {updated} orders", flush=True)
+
+
 # ====== TELEGRAM ======
 
 def _alert(msg: str):

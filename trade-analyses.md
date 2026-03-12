@@ -1268,3 +1268,135 @@ This shows that opening shorts completely can have brutal drawdown days when mar
 **Net improvement over current:**
 - Option B: +455 pts more, DD only +15 pts more, Sharpe +0.19
 - Option C: +216 pts more, DD actually -17 pts LESS, even safer
+
+---
+
+## Analysis #10 — Mar 12, 2026
+
+### Investigation: Alignment +3 During Bearish Regime (Mar 11 trades)
+
+**Trigger:** User noticed LONG signals firing with alignment +3 around 13:00 ET on Mar 11, but market was clearly in a bearish regime. How did alignment score +3?
+
+### Mar 11 Paradigm Timeline
+
+| Time (ET) | Paradigm | Charm | SVB | DD Hedging |
+|-----------|----------|-------|-----|------------|
+| 12:00-12:40 | AG-PURE | +45.8M | +0.39 | -$763M |
+| ~12:42 | AG-LIS → BOFA-PURE | +41.9M | +0.39 | -$2.08B |
+| 12:50-14:00 | **BOFA-PURE** | +26-30M | +0.10 to -0.16 | -$1.6B to -$1.7B |
+
+Paradigm was bearish (AG then BOFA) the entire afternoon. DD hedging deeply negative.
+
+### Alignment +3 Breakdown
+
+The `_compute_greek_alignment()` function scores 3 components (±1 each):
+
+| Component | Value | Score for LONG |
+|-----------|-------|----------------|
+| Charm (aggregatedCharm) | +26-45M (positive) | **+1** |
+| Vanna ALL | +5.3B (positive) | **+1** |
+| GEX (spot vs max +GEX) | Spot 6770 < max +GEX ~6850 | **+1** |
+| **Total** | | **+3** |
+
+**Problem:** Paradigm is NOT a component of alignment. All 3 components can read "bullish" during a bearish regime because:
+1. **Charm** measures net time-decay exposure across ALL strikes — can be positive in AG/BOFA
+2. **Vanna ALL** is dominated by absolute vol levels, almost always positive (~+5B all day) — structurally biased bullish
+3. **GEX position** (spot < max +GEX) — in AG regime, GEX ceiling is resistance not support
+
+### Eval Trader Impact (Mar 11)
+
+Only 1 trade filled: Skew Charm LONG [C] @ 6774.40 → stopped at -12 pts (-$497).
+
+Four more LONG signals at alignment +3 around 12:54-13:33 ET were attempted but ALL rejected by NT8:
+- Skew Charm LONG [B] @ 6770.08 → REJECTED
+- DD Exhaustion LONG [A] @ 6770.60 → REJECTED
+- Skew Charm LONG [B] @ 6771.51 → REJECTED
+- DD Exhaustion LONG [A] @ 6775.26 → REJECTED
+
+### Proposed Fix #1: Paradigm Direction Gate
+
+**Hypothesis:** Block LONG trades in AG/BOFA paradigms, block SHORT trades in GEX paradigms.
+
+**Result: HARMFUL — do NOT implement.**
+
+| Scenario | Trades | WR | PnL | PF |
+|----------|--------|-----|------|-----|
+| No gate (baseline) | 620 | 50.3% | +847 | 1.29 |
+| Strict gate (passed) | 328 | 45.7% | +115 | 1.07 |
+| **Strict gate (blocked)** | 292 | **55.5%** | **+732** | **1.60** |
+
+The blocked trades are the **best performers** (55.5% WR, PF 1.60). Reason: DD Exhaustion and Skew Charm are **contrarian** — they fire in bearish paradigms and profit from reversals.
+
+**Paradigm direction affinity (counterintuitive):**
+- AG paradigm: LONG = 56% WR, +155 pts / SHORT = 41% WR, -68 pts → **favors LONG**
+- BOFA paradigm: LONG = 62% WR, +497 pts / SHORT = 42% WR, -52 pts → **favors LONG**
+- GEX paradigm: LONG = 44% WR, +41 pts / SHORT = 40% WR, +6 pts → neutral
+
+### Proposed Fix #2: Vanna ALL Sign Gate
+
+**User observation:** "When cumulative vanna (weekly/monthly/all) is negative, bullish & GEX setups always fail."
+
+**Result: CONFIRMED — strong signal but already captured by existing alignment filter.**
+
+| Direction | Vanna ALL | Trades | WR | PnL | PF |
+|-----------|-----------|--------|-----|------|-----|
+| LONG | Positive | 253 | **60.9%** | **+770** | **1.77** |
+| LONG | **Negative** | 36 | **25.0%** | **-28** | **0.84** |
+| SHORT | Negative | 51 | 39.2% | **+191** | **2.18** |
+| SHORT | Positive | 268 | 45.5% | -122 | 0.92 |
+
+LONG with negative vanna_all = **25% WR** (devastating). However, negative vanna drops alignment by 2 points, which the existing F5 filter (alignment >= +3 for longs) already catches in most cases.
+
+### Proposed Fix #3: Charm Exposure Resistance/Support Gate
+
+**Hypothesis:** For LONG trades, big positive charm bars above spot (within 20 pts) = resistance, block longs. For SHORT trades, big negative charm bars below spot = support, block shorts.
+
+#### LONG Side — Does NOT Work
+
+Blocking LONGs when charm sum above spot > threshold actually **removes winners**:
+
+| Threshold (sum above) | Passed WR | Passed PnL | Blocked WR | Blocked PnL |
+|----------------------|-----------|-----------|------------|------------|
+| >50M | 54.9% | +447 | **60.8%** | **+328** |
+| >100M | 56.1% | +565 | **57.4%** | **+210** |
+| >200M | 55.7% | +623 | **64.0%** | **+152** |
+
+Blocked LONGs have higher WR at every threshold. Positive charm above spot is a **magnet** (dealers unwind into close, price drifts up), not resistance.
+
+#### SHORT Side — Works Extremely Well
+
+Blocking SHORTs when charm sum below spot < threshold (big negative = support):
+
+| Threshold (sum below) | Passed WR | Passed PnL | Blocked WR | Blocked PnL |
+|----------------------|-----------|-----------|------------|------------|
+| <-50M | **49.8%** | **+149** | 22.0% | -77 |
+| <-100M | **49.1%** | **+208** | **16.3%** | **-136** |
+| <-200M | 47.6% | +113 | 16.7% | -41 |
+| <-500M | 46.6% | +129 | 6.7% | -57 |
+
+**Best threshold: -100M** — blocks 43 shorts at **16.3% WR** (terrible), saves +136 pts.
+
+SHORT losers have **7x more negative charm below spot** than SHORT winners.
+
+#### Time-of-Day Effect
+
+Charm grows exponentially through the day:
+- 10:00 AM: sums ~20-50M
+- 12:00 PM: sums ~100-200M
+- 2:00 PM: sums ~500M-1B
+- 3:30 PM: sums ~2-5B
+
+Late-day SHORT with charm_sum < -100M = **8.3% WR** (nearly all losers).
+
+### Summary & Recommendations
+
+| Filter | Direction | Impact | Verdict |
+|--------|-----------|--------|---------|
+| Paradigm gate | Both | Loses +732 pts | **REJECT** |
+| Vanna ALL sign | LONG | 25% WR when negative | **Already captured by F5** |
+| Charm resistance (above spot) | LONG | Removes winners | **REJECT** |
+| Charm support (below spot) | SHORT | Blocks 16% WR losers, saves +136 | **IMPLEMENT as F7** |
+
+**Recommended F7:** Block SHORT when sum of charm exposure points at strikes within 20 pts below spot < -100M.
+
+**NOT recommended for LONG:** Positive charm above spot acts as a magnet (price drifts toward it as charm decays), not resistance. This is the opposite of the initial hypothesis.

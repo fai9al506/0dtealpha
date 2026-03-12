@@ -9605,6 +9605,7 @@ DASH_HTML_TEMPLATE = """
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
+          <select id="tlFilterStrategy" style="border:1px solid #f59e0b;color:#f59e0b"><option value="">All Strategies</option><option value="v7ag">V7+AG (live)</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
         </div>
         <div class="tl-stats" id="tlStats"></div>
@@ -12590,12 +12591,48 @@ DASH_HTML_TEMPLATE = """
       }
     }
 
+    function _tlPassesStrategy(l, strat) {
+      if (!strat) return true;
+      const sn = l.setup_name || '';
+      const align = l.greek_alignment != null ? l.greek_alignment : 0;
+      const isLong = l.direction === 'long' || l.direction === 'bullish';
+      if (strat === 'r1') {
+        // R1: abs(alignment) >= 3
+        return Math.abs(align) >= 3;
+      }
+      if (strat === 'optB') {
+        // Option B (old asymmetric F5+F6): longs >= +3, shorts per-setup blocks
+        if (isLong) return align >= 3;
+        if (sn === 'ES Absorption') return false;
+        if (sn === 'BofA Scalp') return false;
+        if (sn === 'DD Exhaustion' && align === 0) return false;
+        return true;
+      }
+      if (strat === 'v7') {
+        // V7: longs >= +2, shorts = Skew Charm + DD (align!=0) only
+        if (isLong) return align >= 2;
+        if (sn === 'Skew Charm') return true;
+        if (sn === 'DD Exhaustion' && align !== 0) return true;
+        return false;
+      }
+      if (strat === 'v7ag') {
+        // V7+AG (live): longs >= +2, shorts = Skew Charm + AG Short + DD (align!=0)
+        if (isLong) return align >= 2;
+        if (sn === 'Skew Charm') return true;
+        if (sn === 'AG Short') return true;
+        if (sn === 'DD Exhaustion' && align !== 0) return true;
+        return false;
+      }
+      return true;
+    }
+
     function _tlGetFiltered() {
       const fSetup = document.getElementById('tlFilterSetup').value;
       const fResult = document.getElementById('tlFilterResult').value;
       const fGrade = document.getElementById('tlFilterGrade').value;
       const fDate = document.getElementById('tlFilterDate').value;
       const fAlign = document.getElementById('tlFilterAlign').value;
+      const fStrat = document.getElementById('tlFilterStrategy').value;
       const fSearch = document.getElementById('tlSearch').value.toLowerCase().trim();
       const now = new Date();
       const todayET = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
@@ -12605,6 +12642,7 @@ DASH_HTML_TEMPLATE = """
         if (fSetup && l.setup_name !== fSetup) return false;
         if (fGrade && l.grade !== fGrade) return false;
         if (fAlign !== '' && (l.greek_alignment == null || String(l.greek_alignment) !== fAlign)) return false;
+        if (!_tlPassesStrategy(l, fStrat)) return false;
 
         // Result filter — prefer DB-stored outcome_result (consistent with outcome_pnl)
         if (fResult) {
@@ -12854,6 +12892,7 @@ DASH_HTML_TEMPLATE = """
       const fGrade = document.getElementById('tlFilterGrade').value;
       const fDate = document.getElementById('tlFilterDate').value;
       const fAlign = document.getElementById('tlFilterAlign').value;
+      const fStrat = document.getElementById('tlFilterStrategy').value;
       const fSearch = document.getElementById('tlSearch').value.toLowerCase().trim();
       const now = new Date();
       const todayET = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
@@ -12862,6 +12901,7 @@ DASH_HTML_TEMPLATE = """
         if (fSetup && l.setup_name !== fSetup) return false;
         if (fGrade && l.grade !== fGrade) return false;
         if (fAlign !== '' && (l.greek_alignment == null || String(l.greek_alignment) !== fAlign)) return false;
+        if (!_tlPassesStrategy(l, fStrat)) return false;
         if (fResult) {
           let res = l.outcome_result || (l.status === 'closed' ? '' : 'OPEN');
           if (res !== fResult) return false;
@@ -12978,6 +13018,7 @@ DASH_HTML_TEMPLATE = """
       const fGrade = document.getElementById('tlFilterGrade').value;
       const fDate = document.getElementById('tlFilterDate').value;
       const fAlign = document.getElementById('tlFilterAlign').value;
+      const fStrat = document.getElementById('tlFilterStrategy').value;
       const fSearch = document.getElementById('tlSearch').value.toLowerCase().trim();
       const now = new Date();
       const todayET = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
@@ -12986,6 +13027,7 @@ DASH_HTML_TEMPLATE = """
         if (fSetup && l.setup_name !== fSetup) return false;
         if (fGrade && l.grade !== fGrade) return false;
         if (fAlign !== '' && (l.greek_alignment == null || String(l.greek_alignment) !== fAlign)) return false;
+        if (!_tlPassesStrategy(l, fStrat)) return false;
         if (fResult) {
           const res = l.outcome_result || 'OPEN';
           if (res !== fResult) return false;
@@ -13075,7 +13117,7 @@ DASH_HTML_TEMPLATE = """
       else if (_tlActiveSubTab === 'tssim') renderTsSimLog();
       else if (_tlActiveSubTab === 'eval') renderEvalLog();
     }
-    ['tlFilterSetup','tlFilterResult','tlFilterGrade','tlFilterDate','tlFilterAlign'].forEach(id => {
+    ['tlFilterSetup','tlFilterResult','tlFilterGrade','tlFilterDate','tlFilterAlign','tlFilterStrategy'].forEach(id => {
       document.getElementById(id).addEventListener('change', _tlRerender);
     });
     document.getElementById('tlSearch').addEventListener('input', _tlRerender);

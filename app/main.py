@@ -9673,7 +9673,7 @@ DASH_HTML_TEMPLATE = """
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy" style="border:1px solid #f59e0b;color:#f59e0b"><option value="">All Strategies</option><option value="v7ag">V7+AG (live)</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v7ag">V7+AG (live)</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
         </div>
         <div class="tl-stats" id="tlStats"></div>

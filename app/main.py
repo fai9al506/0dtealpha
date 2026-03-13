@@ -9766,7 +9766,7 @@ DASH_HTML_TEMPLATE = """
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v7ag">V7+AG (live)</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v7ag">V7+AG (live)</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
         </div>
         <div class="tl-stats" id="tlStats"></div>
@@ -12785,6 +12785,14 @@ DASH_HTML_TEMPLATE = """
         if (sn === 'AG Short') return true;
         if (sn === 'DD Exhaustion' && align !== 0) return true;
         return false;
+      }
+      if (strat === 'sc') {
+        // SC Only: Skew Charm only (cash account starter)
+        return sn === 'Skew Charm';
+      }
+      if (strat === 'scag') {
+        // SC+AG: Skew Charm + AG Short (cash account $7K+)
+        return sn === 'Skew Charm' || sn === 'AG Short';
       }
       return true;
     }

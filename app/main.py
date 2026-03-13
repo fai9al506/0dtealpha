@@ -5432,7 +5432,7 @@ def api_debug_gex_analysis():
             result["volland_days"] = [{
                 "date": str(r.d), "paradigm": r.paradigm, "lis": r.lis,
                 "agg_charm": r.agg_charm, "dd_hedging": r.dd_hedging,
-                "svb": float(r.svb_correlation) if r.svb_correlation else None
+                "svb": float(r.svb_correlation) if r.svb_correlation and r.svb_correlation not in ('NaN', 'nan', 'Infinity', '-Infinity') else None
             } for r in volland_days]
 
             # 1b. Per-day SVB time series (all snapshots with SVB, for intra-day analysis)
@@ -5448,9 +5448,12 @@ def api_debug_gex_analysis():
                 GROUP BY d
                 ORDER BY d
             """)).fetchall()
+            import math
             result["svb_daily"] = [{
-                "date": str(r.d), "avg_svb": round(float(r.avg_svb), 4),
-                "min_svb": round(float(r.min_svb), 4), "max_svb": round(float(r.max_svb), 4),
+                "date": str(r.d),
+                "avg_svb": round(float(r.avg_svb), 4) if r.avg_svb is not None and not math.isnan(float(r.avg_svb)) else None,
+                "min_svb": round(float(r.min_svb), 4) if r.min_svb is not None and not math.isnan(float(r.min_svb)) else None,
+                "max_svb": round(float(r.max_svb), 4) if r.max_svb is not None and not math.isnan(float(r.max_svb)) else None,
                 "snap_count": r.snap_count
             } for r in svb_all]
 
@@ -5482,7 +5485,7 @@ def api_debug_gex_analysis():
                 "date": str(r.d), "setup_name": r.setup_name,
                 "direction": r.direction, "grade": r.grade,
                 "alignment": r.greek_alignment,
-                "svb": float(r.spot_vol_beta) if r.spot_vol_beta is not None else None,
+                "svb": float(r.spot_vol_beta) if r.spot_vol_beta is not None and not math.isnan(float(r.spot_vol_beta)) else None,
                 "result": r.outcome_result, "pnl": float(r.outcome_pnl) if r.outcome_pnl else 0
             } for r in setup_days]
 

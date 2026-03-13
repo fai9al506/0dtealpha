@@ -183,7 +183,7 @@ app = FastAPI()
 NY = pytz.timezone("US/Eastern")
 
 # Public paths that don't require authentication
-PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png", "/api/ts/authorize", "/api/ts/callback", "/api/debug/sim-orders"}
+PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png", "/api/ts/authorize", "/api/ts/callback", "/api/debug/sim-orders", "/api/debug/gex-analysis"}
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
@@ -5405,6 +5405,66 @@ def api_debug_sim_orders():
     except Exception as e:
         result["options_db"] = {"error": str(e)}
 
+    return result
+
+@app.get("/api/debug/gex-analysis")
+def api_debug_gex_analysis():
+    """TEMPORARY: Per-day GEX environment vs setup outcomes analysis."""
+    from sqlalchemy import text as _text
+    result = {}
+    try:
+        with engine.connect() as conn:
+            # 1. Per-day: paradigm, GEX from volland (first snapshot each day)
+            volland_days = conn.execute(_text("""
+                SELECT DISTINCT ON (d)
+                    (saved_at AT TIME ZONE 'America/New_York')::date as d,
+                    statistics->>'paradigm' as paradigm,
+                    statistics->>'lis' as lis,
+                    statistics->>'aggregatedCharm' as agg_charm,
+                    statistics->>'ddHedging' as dd_hedging
+                FROM volland_snapshots
+                WHERE saved_at >= '2026-02-05'
+                  AND statistics IS NOT NULL
+                  AND statistics->>'paradigm' IS NOT NULL
+                ORDER BY d, saved_at
+            """)).fetchall()
+            result["volland_days"] = [{
+                "date": str(r.d), "paradigm": r.paradigm, "lis": r.lis,
+                "agg_charm": r.agg_charm, "dd_hedging": r.dd_hedging
+            } for r in volland_days]
+
+            # 2. Per-day GEX from chain_snapshots (net GEX = sum of call_gex + put_gex)
+            gex_days = conn.execute(_text("""
+                SELECT (saved_at AT TIME ZONE 'America/New_York')::date as d,
+                       SUM(gamma * open_interest * 100 * CASE WHEN option_type='call' THEN 1 ELSE -1 END) as net_gex
+                FROM chain_snapshots
+                WHERE saved_at >= '2026-02-05'
+                  AND EXTRACT(HOUR FROM saved_at AT TIME ZONE 'America/New_York') BETWEEN 9 AND 16
+                GROUP BY d
+                ORDER BY d
+            """)).fetchall()
+            result["gex_days"] = [{"date": str(r.d), "net_gex": float(r.net_gex) if r.net_gex else 0} for r in gex_days]
+
+            # 3. Setup outcomes per day with direction and alignment
+            setup_days = conn.execute(_text("""
+                SELECT (sl.ts AT TIME ZONE 'America/New_York')::date as d,
+                       sl.setup_name, sl.direction, sl.grade, sl.score,
+                       sl.greek_alignment,
+                       sl.outcome_result, sl.outcome_pnl
+                FROM setup_log sl
+                WHERE sl.ts >= '2026-02-05'
+                  AND sl.outcome_result IS NOT NULL
+                ORDER BY sl.ts
+            """)).fetchall()
+            result["setup_outcomes"] = [{
+                "date": str(r.d), "setup_name": r.setup_name,
+                "direction": r.direction, "grade": r.grade,
+                "alignment": r.greek_alignment,
+                "result": r.outcome_result, "pnl": float(r.outcome_pnl) if r.outcome_pnl else 0
+            } for r in setup_days]
+
+    except Exception as e:
+        result["error"] = str(e)
     return result
 
 @app.post("/api/auto-trade/test")

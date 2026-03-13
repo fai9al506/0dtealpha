@@ -5414,14 +5414,15 @@ def api_debug_gex_analysis():
     result = {}
     try:
         with engine.connect() as conn:
-            # 1. Per-day: paradigm, GEX from volland (first snapshot each day)
+            # 1. Per-day: paradigm, GEX, SVB from volland (first snapshot each day)
             volland_days = conn.execute(_text("""
                 SELECT DISTINCT ON (d)
                     (ts AT TIME ZONE 'America/New_York')::date as d,
                     payload->'statistics'->>'paradigm' as paradigm,
                     payload->'statistics'->>'lis' as lis,
                     payload->'statistics'->>'aggregatedCharm' as agg_charm,
-                    payload->'statistics'->>'ddHedging' as dd_hedging
+                    payload->'statistics'->>'ddHedging' as dd_hedging,
+                    payload->'statistics'->'spot_vol_beta'->>'correlation' as svb_correlation
                 FROM volland_snapshots
                 WHERE ts >= '2026-02-05'
                   AND payload->'statistics' IS NOT NULL
@@ -5430,8 +5431,28 @@ def api_debug_gex_analysis():
             """)).fetchall()
             result["volland_days"] = [{
                 "date": str(r.d), "paradigm": r.paradigm, "lis": r.lis,
-                "agg_charm": r.agg_charm, "dd_hedging": r.dd_hedging
+                "agg_charm": r.agg_charm, "dd_hedging": r.dd_hedging,
+                "svb": float(r.svb_correlation) if r.svb_correlation else None
             } for r in volland_days]
+
+            # 1b. Per-day SVB time series (all snapshots with SVB, for intra-day analysis)
+            svb_all = conn.execute(_text("""
+                SELECT (ts AT TIME ZONE 'America/New_York')::date as d,
+                       AVG((payload->'statistics'->'spot_vol_beta'->>'correlation')::float) as avg_svb,
+                       MIN((payload->'statistics'->'spot_vol_beta'->>'correlation')::float) as min_svb,
+                       MAX((payload->'statistics'->'spot_vol_beta'->>'correlation')::float) as max_svb,
+                       COUNT(*) as snap_count
+                FROM volland_snapshots
+                WHERE ts >= '2026-02-05'
+                  AND payload->'statistics'->'spot_vol_beta'->>'correlation' IS NOT NULL
+                GROUP BY d
+                ORDER BY d
+            """)).fetchall()
+            result["svb_daily"] = [{
+                "date": str(r.d), "avg_svb": round(float(r.avg_svb), 4),
+                "min_svb": round(float(r.min_svb), 4), "max_svb": round(float(r.max_svb), 4),
+                "snap_count": r.snap_count
+            } for r in svb_all]
 
             # 2. Per-day paradigm transitions (all snapshots, to see if paradigm changed intra-day)
             paradigm_all = conn.execute(_text("""
@@ -5446,11 +5467,11 @@ def api_debug_gex_analysis():
             """)).fetchall()
             result["paradigm_all"] = [{"date": str(r.d), "paradigm": r.paradigm, "count": r.snap_count} for r in paradigm_all]
 
-            # 3. Setup outcomes per day with direction and alignment
+            # 3. Setup outcomes per day with direction, alignment, and SVB
             setup_days = conn.execute(_text("""
                 SELECT (sl.ts AT TIME ZONE 'America/New_York')::date as d,
                        sl.setup_name, sl.direction, sl.grade, sl.score,
-                       sl.greek_alignment,
+                       sl.greek_alignment, sl.spot_vol_beta,
                        sl.outcome_result, sl.outcome_pnl
                 FROM setup_log sl
                 WHERE sl.ts >= '2026-02-05'
@@ -5461,6 +5482,7 @@ def api_debug_gex_analysis():
                 "date": str(r.d), "setup_name": r.setup_name,
                 "direction": r.direction, "grade": r.grade,
                 "alignment": r.greek_alignment,
+                "svb": float(r.spot_vol_beta) if r.spot_vol_beta is not None else None,
                 "result": r.outcome_result, "pnl": float(r.outcome_pnl) if r.outcome_pnl else 0
             } for r in setup_days]
 

@@ -12864,7 +12864,7 @@ DASH_HTML_TEMPLATE = """
         const noteIcon = hasNotes ? '💬' : '📝';
 
         html += '<div class="tl-row" data-id="'+l.id+'" data-idx="'+i+'">' +
-          '<span style="color:var(--muted)">'+(i+1)+'</span>' +
+          '<span style="color:var(--muted)">'+l.id+'</span>' +
           '<span class="setup-pill" style="background:'+pillColor+'22;color:'+pillColor+'">'+l.setup_name+'</span>' +
           '<span style="color:'+dirColor+';font-weight:700;text-align:center">'+dir+'</span>' +
           '<span style="color:'+gradeColor+';font-weight:600">'+l.grade+'</span>' +
@@ -13051,7 +13051,7 @@ DASH_HTML_TEMPLATE = """
         const date = fmtDateShortET(l.ts);
         const statusColor = l.status==='filled'?'#f59e0b':l.status==='closed'?'var(--muted)':'#3b82f6';
         html += '<div class="tl-row tl-grid-sim">' +
-          '<span style="color:var(--muted)">'+(i+1)+'</span>' +
+          '<span style="color:var(--muted)">'+l.setup_log_id+'</span>' +
           '<span class="setup-pill" style="background:'+pillColor+'22;color:'+pillColor+'">'+l.setup_name+'</span>' +
           '<span style="color:'+dirColor+';font-weight:700;text-align:center">'+dir+'</span>' +
           '<span style="color:'+gradeColor+';font-weight:600">'+l.grade+'</span>' +
@@ -13164,7 +13164,7 @@ DASH_HTML_TEMPLATE = """
         const status = l.outcome_result || 'OPEN';
         const statusColor = status==='WIN'?'#22c55e':status==='LOSS'?'#ef4444':'#3b82f6';
         html += '<div class="tl-row tl-grid-eval">' +
-          '<span style="color:var(--muted)">'+(i+1)+'</span>' +
+          '<span style="color:var(--muted)">'+l.id+'</span>' +
           '<span class="setup-pill" style="background:'+pillColor+'22;color:'+pillColor+'">'+l.setup_name+'</span>' +
           '<span style="color:'+dirColor+';font-weight:700;text-align:center">'+dir+'</span>' +
           '<span style="color:'+gradeColor+';font-weight:600">'+l.grade+'</span>' +
@@ -13274,7 +13274,7 @@ DASH_HTML_TEMPLATE = """
         const date = fmtDateShortET(l.ts);
         const sym = l.symbol || '--';
         html += '<div class="tl-row tl-grid-options">' +
-          '<span style="color:var(--muted)">'+(i+1)+'</span>' +
+          '<span style="color:var(--muted)">'+l.setup_log_id+'</span>' +
           '<span class="setup-pill" style="background:'+pillColor+'22;color:'+pillColor+'">'+l.setup_name+'</span>' +
           '<span style="color:'+dirColor+';font-weight:700;text-align:center">'+dir+'</span>' +
           '<span style="color:var(--text);font-size:9px;overflow:hidden;text-overflow:ellipsis" title="'+sym+'">'+sym+'</span>' +

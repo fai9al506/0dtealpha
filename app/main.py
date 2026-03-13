@@ -183,7 +183,7 @@ app = FastAPI()
 NY = pytz.timezone("US/Eastern")
 
 # Public paths that don't require authentication
-PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png", "/api/ts/authorize", "/api/ts/callback"}
+PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png", "/api/ts/authorize", "/api/ts/callback", "/api/debug/sim-orders"}
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
@@ -5286,6 +5286,74 @@ def api_auto_trade_toggle(setup_name: str = Query(...), enabled: bool = Query(..
         return {"ok": True, "toggles": auto_trader.get_toggles()}
     except Exception as e:
         return {"error": str(e)}
+
+@app.get("/api/debug/sim-orders")
+def api_debug_sim_orders():
+    """TEMPORARY: Pull today's filled orders from both SIM accounts via TS API."""
+    import requests as _req
+    SIM_F = "SIM2609239F"  # futures
+    SIM_O = "SIM2609238M"  # options
+    SIM_BASE = "https://sim-api.tradestation.com/v3"
+    token = ts_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    result = {}
+    for label, acct in [("futures_sim", SIM_F), ("options_sim", SIM_O)]:
+        # Balances
+        try:
+            br = _req.get(f"{SIM_BASE}/brokerage/accounts/{acct}/balances", headers=headers, timeout=10)
+            bal = br.json().get("Balances", [{}])[0] if br.status_code == 200 else {"error": br.text[:200]}
+        except Exception as e:
+            bal = {"error": str(e)}
+        # Orders (today)
+        try:
+            orr = _req.get(f"{SIM_BASE}/brokerage/accounts/{acct}/orders", headers=headers, timeout=10)
+            orders_raw = orr.json().get("Orders", []) if orr.status_code == 200 else []
+        except Exception:
+            orders_raw = []
+        orders = []
+        for o in orders_raw:
+            orders.append({
+                "OrderID": o.get("OrderID"),
+                "Symbol": o.get("Legs", [{}])[0].get("Symbol") if o.get("Legs") else o.get("Symbol"),
+                "Side": o.get("Legs", [{}])[0].get("BuyOrSell") if o.get("Legs") else None,
+                "Qty": o.get("Legs", [{}])[0].get("QuantityOrdered") if o.get("Legs") else None,
+                "FilledQty": o.get("Legs", [{}])[0].get("ExecQuantity") if o.get("Legs") else None,
+                "Type": o.get("OrderType"),
+                "LimitPrice": o.get("LimitPrice"),
+                "StopPrice": o.get("StopPrice"),
+                "Status": o.get("Status"),
+                "StatusDesc": o.get("StatusDescription"),
+                "FilledPrice": o.get("FilledPrice"),
+                "AvgFillPrice": o.get("AvgFillPrice"),
+                "OpenedDateTime": o.get("OpenedDateTime"),
+                "ClosedDateTime": o.get("ClosedDateTime"),
+                "Duration": o.get("Duration"),
+                "GroupName": o.get("GroupName"),
+            })
+        # Positions
+        try:
+            pr = _req.get(f"{SIM_BASE}/brokerage/accounts/{acct}/positions", headers=headers, timeout=10)
+            positions = pr.json().get("Positions", []) if pr.status_code == 200 else []
+        except Exception:
+            positions = []
+        pos_list = []
+        for p in positions:
+            pos_list.append({
+                "Symbol": p.get("Symbol"),
+                "Qty": p.get("Quantity"),
+                "AvgPrice": p.get("AveragePrice"),
+                "Last": p.get("Last"),
+                "UnrealizedPnL": p.get("UnrealizedProfitLoss"),
+                "MarketValue": p.get("MarketValue"),
+            })
+        result[label] = {
+            "account": acct,
+            "balance": bal,
+            "orders_count": len(orders),
+            "orders": orders,
+            "positions": pos_list,
+        }
+    return result
 
 @app.post("/api/auto-trade/test")
 def api_auto_trade_test():

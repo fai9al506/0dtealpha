@@ -5289,70 +5289,95 @@ def api_auto_trade_toggle(setup_name: str = Query(...), enabled: bool = Query(..
 
 @app.get("/api/debug/sim-orders")
 def api_debug_sim_orders():
-    """TEMPORARY: Pull today's filled orders from both SIM accounts via TS API."""
+    """TEMPORARY: Pull full statement from both SIM accounts via TS API."""
     import requests as _req
+    from datetime import date as _date
     SIM_F = "SIM2609239F"  # futures
     SIM_O = "SIM2609238M"  # options
     SIM_BASE = "https://sim-api.tradestation.com/v3"
     token = ts_access_token()
     headers = {"Authorization": f"Bearer {token}"}
+    today_str = _date.today().strftime("%m-%d-%Y")
+
+    def _extract_order(o):
+        leg = o.get("Legs", [{}])[0] if o.get("Legs") else {}
+        return {
+            "OrderID": o.get("OrderID"),
+            "Symbol": leg.get("Symbol") or o.get("Symbol"),
+            "Side": leg.get("BuyOrSell"),
+            "QtyOrdered": leg.get("QuantityOrdered"),
+            "QtyFilled": leg.get("ExecQuantity"),
+            "Type": o.get("OrderType"),
+            "LimitPrice": o.get("LimitPrice"),
+            "StopPrice": o.get("StopPrice"),
+            "Status": o.get("Status"),
+            "StatusDesc": o.get("StatusDescription"),
+            "FilledPrice": o.get("FilledPrice"),
+            "AvgFillPrice": o.get("AvgFillPrice"),
+            "OpenedDateTime": o.get("OpenedDateTime"),
+            "ClosedDateTime": o.get("ClosedDateTime"),
+            "Duration": o.get("Duration"),
+            "GroupName": o.get("GroupName"),
+            "TrailingStop": o.get("TrailingStop"),
+            "CommissionFee": o.get("CommissionFee"),
+            "UnbundledRouteFee": o.get("UnbundledRouteFee"),
+        }
+
     result = {}
     for label, acct in [("futures_sim", SIM_F), ("options_sim", SIM_O)]:
-        # Balances
+        section = {"account": acct}
+
+        # 1. Current balances
         try:
-            br = _req.get(f"{SIM_BASE}/brokerage/accounts/{acct}/balances", headers=headers, timeout=10)
-            bal = br.json().get("Balances", [{}])[0] if br.status_code == 200 else {"error": br.text[:200]}
+            r = _req.get(f"{SIM_BASE}/brokerage/accounts/{acct}/balances", headers=headers, timeout=10)
+            section["balance"] = r.json().get("Balances", [{}])[0] if r.status_code == 200 else {"error": r.text[:300]}
         except Exception as e:
-            bal = {"error": str(e)}
-        # Orders (today)
+            section["balance"] = {"error": str(e)}
+
+        # 2. Beginning-of-day balances
         try:
-            orr = _req.get(f"{SIM_BASE}/brokerage/accounts/{acct}/orders", headers=headers, timeout=10)
-            orders_raw = orr.json().get("Orders", []) if orr.status_code == 200 else []
-        except Exception:
-            orders_raw = []
-        orders = []
-        for o in orders_raw:
-            orders.append({
-                "OrderID": o.get("OrderID"),
-                "Symbol": o.get("Legs", [{}])[0].get("Symbol") if o.get("Legs") else o.get("Symbol"),
-                "Side": o.get("Legs", [{}])[0].get("BuyOrSell") if o.get("Legs") else None,
-                "Qty": o.get("Legs", [{}])[0].get("QuantityOrdered") if o.get("Legs") else None,
-                "FilledQty": o.get("Legs", [{}])[0].get("ExecQuantity") if o.get("Legs") else None,
-                "Type": o.get("OrderType"),
-                "LimitPrice": o.get("LimitPrice"),
-                "StopPrice": o.get("StopPrice"),
-                "Status": o.get("Status"),
-                "StatusDesc": o.get("StatusDescription"),
-                "FilledPrice": o.get("FilledPrice"),
-                "AvgFillPrice": o.get("AvgFillPrice"),
-                "OpenedDateTime": o.get("OpenedDateTime"),
-                "ClosedDateTime": o.get("ClosedDateTime"),
-                "Duration": o.get("Duration"),
-                "GroupName": o.get("GroupName"),
-            })
-        # Positions
+            r = _req.get(f"{SIM_BASE}/brokerage/accounts/{acct}/bodbalances", headers=headers, timeout=10)
+            section["bod_balance"] = r.json().get("BODBalances", r.json()) if r.status_code == 200 else {"error": r.text[:300], "status": r.status_code}
+        except Exception as e:
+            section["bod_balance"] = {"error": str(e)}
+
+        # 3. Today's orders (active + filled today)
         try:
-            pr = _req.get(f"{SIM_BASE}/brokerage/accounts/{acct}/positions", headers=headers, timeout=10)
-            positions = pr.json().get("Positions", []) if pr.status_code == 200 else []
-        except Exception:
-            positions = []
-        pos_list = []
-        for p in positions:
-            pos_list.append({
-                "Symbol": p.get("Symbol"),
-                "Qty": p.get("Quantity"),
-                "AvgPrice": p.get("AveragePrice"),
-                "Last": p.get("Last"),
+            r = _req.get(f"{SIM_BASE}/brokerage/accounts/{acct}/orders?pageSize=600", headers=headers, timeout=15)
+            raw = r.json().get("Orders", []) if r.status_code == 200 else []
+            section["todays_orders"] = [_extract_order(o) for o in raw]
+            section["todays_orders_count"] = len(raw)
+        except Exception as e:
+            section["todays_orders"] = []
+            section["todays_orders_error"] = str(e)
+
+        # 4. Historical orders (since today — catches any that /orders misses)
+        try:
+            r = _req.get(f"{SIM_BASE}/brokerage/accounts/{acct}/historicalorders?since={today_str}&pageSize=600",
+                         headers=headers, timeout=15)
+            raw = r.json().get("Orders", []) if r.status_code == 200 else []
+            section["historical_orders"] = [_extract_order(o) for o in raw]
+            section["historical_orders_count"] = len(raw)
+            section["historical_orders_status"] = r.status_code
+        except Exception as e:
+            section["historical_orders"] = []
+            section["historical_orders_error"] = str(e)
+
+        # 5. Current positions
+        try:
+            r = _req.get(f"{SIM_BASE}/brokerage/accounts/{acct}/positions", headers=headers, timeout=10)
+            positions = r.json().get("Positions", []) if r.status_code == 200 else []
+            section["positions"] = [{
+                "Symbol": p.get("Symbol"), "Qty": p.get("Quantity"),
+                "AvgPrice": p.get("AveragePrice"), "Last": p.get("Last"),
                 "UnrealizedPnL": p.get("UnrealizedProfitLoss"),
+                "TodaysPnL": p.get("TodaysProfitLoss"),
                 "MarketValue": p.get("MarketValue"),
-            })
-        result[label] = {
-            "account": acct,
-            "balance": bal,
-            "orders_count": len(orders),
-            "orders": orders,
-            "positions": pos_list,
-        }
+            } for p in positions]
+        except Exception as e:
+            section["positions"] = [{"error": str(e)}]
+
+        result[label] = section
     return result
 
 @app.post("/api/auto-trade/test")

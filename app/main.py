@@ -5384,22 +5384,22 @@ def api_debug_sim_orders():
         from sqlalchemy import text as _text
         with engine.connect() as conn:
             rows = conn.execute(_text("""
-                SELECT setup_log_id, payload->>'setup_name' as setup_name,
-                       payload->>'symbol' as symbol,
-                       payload->>'direction' as direction,
-                       payload->>'status' as status,
-                       payload->>'entry_price' as sim_entry,
-                       payload->>'close_price' as sim_exit,
-                       payload->>'theo_entry_price' as theo_entry,
-                       payload->>'theo_close_price' as theo_exit,
-                       payload->>'ask_at_entry' as ask_at_entry,
-                       payload->>'qty' as qty,
-                       payload->>'ts_placed' as ts_placed,
-                       payload->>'ts_closed' as ts_closed,
-                       payload->>'delta_at_entry' as delta_at_entry
+                SELECT setup_log_id, state->>'setup_name' as setup_name,
+                       state->>'symbol' as symbol,
+                       state->>'direction' as direction,
+                       state->>'status' as status,
+                       state->>'entry_price' as sim_entry,
+                       state->>'close_price' as sim_exit,
+                       state->>'theo_entry_price' as theo_entry,
+                       state->>'theo_close_price' as theo_exit,
+                       state->>'ask_at_entry' as ask_at_entry,
+                       state->>'qty' as qty,
+                       state->>'ts_placed' as ts_placed,
+                       state->>'ts_closed' as ts_closed,
+                       state->>'delta_at_entry' as delta_at_entry
                 FROM options_trade_orders
-                WHERE payload->>'ts_placed' LIKE :today
-                ORDER BY payload->>'ts_placed'
+                WHERE state->>'ts_placed' LIKE :today
+                ORDER BY state->>'ts_placed'
             """), {"today": f"{_date.today().isoformat()}%"}).fetchall()
             result["options_db"] = [dict(r._mapping) for r in rows]
     except Exception as e:

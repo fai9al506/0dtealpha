@@ -149,7 +149,7 @@ def _third_friday(year: int, month: int) -> date:
 
 
 def current_mes_symbol(fmt: str = "nt8") -> str:
-    """Return front-month MES symbol, auto-rolling ~8 days before expiry.
+    """Return front-month MES symbol, rolling to next contract the day after expiry.
 
     fmt="nt8"  → "MES 03-26"
     fmt="ts"   → "MESH26"
@@ -158,7 +158,7 @@ def current_mes_symbol(fmt: str = "nt8") -> str:
     for month_num, code in _MES_MONTHS:
         year = today.year
         expiry = _third_friday(year, month_num)
-        rollover = expiry - timedelta(days=8)
+        rollover = expiry  # roll the day AFTER expiry
         if today <= rollover:
             if fmt == "ts":
                 return f"MES{code}{year % 100}"
@@ -774,8 +774,8 @@ class ComplianceGate:
                 if "BOFA" in paradigm and "PURE" in paradigm:
                     return False, "DD blocked on BOFA-PURE paradigm (18% WR)"
 
-        # Greek filter — V7+AG (Analysis #11)
-        # Longs: alignment >= +2
+        # V8 filter (V7+AG + Smart VIX Gate)
+        # Longs: alignment >= +2, block when VIX>26 unless overvixed
         # Shorts: whitelist SC + DD(align!=0) + AG only
         if cfg.get("greek_filter_enabled"):
             alignment = signal.get("greek_alignment", 0)
@@ -784,6 +784,13 @@ class ComplianceGate:
             if _is_long:
                 if alignment < 2:
                     return False, f"Greek filter: long alignment {alignment:+d} < +2"
+                # V8 Smart VIX Gate: block longs when VIX > 26 UNLESS overvixed (>= +2)
+                _sig_vix = signal.get("vix")
+                _sig_ov = signal.get("overvix")
+                if _sig_vix is not None and _sig_vix > 26:
+                    _ov = _sig_ov if _sig_ov is not None else -99
+                    if _ov < 2:
+                        return False, f"V8 VIX gate: VIX={_sig_vix:.1f}>26, overvix={_ov:+.1f}<+2"
             else:
                 # V7+AG short whitelist
                 _short_allowed = False

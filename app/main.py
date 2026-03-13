@@ -218,6 +218,8 @@ last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
 _df_lock = Lock()
 _vix_last: float | None = None  # latest VIX value from TS quotes
+_vix3m_last: float | None = None  # latest VIX3M value from TS quotes
+_overvix: float | None = None  # VIX - VIX3M (overvix indicator)
 
 # SPY chain state
 latest_spy_df: pd.DataFrame | None = None
@@ -577,6 +579,14 @@ def db_init():
         conn.execute(text("""
         DO $$ BEGIN
             ALTER TABLE setup_log ADD COLUMN charm_limit_entry DOUBLE PRECISION;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+
+        # Overvix (VIX - VIX3M) column on setup_log — V8 Smart VIX Gate
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE setup_log ADD COLUMN overvix DOUBLE PRECISION;
         EXCEPTION WHEN duplicate_column THEN NULL;
         END $$;
         """))
@@ -1534,6 +1544,8 @@ def log_setup(result_wrapper):
                 insert_params.setdefault("greek_alignment", None)
                 # Charm S/R limit entry
                 insert_params.setdefault("charm_limit_entry", None)
+                # Overvix (VIX - VIX3M) — V8 Smart VIX Gate
+                insert_params["overvix"] = _overvix
                 # Auto-populate comments and abs_details for ES Absorption
                 if setup_name == "ES Absorption" and not insert_params.get("comments"):
                     _parts = [
@@ -1566,7 +1578,7 @@ def log_setup(result_wrapper):
                          bofa_stop_level, bofa_target_level, bofa_lis_width, bofa_max_hold_minutes, lis_upper,
                          abs_vol_ratio, abs_es_price, vix, comments, abs_details,
                          vanna_all, vanna_weekly, vanna_monthly, spot_vol_beta, greek_alignment,
-                         charm_limit_entry)
+                         charm_limit_entry, overvix)
                     VALUES
                         (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
                          :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
@@ -1575,7 +1587,7 @@ def log_setup(result_wrapper):
                          :bofa_stop_level, :bofa_target_level, :bofa_lis_width, :bofa_max_hold_minutes, :lis_upper_val,
                          :abs_vol_ratio, :abs_es_price, :vix, :comments, :abs_details,
                          :vanna_all, :vanna_weekly, :vanna_monthly, :spot_vol_beta, :greek_alignment,
-                         :charm_limit_entry)
+                         :charm_limit_entry, :overvix)
                     RETURNING id
                 """), insert_params)
                 log_id = result.fetchone()[0]
@@ -2187,9 +2199,9 @@ def market_open_now() -> bool:
 
 # ====== TS helpers ======
 def get_spx_quote() -> dict:
-    """Return {last, high, low, vix} from TS API quote. Fetches SPX + VIX in one call."""
-    js = api_get("/marketdata/quotes/%24SPX.X,%24VIX.X", timeout=8).json()
-    result = {"last": 0.0, "high": None, "low": None, "vix": None}
+    """Return {last, high, low, vix, vix3m} from TS API quote. Fetches SPX + VIX + VIX3M in one call."""
+    js = api_get("/marketdata/quotes/%24SPX.X,%24VIX.X,%24VIX3M.X", timeout=8).json()
+    result = {"last": 0.0, "high": None, "low": None, "vix": None, "vix3m": None}
     for q in js.get("Quotes", []):
         sym = q.get("Symbol", "")
         if sym == "$SPX.X":
@@ -2215,6 +2227,13 @@ def get_spx_quote() -> dict:
                 vv = q.get("Last") or q.get("Close")
                 if vv is not None:
                     result["vix"] = float(vv)
+            except Exception:
+                pass
+        elif sym == "$VIX3M.X":
+            try:
+                vv = q.get("Last") or q.get("Close")
+                if vv is not None:
+                    result["vix3m"] = float(vv)
             except Exception:
                 pass
     return result
@@ -2461,6 +2480,10 @@ def run_market_job():
         sess_low = quote["low"]
         if quote["vix"] is not None:
             _vix_last = quote["vix"]
+        if quote["vix3m"] is not None:
+            _vix3m_last = quote["vix3m"]
+        if _vix_last is not None and _vix3m_last is not None:
+            _overvix = round(_vix_last - _vix3m_last, 2)
 
         # Derive intra-cycle extremes from session H/L changes
         today = now_et().date()
@@ -3623,6 +3646,15 @@ def _run_setup_check():
                     _msg += (f"\n\n[CHARM S/R] Limit entry @ {_charm_sr['limit_price']:.1f} "
                              f"(R={_charm_sr['resistance']:.0f} S={_charm_sr['support']:.0f} "
                              f"range={_charm_sr['sr_range']:.0f}pt pos={_charm_sr['pos_pct']:.0f}%)")
+                # V8: Append VIX/overvix info
+                if _vix_last is not None:
+                    _ov_str = f"{_overvix:+.1f}" if _overvix is not None else "n/a"
+                    _vix_tag = f"\nVIX={_vix_last:.1f} OV={_ov_str}"
+                    if _vix_last > 26 and (_overvix is None or _overvix < 2):
+                        _vix_tag += " [VIX GATE]"
+                    elif _overvix is not None and _overvix >= 2:
+                        _vix_tag += " [OVERVIX SIGNAL]"
+                    _msg += _vix_tag
                 send_telegram_setups(_msg)
                 print(f"[setups] {setup_name} NEW: {grade} ({score})", flush=True)
                 # Record open trade for live outcome tracking
@@ -3643,7 +3675,7 @@ def _run_setup_check():
                     })
                     tgt_str = "trail" if target_lvl is None else f"{target_lvl:.1f}"
                     print(f"[outcome] tracking {setup_name}: target={tgt_str} stop={stop_lvl:.1f}", flush=True)
-                    # Auto-trade filters — V7+AG Filter (Analysis #11)
+                    # Auto-trade filters — V8 (V7+AG + Smart VIX Gate)
                     # (block execution but keep portal tracking for data collection)
                     _skip_auto_trade = False
                     _greek_align = r.get("greek_alignment", 0)
@@ -3653,6 +3685,14 @@ def _run_setup_check():
                         if _greek_align < 2:
                             print(f"[auto-trader] SKIPPED {setup_name}: long alignment {_greek_align:+d} < +2", flush=True)
                             _skip_auto_trade = True
+                        # V8 Smart VIX Gate: block longs when VIX > 26 UNLESS overvixed (>= +2)
+                        elif _vix_last is not None and _vix_last > 26:
+                            _ov = _overvix if _overvix is not None else -99
+                            if _ov < 2:
+                                print(f"[auto-trader] SKIPPED {setup_name}: V8 VIX gate — VIX={_vix_last:.1f}>26, overvix={_ov:+.1f}<+2", flush=True)
+                                _skip_auto_trade = True
+                            else:
+                                print(f"[auto-trader] ALLOWED {setup_name}: V8 overvix override — VIX={_vix_last:.1f}>26 but overvix={_ov:+.1f}>=+2 (mean reversion)", flush=True)
                     else:
                         # Shorts: whitelist SC + DD(align!=0) + AG only
                         if setup_name == "Skew Charm":
@@ -4266,7 +4306,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
         })
         print(f"[outcome] tracking ES Absorption: target={target_lvl} stop={stop_lvl:.1f}", flush=True)
         # Auto-trade: ES Absorption uses ES price directly
-        # V7+AG filter (Analysis #11): ES Absorption not in short whitelist
+        # V8 filter (V7+AG + Smart VIX Gate): ES Absorption not in short whitelist
         _abs_skip_greek = False
         _abs_align = result.get("greek_alignment", 0)
         _abs_is_long_dir = result["direction"] in ("long", "bullish")
@@ -4274,6 +4314,14 @@ def _run_absorption_detection(bars: list) -> dict | None:
             if _abs_align < 2:
                 print(f"[auto-trader] SKIPPED ES Absorption long: alignment {_abs_align:+d} < +2", flush=True)
                 _abs_skip_greek = True
+            # V8 Smart VIX Gate: block longs when VIX > 26 UNLESS overvixed (>= +2)
+            elif _vix_last is not None and _vix_last > 26:
+                _ov = _overvix if _overvix is not None else -99
+                if _ov < 2:
+                    print(f"[auto-trader] SKIPPED ES Absorption long: V8 VIX gate — VIX={_vix_last:.1f}>26, overvix={_ov:+.1f}<+2", flush=True)
+                    _abs_skip_greek = True
+                else:
+                    print(f"[auto-trader] ALLOWED ES Absorption long: V8 overvix override — VIX={_vix_last:.1f}>26 but overvix={_ov:+.1f}>=+2", flush=True)
         else:
             # ES Absorption shorts not in V7+AG whitelist (toxic: -175.6 pts all-time)
             print(f"[auto-trader] SKIPPED ES Absorption short: not in V7+AG whitelist", flush=True)
@@ -5251,6 +5299,9 @@ def api_health():
             "rithmic_stream": rithmic_info or {"connected": False},
             **_auto_trader_health(),
         },
+        "vix": _vix_last,
+        "vix3m": _vix3m_last,
+        "overvix": _overvix,
         "last": last_run_status,
     }
 
@@ -5760,7 +5811,7 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 "max_plus_gex, max_minus_gex, "
                 "outcome_result, outcome_pnl, "
                 "vanna_all, vanna_weekly, vanna_monthly, spot_vol_beta, greek_alignment, "
-                "charm_limit_entry "
+                "charm_limit_entry, overvix, vix "
                 "FROM setup_log "
                 "WHERE id > :since AND ts::date = :today AND grade != 'LOG' "
                 "ORDER BY id ASC"
@@ -5794,6 +5845,8 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 "spot_vol_beta": row.get("spot_vol_beta"),
                 "greek_alignment": row.get("greek_alignment"),
                 "charm_limit_entry": row.get("charm_limit_entry"),
+                "overvix": row.get("overvix"),
+                "vix": row.get("vix"),
             }
             signals.append(entry)
             if row["outcome_result"]:
@@ -8220,7 +8273,7 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
                        comments, outcome_result, outcome_pnl,
                        outcome_max_profit, outcome_max_loss,
                        outcome_first_event, outcome_elapsed_min,
-                       greek_alignment
+                       greek_alignment, vix, overvix
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim OFFSET :off
@@ -9879,7 +9932,7 @@ DASH_HTML_TEMPLATE = """
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v7ag">V7+AG (live)</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v8">V8 (live)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
         </div>
         <div class="tl-stats" id="tlStats"></div>
@@ -12891,8 +12944,23 @@ DASH_HTML_TEMPLATE = """
         if (sn === 'DD Exhaustion' && align !== 0) return true;
         return false;
       }
+      if (strat === 'v8') {
+        // V8 (live): V7+AG + Smart VIX Gate (block longs at VIX>26 unless overvix>=+2)
+        if (isLong) {
+          if (align < 2) return false;
+          // VIX gate: check vix and overvix fields
+          const vix = l.vix != null ? l.vix : 0;
+          const ov = l.overvix != null ? l.overvix : -99;
+          if (vix > 26 && ov < 2) return false;
+          return true;
+        }
+        if (sn === 'Skew Charm') return true;
+        if (sn === 'AG Short') return true;
+        if (sn === 'DD Exhaustion' && align !== 0) return true;
+        return false;
+      }
       if (strat === 'v7ag') {
-        // V7+AG (live): longs >= +2, shorts = Skew Charm + AG Short + DD (align!=0)
+        // V7+AG: longs >= +2, shorts = Skew Charm + AG Short + DD (align!=0)
         if (isLong) return align >= 2;
         if (sn === 'Skew Charm') return true;
         if (sn === 'AG Short') return true;

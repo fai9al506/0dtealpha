@@ -1497,3 +1497,105 @@ At 8 MES ($40/pt), V7+AG max trailing DD = $2,005 — right at the $2K E2T limit
 - Alignment is structurally biased bullish — AG Short at align=-3 is normal, not bad
 - Historical: 53% WR at align=-3, +13.7 pts. Feb 24 disaster was early data anomaly
 - Today (Mar 12): 5W/1L, +51.2 pts at align=-3 — all blocked by current filter
+
+---
+
+## Analysis #12 — Mar 14, 2026
+
+### VIX Gate & Overvix Indicator — V8 Filter
+
+**Context:** Mar 12-13 saw -443 pts on V7+AG filtered trades (VIX 27.3 and 27.2). Iran/oil crisis pushed VIX above 26 — all long setups lost. Investigated whether VIX level, VIX direction, SVB, and/or Apollo's overvix indicator (VIX - VIX3M) could be used to gate trades.
+
+### Dataset: 431 V7+AG filtered trades, Feb 5 - Mar 13 (24 trading days)
+
+### Key Findings
+
+**1. VIX Level Analysis:**
+
+| VIX Range | Trades | WR | P&L | PF |
+|-----------|--------|-----|------|-----|
+| < 18 | 9 | 0% | -70 | 0.00 |
+| 18-20 | 60 | 53% | +49 | 1.13 |
+| 20-22 | 132 | 64% | +336 | 2.49 |
+| 22-24 | 95 | 66% | +314 | 1.93 |
+| 24-26 | 81 | 56% | +150 | 1.40 |
+| 26+ | 54 | 43% | -326 | 0.57 |
+
+**Sweet spot:** VIX 20-24 (66% WR, PF 2.16). **Toxic:** VIX 26+ (43% WR, -326 pts).
+Longs at VIX 26+: 34% WR, -360 pts. Shorts at VIX 26+: 56% WR, break-even.
+
+**2. SVB (Spot Vol Beta) Analysis:**
+- SVB 97.5% correlated with raw VIX in this period — adds little beyond VIX level.
+- SVB > +0.50 (positive) is BEST: 63% WR, +480 pts.
+- SVB -0.50 to 0 (weak negative) is WORST: 41% WR, -86 pts.
+- Apollo's overvix is NOT the same as SVB — SVB measures vol-spot sensitivity, overvix measures term structure.
+
+**3. Apollo's Overvix Indicator (VIX - VIX3M):**
+- Formula: `overvix = VIX - VIX3M` (VIX3M = CBOE 3-month volatility index)
+- Overvix > +2: "signal territory" (short-term fear overpriced, mean reversion bullish)
+- Overvix > +3: "heavily overvixed" (strongest bullish signal)
+- Since Jan 2024: 92% of days undervixed, only 1.8% above +2
+- Standalone swing signal: 4 entries since Jan 2024, 50% WR, +24 pts total (small sample)
+- In our data: 0 trades on overvix > +2 days. Max overvix was +1.93 (Mar 6).
+
+**4. VIX Gate Backtest (16 variants tested):**
+
+| Gate | Trades | WR | P&L | PF | MaxDD | Sharpe |
+|------|--------|-----|------|-----|-------|--------|
+| **Baseline (V7+AG)** | 431 | 55.5% | +657 | 1.30 | 472 | 0.29 |
+| **A5: Block longs VIX>26** | 364 | 60.7% | +1,140 | 1.71 | 50 | 0.77 |
+| A7: VIX 18-25 only | 294 | 62.6% | +1,094 | 1.95 | 29 | 1.08 |
+| A1: Block all VIX>25 | 303 | 60.7% | +1,024 | 1.84 | 50 | 0.83 |
+| D-Full regime | 276 | 62.3% | +804 | 1.63 | 163 | 0.61 |
+
+**A5 wins on PnL (+483 pts improvement)** while only removing 67 trades.
+
+**5. Smart VIX Gate (overvix-aware A5):**
+Rule: Block longs when VIX > 26 AND overvix < +2 (allow mean-reversion longs when overvixed).
+In current data: identical to plain A5 (VIX > 26 + overvix >= +2 never occurred).
+But future-proofs for Apollo-type overvix signals at high VIX.
+
+**Daily impact (V8 vs V7+AG on worst days):**
+
+| Date | VIX | Overvix | V7+AG P&L | V8 P&L | Saved |
+|------|-----|---------|-----------|--------|-------|
+| Mar 6 | 29.5 | +1.93 | +117 (all shorts) | +117 | -- |
+| Mar 12 | 27.3 | +0.34 | -170 | +31 | +201 |
+| Mar 13 | 27.2 | -0.09 | -273 | +9 | +281 |
+
+### V8 Filter Rules
+
+**V8 = V7+AG + Smart VIX Gate**
+
+All V7+AG rules remain unchanged, PLUS:
+- **Longs:** When VIX > 26 AND overvix (VIX - VIX3M) < +2 → BLOCK
+- **Longs:** When VIX > 26 AND overvix >= +2 → ALLOW (mean reversion signal)
+- **Shorts:** No VIX gate (shorts profitable at high VIX)
+
+**Data source:** VIX and VIX3M fetched from TradeStation API ($VIX.X, $VIX3M.X) every 30s alongside SPX.
+
+### Performance
+
+| Filter | Trades | WR | PnL | PF | MaxDD | Sharpe |
+|--------|--------|-----|------|-----|-------|--------|
+| V7+AG | 431 | 55.5% | +657 | 1.30 | 472 | 0.29 |
+| **V8** | **364** | **60.7%** | **+1,140** | **1.71** | **50** | **0.77** |
+| Delta | -67 | +5.2% | **+483** | +0.41 | **-422** | **+0.48** |
+
+### Decision: Deploy V8
+
+**SIM auto-trader:** V8 (V7+AG + Smart VIX Gate)
+**Eval trader:** V8 (via vix/overvix fields in /api/eval/signals)
+**Portal:** V8 added as default strategy filter, V7+AG retained for comparison
+
+### Overvix Tracking
+
+Overvix (VIX - VIX3M) now logged to:
+- setup_log DB table (`overvix` column)
+- Telegram setup alerts (VIX=X.X OV=+X.X)
+- /api/health endpoint (vix, vix3m, overvix fields)
+- /api/eval/signals (overvix and vix per signal)
+
+### Future: Overvix Swing Setup
+
+Apollo's overvix signal (entry when overvix > +2, exit when < 0) is a swing trade, not 0DTE. Only 4 signals since Jan 2024 — need more data. Tracked via Telegram for manual swing trades.

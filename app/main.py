@@ -5417,33 +5417,34 @@ def api_debug_gex_analysis():
             # 1. Per-day: paradigm, GEX from volland (first snapshot each day)
             volland_days = conn.execute(_text("""
                 SELECT DISTINCT ON (d)
-                    (saved_at AT TIME ZONE 'America/New_York')::date as d,
-                    statistics->>'paradigm' as paradigm,
-                    statistics->>'lis' as lis,
-                    statistics->>'aggregatedCharm' as agg_charm,
-                    statistics->>'ddHedging' as dd_hedging
+                    (ts AT TIME ZONE 'America/New_York')::date as d,
+                    payload->'statistics'->>'paradigm' as paradigm,
+                    payload->'statistics'->>'lis' as lis,
+                    payload->'statistics'->>'aggregatedCharm' as agg_charm,
+                    payload->'statistics'->>'ddHedging' as dd_hedging
                 FROM volland_snapshots
-                WHERE saved_at >= '2026-02-05'
-                  AND statistics IS NOT NULL
-                  AND statistics->>'paradigm' IS NOT NULL
-                ORDER BY d, saved_at
+                WHERE ts >= '2026-02-05'
+                  AND payload->'statistics' IS NOT NULL
+                  AND payload->'statistics'->>'paradigm' IS NOT NULL
+                ORDER BY d, ts
             """)).fetchall()
             result["volland_days"] = [{
                 "date": str(r.d), "paradigm": r.paradigm, "lis": r.lis,
                 "agg_charm": r.agg_charm, "dd_hedging": r.dd_hedging
             } for r in volland_days]
 
-            # 2. Per-day GEX from chain_snapshots (net GEX = sum of call_gex + put_gex)
-            gex_days = conn.execute(_text("""
-                SELECT (saved_at AT TIME ZONE 'America/New_York')::date as d,
-                       SUM(gamma * open_interest * 100 * CASE WHEN option_type='call' THEN 1 ELSE -1 END) as net_gex
-                FROM chain_snapshots
-                WHERE saved_at >= '2026-02-05'
-                  AND EXTRACT(HOUR FROM saved_at AT TIME ZONE 'America/New_York') BETWEEN 9 AND 16
-                GROUP BY d
+            # 2. Per-day paradigm transitions (all snapshots, to see if paradigm changed intra-day)
+            paradigm_all = conn.execute(_text("""
+                SELECT (ts AT TIME ZONE 'America/New_York')::date as d,
+                       payload->'statistics'->>'paradigm' as paradigm,
+                       COUNT(*) as snap_count
+                FROM volland_snapshots
+                WHERE ts >= '2026-02-05'
+                  AND payload->'statistics'->>'paradigm' IS NOT NULL
+                GROUP BY d, payload->'statistics'->>'paradigm'
                 ORDER BY d
             """)).fetchall()
-            result["gex_days"] = [{"date": str(r.d), "net_gex": float(r.net_gex) if r.net_gex else 0} for r in gex_days]
+            result["paradigm_all"] = [{"date": str(r.d), "paradigm": r.paradigm, "count": r.snap_count} for r in paradigm_all]
 
             # 3. Setup outcomes per day with direction and alignment
             setup_days = conn.execute(_text("""

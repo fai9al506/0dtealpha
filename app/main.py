@@ -5378,6 +5378,33 @@ def api_debug_sim_orders():
             section["positions"] = [{"error": str(e)}]
 
         result[label] = section
+
+    # 6. Options trades from DB (theo prices)
+    try:
+        from sqlalchemy import text as _text
+        with engine.connect() as conn:
+            rows = conn.execute(_text("""
+                SELECT setup_log_id, payload->>'setup_name' as setup_name,
+                       payload->>'symbol' as symbol,
+                       payload->>'direction' as direction,
+                       payload->>'status' as status,
+                       payload->>'entry_price' as sim_entry,
+                       payload->>'close_price' as sim_exit,
+                       payload->>'theo_entry_price' as theo_entry,
+                       payload->>'theo_close_price' as theo_exit,
+                       payload->>'ask_at_entry' as ask_at_entry,
+                       payload->>'qty' as qty,
+                       payload->>'ts_placed' as ts_placed,
+                       payload->>'ts_closed' as ts_closed,
+                       payload->>'delta_at_entry' as delta_at_entry
+                FROM options_trade_orders
+                WHERE payload->>'ts_placed' LIKE :today
+                ORDER BY payload->>'ts_placed'
+            """), {"today": f"{_date.today().isoformat()}%"}).fetchall()
+            result["options_db"] = [dict(r._mapping) for r in rows]
+    except Exception as e:
+        result["options_db"] = {"error": str(e)}
+
     return result
 
 @app.post("/api/auto-trade/test")

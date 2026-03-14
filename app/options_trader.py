@@ -89,15 +89,29 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float)
 
     strike = strike_info["strike"]
     delta = strike_info["delta"]
-    bid = strike_info["bid"]
-    ask = strike_info["ask"]
+    snap_bid = strike_info["bid"]
+    snap_ask = strike_info["ask"]
 
     # Build option symbol: "SPY 260313C670" or "SPXW 260305C5880"
     today = date.today()
     cp = "C" if is_long else "P"
     symbol = f"{OPTIONS_UNDERLYING} {today.strftime('%y%m%d')}{cp}{strike}"
 
-    # Place limit buy at ask price (avoid terrible SIM market fills)
+    # Fetch LIVE quote for accurate entry price (snapshot can be up to 2 min stale)
+    live_q = _get_option_quote(symbol)
+    if live_q and live_q.get("ask") and live_q["ask"] > 0:
+        ask = live_q["ask"]
+        bid = live_q["bid"] or snap_bid
+        print(f"[options] live quote {symbol}: bid=${bid:.2f} ask=${ask:.2f} "
+              f"(snap bid=${snap_bid:.2f} ask=${snap_ask:.2f})", flush=True)
+    else:
+        # Fallback to snapshot if live quote fails
+        ask = snap_ask
+        bid = snap_bid
+        print(f"[options] live quote failed for {symbol}, using snapshot: "
+              f"bid=${bid:.2f} ask=${ask:.2f}", flush=True)
+
+    # Place limit buy at ask price
     limit_price = round(ask, 2) if ask > 0 else None
     if not limit_price:
         print(f"[options] skip {setup_name}: ask price is 0", flush=True)
@@ -526,8 +540,8 @@ def _get_order_fill_price(order_id: str) -> float | None:
     return None
 
 
-def _get_option_bid(symbol: str) -> float | None:
-    """Get current bid price for an option symbol from TS quote API.
+def _get_option_quote(symbol: str) -> dict | None:
+    """Get live bid/ask/last for an option symbol from TS quote API.
     Uses live API (not SIM) since marketdata endpoints are read-only."""
     try:
         if not _get_token:
@@ -542,12 +556,26 @@ def _get_option_bid(symbol: str) -> float | None:
         if r.status_code == 200:
             quotes = r.json().get("Quotes", [])
             if quotes:
-                bid = quotes[0].get("Bid")
-                if bid:
-                    return float(str(bid).replace(",", ""))
+                q = quotes[0]
+                def _pf(v):
+                    if v is None: return None
+                    try: return float(str(v).replace(",", ""))
+                    except (ValueError, TypeError): return None
+                return {
+                    "bid": _pf(q.get("Bid")),
+                    "ask": _pf(q.get("Ask")),
+                    "last": _pf(q.get("Last")),
+                    "delta": _pf(q.get("Delta")),
+                }
     except Exception as e:
-        print(f"[options] bid query error for {symbol}: {e}", flush=True)
+        print(f"[options] quote error for {symbol}: {e}", flush=True)
     return None
+
+
+def _get_option_bid(symbol: str) -> float | None:
+    """Get current bid price (convenience wrapper)."""
+    q = _get_option_quote(symbol)
+    return q["bid"] if q and q.get("bid") else None
 
 
 # ====== PERSISTENCE ======

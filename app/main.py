@@ -2102,6 +2102,9 @@ def db_volland_stats() -> Optional[dict]:
     if not ts and rows:
         ts = rows[0]["ts"]
     
+    # Inject live overvix from TS quotes (not from Volland)
+    stats["overvix"] = _overvix
+
     return {
         "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts) if ts else None,
         "stats": stats
@@ -10114,6 +10117,16 @@ DASH_HTML_TEMPLATE = """
       if (s.svb_correlation != null) {
         const svb = parseFloat(s.svb_correlation);
         if (!isNaN(svb)) h += '<div class="stats-row"><span class="stats-label">Spot-Vol Beta</span><span class="stats-value">' + (svb >= 0 ? '+' : '') + svb.toFixed(2) + '</span></div>';
+      }
+
+      // Overvix (VIX - VIX3M)
+      if (s.overvix != null) {
+        const ov = parseFloat(s.overvix);
+        if (!isNaN(ov)) {
+          const ovClr = ov >= 2 ? 'green' : ov <= -2 ? 'red' : '';
+          const ovTag = ov >= 2 ? ' <span style="font-size:9px;opacity:0.7">[OVERVIX]</span>' : '';
+          h += '<div class="stats-row"><span class="stats-label">Overvix</span><span class="stats-value ' + ovClr + '">' + (ov >= 0 ? '+' : '') + ov.toFixed(2) + ovTag + '</span></div>';
+        }
       }
 
       // If no statistics found

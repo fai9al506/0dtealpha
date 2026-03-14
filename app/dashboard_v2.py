@@ -248,19 +248,15 @@ DASH_V2_TEMPLATE = """<!doctype html>
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
 
-    /* Overview layout */
-    .overview-grid {
+    /* Overview layout — stacked: price on top, 3 mini charts below */
+    .overview-price { min-height: 420px; margin-bottom: 14px; }
+    .overview-row {
       display: grid;
-      grid-template-columns: 2fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr;
       gap: 14px;
       margin-bottom: 14px;
     }
-    .overview-right {
-      display: grid;
-      grid-template-rows: 1fr 1fr 1fr;
-      gap: 14px;
-    }
-    .overview-main { min-height: 480px; }
+    .overview-row .chart-card { min-height: 280px; }
 
     /* Exposure view */
     .exposure-grid {
@@ -431,8 +427,7 @@ DASH_V2_TEMPLATE = """<!doctype html>
     @media (max-width: 900px) {
       .container { padding: 12px; }
       .kpi-grid { grid-template-columns: repeat(3, 1fr); }
-      .overview-grid { grid-template-columns: 1fr; }
-      .overview-right { grid-template-rows: auto; }
+      .overview-row { grid-template-columns: 1fr; }
       .exposure-grid { grid-template-columns: 1fr; height: auto; }
       .exposure-card { min-height: 280px; }
       .charts-2x4 { grid-template-columns: 1fr; }
@@ -518,27 +513,25 @@ DASH_V2_TEMPLATE = """<!doctype html>
 
   <!-- ===== OVERVIEW TAB ===== -->
   <div class="tab-panel active" id="panelOverview">
-    <div class="overview-grid animate d4">
-      <!-- Main price chart -->
-      <div class="chart-card overview-main">
-        <div class="chart-title"><span class="dot" style="background:var(--blue)"></span> SPX Price + Key Levels</div>
-        <div class="chart-desc">3-min candles with Target, LIS, GEX levels</div>
-        <div id="overviewPricePlot" style="width:100%;height:calc(100% - 40px)"></div>
+    <!-- Price chart — full width -->
+    <div class="chart-card overview-price animate d4">
+      <div class="chart-title"><span class="dot" style="background:var(--blue)"></span> SPX Price + Key Levels</div>
+      <div class="chart-desc">3-min candles with Target, LIS, GEX levels</div>
+      <div id="overviewPricePlot" style="width:100%;height:380px"></div>
+    </div>
+    <!-- 3 mini exposure charts — equal width row -->
+    <div class="overview-row animate d4">
+      <div class="chart-card">
+        <div class="chart-title"><span class="dot" style="background:var(--green)"></span> Net GEX</div>
+        <div id="overviewGexPlot" style="width:100%;height:240px"></div>
       </div>
-      <!-- Right column: mini exposure panels -->
-      <div class="overview-right">
-        <div class="chart-card">
-          <div class="chart-title"><span class="dot" style="background:var(--green)"></span> Net GEX</div>
-          <div id="overviewGexPlot" style="width:100%;height:calc(100% - 30px)"></div>
-        </div>
-        <div class="chart-card">
-          <div class="chart-title"><span class="dot" style="background:var(--gold)"></span> Charm</div>
-          <div id="overviewCharmPlot" style="width:100%;height:calc(100% - 30px)"></div>
-        </div>
-        <div class="chart-card">
-          <div class="chart-title"><span class="dot" style="background:var(--purple)"></span> Delta Decay</div>
-          <div id="overviewDDPlot" style="width:100%;height:calc(100% - 30px)"></div>
-        </div>
+      <div class="chart-card">
+        <div class="chart-title"><span class="dot" style="background:var(--gold)"></span> Charm</div>
+        <div id="overviewCharmPlot" style="width:100%;height:240px"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title"><span class="dot" style="background:var(--purple)"></span> Delta Decay</div>
+        <div id="overviewDDPlot" style="width:100%;height:240px"></div>
       </div>
     </div>
     <!-- Recent signals -->
@@ -1067,6 +1060,77 @@ function startOverview() {
 }
 
 // ===== EXPOSURE TAB =====
+// Shared Y range for synced strike axis across all 5 exposure charts
+let _expYRange = null;
+let _expBaseYRange = null;
+let _expZoomSyncing = false;
+
+function computeExposureYRange(strikes, spot) {
+  if (_expYRange) return _expYRange; // preserve user zoom
+  if (!strikes || !strikes.length) return null;
+  const half = Math.floor(_exposureStrikes / 2);
+  const above = strikes.filter(s => s >= spot).slice(0, half);
+  const below = strikes.filter(s => s < spot).slice(-half);
+  const selected = [...below, ...above].sort((a,b) => a-b);
+  if (!selected.length) return {min: Math.min(...strikes), max: Math.max(...strikes)};
+  const yMin = Math.min(...selected), yMax = Math.max(...selected);
+  const pad = (yMax - yMin) * 0.02 || 1;
+  const range = {min: yMin - pad, max: yMax + pad};
+  _expBaseYRange = range;
+  return range;
+}
+
+function horizontalSpot(spot, xMin, xMax) {
+  if (spot == null) return null;
+  return {type:'line', y0:spot, y1:spot, x0:xMin, x1:xMax, xref:'x', yref:'y', line:{color:'#008ffb', width:1.5, dash:'dot'}};
+}
+
+function setupExposureZoomSync() {
+  const divIds = ['exposureSpxPlot','exposureGexPlot','exposureCharmPlot','exposureDDPlot','exposureVolPlot'];
+  divIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || el._v2ZoomWired) return;
+    el._v2ZoomWired = true;
+    el.on('plotly_relayout', function(ev) {
+      if (_expZoomSyncing) return;
+      const y0 = ev['yaxis.range[0]'], y1 = ev['yaxis.range[1]'];
+      if (y0 !== undefined && y1 !== undefined) {
+        _expZoomSyncing = true;
+        _expYRange = {min: y0, max: y1};
+        divIds.forEach(otherId => {
+          if (otherId !== id) {
+            const otherEl = document.getElementById(otherId);
+            if (otherEl && otherEl._fullLayout) Plotly.relayout(otherEl, {'yaxis.range': [y0, y1]});
+          }
+        });
+        setTimeout(() => { _expZoomSyncing = false; }, 100);
+      }
+      if (ev['yaxis.autorange']) {
+        _expYRange = null;
+        _expZoomSyncing = true;
+        divIds.forEach(otherId => {
+          if (otherId !== id && _expBaseYRange) {
+            const otherEl = document.getElementById(otherId);
+            if (otherEl && otherEl._fullLayout) Plotly.relayout(otherEl, {'yaxis.range': [_expBaseYRange.min, _expBaseYRange.max]});
+          }
+        });
+        setTimeout(() => { _expZoomSyncing = false; }, 100);
+      }
+    });
+  });
+}
+
+function expBarLayout(yRange, hasLabels) {
+  return {
+    paper_bgcolor: PL.paper, plot_bgcolor: PL.plot, font: PL.font,
+    margin: hasLabels ? {l:50, r:8, t:4, b:24} : {l:8, r:8, t:4, b:24},
+    xaxis: {gridcolor:PL.grid, tickfont:PL.tickfont, zeroline:true, zerolinecolor:'#333'},
+    yaxis: {gridcolor:PL.grid, tickfont:{...PL.tickfont, size:9}, range:[yRange.min, yRange.max],
+      showticklabels: hasLabels, dtick:5, fixedrange:false, side: hasLabels ? 'left' : 'left'},
+    showlegend: false
+  };
+}
+
 async function renderExposure() {
   try {
     const [series, candles, levels, charm, dd] = await Promise.all([
@@ -1094,45 +1158,82 @@ async function renderExposure() {
       Plotly.react('exposureStatisticsPlot', traces, baseLayout({xaxis:{rangeslider:{visible:false},type:'date'}, shapes:shapes, extra:{margin:{t:8,r:60,b:32,l:48}}}), PL.config);
     }
 
-    // --- SPX 3m candles (left column) ---
+    // Compute shared Y range from strikes
+    const yRange = computeExposureYRange(strikes, spot);
+    if (!yRange) return;
+
+    // --- SPX 3m candles (Y = price/strikes, X = time) ---
     if (c.length) {
+      const times = c.map(b => fmtTimeET(b.time));
+      const shapes = [];
+      const annots = [];
+      function addLvl(val, color, label) {
+        if (!val) return;
+        shapes.push({type:'line', y0:val, y1:val, x0:0, x1:1, xref:'paper', yref:'y', line:{color:color, width:1.5}});
+        annots.push({x:0.01, y:val, xref:'paper', yref:'y', text:label+' '+Math.round(val), showarrow:false, font:{color:color, size:9, family:"'JetBrains Mono'"}, xanchor:'left', yanchor:'bottom', bgcolor:'rgba(10,14,23,0.8)', borderpad:2});
+      }
+      if (levels) { addLvl(levels.target,'#008ffb','TGT'); addLvl(levels.lis_low,'#feb019','LIS'); if(levels.lis_high && levels.lis_high !== levels.lis_low) addLvl(levels.lis_high,'#feb019','LIS'); addLvl(levels.max_pos_gamma,'#00e396','+G'); addLvl(levels.max_neg_gamma,'#ff4560','-G'); }
       Plotly.react('exposureSpxPlot', [{
-        type:'candlestick', x:c.map(b=>b.time), open:c.map(b=>b.open), high:c.map(b=>b.high), low:c.map(b=>b.low), close:c.map(b=>b.close),
-        increasing:{line:{color:'#00e396'}}, decreasing:{line:{color:'#ff4560'}},
-      }], baseLayout({small:true, xaxis:{rangeslider:{visible:false},type:'date'}}), PL.config);
+        type:'candlestick', x:times, open:c.map(b=>b.open), high:c.map(b=>b.high), low:c.map(b=>b.low), close:c.map(b=>b.close),
+        increasing:{line:{color:'#00e396'}, fillcolor:'#00e396'}, decreasing:{line:{color:'#ff4560'}, fillcolor:'#ff4560'},
+        hoverinfo:'x+y'
+      }], {
+        ...expBarLayout(yRange, true),
+        xaxis:{gridcolor:PL.grid, tickfont:{size:9}, rangeslider:{visible:false}, type:'category', nticks:8, tickangle:-45},
+        shapes: shapes, annotations: annots
+      }, {...PL.config, scrollZoom:true});
     }
 
-    // --- Net GEX ---
+    // --- Net GEX (horizontal bars, Y = strikes) ---
     if (strikes.length && series.net_gex) {
       const g = series.net_gex;
-      const yMin = Math.min(...g), yMax = Math.max(...g);
-      const sh = spotLine(spot, yMin, yMax);
-      Plotly.react('exposureGexPlot', [barTrace(strikes, g, 'GEX')], baseLayout({small:true, shapes:sh?[sh]:[], dtick:20}), PL.config);
+      const gMax = Math.max(1, ...g.map(v => Math.abs(v))) * 1.1;
+      const sh = horizontalSpot(spot, -gMax, gMax);
+      Plotly.react('exposureGexPlot', [{
+        type:'bar', orientation:'h', x:g, y:strikes,
+        marker:{color: g.map(v => v >= 0 ? '#00e396' : '#ff4560')},
+        hovertemplate:'Strike %{y}<br>GEX %{x:,.0f}<extra></extra>'
+      }], {...expBarLayout(yRange, false), shapes: sh ? [sh] : []}, {...PL.config, scrollZoom:true});
     }
 
-    // --- Charm ---
+    // --- Charm (horizontal bars) ---
     if (charm && charm.points && charm.points.length) {
       const pts = charm.points, s = pts.map(p=>p.strike), v = pts.map(p=>p.vanna);
-      const yMin = Math.min(...v), yMax = Math.max(...v);
-      const sh = spotLine(spot, yMin, yMax);
-      Plotly.react('exposureCharmPlot', [barTrace(s,v,'Charm')], baseLayout({small:true, shapes:sh?[sh]:[], dtick:20}), PL.config);
+      const vMax = Math.max(1, ...v.map(x => Math.abs(x))) * 1.1;
+      const sh = horizontalSpot(spot, -vMax, vMax);
+      Plotly.react('exposureCharmPlot', [{
+        type:'bar', orientation:'h', x:v, y:s,
+        marker:{color: v.map(x => x >= 0 ? '#00e396' : '#ff4560')},
+        hovertemplate:'Strike %{y}<br>Charm %{x:,.0f}<extra></extra>'
+      }], {...expBarLayout(yRange, false), shapes: sh ? [sh] : []}, {...PL.config, scrollZoom:true});
     }
 
-    // --- Delta Decay ---
+    // --- Delta Decay (horizontal bars) ---
     if (dd && dd.points && dd.points.length) {
       const pts = dd.points, s = pts.map(p=>p.strike), v = pts.map(p=>p.delta_decay||p.vanna||0);
-      const yMin = Math.min(...v), yMax = Math.max(...v);
-      const sh = spotLine(spot, yMin, yMax);
-      Plotly.react('exposureDDPlot', [barTrace(s,v,'DD')], baseLayout({small:true, shapes:sh?[sh]:[], dtick:20}), PL.config);
+      const vMax = Math.max(1, ...v.map(x => Math.abs(x))) * 1.1;
+      const sh = horizontalSpot(spot, -vMax, vMax);
+      Plotly.react('exposureDDPlot', [{
+        type:'bar', orientation:'h', x:v, y:s,
+        marker:{color: v.map(x => x >= 0 ? '#00e396' : '#ff4560')},
+        hovertemplate:'Strike %{y}<br>DD %{x:,.0f}<extra></extra>'
+      }], {...expBarLayout(yRange, false), shapes: sh ? [sh] : []}, {...PL.config, scrollZoom:true});
     }
 
-    // --- Volume ---
+    // --- Volume (horizontal bars, mirrored: calls right, puts left) ---
     if (strikes.length && series.call_volume && series.put_volume) {
+      const negPuts = series.put_volume.map(v => -v);
+      const sh = horizontalSpot(spot, Math.min(...negPuts)*1.1, Math.max(...series.call_volume)*1.1);
       Plotly.react('exposureVolPlot', [
-        {type:'bar', x:strikes, y:series.call_volume, marker:{color:'rgba(0,227,150,0.7)'}, name:'Calls'},
-        {type:'bar', x:strikes, y:series.put_volume, marker:{color:'rgba(255,69,96,0.7)'}, name:'Puts'}
-      ], baseLayout({small:true, barmode:'group', showlegend:false, dtick:20}), PL.config);
+        {type:'bar', orientation:'h', x:series.call_volume, y:strikes, marker:{color:'rgba(0,227,150,0.7)'}, name:'Calls',
+          hovertemplate:'Strike %{y}<br>Call Vol %{x:,.0f}<extra></extra>'},
+        {type:'bar', orientation:'h', x:negPuts, y:strikes, marker:{color:'rgba(255,69,96,0.7)'}, name:'Puts',
+          hovertemplate:'Strike %{y}<br>Put Vol %{customdata:,.0f}<extra></extra>', customdata:series.put_volume}
+      ], {...expBarLayout(yRange, false), barmode:'overlay'}, {...PL.config, scrollZoom:true});
     }
+
+    // Wire up zoom sync after first render
+    setupExposureZoomSync();
 
   } catch(e) {
     console.error('Exposure render error:', e);
@@ -1150,6 +1251,7 @@ document.querySelectorAll('[data-strikes]').forEach(btn => {
     document.querySelectorAll('[data-strikes]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     _exposureStrikes = parseInt(btn.dataset.strikes);
+    _expYRange = null; _expBaseYRange = null; // reset zoom on strike change
     if (activeTab === 'exposure') renderExposure();
   });
 });

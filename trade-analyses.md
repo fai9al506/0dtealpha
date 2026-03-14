@@ -1599,3 +1599,183 @@ Overvix (VIX - VIX3M) now logged to:
 ### Future: Overvix Swing Setup
 
 Apollo's overvix signal (entry when overvix > +2, exit when < 0) is a swing trade, not 0DTE. Only 4 signals since Jan 2024 — need more data. Tracked via Telegram for manual swing trades.
+
+---
+
+## Analysis #13 — Mar 14, 2026
+
+### V8 Options Backtest — Real Option Prices (Mar 1-13)
+
+**Context:** Validated V8 filter using actual option chain snapshots instead of SPX point-based P&L. For each V8 trade, found the ~0.30 delta option (call for longs, put for shorts) at entry, priced it from the chain snapshot, then found the same strike at exit time and got the exit bid. This is the most accurate backtest possible — only ~30 seconds of divergence from real fills.
+
+**Dataset:** 255 V8 trades with matched option prices (1 skipped, no snapshot), Mar 1-13 (10 trading days).
+
+### V8 vs V7+AG (Real Option Prices)
+
+| Metric | V8 | V7+AG |
+|--------|-----|-------|
+| Trades | 255 | 327 |
+| Win Rate | 42.0% | 39.8% |
+| Total P&L | $14,930 | $17,850 |
+| P&L/day | $1,493 | $1,785 |
+| Avg Winner | $560 | $600 |
+| Avg Loser | -$304 | -$305 |
+| PF | 1.33 | 1.30 |
+| **Max Drawdown** | **$8,615** | **$19,945** |
+
+**Note:** V7+AG shows slightly more total P&L because a few lucky longs at VIX>26 on Mar 9 had massive option gains (gamma acceleration: +$3,900, +$3,290, +$3,280). But V8's MaxDD is less than half — $8.6K vs $19.9K. Risk management wins.
+
+**Why WR is lower than SPX-point WR (42% vs 61%):** Options have asymmetric payoffs — small option losses (-$50 to -$200) count as losses but represent tiny premium decay, while big winners ($1,000-$2,400) dramatically outweigh them. PF 1.33 confirms profitability despite lower WR.
+
+### By Setup (V8, Real Option Prices)
+
+| Setup | Trades | WR | P&L | Notes |
+|-------|--------|-----|-----|-------|
+| Skew Charm | 106 | 48.1% | +$9,450 | MVP — dominates |
+| DD Exhaustion | 90 | 31.1% | +$4,080 | Low WR but high avg winner |
+| AG Short | 16 | 56.2% | +$2,670 | Small sample, strong |
+| GEX Long | 5 | 60.0% | +$290 | Tiny sample |
+| ES Absorption | 33 | 48.5% | -$305 | Break-even |
+| BofA Scalp | 3 | 0.0% | -$700 | Filtered out mostly |
+| Paradigm Rev | 2 | 0.0% | -$555 | Filtered out mostly |
+
+### Daily P&L (V8, 1 SPX contract per signal)
+
+| Date | Trades | P&L | Cumulative | Capital Needed | VIX |
+|------|--------|-----|-----------|---------------|-----|
+| Mar 2 | 15 | +$2,440 | +$2,440 | $639 | 21.2 |
+| Mar 3 | 32 | +$3,135 | +$5,575 | $2,156 | 24.1 |
+| Mar 4 | 34 | -$4,325 | +$1,250 | $1,978 | 21.1 |
+| Mar 5 | 41 | +$5,450 | +$6,700 | $3,014 | 23.7 |
+| Mar 6 | 23 | +$3,300 | +$10,000 | $2,154 | 26.7 |
+| Mar 9 | 18 | -$2,795 | +$7,205 | $1,339 | 27.4 |
+| Mar 10 | 37 | +$13,030 | +$20,235 | $2,542 | 23.8 |
+| Mar 11 | 31 | -$2,320 | +$17,915 | $2,294 | 25.0 |
+| Mar 12 | 12 | -$480 | +$17,435 | $1,103 | 26.0 |
+| Mar 13 | 12 | -$2,505 | +$14,930 | $1,046 | 26.0 |
+
+**Capital needed = trades × option premium × $100 multiplier (actual cost to buy all options that day).**
+
+### SPY Account Sizing (1 SPY per signal, SPX/10)
+
+| Level | Amount |
+|-------|--------|
+| Max daily capital | $3,014 |
+| Worst day loss | -$432 |
+| **Account needed (comfortable)** | **$3,447** |
+| Avg daily P&L | +$149 |
+| **Monthly P&L** | **+$3,135** |
+| **Monthly ROI** | **+91%** |
+
+### Scaling Table
+
+| SPY Qty | Account Needed | Monthly P&L | Monthly ROI |
+|---------|---------------|-------------|-------------|
+| 1 | $3,447 | +$3,135 | 91% |
+| 2 | $6,894 | +$6,271 | 91% |
+| 5 | $17,235 | +$15,676 | 91% |
+| 10 | $34,470 | +$31,353 | 91% |
+
+### Circuit Breaker Analysis (Pending Validation)
+
+| Risk Control | Total P&L | vs Baseline |
+|---|---|---|
+| No limit (baseline) | $14,930 | -- |
+| **Stop after 4 consecutive losses** | **$22,035** | **+$7,105 (+48%)** |
+| Stop after daily P&L < -$2,000 | $18,200 | +$3,270 |
+| Max 20 trades/day | $20,670 | +$5,740 |
+| Stop after 3 consecutive losses | $9,160 | -$5,770 (too tight) |
+
+**Not deployed yet — only 10 trading days. Need 30+ days to validate. Saving 48% of P&L is significant if it holds.**
+
+### Decision
+
+- **TradeStation account #11697180 funded $4,000**
+- **2-week validation period (Mar 14-28):** tracking logs only, no live trades
+- **Go live after validation with 1 SPY per signal**
+- **Scale to 2 SPY when balance reaches $6,894**
+- **Options_trader.py updated:** live TS API quotes for both entry and exit (not stale snapshots)
+
+---
+
+## Analysis #14 — Mar 14, 2026
+
+### Full-Period Options Backtest — Feb 5 to Mar 13 (V8, Real Prices)
+
+**Context:** Extended Analysis #13 to cover the full data period. Feb lacked Skew Charm (added Mar) and had fewer refined setups. Purpose: assess regime stability and per-setup option performance.
+
+**Dataset:** 358 V8 trades with matched option prices, 21 trading days.
+
+### Overall (V8, Real Option Prices)
+
+| Period | Trades | WR | P&L | PF | MaxDD | P&L/day |
+|--------|--------|-----|------|-----|-------|---------|
+| Feb (11 days) | 103 | 38.8% | +$3,060 | 1.16 | $11,560 | +$278 |
+| Mar (10 days) | 255 | 42.0% | +$14,930 | 1.33 | $8,615 | +$1,493 |
+| **Full period** | **358** | **41.1%** | **+$17,990** | **1.28** | **$11,560** | **+$857** |
+
+### Per-Setup (V8, Full Period)
+
+| Setup | Trades | WR | P&L | Avg Winner | Avg Loser | P&L/day |
+|-------|--------|-----|-----|-----------|-----------|---------|
+| **Skew Charm** | 106 | 48% | +$9,450 | $505 | -$296 | +$945 |
+| **DD Exhaustion** | 154 | 32% | +$9,390 | $889 | -$325 | +$522 |
+| AG Short | 40 | 50% | +$85 | $372 | -$367 | +$6 |
+| GEX Long | 5 | 60% | +$290 | $280 | -$275 | +$97 |
+| ES Absorption | 42 | 50% | -$130 | $186 | -$192 | -$16 |
+| BofA Scalp | 6 | 33% | -$420 | $190 | -$200 | -$84 |
+| Paradigm Rev | 5 | 20% | -$675 | $50 | -$181 | -$135 |
+
+**Key: DD Exhaustion has 32% WR but avg winner is 2.7x avg loser ($889 vs $325) — gamma acceleration on options makes low-WR setups profitable.**
+
+### Feb vs Mar Per-Setup
+
+| Setup | Feb P&L | Mar P&L | Notes |
+|-------|---------|---------|-------|
+| Skew Charm | n/a | +$9,450 | Only existed in March |
+| DD Exhaustion | +$5,310 | +$4,080 | Consistent both months |
+| AG Short | -$2,585 | +$2,670 | Regime-dependent |
+| ES Absorption | +$175 | -$305 | Neutral both months |
+
+### VIX Regime (V8, Real Option Prices)
+
+| VIX Range | Trades | WR | P&L | Avg Premium |
+|-----------|--------|-----|------|------------|
+| 18-20 | 39 | 21% | -$3,400 | $3.89 |
+| **20-22** | **67** | **48%** | **+$1,710** | $5.56 |
+| **22-24** | **57** | **51%** | **+$12,185** | $6.57 |
+| 24-26 | 102 | 39% | +$4,280 | $7.70 |
+| 26+ | 46 | 33% | -$1,710 | $8.67 |
+
+**Sweet spot: VIX 22-24.** VIX 18-20 is toxic even with V8. VIX 26+ still negative (shorts only after V8 gate).
+
+### DD Exhaustion Grade Surprise
+
+| Grade | Trades | WR | P&L |
+|-------|--------|-----|------|
+| A | 62 | 34% | +$8,805 |
+| A+ | 35 | 26% | +$1,640 |
+| A-Entry | 53 | 28% | -$2,255 |
+| LOG | 4 | 100% | +$1,200 |
+
+**LOG grade (lowest confidence) = 100% WR.** A-Entry (gate-level) is the worst. Confirms Analysis #5: DD score is NOT predictive of outcome.
+
+### Time-of-Day Insights
+
+**Skew Charm:** Best 13:00-16:00 (60%+ WR). Weakens after 17:00.
+**DD Exhaustion:** Best at 16:00 (47% WR, +$7,775). Terrible at 19:00 (9% WR, -$3,660).
+**AG Short:** Best at 14:00 (80% WR, +$2,590). Terrible at 16:00 (12% WR, -$2,645).
+
+### Capital & Projections (Full Period, 1 SPY)
+
+| Metric | Full Period | Mar Only |
+|--------|-----------|---------|
+| Daily P&L | +$86 | +$149 |
+| Monthly projection | +$1,799 | +$3,135 |
+| Account needed | $3,558 | $3,447 |
+
+**Mar-only is more representative of current capability** (Skew Charm enabled, all setups refined).
+
+### 12-Month Growth (starting $4K, 75% of Mar performance)
+
+Month 1: $5,349 → Month 6: $20,191 → Month 12: $129,480

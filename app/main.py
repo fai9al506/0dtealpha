@@ -182,6 +182,10 @@ def get_current_user(session: str = None) -> Optional[dict]:
 app = FastAPI()
 NY = pytz.timezone("US/Eastern")
 
+# V2 Dashboard (separate file, access at /v2)
+from app.dashboard_v2 import router as _v2_router
+app.include_router(_v2_router)
+
 # Public paths that don't require authentication
 PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png", "/api/ts/authorize", "/api/ts/callback", "/api/debug/sim-orders", "/api/debug/gex-analysis"}
 
@@ -5185,6 +5189,27 @@ def on_startup():
         options_trader_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[options] init error (non-fatal): {e}", flush=True)
+    # Initialize V2 dashboard (separate design at /v2)
+    try:
+        from app.dashboard_v2 import init as dashboard_v2_init
+        def _get_dashboard_v2_context(session):
+            user = get_current_user(session)
+            if not user:
+                return None
+            open_now = market_open_now()
+            return {
+                "STATUS_COLOR": "#00e396" if open_now else "#ff4560",
+                "STATUS_TEXT": "Market OPEN" if open_now else "Market CLOSED",
+                "LAST_TS": str(last_run_status.get("ts") or ""),
+                "LAST_MSG": str(last_run_status.get("msg") or ""),
+                "PULL_MS": str(PULL_EVERY * 1000),
+                "USER_EMAIL": user["email"],
+                "IS_ADMIN": "true" if user.get("is_admin") else "false",
+            }
+        dashboard_v2_init(_get_dashboard_v2_context)
+        print("[dashboard-v2] initialized at /v2", flush=True)
+    except Exception as e:
+        print(f"[dashboard-v2] init error (non-fatal): {e}", flush=True)
 
 @app.on_event("shutdown")
 def on_shutdown():

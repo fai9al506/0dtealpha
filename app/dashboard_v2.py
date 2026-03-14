@@ -749,7 +749,9 @@ let chartsSubTab = '0dte';
 let tlSubTab = 'portal';
 let timers = {};
 let _spotPrice = null;
+let _vixValue = null;
 let _exposureStrikes = 30;
+let _lastSignalId = null; // track last signal to detect new ones
 
 // ===== Tab Management =====
 function switchTab(tab) {
@@ -816,6 +818,7 @@ async function updateFreshness() {
     }
 
     if (d.spot) _spotPrice = d.spot;
+    if (d.vix) _vixValue = d.vix;
   } catch(e) {
     document.getElementById('freshnessBar').innerHTML = '<span style="color:var(--red)">Error</span>';
   }
@@ -867,17 +870,41 @@ async function updateKPIs() {
     // VIX / Overvix
     const vixEl = document.getElementById('kpiVIXVal');
     const vixSub = document.getElementById('kpiVIXSub');
+    // Show actual VIX value from freshness data
+    if (_vixValue) {
+      vixEl.textContent = _vixValue.toFixed(2);
+      vixEl.style.color = _vixValue > 26 ? 'var(--red)' : _vixValue > 20 ? 'var(--gold)' : 'var(--green)';
+    }
     if (s.overvix != null) {
       const ov = parseFloat(s.overvix);
       if (!isNaN(ov)) {
-        vixSub.textContent = 'Overvix: ' + (ov >= 0 ? '+' : '') + ov.toFixed(2);
+        const ovTag = ov >= 2 ? ' [OVERVIX]' : '';
+        vixSub.textContent = 'OV: ' + (ov >= 0 ? '+' : '') + ov.toFixed(2) + ovTag;
         vixSub.style.color = ov >= 2 ? 'var(--green)' : ov <= -2 ? 'var(--red)' : '';
       }
     }
 
-    // LIS in spot sub
-    if (s.lines_in_sand) {
-      document.getElementById('kpiSpotSub').textContent = 'LIS: ' + s.lines_in_sand;
+    // SVB (Spot-Vol Beta)
+    if (s.svb_correlation != null) {
+      const svb = parseFloat(s.svb_correlation);
+      if (!isNaN(svb)) {
+        document.getElementById('kpiDDSub').textContent = 'SVB: ' + (svb >= 0 ? '+' : '') + svb.toFixed(2);
+      }
+    }
+
+    // LIS in spot sub — show distance from spot
+    if (s.lines_in_sand && _spotPrice) {
+      // Parse LIS range (e.g. "$5,900 - $5,940" or "5900/5940")
+      const nums = s.lines_in_sand.replace(/[$,]/g, '').match(/[0-9]+/g);
+      if (nums && nums.length >= 1) {
+        const lisLow = parseFloat(nums[0]);
+        const lisHigh = nums.length >= 2 ? parseFloat(nums[1]) : lisLow;
+        const lisMid = (lisLow + lisHigh) / 2;
+        const dist = (_spotPrice - lisMid).toFixed(1);
+        document.getElementById('kpiSpotSub').textContent = 'LIS: ' + s.lines_in_sand + ' (' + (dist >= 0 ? '+' : '') + dist + ')';
+      } else {
+        document.getElementById('kpiSpotSub').textContent = 'LIS: ' + s.lines_in_sand;
+      }
     }
   } catch(e) {}
 
@@ -900,6 +927,26 @@ async function updateKPIs() {
   } catch(e) {}
 }
 
+// Audio alert for new signals (uses Web Audio API — no file needed)
+function playSignalAlert() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Play two rising tones
+    [0, 0.15].forEach((delay, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = i === 0 ? 600 : 900;
+      osc.type = 'sine';
+      gain.gain.value = 0.15;
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.3);
+      osc.start(ctx.currentTime + delay);
+      osc.stop(ctx.currentTime + delay + 0.3);
+    });
+  } catch(e) {}
+}
+
 async function updateSignals() {
   try {
     const logs = await fetchJSON('/api/setup/log?limit=5&date_range=today');
@@ -911,6 +958,7 @@ async function updateSignals() {
     const latest = logs[0];
     const age = Date.now() - new Date(latest.ts).getTime();
     const ageMin = age / 60000;
+    const signalId = latest.id || latest.ts;
 
     if (ageMin < 5 && !latest.outcome_result) {
       const bar = document.getElementById('signalBar');
@@ -919,12 +967,21 @@ async function updateSignals() {
       bar.classList.add(latest.direction === 'LONG' ? 'signal-long' : 'signal-short');
 
       const dir = latest.direction === 'LONG' ? '&#9650;' : '&#9660;';
+      const alignStr = latest.alignment != null ? ' [align ' + (latest.alignment >= 0 ? '+' : '') + latest.alignment + ']' : '';
+      const stopStr = latest.stop_level ? ' SL:' + latest.stop_level.toFixed(0) : '';
       document.getElementById('signalText').innerHTML =
         '<span style="color:' + setupColor(latest.setup_name) + '">' + latest.setup_name + '</span> ' +
         latest.grade + ' ' + dir + ' ' +
         (latest.spot ? latest.spot.toFixed(1) : '--') +
-        (latest.target_level ? ' &rarr; ' + latest.target_level.toFixed(1) : '');
+        (latest.target_level ? ' &rarr; ' + latest.target_level.toFixed(1) : '') +
+        stopStr + alignStr;
       document.getElementById('signalMeta').textContent = Math.floor(ageMin) + 'm ago';
+
+      // Play sound on NEW signal only
+      if (signalId !== _lastSignalId) {
+        _lastSignalId = signalId;
+        playSignalAlert();
+      }
     } else {
       document.getElementById('signalBar').classList.remove('active');
     }

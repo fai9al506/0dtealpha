@@ -192,7 +192,7 @@ Volume-gated price vs CVD divergence on ES 5-pt range bars, with Volland conflue
 
 **Risk Management:** Fixed SL=8pt / T=10pt. Entry at ES price from Rithmic range bars.
 
-**Greek filter (F5+F6):** Asymmetric alignment filter (Analysis #9). Longs: alignment >= +3. Shorts: block ALL ES Absorption shorts (toxic), block ALL BofA Scalp shorts (toxic), block DD Exhaustion shorts at align=0 (28% WR), AG Short at align=-3 already blocked by F3. No general alignment filter on shorts — alignment is structurally biased bullish.
+**V8 filter (V7+AG + Smart VIX Gate, Analysis #12):** Longs: alignment >= +2 AND (VIX <= 26 OR overvix >= +2). Shorts whitelist: Skew Charm (all), AG Short (all), DD Exhaustion (align!=0). Overvix = VIX - VIX3M; when >= +2 means market overvixed (mean reversion bullish signal, allow longs even at high VIX). VIX/VIX3M fetched from TradeStation every 30s. Backtest: +483 pts improvement over V7+AG, MaxDD 472→50, Sharpe 0.29→0.77.
 
 **Charm S/R Limit Entry (shorts only, added 2026-03-12):** For short setups, uses charm per-strike S/R levels to improve entry price. Queries `volland_exposure_points` for strongest positive charm strike above spot (resistance) and strongest negative below (support). If entry is NOT in the top 30% of the S/R range, places a LIMIT order at `resistance - range × 0.3` instead of MARKET. Backtest: +822 pts improvement, WR 69%→81%, DD halved.
 

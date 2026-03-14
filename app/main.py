@@ -10127,6 +10127,8 @@ DASH_HTML_TEMPLATE = """
           const ovTag = ov >= 2 ? ' <span style="font-size:9px;opacity:0.7">[OVERVIX]</span>' : '';
           h += '<div class="stats-row"><span class="stats-label">Overvix</span><span class="stats-value ' + ovClr + '">' + (ov >= 0 ? '+' : '') + ov.toFixed(2) + ovTag + '</span></div>';
         }
+      } else {
+        h += '<div class="stats-row"><span class="stats-label">Overvix</span><span class="stats-value" style="color:var(--muted)">n/a</span></div>';
       }
 
       // If no statistics found

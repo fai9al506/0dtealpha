@@ -7526,13 +7526,19 @@ def api_setup_settings_post(
     return {"status": "ok", "settings": _setup_settings}
 
 @app.get("/api/setup/log")
-def api_setup_log(limit: int = Query(50)):
+def api_setup_log(limit: int = Query(50), date_range: str = Query(None)):
     """Get recent setup detection log entries."""
     if not engine:
         return []
     try:
+        date_filter = ""
+        params: dict = {"lim": min(int(limit), 200)}
+        if date_range == "today":
+            today_et = datetime.now(NY).strftime("%Y-%m-%d")
+            date_filter = "WHERE ts::date = :today"
+            params["today"] = today_et
         with engine.begin() as conn:
-            rows = conn.execute(text("""
+            rows = conn.execute(text(f"""
                 SELECT id, ts, setup_name, direction, grade, score,
                        paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
                        gap_to_lis, upside, rr_ratio, first_hour,
@@ -7540,17 +7546,25 @@ def api_setup_log(limit: int = Query(50)):
                        target_cluster_score, rr_score, notified,
                        bofa_stop_level, bofa_target_level, bofa_lis_width,
                        bofa_max_hold_minutes, lis_upper,
-                       abs_vol_ratio, abs_es_price
+                       abs_vol_ratio, abs_es_price,
+                       outcome_result, outcome_pnl, outcome_max_profit,
+                       outcome_max_loss, outcome_first_event,
+                       outcome_target_level, outcome_stop_level,
+                       greek_alignment, vix, overvix
                 FROM setup_log
+                {date_filter}
                 ORDER BY ts DESC
                 LIMIT :lim
-            """), {"lim": min(int(limit), 200)}).mappings().all()
-            return [
-                {
-                    **{k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(r).items()}
-                }
-                for r in rows
-            ]
+            """), params).mappings().all()
+            results = []
+            for r in rows:
+                entry = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(r).items()}
+                # Expose as target_level/stop_level/alignment for dashboard compatibility
+                entry["target_level"] = entry.get("outcome_target_level")
+                entry["stop_level"] = entry.get("outcome_stop_level")
+                entry["alignment"] = entry.get("greek_alignment")
+                results.append(entry)
+            return results
     except Exception as e:
         print(f"[setups] log query error: {e}", flush=True)
         return []

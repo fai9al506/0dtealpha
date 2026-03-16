@@ -994,8 +994,7 @@ async function updateSignals() {
 updateFreshness();
 updateKPIs();
 updateSignals();
-timers.global = setInterval(() => { updateFreshness(); updateSignals(); }, PULL_MS);
-setInterval(updateKPIs, 60000);
+timers.global = setInterval(() => { updateFreshness(); updateSignals(); updateKPIs(); }, PULL_MS);
 
 // ===== OVERVIEW TAB =====
 async function renderOverview() {

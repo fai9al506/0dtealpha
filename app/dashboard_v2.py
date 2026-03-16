@@ -913,7 +913,7 @@ async function updateKPIs() {
     const logs = await fetchJSON('/api/setup/log?limit=200&date_range=today');
     if (Array.isArray(logs)) {
       let wins = 0, losses = 0, pnl = 0;
-      logs.forEach(t => {
+      logs.filter(t => t.notified).forEach(t => {
         if (t.outcome_result === 'WIN') { wins++; pnl += (t.outcome_pnl || 0); }
         else if (t.outcome_result === 'LOSS') { losses++; pnl += (t.outcome_pnl || 0); }
         else if (t.outcome_result === 'EXPIRED') { losses++; pnl += (t.outcome_pnl || 0); }
@@ -1047,8 +1047,8 @@ async function renderOverview() {
     }
 
     // --- Mini GEX ---
-    if (series && series.strikes && series.net_gex) {
-      const s = series.strikes, g = series.net_gex;
+    if (series && series.strikes && series.netGEX) {
+      const s = series.strikes, g = series.netGEX;
       const spot = series.spot;
       const yMin = Math.min(...g), yMax = Math.max(...g);
       const sh = spotLine(spot, yMin, yMax);
@@ -1241,8 +1241,8 @@ async function renderExposure() {
     }
 
     // --- Net GEX (horizontal bars, Y = strikes) ---
-    if (strikes.length && series.net_gex) {
-      const g = series.net_gex;
+    if (strikes.length && series.netGEX) {
+      const g = series.netGEX;
       const gMax = Math.max(1, ...g.map(v => Math.abs(v))) * 1.1;
       const sh = horizontalSpot(spot, -gMax, gMax);
       Plotly.react('exposureGexPlot', [{
@@ -1277,14 +1277,14 @@ async function renderExposure() {
     }
 
     // --- Volume (horizontal bars, mirrored: calls right, puts left) ---
-    if (strikes.length && series.call_volume && series.put_volume) {
-      const negPuts = series.put_volume.map(v => -v);
-      const sh = horizontalSpot(spot, Math.min(...negPuts)*1.1, Math.max(...series.call_volume)*1.1);
+    if (strikes.length && series.callVol && series.putVol) {
+      const negPuts = series.putVol.map(v => -v);
+      const sh = horizontalSpot(spot, Math.min(...negPuts)*1.1, Math.max(...series.callVol)*1.1);
       Plotly.react('exposureVolPlot', [
-        {type:'bar', orientation:'h', x:series.call_volume, y:strikes, marker:{color:'rgba(0,227,150,0.7)'}, name:'Calls',
+        {type:'bar', orientation:'h', x:series.callVol, y:strikes, marker:{color:'rgba(0,227,150,0.7)'}, name:'Calls',
           hovertemplate:'Strike %{y}<br>Call Vol %{x:,.0f}<extra></extra>'},
         {type:'bar', orientation:'h', x:negPuts, y:strikes, marker:{color:'rgba(255,69,96,0.7)'}, name:'Puts',
-          hovertemplate:'Strike %{y}<br>Put Vol %{customdata:,.0f}<extra></extra>', customdata:series.put_volume}
+          hovertemplate:'Strike %{y}<br>Put Vol %{customdata:,.0f}<extra></extra>', customdata:series.putVol}
       ], {...expBarLayout(yRange, false), barmode:'overlay'}, {...PL.config, scrollZoom:true});
     }
 
@@ -1346,18 +1346,18 @@ async function renderCharts0dte() {
     }
 
     // Net GEX
-    if (strikes.length && series.net_gex) renderBar('chartGexNet', strikes, series.net_gex, 'GEX');
+    if (strikes.length && series.netGEX) renderBar('chartGexNet', strikes, series.netGEX, 'GEX');
     // GEX Call & Put
-    if (strikes.length && series.call_gex) renderCallPut('chartGexCP', strikes, series.call_gex, series.put_gex, 'GEX');
+    if (strikes.length && series.callGEX) renderCallPut('chartGexCP', strikes, series.callGEX, series.putGEX, 'GEX');
     // Charm
     if (charm && charm.points) {
       const pts = charm.points;
       renderBar('chartCharm', pts.map(p=>p.strike), pts.map(p=>p.vanna), 'Charm');
     }
     // OI
-    if (strikes.length && series.call_oi) renderCallPut('chartOI', strikes, series.call_oi, series.put_oi, 'OI');
+    if (strikes.length && series.callOI) renderCallPut('chartOI', strikes, series.callOI, series.putOI, 'OI');
     // Volume
-    if (strikes.length && series.call_volume) renderCallPut('chartVol', strikes, series.call_volume, series.put_volume, 'Vol');
+    if (strikes.length && series.callVol) renderCallPut('chartVol', strikes, series.callVol, series.putVol, 'Vol');
     // DD
     if (dd && dd.points) {
       const pts = dd.points;

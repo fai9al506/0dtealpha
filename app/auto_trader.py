@@ -116,11 +116,44 @@ def init(engine, get_token_fn, send_telegram_fn):
         except Exception as e:
             print(f"[auto-trader] account check error: {e}", flush=True)
 
-        # Startup orphan check: detect and close any positions from previous session
+        # Pre-market startup: flatten everything and start fresh.
+        # Prevents stale overnight positions from persisting across deploys.
         try:
-            _close_broker_orphans(source="STARTUP")
+            from datetime import timezone as _tz
+            import zoneinfo
+            _et = zoneinfo.ZoneInfo("US/Eastern")
+            _now_et = datetime.now(_tz.utc).astimezone(_et)
+            _market_open = _now_et.replace(hour=9, minute=20, second=0, microsecond=0)
+            _market_close = _now_et.replace(hour=16, minute=10, second=0, microsecond=0)
+            if _now_et < _market_open or _now_et > _market_close:
+                # Outside market hours — flatten broker + clear all tracked orders
+                broker_pos = _get_broker_position()
+                if broker_pos or _active_orders:
+                    print(f"[auto-trader] PRE-MARKET CLEANUP: time={_now_et.strftime('%H:%M ET')} "
+                          f"broker={'%s %s %s' % (broker_pos['long_short'], broker_pos['qty'], broker_pos['symbol']) if broker_pos else 'flat'} "
+                          f"tracked={len(_active_orders)}", flush=True)
+                    if broker_pos:
+                        flatten_account_positions()
+                    # Mark all active orders as closed
+                    with _lock:
+                        for lid, o in _active_orders.items():
+                            if o["status"] not in ("closed",):
+                                o["status"] = "closed"
+                                o["close_reason"] = "pre_market_cleanup"
+                                _persist_order(lid)
+                                print(f"[auto-trader] PRE-MARKET: closed order {o.get('setup_name', '?')} id={lid}", flush=True)
+                else:
+                    print(f"[auto-trader] PRE-MARKET: clean (no positions, no tracked orders)", flush=True)
+            else:
+                # During market hours — just do orphan check
+                _close_broker_orphans(source="STARTUP")
         except Exception as e:
-            print(f"[auto-trader] startup orphan check error: {e}", flush=True)
+            print(f"[auto-trader] startup cleanup error: {e}", flush=True)
+            # Fallback to orphan check
+            try:
+                _close_broker_orphans(source="STARTUP")
+            except Exception:
+                pass
 
 
 # ====== MAIN ENTRY POINT ======

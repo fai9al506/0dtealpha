@@ -187,7 +187,7 @@ from app.dashboard_v2 import router as _v2_router
 app.include_router(_v2_router)
 
 # Public paths that don't require authentication
-PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png", "/api/ts/authorize", "/api/ts/callback", "/api/debug/sim-orders", "/api/debug/gex-analysis", "/api/debug/vix3m-test"}
+PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png", "/api/ts/authorize", "/api/ts/callback", "/api/debug/sim-orders", "/api/debug/gex-analysis", "/api/debug/vix3m-test", "/api/debug/options-sim"}
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
@@ -5406,6 +5406,207 @@ def api_auto_trade_toggle(setup_name: str = Query(...), enabled: bool = Query(..
         return {"ok": True, "toggles": auto_trader.get_toggles()}
     except Exception as e:
         return {"error": str(e)}
+
+@app.get("/api/debug/options-sim")
+def api_debug_options_sim(date: str = "2026-03-10"):
+    """Simulate options trades for a date using real chain_snapshots data."""
+    from sqlalchemy import text as _text
+    result = {"date": date, "trades": [], "summary": {}}
+    try:
+        with engine.connect() as conn:
+            # 1. Get all setup_log trades for this date
+            setups = conn.execute(_text("""
+                SELECT id, setup_name, direction, grade, score, alignment,
+                       outcome, outcome_pnl, entry_time, spot_at_entry, vix,
+                       overvix, charm_limit_entry
+                FROM setup_log
+                WHERE trade_date = :d AND outcome IN ('WIN','LOSS')
+                ORDER BY entry_time
+            """), {"d": date}).fetchall()
+
+            # 2. Get all chain_snapshots for this date (every ~2 min)
+            chains = conn.execute(_text("""
+                SELECT ts, spot, rows, columns FROM chain_snapshots
+                WHERE ts::date = :d ORDER BY ts
+            """), {"d": date}).fetchall()
+
+            chain_list = []
+            for c in chains:
+                cols = json.loads(c.columns) if isinstance(c.columns, str) else c.columns
+                rows = json.loads(c.rows) if isinstance(c.rows, str) else c.rows
+                chain_list.append({"ts": c.ts, "spot": c.spot, "cols": cols, "rows": rows})
+
+            def find_nearest_chain(target_ts):
+                best = None
+                best_diff = 999999
+                for ch in chain_list:
+                    diff = abs((ch["ts"] - target_ts).total_seconds())
+                    if diff < best_diff:
+                        best_diff = diff
+                        best = ch
+                return best, best_diff
+
+            def find_strike_at_delta(chain, target_delta, side="call"):
+                """Find strike nearest to target delta. Returns (strike, ask, bid, delta)."""
+                best = None
+                best_diff = 999
+                for row in chain["rows"]:
+                    try:
+                        strike = float(row[10])
+                        if side == "call":
+                            delta = float(row[4]) if row[4] != "" else None
+                            ask = float(row[7]) if row[7] != "" else None
+                            bid = float(row[5]) if row[5] != "" else None
+                        else:  # put
+                            delta = float(row[16]) if row[16] != "" else None
+                            ask = float(row[12]) if row[12] != "" else None
+                            bid = float(row[14]) if row[14] != "" else None
+                        if delta is None or ask is None:
+                            continue
+                        diff = abs(abs(delta) - target_delta)
+                        if diff < best_diff:
+                            best_diff = diff
+                            best = {"strike": strike, "ask": ask, "bid": bid, "delta": delta}
+                    except (ValueError, IndexError):
+                        continue
+                return best
+
+            def find_strike_price(chain, strike, side="call"):
+                """Get bid/ask for a specific strike in a chain snapshot."""
+                for row in chain["rows"]:
+                    try:
+                        s = float(row[10])
+                        if abs(s - strike) < 0.5:
+                            if side == "call":
+                                ask = float(row[7]) if row[7] != "" else None
+                                bid = float(row[5]) if row[5] != "" else None
+                                delta = float(row[4]) if row[4] != "" else None
+                            else:
+                                ask = float(row[12]) if row[12] != "" else None
+                                bid = float(row[14]) if row[14] != "" else None
+                                delta = float(row[16]) if row[16] != "" else None
+                            return {"strike": s, "ask": ask, "bid": bid, "delta": delta}
+                    except (ValueError, IndexError):
+                        continue
+                return None
+
+            # 3. For each setup, simulate option trade
+            v8_pnl = 0; v9sc_pnl = 0
+            v8_trades = 0; v9sc_trades = 0
+
+            for s in setups:
+                setup_name = s.setup_name
+                direction = s.direction
+                is_long = direction in ("long", "bullish")
+                side = "call" if is_long else "put"
+                align = s.alignment or 0
+                vix_val = float(s.vix) if s.vix else None
+                outcome = s.outcome
+                pnl_pts = float(s.outcome_pnl) if s.outcome_pnl else 0
+
+                # Find entry chain
+                entry_chain, entry_lag = find_nearest_chain(s.entry_time)
+                if not entry_chain:
+                    continue
+
+                # Find ~0.30 delta option at entry
+                entry_opt = find_strike_at_delta(entry_chain, 0.30, side)
+                if not entry_opt or not entry_opt["ask"] or entry_opt["ask"] <= 0:
+                    continue
+
+                entry_price = entry_opt["ask"]  # buy at ask
+                strike = entry_opt["strike"]
+
+                # Find exit: scan chain_snapshots AFTER entry for when spot reaches target/stop
+                # Simpler: use the outcome — if WIN, spot moved favorably. Find chain ~30-60 min later
+                # or find chain where spot matches exit
+                exit_spot = float(s.spot_at_entry) + (pnl_pts if is_long else -pnl_pts)
+                exit_chain = None
+                exit_price = None
+
+                # Search for chain snapshot closest to exit spot
+                best_exit = None
+                best_exit_diff = 999
+                for ch in chain_list:
+                    if ch["ts"] <= s.entry_time:
+                        continue  # must be after entry
+                    if ch["spot"] is None:
+                        continue
+                    spot_diff = abs(ch["spot"] - exit_spot)
+                    if spot_diff < best_exit_diff:
+                        best_exit_diff = spot_diff
+                        best_exit = ch
+
+                if best_exit:
+                    exit_opt = find_strike_price(best_exit, strike, side)
+                    if exit_opt and exit_opt["bid"] is not None:
+                        exit_price = exit_opt["bid"]  # sell at bid
+
+                # If no exit chain found or option expired worthless
+                if exit_price is None:
+                    if outcome == "LOSS":
+                        exit_price = max(0.01, entry_price * 0.05)  # near total loss
+                    else:
+                        exit_price = entry_price * 1.5  # rough WIN estimate
+
+                opt_pnl = (exit_price - entry_price) * 100  # per contract
+
+                # V8 filter
+                v8_pass = True
+                if is_long:
+                    if align < 2: v8_pass = False
+                    elif vix_val and vix_val > 26: v8_pass = False
+                else:
+                    if setup_name == "Skew Charm": pass
+                    elif setup_name == "AG Short": pass
+                    elif setup_name == "DD Exhaustion" and align != 0: pass
+                    else: v8_pass = False
+
+                # V9-SC filter
+                v9_pass = True
+                if is_long:
+                    if align < 2: v9_pass = False
+                    elif setup_name == "Skew Charm": pass  # exempt
+                    elif vix_val and vix_val > 22: v9_pass = False
+                else:
+                    if setup_name == "Skew Charm": pass
+                    elif setup_name == "AG Short": pass
+                    elif setup_name == "DD Exhaustion" and align != 0: pass
+                    else: v9_pass = False
+
+                if v8_pass:
+                    v8_pnl += opt_pnl
+                    v8_trades += 1
+                if v9_pass:
+                    v9sc_pnl += opt_pnl
+                    v9sc_trades += 1
+
+                trade = {
+                    "id": s.id, "setup": setup_name, "dir": direction,
+                    "align": align, "vix": vix_val,
+                    "outcome": outcome, "spx_pnl": pnl_pts,
+                    "strike": strike, "side": side,
+                    "entry_price": round(entry_price, 2),
+                    "exit_price": round(exit_price, 2) if exit_price else None,
+                    "opt_pnl": round(opt_pnl, 2),
+                    "entry_delta": round(entry_opt["delta"], 4),
+                    "entry_lag_sec": round(entry_lag),
+                    "v8": v8_pass, "v9sc": v9_pass,
+                }
+                result["trades"].append(trade)
+
+            result["summary"] = {
+                "total_trades": len(result["trades"]),
+                "chain_snapshots": len(chain_list),
+                "v8": {"trades": v8_trades, "pnl": round(v8_pnl, 2)},
+                "v9sc": {"trades": v9sc_trades, "pnl": round(v9sc_pnl, 2)},
+                "delta": round(v9sc_pnl - v8_pnl, 2),
+            }
+    except Exception as e:
+        import traceback
+        result["error"] = str(e)
+        result["traceback"] = traceback.format_exc()
+    return result
 
 @app.get("/api/debug/vix3m-test")
 def api_debug_vix3m_test():

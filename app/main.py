@@ -2207,10 +2207,13 @@ def market_open_now() -> bool:
 # ====== TS helpers ======
 def get_spx_quote() -> dict:
     """Return {last, high, low, vix, vix3m} from TS API quote. Fetches SPX + VIX + VIX3M in one call."""
-    js = api_get("/marketdata/quotes/%24SPX.X,%24VIX.X,%24VIX3M.X", timeout=8).json()
+    # Try $VIX3M.X first; fall back to legacy $VXV.X if not found
+    js = api_get("/marketdata/quotes/%24SPX.X,%24VIX.X,%24VIX3M.X,%24VXV.X", timeout=8).json()
     result = {"last": 0.0, "high": None, "low": None, "vix": None, "vix3m": None}
+    _returned_syms = []
     for q in js.get("Quotes", []):
         sym = q.get("Symbol", "")
+        _returned_syms.append(sym)
         if sym == "$SPX.X":
             v = q.get("Last") or q.get("Close")
             try:
@@ -2236,13 +2239,16 @@ def get_spx_quote() -> dict:
                     result["vix"] = float(vv)
             except Exception:
                 pass
-        elif sym == "$VIX3M.X":
+        elif sym in ("$VIX3M.X", "$VXV.X"):
             try:
                 vv = q.get("Last") or q.get("Close")
-                if vv is not None:
+                if vv is not None and result["vix3m"] is None:
                     result["vix3m"] = float(vv)
+                    print(f"[vix3m] got value {result['vix3m']} from symbol {sym}", flush=True)
             except Exception:
                 pass
+    if result["vix3m"] is None:
+        print(f"[vix3m] WARNING: no VIX3M data — TS returned symbols: {_returned_syms}", flush=True)
     return result
 
 def get_spx_last() -> float:
@@ -5581,12 +5587,13 @@ def api_debug_gex_analysis():
             """)).fetchall()
             result["paradigm_all"] = [{"date": str(r.d), "paradigm": r.paradigm, "count": r.snap_count} for r in paradigm_all]
 
-            # 3. Setup outcomes per day with direction, alignment, and SVB
+            # 3. Setup outcomes per day with direction, alignment, SVB, VIX, overvix
             setup_days = conn.execute(_text("""
                 SELECT (sl.ts AT TIME ZONE 'America/New_York')::date as d,
                        sl.setup_name, sl.direction, sl.grade, sl.score,
                        sl.greek_alignment, sl.spot_vol_beta,
-                       sl.outcome_result, sl.outcome_pnl
+                       sl.outcome_result, sl.outcome_pnl,
+                       sl.vix, sl.overvix
                 FROM setup_log sl
                 WHERE sl.ts >= '2026-02-05'
                   AND sl.outcome_result IS NOT NULL
@@ -5597,7 +5604,9 @@ def api_debug_gex_analysis():
                 "direction": r.direction, "grade": r.grade,
                 "alignment": r.greek_alignment,
                 "svb": float(r.spot_vol_beta) if r.spot_vol_beta is not None and not math.isnan(float(r.spot_vol_beta)) else None,
-                "result": r.outcome_result, "pnl": float(r.outcome_pnl) if r.outcome_pnl else 0
+                "result": r.outcome_result, "pnl": float(r.outcome_pnl) if r.outcome_pnl else 0,
+                "vix": round(float(r.vix), 2) if r.vix is not None else None,
+                "overvix": round(float(r.overvix), 2) if r.overvix is not None else None
             } for r in setup_days]
 
     except Exception as e:

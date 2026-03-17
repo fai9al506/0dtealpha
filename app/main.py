@@ -14163,12 +14163,11 @@ DASH_HTML_TEMPLATE = """
         // Title
         const isBofa = e.setup_name === 'BofA Scalp';
         const isAbs = e.setup_name === 'ES Absorption';
-        const dir = isAbs ? (e.direction === 'bullish' ? 'BUY ▲' : 'SELL ▼') : (e.direction === 'long' ? 'LONG ▲' : 'SHORT ▼');
+        const dir = isAbs ? (e.direction === 'bullish' ? 'BUY' : 'SELL') : (e.direction === 'long' ? 'LONG' : 'SHORT');
         const dirColor = (e.direction === 'long' || e.direction === 'bullish') ? '#22c55e' : '#ef4444';
-        const setupLabel = isBofa ? 'BofA Scalp ' : isAbs ? 'ES Absorption ' : '';
-        const priceLabel = isAbs ? '@ ES ' : '@ SPX ';
         const displayPrice = isAbs ? (e.abs_es_price || e.spot)?.toFixed(2) : e.spot?.toFixed(0);
-        title.innerHTML = setupLabel + '<span style="color:' + dirColor + '">' + dir + '</span> ' + e.grade + ' ' + priceLabel + displayPrice;
+        const priceSpace = isAbs ? 'ES ' : 'SPX ';
+        title.innerHTML = '#' + e.id + ' <span style="color:' + dirColor + '">' + dir + '</span> ' + priceSpace + displayPrice;
 
         // Info grid — ES Absorption uses abs_details JSONB for structured display
         const ad = isAbs ? (data.abs_details || {}) : {};

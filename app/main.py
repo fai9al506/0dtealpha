@@ -8526,7 +8526,9 @@ def api_setup_log_outcome(log_id: int):
                        support_score, upside_score, floor_cluster_score,
                        target_cluster_score, rr_score,
                        outcome_result, outcome_pnl, outcome_max_profit,
-                       outcome_max_loss, outcome_first_event
+                       outcome_max_loss, outcome_first_event,
+                       vix, overvix, greek_alignment, spot_vol_beta,
+                       charm_limit_entry
                 FROM setup_log WHERE id = :log_id
             """), {"log_id": log_id}).mappings().first()
 
@@ -14167,7 +14169,8 @@ DASH_HTML_TEMPLATE = """
         const dirColor = (e.direction === 'long' || e.direction === 'bullish') ? '#22c55e' : '#ef4444';
         const displayPrice = isAbs ? (e.abs_es_price || e.spot)?.toFixed(2) : e.spot?.toFixed(0);
         const priceSpace = isAbs ? 'ES ' : 'SPX ';
-        title.innerHTML = '#' + e.id + ' <span style="color:' + dirColor + '">' + dir + '</span> ' + priceSpace + displayPrice;
+        const timeET = fmtTimeET(e.ts);
+        title.innerHTML = '#' + e.id + ' <span style="color:' + dirColor + '">' + dir + '</span> ' + priceSpace + displayPrice + ' <span style="color:var(--muted);font-size:11px;font-weight:400">' + timeET + ' ET</span>';
 
         // Info grid — ES Absorption uses abs_details JSONB for structured display
         const ad = isAbs ? (data.abs_details || {}) : {};
@@ -14206,50 +14209,80 @@ DASH_HTML_TEMPLATE = """
         }[ad.pattern] || '';
         const strengthLabel = (adBest.cvd_z != null ? adBest.cvd_z.toFixed(2) + 'σ' : '–')
           + (!isZone && adBest.price_atr != null ? ' (' + adBest.price_atr.toFixed(1) + 'x price)' : '');
+        const absAlignVal = e.greek_alignment;
+        const absAlignStr = absAlignVal != null ? (absAlignVal >= 0 ? '+' : '') + absAlignVal : '–';
+        const absAlignClr = absAlignVal > 0 ? '#22c55e' : absAlignVal < 0 ? '#ef4444' : 'var(--muted)';
         const infoItems = isAbs ? [
-          ['Time', fmtDateTimeET(e.ts) + ' ET'],
+          ['__section__', 'CONTEXT'],
+          ['Paradigm', e.paradigm || '–'],
+          ['Alignment', absAlignStr, absAlignClr],
+          ['VIX', e.vix != null ? Number(e.vix).toFixed(1) : '–'],
+          ['Vol Ratio', (e.abs_vol_ratio || 0).toFixed(1) + 'x'],
+          ['Score', e.score + '/100'],
+          ['__section__', 'TRADE'],
           ['Pattern', absPatternLabel],
           ['ES Entry', (lv.abs_es_price || e.abs_es_price)?.toFixed(2)],
           ['T1 (+10pt)', lv.ten_pt?.toFixed(2) || '–'],
-          ['Init Stop', lv.stop?.toFixed(2) || '–'],
-          ['Score', e.score + '/100'],
-          ['──────', '──────────────────────'],
+          ['Stop', lv.stop?.toFixed(2) || '–'],
+          ['LIS (ES)', lv.lis?.toFixed(0) || '–'],
+          ['__section__', 'DIVERGENCE'],
           [swLabel + ' 1', s1Label + ' | Bar #' + (adRef.bar_idx ?? '–')],
           [swLabel + ' 2', s2Label + ' | Bar #' + (adSw.bar_idx ?? '–')],
-          ['──────', '──────────────────────'],
           ['Price diff', priceDiff + ' ' + priceDir],
           ['CVD diff', cvdDiff + ' ' + cvdDir],
           ['Strength', strengthLabel],
-          ['──────', '──────────────────────'],
-          ['Vol Ratio', (e.abs_vol_ratio || 0).toFixed(1) + 'x'],
-          ['Paradigm', e.paradigm || '–'],
-          ['LIS (ES)', lv.lis?.toFixed(0) || '–'],
-        ] : isBofa ? [
-          ['Time', fmtDateTimeET(e.ts) + ' ET'],
-          ['Paradigm', e.paradigm || '–'],
-          ['Entry', e.spot?.toFixed(2)],
-          ['LIS', e.lis?.toFixed(0) + (lv.lis_upper ? ' – ' + lv.lis_upper?.toFixed(0) : '')],
-          ['Width', e.bofa_lis_width?.toFixed(0) + 'pts'],
-          ['Target (+10)', lv.bofa_target_level?.toFixed(0) || lv.ten_pt?.toFixed(0)],
-          ['Stop (-12)', lv.stop?.toFixed(0)],
-          ['Max Hold', (lv.bofa_max_hold_minutes || 30) + 'min'],
-          ['Gap', e.gap_to_lis?.toFixed(1)],
-          ['Score', e.score],
-        ] : [
-          ['Time', fmtDateTimeET(e.ts) + ' ET'],
-          ['Paradigm', e.paradigm || '–'],
-          ['Entry', e.spot?.toFixed(2)],
-          ['LIS', e.lis?.toFixed(0)],
-          ['Target', e.target?.toFixed(0)],
-          ['10pt Level', lv.ten_pt?.toFixed(0)],
-          ['Stop Level', lv.stop?.toFixed(0)],
-          ['Gap', e.gap_to_lis?.toFixed(1)],
-          ['R:R', e.rr_ratio?.toFixed(1) + 'x'],
-          ['+GEX', lv.max_plus_gex?.toFixed(0)],
-          ['-GEX', lv.max_minus_gex?.toFixed(0)],
-          ['Score', e.score],
-        ];
-        info.innerHTML = infoItems.map(([k, v]) => '<div style="background:#1a1d21;padding:6px 8px;border-radius:4px"><div style="color:var(--muted);font-size:9px">' + k + '</div><div style="color:var(--text);font-weight:600">' + (v || '–') + '</div></div>').join('');
+        ] : (() => {
+          // ── 3-section layout: CONTEXT → TRADE → LEVELS ──
+          const alignVal = e.greek_alignment;
+          const alignStr = alignVal != null ? (alignVal >= 0 ? '+' : '') + alignVal : '–';
+          const alignClr = alignVal > 0 ? '#22c55e' : alignVal < 0 ? '#ef4444' : 'var(--muted)';
+          const vixStr = e.vix != null ? Number(e.vix).toFixed(1) : '–';
+          const overvixVal = e.overvix;
+          const overvixStr = overvixVal != null ? (overvixVal >= 0 ? '+' : '') + Number(overvixVal).toFixed(1) : '–';
+          const svbStr = e.spot_vol_beta != null ? Number(e.spot_vol_beta).toFixed(2) : '–';
+          const charmStr = e.charm_limit_entry != null ? Number(e.charm_limit_entry).toFixed(0) : null;
+
+          const sectionHdr = (label) => ['__section__', label];
+          const ctx = [
+            sectionHdr('CONTEXT'),
+            ['Paradigm', e.paradigm || '–'],
+            ['Alignment', alignStr, alignClr],
+            ['VIX', vixStr],
+            ['Overvix', overvixStr],
+            ['SVB', svbStr],
+            ['Score', e.score + '/100'],
+          ];
+          const trade = [
+            sectionHdr('TRADE'),
+            ['Entry', e.spot?.toFixed(2)],
+            ['Stop', lv.stop?.toFixed(0)],
+            ['Target', (lv.ten_pt || e.target)?.toFixed(0)],
+            ['R:R', e.rr_ratio ? e.rr_ratio.toFixed(1) + 'x' : '–'],
+            ['Grade', e.grade],
+          ];
+          if (charmStr) trade.push(['Charm S/R', charmStr]);
+
+          const levels = [
+            sectionHdr('LEVELS'),
+            ['LIS', e.lis?.toFixed(0)],
+            ['+GEX', lv.max_plus_gex?.toFixed(0)],
+            ['-GEX', lv.max_minus_gex?.toFixed(0)],
+          ];
+
+          if (isBofa) {
+            trade.splice(trade.findIndex(x => x[0] === 'R:R'), 1); // no R:R for BofA
+            trade.push(['Max Hold', (lv.bofa_max_hold_minutes || 30) + 'min']);
+            if (e.bofa_lis_width) levels.push(['LIS Width', e.bofa_lis_width.toFixed(0) + 'pts']);
+          }
+
+          return [...ctx, ...trade, ...levels];
+        })();
+
+        const cellHtml = (k, v, clr) => {
+          if (k === '__section__') return '<div style="grid-column:1/-1;color:var(--accent);font-size:9px;font-weight:700;letter-spacing:1px;padding:6px 0 2px;border-top:1px solid var(--border);margin-top:2px">' + v + '</div>';
+          return '<div style="background:#1a1d21;padding:6px 8px;border-radius:4px"><div style="color:var(--muted);font-size:9px">' + k + '</div><div style="color:' + (clr || 'var(--text)') + ';font-weight:600">' + (v || '–') + '</div></div>';
+        };
+        info.innerHTML = infoItems.map(([k, v, c]) => cellHtml(k, v, c)).join('');
 
         // Outcome row
         if (isAbs) {

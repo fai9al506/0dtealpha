@@ -5466,6 +5466,27 @@ def api_debug_vix3m_test():
     results["current_vix3m"] = _vix3m_last
     results["current_overvix"] = _overvix
 
+    # Test 5: Call get_spx_quote() directly and return raw result
+    try:
+        quote_result = get_spx_quote()
+        results["get_spx_quote_result"] = quote_result
+    except Exception as e:
+        results["get_spx_quote_error"] = str(e)
+
+    # Test 6: Replicate exact api_get call from get_spx_quote
+    try:
+        raw_resp = api_get("/marketdata/quotes/%24SPX.X,%24VIX.X,%24VIX3M.X,%24VXV.X", timeout=8)
+        raw_json = raw_resp.json()
+        results["exact_api_get_call"] = {
+            "status": raw_resp.status_code,
+            "quotes": [{"Symbol": q.get("Symbol"), "Last": q.get("Last"), "Close": q.get("Close")}
+                       for q in raw_json.get("Quotes", [])],
+            "errors": raw_json.get("Errors", []),
+            "raw_keys": list(raw_json.keys()),
+        }
+    except Exception as e:
+        results["exact_api_get_call_error"] = str(e)
+
     return results
 
 @app.get("/api/debug/sim-orders")

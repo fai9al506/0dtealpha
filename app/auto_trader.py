@@ -1326,7 +1326,7 @@ def _load_active_orders():
         from sqlalchemy import text
         with _engine.begin() as conn:
             rows = conn.execute(text("""
-                SELECT setup_log_id, state FROM auto_trade_orders
+                SELECT setup_log_id, state, updated_at FROM auto_trade_orders
                 WHERE state->>'status' != 'closed'
             """)).mappings().all()
 
@@ -1339,9 +1339,15 @@ def _load_active_orders():
             if isinstance(state, str):
                 state = json.loads(state)
             # Check if order is from today — skip stale overnight orders
+            # Use ts_placed from state, fallback to updated_at from DB column
             ts_placed = state.get("ts_placed", "")
             order_date = ts_placed[:10] if len(ts_placed) >= 10 else ""
-            if order_date and order_date < today_str:
+            if not order_date and row.get("updated_at"):
+                order_date = str(row["updated_at"])[:10]
+            # If we have a date and it's before today → stale.
+            # If we have NO date at all → also stale (unknown age = unsafe to keep).
+            is_stale = (order_date < today_str) if order_date else True
+            if is_stale:
                 # Stale order from previous day — mark closed in DB
                 stale += 1
                 state["status"] = "closed"
@@ -1350,7 +1356,7 @@ def _load_active_orders():
                 _persist_order(lid)
                 del _active_orders[lid]
                 print(f"[auto-trader] STALE order auto-closed: {state.get('setup_name', '?')} "
-                      f"id={lid} from {order_date}", flush=True)
+                      f"id={lid} from {order_date or 'unknown'}", flush=True)
                 continue
             _active_orders[lid] = state
             loaded += 1

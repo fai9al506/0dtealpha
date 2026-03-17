@@ -278,7 +278,7 @@ _DEFAULT_SETUP_SETTINGS = {
     "skew_threshold_pct": 3.0,
     "skew_cooldown_minutes": 30,
     "skew_target_pts": 10,
-    "skew_stop_pts": 20,
+    "skew_stop_pts": 14,
     "skew_market_start": "09:45",
     "skew_market_end": "15:45",
     "brackets": {
@@ -5490,9 +5490,11 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                         continue
                 return None
 
-            # 3. For each setup, simulate option trade
-            v8_pnl = 0; v9sc_pnl = 0
-            v8_trades = 0; v9sc_trades = 0
+            # 3. For each setup, simulate 3 strategies with REAL chain prices
+            # A) Naked long (0.30 delta) — current strategy
+            # B) Debit spread (buy 0.45 delta, sell strike+10 for calls / strike-10 for puts)
+            # C) Credit spread (sell ~0.50 delta, buy ~0.40 delta as protection)
+            SPREAD_WIDTH = 10  # $10 SPXW strikes
 
             for s in setups:
                 setup_name = s.setup_name
@@ -5509,27 +5511,55 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                 if not entry_chain:
                     continue
 
-                # Find ~0.30 delta option at entry
-                entry_opt = find_strike_at_delta(entry_chain, 0.30, side)
-                if not entry_opt or not entry_opt["ask"] or entry_opt["ask"] <= 0:
+                # ── NAKED: 0.30 delta ──
+                naked_entry_opt = find_strike_at_delta(entry_chain, 0.30, side)
+                if not naked_entry_opt or not naked_entry_opt["ask"] or naked_entry_opt["ask"] <= 0:
                     continue
+                naked_strike = naked_entry_opt["strike"]
+                naked_entry = naked_entry_opt["ask"]
 
-                entry_price = entry_opt["ask"]  # buy at ask
-                strike = entry_opt["strike"]
+                # ── DEBIT SPREAD: buy 0.45 delta, sell 0.35 delta ($10 wide) ──
+                debit_long_opt = find_strike_at_delta(entry_chain, 0.45, side)
+                if debit_long_opt and debit_long_opt["ask"] and debit_long_opt["ask"] > 0:
+                    debit_long_strike = debit_long_opt["strike"]
+                    debit_long_ask = debit_long_opt["ask"]
+                    # Short leg: strike + 10 for calls, strike - 10 for puts
+                    debit_short_strike = debit_long_strike + SPREAD_WIDTH if side == "call" else debit_long_strike - SPREAD_WIDTH
+                    debit_short_opt = find_strike_price(entry_chain, debit_short_strike, side)
+                    debit_short_bid = debit_short_opt["bid"] if debit_short_opt and debit_short_opt["bid"] else 0
+                    debit_cost = debit_long_ask - debit_short_bid  # net debit
+                    has_debit = debit_cost > 0
+                else:
+                    has_debit = False
 
-                # Find exit: scan chain_snapshots AFTER entry for when spot reaches target/stop
-                # Simpler: use the outcome — if WIN, spot moved favorably. Find chain ~30-60 min later
-                # or find chain where spot matches exit
+                # ── CREDIT SPREAD: sell ~0.50 delta (near ATM), buy protection $10 away ──
+                credit_short_opt = find_strike_at_delta(entry_chain, 0.50, side)
+                if credit_short_opt and credit_short_opt["bid"] and credit_short_opt["bid"] > 0:
+                    credit_short_strike = credit_short_opt["strike"]
+                    credit_short_bid = credit_short_opt["bid"]
+                    # Protection leg: further OTM
+                    credit_long_strike = credit_short_strike + SPREAD_WIDTH if side == "put" else credit_short_strike - SPREAD_WIDTH
+                    # For credit: if selling put, buy lower put. If selling call, buy higher call.
+                    # Bullish (sell put spread): sell higher put, buy lower put
+                    # Bearish (sell call spread): sell lower call, buy higher call
+                    if side == "put":
+                        credit_long_strike = credit_short_strike - SPREAD_WIDTH
+                    else:
+                        credit_long_strike = credit_short_strike + SPREAD_WIDTH
+                    credit_long_opt = find_strike_price(entry_chain, credit_long_strike, side)
+                    credit_long_ask = credit_long_opt["ask"] if credit_long_opt and credit_long_opt["ask"] else 0
+                    credit_received = credit_short_bid - credit_long_ask
+                    has_credit = credit_received > 0
+                else:
+                    has_credit = False
+
+                # ── Find EXIT chain (by spot matching) ──
                 exit_spot = float(s.spot) + (pnl_pts if is_long else -pnl_pts)
-                exit_chain = None
-                exit_price = None
-
-                # Search for chain snapshot closest to exit spot
                 best_exit = None
                 best_exit_diff = 999
                 for ch in chain_list:
                     if ch["ts"] <= s.ts:
-                        continue  # must be after entry
+                        continue
                     if ch["spot"] is None:
                         continue
                     spot_diff = abs(ch["spot"] - exit_spot)
@@ -5537,21 +5567,49 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                         best_exit_diff = spot_diff
                         best_exit = ch
 
+                # ── Naked exit ──
+                naked_exit = None
                 if best_exit:
-                    exit_opt = find_strike_price(best_exit, strike, side)
+                    exit_opt = find_strike_price(best_exit, naked_strike, side)
                     if exit_opt and exit_opt["bid"] is not None:
-                        exit_price = exit_opt["bid"]  # sell at bid
+                        naked_exit = exit_opt["bid"]
+                if naked_exit is None:
+                    naked_exit = max(0.01, naked_entry * 0.05) if outcome == "LOSS" else naked_entry * 1.5
+                naked_pnl = (naked_exit - naked_entry) * 100
 
-                # If no exit chain found or option expired worthless
-                if exit_price is None:
-                    if outcome == "LOSS":
-                        exit_price = max(0.01, entry_price * 0.05)  # near total loss
-                    else:
-                        exit_price = entry_price * 1.5  # rough WIN estimate
+                # ── Debit spread exit (REAL chain prices for both legs) ──
+                debit_pnl = None
+                debit_entry_str = None
+                debit_exit_str = None
+                if has_debit and best_exit:
+                    debit_exit_long = find_strike_price(best_exit, debit_long_strike, side)
+                    debit_exit_short = find_strike_price(best_exit, debit_short_strike, side)
+                    if debit_exit_long and debit_exit_short:
+                        # Close: sell long at bid, buy back short at ask
+                        d_exit_long_bid = debit_exit_long["bid"] if debit_exit_long["bid"] else 0
+                        d_exit_short_ask = debit_exit_short["ask"] if debit_exit_short["ask"] else 0
+                        debit_exit_value = d_exit_long_bid - d_exit_short_ask
+                        debit_pnl = (debit_exit_value - debit_cost) * 100
+                        debit_entry_str = f"{debit_long_ask:.2f}-{debit_short_bid:.2f}={debit_cost:.2f}"
+                        debit_exit_str = f"{d_exit_long_bid:.2f}-{d_exit_short_ask:.2f}={debit_exit_value:.2f}"
 
-                opt_pnl = (exit_price - entry_price) * 100  # per contract
+                # ── Credit spread exit (REAL chain prices for both legs) ──
+                credit_pnl = None
+                credit_entry_str = None
+                credit_exit_str = None
+                if has_credit and best_exit:
+                    credit_exit_short = find_strike_price(best_exit, credit_short_strike, side)
+                    credit_exit_long = find_strike_price(best_exit, credit_long_strike, side)
+                    if credit_exit_short and credit_exit_long:
+                        # Close: buy back short at ask, sell long at bid
+                        c_exit_short_ask = credit_exit_short["ask"] if credit_exit_short["ask"] else 0
+                        c_exit_long_bid = credit_exit_long["bid"] if credit_exit_long["bid"] else 0
+                        credit_close_cost = c_exit_short_ask - c_exit_long_bid
+                        credit_pnl = (credit_received - credit_close_cost) * 100
+                        credit_entry_str = f"{credit_short_bid:.2f}-{credit_long_ask:.2f}={credit_received:.2f}"
+                        credit_exit_str = f"{c_exit_short_ask:.2f}-{c_exit_long_bid:.2f}={credit_close_cost:.2f}"
 
-                # V8 filter
+                # ── Filters ──
                 v8_pass = True
                 if is_long:
                     if align < 2: v8_pass = False
@@ -5562,11 +5620,10 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                     elif setup_name == "DD Exhaustion" and align != 0: pass
                     else: v8_pass = False
 
-                # V9-SC filter
                 v9_pass = True
                 if is_long:
                     if align < 2: v9_pass = False
-                    elif setup_name == "Skew Charm": pass  # exempt
+                    elif setup_name == "Skew Charm": pass
                     elif vix_val and vix_val > 22: v9_pass = False
                 else:
                     if setup_name == "Skew Charm": pass
@@ -5574,33 +5631,53 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                     elif setup_name == "DD Exhaustion" and align != 0: pass
                     else: v9_pass = False
 
-                if v8_pass:
-                    v8_pnl += opt_pnl
-                    v8_trades += 1
-                if v9_pass:
-                    v9sc_pnl += opt_pnl
-                    v9sc_trades += 1
-
                 trade = {
                     "id": s.id, "setup": setup_name, "dir": direction,
                     "align": align, "vix": vix_val,
                     "outcome": outcome, "spx_pnl": pnl_pts,
-                    "strike": strike, "side": side,
-                    "entry_price": round(entry_price, 2),
-                    "exit_price": round(exit_price, 2) if exit_price else None,
-                    "opt_pnl": round(opt_pnl, 2),
-                    "entry_delta": round(entry_opt["delta"], 4),
-                    "entry_lag_sec": round(entry_lag),
+                    "side": side, "entry_lag_sec": round(entry_lag),
                     "v8": v8_pass, "v9sc": v9_pass,
+                    # Naked
+                    "naked_strike": naked_strike,
+                    "naked_entry": round(naked_entry, 2),
+                    "naked_exit": round(naked_exit, 2),
+                    "naked_pnl": round(naked_pnl, 2),
+                    "naked_delta": round(naked_entry_opt["delta"], 4),
+                    # Debit spread
+                    "debit_pnl": round(debit_pnl, 2) if debit_pnl is not None else None,
+                    "debit_entry": debit_entry_str,
+                    "debit_exit": debit_exit_str,
+                    "debit_long_strike": debit_long_strike if has_debit else None,
+                    "debit_short_strike": debit_short_strike if has_debit else None,
+                    # Credit spread
+                    "credit_pnl": round(credit_pnl, 2) if credit_pnl is not None else None,
+                    "credit_entry": credit_entry_str,
+                    "credit_exit": credit_exit_str,
+                    "credit_short_strike": credit_short_strike if has_credit else None,
+                    "credit_long_strike": credit_long_strike if has_credit else None,
                 }
                 result["trades"].append(trade)
+
+            # ── Compute summaries ──
+            def _sum_strat(key, filter_key=None):
+                total = 0; count = 0; wins = 0
+                for t in result["trades"]:
+                    if filter_key and not t.get(filter_key):
+                        continue
+                    v = t.get(key)
+                    if v is not None:
+                        total += v; count += 1
+                        if v >= 0: wins += 1
+                return {"pnl": round(total, 2), "trades": count, "wins": wins, "losses": count - wins,
+                        "wr": round(wins / count * 100, 1) if count else 0}
 
             result["summary"] = {
                 "total_trades": len(result["trades"]),
                 "chain_snapshots": len(chain_list),
-                "v8": {"trades": v8_trades, "pnl": round(v8_pnl, 2)},
-                "v9sc": {"trades": v9sc_trades, "pnl": round(v9sc_pnl, 2)},
-                "delta": round(v9sc_pnl - v8_pnl, 2),
+                "naked_v8": _sum_strat("naked_pnl", "v8"),
+                "naked_v9sc": _sum_strat("naked_pnl", "v9sc"),
+                "debit_v9sc": _sum_strat("debit_pnl", "v9sc"),
+                "credit_v9sc": _sum_strat("credit_pnl", "v9sc"),
             }
     except Exception as e:
         import traceback
@@ -8181,7 +8258,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5, "initial_sl": 12},
             "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
-            "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8, "initial_sl": 20},
+            "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8, "initial_sl": 14},
         }
 
         if is_trailing:

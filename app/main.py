@@ -5417,11 +5417,11 @@ def api_debug_options_sim(date: str = "2026-03-10"):
             # 1. Get all setup_log trades for this date
             setups = conn.execute(_text("""
                 SELECT id, setup_name, direction, grade, score, greek_alignment,
-                       outcome_result, outcome_pnl, entry_time, spot_at_entry, vix,
+                       outcome_result, outcome_pnl, ts, spot, vix,
                        overvix, charm_limit_entry
                 FROM setup_log
-                WHERE trade_date = :d AND outcome_result IN ('WIN','LOSS')
-                ORDER BY entry_time
+                WHERE ts::date = :d AND outcome_result IN ('WIN','LOSS')
+                ORDER BY ts
             """), {"d": date}).fetchall()
 
             # 2. Get all chain_snapshots for this date (every ~2 min)
@@ -5505,7 +5505,7 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                 pnl_pts = float(s.outcome_pnl) if s.outcome_pnl else 0
 
                 # Find entry chain
-                entry_chain, entry_lag = find_nearest_chain(s.entry_time)
+                entry_chain, entry_lag = find_nearest_chain(s.ts)
                 if not entry_chain:
                     continue
 
@@ -5520,7 +5520,7 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                 # Find exit: scan chain_snapshots AFTER entry for when spot reaches target/stop
                 # Simpler: use the outcome — if WIN, spot moved favorably. Find chain ~30-60 min later
                 # or find chain where spot matches exit
-                exit_spot = float(s.spot_at_entry) + (pnl_pts if is_long else -pnl_pts)
+                exit_spot = float(s.spot) + (pnl_pts if is_long else -pnl_pts)
                 exit_chain = None
                 exit_price = None
 
@@ -5528,7 +5528,7 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                 best_exit = None
                 best_exit_diff = 999
                 for ch in chain_list:
-                    if ch["ts"] <= s.entry_time:
+                    if ch["ts"] <= s.ts:
                         continue  # must be after entry
                     if ch["spot"] is None:
                         continue

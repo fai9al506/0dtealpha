@@ -3117,8 +3117,8 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         from app import options_trader
         options_trader.poll_order_status()
         options_trader.reconcile_with_broker()
-    except Exception:
-        pass
+    except Exception as _opt_poll_err:
+        print(f"[options] poll/reconcile error: {_opt_poll_err}", flush=True)
 
     from app.setup_detector import format_setup_outcome
 
@@ -4877,6 +4877,27 @@ def _auto_trade_eod_flatten():
         print(f"[auto-trade-eod] flatten error: {e}", flush=True)
 
 
+def _options_trade_eod_flatten():
+    """Close all open SIM option positions before market close. Runs at 15:55 ET."""
+    try:
+        from app import options_trader
+        with options_trader._lock:
+            open_orders = [(lid, o) for lid, o in options_trader._active_orders.items()
+                           if o["status"] in ("pending_entry", "filled")]
+        if not open_orders:
+            print("[options-eod] no open positions", flush=True)
+            return
+        print(f"[options-eod] closing {len(open_orders)} position(s)", flush=True)
+        for lid, order in open_orders:
+            try:
+                options_trader.close_trade(lid, "EOD-flatten")
+                print(f"[options-eod] closed {order.get('setup_name')} id={lid}", flush=True)
+            except Exception as e2:
+                print(f"[options-eod] close error id={lid}: {e2}", flush=True)
+    except Exception as e:
+        print(f"[options-eod] flatten error: {e}", flush=True)
+
+
 def _auto_trade_orphan_check():
     """Periodic orphan position check during market hours. Runs every 5 minutes."""
     t = now_et().time()
@@ -4996,6 +5017,15 @@ def _send_setup_eod_summary():
                 print(f"[eod-summary] DB persist error: {db_err}", flush=True)
 
         print(f"[eod-summary] expired {setup_name} {direction} {pnl:+.1f}pts", flush=True)
+
+        # Close option position if it was opened (Bug fix: previously missing)
+        _eod_log_id = trade.get("setup_log_id")
+        if _eod_log_id:
+            try:
+                from app import options_trader
+                options_trader.close_trade(_eod_log_id, "EXPIRED")
+            except Exception as _opt_err:
+                print(f"[eod-summary] options close error: {_opt_err}", flush=True)
 
     _setup_open_trades = []
 
@@ -5136,6 +5166,8 @@ def start_scheduler():
                 id="auto_trade_premarket", coalesce=True, max_instances=1)
     sch.add_job(_auto_trade_eod_flatten, "cron", hour=15, minute=55,
                 id="auto_trade_eod", coalesce=True, max_instances=1)
+    sch.add_job(_options_trade_eod_flatten, "cron", hour=15, minute=55,
+                id="options_trade_eod", coalesce=True, max_instances=1)
     sch.add_job(_auto_trade_orphan_check, "interval", minutes=5,
                 id="auto_trade_orphan", coalesce=True, max_instances=1)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,

@@ -784,13 +784,14 @@ class ComplianceGate:
             if _is_long:
                 if alignment < 2:
                     return False, f"Greek filter: long alignment {alignment:+d} < +2"
-                # V9 VIX Gate: block longs when VIX > 22 UNLESS overvixed (>= +2)
-                _sig_vix = signal.get("vix")
-                _sig_ov = signal.get("overvix")
-                if _sig_vix is not None and _sig_vix > 22:
-                    _ov = _sig_ov if _sig_ov is not None else -99
-                    if _ov < 2:
-                        return False, f"V9 VIX gate: VIX={_sig_vix:.1f}>22, overvix={_ov:+.1f}<+2"
+                # V9-SC: Skew Charm exempt from VIX gate (82% WR at VIX 22-26)
+                if sname != "Skew Charm":
+                    _sig_vix = signal.get("vix")
+                    _sig_ov = signal.get("overvix")
+                    if _sig_vix is not None and _sig_vix > 22:
+                        _ov = _sig_ov if _sig_ov is not None else -99
+                        if _ov < 2:
+                            return False, f"V9 VIX gate: VIX={_sig_vix:.1f}>22, overvix={_ov:+.1f}<+2"
             else:
                 # V7+AG short whitelist
                 _short_allowed = False

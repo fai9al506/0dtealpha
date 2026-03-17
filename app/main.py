@@ -3663,7 +3663,7 @@ def _run_setup_check():
                 if _vix_last is not None:
                     _ov_str = f"{_overvix:+.1f}" if _overvix is not None else "n/a"
                     _vix_tag = f"\nVIX={_vix_last:.1f} OV={_ov_str}"
-                    if _vix_last > 22 and (_overvix is None or _overvix < 2):
+                    if _vix_last > 22 and (_overvix is None or _overvix < 2) and setup_name != "Skew Charm":
                         _vix_tag += " [VIX GATE]"
                     elif _overvix is not None and _overvix >= 2:
                         _vix_tag += " [OVERVIX SIGNAL]"
@@ -3688,7 +3688,7 @@ def _run_setup_check():
                     })
                     tgt_str = "trail" if target_lvl is None else f"{target_lvl:.1f}"
                     print(f"[outcome] tracking {setup_name}: target={tgt_str} stop={stop_lvl:.1f}", flush=True)
-                    # Auto-trade filters — V9 (V8 + tighter VIX gate at 22)
+                    # Auto-trade filters — V9-SC (VIX gate at 22, SC exempt)
                     # (block execution but keep portal tracking for data collection)
                     _skip_auto_trade = False
                     _greek_align = r.get("greek_alignment", 0)
@@ -3698,7 +3698,10 @@ def _run_setup_check():
                         if _greek_align < 2:
                             print(f"[auto-trader] SKIPPED {setup_name}: long alignment {_greek_align:+d} < +2", flush=True)
                             _skip_auto_trade = True
-                        # V9 VIX Gate: block longs when VIX > 22 UNLESS overvixed (>= +2)
+                        # Skew Charm longs exempt from VIX gate (82% WR at VIX 22-26)
+                        elif setup_name == "Skew Charm":
+                            pass  # allow SC longs at any VIX
+                        # V9 VIX Gate: block other longs when VIX > 22 UNLESS overvixed (>= +2)
                         elif _vix_last is not None and _vix_last > 22:
                             _ov = _overvix if _overvix is not None else -99
                             if _ov < 2:
@@ -10100,7 +10103,7 @@ DASH_HTML_TEMPLATE = """
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v9">V9 (live)</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v9">V9-SC (live)</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
         </div>
         <div class="tl-stats" id="tlStats"></div>
@@ -13125,9 +13128,10 @@ DASH_HTML_TEMPLATE = """
         return false;
       }
       if (strat === 'v9') {
-        // V9 (live): V8 + tighter VIX gate at 22 (block longs at VIX>22 unless overvix>=+2)
+        // V9-SC (live): VIX gate at 22, SC exempt (82% WR at VIX 22-26)
         if (isLong) {
           if (align < 2) return false;
+          if (sn === 'Skew Charm') return true; // SC exempt from VIX gate
           const vix = l.vix != null ? l.vix : 0;
           const ov = l.overvix != null ? l.overvix : -99;
           if (vix > 22 && ov < 2) return false;

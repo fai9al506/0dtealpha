@@ -5416,7 +5416,7 @@ def api_debug_options_sim(date: str = "2026-03-10"):
         with engine.connect() as conn:
             # 1. Get all setup_log trades for this date
             setups = conn.execute(_text("""
-                SELECT id, setup_name, direction, grade, score, alignment,
+                SELECT id, setup_name, direction, grade, score, greek_alignment,
                        outcome, outcome_pnl, entry_time, spot_at_entry, vix,
                        overvix, charm_limit_entry
                 FROM setup_log
@@ -5499,7 +5499,7 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                 direction = s.direction
                 is_long = direction in ("long", "bullish")
                 side = "call" if is_long else "put"
-                align = s.alignment or 0
+                align = s.greek_alignment or 0
                 vix_val = float(s.vix) if s.vix else None
                 outcome = s.outcome
                 pnl_pts = float(s.outcome_pnl) if s.outcome_pnl else 0

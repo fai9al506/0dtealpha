@@ -1316,7 +1316,9 @@ def _persist_order(setup_log_id: int):
 
 
 def _load_active_orders():
-    """Load non-closed orders from DB on startup."""
+    """Load non-closed orders from DB on startup.
+    Only loads orders from today — stale overnight orders are auto-closed to prevent
+    blocking new trades or masking orphaned broker positions."""
     global _active_orders
     if not _engine:
         return
@@ -1327,14 +1329,36 @@ def _load_active_orders():
                 SELECT setup_log_id, state FROM auto_trade_orders
                 WHERE state->>'status' != 'closed'
             """)).mappings().all()
+
+        today_str = date.today().isoformat()
+        loaded = 0
+        stale = 0
         for row in rows:
             lid = row["setup_log_id"]
             state = row["state"]
             if isinstance(state, str):
                 state = json.loads(state)
+            # Check if order is from today — skip stale overnight orders
+            ts_placed = state.get("ts_placed", "")
+            order_date = ts_placed[:10] if len(ts_placed) >= 10 else ""
+            if order_date and order_date < today_str:
+                # Stale order from previous day — mark closed in DB
+                stale += 1
+                state["status"] = "closed"
+                state["close_reason"] = "stale_overnight"
+                _active_orders[lid] = state  # temporarily load to persist
+                _persist_order(lid)
+                del _active_orders[lid]
+                print(f"[auto-trader] STALE order auto-closed: {state.get('setup_name', '?')} "
+                      f"id={lid} from {order_date}", flush=True)
+                continue
             _active_orders[lid] = state
-        if _active_orders:
-            print(f"[auto-trader] restored {len(_active_orders)} active orders", flush=True)
+            loaded += 1
+
+        if loaded:
+            print(f"[auto-trader] restored {loaded} active orders", flush=True)
+        if stale:
+            print(f"[auto-trader] auto-closed {stale} stale overnight order(s)", flush=True)
     except Exception as e:
         print(f"[auto-trader] load error (non-fatal): {e}", flush=True)
 
@@ -1640,9 +1664,28 @@ def _close_broker_orphans(source: str = "EOD"):
 def periodic_orphan_check():
     """Periodic safety check — detect orphaned broker positions during market hours.
     Called by scheduler every 5 minutes.
-    With stacking: also detects direction mismatches (ghost positions from orphaned orders)."""
+    With stacking: also detects direction mismatches (ghost positions from orphaned orders).
+    Also cleans up stale overnight orders that survived startup check."""
     if not AUTO_TRADE_ENABLED or not _get_token:
         return
+
+    # Daily cleanup: expire any stale orders from previous days
+    today_str = date.today().isoformat()
+    with _lock:
+        stale_ids = []
+        for lid, o in _active_orders.items():
+            if o["status"] in ("pending_entry", "pending_limit", "filled"):
+                ts_placed = o.get("ts_placed", "")
+                order_date = ts_placed[:10] if len(ts_placed) >= 10 else ""
+                if order_date and order_date < today_str:
+                    stale_ids.append(lid)
+        for lid in stale_ids:
+            o = _active_orders[lid]
+            print(f"[auto-trader] PERIODIC: expiring stale order {o.get('setup_name', '?')} "
+                  f"id={lid} from {o.get('ts_placed', '?')[:10]}", flush=True)
+            o["status"] = "closed"
+            o["close_reason"] = "stale_overnight_periodic"
+            _persist_order(lid)
 
     broker_pos = _get_broker_position()
     if not broker_pos:

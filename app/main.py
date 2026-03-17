@@ -2481,7 +2481,7 @@ def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
 
 # ====== jobs ======
 def run_market_job():
-    global latest_df, last_run_status, _spx_session, _spx_cycle_high, _spx_cycle_low, _vix_last
+    global latest_df, last_run_status, _spx_session, _spx_cycle_high, _spx_cycle_low, _vix_last, _vix3m_last, _overvix
     try:
         if not market_open_now():
             last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}

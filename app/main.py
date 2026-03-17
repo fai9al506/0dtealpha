@@ -6201,6 +6201,16 @@ def api_options_log(limit: int = Query(200)):
                     hold_min = (t2 - t1).total_seconds() / 60
                 except Exception:
                     pass
+            # Commission: SPY $0.60/contract/side, SPXW $1.40/contract/side
+            qty = st.get("qty", 1)
+            sym = st.get("symbol", "")
+            is_index = "SPX" in sym.upper() and "SPY" not in sym.upper()
+            comm_per_side = 1.40 if is_index else 0.60
+            commission = comm_per_side * 2 * qty  # round trip (open + close)
+            # Net P&L = theo P&L - commission
+            net_pnl = (theo_pnl - commission) if theo_pnl is not None else None
+            # Delta at entry
+            delta_at_entry = st.get("delta_at_entry")
             results.append({
                 "setup_log_id": r["setup_log_id"],
                 "setup_name": r["setup_name"] or st.get("setup_name", "?"),
@@ -6217,7 +6227,10 @@ def api_options_log(limit: int = Query(200)):
                 "theo_entry": round(theo_entry, 2) if theo_entry else None,
                 "theo_close": round(theo_close, 2) if theo_close else None,
                 "theo_pnl": round(theo_pnl, 0) if theo_pnl is not None else None,
+                "commission": round(commission, 2),
+                "net_pnl": round(net_pnl, 0) if net_pnl is not None else None,
                 "hold_min": round(hold_min, 0) if hold_min is not None else None,
+                "delta_at_entry": round(float(delta_at_entry), 3) if delta_at_entry else None,
                 "greek_alignment": r["greek_alignment"],
                 "portal_result": r["outcome_result"],
                 "portal_pnl": r["outcome_pnl"],
@@ -9664,8 +9677,9 @@ DASH_HTML_TEMPLATE = """
     .tl-header.tl-grid-sim, .tl-row.tl-grid-sim { grid-template-columns:32px 100px 32px 48px 72px 72px 72px 40px 40px 56px 64px 44px 64px; }
     /* Eval Log grid: #, Setup, Dir, Grade, Time, Qty, Entry, Stop, Result, P&L($), Dur, Status */
     .tl-header.tl-grid-eval, .tl-row.tl-grid-eval { grid-template-columns:32px 100px 32px 48px 72px 36px 72px 56px 56px 64px 44px 64px; }
-    /* Options Log grid: #, Setup, Dir, Symbol, TheoIn, TheoOut, TheoPnl, SIMIn, SIMOut, SIMPnl, Hold, Time */
-    .tl-header.tl-grid-options, .tl-row.tl-grid-options { grid-template-columns:32px 100px 32px 130px 52px 52px 64px 52px 52px 64px 44px 72px; }
+    /* Options Log grid: #, Setup, Dir, Align, Symbol, Delta, Entry, Exit, Gross, Comm, Net, Hold, Time */
+    .tl-header.tl-grid-options, .tl-row.tl-grid-options { grid-template-columns:32px 90px 28px 32px 110px 38px 52px 52px 58px 40px 62px 38px 72px; }
+    .tl-options-day-row { display:grid; grid-template-columns:1fr; padding:4px 8px; background:var(--panel); border-top:1px solid var(--border); margin-top:4px; font-size:10px; font-weight:600; }
 
     /* Playback View */
     .playback-container { display:flex; flex-direction:column; }
@@ -13990,62 +14004,89 @@ DASH_HTML_TEMPLATE = """
     function renderOptionsLog() {
       const hdr = document.getElementById('tlHeaderRow');
       hdr.className = 'tl-header tl-grid-options';
-      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Symbol</span><span>Theo In</span><span>Theo Out</span><span>Theo P&L</span><span>SIM In</span><span>SIM Out</span><span>SIM P&L</span><span>Hold</span><span>Time</span>';
+      hdr.innerHTML = '<span>#</span><span>Setup</span><span>D</span><span>A</span><span>Symbol</span><span>\u0394</span><span>Entry</span><span>Exit</span><span>Gross</span><span>Comm</span><span>Net P&L</span><span>Hold</span><span>Time</span>';
       const filtered = _optionsGetFiltered();
-      let theoPnlTotal=0,simPnlTotal=0,theoCount=0,simCount=0,trades=0;
+      // Totals
+      let grossTotal=0,commTotal=0,netTotal=0,trades=0,wins=0;
       filtered.forEach(l => {
         trades++;
-        if (l.theo_pnl!=null) { theoPnlTotal += l.theo_pnl; theoCount++; }
-        if (l.sim_pnl!=null) { simPnlTotal += l.sim_pnl; simCount++; }
+        if (l.theo_pnl!=null) grossTotal += l.theo_pnl;
+        if (l.commission!=null) commTotal += l.commission;
+        if (l.net_pnl!=null) { netTotal += l.net_pnl; if (l.net_pnl>=0) wins++; }
       });
-      const theoColor = theoPnlTotal>=0 ? '#22c55e' : '#ef4444';
-      const simColor = simPnlTotal>=0 ? '#22c55e' : '#ef4444';
-      const theoStr = theoCount>0 ? '$'+(theoPnlTotal>=0?'+':'')+theoPnlTotal.toFixed(0) : '--';
-      const simStr = simCount>0 ? '$'+(simPnlTotal>=0?'+':'')+simPnlTotal.toFixed(0) : '--';
+      const wr = trades>0 ? (wins/trades*100).toFixed(0) : '--';
+      const netColor = netTotal>=0 ? '#22c55e' : '#ef4444';
+      const grossColor = grossTotal>=0 ? '#22c55e' : '#ef4444';
       document.getElementById('tlStats').innerHTML =
         '<span>Trades: <span class="stat-val">'+trades+'</span></span>' +
-        '<span>Theo P&L: <span class="stat-val" style="color:'+theoColor+'">'+theoStr+'</span></span>' +
-        '<span>SIM P&L: <span class="stat-val" style="color:'+simColor+'">'+simStr+'</span></span>' +
-        '<span style="color:var(--muted);font-size:8px;font-style:italic;margin-left:8px">SIM fills unreliable for 0DTE \u2014 use Theo P&L</span>';
+        '<span>WR: <span class="stat-val">'+wr+'%</span></span>' +
+        '<span>Gross: <span class="stat-val" style="color:'+grossColor+'">$'+(grossTotal>=0?'+':'')+grossTotal.toFixed(0)+'</span></span>' +
+        '<span>Comm: <span class="stat-val" style="color:#f59e0b">-$'+commTotal.toFixed(0)+'</span></span>' +
+        '<span>Net P&L: <span class="stat-val" style="color:'+netColor+';font-size:13px">$'+(netTotal>=0?'+':'')+netTotal.toFixed(0)+'</span></span>';
       const body = document.getElementById('tlBody');
       if (filtered.length===0) { body.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px">No options trades</div>'; return; }
+      // Group by date for daily subtotals
+      const byDate = {};
+      filtered.forEach(l => {
+        const d = l.ts ? new Date(l.ts) : null;
+        const dET = d ? new Date(d.toLocaleString('en-US',{timeZone:'America/New_York'})) : null;
+        const dateKey = dET ? dET.getFullYear()+'-'+String(dET.getMonth()+1).padStart(2,'0')+'-'+String(dET.getDate()).padStart(2,'0') : 'unknown';
+        if (!byDate[dateKey]) byDate[dateKey] = [];
+        byDate[dateKey].push(l);
+      });
       let html='';
-      filtered.forEach((l,i) => {
-        const pillColor = _tlPillColors[l.setup_name]||'#888';
-        const dir = (l.direction==='long'||l.direction==='bullish') ? '\u25B2' : '\u25BC';
-        const dirColor = (l.direction==='long'||l.direction==='bullish') ? '#22c55e' : '#ef4444';
-        const theoIn = l.theo_entry!=null ? '$'+l.theo_entry.toFixed(2) : '--';
-        const theoOut = l.theo_close!=null ? '$'+l.theo_close.toFixed(2) : '--';
-        let theoPnl='--', theoPnlC='#888';
-        if (l.theo_pnl!=null) {
-          theoPnl = '$'+(l.theo_pnl>=0?'+':'')+l.theo_pnl.toFixed(0);
-          theoPnlC = l.theo_pnl>=0 ? '#22c55e' : '#ef4444';
-        }
-        const simIn = l.entry_price!=null ? '$'+l.entry_price.toFixed(2) : '--';
-        const simOut = l.close_price!=null ? '$'+l.close_price.toFixed(2) : '--';
-        let simPnl='--', simPnlC='#888';
-        if (l.sim_pnl!=null) {
-          simPnl = '$'+(l.sim_pnl>=0?'+':'')+l.sim_pnl.toFixed(0);
-          simPnlC = l.sim_pnl>=0 ? '#22c55e' : '#ef4444';
-        }
-        const holdStr = l.hold_min!=null ? (l.hold_min>=60?Math.floor(l.hold_min/60)+'h'+String(Math.round(l.hold_min%60)).padStart(2,'0'):Math.round(l.hold_min)+'m') : '--';
-        const time = fmtTimeET(l.ts);
-        const date = fmtDateShortET(l.ts);
-        const sym = l.symbol || '--';
-        html += '<div class="tl-row tl-grid-options">' +
-          '<span style="color:var(--muted)">'+l.setup_log_id+'</span>' +
-          '<span class="setup-pill" style="background:'+pillColor+'22;color:'+pillColor+'">'+l.setup_name+'</span>' +
-          '<span style="color:'+dirColor+';font-weight:700;text-align:center">'+dir+'</span>' +
-          '<span style="color:var(--text);font-size:9px;overflow:hidden;text-overflow:ellipsis" title="'+sym+'">'+sym+'</span>' +
-          '<span style="color:var(--text);font-size:10px">'+theoIn+'</span>' +
-          '<span style="color:var(--text);font-size:10px">'+theoOut+'</span>' +
-          '<span style="color:'+theoPnlC+';font-weight:700;font-size:10px">'+theoPnl+'</span>' +
-          '<span style="color:var(--muted);font-size:10px">'+simIn+'</span>' +
-          '<span style="color:var(--muted);font-size:10px">'+simOut+'</span>' +
-          '<span style="color:'+simPnlC+';font-size:10px">'+simPnl+'</span>' +
-          '<span style="color:var(--muted);font-size:9px">'+holdStr+'</span>' +
-          '<span style="color:var(--muted);font-size:9px">'+date+' '+time+'</span>' +
+      let cumNet = 0;
+      const sortedDates = Object.keys(byDate).sort().reverse();
+      sortedDates.forEach(dateKey => {
+        const dayTrades = byDate[dateKey];
+        let dayGross=0, dayComm=0, dayNet=0, dayW=0, dayL=0;
+        dayTrades.forEach(l => {
+          if (l.theo_pnl!=null) dayGross += l.theo_pnl;
+          if (l.commission!=null) dayComm += l.commission;
+          if (l.net_pnl!=null) { dayNet += l.net_pnl; if (l.net_pnl>=0) dayW++; else dayL++; }
+        });
+        cumNet += dayNet;
+        const dayNetC = dayNet>=0 ? '#22c55e' : '#ef4444';
+        const cumC = cumNet>=0 ? '#22c55e' : '#ef4444';
+        html += '<div class="tl-options-day-row" style="display:flex;justify-content:space-between;align-items:center">' +
+          '<span style="color:var(--text)">'+dateKey+' ('+dayTrades.length+' trades, '+dayW+'W/'+dayL+'L)</span>' +
+          '<span>Gross: <span style="color:'+(dayGross>=0?'#22c55e':'#ef4444')+'">$'+(dayGross>=0?'+':'')+dayGross.toFixed(0)+'</span>' +
+          ' Comm: <span style="color:#f59e0b">-$'+dayComm.toFixed(0)+'</span>' +
+          ' <b>Net: <span style="color:'+dayNetC+'">$'+(dayNet>=0?'+':'')+dayNet.toFixed(0)+'</span></b>' +
+          ' Cum: <span style="color:'+cumC+'">$'+(cumNet>=0?'+':'')+cumNet.toFixed(0)+'</span></span>' +
         '</div>';
+        dayTrades.forEach((l,i) => {
+          const pillColor = _tlPillColors[l.setup_name]||'#888';
+          const dir = (l.direction==='long'||l.direction==='bullish') ? '\u25B2' : '\u25BC';
+          const dirColor = (l.direction==='long'||l.direction==='bullish') ? '#22c55e' : '#ef4444';
+          const alignStr = l.greek_alignment!=null ? (l.greek_alignment>0?'+':'')+l.greek_alignment : '-';
+          const deltaStr = l.delta_at_entry!=null ? l.delta_at_entry.toFixed(2) : '--';
+          const theoIn = l.theo_entry!=null ? '$'+l.theo_entry.toFixed(2) : '--';
+          const theoOut = l.theo_close!=null ? '$'+l.theo_close.toFixed(2) : '--';
+          let grossPnl='--', grossC='#888';
+          if (l.theo_pnl!=null) { grossPnl='$'+(l.theo_pnl>=0?'+':'')+l.theo_pnl.toFixed(0); grossC=l.theo_pnl>=0?'#22c55e':'#ef4444'; }
+          const commStr = l.commission!=null ? '$'+l.commission.toFixed(1) : '--';
+          let netPnl='--', netC='#888';
+          if (l.net_pnl!=null) { netPnl='$'+(l.net_pnl>=0?'+':'')+l.net_pnl.toFixed(0); netC=l.net_pnl>=0?'#22c55e':'#ef4444'; }
+          const holdStr = l.hold_min!=null ? (l.hold_min>=60?Math.floor(l.hold_min/60)+'h'+String(Math.round(l.hold_min%60)).padStart(2,'0'):Math.round(l.hold_min)+'m') : '--';
+          const time = fmtTimeET(l.ts);
+          const sym = l.symbol || '--';
+          html += '<div class="tl-row tl-grid-options">' +
+            '<span style="color:var(--muted)">'+l.setup_log_id+'</span>' +
+            '<span class="setup-pill" style="background:'+pillColor+'22;color:'+pillColor+'">'+l.setup_name+'</span>' +
+            '<span style="color:'+dirColor+';font-weight:700;text-align:center">'+dir+'</span>' +
+            '<span style="color:var(--muted);font-size:10px;text-align:center">'+alignStr+'</span>' +
+            '<span style="color:var(--text);font-size:9px;overflow:hidden;text-overflow:ellipsis" title="'+sym+'">'+sym+'</span>' +
+            '<span style="color:var(--muted);font-size:9px;text-align:center">'+deltaStr+'</span>' +
+            '<span style="color:var(--text);font-size:10px">'+theoIn+'</span>' +
+            '<span style="color:var(--text);font-size:10px">'+theoOut+'</span>' +
+            '<span style="color:'+grossC+';font-size:10px">'+grossPnl+'</span>' +
+            '<span style="color:#f59e0b;font-size:9px">'+commStr+'</span>' +
+            '<span style="color:'+netC+';font-weight:700;font-size:10px">'+netPnl+'</span>' +
+            '<span style="color:var(--muted);font-size:9px">'+holdStr+'</span>' +
+            '<span style="color:var(--muted);font-size:9px">'+time+'</span>' +
+          '</div>';
+        });
       });
       body.innerHTML = html;
     }

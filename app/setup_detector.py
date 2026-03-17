@@ -1296,7 +1296,7 @@ DEFAULT_SKEW_CHARM_SETTINGS = {
     "skew_threshold_pct": 3.0,      # minimum % change to fire
     "skew_cooldown_minutes": 30,    # per-direction cooldown
     "skew_target_pts": 10,          # fixed target for outcome tracking
-    "skew_stop_pts": 20,            # fixed stop for outcome tracking
+    "skew_stop_pts": 14,            # fixed stop for outcome tracking (was 20, optimized Mar 18)
     "skew_market_start": "09:45",
     "skew_market_end": "15:45",
 }

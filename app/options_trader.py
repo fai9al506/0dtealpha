@@ -2,7 +2,7 @@
 # Self-contained — receives engine, token fn, and telegram fn via init()
 # Hardcoded to SIM API — cannot hit live.
 #
-# Buys SPY (or SPXW) 0DTE options at ~0.30 delta on ALL setups (behind Greek filter).
+# Buys SPY (or SPXW) 0DTE options at ~0.50 delta (ATM) on ALL setups (behind Greek filter).
 # Single-leg only, no splits, no trailing — exit on outcome resolution.
 # No stop-loss needed — max risk = premium paid.
 #
@@ -19,7 +19,7 @@ SIM_BASE = "https://sim-api.tradestation.com/v3"
 SIM_ACCOUNT_ID = os.getenv("OPTIONS_SIM_ACCOUNT", "SIM2609238M")
 OPTIONS_TRADE_ENABLED = os.getenv("OPTIONS_TRADE_ENABLED", "false").lower() == "true"
 OPTIONS_QTY = int(os.getenv("OPTIONS_QTY", "1"))
-TARGET_DELTA = float(os.getenv("OPTIONS_TARGET_DELTA", "0.30"))
+TARGET_DELTA = float(os.getenv("OPTIONS_TARGET_DELTA", "0.50"))
 MAX_HOLD_MINUTES = int(os.getenv("OPTIONS_MAX_HOLD_MIN", "90"))     # close after 90 min
 OPTIONS_UNDERLYING = os.getenv("OPTIONS_UNDERLYING", "SPY")         # "SPY" or "SPXW"
 

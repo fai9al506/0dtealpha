@@ -187,7 +187,7 @@ from app.dashboard_v2 import router as _v2_router
 app.include_router(_v2_router)
 
 # Public paths that don't require authentication
-PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png", "/api/ts/authorize", "/api/ts/callback", "/api/debug/sim-orders", "/api/debug/gex-analysis"}
+PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png", "/api/ts/authorize", "/api/ts/callback", "/api/debug/sim-orders", "/api/debug/gex-analysis", "/api/debug/vix3m-test"}
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
@@ -5403,6 +5403,70 @@ def api_auto_trade_toggle(setup_name: str = Query(...), enabled: bool = Query(..
         return {"ok": True, "toggles": auto_trader.get_toggles()}
     except Exception as e:
         return {"error": str(e)}
+
+@app.get("/api/debug/vix3m-test")
+def api_debug_vix3m_test():
+    """TEMPORARY: Test every possible VIX3M symbol variant against TS API."""
+    import requests as _req
+    token = ts_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    # Every possible symbol variant for VIX3M / VXV on TradeStation
+    candidates = [
+        "$VIX3M.X", "$VXV.X", "$VIX3M", "$VXV",
+        "VIX3M", "VXV", "CBOE:VIX3M", ".VIX3M",
+        "$VIX9D.X", "$VXMT.X",  # other vol indices for reference
+    ]
+    results = {}
+    # Test 1: Multi-symbol quote (how the app currently does it)
+    try:
+        encoded = ",".join(c.replace("$", "%24") for c in candidates)
+        r = _req.get(f"{BASE}/marketdata/quotes/{encoded}", headers=headers, timeout=10)
+        raw = r.json()
+        results["multi_quote_status"] = r.status_code
+        results["multi_quote_symbols_returned"] = [
+            {"Symbol": q.get("Symbol"), "Last": q.get("Last"), "Close": q.get("Close"),
+             "Description": q.get("Description"), "Error": q.get("Error"), "Message": q.get("Message")}
+            for q in raw.get("Quotes", [])
+        ]
+        results["multi_quote_errors"] = raw.get("Errors", raw.get("Error", None))
+    except Exception as e:
+        results["multi_quote_error"] = str(e)
+
+    # Test 2: Individual symbol lookups
+    for sym in candidates:
+        key = f"individual_{sym}"
+        try:
+            encoded = sym.replace("$", "%24")
+            r = _req.get(f"{BASE}/marketdata/quotes/{encoded}", headers=headers, timeout=8)
+            js = r.json()
+            quotes = js.get("Quotes", [])
+            if quotes:
+                q = quotes[0]
+                results[key] = {
+                    "status": r.status_code,
+                    "Symbol": q.get("Symbol"), "Last": q.get("Last"),
+                    "Close": q.get("Close"), "Description": q.get("Description"),
+                }
+            else:
+                results[key] = {"status": r.status_code, "raw": js}
+        except Exception as e:
+            results[key] = {"error": str(e)}
+
+    # Test 3: Symbol search for "VIX3M" and "VXV"
+    for term in ["VIX3M", "VXV", "3-month volatility"]:
+        key = f"search_{term}"
+        try:
+            r = _req.get(f"{BASE}/marketdata/symbology/search/{term}", headers=headers, timeout=8)
+            results[key] = {"status": r.status_code, "results": r.json() if r.status_code == 200 else r.text[:500]}
+        except Exception as e:
+            results[key] = {"error": str(e)}
+
+    # Test 4: Current state
+    results["current_vix"] = _vix_last
+    results["current_vix3m"] = _vix3m_last
+    results["current_overvix"] = _overvix
+
+    return results
 
 @app.get("/api/debug/sim-orders")
 def api_debug_sim_orders():

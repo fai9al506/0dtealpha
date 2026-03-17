@@ -3663,7 +3663,7 @@ def _run_setup_check():
                 if _vix_last is not None:
                     _ov_str = f"{_overvix:+.1f}" if _overvix is not None else "n/a"
                     _vix_tag = f"\nVIX={_vix_last:.1f} OV={_ov_str}"
-                    if _vix_last > 26 and (_overvix is None or _overvix < 2):
+                    if _vix_last > 22 and (_overvix is None or _overvix < 2):
                         _vix_tag += " [VIX GATE]"
                     elif _overvix is not None and _overvix >= 2:
                         _vix_tag += " [OVERVIX SIGNAL]"
@@ -3688,7 +3688,7 @@ def _run_setup_check():
                     })
                     tgt_str = "trail" if target_lvl is None else f"{target_lvl:.1f}"
                     print(f"[outcome] tracking {setup_name}: target={tgt_str} stop={stop_lvl:.1f}", flush=True)
-                    # Auto-trade filters — V8 (V7+AG + Smart VIX Gate)
+                    # Auto-trade filters — V9 (V8 + tighter VIX gate at 22)
                     # (block execution but keep portal tracking for data collection)
                     _skip_auto_trade = False
                     _greek_align = r.get("greek_alignment", 0)
@@ -3698,14 +3698,14 @@ def _run_setup_check():
                         if _greek_align < 2:
                             print(f"[auto-trader] SKIPPED {setup_name}: long alignment {_greek_align:+d} < +2", flush=True)
                             _skip_auto_trade = True
-                        # V8 Smart VIX Gate: block longs when VIX > 26 UNLESS overvixed (>= +2)
-                        elif _vix_last is not None and _vix_last > 26:
+                        # V9 VIX Gate: block longs when VIX > 22 UNLESS overvixed (>= +2)
+                        elif _vix_last is not None and _vix_last > 22:
                             _ov = _overvix if _overvix is not None else -99
                             if _ov < 2:
-                                print(f"[auto-trader] SKIPPED {setup_name}: V8 VIX gate — VIX={_vix_last:.1f}>26, overvix={_ov:+.1f}<+2", flush=True)
+                                print(f"[auto-trader] SKIPPED {setup_name}: V9 VIX gate — VIX={_vix_last:.1f}>22, overvix={_ov:+.1f}<+2", flush=True)
                                 _skip_auto_trade = True
                             else:
-                                print(f"[auto-trader] ALLOWED {setup_name}: V8 overvix override — VIX={_vix_last:.1f}>26 but overvix={_ov:+.1f}>=+2 (mean reversion)", flush=True)
+                                print(f"[auto-trader] ALLOWED {setup_name}: V9 overvix override — VIX={_vix_last:.1f}>22 but overvix={_ov:+.1f}>=+2 (mean reversion)", flush=True)
                     else:
                         # Shorts: whitelist SC + DD(align!=0) + AG only
                         if setup_name == "Skew Charm":
@@ -4319,7 +4319,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
         })
         print(f"[outcome] tracking ES Absorption: target={target_lvl} stop={stop_lvl:.1f}", flush=True)
         # Auto-trade: ES Absorption uses ES price directly
-        # V8 filter (V7+AG + Smart VIX Gate): ES Absorption not in short whitelist
+        # V9 filter (V8 + tighter VIX gate at 22): ES Absorption not in short whitelist
         _abs_skip_greek = False
         _abs_align = result.get("greek_alignment", 0)
         _abs_is_long_dir = result["direction"] in ("long", "bullish")
@@ -4327,14 +4327,14 @@ def _run_absorption_detection(bars: list) -> dict | None:
             if _abs_align < 2:
                 print(f"[auto-trader] SKIPPED ES Absorption long: alignment {_abs_align:+d} < +2", flush=True)
                 _abs_skip_greek = True
-            # V8 Smart VIX Gate: block longs when VIX > 26 UNLESS overvixed (>= +2)
-            elif _vix_last is not None and _vix_last > 26:
+            # V9 VIX Gate: block longs when VIX > 22 UNLESS overvixed (>= +2)
+            elif _vix_last is not None and _vix_last > 22:
                 _ov = _overvix if _overvix is not None else -99
                 if _ov < 2:
-                    print(f"[auto-trader] SKIPPED ES Absorption long: V8 VIX gate — VIX={_vix_last:.1f}>26, overvix={_ov:+.1f}<+2", flush=True)
+                    print(f"[auto-trader] SKIPPED ES Absorption long: V9 VIX gate — VIX={_vix_last:.1f}>22, overvix={_ov:+.1f}<+2", flush=True)
                     _abs_skip_greek = True
                 else:
-                    print(f"[auto-trader] ALLOWED ES Absorption long: V8 overvix override — VIX={_vix_last:.1f}>26 but overvix={_ov:+.1f}>=+2", flush=True)
+                    print(f"[auto-trader] ALLOWED ES Absorption long: V9 overvix override — VIX={_vix_last:.1f}>22 but overvix={_ov:+.1f}>=+2", flush=True)
         else:
             # ES Absorption shorts not in V7+AG whitelist (toxic: -175.6 pts all-time)
             print(f"[auto-trader] SKIPPED ES Absorption short: not in V7+AG whitelist", flush=True)
@@ -10100,7 +10100,7 @@ DASH_HTML_TEMPLATE = """
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v8">V8 (live)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v9">V9 (live)</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
         </div>
         <div class="tl-stats" id="tlStats"></div>
@@ -13124,11 +13124,24 @@ DASH_HTML_TEMPLATE = """
         if (sn === 'DD Exhaustion' && align !== 0) return true;
         return false;
       }
-      if (strat === 'v8') {
-        // V8 (live): V7+AG + Smart VIX Gate (block longs at VIX>26 unless overvix>=+2)
+      if (strat === 'v9') {
+        // V9 (live): V8 + tighter VIX gate at 22 (block longs at VIX>22 unless overvix>=+2)
         if (isLong) {
           if (align < 2) return false;
-          // VIX gate: check vix and overvix fields
+          const vix = l.vix != null ? l.vix : 0;
+          const ov = l.overvix != null ? l.overvix : -99;
+          if (vix > 22 && ov < 2) return false;
+          return true;
+        }
+        if (sn === 'Skew Charm') return true;
+        if (sn === 'AG Short') return true;
+        if (sn === 'DD Exhaustion' && align !== 0) return true;
+        return false;
+      }
+      if (strat === 'v8') {
+        // V8 (historical): V7+AG + VIX gate at 26
+        if (isLong) {
+          if (align < 2) return false;
           const vix = l.vix != null ? l.vix : 0;
           const ov = l.overvix != null ? l.overvix : -99;
           if (vix > 26 && ov < 2) return false;

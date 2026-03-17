@@ -784,13 +784,13 @@ class ComplianceGate:
             if _is_long:
                 if alignment < 2:
                     return False, f"Greek filter: long alignment {alignment:+d} < +2"
-                # V8 Smart VIX Gate: block longs when VIX > 26 UNLESS overvixed (>= +2)
+                # V9 VIX Gate: block longs when VIX > 22 UNLESS overvixed (>= +2)
                 _sig_vix = signal.get("vix")
                 _sig_ov = signal.get("overvix")
-                if _sig_vix is not None and _sig_vix > 26:
+                if _sig_vix is not None and _sig_vix > 22:
                     _ov = _sig_ov if _sig_ov is not None else -99
                     if _ov < 2:
-                        return False, f"V8 VIX gate: VIX={_sig_vix:.1f}>26, overvix={_ov:+.1f}<+2"
+                        return False, f"V9 VIX gate: VIX={_sig_vix:.1f}>22, overvix={_ov:+.1f}<+2"
             else:
                 # V7+AG short whitelist
                 _short_allowed = False
@@ -1076,10 +1076,16 @@ class NT8Bridge:
 
         return {"stop_oid": stop_oid, "target_oid": target_oid}
 
-    def change_stop(self, order_id: str, new_stop_price: float, qty: int):
-        """Modify an existing stop order price via OIF CHANGE command."""
+    def change_stop(self, order_id: str, new_stop_price: float, qty: int,
+                    direction: str = "long"):
+        """Modify an existing stop order price via OIF CHANGE command.
+
+        direction is the POSITION direction (long/short). The stop action is
+        the opposite: SELL for longs, BUY for shorts.
+        """
+        exit_side = "SELL" if direction in ("long", "bullish") else "BUY"
         self._write(
-            f"CHANGE;{self.account};{self.symbol};;{qty};"
+            f"CHANGE;{self.account};{self.symbol};{exit_side};{qty};"
             f"STOPMARKET;;{_round_tick(new_stop_price)};DAY;;{order_id};;\n"
         )
         log.info(f"NT8 CHANGE stop: {order_id} → {_round_tick(new_stop_price)}")
@@ -1275,12 +1281,20 @@ class PositionTracker:
 
         # Use ES/MES price for stop/target calculation (SPX and MES differ by ~15-20 pts)
         # ES price comes from Railway API's quote stream; fall back to SPX spot if unavailable
+        _MAX_ES_SPX_SPREAD = 25  # reject stale ES price if spread > 25 pts
         es_price = signal.get("es_price")
         if es_price is not None:
             es_price = float(es_price)
         if es_price:
-            order_ref = es_price
-            log.info(f"  Using ES price for orders: {es_price:.2f} (SPX spot: {spot:.2f})")
+            spread = abs(es_price - spot)
+            if spread > _MAX_ES_SPX_SPREAD:
+                log.warning(f"  STALE ES PRICE: {es_price:.2f} vs SPX {spot:.2f} "
+                            f"(spread={spread:.1f} > {_MAX_ES_SPX_SPREAD}) — using SPX spot")
+                es_price = None
+                order_ref = spot
+            else:
+                order_ref = es_price
+                log.info(f"  Using ES price for orders: {es_price:.2f} (SPX spot: {spot:.2f})")
         else:
             order_ref = spot
             log.warning(f"  ES price unavailable — using SPX spot {spot:.2f} for orders")
@@ -1426,7 +1440,9 @@ class PositionTracker:
         new_stop = round(round(raw_stop / MES_TICK_SIZE) * MES_TICK_SIZE, 2)
         old_stop = self.position["stop_price"]
 
-        self.nt8.change_stop(self.position["stop_oid"], new_stop, self.position.get("qty", self.cfg["qty"]))
+        self.nt8.change_stop(self.position["stop_oid"], new_stop,
+                             self.position.get("qty", self.cfg["qty"]),
+                             self.position["direction"])
         self.position["stop_price"] = new_stop
         self._save()
 
@@ -1488,6 +1504,24 @@ class PositionTracker:
 
         self.compliance.record_trade(pnl_pts, old_name, old_qty)
         log.info(f"  Closed {old_name}: ~{pnl_pts:+.1f} pts (estimated from ES price)")
+
+        # Check if PNL cap reached after closing — if so, just close, don't reverse
+        daily_cap = self.cfg.get("e2t_daily_pnl_cap", 0)
+        if daily_cap > 0 and self.compliance.daily_pnl >= daily_cap:
+            log.info(f"  PNL cap reached (${self.compliance.daily_pnl:+.0f} >= ${daily_cap:.0f}) — closing only, no reversal")
+            # Just close the old position
+            close_side = "SELL" if self.position["direction"] in ("long", "bullish") else "BUY"
+            close_oid = self.nt8._oid("c")
+            time.sleep(0.5)
+            self.nt8._write(
+                f"PLACE;{self.nt8.account};{self.nt8.symbol};{close_side};{old_qty};"
+                f"MARKET;;;DAY;;{close_oid};;\n"
+            )
+            self.position = None
+            self.compliance.has_open_position = False
+            self._save()
+            self.compliance.save()
+            return
 
         # NOTE: do NOT clear position file here — keep old position on disk
         # until new position is saved. Prevents orphan positions on crash.
@@ -1728,7 +1762,8 @@ class PositionTracker:
             current_stop = self.position["stop_price"]
             tighter = (new_stop > current_stop) if is_long else (new_stop < current_stop)
             if tighter:
-                self.nt8.change_stop(self.position["stop_oid"], new_stop, qty)
+                self.nt8.change_stop(self.position["stop_oid"], new_stop, qty,
+                                     self.position["direction"])
                 old_stop = self.position["stop_price"]
                 self.position["stop_price"] = new_stop
                 self._save()

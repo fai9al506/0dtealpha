@@ -5417,10 +5417,10 @@ def api_debug_options_sim(date: str = "2026-03-10"):
             # 1. Get all setup_log trades for this date
             setups = conn.execute(_text("""
                 SELECT id, setup_name, direction, grade, score, greek_alignment,
-                       outcome, outcome_pnl, entry_time, spot_at_entry, vix,
+                       outcome_result, outcome_pnl, entry_time, spot_at_entry, vix,
                        overvix, charm_limit_entry
                 FROM setup_log
-                WHERE trade_date = :d AND outcome IN ('WIN','LOSS')
+                WHERE trade_date = :d AND outcome_result IN ('WIN','LOSS')
                 ORDER BY entry_time
             """), {"d": date}).fetchall()
 
@@ -5501,7 +5501,7 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                 side = "call" if is_long else "put"
                 align = s.greek_alignment or 0
                 vix_val = float(s.vix) if s.vix else None
-                outcome = s.outcome
+                outcome = s.outcome_result
                 pnl_pts = float(s.outcome_pnl) if s.outcome_pnl else 0
 
                 # Find entry chain

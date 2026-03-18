@@ -5417,7 +5417,7 @@ def api_debug_options_sim(date: str = "2026-03-10"):
             # 1. Get all setup_log trades for this date
             setups = conn.execute(_text("""
                 SELECT id, setup_name, direction, grade, score, greek_alignment,
-                       outcome_result, outcome_pnl, ts, spot, vix,
+                       outcome_result, outcome_pnl, outcome_elapsed_min, ts, spot, vix,
                        overvix, charm_limit_entry
                 FROM setup_log
                 WHERE ts::date = :d AND outcome_result IN ('WIN','LOSS')
@@ -5511,12 +5511,18 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                 if not entry_chain:
                     continue
 
-                # ── NAKED: 0.30 delta ──
+                # ── NAKED 0.30 delta ──
                 naked_entry_opt = find_strike_at_delta(entry_chain, 0.30, side)
                 if not naked_entry_opt or not naked_entry_opt["ask"] or naked_entry_opt["ask"] <= 0:
                     continue
                 naked_strike = naked_entry_opt["strike"]
                 naked_entry = naked_entry_opt["ask"]
+
+                # ── NAKED 0.50 delta (ATM) ──
+                atm_entry_opt = find_strike_at_delta(entry_chain, 0.50, side)
+                has_atm = atm_entry_opt and atm_entry_opt["ask"] and atm_entry_opt["ask"] > 0
+                atm_strike = atm_entry_opt["strike"] if has_atm else None
+                atm_entry = atm_entry_opt["ask"] if has_atm else None
 
                 # ── DEBIT SPREAD: buy 0.45 delta, sell 0.35 delta ($10 wide) ──
                 debit_long_opt = find_strike_at_delta(entry_chain, 0.45, side)
@@ -5553,18 +5559,18 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                 else:
                     has_credit = False
 
-                # ── Find EXIT chain (by spot matching) ──
-                exit_spot = float(s.spot) + (pnl_pts if is_long else -pnl_pts)
+                # ── Find EXIT chain (by TIME: entry + elapsed minutes) ──
+                elapsed_min = s.outcome_elapsed_min or 20  # default 20 min if missing
+                from datetime import timedelta as _td
+                exit_target_ts = s.ts + _td(minutes=float(elapsed_min))
                 best_exit = None
-                best_exit_diff = 999
+                best_exit_diff = 999999
                 for ch in chain_list:
                     if ch["ts"] <= s.ts:
                         continue
-                    if ch["spot"] is None:
-                        continue
-                    spot_diff = abs(ch["spot"] - exit_spot)
-                    if spot_diff < best_exit_diff:
-                        best_exit_diff = spot_diff
+                    time_diff = abs((ch["ts"] - exit_target_ts).total_seconds())
+                    if time_diff < best_exit_diff:
+                        best_exit_diff = time_diff
                         best_exit = ch
 
                 # ── Naked exit ──
@@ -5576,6 +5582,18 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                 if naked_exit is None:
                     naked_exit = max(0.01, naked_entry * 0.05) if outcome == "LOSS" else naked_entry * 1.5
                 naked_pnl = (naked_exit - naked_entry) * 100
+
+                # ── ATM 0.50 exit ──
+                atm_exit = None
+                atm_pnl = None
+                if has_atm and best_exit:
+                    atm_exit_opt = find_strike_price(best_exit, atm_strike, side)
+                    if atm_exit_opt and atm_exit_opt["bid"] is not None:
+                        atm_exit = atm_exit_opt["bid"]
+                if has_atm:
+                    if atm_exit is None:
+                        atm_exit = max(0.01, atm_entry * 0.05) if outcome == "LOSS" else atm_entry * 1.5
+                    atm_pnl = (atm_exit - atm_entry) * 100
 
                 # ── Debit spread exit (REAL chain prices for both legs) ──
                 debit_pnl = None
@@ -5636,6 +5654,8 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                     "align": align, "vix": vix_val,
                     "outcome": outcome, "spx_pnl": pnl_pts,
                     "side": side, "entry_lag_sec": round(entry_lag),
+                    "elapsed_min": float(elapsed_min),
+                    "exit_lag_sec": round(best_exit_diff) if best_exit else None,
                     "v8": v8_pass, "v9sc": v9_pass,
                     # Naked
                     "naked_strike": naked_strike,
@@ -5643,6 +5663,11 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                     "naked_exit": round(naked_exit, 2),
                     "naked_pnl": round(naked_pnl, 2),
                     "naked_delta": round(naked_entry_opt["delta"], 4),
+                    # ATM 0.50 delta
+                    "atm_strike": atm_strike,
+                    "atm_entry": round(atm_entry, 2) if atm_entry else None,
+                    "atm_exit": round(atm_exit, 2) if atm_exit else None,
+                    "atm_pnl": round(atm_pnl, 2) if atm_pnl is not None else None,
                     # Debit spread
                     "debit_pnl": round(debit_pnl, 2) if debit_pnl is not None else None,
                     "debit_entry": debit_entry_str,
@@ -5674,8 +5699,8 @@ def api_debug_options_sim(date: str = "2026-03-10"):
             result["summary"] = {
                 "total_trades": len(result["trades"]),
                 "chain_snapshots": len(chain_list),
-                "naked_v8": _sum_strat("naked_pnl", "v8"),
-                "naked_v9sc": _sum_strat("naked_pnl", "v9sc"),
+                "naked030_v9sc": _sum_strat("naked_pnl", "v9sc"),
+                "naked050_v9sc": _sum_strat("atm_pnl", "v9sc"),
                 "debit_v9sc": _sum_strat("debit_pnl", "v9sc"),
                 "credit_v9sc": _sum_strat("credit_pnl", "v9sc"),
             }

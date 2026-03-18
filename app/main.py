@@ -14325,6 +14325,10 @@ DASH_HTML_TEMPLATE = """
           if (isBofa) {
             trade.splice(trade.findIndex(x => x[0] === 'R:R'), 1); // no R:R for BofA
             trade.push(['Max Hold', (lv.bofa_max_hold_minutes || 30) + 'min']);
+            // BofA has 2 LIS levels — show as range
+            const lisLo = e.lis?.toFixed(0) || '–';
+            const lisHi = lv.lis_upper?.toFixed(0);
+            levels[levels.findIndex(x => x[0] === 'LIS')][1] = lisHi ? lisLo + ' – ' + lisHi : lisLo;
             if (e.bofa_lis_width) levels.push(['LIS Width', e.bofa_lis_width.toFixed(0) + 'pts']);
           }
 

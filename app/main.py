@@ -14022,8 +14022,9 @@ DASH_HTML_TEMPLATE = """
         '<span>Trades: <span class="stat-val">'+trades+'</span></span>' +
         '<span>WR: <span class="stat-val">'+wr+'%</span></span>' +
         '<span>SPX: <span class="stat-val" style="color:'+spxColor+'">'+(spxTotal>=0?'+':'')+spxTotal.toFixed(1)+' pts</span></span>' +
-        '<span>Net P&L: <span class="stat-val" style="color:'+netColor+';font-size:13px">$'+(netTotal>=0?'+':'')+netTotal.toFixed(0)+'</span></span>' +
-        '<span style="color:var(--muted);font-size:9px">Comm: -$'+commTotal.toFixed(0)+'</span>';
+        '<span>Gross: <span class="stat-val" style="color:'+(grossTotal>=0?'#22c55e':'#ef4444')+'">$'+(grossTotal>=0?'+':'')+grossTotal.toFixed(0)+'</span></span>' +
+        '<span>Comm: <span class="stat-val" style="color:#f59e0b">-$'+commTotal.toFixed(0)+'</span></span>' +
+        '<span>Net P&L: <span class="stat-val" style="color:'+netColor+';font-size:13px">$'+(netTotal>=0?'+':'')+netTotal.toFixed(0)+'</span></span>';
       const body = document.getElementById('tlBody');
       if (filtered.length===0) { body.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px">No options trades</div>'; return; }
       // Group by date for daily subtotals

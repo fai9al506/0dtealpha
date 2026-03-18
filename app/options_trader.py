@@ -2,9 +2,11 @@
 # Self-contained — receives engine, token fn, and telegram fn via init()
 # Hardcoded to SIM API — cannot hit live.
 #
-# Buys SPY (or SPXW) 0DTE options at ~0.50 delta (ATM) on ALL setups (behind Greek filter).
-# Single-leg only, no splits, no trailing — exit on outcome resolution.
-# No stop-loss needed — max risk = premium paid.
+# Supports two strategies:
+#   - "credit_spread" (default): sell ATM credit spread, theta works for you
+#     Bullish = bull put spread (sell put + buy lower put)
+#     Bearish = bear call spread (sell call + buy higher call)
+#   - "single_leg": buy call/put (original behavior)
 #
 # Tracks BOTH:
 #   - SIM P&L (actual broker fills — may be unreliable for index options)
@@ -20,13 +22,12 @@ SIM_ACCOUNT_ID = os.getenv("OPTIONS_SIM_ACCOUNT", "SIM2609238M")
 OPTIONS_TRADE_ENABLED = os.getenv("OPTIONS_TRADE_ENABLED", "false").lower() == "true"
 OPTIONS_QTY = int(os.getenv("OPTIONS_QTY", "1"))
 TARGET_DELTA = float(os.getenv("OPTIONS_TARGET_DELTA", "0.50"))
-MAX_HOLD_MINUTES = int(os.getenv("OPTIONS_MAX_HOLD_MIN", "90"))     # close after 90 min
+MAX_HOLD_MINUTES = int(os.getenv("OPTIONS_MAX_HOLD_MIN", "90"))     # single-leg only
 OPTIONS_UNDERLYING = os.getenv("OPTIONS_UNDERLYING", "SPY")         # "SPY" or "SPXW"
+OPTIONS_STRATEGY = os.getenv("OPTIONS_STRATEGY", "credit_spread")   # "credit_spread" or "single_leg"
+SPREAD_WIDTH = int(os.getenv("OPTIONS_SPREAD_WIDTH", "2"))          # $1 or $2 for SPY
 
 # Chain column indices (CANONICAL_COLS from main.py)
-# C_Volume(0), C_OI(1), C_IV(2), C_Gamma(3), C_Delta(4), C_Bid(5), C_BidSize(6), C_Ask(7), C_AskSize(8), C_Last(9),
-# Strike(10),
-# P_Last(11), P_Ask(12), P_AskSize(13), P_Bid(14), P_BidSize(15), P_Delta(16), P_Gamma(17), P_IV(18), P_OI(19), P_Volume(20)
 IDX_C_DELTA = 4
 IDX_C_BID = 5
 IDX_C_ASK = 7
@@ -52,21 +53,18 @@ def init(engine, get_token_fn, send_telegram_fn):
     _send_telegram = send_telegram_fn
     _load_active_orders()
     n = len(_active_orders)
+    strat_info = f"strategy={OPTIONS_STRATEGY}"
+    if OPTIONS_STRATEGY == "credit_spread":
+        strat_info += f" width=${SPREAD_WIDTH}"
     print(f"[options] init: enabled={OPTIONS_TRADE_ENABLED} account={SIM_ACCOUNT_ID} "
-          f"underlying={OPTIONS_UNDERLYING} qty={OPTIONS_QTY} delta={TARGET_DELTA} active={n}", flush=True)
+          f"underlying={OPTIONS_UNDERLYING} qty={OPTIONS_QTY} delta={TARGET_DELTA} "
+          f"{strat_info} active={n}", flush=True)
 
 
 # ====== MAIN ENTRY POINT ======
 
 def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float):
-    """Buy 0DTE option when a setup fires.
-
-    Args:
-        setup_log_id: DB id from setup_log table
-        setup_name: e.g. "Skew Charm"
-        direction: "Long"/"Bullish" or "Short"/"Bearish"
-        spot: current SPX spot price
-    """
+    """Place 0DTE option trade when a setup fires."""
     if not OPTIONS_TRADE_ENABLED:
         print(f"[options] skip {setup_name}: master switch OFF", flush=True)
         return
@@ -79,9 +77,169 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float)
             print(f"[options] skip {setup_name} id={setup_log_id}: already active", flush=True)
             return
 
+    if OPTIONS_STRATEGY == "credit_spread":
+        _place_credit_spread(setup_log_id, setup_name, direction, spot)
+    else:
+        _place_single_leg(setup_log_id, setup_name, direction, spot)
+
+
+# ====== CREDIT SPREAD ENTRY ======
+
+def _place_credit_spread(setup_log_id: int, setup_name: str, direction: str, spot: float):
+    """Sell ATM credit spread: bull put spread for bullish, bear call spread for bearish."""
     is_long = direction.lower() in ("long", "bullish")
 
-    # Find the best strike from chain data
+    # For credit spread, short leg option type is OPPOSITE of single-leg:
+    #   Bullish → sell PUT spread (sell put near ATM, buy lower put)
+    #   Bearish → sell CALL spread (sell call near ATM, buy higher call)
+    scan_puts = is_long
+
+    chain_rows = _get_chain_rows()
+    if not chain_rows:
+        print(f"[options] skip {setup_name}: no chain data", flush=True)
+        return
+
+    # Find short leg near TARGET_DELTA
+    short_info = _find_strike_in_rows(chain_rows, scan_puts, TARGET_DELTA)
+    if not short_info:
+        print(f"[options] skip {setup_name}: no short strike found", flush=True)
+        return
+
+    short_strike = short_info["strike"]
+    cp = "P" if scan_puts else "C"
+
+    # Long leg: further OTM by SPREAD_WIDTH
+    if scan_puts:
+        long_strike = short_strike - SPREAD_WIDTH   # lower put = more OTM
+    else:
+        long_strike = short_strike + SPREAD_WIDTH   # higher call = more OTM
+
+    # Get long leg data from chain
+    long_info = _find_exact_strike(chain_rows, scan_puts, long_strike)
+    if not long_info:
+        print(f"[options] skip {setup_name}: no chain data for {cp}{long_strike}", flush=True)
+        return
+
+    # Build option symbols
+    today = date.today()
+    ds = today.strftime('%y%m%d')
+    short_sym = f"{OPTIONS_UNDERLYING} {ds}{cp}{short_strike}"
+    long_sym = f"{OPTIONS_UNDERLYING} {ds}{cp}{long_strike}"
+
+    # Get live quotes for both legs
+    short_q = _get_option_quote(short_sym)
+    long_q = _get_option_quote(long_sym)
+
+    short_bid = (short_q["bid"] if short_q and short_q.get("bid") else short_info["bid"]) or 0
+    short_ask = (short_q["ask"] if short_q and short_q.get("ask") else short_info["ask"]) or 0
+    long_bid = (long_q["bid"] if long_q and long_q.get("bid") else long_info["bid"]) or 0
+    long_ask = (long_q["ask"] if long_q and long_q.get("ask") else long_info["ask"]) or 0
+
+    print(f"[options] spread quotes: {short_sym} bid=${short_bid:.2f} ask=${short_ask:.2f} | "
+          f"{long_sym} bid=${long_bid:.2f} ask=${long_ask:.2f}", flush=True)
+
+    # Net credit = what we receive (short bid) - what we pay (long ask)
+    net_credit = round(short_bid - long_ask, 2)
+    if net_credit <= 0.01:
+        print(f"[options] skip {setup_name}: no positive credit "
+              f"(short_bid=${short_bid:.2f} - long_ask=${long_ask:.2f} = ${net_credit:.2f})", flush=True)
+        return
+
+    max_loss = round(SPREAD_WIDTH - net_credit, 2)
+
+    # Place two orders: SELLTOOPEN short leg, BUYTOOPEN long leg
+    short_payload = {
+        "AccountID": SIM_ACCOUNT_ID,
+        "Symbol": short_sym,
+        "Quantity": str(OPTIONS_QTY),
+        "OrderType": "Limit",
+        "LimitPrice": str(round(short_bid, 2)),
+        "TradeAction": "SELLTOOPEN",
+        "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+    resp1 = _sim_api("POST", "/orderexecution/orders", short_payload)
+    ok1, oid1 = _order_ok(resp1)
+
+    long_payload = {
+        "AccountID": SIM_ACCOUNT_ID,
+        "Symbol": long_sym,
+        "Quantity": str(OPTIONS_QTY),
+        "OrderType": "Limit",
+        "LimitPrice": str(round(long_ask, 2)),
+        "TradeAction": "BUYTOOPEN",
+        "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+    resp2 = _sim_api("POST", "/orderexecution/orders", long_payload)
+    ok2, oid2 = _order_ok(resp2)
+
+    if not ok1 or not ok2:
+        # Cancel whichever succeeded
+        if ok1 and oid1:
+            _sim_api("DELETE", f"/orderexecution/orders/{oid1}", None)
+        if ok2 and oid2:
+            _sim_api("DELETE", f"/orderexecution/orders/{oid2}", None)
+        _alert(f"[OPTIONS] FAILED credit spread for {setup_name}\n"
+               f"{short_sym} / {long_sym}")
+        return
+
+    order = {
+        "strategy": "credit_spread",
+        "setup_log_id": setup_log_id,
+        "setup_name": setup_name,
+        "direction": direction,
+        "symbol": short_sym,                # primary symbol for display/compat
+        "short_symbol": short_sym,
+        "long_symbol": long_sym,
+        "short_strike": short_strike,
+        "long_strike": long_strike,
+        "spread_width": SPREAD_WIDTH,
+        "cp": cp,
+        "delta_at_entry": short_info["delta"],
+        "short_entry_oid": oid1,
+        "long_entry_oid": oid2,
+        "short_close_oid": None,
+        "long_close_oid": None,
+        "qty": OPTIONS_QTY,
+        "short_filled": False,
+        "long_filled": False,
+        "short_entry_price": None,          # SIM fill
+        "long_entry_price": None,           # SIM fill
+        "short_close_price": None,
+        "long_close_price": None,
+        "entry_price": None,                # compat: net credit (SIM)
+        "close_price": None,                # compat: net debit (SIM)
+        "theo_credit": net_credit,          # live bid/ask net credit
+        "theo_debit": None,                 # live bid/ask net debit at close
+        "theo_entry_price": net_credit,     # compat: stored for log endpoint
+        "theo_close_price": None,           # compat: set at close
+        "theo_pnl": None,                   # pre-computed at close
+        "status": "pending_entry",
+        "spot_at_entry": spot,
+        "max_loss": max_loss,
+        "ts_placed": datetime.utcnow().isoformat(),
+    }
+
+    with _lock:
+        _active_orders[setup_log_id] = order
+    _persist_order(setup_log_id)
+
+    print(f"[options] CREDIT SPREAD placed: {setup_name} "
+          f"SELL {short_sym} @ ${short_bid:.2f} / BUY {long_sym} @ ${long_ask:.2f} "
+          f"credit=${net_credit:.2f} maxloss=${max_loss:.2f}", flush=True)
+    _alert(f"[OPTIONS] CREDIT SPREAD {setup_name}\n"
+           f"SELL {short_sym} @ ${short_bid:.2f}\n"
+           f"BUY {long_sym} @ ${long_ask:.2f}\n"
+           f"Credit: ${net_credit:.2f} | Max loss: ${max_loss:.2f} | SPX: {spot:.0f}")
+
+
+# ====== SINGLE LEG ENTRY (original) ======
+
+def _place_single_leg(setup_log_id: int, setup_name: str, direction: str, spot: float):
+    """Buy 0DTE option (original single-leg strategy)."""
+    is_long = direction.lower() in ("long", "bullish")
+
     strike_info = _find_strike(is_long)
     if not strike_info:
         print(f"[options] skip {setup_name}: no suitable strike found", flush=True)
@@ -92,12 +250,10 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float)
     snap_bid = strike_info["bid"]
     snap_ask = strike_info["ask"]
 
-    # Build option symbol: "SPY 260313C670" or "SPXW 260305C5880"
     today = date.today()
     cp = "C" if is_long else "P"
     symbol = f"{OPTIONS_UNDERLYING} {today.strftime('%y%m%d')}{cp}{strike}"
 
-    # Fetch LIVE quote for accurate entry price (snapshot can be up to 2 min stale)
     live_q = _get_option_quote(symbol)
     if live_q and live_q.get("ask") and live_q["ask"] > 0:
         ask = live_q["ask"]
@@ -105,13 +261,11 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float)
         print(f"[options] live quote {symbol}: bid=${bid:.2f} ask=${ask:.2f} "
               f"(snap bid=${snap_bid:.2f} ask=${snap_ask:.2f})", flush=True)
     else:
-        # Fallback to snapshot if live quote fails
         ask = snap_ask
         bid = snap_bid
         print(f"[options] live quote failed for {symbol}, using snapshot: "
               f"bid=${bid:.2f} ask=${ask:.2f}", flush=True)
 
-    # Place limit buy at ask price
     limit_price = round(ask, 2) if ask > 0 else None
     if not limit_price:
         print(f"[options] skip {setup_name}: ask price is 0", flush=True)
@@ -135,6 +289,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float)
         return
 
     order = {
+        "strategy": "single_leg",
         "setup_log_id": setup_log_id,
         "setup_name": setup_name,
         "direction": direction,
@@ -144,10 +299,11 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float)
         "entry_order_id": entry_oid,
         "close_order_id": None,
         "qty": OPTIONS_QTY,
-        "entry_price": None,        # SIM fill price (may be unreliable)
-        "close_price": None,        # SIM fill price (may be unreliable)
-        "theo_entry_price": ask,    # theoretical: buy at ask (accurate)
-        "theo_close_price": None,   # theoretical: sell at bid (set on close)
+        "entry_price": None,
+        "close_price": None,
+        "theo_entry_price": ask,
+        "theo_close_price": None,
+        "theo_pnl": None,
         "status": "pending_entry",
         "spot_at_entry": spot,
         "bid_at_entry": bid,
@@ -166,6 +322,8 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float)
            f"Delta: {delta:.3f} | Limit: ${limit_price:.2f} | SPX: {spot:.0f}")
 
 
+# ====== CLOSE TRADE ======
+
 def close_trade(setup_log_id: int, result_type: str = ""):
     """Close option position on outcome resolution."""
     with _lock:
@@ -175,20 +333,115 @@ def close_trade(setup_log_id: int, result_type: str = ""):
         if order["status"] == "closed":
             return
 
+    if order.get("strategy") == "credit_spread":
+        _close_credit_spread(setup_log_id, order, result_type)
+    else:
+        _close_single_leg(setup_log_id, order, result_type)
+
+
+def _close_credit_spread(setup_log_id: int, order: dict, result_type: str):
+    """Close credit spread by buying back short + selling long."""
+    setup_name = order["setup_name"]
+    short_sym = order["short_symbol"]
+    long_sym = order["long_symbol"]
+
+    if order["status"] == "filled":
+        # Get live quotes for both legs
+        short_q = _get_option_quote(short_sym)
+        long_q = _get_option_quote(long_sym)
+
+        short_ask = (short_q["ask"] if short_q and short_q.get("ask") else None) or 0
+        long_bid = (long_q["bid"] if long_q and long_q.get("bid") else None) or 0
+
+        # Compute theo debit (cost to close the spread)
+        theo_debit = round(max(short_ask - long_bid, 0), 2)
+        theo_credit = order.get("theo_credit", 0)
+        theo_pnl = round((theo_credit - theo_debit) * 100 * order["qty"], 0)
+
+        with _lock:
+            order["theo_debit"] = theo_debit
+            order["theo_close_price"] = theo_debit
+            order["theo_pnl"] = theo_pnl
+
+        print(f"[options] credit spread close: {setup_name} credit=${theo_credit:.2f} "
+              f"debit=${theo_debit:.2f} pnl=${theo_pnl:+.0f} ({result_type})", flush=True)
+
+        # BUYTOCLOSE short leg (at ask)
+        if short_ask > 0:
+            payload = {
+                "AccountID": SIM_ACCOUNT_ID,
+                "Symbol": short_sym,
+                "Quantity": str(order["qty"]),
+                "OrderType": "Limit",
+                "LimitPrice": str(round(short_ask, 2)),
+                "TradeAction": "BUYTOCLOSE",
+                "TimeInForce": {"Duration": "DAY"},
+                "Route": "Intelligent",
+            }
+            resp = _sim_api("POST", "/orderexecution/orders", payload)
+            ok, oid = _order_ok(resp)
+            if ok:
+                with _lock:
+                    order["short_close_oid"] = oid
+        else:
+            print(f"[options] short leg {short_sym} ask=0, will expire", flush=True)
+
+        # SELLTOCLOSE long leg (at bid)
+        if long_bid > 0:
+            payload = {
+                "AccountID": SIM_ACCOUNT_ID,
+                "Symbol": long_sym,
+                "Quantity": str(order["qty"]),
+                "OrderType": "Limit",
+                "LimitPrice": str(round(long_bid, 2)),
+                "TradeAction": "SELLTOCLOSE",
+                "TimeInForce": {"Duration": "DAY"},
+                "Route": "Intelligent",
+            }
+            resp = _sim_api("POST", "/orderexecution/orders", payload)
+            ok, oid = _order_ok(resp)
+            if ok:
+                with _lock:
+                    order["long_close_oid"] = oid
+        else:
+            print(f"[options] long leg {long_sym} bid=0, will expire", flush=True)
+
+        with _lock:
+            order["ts_closed"] = datetime.utcnow().isoformat()
+            order["close_order_id"] = order.get("short_close_oid")  # compat
+
+        _alert(f"[OPTIONS] SPREAD CLOSED: {setup_name} ({result_type})\n"
+               f"Credit: ${theo_credit:.2f} | Debit: ${theo_debit:.2f}\n"
+               f"Theo P&L: ${theo_pnl:+.0f}")
+
+    elif order["status"] == "pending_entry":
+        # Cancel both entry orders
+        for oid_key in ("short_entry_oid", "long_entry_oid"):
+            oid = order.get(oid_key)
+            if oid:
+                _sim_api("DELETE", f"/orderexecution/orders/{oid}", None)
+        print(f"[options] cancelled unfilled spread: {setup_name}", flush=True)
+
+    with _lock:
+        order["status"] = "closed"
+    _persist_order(setup_log_id)
+
+
+def _close_single_leg(setup_log_id: int, order: dict, result_type: str):
+    """Close single-leg option (original behavior)."""
     setup_name = order["setup_name"]
     symbol = order["symbol"]
 
-    # Sell to close at bid price (avoid terrible SIM market fills)
     if order["status"] == "filled":
-        # Get current bid for limit exit — this IS the theoretical close price
         bid_price = _get_option_bid(symbol)
 
-        # Save theoretical close price (live API bid — accurate market price)
         if bid_price and bid_price > 0:
             with _lock:
                 order["theo_close_price"] = bid_price
             theo_entry = order.get("theo_entry_price") or order.get("ask_at_entry") or 0
             theo_pnl = (bid_price - theo_entry) * 100 * order["qty"]
+            with _lock:
+                order["theo_pnl"] = round(theo_pnl, 0)
             print(f"[options] theo close: {setup_name} theo_bid=${bid_price:.2f} "
                   f"theo_pnl=${theo_pnl:+.0f}", flush=True)
 
@@ -210,7 +463,6 @@ def close_trade(setup_log_id: int, result_type: str = ""):
             with _lock:
                 order["close_order_id"] = close_oid
                 order["ts_closed"] = datetime.utcnow().isoformat()
-            # Try to capture fill price
             if close_oid:
                 time.sleep(1)
                 fp = _get_order_fill_price(close_oid)
@@ -224,7 +476,6 @@ def close_trade(setup_log_id: int, result_type: str = ""):
             print(f"[options] close FAILED: {setup_name} {symbol} — "
                   f"will expire cash-settled", flush=True)
     elif order["status"] == "pending_entry":
-        # Entry not filled yet — cancel it
         if order.get("entry_order_id"):
             _sim_api("DELETE", f"/orderexecution/orders/{order['entry_order_id']}", None)
         print(f"[options] cancelled unfilled entry: {setup_name} {symbol}", flush=True)
@@ -234,8 +485,10 @@ def close_trade(setup_log_id: int, result_type: str = ""):
     _persist_order(setup_log_id)
 
 
+# ====== POLL ORDER STATUS ======
+
 def poll_order_status():
-    """Check order fills, stop-loss, and time exit via TS API. Called each ~30s cycle."""
+    """Check order fills and time exit. Called each ~30s cycle."""
     if not OPTIONS_TRADE_ENABLED:
         return
     with _lock:
@@ -262,27 +515,19 @@ def poll_order_status():
             broker_orders[oid] = o
 
     for lid, order in pending:
-        _check_fills(lid, order, broker_orders)
+        if order.get("strategy") == "credit_spread":
+            _check_spread_fills(lid, order, broker_orders)
+        else:
+            _check_fills(lid, order, broker_orders)
 
-    # ── Time-based exit for filled positions ──
+    # ── Time-based exit for SINGLE-LEG filled positions only ──
+    # Credit spreads: NO time exit (theta works for us, hold to resolution)
     with _lock:
         filled = [(lid, o) for lid, o in _active_orders.items()
-                  if o["status"] == "filled" and o.get("entry_price")]
+                  if o["status"] == "filled" and o.get("entry_price")
+                  and o.get("strategy") != "credit_spread"]
     if not filled:
         return
-
-    # Get current positions to check mark price
-    try:
-        pos_data = _sim_api("GET",
-            f"/brokerage/accounts/{SIM_ACCOUNT_ID}/positions", None)
-    except Exception:
-        pos_data = None
-
-    positions_by_symbol = {}
-    if pos_data:
-        for p in pos_data.get("Positions", []):
-            sym = p.get("Symbol", "")
-            positions_by_symbol[sym] = p
 
     now = datetime.utcnow()
     for lid, order in filled:
@@ -290,24 +535,11 @@ def poll_order_status():
         entry_price = order["entry_price"]
         placed_ts = order.get("ts_placed")
 
-        # Get current mark/last price from position
-        pos = positions_by_symbol.get(symbol)
-        current_price = None
-        if pos:
-            last = pos.get("Last") or pos.get("MarketValue")
-            if last:
-                try:
-                    current_price = float(str(last).replace(",", ""))
-                except (ValueError, TypeError):
-                    pass
-
         should_close = False
         reason = ""
 
-        # No stop-loss: max risk is just the option premium, which is tiny.
-
         # Time exit: close if held > MAX_HOLD_MINUTES
-        if not should_close and placed_ts:
+        if placed_ts:
             try:
                 placed = datetime.fromisoformat(placed_ts)
                 held_min = (now - placed).total_seconds() / 60
@@ -322,90 +554,79 @@ def poll_order_status():
                   flush=True)
             _alert(f"[OPTIONS] AUTO-CLOSE: {order['setup_name']}\n"
                    f"{symbol} | {reason}\n"
-                   f"Entry: ${entry_price:.2f} | Current: ${current_price or '?'}")
+                   f"Entry: ${entry_price:.2f}")
             close_trade(lid, result_type=reason)
 
 
-# ====== STRIKE SELECTION ======
+# ====== FILL CHECKING ======
 
-def _find_strike(is_long: bool) -> dict | None:
-    """Find option strike nearest to TARGET_DELTA from latest chain snapshot."""
-    if not _engine:
-        return None
-
-    # Use SPY chain for SPY, SPX chain for SPXW
-    table = "spy_chain_snapshots" if OPTIONS_UNDERLYING == "SPY" else "chain_snapshots"
-
-    try:
-        from sqlalchemy import text
-        with _engine.begin() as conn:
-            row = conn.execute(text(
-                f"SELECT columns, rows FROM {table} ORDER BY ts DESC LIMIT 1"
-            )).mappings().first()
-        if not row:
-            print(f"[options] no {table} snapshot available", flush=True)
-            return None
-
-        cols = json.loads(row["columns"]) if isinstance(row["columns"], str) else row["columns"]
-        rows = json.loads(row["rows"]) if isinstance(row["rows"], str) else row["rows"]
-    except Exception as e:
-        print(f"[options] chain query error: {e}", flush=True)
-        return None
-
-    if not rows:
-        print(f"[options] {table} snapshot has no rows", flush=True)
-        return None
-
-    # For LONG: buy call → scan C_Delta (idx 4), target ~0.30
-    # For SHORT: buy put → scan P_Delta (idx 16), target ~-0.30 (abs 0.30)
-    best = None
-    best_gap = float("inf")
-
-    for r in rows:
-        try:
-            strike = float(r[IDX_STRIKE]) if r[IDX_STRIKE] else None
-            if not strike:
-                continue
-
-            if is_long:
-                delta = float(r[IDX_C_DELTA]) if r[IDX_C_DELTA] else None
-                bid = float(r[IDX_C_BID]) if r[IDX_C_BID] else 0
-                ask = float(r[IDX_C_ASK]) if r[IDX_C_ASK] else 0
-            else:
-                delta = float(r[IDX_P_DELTA]) if r[IDX_P_DELTA] else None
-                bid = float(r[IDX_P_BID]) if r[IDX_P_BID] else 0
-                ask = float(r[IDX_P_ASK]) if r[IDX_P_ASK] else 0
-
-            if delta is None:
-                continue
-
-            # Put delta is negative; compare absolute value
-            gap = abs(abs(delta) - TARGET_DELTA)
-            if gap < best_gap:
-                best_gap = gap
-                best = {
-                    "strike": int(strike),
-                    "delta": delta,
-                    "bid": bid,
-                    "ask": ask,
-                }
-        except (ValueError, TypeError, IndexError):
-            continue
-
-    if best:
-        print(f"[options] strike selected: {OPTIONS_UNDERLYING} {best['strike']} "
-              f"delta={best['delta']:.3f} bid={best['bid']:.2f} ask={best['ask']:.2f}",
-              flush=True)
-    return best
-
-
-# ====== ORDER FILL CHECKING ======
-
-def _check_fills(lid, order, broker_orders):
-    """Check individual order fills and update state."""
+def _check_spread_fills(lid, order, broker_orders):
+    """Check credit spread entry/close fills for both legs."""
     changed = False
 
-    # Check entry fill
+    if order["status"] == "pending_entry":
+        # Check short leg entry
+        if not order.get("short_filled") and order.get("short_entry_oid"):
+            bo = broker_orders.get(order["short_entry_oid"], {})
+            if bo.get("Status") == "FLL":
+                fp = _extract_fill_price(bo)
+                with _lock:
+                    order["short_filled"] = True
+                    order["short_entry_price"] = fp
+                changed = True
+            elif bo.get("Status") in ("REJ", "CAN", "EXP"):
+                long_oid = order.get("long_entry_oid")
+                if long_oid:
+                    _sim_api("DELETE", f"/orderexecution/orders/{long_oid}", None)
+                with _lock:
+                    order["status"] = "closed"
+                changed = True
+                print(f"[options] short entry rejected: {order['setup_name']}", flush=True)
+
+        # Check long leg entry
+        if not order.get("long_filled") and order.get("long_entry_oid"):
+            bo = broker_orders.get(order["long_entry_oid"], {})
+            if bo.get("Status") == "FLL":
+                fp = _extract_fill_price(bo)
+                with _lock:
+                    order["long_filled"] = True
+                    order["long_entry_price"] = fp
+                changed = True
+            elif bo.get("Status") in ("REJ", "CAN", "EXP"):
+                short_oid = order.get("short_entry_oid")
+                if short_oid:
+                    _sim_api("DELETE", f"/orderexecution/orders/{short_oid}", None)
+                with _lock:
+                    order["status"] = "closed"
+                changed = True
+                print(f"[options] long entry rejected: {order['setup_name']}", flush=True)
+
+        # Both filled → transition to "filled"
+        with _lock:
+            if order.get("short_filled") and order.get("long_filled") and order["status"] == "pending_entry":
+                order["status"] = "filled"
+                sim_credit = None
+                if order.get("short_entry_price") and order.get("long_entry_price"):
+                    sim_credit = round(order["short_entry_price"] - order["long_entry_price"], 2)
+                    order["entry_price"] = sim_credit
+                theo = order.get("theo_credit", 0)
+                changed = True
+                print(f"[options] SPREAD FILLED: {order['setup_name']} "
+                      f"short=${order['short_entry_price']} long=${order['long_entry_price']} "
+                      f"sim_credit=${sim_credit} theo_credit=${theo:.2f}", flush=True)
+                _alert(f"[OPTIONS] SPREAD FILLED: {order['setup_name']}\n"
+                       f"SELL {order['short_symbol']} @ ${order['short_entry_price']}\n"
+                       f"BUY {order['long_symbol']} @ ${order['long_entry_price']}\n"
+                       f"Credit: ${sim_credit} (theo: ${theo:.2f})")
+
+    if changed:
+        _persist_order(lid)
+
+
+def _check_fills(lid, order, broker_orders):
+    """Check single-leg order fills."""
+    changed = False
+
     if order["status"] == "pending_entry" and order.get("entry_order_id"):
         entry = broker_orders.get(order["entry_order_id"], {})
         status = entry.get("Status", "")
@@ -415,7 +636,6 @@ def _check_fills(lid, order, broker_orders):
                 order["status"] = "filled"
                 order["entry_price"] = fp
             changed = True
-            # Log both SIM fill and theoretical entry
             theo = order.get("theo_entry_price") or order.get("ask_at_entry")
             print(f"[options] FILLED: {order['setup_name']} {order['symbol']} "
                   f"sim=${fp} theo=${theo}", flush=True)
@@ -430,7 +650,6 @@ def _check_fills(lid, order, broker_orders):
             print(f"[options] entry {status}: {order['setup_name']} "
                   f"reason={reason}", flush=True)
 
-    # Check close fill
     if order["status"] == "filled" and order.get("close_order_id"):
         close = broker_orders.get(order["close_order_id"], {})
         if close.get("Status") == "FLL":
@@ -449,6 +668,92 @@ def _check_fills(lid, order, broker_orders):
 
     if changed:
         _persist_order(lid)
+
+
+# ====== STRIKE SELECTION ======
+
+def _get_chain_rows():
+    """Get latest chain snapshot rows."""
+    if not _engine:
+        return None
+    table = "spy_chain_snapshots" if OPTIONS_UNDERLYING == "SPY" else "chain_snapshots"
+    try:
+        from sqlalchemy import text
+        with _engine.begin() as conn:
+            row = conn.execute(text(
+                f"SELECT rows FROM {table} ORDER BY ts DESC LIMIT 1"
+            )).mappings().first()
+        if not row:
+            print(f"[options] no {table} snapshot available", flush=True)
+            return None
+        rows = json.loads(row["rows"]) if isinstance(row["rows"], str) else row["rows"]
+        return rows
+    except Exception as e:
+        print(f"[options] chain query error: {e}", flush=True)
+        return None
+
+
+def _find_strike_in_rows(rows, scan_puts: bool, target_delta: float) -> dict | None:
+    """Find strike nearest to target_delta. scan_puts=True scans put side."""
+    best = None
+    best_gap = float("inf")
+    for r in rows:
+        try:
+            strike = float(r[IDX_STRIKE]) if r[IDX_STRIKE] else None
+            if not strike:
+                continue
+            if scan_puts:
+                delta = float(r[IDX_P_DELTA]) if r[IDX_P_DELTA] else None
+                bid = float(r[IDX_P_BID]) if r[IDX_P_BID] else 0
+                ask = float(r[IDX_P_ASK]) if r[IDX_P_ASK] else 0
+            else:
+                delta = float(r[IDX_C_DELTA]) if r[IDX_C_DELTA] else None
+                bid = float(r[IDX_C_BID]) if r[IDX_C_BID] else 0
+                ask = float(r[IDX_C_ASK]) if r[IDX_C_ASK] else 0
+            if delta is None:
+                continue
+            gap = abs(abs(delta) - target_delta)
+            if gap < best_gap:
+                best_gap = gap
+                best = {"strike": int(strike), "delta": delta, "bid": bid, "ask": ask}
+        except (ValueError, TypeError, IndexError):
+            continue
+    if best:
+        side = "P" if scan_puts else "C"
+        print(f"[options] short strike: {OPTIONS_UNDERLYING} {side}{best['strike']} "
+              f"delta={best['delta']:.3f} bid={best['bid']:.2f} ask={best['ask']:.2f}", flush=True)
+    return best
+
+
+def _find_exact_strike(rows, scan_puts: bool, target_strike: int) -> dict | None:
+    """Find exact strike in chain rows."""
+    for r in rows:
+        try:
+            strike = float(r[IDX_STRIKE]) if r[IDX_STRIKE] else None
+            if not strike or int(strike) != target_strike:
+                continue
+            if scan_puts:
+                delta = float(r[IDX_P_DELTA]) if r[IDX_P_DELTA] else None
+                bid = float(r[IDX_P_BID]) if r[IDX_P_BID] else 0
+                ask = float(r[IDX_P_ASK]) if r[IDX_P_ASK] else 0
+            else:
+                delta = float(r[IDX_C_DELTA]) if r[IDX_C_DELTA] else None
+                bid = float(r[IDX_C_BID]) if r[IDX_C_BID] else 0
+                ask = float(r[IDX_C_ASK]) if r[IDX_C_ASK] else 0
+            return {"strike": int(strike), "delta": delta, "bid": bid, "ask": ask}
+        except (ValueError, TypeError, IndexError):
+            continue
+    return None
+
+
+def _find_strike(is_long: bool) -> dict | None:
+    """Find option strike nearest to TARGET_DELTA (single-leg mode)."""
+    chain_rows = _get_chain_rows()
+    if not chain_rows:
+        return None
+    # Single-leg: bullish = call, bearish = put
+    scan_puts = not is_long
+    return _find_strike_in_rows(chain_rows, scan_puts, TARGET_DELTA)
 
 
 # ====== API HELPERS ======
@@ -631,21 +936,16 @@ def _load_active_orders():
 _last_reconcile = 0.0  # epoch timestamp
 
 def reconcile_with_broker():
-    """Backfill missing entry/close prices from TS API. Called every ~60s.
-
-    Purely additive — only READS from broker and UPDATES our DB state
-    where data is missing. Does NOT change any trading logic or status flow.
-    """
+    """Backfill missing entry/close prices from TS API. Called every ~60s."""
     global _last_reconcile
     if not OPTIONS_TRADE_ENABLED or not _get_token:
         return
 
     now = time.time()
-    if now - _last_reconcile < 55:  # run at most every ~60s
+    if now - _last_reconcile < 55:
         return
     _last_reconcile = now
 
-    # Collect orders that need backfill
     with _lock:
         needs_backfill = [
             (lid, o) for lid, o in _active_orders.items()
@@ -657,7 +957,6 @@ def reconcile_with_broker():
     if not needs_backfill:
         return
 
-    # Pull all orders from broker
     try:
         data = _sim_api("GET", f"/brokerage/accounts/{SIM_ACCOUNT_ID}/orders", None)
     except Exception:
@@ -675,7 +974,6 @@ def reconcile_with_broker():
     for lid, order in needs_backfill:
         changed = False
 
-        # Backfill missing entry_price
         if order.get("entry_price") is None and order.get("entry_order_id"):
             entry = broker_orders.get(order["entry_order_id"], {})
             if entry.get("Status") == "FLL":
@@ -685,7 +983,6 @@ def reconcile_with_broker():
                         order["entry_price"] = fp
                     changed = True
 
-        # Backfill missing close_price
         if order.get("close_price") is None and order.get("close_order_id"):
             close = broker_orders.get(order["close_order_id"], {})
             if close.get("Status") == "FLL":

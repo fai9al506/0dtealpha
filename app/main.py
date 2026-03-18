@@ -6338,7 +6338,12 @@ def api_options_log(limit: int = Query(200)):
             theo_entry = st.get("theo_entry_price") or st.get("ask_at_entry")
             theo_close = st.get("theo_close_price")
             sim_pnl = ((close_p or 0) - (entry_p or 0)) * 100 * st.get("qty", 1) if entry_p and close_p else None
-            theo_pnl = ((theo_close or 0) - (theo_entry or 0)) * 100 * st.get("qty", 1) if theo_entry and theo_close else None
+            # Use pre-computed theo_pnl for credit spreads, fallback to formula for single-leg
+            theo_pnl = st.get("theo_pnl")
+            if theo_pnl is not None:
+                theo_pnl = float(theo_pnl)
+            elif theo_entry and theo_close:
+                theo_pnl = ((theo_close or 0) - (theo_entry or 0)) * 100 * st.get("qty", 1)
             # Hold time in minutes
             hold_min = None
             ts_placed = st.get("ts_placed")
@@ -6355,7 +6360,9 @@ def api_options_log(limit: int = Query(200)):
             sym = st.get("symbol", "")
             is_index = "SPX" in sym.upper() and "SPY" not in sym.upper()
             comm_per_side = 1.40 if is_index else 0.60
-            commission = comm_per_side * 2 * qty  # round trip (open + close)
+            is_spread = st.get("strategy") == "credit_spread"
+            legs = 4 if is_spread else 2  # credit spread = 4 legs (open+close x 2)
+            commission = comm_per_side * legs * qty
             # Net P&L = theo P&L - commission
             net_pnl = (theo_pnl - commission) if theo_pnl is not None else None
             # Delta at entry

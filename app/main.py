@@ -9677,8 +9677,8 @@ DASH_HTML_TEMPLATE = """
     .tl-header.tl-grid-sim, .tl-row.tl-grid-sim { grid-template-columns:32px 100px 32px 48px 72px 72px 72px 40px 40px 56px 64px 44px 64px; }
     /* Eval Log grid: #, Setup, Dir, Grade, Time, Qty, Entry, Stop, Result, P&L($), Dur, Status */
     .tl-header.tl-grid-eval, .tl-row.tl-grid-eval { grid-template-columns:32px 100px 32px 48px 72px 36px 72px 56px 56px 64px 44px 64px; }
-    /* Options Log grid: #, Setup, Dir, Align, Symbol, Delta, Entry, Exit, Gross, Comm, Net, Hold, Time */
-    .tl-header.tl-grid-options, .tl-row.tl-grid-options { grid-template-columns:32px 90px 28px 32px 110px 38px 52px 52px 58px 40px 62px 38px 72px; }
+    /* Options Log grid: #, Setup, Dir, Align, SPX, Symbol, Delta, Entry, Exit, Gross, Comm, Net, Hold, Time */
+    .tl-header.tl-grid-options, .tl-row.tl-grid-options { grid-template-columns:32px 86px 24px 28px 52px 100px 36px 48px 48px 54px 38px 58px 36px 60px; }
     .tl-options-day-row { display:grid; grid-template-columns:1fr; padding:4px 8px; background:var(--panel); border-top:1px solid var(--border); margin-top:4px; font-size:10px; font-weight:600; }
 
     /* Playback View */
@@ -14004,25 +14004,26 @@ DASH_HTML_TEMPLATE = """
     function renderOptionsLog() {
       const hdr = document.getElementById('tlHeaderRow');
       hdr.className = 'tl-header tl-grid-options';
-      hdr.innerHTML = '<span>#</span><span>Setup</span><span>D</span><span>A</span><span>Symbol</span><span>\u0394</span><span>Entry</span><span>Exit</span><span>Gross</span><span>Comm</span><span>Net P&L</span><span>Hold</span><span>Time</span>';
+      hdr.innerHTML = '<span>#</span><span>Setup</span><span>D</span><span>A</span><span>SPX</span><span>Symbol</span><span>\u0394</span><span>Entry</span><span>Exit</span><span>Gross</span><span>Comm</span><span>Net P&L</span><span>Hold</span><span>Time</span>';
       const filtered = _optionsGetFiltered();
       // Totals
-      let grossTotal=0,commTotal=0,netTotal=0,trades=0,wins=0;
+      let grossTotal=0,commTotal=0,netTotal=0,spxTotal=0,trades=0,wins=0,spxCount=0;
       filtered.forEach(l => {
         trades++;
         if (l.theo_pnl!=null) grossTotal += l.theo_pnl;
         if (l.commission!=null) commTotal += l.commission;
         if (l.net_pnl!=null) { netTotal += l.net_pnl; if (l.net_pnl>=0) wins++; }
+        if (l.portal_pnl!=null) { spxTotal += l.portal_pnl; spxCount++; }
       });
       const wr = trades>0 ? (wins/trades*100).toFixed(0) : '--';
       const netColor = netTotal>=0 ? '#22c55e' : '#ef4444';
-      const grossColor = grossTotal>=0 ? '#22c55e' : '#ef4444';
+      const spxColor = spxTotal>=0 ? '#22c55e' : '#ef4444';
       document.getElementById('tlStats').innerHTML =
         '<span>Trades: <span class="stat-val">'+trades+'</span></span>' +
         '<span>WR: <span class="stat-val">'+wr+'%</span></span>' +
-        '<span>Gross: <span class="stat-val" style="color:'+grossColor+'">$'+(grossTotal>=0?'+':'')+grossTotal.toFixed(0)+'</span></span>' +
-        '<span>Comm: <span class="stat-val" style="color:#f59e0b">-$'+commTotal.toFixed(0)+'</span></span>' +
-        '<span>Net P&L: <span class="stat-val" style="color:'+netColor+';font-size:13px">$'+(netTotal>=0?'+':'')+netTotal.toFixed(0)+'</span></span>';
+        '<span>SPX: <span class="stat-val" style="color:'+spxColor+'">'+(spxTotal>=0?'+':'')+spxTotal.toFixed(1)+' pts</span></span>' +
+        '<span>Net P&L: <span class="stat-val" style="color:'+netColor+';font-size:13px">$'+(netTotal>=0?'+':'')+netTotal.toFixed(0)+'</span></span>' +
+        '<span style="color:var(--muted);font-size:9px">Comm: -$'+commTotal.toFixed(0)+'</span>';
       const body = document.getElementById('tlBody');
       if (filtered.length===0) { body.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px">No options trades</div>'; return; }
       // Group by date for daily subtotals
@@ -14039,19 +14040,20 @@ DASH_HTML_TEMPLATE = """
       const sortedDates = Object.keys(byDate).sort().reverse();
       sortedDates.forEach(dateKey => {
         const dayTrades = byDate[dateKey];
-        let dayGross=0, dayComm=0, dayNet=0, dayW=0, dayL=0;
+        let dayGross=0, dayComm=0, dayNet=0, dayW=0, dayL=0, daySpx=0;
         dayTrades.forEach(l => {
           if (l.theo_pnl!=null) dayGross += l.theo_pnl;
           if (l.commission!=null) dayComm += l.commission;
           if (l.net_pnl!=null) { dayNet += l.net_pnl; if (l.net_pnl>=0) dayW++; else dayL++; }
+          if (l.portal_pnl!=null) daySpx += l.portal_pnl;
         });
         cumNet += dayNet;
         const dayNetC = dayNet>=0 ? '#22c55e' : '#ef4444';
         const cumC = cumNet>=0 ? '#22c55e' : '#ef4444';
+        const daySpxC = daySpx>=0 ? '#22c55e' : '#ef4444';
         html += '<div class="tl-options-day-row" style="display:flex;justify-content:space-between;align-items:center">' +
-          '<span style="color:var(--text)">'+dateKey+' ('+dayTrades.length+' trades, '+dayW+'W/'+dayL+'L)</span>' +
-          '<span>Gross: <span style="color:'+(dayGross>=0?'#22c55e':'#ef4444')+'">$'+(dayGross>=0?'+':'')+dayGross.toFixed(0)+'</span>' +
-          ' Comm: <span style="color:#f59e0b">-$'+dayComm.toFixed(0)+'</span>' +
+          '<span style="color:var(--text)">'+dateKey+' ('+dayTrades.length+'t, '+dayW+'W/'+dayL+'L)</span>' +
+          '<span>SPX: <span style="color:'+daySpxC+'">'+(daySpx>=0?'+':'')+daySpx.toFixed(1)+'pts</span>' +
           ' <b>Net: <span style="color:'+dayNetC+'">$'+(dayNet>=0?'+':'')+dayNet.toFixed(0)+'</span></b>' +
           ' Cum: <span style="color:'+cumC+'">$'+(cumNet>=0?'+':'')+cumNet.toFixed(0)+'</span></span>' +
         '</div>';
@@ -14060,6 +14062,14 @@ DASH_HTML_TEMPLATE = """
           const dir = (l.direction==='long'||l.direction==='bullish') ? '\u25B2' : '\u25BC';
           const dirColor = (l.direction==='long'||l.direction==='bullish') ? '#22c55e' : '#ef4444';
           const alignStr = l.greek_alignment!=null ? (l.greek_alignment>0?'+':'')+l.greek_alignment : '-';
+          // SPX points PnL from portal
+          let spxStr='--', spxC='#888';
+          if (l.portal_pnl!=null) {
+            spxStr=(l.portal_pnl>=0?'+':'')+l.portal_pnl.toFixed(1);
+            spxC=l.portal_pnl>=0?'#22c55e':'#ef4444';
+          } else if (l.portal_result) {
+            spxStr=l.portal_result; spxC=l.portal_result==='WIN'?'#22c55e':'#ef4444';
+          }
           const deltaStr = l.delta_at_entry!=null ? l.delta_at_entry.toFixed(2) : '--';
           const theoIn = l.theo_entry!=null ? '$'+l.theo_entry.toFixed(2) : '--';
           const theoOut = l.theo_close!=null ? '$'+l.theo_close.toFixed(2) : '--';
@@ -14076,7 +14086,8 @@ DASH_HTML_TEMPLATE = """
             '<span class="setup-pill" style="background:'+pillColor+'22;color:'+pillColor+'">'+l.setup_name+'</span>' +
             '<span style="color:'+dirColor+';font-weight:700;text-align:center">'+dir+'</span>' +
             '<span style="color:var(--muted);font-size:10px;text-align:center">'+alignStr+'</span>' +
-            '<span style="color:var(--text);font-size:9px;overflow:hidden;text-overflow:ellipsis" title="'+sym+'">'+sym+'</span>' +
+            '<span style="color:'+spxC+';font-size:10px;font-weight:600">'+spxStr+'</span>' +
+            '<span style="color:var(--text);font-size:8px;overflow:hidden;text-overflow:ellipsis" title="'+sym+'">'+sym+'</span>' +
             '<span style="color:var(--muted);font-size:9px;text-align:center">'+deltaStr+'</span>' +
             '<span style="color:var(--text);font-size:10px">'+theoIn+'</span>' +
             '<span style="color:var(--text);font-size:10px">'+theoOut+'</span>' +

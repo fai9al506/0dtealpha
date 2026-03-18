@@ -4090,8 +4090,9 @@ def _es_quote_reset():
     # Reset absorption detector for new session
     global _last_absorption_bar_idx
     _last_absorption_bar_idx = -1
-    from app.setup_detector import reset_absorption_session
+    from app.setup_detector import reset_absorption_session, reset_single_bar_abs_session
     reset_absorption_session()
+    reset_single_bar_abs_session()
     _absorption_signals.clear()
 
 def _run_absorption_detection(bars: list) -> dict | None:
@@ -4392,6 +4393,111 @@ def _run_absorption_detection(bars: list) -> dict | None:
     return signal
 
 
+def _run_single_bar_absorption(bars: list):
+    """Evaluate single-bar absorption (LOG-ONLY). Logs to setup_log + sends Telegram."""
+    from app.setup_detector import (
+        evaluate_single_bar_absorption, should_notify_single_bar_abs,
+        format_single_bar_abs_message,
+    )
+
+    # Build volland stats dict (same as _run_absorption_detection)
+    volland_stats = None
+    try:
+        vstat = db_volland_stats()
+        if vstat and vstat.get("stats") and vstat["stats"].get("has_statistics"):
+            volland_stats = vstat["stats"]
+    except Exception as e:
+        print(f"[sb-absorption] volland lookup error: {e}", flush=True)
+
+    result = evaluate_single_bar_absorption(bars, volland_stats, _setup_settings)
+    if result is None:
+        return None
+
+    print(f"[sb-absorption] SIGNAL: {result['direction'].upper()} "
+          f"ES={result['abs_es_price']:.2f} vol={result['abs_vol_ratio']:.1f}x "
+          f"delta={result['bar_delta']:+d}({result['delta_ratio']:.1f}x) "
+          f"cvd_trend={result['cvd_trend']:+d} svb={result.get('svb')} "
+          f"bar_idx={result['bar_idx']}", flush=True)
+
+    # SPX spot for setup_log
+    spx_spot = None
+    try:
+        msg = last_run_status.get("msg") or ""
+        parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+        spx_spot = float(parts.get("spot", ""))
+    except Exception:
+        pass
+    if spx_spot:
+        result["spot"] = round(spx_spot, 2)
+
+    # Greek alignment
+    _sba_charm = None
+    if volland_stats and isinstance(volland_stats, dict):
+        _c = volland_stats.get("aggregatedCharm")
+        if _c is not None:
+            try:
+                _sba_charm = float(_c)
+            except (ValueError, TypeError):
+                pass
+    result["vanna_all"] = _vanna_cache.get("all")
+    result["vanna_weekly"] = _vanna_cache.get("weekly")
+    result["vanna_monthly"] = _vanna_cache.get("monthly")
+    result["spot_vol_beta"] = result.get("svb")
+    result["greek_alignment"] = _compute_greek_alignment(
+        result.get("direction"), _sba_charm, _vanna_cache.get("all"),
+        result.get("spot"), None)
+    result["charm_limit_entry"] = None  # Not applicable
+
+    # Notification gate
+    fire, reason = should_notify_single_bar_abs(result)
+
+    # Log to setup_log (always, regardless of cooldown)
+    rw = {
+        "result": result,
+        "notify": fire,
+        "notify_reason": reason or "cooldown",
+        "message": format_single_bar_abs_message(result, alignment=result.get("greek_alignment")),
+    }
+    log_setup(rw)
+
+    # Send Telegram only when notification gate passes
+    if fire:
+        try:
+            send_telegram_setups(rw["message"])
+        except Exception as e:
+            print(f"[sb-absorption] telegram error: {e}", flush=True)
+
+    # Outcome tracking (LOG-ONLY: no auto-trading, but track for performance data)
+    if fire:
+        stop_pts = _setup_settings.get("sba_stop_pts", 8)
+        target_pts = _setup_settings.get("sba_target_pts", 10)
+        es_entry = result.get("abs_es_price", result["spot"])
+        if result["direction"] == "bullish":
+            target_lvl = es_entry + target_pts
+            stop_lvl = es_entry - stop_pts
+        else:
+            target_lvl = es_entry - target_pts
+            stop_lvl = es_entry + stop_pts
+        _setup_open_trades.append({
+            "setup_name": "SB Absorption", "direction": result["direction"],
+            "spot": result["spot"], "grade": result["grade"],
+            "target_level": target_lvl, "stop_level": stop_lvl,
+            "initial_stop_level": stop_lvl,
+            "ts": now_et(), "result_data": result,
+            "_seen_high": es_entry, "_seen_low": es_entry,
+            "_es_last_bar_idx": result.get("bar_idx", 0),
+            "max_hold_minutes": None,
+            "_trade_date": now_et().date(),
+            "setup_log_id": _current_setup_log.get("SB Absorption"),
+        })
+        print(f"[outcome] tracking SB Absorption: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
+
+    # NO auto-trading: SB Absorption is LOG-ONLY
+    # Grade='LOG' ensures /api/eval/signals also excludes it
+
+    return result
+
+
 # Track last bar idx to avoid re-evaluating same bar
 _last_absorption_bar_idx = -1
 _absorption_thread_lock = Lock()
@@ -4446,6 +4552,11 @@ def _run_absorption_in_thread(bars: list):
             _run_absorption_detection(bars)
         except Exception as e:
             print(f"[absorption] proactive eval error: {e}", flush=True)
+        # Single-bar absorption (LOG-ONLY — separate detector, same bar data)
+        try:
+            _run_single_bar_absorption(bars)
+        except Exception as e:
+            print(f"[sb-absorption] eval error: {e}", flush=True)
 
 
 def _es_session_date() -> str:

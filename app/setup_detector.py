@@ -1,7 +1,7 @@
 """
 Trading Setup Detector — self-contained scoring module.
-Evaluates GEX Long, AG Short, BofA Scalp, ES Absorption, Paradigm Reversal,
-DD Exhaustion, and Skew Charm setups.
+Evaluates GEX Long, AG Short, BofA Scalp, ES Absorption, Single-Bar Absorption,
+Paradigm Reversal, DD Exhaustion, and Skew Charm setups.
 Receives all data as parameters; no imports from main.py.
 """
 from collections import deque
@@ -1230,6 +1230,258 @@ def format_absorption_message(result, alignment=None):
         extras.append("Para")
     if result.get("lis_raw") and result.get("lis_val") is not None:
         extras.append(f"LIS {result['lis_dist']:.0f}pt")
+    if extras:
+        parts.append(" | ".join(extras))
+
+    return "\n".join(parts)
+
+
+# ── Single-Bar Absorption (LOG-ONLY) — defaults and state ──────────────────
+
+DEFAULT_SINGLE_BAR_ABS_SETTINGS = {
+    "single_bar_abs_enabled": True,
+    "sba_vol_mult": 2.0,          # trigger bar volume >= N x 20-bar avg
+    "sba_delta_mult": 2.0,        # trigger bar |delta| >= N x 20-bar avg |delta|
+    "sba_cvd_lookback": 8,        # bars to compute CVD trend
+    "sba_cvd_threshold": 0,       # min |CVD trend| (0 = just require direction alignment)
+    "sba_cooldown_bars": 10,      # min bars between same-direction signals
+    "sba_stop_pts": 8,
+    "sba_target_pts": 10,
+}
+
+_cooldown_single_bar_abs = {
+    "last_bullish_bar": -100,
+    "last_bearish_bar": -100,
+    "last_checked_idx": -1,
+    "last_date": None,
+}
+
+
+def reset_single_bar_abs_session():
+    """Reset single-bar absorption detector state for a new ES session."""
+    _cooldown_single_bar_abs["last_bullish_bar"] = -100
+    _cooldown_single_bar_abs["last_bearish_bar"] = -100
+    _cooldown_single_bar_abs["last_checked_idx"] = -1
+
+
+def evaluate_single_bar_absorption(bars, volland_stats, settings, spx_spot=None):
+    """
+    Detect single-bar absorption: bar closes against delta direction.
+
+    Bearish: bar closes RED despite strongly POSITIVE delta
+      -> passive sellers absorbing aggressive buyers -> SHORT signal
+    Bullish: bar closes GREEN despite strongly NEGATIVE delta
+      -> passive buyers absorbing aggressive sellers -> LONG signal
+
+    Requires CVD trend alignment (buyers exhausting into top, sellers into bottom)
+    and SVB >= 0 (normal market correlation).
+
+    Always returns grade='LOG' (log-only mode, not auto-traded).
+    """
+    if not settings.get("single_bar_abs_enabled", True):
+        return None
+
+    vol_mult = settings.get("sba_vol_mult", DEFAULT_SINGLE_BAR_ABS_SETTINGS["sba_vol_mult"])
+    delta_mult = settings.get("sba_delta_mult", DEFAULT_SINGLE_BAR_ABS_SETTINGS["sba_delta_mult"])
+    cvd_lookback = settings.get("sba_cvd_lookback", DEFAULT_SINGLE_BAR_ABS_SETTINGS["sba_cvd_lookback"])
+    cooldown_bars = settings.get("sba_cooldown_bars", DEFAULT_SINGLE_BAR_ABS_SETTINGS["sba_cooldown_bars"])
+    vol_window = 20
+
+    min_bars = vol_window + cvd_lookback
+    closed = [b for b in bars if b.get("status") == "closed"]
+    if len(closed) < min_bars:
+        return None
+
+    trigger = closed[-1]
+    trigger_idx = trigger["idx"]
+
+    # Dedup: skip if already checked this bar
+    if trigger_idx <= _cooldown_single_bar_abs["last_checked_idx"]:
+        return None
+    _cooldown_single_bar_abs["last_checked_idx"] = trigger_idx
+
+    # --- Volume gate ---
+    recent_vols = [b["volume"] for b in closed[-(vol_window + 1):-1]]
+    if not recent_vols:
+        return None
+    vol_avg = sum(recent_vols) / len(recent_vols)
+    if vol_avg <= 0:
+        return None
+    vol_ratio = trigger["volume"] / vol_avg
+    if vol_ratio < vol_mult:
+        return None
+
+    # --- Delta gate ---
+    recent_deltas = [abs(b.get("delta", 0)) for b in closed[-(vol_window + 1):-1]]
+    delta_avg = sum(recent_deltas) / len(recent_deltas) if recent_deltas else 0
+    if delta_avg <= 0:
+        return None
+    delta_ratio = abs(trigger.get("delta", 0)) / delta_avg
+    if delta_ratio < delta_mult:
+        return None
+
+    # --- Single-bar absorption check ---
+    bar_delta = trigger.get("delta", 0)
+    is_red = trigger["close"] < trigger["open"]
+    is_green = trigger["close"] > trigger["open"]
+
+    direction = None
+    if is_red and bar_delta > 0:
+        direction = "bearish"
+    elif is_green and bar_delta < 0:
+        direction = "bullish"
+    if direction is None:
+        return None
+
+    # --- CVD trend alignment (8-bar) ---
+    # Bearish absorption: CVD should be rising into the top (buyers exhausting)
+    # Bullish absorption: CVD should be falling into the bottom (sellers exhausting)
+    cvd_start = closed[-(cvd_lookback + 1)]["cvd"]
+    cvd_end = trigger["cvd"]
+    cvd_trend = cvd_end - cvd_start
+
+    cvd_threshold = settings.get("sba_cvd_threshold", 0)
+    if direction == "bearish" and cvd_trend <= cvd_threshold:
+        return None  # CVD not rising -> no exhaustion
+    if direction == "bullish" and cvd_trend >= -cvd_threshold:
+        return None  # CVD not falling -> no exhaustion
+
+    # --- SVB filter (from Volland stats) ---
+    svb_val = None
+    paradigm_str = ""
+    dd_str = ""
+    dd_numeric = 0
+    charm_val = None
+    lis_val = None
+    lis_dist = None
+
+    if volland_stats and volland_stats.get("has_statistics"):
+        paradigm_str = (volland_stats.get("paradigm") or "").upper()
+        dd_str = volland_stats.get("delta_decay_hedging") or ""
+        # Parse DD numeric
+        _dd_clean = dd_str.replace("$", "").replace(",", "")
+        try:
+            dd_numeric = float(_dd_clean)
+        except (ValueError, TypeError):
+            dd_numeric = 0
+        # Parse charm
+        _charm_raw = volland_stats.get("aggregatedCharm")
+        if _charm_raw is not None:
+            try:
+                charm_val = float(_charm_raw)
+            except (ValueError, TypeError):
+                pass
+        # Parse LIS
+        lis_raw_str = volland_stats.get("lines_in_sand") or ""
+        lis_match = re.search(r'[\d,]+\.?\d*', lis_raw_str.replace(',', ''))
+        if lis_match:
+            lis_val = float(lis_match.group())
+            lis_dist = abs(trigger["close"] - lis_val)
+        # Parse SVB
+        _svb_raw = volland_stats.get("spot_vol_beta")
+        if _svb_raw and isinstance(_svb_raw, dict):
+            try:
+                svb_val = float(_svb_raw.get("correlation"))
+            except (ValueError, TypeError):
+                pass
+        elif _svb_raw is not None:
+            try:
+                svb_val = float(_svb_raw)
+            except (ValueError, TypeError):
+                pass
+
+    # Block negative SVB (dislocation = unreliable absorption)
+    if svb_val is not None and svb_val < 0:
+        return None
+
+    # --- Price trend context (8-bar) ---
+    price_trend = trigger["close"] - closed[-(cvd_lookback + 1)]["close"]
+
+    # --- Build result (LOG-ONLY: grade always "LOG", score 0) ---
+    return {
+        "setup_name": "SB Absorption",
+        "direction": direction,
+        "grade": "LOG",
+        "score": 0,
+        "paradigm": paradigm_str,
+        "spot": round(trigger["close"], 2),
+        "lis": round(lis_val, 2) if lis_val is not None else None,
+        "target": None,
+        "max_plus_gex": None,
+        "max_minus_gex": None,
+        "gap_to_lis": round(lis_dist, 2) if lis_dist is not None else None,
+        "upside": None,
+        "rr_ratio": None,
+        "first_hour": False,
+        # Scores: reuse column mapping for setup_log compatibility
+        "support_score": round(vol_ratio, 1),      # vol ratio
+        "upside_score": round(delta_ratio, 1),      # delta ratio
+        "floor_cluster_score": bar_delta,            # raw bar delta
+        "target_cluster_score": cvd_trend,           # CVD trend
+        "rr_score": round(svb_val, 2) if svb_val is not None else 0,
+        # Single-bar-specific extras
+        "bar_idx": trigger_idx,
+        "abs_es_price": round(trigger["close"], 2),
+        "abs_vol_ratio": round(vol_ratio, 1),
+        "vol_trigger": trigger["volume"],
+        "bar_delta": bar_delta,
+        "delta_ratio": round(delta_ratio, 1),
+        "cvd_trend": cvd_trend,
+        "price_trend": round(price_trend, 2),
+        "svb": round(svb_val, 2) if svb_val is not None else None,
+        "dd_hedging": dd_str,
+        "dd_numeric": dd_numeric,
+        "charm": charm_val,
+        "lis_val": lis_val,
+        "lis_dist": round(lis_dist, 1) if lis_dist is not None else None,
+        "ts": trigger.get("ts_end", ""),
+        "cvd": trigger["cvd"],
+        "high": trigger["high"],
+        "low": trigger["low"],
+    }
+
+
+def should_notify_single_bar_abs(result):
+    """Cooldown gate for Single-Bar Absorption. Bar-index based."""
+    today = datetime.now(NY).date()
+    if _cooldown_single_bar_abs["last_date"] != today:
+        _cooldown_single_bar_abs["last_bullish_bar"] = -100
+        _cooldown_single_bar_abs["last_bearish_bar"] = -100
+        _cooldown_single_bar_abs["last_date"] = today
+
+    bar_idx = result["bar_idx"]
+    direction = result["direction"]
+    cooldown = 10
+
+    if direction == "bullish":
+        if bar_idx - _cooldown_single_bar_abs["last_bullish_bar"] < cooldown:
+            return False, None
+        _cooldown_single_bar_abs["last_bullish_bar"] = bar_idx
+    else:
+        if bar_idx - _cooldown_single_bar_abs["last_bearish_bar"] < cooldown:
+            return False, None
+        _cooldown_single_bar_abs["last_bearish_bar"] = bar_idx
+
+    return True, "new"
+
+
+def format_single_bar_abs_message(result, alignment=None):
+    """Format Telegram HTML message for Single-Bar Absorption (LOG-ONLY)."""
+    side_emoji = "\U0001f7e2" if result["direction"] == "bullish" else "\U0001f534"
+    side_label = "BUY" if result["direction"] == "bullish" else "SELL"
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
+
+    parts = [
+        f"[LOG-ONLY] {side_emoji} <b>SB Abs {side_label}{align_str}</b>",
+        f"ES {result['abs_es_price']:.2f} | Vol {result['abs_vol_ratio']:.1f}x | Delta {result['bar_delta']:+d} ({result['delta_ratio']:.1f}x)",
+        f"CVD trend {result['cvd_trend']:+d} | Price trend {result['price_trend']:+.1f}",
+    ]
+
+    extras = []
+    if result.get("svb") is not None:
+        extras.append(f"SVB {result['svb']:.2f}")
+    if result.get("paradigm"):
+        extras.append(result["paradigm"])
     if extras:
         parts.append(" | ".join(extras))
 
@@ -2584,6 +2836,7 @@ def export_cooldowns() -> dict:
         "skew_charm": _serialize(_cooldown_skew_charm),
         "skew_tracker": copy.deepcopy(_skew_tracker),
         "vanna_pivot": _serialize(_cooldown_vanna_pivot),
+        "single_bar_abs": _serialize(_cooldown_single_bar_abs),
     }
 
 def import_cooldowns(data: dict):
@@ -2636,3 +2889,5 @@ def import_cooldowns(data: dict):
         _cooldown_vanna_pivot.update(_deserialize(
             data["vanna_pivot"], has_datetimes=True,
             dt_keys=("last_long_time", "last_short_time")))
+    if "single_bar_abs" in data:
+        _cooldown_single_bar_abs.update(_deserialize(data["single_bar_abs"]))

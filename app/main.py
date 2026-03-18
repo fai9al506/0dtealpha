@@ -10151,7 +10151,7 @@ DASH_HTML_TEMPLATE = """
         </div>
         <div class="modal-body" style="padding:12px">
           <!-- Info Row -->
-          <div id="setupDetailInfo" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;font-size:11px">
+          <div id="setupDetailInfo" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:3px;margin-bottom:8px;font-size:11px">
           </div>
           <!-- Outcome Row -->
           <div id="setupDetailOutcome" style="display:flex;gap:16px;margin-bottom:12px;padding:10px;background:#0f1115;border-radius:8px;font-size:12px">
@@ -14332,8 +14332,8 @@ DASH_HTML_TEMPLATE = """
         })();
 
         const cellHtml = (k, v, clr) => {
-          if (k === '__section__') return '<div style="grid-column:1/-1;color:var(--accent);font-size:9px;font-weight:700;letter-spacing:1px;padding:6px 0 2px;border-top:1px solid var(--border);margin-top:2px">' + v + '</div>';
-          return '<div style="background:#1a1d21;padding:6px 8px;border-radius:4px"><div style="color:var(--muted);font-size:9px">' + k + '</div><div style="color:' + (clr || 'var(--text)') + ';font-weight:600">' + (v || '–') + '</div></div>';
+          if (k === '__section__') return '<div style="grid-column:1/-1;color:var(--accent);font-size:8px;font-weight:700;letter-spacing:1px;padding:3px 0 1px;border-top:1px solid var(--border);margin-top:1px">' + v + '</div>';
+          return '<div style="background:#1a1d21;padding:3px 6px;border-radius:3px"><div style="color:var(--muted);font-size:8px">' + k + '</div><div style="color:' + (clr || 'var(--text)') + ';font-weight:600">' + (v || '–') + '</div></div>';
         };
         info.innerHTML = infoItems.map(([k, v, c]) => cellHtml(k, v, c)).join('');
 

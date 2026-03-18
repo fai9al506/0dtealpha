@@ -147,39 +147,35 @@ def _place_credit_spread(setup_log_id: int, setup_name: str, direction: str, spo
 
     max_loss = round(SPREAD_WIDTH - net_credit, 2)
 
-    # Place two orders: SELLTOOPEN short leg, BUYTOOPEN long leg
-    short_payload = {
+    # Place as single atomic multi-leg order using TS API Legs array.
+    # LimitPrice = net credit price. Both legs fill together or not at all.
+    # Symbol = short leg (primary), Legs = both legs with per-leg TradeAction.
+    payload = {
         "AccountID": SIM_ACCOUNT_ID,
         "Symbol": short_sym,
         "Quantity": str(OPTIONS_QTY),
         "OrderType": "Limit",
-        "LimitPrice": str(round(short_bid, 2)),
+        "LimitPrice": str(round(net_credit, 2)),
         "TradeAction": "SELLTOOPEN",
         "TimeInForce": {"Duration": "DAY"},
         "Route": "Intelligent",
+        "Legs": [
+            {
+                "Symbol": short_sym,
+                "Quantity": str(OPTIONS_QTY),
+                "TradeAction": "SELLTOOPEN",
+            },
+            {
+                "Symbol": long_sym,
+                "Quantity": str(OPTIONS_QTY),
+                "TradeAction": "BUYTOOPEN",
+            },
+        ],
     }
-    resp1 = _sim_api("POST", "/orderexecution/orders", short_payload)
-    ok1, oid1 = _order_ok(resp1)
+    resp = _sim_api("POST", "/orderexecution/orders", payload)
+    ok, entry_oid = _order_ok(resp)
 
-    long_payload = {
-        "AccountID": SIM_ACCOUNT_ID,
-        "Symbol": long_sym,
-        "Quantity": str(OPTIONS_QTY),
-        "OrderType": "Limit",
-        "LimitPrice": str(round(long_ask, 2)),
-        "TradeAction": "BUYTOOPEN",
-        "TimeInForce": {"Duration": "DAY"},
-        "Route": "Intelligent",
-    }
-    resp2 = _sim_api("POST", "/orderexecution/orders", long_payload)
-    ok2, oid2 = _order_ok(resp2)
-
-    if not ok1 or not ok2:
-        # Cancel whichever succeeded
-        if ok1 and oid1:
-            _sim_api("DELETE", f"/orderexecution/orders/{oid1}", None)
-        if ok2 and oid2:
-            _sim_api("DELETE", f"/orderexecution/orders/{oid2}", None)
+    if not ok:
         _alert(f"[OPTIONS] FAILED credit spread for {setup_name}\n"
                f"{short_sym} / {long_sym}")
         return
@@ -197,19 +193,11 @@ def _place_credit_spread(setup_log_id: int, setup_name: str, direction: str, spo
         "spread_width": SPREAD_WIDTH,
         "cp": cp,
         "delta_at_entry": short_info["delta"],
-        "short_entry_oid": oid1,
-        "long_entry_oid": oid2,
-        "short_close_oid": None,
-        "long_close_oid": None,
+        "entry_order_id": entry_oid,        # single atomic multi-leg order
+        "close_order_id": None,             # single atomic close order
         "qty": OPTIONS_QTY,
-        "short_filled": False,
-        "long_filled": False,
-        "short_entry_price": None,          # SIM fill
-        "long_entry_price": None,           # SIM fill
-        "short_close_price": None,
-        "long_close_price": None,
-        "entry_price": None,                # compat: net credit (SIM)
-        "close_price": None,                # compat: net debit (SIM)
+        "entry_price": None,                # SIM fill: net credit
+        "close_price": None,                # SIM fill: net debit
         "theo_credit": net_credit,          # live bid/ask net credit
         "theo_debit": None,                 # live bid/ask net debit at close
         "theo_entry_price": net_credit,     # compat: stored for log endpoint
@@ -340,7 +328,7 @@ def close_trade(setup_log_id: int, result_type: str = ""):
 
 
 def _close_credit_spread(setup_log_id: int, order: dict, result_type: str):
-    """Close credit spread by buying back short + selling long."""
+    """Close credit spread as single atomic multi-leg order."""
     setup_name = order["setup_name"]
     short_sym = order["short_symbol"]
     long_sym = order["long_symbol"]
@@ -366,60 +354,55 @@ def _close_credit_spread(setup_log_id: int, order: dict, result_type: str):
         print(f"[options] credit spread close: {setup_name} credit=${theo_credit:.2f} "
               f"debit=${theo_debit:.2f} pnl=${theo_pnl:+.0f} ({result_type})", flush=True)
 
-        # BUYTOCLOSE short leg (at ask)
-        if short_ask > 0:
+        # Close as single atomic multi-leg order: BUYTOCLOSE short + SELLTOCLOSE long
+        # LimitPrice = net debit we're willing to pay to close
+        # If both legs are near 0 (OTM at expiry), let them expire instead
+        if theo_debit > 0.01:
             payload = {
                 "AccountID": SIM_ACCOUNT_ID,
                 "Symbol": short_sym,
                 "Quantity": str(order["qty"]),
                 "OrderType": "Limit",
-                "LimitPrice": str(round(short_ask, 2)),
+                "LimitPrice": str(round(theo_debit, 2)),
                 "TradeAction": "BUYTOCLOSE",
                 "TimeInForce": {"Duration": "DAY"},
                 "Route": "Intelligent",
+                "Legs": [
+                    {
+                        "Symbol": short_sym,
+                        "Quantity": str(order["qty"]),
+                        "TradeAction": "BUYTOCLOSE",
+                    },
+                    {
+                        "Symbol": long_sym,
+                        "Quantity": str(order["qty"]),
+                        "TradeAction": "SELLTOCLOSE",
+                    },
+                ],
             }
             resp = _sim_api("POST", "/orderexecution/orders", payload)
-            ok, oid = _order_ok(resp)
-            if ok:
+            close_ok, close_oid = _order_ok(resp)
+            if close_ok:
                 with _lock:
-                    order["short_close_oid"] = oid
+                    order["close_order_id"] = close_oid
+            else:
+                print(f"[options] spread close order failed: {setup_name} — "
+                      f"will expire cash-settled", flush=True)
         else:
-            print(f"[options] short leg {short_sym} ask=0, will expire", flush=True)
-
-        # SELLTOCLOSE long leg (at bid)
-        if long_bid > 0:
-            payload = {
-                "AccountID": SIM_ACCOUNT_ID,
-                "Symbol": long_sym,
-                "Quantity": str(order["qty"]),
-                "OrderType": "Limit",
-                "LimitPrice": str(round(long_bid, 2)),
-                "TradeAction": "SELLTOCLOSE",
-                "TimeInForce": {"Duration": "DAY"},
-                "Route": "Intelligent",
-            }
-            resp = _sim_api("POST", "/orderexecution/orders", payload)
-            ok, oid = _order_ok(resp)
-            if ok:
-                with _lock:
-                    order["long_close_oid"] = oid
-        else:
-            print(f"[options] long leg {long_sym} bid=0, will expire", flush=True)
+            print(f"[options] spread near $0, letting expire: {setup_name}", flush=True)
 
         with _lock:
             order["ts_closed"] = datetime.utcnow().isoformat()
-            order["close_order_id"] = order.get("short_close_oid")  # compat
 
         _alert(f"[OPTIONS] SPREAD CLOSED: {setup_name} ({result_type})\n"
                f"Credit: ${theo_credit:.2f} | Debit: ${theo_debit:.2f}\n"
                f"Theo P&L: ${theo_pnl:+.0f}")
 
     elif order["status"] == "pending_entry":
-        # Cancel both entry orders
-        for oid_key in ("short_entry_oid", "long_entry_oid"):
-            oid = order.get(oid_key)
-            if oid:
-                _sim_api("DELETE", f"/orderexecution/orders/{oid}", None)
+        # Cancel the single entry order (covers both legs)
+        oid = order.get("entry_order_id")
+        if oid:
+            _sim_api("DELETE", f"/orderexecution/orders/{oid}", None)
         print(f"[options] cancelled unfilled spread: {setup_name}", flush=True)
 
     with _lock:
@@ -561,63 +544,47 @@ def poll_order_status():
 # ====== FILL CHECKING ======
 
 def _check_spread_fills(lid, order, broker_orders):
-    """Check credit spread entry/close fills for both legs."""
+    """Check credit spread fills. Single atomic order — both legs fill together."""
     changed = False
 
-    if order["status"] == "pending_entry":
-        # Check short leg entry
-        if not order.get("short_filled") and order.get("short_entry_oid"):
-            bo = broker_orders.get(order["short_entry_oid"], {})
-            if bo.get("Status") == "FLL":
-                fp = _extract_fill_price(bo)
-                with _lock:
-                    order["short_filled"] = True
-                    order["short_entry_price"] = fp
-                changed = True
-            elif bo.get("Status") in ("REJ", "CAN", "EXP"):
-                long_oid = order.get("long_entry_oid")
-                if long_oid:
-                    _sim_api("DELETE", f"/orderexecution/orders/{long_oid}", None)
-                with _lock:
-                    order["status"] = "closed"
-                changed = True
-                print(f"[options] short entry rejected: {order['setup_name']}", flush=True)
-
-        # Check long leg entry
-        if not order.get("long_filled") and order.get("long_entry_oid"):
-            bo = broker_orders.get(order["long_entry_oid"], {})
-            if bo.get("Status") == "FLL":
-                fp = _extract_fill_price(bo)
-                with _lock:
-                    order["long_filled"] = True
-                    order["long_entry_price"] = fp
-                changed = True
-            elif bo.get("Status") in ("REJ", "CAN", "EXP"):
-                short_oid = order.get("short_entry_oid")
-                if short_oid:
-                    _sim_api("DELETE", f"/orderexecution/orders/{short_oid}", None)
-                with _lock:
-                    order["status"] = "closed"
-                changed = True
-                print(f"[options] long entry rejected: {order['setup_name']}", flush=True)
-
-        # Both filled → transition to "filled"
-        with _lock:
-            if order.get("short_filled") and order.get("long_filled") and order["status"] == "pending_entry":
+    # Check entry fill (single multi-leg order)
+    if order["status"] == "pending_entry" and order.get("entry_order_id"):
+        bo = broker_orders.get(order["entry_order_id"], {})
+        status = bo.get("Status", "")
+        if status == "FLL":
+            fp = _extract_fill_price(bo)
+            with _lock:
                 order["status"] = "filled"
-                sim_credit = None
-                if order.get("short_entry_price") and order.get("long_entry_price"):
-                    sim_credit = round(order["short_entry_price"] - order["long_entry_price"], 2)
-                    order["entry_price"] = sim_credit
-                theo = order.get("theo_credit", 0)
-                changed = True
-                print(f"[options] SPREAD FILLED: {order['setup_name']} "
-                      f"short=${order['short_entry_price']} long=${order['long_entry_price']} "
-                      f"sim_credit=${sim_credit} theo_credit=${theo:.2f}", flush=True)
-                _alert(f"[OPTIONS] SPREAD FILLED: {order['setup_name']}\n"
-                       f"SELL {order['short_symbol']} @ ${order['short_entry_price']}\n"
-                       f"BUY {order['long_symbol']} @ ${order['long_entry_price']}\n"
-                       f"Credit: ${sim_credit} (theo: ${theo:.2f})")
+                order["entry_price"] = fp  # net credit fill price
+            changed = True
+            theo = order.get("theo_credit", 0)
+            print(f"[options] SPREAD FILLED: {order['setup_name']} "
+                  f"sim_credit=${fp} theo_credit=${theo:.2f}", flush=True)
+            _alert(f"[OPTIONS] SPREAD FILLED: {order['setup_name']}\n"
+                   f"SELL {order['short_symbol']}\n"
+                   f"BUY {order['long_symbol']}\n"
+                   f"Credit: ${fp} (theo: ${theo:.2f})")
+        elif status in ("REJ", "CAN", "EXP"):
+            with _lock:
+                order["status"] = "closed"
+            changed = True
+            reason = bo.get("RejectReason") or bo.get("StatusDescription") or ""
+            print(f"[options] spread entry {status}: {order['setup_name']} "
+                  f"reason={reason}", flush=True)
+
+    # Check close fill (single multi-leg order)
+    if order["status"] == "filled" and order.get("close_order_id"):
+        bo = broker_orders.get(order["close_order_id"], {})
+        if bo.get("Status") == "FLL":
+            fp = _extract_fill_price(bo)
+            with _lock:
+                order["close_price"] = fp  # net debit fill price
+                order["status"] = "closed"
+            changed = True
+            theo_credit = order.get("theo_credit", 0)
+            sim_pnl = ((order.get("entry_price") or 0) - (fp or 0)) * 100 * order["qty"]
+            print(f"[options] SPREAD CLOSE FILLED: {order['setup_name']} "
+                  f"sim_debit=${fp} sim_pnl=${sim_pnl:+.0f}", flush=True)
 
     if changed:
         _persist_order(lid)

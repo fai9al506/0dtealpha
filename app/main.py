@@ -6022,6 +6022,19 @@ def api_auto_trade_flatten_now():
     except Exception as e:
         return {"error": str(e)}
 
+@app.post("/api/options/reset")
+def api_options_reset():
+    """Clear all options_trade_orders to start fresh."""
+    if not engine:
+        return {"error": "no engine"}
+    try:
+        with engine.begin() as conn:
+            result = conn.execute(text("DELETE FROM options_trade_orders"))
+            count = result.rowcount
+        return {"ok": True, "deleted": count}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/api/auto-trade/log")
 def api_auto_trade_log(limit: int = Query(200)):
     """Return TS SIM auto-trade orders joined with setup_log for the dashboard."""

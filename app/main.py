@@ -3173,8 +3173,9 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         ts_entry = trade["ts"]
         is_long = direction.lower() in ("long", "bullish")
 
-        # Use ES price for absorption, SPX spot for everything else
-        if setup_name == "ES Absorption":
+        # Use ES price for ES-based setups (absorption), SPX spot for everything else
+        _es_based = setup_name in ("ES Absorption", "SB Absorption")
+        if _es_based:
             if not es_price:
                 still_open.append(trade)
                 continue  # Skip — no ES data; never fall back to SPX
@@ -3182,8 +3183,8 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         else:
             check_price = spot
 
-        # Determine entry price for P&L calc (ES price for absorption, SPX for others)
-        if setup_name == "ES Absorption":
+        # Determine entry price for P&L calc (ES price for ES-based, SPX for others)
+        if _es_based:
             entry_price = trade.get("result_data", {}).get("abs_es_price", entry_spot)
         else:
             entry_price = entry_spot
@@ -3198,8 +3199,8 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         pnl = None
 
         # Update per-trade price tracking with cycle extremes
-        if setup_name == "ES Absorption":
-            # ES Absorption: scan completed ES range bar H/L since entry bar
+        if _es_based:
+            # ES-based setups: scan completed ES range bar H/L since entry bar
             # This catches intra-bar target/stop hits that bar-close checks miss
             entry_bar_idx = trade.get("result_data", {}).get("bar_idx", 0)
             last_scanned = trade.get("_es_last_bar_idx", entry_bar_idx)
@@ -3232,8 +3233,8 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         _tp = _trail_params.get(setup_name)
         if _tp is not None:
             # Advance trail using cycle high (long) or cycle low (short)
-            # ES Absorption: use ES seen_high/low from range bars (not SPX cycle)
-            if setup_name == "ES Absorption":
+            # ES-based setups: use ES seen_high/low from range bars (not SPX cycle)
+            if _es_based:
                 fav_price = trade.get("_seen_high", entry_price) if is_long else trade.get("_seen_low", entry_price)
             else:
                 fav_price = spx_cycle_high if is_long else spx_cycle_low
@@ -3286,8 +3287,8 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 except Exception:
                     pass
             # Check trailing stop hit using cycle extreme (not just current price)
-            # ES Absorption: use ES seen_low/high from range bars
-            if setup_name == "ES Absorption":
+            # ES-based setups: use ES seen_low/high from range bars
+            if _es_based:
                 stop_check = trade.get("_seen_low", entry_price) if is_long else trade.get("_seen_high", entry_price)
             else:
                 stop_check = spx_cycle_low if is_long else spx_cycle_high
@@ -3303,7 +3304,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         elif is_long:
             # Use all-time seen_high/seen_low for fixed SL/TP (never miss a breach)
             # Fallback to entry_price (not check_price) to avoid false WIN on first cycle
-            _fallback = entry_price if setup_name == "ES Absorption" else check_price
+            _fallback = entry_price if _es_based else check_price
             price_high = trade.get("_seen_high", _fallback)
             price_low = trade.get("_seen_low", _fallback)
             if price_high >= target_lvl:
@@ -3316,7 +3317,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 result_type = "EXPIRED"
                 pnl = check_price - entry_price
         else:
-            _fallback = entry_price if setup_name == "ES Absorption" else check_price
+            _fallback = entry_price if _es_based else check_price
             price_high = trade.get("_seen_high", _fallback)
             price_low = trade.get("_seen_low", _fallback)
             if price_low <= target_lvl:
@@ -3334,7 +3335,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             # If T1 was hit, overall P&L = average of T1 (+10) and T2 (trail exit)
             if trade.get("_t1_hit"):
                 pnl = round((10.0 + pnl) / 2, 1)  # T2 pnl already computed above
-                result_type = "WIN"  # T1 always hit → overall WIN
+                result_type = "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "EXPIRED")
             else:
                 pnl = round(pnl, 1)
             elapsed_min = int(elapsed)
@@ -5650,20 +5651,20 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                     has_debit = False
 
                 # ── CREDIT SPREAD: sell ~0.50 delta (near ATM), buy protection $10 away ──
-                credit_short_opt = find_strike_at_delta(entry_chain, 0.50, side)
+                # Use OPPOSITE side: bullish → sell put spread, bearish → sell call spread
+                credit_side = "put" if side == "call" else "call"
+                credit_short_opt = find_strike_at_delta(entry_chain, 0.50, credit_side)
                 if credit_short_opt and credit_short_opt["bid"] and credit_short_opt["bid"] > 0:
                     credit_short_strike = credit_short_opt["strike"]
                     credit_short_bid = credit_short_opt["bid"]
-                    # Protection leg: further OTM
-                    credit_long_strike = credit_short_strike + SPREAD_WIDTH if side == "put" else credit_short_strike - SPREAD_WIDTH
                     # For credit: if selling put, buy lower put. If selling call, buy higher call.
-                    # Bullish (sell put spread): sell higher put, buy lower put
-                    # Bearish (sell call spread): sell lower call, buy higher call
-                    if side == "put":
+                    # Bullish (bull put spread): sell ATM put, buy lower put
+                    # Bearish (bear call spread): sell ATM call, buy higher call
+                    if credit_side == "put":
                         credit_long_strike = credit_short_strike - SPREAD_WIDTH
                     else:
                         credit_long_strike = credit_short_strike + SPREAD_WIDTH
-                    credit_long_opt = find_strike_price(entry_chain, credit_long_strike, side)
+                    credit_long_opt = find_strike_price(entry_chain, credit_long_strike, credit_side)
                     credit_long_ask = credit_long_opt["ask"] if credit_long_opt and credit_long_opt["ask"] else 0
                     credit_received = credit_short_bid - credit_long_ask
                     has_credit = credit_received > 0
@@ -5727,8 +5728,8 @@ def api_debug_options_sim(date: str = "2026-03-10"):
                 credit_entry_str = None
                 credit_exit_str = None
                 if has_credit and best_exit:
-                    credit_exit_short = find_strike_price(best_exit, credit_short_strike, side)
-                    credit_exit_long = find_strike_price(best_exit, credit_long_strike, side)
+                    credit_exit_short = find_strike_price(best_exit, credit_short_strike, credit_side)
+                    credit_exit_long = find_strike_price(best_exit, credit_long_strike, credit_side)
                     if credit_exit_short and credit_exit_long:
                         # Close: buy back short at ask, sell long at bid
                         c_exit_short_ask = credit_exit_short["ask"] if credit_exit_short["ask"] else 0

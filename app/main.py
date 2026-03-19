@@ -3045,6 +3045,31 @@ def send_summary_alert(time_label: str):
     except Exception as e:
         print(f"[alerts] summary error: {e}", flush=True)
 
+def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
+                        vix: float | None = None, overvix: float | None = None) -> bool:
+    """Single source of truth for the LIVE auto-trade filter (currently V9-SC).
+    Used for: Telegram sends, auto-trade gating, outcome notifications.
+    Change this ONE function when the filter evolves."""
+    is_long = direction in ("long", "bullish")
+    align = greek_alignment or 0
+    if is_long:
+        if align < 2:
+            return False
+        if setup_name == "Skew Charm":
+            return True  # SC longs exempt from VIX gate
+        if vix is not None and vix > 22:
+            ov = overvix if overvix is not None else -99
+            if ov < 2:
+                return False
+        return True
+    else:
+        if setup_name in ("Skew Charm", "AG Short"):
+            return True
+        if setup_name == "DD Exhaustion" and align != 0:
+            return True
+        return False
+
+
 def _compute_setup_levels(r: dict):
     """Compute (target_level, stop_level) from a setup result dict.
 
@@ -3364,12 +3389,15 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             elapsed_min = int(elapsed)
             trade["close_price"] = check_price
 
-            # Send individual outcome Telegram
-            try:
-                outcome_msg = format_setup_outcome(trade, result_type, pnl, elapsed_min)
-                send_telegram_setups(outcome_msg)
-            except Exception as e:
-                print(f"[outcome] telegram error: {e}", flush=True)
+            # Send individual outcome Telegram (only for live-filter trades)
+            if trade.get("_passes_live", True):
+                try:
+                    outcome_msg = format_setup_outcome(trade, result_type, pnl, elapsed_min)
+                    send_telegram_setups(outcome_msg)
+                except Exception as e:
+                    print(f"[outcome] telegram error: {e}", flush=True)
+            else:
+                print(f"[outcome] {setup_name} {result_type} {pnl:+.1f} — Telegram SKIPPED (live filter)", flush=True)
 
             # Persist outcome to setup_log DB
             log_id = trade.get("setup_log_id")
@@ -3694,7 +3722,13 @@ def _run_setup_check():
                     elif _overvix is not None and _overvix >= 2:
                         _vix_tag += " [OVERVIX SIGNAL]"
                     _msg += _vix_tag
-                send_telegram_setups(_msg)
+                # Live filter: only send Telegram for signals that pass the active auto-trade filter
+                _passes_live = _passes_live_filter(setup_name, r["direction"],
+                                                   r.get("greek_alignment", 0), _vix_last, _overvix)
+                if _passes_live:
+                    send_telegram_setups(_msg)
+                else:
+                    print(f"[setups] {setup_name} NEW: {grade} — Telegram SKIPPED (live filter)", flush=True)
                 print(f"[setups] {setup_name} NEW: {grade} ({score})", flush=True)
                 # Record open trade for live outcome tracking
                 target_lvl, stop_lvl = _compute_setup_levels(r)
@@ -3711,42 +3745,14 @@ def _run_setup_check():
                         "_trade_date": now_et().date(),
                         "setup_log_id": _current_setup_log.get(setup_name),
                         "_dd_max_fav": 0.0,  # track max favorable excursion for trailing
+                        "_passes_live": _passes_live,  # for Telegram filtering on outcomes
                     })
                     tgt_str = "trail" if target_lvl is None else f"{target_lvl:.1f}"
                     print(f"[outcome] tracking {setup_name}: target={tgt_str} stop={stop_lvl:.1f}", flush=True)
-                    # Auto-trade filters — V9-SC (VIX gate at 22, SC exempt)
-                    # (block execution but keep portal tracking for data collection)
-                    _skip_auto_trade = False
-                    _greek_align = r.get("greek_alignment", 0)
-                    _is_long_dir = r["direction"] in ("long", "bullish")
-                    if _is_long_dir:
-                        # Longs: require alignment >= +2
-                        if _greek_align < 2:
-                            print(f"[auto-trader] SKIPPED {setup_name}: long alignment {_greek_align:+d} < +2", flush=True)
-                            _skip_auto_trade = True
-                        # Skew Charm longs exempt from VIX gate (82% WR at VIX 22-26)
-                        elif setup_name == "Skew Charm":
-                            pass  # allow SC longs at any VIX
-                        # V9 VIX Gate: block other longs when VIX > 22 UNLESS overvixed (>= +2)
-                        elif _vix_last is not None and _vix_last > 22:
-                            _ov = _overvix if _overvix is not None else -99
-                            if _ov < 2:
-                                print(f"[auto-trader] SKIPPED {setup_name}: V9 VIX gate — VIX={_vix_last:.1f}>22, overvix={_ov:+.1f}<+2", flush=True)
-                                _skip_auto_trade = True
-                            else:
-                                print(f"[auto-trader] ALLOWED {setup_name}: V9 overvix override — VIX={_vix_last:.1f}>22 but overvix={_ov:+.1f}>=+2 (mean reversion)", flush=True)
-                    else:
-                        # Shorts: whitelist SC + DD(align!=0) + AG only
-                        if setup_name == "Skew Charm":
-                            pass  # allow all
-                        elif setup_name == "AG Short":
-                            pass  # allow all (no alignment filter)
-                        elif setup_name == "DD Exhaustion" and _greek_align != 0:
-                            pass  # allow DD shorts except align=0
-                        else:
-                            # Block everything else (ES Absorption, BofA, Paradigm Rev, DD align=0)
-                            print(f"[auto-trader] SKIPPED {setup_name} short: not in V7+AG whitelist (align={_greek_align:+d})", flush=True)
-                            _skip_auto_trade = True
+                    # Auto-trade: use same live filter as Telegram (single source of truth)
+                    _skip_auto_trade = not _passes_live
+                    if _skip_auto_trade:
+                        print(f"[auto-trader] SKIPPED {setup_name} {r['direction']}: live filter blocked (align={r.get('greek_alignment',0):+d})", flush=True)
                     # Auto-trade: place MES SIM order (skip if filters blocked)
                     if not _skip_auto_trade:
                         try:
@@ -3796,16 +3802,11 @@ def _run_setup_check():
                         except Exception as e:
                             print(f"[options] place error: {e}", flush=True)
             elif reason == "grade_upgrade":
-                msg = f"⬆️ <b>{setup_name} → {grade}</b> ({score}) | {r['spot']:.0f}"
-                send_telegram_setups(msg)
-                print(f"[setups] {setup_name} UPGRADED: {grade} ({score})", flush=True)
+                # Suppressed: grade upgrades add noise, initial fire is sufficient
+                print(f"[setups] {setup_name} UPGRADED: {grade} ({score}) — Telegram suppressed", flush=True)
             elif reason == "gap_improvement":
-                # Short improvement notice
-                emoji = "📈"
-                msg = f"{emoji} <b>{setup_name} improved</b>\n"
-                msg += f"{grade} | SPX: {r['spot']:.0f} | Gap: {r['gap_to_lis']:.1f} | R:R: {r['rr_ratio']:.1f}x"
-                send_telegram_setups(msg)
-                print(f"[setups] {setup_name} GAP IMPROVED: {grade} ({score})", flush=True)
+                # Suppressed: gap improvements add noise
+                print(f"[setups] {setup_name} GAP IMPROVED: {grade} ({score}) — Telegram suppressed", flush=True)
         else:
             print(f"[setups] {setup_name} active: {grade} ({score}) - no change", flush=True)
 
@@ -4318,8 +4319,10 @@ def _run_absorption_detection(bars: list) -> dict | None:
     }
     log_setup(rw)
 
-    # Send Telegram only when notification gate passes
-    if fire:
+    # Send Telegram only when notification gate passes AND live filter
+    _abs_passes_live = _passes_live_filter("ES Absorption", result["direction"],
+                                           result.get("greek_alignment", 0), _vix_last, _overvix)
+    if fire and _abs_passes_live:
         try:
             msg = rw["message"]
             if result.get("log_only"):
@@ -4346,6 +4349,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
             "max_hold_minutes": None,
             "_trade_date": now_et().date(),
             "setup_log_id": _current_setup_log.get("ES Absorption"),
+            "_passes_live": _abs_passes_live,
         })
         print(f"[outcome] tracking ES Absorption: target={target_lvl} stop={stop_lvl:.1f}", flush=True)
         # Auto-trade: ES Absorption uses ES price directly
@@ -4492,12 +4496,9 @@ def _run_single_bar_absorption(bars: list):
     }
     log_setup(rw)
 
-    # Send Telegram only when notification gate passes
-    if fire:
-        try:
-            send_telegram_setups(rw["message"])
-        except Exception as e:
-            print(f"[sb-absorption] telegram error: {e}", flush=True)
+    # SB Absorption: LOG-ONLY, not in V9-SC — suppress Telegram
+    # if fire:
+    #     send_telegram_setups(rw["message"])
 
     # Outcome tracking (LOG-ONLY: no auto-trading, but track for performance data)
     if fire:
@@ -5121,11 +5122,12 @@ def _send_setup_eod_summary():
         elapsed_min = int((now - ts_entry).total_seconds() / 60.0) if ts_entry else 0
         trade["close_price"] = check_price
 
-        try:
-            outcome_msg = format_setup_outcome(trade, "EXPIRED", pnl, elapsed_min)
-            send_telegram_setups(outcome_msg)
-        except Exception as e:
-            print(f"[eod-summary] expire telegram error: {e}", flush=True)
+        if trade.get("_passes_live", True):
+            try:
+                outcome_msg = format_setup_outcome(trade, "EXPIRED", pnl, elapsed_min)
+                send_telegram_setups(outcome_msg)
+            except Exception as e:
+                print(f"[eod-summary] expire telegram error: {e}", flush=True)
 
         resolved = {**trade, "result_type": "EXPIRED", "pnl": pnl, "elapsed_min": elapsed_min,
                     "ts_str": ts_entry.strftime("%H:%M") if hasattr(ts_entry, "strftime") else ""}
@@ -5189,32 +5191,40 @@ def _send_setup_eod_summary():
                 rows = conn.execute(text("""
                     SELECT setup_name, direction, grade, ts,
                            outcome_result, outcome_pnl, outcome_elapsed_min,
-                           greek_alignment
+                           greek_alignment, vix, overvix
                     FROM setup_log
                     WHERE ts >= :today_start
                       AND outcome_result IS NOT NULL
                     ORDER BY ts ASC
                 """), {"today_start": today_start}).fetchall()
             for row in rows:
+                _sn = row[0]
+                _dir = row[1]
+                _align = int(row[7]) if row[7] is not None else 0
+                _v = float(row[8]) if row[8] is not None else None
+                _ov = float(row[9]) if row[9] is not None else None
+                # Only include trades that pass the live filter
+                if not _passes_live_filter(_sn, _dir, _align, _v, _ov):
+                    continue
                 ts_val = row[3]
                 ts_str = ts_val.strftime("%H:%M") if hasattr(ts_val, "strftime") else ""
                 trades_for_summary.append({
-                    "setup_name": row[0],
-                    "direction": row[1],
+                    "setup_name": _sn,
+                    "direction": _dir,
                     "grade": row[2],
                     "ts_str": ts_str,
                     "result_type": row[4],
                     "pnl": float(row[5]) if row[5] is not None else 0.0,
                     "elapsed_min": int(row[6]) if row[6] is not None else 0,
-                    "alignment": row[7],
+                    "alignment": _align,
                 })
             print(f"[eod-summary] loaded {len(trades_for_summary)} trades from DB", flush=True)
         except Exception as db_err:
             print(f"[eod-summary] DB query error, falling back to in-memory: {db_err}", flush=True)
-            trades_for_summary = _setup_resolved_trades
+            trades_for_summary = [t for t in _setup_resolved_trades if t.get("_passes_live", True)]
 
     if not trades_for_summary:
-        trades_for_summary = _setup_resolved_trades
+        trades_for_summary = [t for t in _setup_resolved_trades if t.get("_passes_live", True)]
 
     if trades_for_summary:
         summary_msg = format_setup_daily_summary(trades_for_summary)

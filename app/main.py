@@ -3154,9 +3154,9 @@ def _compute_setup_levels(r: dict):
         return round(target_lvl, 2), round(stop_lvl, 2)
 
     if setup_name == "Skew Charm":
-        # Trailing stop — no fixed target; initial SL = 20 pts
+        # Trailing stop — no fixed target; initial SL = 14 pts (was 20, optimized Mar 18)
         # Hybrid trail: BE at +10, continuous trail activation=10, gap=8
-        stop_lvl = spot - 20 if is_long else spot + 20
+        stop_lvl = spot - 14 if is_long else spot + 14
         return None, round(stop_lvl, 2)
 
     if setup_name == "Vanna Pivot Bounce":
@@ -3881,6 +3881,8 @@ def _run_setup_check():
                                     es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
                                     charm_limit_price=_mes_charm_limit,
                                 )
+                            elif not es_px:
+                                print(f"[real-trader] SKIPPED {setup_name}: no ES price", flush=True)
                         except Exception as e:
                             print(f"[real-trader] place error: {e}", flush=True)
             elif reason == "grade_upgrade":

@@ -2555,6 +2555,14 @@ def run_market_job():
         if _vix_last is not None and _vix3m_last is not None:
             _overvix = round(_vix_last - _vix3m_last, 2)
 
+        # Update VIX compression tracker
+        if _vix_last is not None and spot:
+            try:
+                from app.setup_detector import update_vix_tracker
+                update_vix_tracker(_vix_last, spot)
+            except Exception:
+                pass
+
         # Derive intra-cycle extremes from session H/L changes
         today = now_et().date()
         if _spx_session["date"] != today:
@@ -3087,6 +3095,8 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     """Single source of truth for the LIVE auto-trade filter (currently V9-SC).
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Change this ONE function when the filter evolves."""
+    if setup_name == "VIX Compression":
+        return False
     is_long = direction in ("long", "bullish")
     align = greek_alignment or 0
     if is_long:
@@ -3720,6 +3730,7 @@ def _run_setup_check():
         dd_value=dd_numeric, dd_shift=dd_shift,
         skew_value=skew_value, skew_change_pct=skew_change_pct,
         vanna_levels=vanna_levels, es_range_bars=es_range_bars_vp,
+        vix=_vix_last,
     )
     for rw in result_wrappers:
         setup_name = rw["result"]["setup_name"]
@@ -3757,6 +3768,7 @@ def _run_setup_check():
                     format_ag_short_message, format_bofa_scalp_message,
                     format_paradigm_reversal_message, format_dd_exhaustion_message,
                     format_skew_charm_message, format_vanna_pivot_message,
+                    format_vix_compress_message,
                 )
                 _fmt_map = {
                     "GEX Long": format_setup_message, "GEX Velocity": format_gex_velocity_message,
@@ -3764,6 +3776,7 @@ def _run_setup_check():
                     "BofA Scalp": format_bofa_scalp_message, "Paradigm Reversal": format_paradigm_reversal_message,
                     "DD Exhaustion": format_dd_exhaustion_message, "Skew Charm": format_skew_charm_message,
                     "Vanna Pivot Bounce": format_vanna_pivot_message,
+                    "VIX Compression": format_vix_compress_message,
                 }
                 _fmt_fn = _fmt_map.get(setup_name)
                 _align = r.get("greek_alignment")
@@ -5429,6 +5442,19 @@ def start_scheduler():
                 id="options_trade_eod", coalesce=True, max_instances=1)
     sch.add_job(_real_trade_eod_flatten, "cron", hour=15, minute=50,
                 id="real_trade_eod", coalesce=True, max_instances=1)
+    # Real trader: fast 3s polling to minimize orphaned order window (cap=2 stacking safety)
+    def _real_trade_fast_poll():
+        t = now_et().time()
+        if not (dtime(9, 30) <= t <= dtime(16, 0)):
+            return
+        try:
+            from app import real_trader
+            if real_trader._active_orders:
+                real_trader.poll_order_status()
+        except Exception:
+            pass
+    sch.add_job(_real_trade_fast_poll, "interval", seconds=3,
+                id="real_trade_poll", coalesce=True, max_instances=1)
     sch.add_job(_auto_trade_orphan_check, "interval", minutes=5,
                 id="auto_trade_orphan", coalesce=True, max_instances=1)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,

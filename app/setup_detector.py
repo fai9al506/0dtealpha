@@ -1496,6 +1496,13 @@ _cooldown_single_bar_abs = {
     "last_date": None,
 }
 
+# ── VIX Compression state ──────────────────────────────────────────────
+_vix_history: list = []  # list of (timestamp_str, vix, spot) tuples
+_cooldown_vix_compress = {
+    "last_date": "",
+    "last_long_time": None,
+}
+
 
 def reset_single_bar_abs_session():
     """Reset single-bar absorption detector state for a new ES session."""
@@ -2086,6 +2093,202 @@ def update_dd_tracker(dd_value):
     if prev is None:
         return None
     return dd_value - prev
+
+
+def update_vix_tracker(vix: float, spot: float):
+    """Track VIX+SPX for rolling window detection. Called every 30s cycle from main.py."""
+    if vix is None or spot is None:
+        return
+    now_str = datetime.now(NY).strftime("%Y-%m-%d %H:%M:%S")
+    _vix_history.append((now_str, float(vix), float(spot)))
+    # Keep last 120 min of data (generous buffer for 45-min window)
+    if len(_vix_history) > 240:
+        _vix_history[:] = _vix_history[-240:]
+
+
+def evaluate_vix_compression(spot, vix, settings):
+    """
+    Evaluate VIX Compression setup (LONG only).
+    Detects when VIX drops >0.8 in a rolling 45-min window while SPX stays flat (<20 pts).
+    This divergence (fear dropping + price not rallying yet) precedes a bullish move.
+    Returns result dict or None.
+    """
+    if spot is None or vix is None:
+        return None
+    if len(_vix_history) < 10:
+        return None  # need minimum data
+
+    # Time gate: 9:30 - 14:30 ET
+    now = datetime.now(NY)
+    if not (dtime(9, 30) <= now.time() <= dtime(14, 30)):
+        return None
+
+    # VIX floor: only meaningful when VIX >= 15
+    if vix < 15:
+        return None
+
+    # One signal per day
+    today = now.date()
+    if _cooldown_vix_compress.get("last_date") == str(today) and _cooldown_vix_compress.get("last_long_time") is not None:
+        return None
+
+    # Scan rolling 45-min windows in _vix_history
+    # Each entry is ~30s apart; 45 min = ~90 entries
+    best_vix_drop = 0.0
+    best_spx_move = None
+    best_window_start = None
+    best_window_end = None
+    best_vix_start = None
+
+    for i in range(len(_vix_history)):
+        ts_start_str, vix_start, spot_start = _vix_history[i]
+        try:
+            ts_start = datetime.strptime(ts_start_str, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            continue
+
+        for j in range(len(_vix_history) - 1, i, -1):
+            ts_end_str, vix_end, spot_end = _vix_history[j]
+            try:
+                ts_end = datetime.strptime(ts_end_str, "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                continue
+
+            window_min = (ts_end - ts_start).total_seconds() / 60.0
+            if window_min < 10 or window_min > 45:
+                continue
+
+            vix_drop = vix_start - vix_end
+            spx_move = abs(spot_end - spot_start)
+
+            if vix_drop > 0.8 and spx_move < 20 and vix_drop > best_vix_drop:
+                best_vix_drop = vix_drop
+                best_spx_move = spx_move
+                best_window_start = ts_start_str
+                best_window_end = ts_end_str
+                best_vix_start = vix_start
+            break  # only check furthest valid endpoint per start
+
+    if best_vix_drop <= 0.8:
+        return None
+
+    # ── Scoring (3 components, max 100) ──
+    # 1. VIX drop magnitude (0-40): bigger drop = stronger compression signal
+    if best_vix_drop >= 2.5:
+        vix_drop_score = 40
+    elif best_vix_drop >= 2.0:
+        vix_drop_score = 35
+    elif best_vix_drop >= 1.5:
+        vix_drop_score = 30
+    elif best_vix_drop >= 1.2:
+        vix_drop_score = 22
+    elif best_vix_drop >= 1.0:
+        vix_drop_score = 15
+    else:
+        vix_drop_score = 8
+
+    # 2. SPX flatness (0-30): flatter = more coiled energy to release
+    if best_spx_move < 5:
+        spx_flat_score = 30
+    elif best_spx_move < 8:
+        spx_flat_score = 25
+    elif best_spx_move < 12:
+        spx_flat_score = 18
+    elif best_spx_move < 16:
+        spx_flat_score = 10
+    else:
+        spx_flat_score = 5
+
+    # 3. VIX level (0-30): higher VIX = more room to compress = stronger signal
+    if vix >= 30:
+        vix_level_score = 30
+    elif vix >= 25:
+        vix_level_score = 25
+    elif vix >= 22:
+        vix_level_score = 20
+    elif vix >= 18:
+        vix_level_score = 14
+    elif vix >= 15:
+        vix_level_score = 8
+    else:
+        vix_level_score = 0
+
+    composite = vix_drop_score + spx_flat_score + vix_level_score
+
+    # Grade
+    if composite >= 80:
+        grade = "A+"
+    elif composite >= 60:
+        grade = "A"
+    elif composite >= 40:
+        grade = "B"
+    else:
+        return None  # below B = no signal
+
+    stop_pts = 20
+    target_pts = 20
+
+    return {
+        "setup_name": "VIX Compression",
+        "direction": "long",
+        "grade": grade,
+        "score": round(composite, 1),
+        "spot": round(spot, 2),
+        "vix": round(vix, 2),
+        "vix_start": round(best_vix_start, 2) if best_vix_start else None,
+        "vix_drop": round(best_vix_drop, 2),
+        "spx_move": round(best_spx_move, 2) if best_spx_move is not None else None,
+        "window_start": best_window_start,
+        "window_end": best_window_end,
+        "vix_drop_score": vix_drop_score,
+        "spx_flat_score": spx_flat_score,
+        "vix_level_score": vix_level_score,
+        "target_pts": target_pts,
+        "stop_pts": stop_pts,
+        "stop_price": round(spot - stop_pts, 2),
+        "target_price": round(spot + target_pts, 2),
+    }
+
+
+def should_notify_vix_compress(result):
+    """One signal per day for VIX Compression (long-only)."""
+    if result is None:
+        return False, None
+
+    now = datetime.now(NY)
+    today = str(now.date())
+
+    if _cooldown_vix_compress.get("last_date") != today:
+        _cooldown_vix_compress["last_long_time"] = None
+        _cooldown_vix_compress["last_date"] = today
+
+    if _cooldown_vix_compress.get("last_long_time") is not None:
+        return False, None
+
+    _cooldown_vix_compress["last_long_time"] = now
+    return True, "new"
+
+
+def format_vix_compress_message(result, alignment=None):
+    """Format a concise Telegram HTML message for VIX Compression."""
+    grade = result.get("grade", "?")
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
+    vix_drop = result.get("vix_drop", 0)
+    spx_move = result.get("spx_move", 0)
+    vix_level = result.get("vix", 0)
+    w_start = result.get("window_start", "?")
+    w_end = result.get("window_end", "?")
+    # Extract just HH:MM from timestamps
+    try:
+        w_start_short = w_start.split(" ")[1][:5] if " " in str(w_start) else str(w_start)
+        w_end_short = w_end.split(" ")[1][:5] if " " in str(w_end) else str(w_end)
+    except Exception:
+        w_start_short, w_end_short = str(w_start), str(w_end)
+    score = result.get("score", 0)
+    msg = f"\U0001f535 <b>VIX Compression LONG [{grade}]{align_str}</b>\n"
+    msg += f"{result['spot']:.0f} \u2192 T {result.get('target_price', 0):.0f} | SL {result.get('stop_price', 0):.0f} (20pt)\n"
+    msg += f"VIX {vix_level:.1f} \u2193{vix_drop:.1f} | SPX \u0394{spx_move:.0f}pt | {w_start_short}-{w_end_short} | sc={score:.0f}"
+    return msg
 
 
 def evaluate_dd_exhaustion(spot, dd_value, dd_shift, charm, paradigm, settings):
@@ -2957,7 +3160,8 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
                  dd_hedging=None, es_bars=None,
                  dd_value=None, dd_shift=None,
                  skew_value=None, skew_change_pct=None,
-                 vanna_levels=None, es_range_bars=None):
+                 vanna_levels=None, es_range_bars=None,
+                 vix=None):
     """
     Main entry point called from main.py.
     Returns a list of result wrappers (each has keys: result, notify, notify_reason, message).
@@ -2974,6 +3178,7 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
       skew_change_pct: % change in skew over lookback window (Skew+Charm)
       vanna_levels: list of dominant vanna level dicts (Vanna Pivot Bounce)
       es_range_bars: list of ES range bar dicts from DB (Vanna Pivot Bounce)
+      vix: current VIX value (VIX Compression)
     """
     results = []
 
@@ -3103,6 +3308,17 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
             "message": format_vanna_pivot_message(vp_result),
         })
 
+    # ── VIX Compression ──
+    vc_result = evaluate_vix_compression(spot, vix, settings)
+    if vc_result is not None:
+        notify_vc, reason_vc = should_notify_vix_compress(vc_result)
+        results.append({
+            "result": vc_result,
+            "notify": notify_vc,
+            "notify_reason": reason_vc,
+            "message": format_vix_compress_message(vc_result),
+        })
+
     return results
 
 
@@ -3135,6 +3351,8 @@ def export_cooldowns() -> dict:
         "vanna_pivot": _serialize(_cooldown_vanna_pivot),
         "single_bar_abs": _serialize(_cooldown_single_bar_abs),
         "gex_velocity": _serialize(_cooldown_gex_vel),
+        "vix_compress": _serialize(_cooldown_vix_compress),
+        "vix_history": _vix_history[-60:],  # save last ~30 min for restart recovery
     }
 
 def import_cooldowns(data: dict):
@@ -3191,3 +3409,10 @@ def import_cooldowns(data: dict):
         _cooldown_single_bar_abs.update(_deserialize(data["single_bar_abs"]))
     if "gex_velocity" in data:
         _cooldown_gex_vel.update(_deserialize(data["gex_velocity"]))
+    if "vix_compress" in data:
+        _cooldown_vix_compress.update(_deserialize(
+            data["vix_compress"], has_datetimes=True,
+            dt_keys=("last_long_time",)))
+    if "vix_history" in data:
+        _vix_history.clear()
+        _vix_history.extend(data["vix_history"])

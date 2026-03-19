@@ -106,6 +106,7 @@ _get_token = None       # callable -> str (access token)
 _send_telegram = None   # callable(msg) -> bool
 _lock = Lock()
 _active_orders: dict[int, dict] = {}  # keyed by setup_log_id
+_last_reconcile_ts = 0.0  # throttle position reconciliation to every 30s
 
 
 def init(engine, get_token_fn, send_telegram_fn):
@@ -796,6 +797,57 @@ def poll_order_status():
 
         for lid, order in order_list:
             _check_order_fills(lid, order, broker_orders)
+
+    # Position reconciliation: every 30s (throttled), verify broker position matches tracked state
+    global _last_reconcile_ts
+    _now_ts = time.time()
+    if _now_ts - _last_reconcile_ts >= 30:
+        _last_reconcile_ts = _now_ts
+        _reconcile_positions()
+
+
+def _reconcile_positions():
+    """Check broker positions match tracked orders. Alert on mismatch."""
+    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+        if acct_id not in ACCOUNT_WHITELIST:
+            continue
+        # Count expected qty from tracked orders
+        with _lock:
+            expected_qty = sum(
+                QTY for o in _active_orders.values()
+                if o.get("account_id") == acct_id and o["status"] == "filled"
+            )
+        # Query broker
+        broker_pos = _get_broker_position(acct_id)
+        broker_qty = broker_pos["qty"] if broker_pos else 0
+        if broker_qty != expected_qty:
+            print(f"[real-trader] RECONCILE MISMATCH on {acct_id}: "
+                  f"expected={expected_qty} broker={broker_qty}", flush=True)
+            if broker_qty > 0 and expected_qty == 0:
+                # Orphan: broker has position we don't track
+                _alert(f"[REAL-TRADE] POSITION MISMATCH on {acct_id}\n"
+                       f"Expected: {expected_qty} MES\n"
+                       f"Broker: {broker_qty} MES\n"
+                       f"ORPHAN detected -- auto-closing")
+                _close_broker_orphans(acct_id, source="RECONCILE")
+            elif broker_qty == 0 and expected_qty > 0:
+                # Ghost: we think we have position but broker doesn't
+                _alert(f"[REAL-TRADE] GHOST POSITION on {acct_id}\n"
+                       f"Expected: {expected_qty} MES\n"
+                       f"Broker: FLAT\n"
+                       f"Marking tracked orders as closed")
+                with _lock:
+                    for o in _active_orders.values():
+                        if o.get("account_id") == acct_id and o["status"] == "filled":
+                            o["status"] = "closed"
+                            o["close_reason"] = "ghost_reconcile"
+                            _persist_order(o["setup_log_id"])
+            elif broker_qty != expected_qty:
+                # Qty mismatch
+                _alert(f"[REAL-TRADE] QTY MISMATCH on {acct_id}\n"
+                       f"Expected: {expected_qty} MES\n"
+                       f"Broker: {broker_qty} MES\n"
+                       f"Check manually")
 
 
 def _check_order_fills(lid, order, broker_orders):

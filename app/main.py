@@ -4414,6 +4414,12 @@ def _run_single_bar_absorption(bars: list):
     if result is None:
         return None
 
+    # Block signals in last 5 minutes — not enough time for SL/TP to play out
+    t_now = now_et().time()
+    if t_now >= dtime(15, 55):
+        print(f"[sb-absorption] BLOCKED: {result['direction'].upper()} at {t_now} — too close to market close", flush=True)
+        return None
+
     print(f"[sb-absorption] SIGNAL: {result['direction'].upper()} "
           f"ES={result['abs_es_price']:.2f} vol={result['abs_vol_ratio']:.1f}x "
           f"delta={result['bar_delta']:+d}({result['delta_ratio']:.1f}x) "

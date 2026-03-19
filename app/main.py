@@ -3862,7 +3862,7 @@ def _run_setup_check():
                         except Exception as e:
                             print(f"[options] place error: {e}", flush=True)
                     # Real trader: MES REAL accounts (SC only, direction-routed)
-                    if not _skip_auto_trade:
+                    if not _skip_auto_trade and setup_name == "Skew Charm":
                         try:
                             from app import real_trader
                             es_px = None
@@ -5151,6 +5151,11 @@ def _auto_trade_orphan_check():
         auto_trader.periodic_orphan_check()
     except Exception as e:
         print(f"[auto-trade-orphan] check error: {e}", flush=True)
+    try:
+        from app import real_trader
+        real_trader.periodic_orphan_check()
+    except Exception as e:
+        print(f"[real-trade-orphan] check error: {e}", flush=True)
 
 
 def _auto_trade_premarket_reconcile():

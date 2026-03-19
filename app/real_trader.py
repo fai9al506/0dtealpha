@@ -252,6 +252,11 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     """
     is_long = direction.lower() in ("long", "bullish")
 
+    # Setup filter: only trade Skew Charm (defense-in-depth, main.py also filters)
+    if setup_name != "Skew Charm":
+        print(f"[real-trader] skip {setup_name}: only Skew Charm allowed on real accounts", flush=True)
+        return
+
     # Check master switch for this direction
     account_id = _get_account_for_direction(is_long)
     if not account_id:
@@ -311,8 +316,8 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                    f"Account: {account_id} | BP: ${bp:,.0f} < ${margin_needed:,.0f}")
             return
 
-    # Charm S/R limit entry for shorts
-    if charm_limit_price is not None:
+    # Charm S/R limit entry for shorts ONLY (safety: ignore for longs)
+    if charm_limit_price is not None and not is_long:
         _place_limit_entry(setup_log_id, setup_name, direction, is_long,
                            account_id, es_price, stop_pts, target_pts,
                            charm_limit_price)

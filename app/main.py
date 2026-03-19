@@ -1099,17 +1099,18 @@ def _backfill_outcomes():
             is_long = entry.get("direction", "long").lower() in ("long", "bullish")
             spot = entry.get("spot") or 0
             es_price = entry.get("abs_es_price")
-            entry_price = es_price if entry.get("setup_name") == "ES Absorption" and es_price else spot
+            _es_based_bf = entry.get("setup_name") in ("ES Absorption", "SB Absorption")
+            entry_price = es_price if _es_based_bf and es_price else spot
 
             is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long", "AG Short", "Skew Charm")
-            is_absorption = entry.get("setup_name") == "ES Absorption"
+            is_absorption = _es_based_bf
             if is_absorption:
                 # ES Absorption: split-target. P&L = average of T1 (+10) and T2 (trail).
                 t1_hit = outcome.get("hit_10pt")
                 t2_exit = outcome.get("trail_exit_pnl")
                 if t1_hit and t2_exit is not None:
                     pnl = round((10.0 + t2_exit) / 2, 1)  # average of T1 and T2
-                    result_type = "WIN"  # T1 always wins
+                    result_type = "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "EXPIRED")
                 elif t1_hit:
                     pnl = 10.0  # T1 hit, trail still running
                     result_type = "WIN"
@@ -8363,8 +8364,8 @@ def _calculate_setup_outcome(entry: dict) -> dict:
     if not engine:
         return {}
 
-    # ES Absorption: outcome tracking using ES range bars
-    if entry.get("setup_name") == "ES Absorption":
+    # ES-based setups: outcome tracking using ES range bars
+    if entry.get("setup_name") in ("ES Absorption", "SB Absorption"):
         return _calculate_absorption_outcome(entry)
 
     try:
@@ -8716,7 +8717,7 @@ def api_setup_log_outcome(log_id: int):
         # Get price history
         ts = row["ts"]
         is_bofa = row["setup_name"] == "BofA Scalp"
-        is_abs = row["setup_name"] == "ES Absorption"
+        is_abs = row["setup_name"] in ("ES Absorption", "SB Absorption")
         alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
         market_open = NY.localize(datetime.combine(alert_date, dtime(9, 30)))
         market_close = NY.localize(datetime.combine(alert_date, dtime(16, 0)))
@@ -13750,7 +13751,7 @@ DASH_HTML_TEMPLATE = """
 
       let html = '';
       filtered.forEach((l, i) => {
-        const isAbs = l.setup_name === 'ES Absorption';
+        const isAbs = l.setup_name === 'ES Absorption' || l.setup_name === 'SB Absorption';
         const isBofa = l.setup_name === 'BofA Scalp';
         const pillColor = _tlPillColors[l.setup_name] || '#888';
         const dir = isAbs ? (l.direction === 'bullish' ? '▲' : '▼') : (l.direction === 'long' ? '▲' : '▼');
@@ -14299,7 +14300,7 @@ DASH_HTML_TEMPLATE = """
           const color = gradeColor[l.grade] || '#888';
           const bell = l.notified ? '&#128276;' : '';
           const isBofa = l.setup_name === 'BofA Scalp';
-          const isAbs = l.setup_name === 'ES Absorption';
+          const isAbs = l.setup_name === 'ES Absorption' || l.setup_name === 'SB Absorption';
           const dir = isAbs ? (l.direction === 'bullish' ? '▲' : '▼') : (l.direction === 'long' ? '▲' : '▼');
           const dirColor = (l.direction === 'long' || l.direction === 'bullish') ? '#22c55e' : '#ef4444';
           const o = l.outcome || {};
@@ -14380,7 +14381,7 @@ DASH_HTML_TEMPLATE = """
 
         // Title
         const isBofa = e.setup_name === 'BofA Scalp';
-        const isAbs = e.setup_name === 'ES Absorption';
+        const isAbs = e.setup_name === 'ES Absorption' || e.setup_name === 'SB Absorption';
         const dir = isAbs ? (e.direction === 'bullish' ? 'BUY' : 'SELL') : (e.direction === 'long' ? 'LONG' : 'SHORT');
         const dirColor = (e.direction === 'long' || e.direction === 'bullish') ? '#22c55e' : '#ef4444';
         const displayPrice = isAbs ? (e.abs_es_price || e.spot)?.toFixed(2) : e.spot?.toFixed(0);
@@ -14470,7 +14471,7 @@ DASH_HTML_TEMPLATE = """
           ];
           const trade = [
             sectionHdr('TRADE'),
-            ['Entry', e.spot?.toFixed(2)],
+            ['Entry', isAbs ? (e.abs_es_price || e.spot)?.toFixed(2) : e.spot?.toFixed(2)],
             ['Stop', lv.stop?.toFixed(0)],
             ['Target', (lv.ten_pt || e.target)?.toFixed(0)],
             ['R:R', e.rr_ratio ? e.rr_ratio.toFixed(1) + 'x' : '–'],

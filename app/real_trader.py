@@ -1,0 +1,1629 @@
+# Real Trader: MES Futures LIVE execution module
+# Self-contained -- receives engine, get_token_fn, and send_telegram_fn via init()
+# Uses REAL TradeStation API (api.tradestation.com) -- THIS IS REAL MONEY.
+#
+# Two accounts, direction-routed:
+#   210VYX65 -> longs only
+#   210VYX91 -> shorts only
+#
+# 1 MES per trade. No split target -- entry + stop + target.
+# Cap: 2 concurrent per direction.
+# Trail: SC trail (BE trigger=10, activation=10, gap=8).
+
+import os, json, math, time, calendar, requests
+from datetime import datetime, date, timedelta
+from threading import Lock
+
+# ====== MES CONTRACT AUTO-ROLLOVER ======
+_MES_MONTHS = [(3, "H"), (6, "M"), (9, "U"), (12, "Z")]
+
+
+def _third_friday(year: int, month: int) -> date:
+    c = calendar.Calendar(firstweekday=calendar.MONDAY)
+    fridays = [d for d in c.itermonthdates(year, month) if d.month == month and d.weekday() == 4]
+    return fridays[2]
+
+
+def _auto_mes_symbol() -> str:
+    """Return front-month MES symbol for TradeStation (e.g. MESH26), rolling ~8 days before expiry."""
+    today = date.today()
+    for month_num, code in _MES_MONTHS:
+        expiry = _third_friday(today.year, month_num)
+        if today <= expiry - timedelta(days=8):
+            return f"MES{code}{today.year % 100}"
+    return f"MESH{(today.year + 1) % 100}"
+
+
+# ====== CONFIG ======
+REAL_BASE = "https://api.tradestation.com/v3"
+
+# Account whitelist -- ONLY these accounts can receive orders
+ACCOUNT_WHITELIST = frozenset({"210VYX65", "210VYX91"})
+
+# Direction binding -- each account is locked to one direction
+_LONGS_ACCOUNT = os.getenv("REAL_TRADE_LONGS_ACCOUNT", "210VYX65")
+_SHORTS_ACCOUNT = os.getenv("REAL_TRADE_SHORTS_ACCOUNT", "210VYX91")
+ACCOUNT_DIRECTION_BINDING = {
+    _LONGS_ACCOUNT: "long",
+    _SHORTS_ACCOUNT: "short",
+}
+
+# Master switches -- both default OFF for safety
+LONGS_ENABLED = os.getenv("REAL_TRADE_LONGS_ENABLED", "false").lower() == "true"
+SHORTS_ENABLED = os.getenv("REAL_TRADE_SHORTS_ENABLED", "false").lower() == "true"
+
+# Symbol
+_es_env = os.getenv("REAL_TRADE_MES_SYMBOL", "auto")
+MES_SYMBOL = _auto_mes_symbol() if _es_env.lower() == "auto" else _es_env
+
+# Position sizing -- 1 MES per trade, max 2 concurrent per direction
+QTY = 1
+MAX_CONCURRENT_PER_DIR = 2
+
+# Risk management
+FIRST_TARGET_PTS = 10.0
+MES_TICK_SIZE = 0.25
+MES_POINT_VALUE = 5.0
+
+# SC Trail parameters
+BE_TRIGGER_PTS = 10.0    # move stop to breakeven after 10pts profit
+TRAIL_ACTIVATION_PTS = 10.0  # trail activates at 10pts
+TRAIL_GAP_PTS = 8.0      # trail gap = max_fav - 8
+BE_BUFFER_PTS = 0.25     # breakeven + 1 tick buffer
+
+# Charm S/R limit entry timeout
+_LIMIT_ENTRY_TIMEOUT_S = 1800  # 30 min
+
+# DB table name
+DB_TABLE = "real_trade_orders"
+
+
+def _round_mes(price: float) -> float:
+    """Round price to nearest MES tick (0.25)."""
+    return round(round(price / MES_TICK_SIZE) * MES_TICK_SIZE, 2)
+
+
+def _order_ok(resp: dict | None) -> tuple[bool, str | None]:
+    """Check if an order response succeeded. Returns (ok, order_id).
+    TS returns HTTP 200 even for FAILED orders -- must check order-level Error."""
+    if not resp:
+        return False, None
+    orders = resp.get("Orders", [])
+    if not orders:
+        return False, None
+    first = orders[0]
+    if first.get("Error") == "FAILED":
+        msg = first.get("Message", "unknown error")
+        print(f"[real-trader] order FAILED: {msg}", flush=True)
+        return False, first.get("OrderID")
+    oid = first.get("OrderID")
+    return bool(oid), oid
+
+
+# ====== STATE ======
+_engine = None
+_get_token = None       # callable -> str (access token)
+_send_telegram = None   # callable(msg) -> bool
+_lock = Lock()
+_active_orders: dict[int, dict] = {}  # keyed by setup_log_id
+
+
+def init(engine, get_token_fn, send_telegram_fn):
+    """Initialize real trader. Called once at startup."""
+    global _engine, _get_token, _send_telegram
+    _engine = engine
+    _get_token = get_token_fn
+    _send_telegram = send_telegram_fn
+    _load_active_orders()
+    n = len(_active_orders)
+    print(f"[real-trader] init: longs={LONGS_ENABLED} (acct={_LONGS_ACCOUNT}) "
+          f"shorts={SHORTS_ENABLED} (acct={_SHORTS_ACCOUNT}) "
+          f"symbol={MES_SYMBOL} qty={QTY} max_per_dir={MAX_CONCURRENT_PER_DIR} "
+          f"active_orders={n}", flush=True)
+
+    # Validate account configuration
+    if _LONGS_ACCOUNT not in ACCOUNT_WHITELIST:
+        print(f"[real-trader] FATAL: longs account {_LONGS_ACCOUNT} not in whitelist!", flush=True)
+    if _SHORTS_ACCOUNT not in ACCOUNT_WHITELIST:
+        print(f"[real-trader] FATAL: shorts account {_SHORTS_ACCOUNT} not in whitelist!", flush=True)
+    if _LONGS_ACCOUNT == _SHORTS_ACCOUNT:
+        print(f"[real-trader] WARNING: longs and shorts using same account {_LONGS_ACCOUNT}", flush=True)
+
+    # Verify account access on startup (if either direction enabled)
+    if (LONGS_ENABLED or SHORTS_ENABLED) and _get_token:
+        for acct_id in set(filter(None, [
+            _LONGS_ACCOUNT if LONGS_ENABLED else None,
+            _SHORTS_ACCOUNT if SHORTS_ENABLED else None,
+        ])):
+            try:
+                acct = _ts_api("GET", f"/brokerage/accounts/{acct_id}", None, acct_id)
+                if acct:
+                    print(f"[real-trader] account {acct_id} OK: "
+                          f"{json.dumps(acct, default=str)[:300]}", flush=True)
+                else:
+                    print(f"[real-trader] WARNING: cannot access account {acct_id}", flush=True)
+                    _alert(f"[REAL-TRADE] WARNING: Cannot access account {acct_id} on startup")
+            except Exception as e:
+                print(f"[real-trader] account {acct_id} check error: {e}", flush=True)
+
+    # Pre-market startup cleanup
+    if LONGS_ENABLED or SHORTS_ENABLED:
+        try:
+            from datetime import timezone as _tz
+            import zoneinfo
+            _et = zoneinfo.ZoneInfo("US/Eastern")
+            _now_et = datetime.now(_tz.utc).astimezone(_et)
+            _market_open = _now_et.replace(hour=9, minute=20, second=0, microsecond=0)
+            _market_close = _now_et.replace(hour=16, minute=10, second=0, microsecond=0)
+            if _now_et < _market_open or _now_et > _market_close:
+                # Outside market hours -- flatten everything
+                for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+                    if acct_id not in ACCOUNT_WHITELIST:
+                        continue
+                    broker_pos = _get_broker_position(acct_id)
+                    if broker_pos:
+                        print(f"[real-trader] PRE-MARKET CLEANUP: {acct_id} has "
+                              f"{broker_pos['long_short']} {broker_pos['qty']} {broker_pos['symbol']}",
+                              flush=True)
+                        _alert(f"[REAL-TRADE] PRE-MARKET: Found position on {acct_id}\n"
+                               f"{broker_pos['long_short']} {broker_pos['qty']} {broker_pos['symbol']}\n"
+                               f"Auto-closing...")
+                        _flatten_account(acct_id)
+                # Mark all tracked orders as closed
+                with _lock:
+                    for lid, o in _active_orders.items():
+                        if o["status"] not in ("closed",):
+                            o["status"] = "closed"
+                            o["close_reason"] = "pre_market_cleanup"
+                            _persist_order(lid)
+                            print(f"[real-trader] PRE-MARKET: closed order "
+                                  f"{o.get('setup_name', '?')} id={lid}", flush=True)
+            else:
+                # During market hours -- orphan check
+                for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+                    if acct_id in ACCOUNT_WHITELIST:
+                        _close_broker_orphans(acct_id, source="STARTUP")
+        except Exception as e:
+            print(f"[real-trader] startup cleanup error: {e}", flush=True)
+
+
+# ====== HELPERS ======
+
+def _get_account_for_direction(is_long: bool) -> str | None:
+    """Return the account ID for a given direction, or None if disabled."""
+    if is_long:
+        if not LONGS_ENABLED:
+            return None
+        return _LONGS_ACCOUNT
+    else:
+        if not SHORTS_ENABLED:
+            return None
+        return _SHORTS_ACCOUNT
+
+
+def _validate_account_direction(account_id: str, is_long: bool) -> bool:
+    """Validate that the account is allowed for this direction. CRITICAL SAFETY CHECK."""
+    if account_id not in ACCOUNT_WHITELIST:
+        print(f"[real-trader] BLOCKED: account {account_id} not in whitelist!", flush=True)
+        _alert(f"[REAL-TRADE] SECURITY: Blocked order to non-whitelisted account {account_id}")
+        return False
+    expected_dir = ACCOUNT_DIRECTION_BINDING.get(account_id)
+    if expected_dir is None:
+        print(f"[real-trader] BLOCKED: account {account_id} has no direction binding!", flush=True)
+        _alert(f"[REAL-TRADE] SECURITY: No direction binding for account {account_id}")
+        return False
+    actual_dir = "long" if is_long else "short"
+    if expected_dir != actual_dir:
+        print(f"[real-trader] BLOCKED: account {account_id} bound to {expected_dir}, "
+              f"got {actual_dir}!", flush=True)
+        _alert(f"[REAL-TRADE] SECURITY: Direction mismatch!\n"
+               f"Account {account_id} bound to {expected_dir}, attempted {actual_dir}")
+        return False
+    return True
+
+
+def _count_active_for_direction(is_long: bool) -> int:
+    """Count currently active orders (pending or filled) for a direction."""
+    count = 0
+    with _lock:
+        for o in _active_orders.values():
+            if o["status"] in ("pending_entry", "pending_limit", "filled"):
+                o_is_long = o["direction"].lower() in ("long", "bullish")
+                if o_is_long == is_long:
+                    count += 1
+    return count
+
+
+# ====== MAIN ENTRY POINT ======
+
+def place_trade(setup_log_id: int, setup_name: str, direction: str,
+                es_price: float, target_pts: float | None, stop_pts: float,
+                charm_limit_price: float | None = None):
+    """Place 1 MES REAL trade when a setup fires.
+
+    Args:
+        setup_log_id: DB id from setup_log table
+        setup_name: e.g. "Skew Charm", "AG Short"
+        direction: "Long"/"Bullish" or "Short"/"Bearish"
+        es_price: current ES/MES price from quote stream
+        target_pts: distance in points to target (None for trailing setups)
+        stop_pts: distance in points to stop
+        charm_limit_price: MES limit entry price (charm S/R shorts). None = market order.
+    """
+    is_long = direction.lower() in ("long", "bullish")
+
+    # Check master switch for this direction
+    account_id = _get_account_for_direction(is_long)
+    if not account_id:
+        dir_str = "longs" if is_long else "shorts"
+        print(f"[real-trader] skip {setup_name}: {dir_str} master switch OFF", flush=True)
+        return
+
+    # Validate account-direction binding (CRITICAL SAFETY)
+    if not _validate_account_direction(account_id, is_long):
+        return
+
+    if not setup_log_id:
+        print(f"[real-trader] skip {setup_name}: no setup_log_id", flush=True)
+        return
+
+    # Dedup: already tracking this setup_log_id
+    with _lock:
+        if setup_log_id in _active_orders:
+            print(f"[real-trader] skip {setup_name} id={setup_log_id}: already active", flush=True)
+            return
+        # DEDUP: block if same setup_name+direction placed within last 90s (deploy overlap)
+        from datetime import timezone as _utc
+        _now = datetime.now(_utc.utc)
+        for _lid, _o in _active_orders.items():
+            if (_o.get("setup_name") == setup_name and
+                _o.get("direction", "").lower() == direction.lower()):
+                _placed = _o.get("ts_placed", "")
+                if _placed:
+                    try:
+                        _placed_dt = datetime.fromisoformat(_placed)
+                        if _placed_dt.tzinfo is None:
+                            _placed_dt = _placed_dt.replace(tzinfo=_utc.utc)
+                        if (_now - _placed_dt).total_seconds() < 90:
+                            print(f"[real-trader] DEDUP {setup_name} id={setup_log_id}: "
+                                  f"same setup placed {(_now - _placed_dt).total_seconds():.0f}s ago "
+                                  f"(id={_lid})", flush=True)
+                            return
+                    except (ValueError, TypeError):
+                        pass
+
+    # Cap check: max 2 concurrent per direction
+    active_count = _count_active_for_direction(is_long)
+    if active_count >= MAX_CONCURRENT_PER_DIR:
+        dir_str = "long" if is_long else "short"
+        print(f"[real-trader] skip {setup_name}: {dir_str} cap reached "
+              f"({active_count}/{MAX_CONCURRENT_PER_DIR})", flush=True)
+        return
+
+    # Margin/buying power pre-check
+    bp = _get_buying_power(account_id)
+    if bp is not None:
+        margin_needed = QTY * 2737  # ~$2,737/MES contract
+        if bp < margin_needed:
+            print(f"[real-trader] skip {setup_name}: insufficient buying power on {account_id} "
+                  f"(${bp:,.0f} < ${margin_needed:,.0f})", flush=True)
+            _alert(f"[REAL-TRADE] SKIPPED {setup_name}: insufficient margin\n"
+                   f"Account: {account_id} | BP: ${bp:,.0f} < ${margin_needed:,.0f}")
+            return
+
+    # Charm S/R limit entry for shorts
+    if charm_limit_price is not None:
+        _place_limit_entry(setup_log_id, setup_name, direction, is_long,
+                           account_id, es_price, stop_pts, target_pts,
+                           charm_limit_price)
+        return
+
+    # Standard market entry
+    _place_market_entry(setup_log_id, setup_name, direction, is_long,
+                        account_id, es_price, stop_pts, target_pts)
+
+
+# ====== ORDER PLACEMENT ======
+
+def _place_market_entry(setup_log_id, setup_name, direction, is_long,
+                        account_id, es_price, stop_pts, target_pts):
+    """Place market entry + stop + target for 1 MES."""
+    # Final safety check before placing order
+    if not _validate_account_direction(account_id, is_long):
+        return
+
+    side = "Buy" if is_long else "Sell"
+    exit_side = "Sell" if is_long else "Buy"
+
+    if is_long:
+        es_stop = _round_mes(es_price - stop_pts)
+        es_target = _round_mes(es_price + (target_pts if target_pts else FIRST_TARGET_PTS))
+    else:
+        es_stop = _round_mes(es_price + stop_pts)
+        es_target = _round_mes(es_price - (target_pts if target_pts else FIRST_TARGET_PTS))
+
+    # 1. Market entry
+    entry_payload = {
+        "AccountID": account_id,
+        "Symbol": MES_SYMBOL,
+        "Quantity": str(QTY),
+        "OrderType": "Market",
+        "TradeAction": side,
+        "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+    print(f"[real-trader] PLACING: {setup_name} {side} {QTY} {MES_SYMBOL} "
+          f"@ ~{es_price:.2f} on {account_id}", flush=True)
+    resp = _ts_api("POST", "/orderexecution/orders", entry_payload, account_id)
+    ok, entry_oid = _order_ok(resp)
+    if not ok:
+        _alert(f"[REAL-TRADE] FAILED entry for {setup_name}\n"
+               f"Account: {account_id}\n"
+               f"Side: {side} {QTY} {MES_SYMBOL} @ ~{es_price:.2f}")
+        return
+
+    # 2. Stop order
+    stop_payload = {
+        "AccountID": account_id,
+        "Symbol": MES_SYMBOL,
+        "Quantity": str(QTY),
+        "OrderType": "StopMarket",
+        "StopPrice": str(es_stop),
+        "TradeAction": exit_side,
+        "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+    stop_resp = _ts_api("POST", "/orderexecution/orders", stop_payload, account_id)
+    stop_ok, stop_oid = _order_ok(stop_resp)
+    if not stop_ok:
+        stop_oid = None
+        _alert(f"[REAL-TRADE] MANUAL INTERVENTION: {setup_name} entry placed "
+               f"(id={entry_oid}) but STOP FAILED!\n"
+               f"Account: {account_id}\n"
+               f"Side: {side} {QTY} {MES_SYMBOL} @ ~{es_price:.2f} Stop: {es_stop:.2f}")
+
+    # 3. Target limit
+    t1_payload = {
+        "AccountID": account_id,
+        "Symbol": MES_SYMBOL,
+        "Quantity": str(QTY),
+        "OrderType": "Limit",
+        "LimitPrice": str(es_target),
+        "TradeAction": exit_side,
+        "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+    t1_resp = _ts_api("POST", "/orderexecution/orders", t1_payload, account_id)
+    t1_ok, t1_oid = _order_ok(t1_resp)
+    if not t1_ok:
+        t1_oid = None
+        print(f"[real-trader] target limit skipped (margin?): {setup_name} "
+              f"target={es_target:.2f}", flush=True)
+
+    order = {
+        "setup_log_id": setup_log_id,
+        "setup_name": setup_name,
+        "direction": direction,
+        "account_id": account_id,
+        "entry_order_id": entry_oid,
+        "target_order_id": t1_oid,
+        "stop_order_id": stop_oid,
+        "current_stop": es_stop,
+        "target_price": es_target,
+        "status": "pending_entry",
+        "fill_price": None,
+        "max_favorable": 0.0,
+        "be_triggered": False,
+        "trail_active": False,
+        "ts_placed": datetime.utcnow().isoformat(),
+    }
+
+    with _lock:
+        _active_orders[setup_log_id] = order
+    _persist_order(setup_log_id)
+
+    dir_str = "LONG" if is_long else "SHORT"
+    print(f"[real-trader] PLACED: {setup_name} {dir_str} {QTY} {MES_SYMBOL} "
+          f"@ ~{es_price:.2f} target={es_target:.2f} stop={es_stop:.2f} "
+          f"acct={account_id} ids=entry:{entry_oid}/stop:{stop_oid}/tgt:{t1_oid}",
+          flush=True)
+    _alert(f"[REAL-TRADE] {setup_name} PLACED\n"
+           f"Side: {dir_str} | {QTY} {MES_SYMBOL} @ ~{es_price:.2f}\n"
+           f"Account: {account_id}\n"
+           f"Target: {es_target:.2f} | Stop: {es_stop:.2f}")
+
+
+def _place_limit_entry(setup_log_id, setup_name, direction, is_long,
+                       account_id, es_price, stop_pts, target_pts,
+                       limit_entry_price):
+    """Charm S/R: place LIMIT entry only. Stop/target placed after fill (Phase 2)."""
+    # Final safety check
+    if not _validate_account_direction(account_id, is_long):
+        return
+
+    side = "Buy" if is_long else "Sell"
+    limit_price = _round_mes(limit_entry_price)
+
+    entry_payload = {
+        "AccountID": account_id,
+        "Symbol": MES_SYMBOL,
+        "Quantity": str(QTY),
+        "OrderType": "Limit",
+        "LimitPrice": str(limit_price),
+        "TradeAction": side,
+        "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+    print(f"[real-trader] PLACING LIMIT: {setup_name} {side} {QTY} {MES_SYMBOL} "
+          f"LIMIT @ {limit_price:.2f} on {account_id}", flush=True)
+    resp = _ts_api("POST", "/orderexecution/orders", entry_payload, account_id)
+    ok, entry_oid = _order_ok(resp)
+    if not ok:
+        _alert(f"[REAL-TRADE] FAILED limit entry for {setup_name}\n"
+               f"Account: {account_id}\n"
+               f"Side: {side} {QTY} {MES_SYMBOL} LIMIT @ {limit_price:.2f}")
+        return
+
+    order = {
+        "setup_log_id": setup_log_id,
+        "setup_name": setup_name,
+        "direction": direction,
+        "account_id": account_id,
+        "entry_order_id": entry_oid,
+        "target_order_id": None,
+        "stop_order_id": None,
+        "current_stop": None,
+        "target_price": None,
+        "status": "pending_limit",
+        "fill_price": None,
+        "max_favorable": 0.0,
+        "be_triggered": False,
+        "trail_active": False,
+        "ts_placed": datetime.utcnow().isoformat(),
+        "limit_entry_price": limit_price,
+        "limit_placed_at": datetime.utcnow().isoformat(),
+        "deferred_stop_pts": stop_pts,
+        "deferred_target_pts": target_pts,
+        "deferred_es_price": es_price,
+    }
+
+    with _lock:
+        _active_orders[setup_log_id] = order
+    _persist_order(setup_log_id)
+
+    dir_str = "LONG" if is_long else "SHORT"
+    print(f"[real-trader] LIMIT placed: {setup_name} {dir_str} {QTY} {MES_SYMBOL} "
+          f"LIMIT @ {limit_price:.2f} (market was {es_price:.2f}) "
+          f"acct={account_id} id={entry_oid}", flush=True)
+    _alert(f"[REAL-TRADE] {setup_name} LIMIT entry\n"
+           f"Side: {dir_str} | {QTY} {MES_SYMBOL} LIMIT @ {limit_price:.2f}\n"
+           f"Account: {account_id}\n"
+           f"[CHARM S/R] Waiting for fill (market @ {es_price:.2f})")
+
+
+def _place_deferred_protective_orders(lid, order, fill_price):
+    """Phase 2: place stop + target orders after limit entry fills."""
+    is_long = order["direction"].lower() in ("long", "bullish")
+    account_id = order["account_id"]
+    exit_side = "Sell" if is_long else "Buy"
+    stop_pts = order["deferred_stop_pts"]
+    target_pts = order.get("deferred_target_pts")
+    setup_name = order["setup_name"]
+
+    if is_long:
+        es_stop = _round_mes(fill_price - stop_pts)
+        es_target = _round_mes(fill_price + (target_pts if target_pts else FIRST_TARGET_PTS))
+    else:
+        es_stop = _round_mes(fill_price + stop_pts)
+        es_target = _round_mes(fill_price - (target_pts if target_pts else FIRST_TARGET_PTS))
+
+    # Final safety check
+    if not _validate_account_direction(account_id, is_long):
+        _alert(f"[REAL-TRADE] MANUAL INTERVENTION: {setup_name} limit FILLED "
+               f"@ {fill_price:.2f} but direction validation FAILED!\n"
+               f"Account: {account_id}")
+        return
+
+    # 1. Stop order
+    stop_payload = {
+        "AccountID": account_id,
+        "Symbol": MES_SYMBOL,
+        "Quantity": str(QTY),
+        "OrderType": "StopMarket",
+        "StopPrice": str(es_stop),
+        "TradeAction": exit_side,
+        "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+    stop_resp = _ts_api("POST", "/orderexecution/orders", stop_payload, account_id)
+    stop_ok, stop_oid = _order_ok(stop_resp)
+    if not stop_ok:
+        stop_oid = None
+        _alert(f"[REAL-TRADE] MANUAL INTERVENTION: {setup_name} limit FILLED "
+               f"@ {fill_price:.2f} but STOP FAILED!\n"
+               f"Account: {account_id}")
+
+    # 2. Target limit
+    t1_payload = {
+        "AccountID": account_id,
+        "Symbol": MES_SYMBOL,
+        "Quantity": str(QTY),
+        "OrderType": "Limit",
+        "LimitPrice": str(es_target),
+        "TradeAction": exit_side,
+        "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+    t1_resp = _ts_api("POST", "/orderexecution/orders", t1_payload, account_id)
+    t1_ok, t1_oid = _order_ok(t1_resp)
+    if not t1_ok:
+        t1_oid = None
+
+    # Update order state
+    with _lock:
+        order["stop_order_id"] = stop_oid
+        order["target_order_id"] = t1_oid
+        order["current_stop"] = es_stop
+        order["target_price"] = es_target
+    _persist_order(lid)
+
+    imp_pts = abs(fill_price - order.get("deferred_es_price", fill_price))
+    print(f"[real-trader] DEFERRED orders placed: {setup_name} "
+          f"stop={es_stop:.2f} target={es_target:.2f} "
+          f"(entry improved {imp_pts:.1f}pts from market) acct={account_id}", flush=True)
+    _alert(f"[REAL-TRADE] {setup_name} LIMIT FILLED @ {fill_price:.2f}\n"
+           f"Account: {account_id}\n"
+           f"[CHARM S/R] Improved {imp_pts:+.1f}pts from market "
+           f"({order.get('deferred_es_price', 0):.2f})\n"
+           f"Stop: {es_stop:.2f} | Target: {es_target:.2f}")
+
+
+# ====== TRAIL & CLOSE ======
+
+def update_stop(setup_log_id: int, new_stop_price: float):
+    """Update the stop order price (called when trail advances)."""
+    with _lock:
+        order = _active_orders.get(setup_log_id)
+        if not order:
+            return
+        if order["status"] != "filled":
+            return
+        old_stop = order["current_stop"]
+        if old_stop is None:
+            return
+        # Skip trivial changes (< 1 MES tick)
+        if abs(new_stop_price - old_stop) < MES_TICK_SIZE:
+            return
+        stop_oid = order["stop_order_id"]
+        account_id = order["account_id"]
+
+    if not stop_oid:
+        return
+
+    new_stop_price = _round_mes(new_stop_price)
+
+    # Validate account before modifying order
+    is_long = order["direction"].lower() in ("long", "bullish")
+    if not _validate_account_direction(account_id, is_long):
+        return
+
+    replace_payload = {
+        "AccountID": account_id,
+        "Symbol": MES_SYMBOL,
+        "Quantity": str(QTY),
+        "OrderType": "StopMarket",
+        "StopPrice": str(new_stop_price),
+        "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+
+    resp = _ts_api("PUT", f"/orderexecution/orders/{stop_oid}", replace_payload, account_id)
+    if resp:
+        with _lock:
+            order["current_stop"] = new_stop_price
+            new_orders = resp.get("Orders", [])
+            if new_orders and new_orders[0].get("OrderID"):
+                order["stop_order_id"] = new_orders[0]["OrderID"]
+        _persist_order(setup_log_id)
+        print(f"[real-trader] stop updated: id={setup_log_id} "
+              f"{old_stop:.2f} -> {new_stop_price:.2f} acct={account_id}", flush=True)
+        _alert(f"[REAL-TRADE] {order['setup_name']} stop updated\n"
+               f"Account: {account_id}\n"
+               f"{old_stop:.2f} -> {new_stop_price:.2f}")
+    else:
+        _alert(f"[REAL-TRADE] MANUAL INTERVENTION: stop update FAILED\n"
+               f"Account: {account_id}\n"
+               f"id={setup_log_id} old={old_stop:.2f} new={new_stop_price:.2f}")
+
+
+def close_trade(setup_log_id: int, result_type: str):
+    """Close a trade on outcome resolution.
+    Cancel remaining orders + market close if position still open."""
+    with _lock:
+        order = _active_orders.get(setup_log_id)
+        if not order:
+            return
+        if order["status"] == "closed":
+            return
+
+    setup_name = order["setup_name"]
+    account_id = order["account_id"]
+
+    # Flatten: cancel pending orders + market close
+    _flatten_position(order)
+
+    with _lock:
+        order["status"] = "closed"
+        order["close_reason"] = result_type
+    _persist_order(setup_log_id)
+    print(f"[real-trader] closed: {setup_name} id={setup_log_id} "
+          f"result={result_type} acct={account_id}", flush=True)
+    _alert(f"[REAL-TRADE] {setup_name} CLOSED: {result_type}\n"
+           f"Account: {account_id}")
+
+
+def _flatten_position(order):
+    """Market close remaining position + cancel all pending orders."""
+    account_id = order["account_id"]
+    is_long = order["direction"].lower() in ("long", "bullish")
+    close_side = "Sell" if is_long else "Buy"
+
+    # Validate before any order modification
+    if not _validate_account_direction(account_id, is_long):
+        _alert(f"[REAL-TRADE] CRITICAL: Cannot flatten -- direction validation failed!\n"
+               f"Account: {account_id} | {order.get('setup_name')}")
+        return
+
+    # Cancel pending stop and target orders FIRST
+    for oid_key in ("stop_order_id", "target_order_id"):
+        oid = order.get(oid_key)
+        if oid:
+            _ts_api("DELETE", f"/orderexecution/orders/{oid}", None, account_id)
+
+    # Cancel pending limit entry if not yet filled
+    if order.get("status") == "pending_limit" and order.get("entry_order_id"):
+        _ts_api("DELETE", f"/orderexecution/orders/{order['entry_order_id']}", None, account_id)
+        print(f"[real-trader] cancelled pending limit entry: {order['setup_name']} "
+              f"acct={account_id}", flush=True)
+        _alert(f"[REAL-TRADE] {order['setup_name']} limit entry cancelled\n"
+               f"Account: {account_id}")
+        return
+
+    # Wait for cancellations to settle
+    time.sleep(0.5)
+
+    # Market close if position exists
+    if order["status"] == "filled":
+        # Check broker position first -- don't create ghost positions
+        broker_pos = _get_broker_position(account_id)
+        if not broker_pos:
+            print(f"[real-trader] flatten SKIPPED: broker already flat on {account_id} "
+                  f"(stop/target filled). {order['setup_name']}", flush=True)
+            return
+
+        # Verify direction matches
+        broker_is_long = broker_pos["long_short"] == "Long"
+        if broker_is_long != is_long:
+            print(f"[real-trader] flatten SKIPPED: direction mismatch on {account_id}! "
+                  f"Expected={'Long' if is_long else 'Short'} "
+                  f"Actual={broker_pos['long_short']} qty={broker_pos['qty']}", flush=True)
+            _alert(f"[REAL-TRADE] POSITION MISMATCH on {account_id}\n"
+                   f"Expected: {'Long' if is_long else 'Short'}\n"
+                   f"Broker: {broker_pos['long_short']} {broker_pos['qty']}\n"
+                   f"MANUAL REVIEW NEEDED")
+            return
+
+        close_qty = min(QTY, broker_pos["qty"])
+        close_payload = {
+            "AccountID": account_id,
+            "Symbol": MES_SYMBOL,
+            "Quantity": str(close_qty),
+            "OrderType": "Market",
+            "TradeAction": close_side,
+            "TimeInForce": {"Duration": "DAY"},
+            "Route": "Intelligent",
+        }
+        resp = _ts_api("POST", "/orderexecution/orders", close_payload, account_id)
+        if resp:
+            # Check for rejection
+            orders_list = resp.get("Orders", [])
+            if orders_list and orders_list[0].get("Error") == "FAILED":
+                msg = orders_list[0].get("Message", "")
+                _alert(f"[REAL-TRADE] FLATTEN REJECTED on {account_id}\n"
+                       f"{order['setup_name']} qty={close_qty}\n"
+                       f"Error: {msg}\nMANUAL CLOSE REQUIRED")
+                return
+            # Capture fill price
+            close_oid = None
+            if orders_list:
+                close_oid = orders_list[0].get("OrderID")
+            if close_oid:
+                time.sleep(1)
+                close_fp = _get_order_fill_price(close_oid, account_id)
+                if close_fp:
+                    order["close_fill_price"] = close_fp
+            print(f"[real-trader] flattened: {order['setup_name']} qty={close_qty} "
+                  f"fill={order.get('close_fill_price')} acct={account_id}", flush=True)
+        else:
+            _alert(f"[REAL-TRADE] FLATTEN FAILED on {account_id}\n"
+                   f"{order['setup_name']} id={order['setup_log_id']} qty={close_qty}\n"
+                   f"MANUAL CLOSE REQUIRED")
+
+
+# ====== POLL ORDER STATUS ======
+
+def poll_order_status():
+    """Check order fills via TS API. Called each ~30s cycle."""
+    if not (LONGS_ENABLED or SHORTS_ENABLED):
+        return
+    with _lock:
+        if not _active_orders:
+            return
+        pending = [(lid, o) for lid, o in _active_orders.items()
+                   if o["status"] in ("pending_entry", "pending_limit", "filled")]
+    if not pending:
+        return
+
+    # Group by account to minimize API calls
+    by_account: dict[str, list] = {}
+    for lid, o in pending:
+        acct = o.get("account_id", "")
+        if acct:
+            by_account.setdefault(acct, []).append((lid, o))
+
+    for account_id, order_list in by_account.items():
+        if account_id not in ACCOUNT_WHITELIST:
+            continue
+        try:
+            orders_data = _ts_api("GET",
+                f"/brokerage/accounts/{account_id}/orders", None, account_id)
+        except Exception as e:
+            print(f"[real-trader] poll error for {account_id}: {e}", flush=True)
+            continue
+        if not orders_data:
+            continue
+
+        broker_orders = {}
+        for o in orders_data.get("Orders", []):
+            oid = o.get("OrderID")
+            if oid:
+                broker_orders[oid] = o
+
+        for lid, order in order_list:
+            _check_order_fills(lid, order, broker_orders)
+
+
+def _check_order_fills(lid, order, broker_orders):
+    """Check individual order fills and update state."""
+    changed = False
+    account_id = order.get("account_id", "")
+
+    # Check pending limit entry (Phase 2: deferred stop/target)
+    if order["status"] == "pending_limit" and order.get("entry_order_id"):
+        entry = broker_orders.get(order["entry_order_id"], {})
+        entry_status = entry.get("Status", "")
+        if entry_status == "FLL":
+            fill_price = _extract_fill_price(entry)
+            with _lock:
+                order["status"] = "filled"
+                order["fill_price"] = fill_price
+            changed = True
+            _place_deferred_protective_orders(lid, order, fill_price)
+        elif entry_status in ("REJ", "CAN", "EXP"):
+            with _lock:
+                order["status"] = "closed"
+                order["close_reason"] = f"limit_{entry_status}"
+            changed = True
+            print(f"[real-trader] limit entry {entry_status}: {order['setup_name']} "
+                  f"acct={account_id}", flush=True)
+            _alert(f"[REAL-TRADE] {order['setup_name']} LIMIT {entry_status}\n"
+                   f"Account: {account_id}\n"
+                   f"[CHARM S/R] Entry not filled -- trade skipped")
+        else:
+            # Check timeout (30 min)
+            placed_at = order.get("limit_placed_at")
+            if placed_at:
+                try:
+                    placed_dt = datetime.fromisoformat(placed_at)
+                    if placed_dt.tzinfo is None:
+                        placed_dt = placed_dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+                    elapsed = (datetime.utcnow() - placed_dt.replace(tzinfo=None)).total_seconds()
+                    if elapsed > _LIMIT_ENTRY_TIMEOUT_S:
+                        _ts_api("DELETE",
+                                f"/orderexecution/orders/{order['entry_order_id']}",
+                                None, account_id)
+                        with _lock:
+                            order["status"] = "closed"
+                            order["close_reason"] = "limit_timeout"
+                        changed = True
+                        print(f"[real-trader] LIMIT TIMEOUT: {order['setup_name']} cancelled "
+                              f"after {elapsed/60:.0f} min acct={account_id}", flush=True)
+                        _alert(f"[REAL-TRADE] {order['setup_name']} LIMIT EXPIRED\n"
+                               f"Account: {account_id}\n"
+                               f"[CHARM S/R] {order.get('limit_entry_price', 0):.2f} not reached "
+                               f"in {elapsed/60:.0f} min -- trade skipped")
+                except (ValueError, TypeError):
+                    pass
+
+    # Check market entry fill
+    if order["status"] == "pending_entry" and order.get("entry_order_id"):
+        entry = broker_orders.get(order["entry_order_id"], {})
+        entry_status = entry.get("Status", "")
+        if entry_status == "FLL":
+            fill_price = _extract_fill_price(entry)
+            with _lock:
+                order["status"] = "filled"
+                order["fill_price"] = fill_price
+            changed = True
+            print(f"[real-trader] FILLED: {order['setup_name']} "
+                  f"{QTY} {MES_SYMBOL} @ {fill_price} acct={account_id}", flush=True)
+            _alert(f"[REAL-TRADE] {order['setup_name']} FILLED\n"
+                   f"Account: {account_id}\n"
+                   f"{QTY} {MES_SYMBOL} @ {fill_price}\n"
+                   f"Target: {order.get('target_price', 0):.2f} | "
+                   f"Stop: {order['current_stop']:.2f}")
+        elif entry_status in ("REJ", "CAN", "EXP"):
+            with _lock:
+                order["status"] = "closed"
+                order["close_reason"] = f"entry_{entry_status}"
+            changed = True
+            rej_reason = (entry.get("RejectReason") or entry.get("StatusDescription")
+                          or entry.get("Message", ""))
+            print(f"[real-trader] entry {entry_status}: {order['setup_name']} "
+                  f"reason={rej_reason} acct={account_id}", flush=True)
+            _alert(f"[REAL-TRADE] {order['setup_name']} entry {entry_status}\n"
+                   f"Account: {account_id}\n"
+                   f"Reason: {rej_reason}")
+
+    # Check target/stop fills for active positions
+    if order["status"] == "filled":
+        # Check target fill
+        if order.get("target_order_id"):
+            tgt = broker_orders.get(order["target_order_id"], {})
+            if tgt.get("Status") == "FLL":
+                tgt_fp = _extract_fill_price(tgt)
+                with _lock:
+                    order["target_fill_price"] = tgt_fp
+                    order["status"] = "closed"
+                    order["close_reason"] = "target_filled"
+                changed = True
+                # Cancel stop since target filled
+                if order.get("stop_order_id"):
+                    _ts_api("DELETE",
+                            f"/orderexecution/orders/{order['stop_order_id']}",
+                            None, account_id)
+                pnl = None
+                if tgt_fp and order.get("fill_price"):
+                    is_long = order["direction"].lower() in ("long", "bullish")
+                    if is_long:
+                        pnl = (tgt_fp - order["fill_price"]) * MES_POINT_VALUE * QTY
+                    else:
+                        pnl = (order["fill_price"] - tgt_fp) * MES_POINT_VALUE * QTY
+                pnl_str = f"${pnl:.2f}" if pnl is not None else "n/a"
+                print(f"[real-trader] TARGET filled: {order['setup_name']} "
+                      f"@ {tgt_fp} pnl={pnl_str} acct={account_id}", flush=True)
+                _alert(f"[REAL-TRADE] {order['setup_name']} TARGET FILLED\n"
+                       f"Account: {account_id}\n"
+                       f"{QTY} {MES_SYMBOL} @ {tgt_fp}\n"
+                       f"P&L: {pnl_str}")
+
+        # Check stop fill
+        if order.get("stop_order_id") and order["status"] == "filled":
+            stop_order = broker_orders.get(order["stop_order_id"], {})
+            if stop_order.get("Status") == "FLL":
+                stop_fp = _extract_fill_price(stop_order)
+                with _lock:
+                    order["stop_fill_price"] = stop_fp
+                    order["status"] = "closed"
+                    order["close_reason"] = "stop_filled"
+                changed = True
+                # Cancel target since stop filled
+                if order.get("target_order_id"):
+                    _ts_api("DELETE",
+                            f"/orderexecution/orders/{order['target_order_id']}",
+                            None, account_id)
+                pnl = None
+                if stop_fp and order.get("fill_price"):
+                    is_long = order["direction"].lower() in ("long", "bullish")
+                    if is_long:
+                        pnl = (stop_fp - order["fill_price"]) * MES_POINT_VALUE * QTY
+                    else:
+                        pnl = (order["fill_price"] - stop_fp) * MES_POINT_VALUE * QTY
+                pnl_str = f"${pnl:.2f}" if pnl is not None else "n/a"
+                print(f"[real-trader] STOP filled: {order['setup_name']} "
+                      f"@ {stop_fp} pnl={pnl_str} acct={account_id}", flush=True)
+                _alert(f"[REAL-TRADE] {order['setup_name']} STOP FILLED\n"
+                       f"Account: {account_id}\n"
+                       f"{QTY} {MES_SYMBOL} @ {stop_fp}\n"
+                       f"P&L: {pnl_str}")
+
+    if changed:
+        _persist_order(lid)
+
+
+def _extract_fill_price(entry_order: dict) -> float | None:
+    """Extract fill price from a broker order response."""
+    try:
+        fp = float(entry_order.get("FilledPrice", 0))
+        if fp > 0:
+            return fp
+    except (ValueError, TypeError):
+        pass
+    fills = entry_order.get("Legs", [{}])
+    if fills:
+        try:
+            ep = float(fills[0].get("ExecPrice", 0))
+            if ep > 0:
+                return ep
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
+def _get_order_fill_price(order_id: str, account_id: str) -> float | None:
+    """Get fill price for a specific order by polling broker."""
+    if account_id not in ACCOUNT_WHITELIST:
+        return None
+    try:
+        data = _ts_api("GET", f"/brokerage/accounts/{account_id}/orders", None, account_id)
+        if data:
+            for o in data.get("Orders", []):
+                if o.get("OrderID") == order_id and o.get("Status") == "FLL":
+                    return _extract_fill_price(o)
+    except Exception:
+        pass
+    return None
+
+
+# ====== SC TRAIL LOGIC ======
+
+def update_trail(setup_log_id: int, current_es_price: float):
+    """Update trailing stop based on current ES price.
+    SC Trail: BE trigger=10, activation=10, gap=8.
+
+    Called externally (from main.py's outcome tracking loop) with the current ES price.
+    This function tracks max favorable excursion and advances the stop accordingly.
+    """
+    with _lock:
+        order = _active_orders.get(setup_log_id)
+        if not order:
+            return
+        if order["status"] != "filled":
+            return
+        fill_price = order.get("fill_price")
+        if not fill_price:
+            return
+
+    is_long = order["direction"].lower() in ("long", "bullish")
+
+    # Calculate current profit
+    if is_long:
+        profit = current_es_price - fill_price
+    else:
+        profit = fill_price - current_es_price
+
+    # Update max favorable excursion
+    with _lock:
+        if profit > order.get("max_favorable", 0):
+            order["max_favorable"] = profit
+
+        max_fav = order["max_favorable"]
+        current_stop = order.get("current_stop")
+        if current_stop is None:
+            return
+
+        new_stop = current_stop  # default: no change
+
+        # Phase 1: Breakeven trigger
+        if not order.get("be_triggered") and max_fav >= BE_TRIGGER_PTS:
+            order["be_triggered"] = True
+            if is_long:
+                be_stop = _round_mes(fill_price + BE_BUFFER_PTS)
+                if be_stop > current_stop:
+                    new_stop = be_stop
+            else:
+                be_stop = _round_mes(fill_price - BE_BUFFER_PTS)
+                if be_stop < current_stop:
+                    new_stop = be_stop
+
+        # Phase 2: Trail activation
+        if max_fav >= TRAIL_ACTIVATION_PTS:
+            order["trail_active"] = True
+            trail_stop = _round_mes(fill_price + (max_fav - TRAIL_GAP_PTS)) if is_long else \
+                         _round_mes(fill_price - (max_fav - TRAIL_GAP_PTS))
+            # Trail only moves forward (tighter)
+            if is_long and trail_stop > new_stop:
+                new_stop = trail_stop
+            elif not is_long and trail_stop < new_stop:
+                new_stop = trail_stop
+
+    # Apply stop update if changed
+    if new_stop != current_stop:
+        # Trail only moves in protective direction
+        if is_long and new_stop > current_stop:
+            update_stop(setup_log_id, new_stop)
+        elif not is_long and new_stop < current_stop:
+            update_stop(setup_log_id, new_stop)
+
+
+# ====== EOD FLATTEN ======
+
+def flatten_all_eod():
+    """Force-close all open REAL positions at end of day.
+    Called by scheduler at 15:55 ET before market close."""
+    with _lock:
+        open_orders = [(lid, o) for lid, o in _active_orders.items()
+                       if o["status"] in ("pending_entry", "pending_limit", "filled")]
+    if not open_orders:
+        print("[real-trader] EOD flatten: no tracked positions", flush=True)
+    else:
+        print(f"[real-trader] EOD flatten: closing {len(open_orders)} tracked position(s)",
+              flush=True)
+        _alert(f"[REAL-TRADE] EOD FLATTEN: closing {len(open_orders)} position(s)")
+
+        # Phase 1a: Cancel ALL orders across ALL tracked trades first
+        cancelled = 0
+        for lid, order in open_orders:
+            account_id = order.get("account_id", "")
+            if account_id not in ACCOUNT_WHITELIST:
+                continue
+            for oid_key in ("entry_order_id", "stop_order_id", "target_order_id"):
+                # Cancel entry only for pending_limit
+                if oid_key == "entry_order_id" and order.get("status") != "pending_limit":
+                    continue
+                oid = order.get(oid_key)
+                if oid:
+                    try:
+                        _ts_api("DELETE", f"/orderexecution/orders/{oid}", None, account_id)
+                        cancelled += 1
+                    except Exception:
+                        pass
+        print(f"[real-trader] EOD: cancelled {cancelled} orders", flush=True)
+
+        # Phase 1b: Wait for cancellations to settle
+        time.sleep(3)
+
+        # Phase 1c: Close actual broker positions with retry
+        for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+            if acct_id not in ACCOUNT_WHITELIST:
+                continue
+            broker_pos = _get_broker_position(acct_id)
+            if not broker_pos:
+                print(f"[real-trader] EOD: {acct_id} already flat", flush=True)
+                continue
+
+            close_side = "Sell" if broker_pos["long_short"] == "Long" else "Buy"
+            closed = False
+            for attempt, wait in enumerate([0, 3, 5, 10], start=1):
+                if attempt > 1:
+                    print(f"[real-trader] EOD close retry #{attempt} after {wait}s wait "
+                          f"on {acct_id}...", flush=True)
+                    time.sleep(wait)
+                    broker_pos = _get_broker_position(acct_id)
+                    if not broker_pos:
+                        print(f"[real-trader] EOD: {acct_id} closed during wait", flush=True)
+                        closed = True
+                        break
+                    close_side = "Sell" if broker_pos["long_short"] == "Long" else "Buy"
+
+                close_payload = {
+                    "AccountID": acct_id,
+                    "Symbol": broker_pos["symbol"],
+                    "Quantity": str(broker_pos["qty"]),
+                    "OrderType": "Market",
+                    "TradeAction": close_side,
+                    "TimeInForce": {"Duration": "DAY"},
+                    "Route": "Intelligent",
+                }
+                resp = _ts_api("POST", "/orderexecution/orders", close_payload, acct_id)
+                if resp:
+                    orders_list = resp.get("Orders", [])
+                    if orders_list and orders_list[0].get("Error") == "FAILED":
+                        msg = orders_list[0].get("Message", "")
+                        print(f"[real-trader] EOD close rejected on {acct_id} "
+                              f"(attempt {attempt}): {msg}", flush=True)
+                        continue
+                    print(f"[real-trader] EOD: closed {broker_pos['long_short']} "
+                          f"{broker_pos['qty']} MES on {acct_id} (attempt {attempt})",
+                          flush=True)
+                    closed = True
+                    break
+                else:
+                    print(f"[real-trader] EOD close API error on {acct_id} "
+                          f"(attempt {attempt})", flush=True)
+
+            if not closed:
+                _alert(f"[REAL-TRADE] EOD CLOSE FAILED after 4 attempts\n"
+                       f"Account: {acct_id}\n"
+                       f"{broker_pos['long_short']} {broker_pos['qty']} MES\n"
+                       f"MANUAL CLOSE REQUIRED IMMEDIATELY")
+
+        # Phase 1d: Mark all tracked trades as closed
+        for lid, order in open_orders:
+            with _lock:
+                order["status"] = "closed"
+                order["close_reason"] = "eod_flatten"
+            _persist_order(lid)
+            print(f"[real-trader] EOD marked closed: {order['setup_name']} id={lid} "
+                  f"acct={order.get('account_id')}", flush=True)
+
+    # Phase 2: Cancel ALL remaining open orders on both accounts
+    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+        if acct_id not in ACCOUNT_WHITELIST:
+            continue
+        try:
+            ord_data = _ts_api("GET", f"/brokerage/accounts/{acct_id}/orders", None, acct_id)
+            for o in (ord_data or {}).get("Orders", []):
+                status = o.get("Status", "")
+                if status in ("FLL", "CAN", "REJ", "EXP", "BRO", "OUT", "TSC"):
+                    continue
+                oid = o.get("OrderID")
+                if oid:
+                    _ts_api("DELETE", f"/orderexecution/orders/{oid}", None, acct_id)
+                    print(f"[real-trader] EOD: cancelled remaining order {oid} "
+                          f"on {acct_id}", flush=True)
+        except Exception as e:
+            print(f"[real-trader] EOD order sweep error on {acct_id}: {e}", flush=True)
+
+    # Phase 3: Close any orphaned positions
+    time.sleep(1)
+    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+        if acct_id in ACCOUNT_WHITELIST:
+            _close_broker_orphans(acct_id, source="EOD")
+
+    # Phase 4: Final verification -- confirm we are flat on both accounts
+    time.sleep(1)
+    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+        if acct_id not in ACCOUNT_WHITELIST:
+            continue
+        final_pos = _get_broker_position(acct_id)
+        if final_pos:
+            print(f"[real-trader] EOD CRITICAL: still have position on {acct_id}! "
+                  f"{final_pos['long_short']} {final_pos['qty']} {final_pos['symbol']}",
+                  flush=True)
+            _alert(f"[REAL-TRADE] EOD FLATTEN FAILED on {acct_id}\n"
+                   f"STILL OPEN: {final_pos['long_short']} {final_pos['qty']}\n"
+                   f"MANUAL INTERVENTION REQUIRED IMMEDIATELY")
+            # Last-resort retry
+            try:
+                _flatten_account(acct_id)
+                time.sleep(1)
+                still_open = _get_broker_position(acct_id)
+                if still_open:
+                    print(f"[real-trader] EOD FLATTEN FAILED FINAL on {acct_id}: "
+                          f"{still_open}", flush=True)
+                else:
+                    print(f"[real-trader] EOD retry flatten succeeded on {acct_id}", flush=True)
+            except Exception as e:
+                print(f"[real-trader] EOD retry flatten error on {acct_id}: {e}", flush=True)
+        else:
+            print(f"[real-trader] EOD flatten verified flat on {acct_id}", flush=True)
+
+
+def _flatten_account(account_id: str):
+    """Close all positions + cancel all orders on a specific account."""
+    if account_id not in ACCOUNT_WHITELIST:
+        print(f"[real-trader] BLOCKED: _flatten_account on non-whitelisted {account_id}",
+              flush=True)
+        return
+
+    # Cancel all open orders
+    try:
+        ord_data = _ts_api("GET", f"/brokerage/accounts/{account_id}/orders", None, account_id)
+        for o in (ord_data or {}).get("Orders", []):
+            status = o.get("Status", "")
+            if status in ("FLL", "CAN", "REJ", "EXP", "BRO", "OUT", "TSC"):
+                continue
+            oid = o.get("OrderID")
+            if oid:
+                _ts_api("DELETE", f"/orderexecution/orders/{oid}", None, account_id)
+    except Exception as e:
+        print(f"[real-trader] flatten-account order cancel error on {account_id}: {e}",
+              flush=True)
+
+    time.sleep(1)
+
+    # Close all positions
+    try:
+        pos_data = _ts_api("GET", f"/brokerage/accounts/{account_id}/positions", None, account_id)
+        for pos in (pos_data or {}).get("Positions", []):
+            symbol = pos.get("Symbol", "")
+            qty = int(pos.get("Quantity", "0"))
+            long_short = pos.get("LongShort", "")
+            if qty <= 0:
+                continue
+            close_side = "Sell" if long_short == "Long" else "Buy"
+            close_payload = {
+                "AccountID": account_id,
+                "Symbol": symbol,
+                "Quantity": str(qty),
+                "OrderType": "Market",
+                "TradeAction": close_side,
+                "TimeInForce": {"Duration": "DAY"},
+                "Route": "Intelligent",
+            }
+            resp = _ts_api("POST", "/orderexecution/orders", close_payload, account_id)
+            if resp:
+                orders_list = resp.get("Orders", [])
+                if orders_list and orders_list[0].get("Error") == "FAILED":
+                    msg = orders_list[0].get("Message", "")
+                    print(f"[real-trader] flatten-account REJECTED on {account_id}: {msg}",
+                          flush=True)
+                    _alert(f"[REAL-TRADE] FLATTEN REJECTED on {account_id}\n"
+                           f"{long_short} {qty} {symbol}: {msg}")
+                else:
+                    print(f"[real-trader] flatten-account: closed {long_short} {qty} {symbol} "
+                          f"on {account_id}", flush=True)
+    except Exception as e:
+        print(f"[real-trader] flatten-account position close error on {account_id}: {e}",
+              flush=True)
+
+
+# ====== ORPHAN DETECTION ======
+
+def _close_broker_orphans(account_id: str, source: str = "EOD"):
+    """Check broker for positions not tracked in _active_orders. Close any orphans."""
+    if account_id not in ACCOUNT_WHITELIST:
+        return
+
+    try:
+        pos_data = _ts_api("GET", f"/brokerage/accounts/{account_id}/positions", None, account_id)
+        positions = (pos_data or {}).get("Positions", [])
+    except Exception as e:
+        print(f"[real-trader] {source} orphan check failed on {account_id}: {e}", flush=True)
+        return
+
+    if not positions:
+        return
+
+    # Check which positions are tracked
+    with _lock:
+        tracked_acct_directions = set()
+        for o in _active_orders.values():
+            if o["status"] in ("pending_entry", "filled") and o.get("account_id") == account_id:
+                d = o["direction"].lower()
+                tracked_acct_directions.add("Long" if d in ("long", "bullish") else "Short")
+
+    for pos in positions:
+        symbol = pos.get("Symbol", "")
+        qty = int(pos.get("Quantity", "0"))
+        long_short = pos.get("LongShort", "")
+        if qty <= 0:
+            continue
+        if long_short in tracked_acct_directions:
+            print(f"[real-trader] {source} orphan check on {account_id}: "
+                  f"{long_short} {qty} {symbol} -- matches tracked, OK", flush=True)
+            continue
+
+        print(f"[real-trader] WARNING: {source} orphan on {account_id} -- "
+              f"{long_short} {qty} {symbol}. Closing...", flush=True)
+        _alert(f"[REAL-TRADE] {source} ORPHAN on {account_id}\n"
+               f"{long_short} {qty} {symbol}\nAuto-closing...")
+        close_side = "Sell" if long_short == "Long" else "Buy"
+        close_payload = {
+            "AccountID": account_id,
+            "Symbol": symbol,
+            "Quantity": str(qty),
+            "OrderType": "Market",
+            "TradeAction": close_side,
+            "TimeInForce": {"Duration": "DAY"},
+            "Route": "Intelligent",
+        }
+        try:
+            _ts_api("POST", "/orderexecution/orders", close_payload, account_id)
+            print(f"[real-trader] {source} orphan closed on {account_id}: "
+                  f"{long_short} {qty} {symbol}", flush=True)
+        except Exception as e:
+            print(f"[real-trader] {source} orphan close FAILED on {account_id}: {e}",
+                  flush=True)
+
+    # Cancel untracked orders
+    try:
+        ord_data = _ts_api("GET", f"/brokerage/accounts/{account_id}/orders", None, account_id)
+        tracked_oids = set()
+        with _lock:
+            for o in _active_orders.values():
+                if o.get("account_id") == account_id:
+                    for k in ("entry_order_id", "stop_order_id", "target_order_id"):
+                        oid = o.get(k)
+                        if oid:
+                            tracked_oids.add(str(oid))
+        for o in (ord_data or {}).get("Orders", []):
+            status = o.get("Status", "")
+            if status in ("FLL", "CAN", "REJ", "EXP", "BRO", "OUT", "TSC"):
+                continue
+            oid = o.get("OrderID")
+            if oid and str(oid) not in tracked_oids:
+                _ts_api("DELETE", f"/orderexecution/orders/{oid}", None, account_id)
+                print(f"[real-trader] {source} orphan cleanup: cancelled untracked order "
+                      f"{oid} on {account_id}", flush=True)
+    except Exception as e:
+        print(f"[real-trader] {source} orphan order cancel failed on {account_id}: {e}",
+              flush=True)
+
+
+def periodic_orphan_check():
+    """Periodic safety check -- detect orphaned broker positions during market hours.
+    Called by scheduler every 5 minutes."""
+    if not (LONGS_ENABLED or SHORTS_ENABLED) or not _get_token:
+        return
+
+    # Daily cleanup: expire stale orders from previous days
+    today_str = date.today().isoformat()
+    with _lock:
+        stale_ids = []
+        for lid, o in _active_orders.items():
+            if o["status"] in ("pending_entry", "pending_limit", "filled"):
+                ts_placed = o.get("ts_placed", "")
+                order_date = ts_placed[:10] if len(ts_placed) >= 10 else ""
+                if order_date and order_date < today_str:
+                    stale_ids.append(lid)
+        for lid in stale_ids:
+            o = _active_orders[lid]
+            print(f"[real-trader] PERIODIC: expiring stale order {o.get('setup_name', '?')} "
+                  f"id={lid} from {o.get('ts_placed', '?')[:10]} "
+                  f"acct={o.get('account_id')}", flush=True)
+            o["status"] = "closed"
+            o["close_reason"] = "stale_overnight_periodic"
+            _persist_order(lid)
+
+    # Check each account
+    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+        if acct_id not in ACCOUNT_WHITELIST:
+            continue
+        broker_pos = _get_broker_position(acct_id)
+        if not broker_pos:
+            continue
+
+        with _lock:
+            has_tracked = any(
+                o["status"] in ("pending_entry", "filled") and o.get("account_id") == acct_id
+                for o in _active_orders.values()
+            )
+
+        if not has_tracked:
+            print(f"[real-trader] PERIODIC: orphan on {acct_id} -- "
+                  f"{broker_pos['long_short']} {broker_pos['qty']} {broker_pos['symbol']}. "
+                  f"Closing...", flush=True)
+            _alert(f"[REAL-TRADE] PERIODIC ORPHAN on {acct_id}\n"
+                   f"{broker_pos['long_short']} {broker_pos['qty']} "
+                   f"{broker_pos['symbol']}\nAuto-closing...")
+            _close_broker_orphans(acct_id, source="PERIODIC")
+
+
+# ====== STATUS ======
+
+def get_status() -> dict:
+    """Return status dict for health endpoint."""
+    with _lock:
+        active = {lid: {
+            "setup_name": o["setup_name"],
+            "direction": o["direction"],
+            "account_id": o.get("account_id"),
+            "status": o["status"],
+            "fill_price": o["fill_price"],
+            "current_stop": o["current_stop"],
+            "target_price": o.get("target_price"),
+            "max_favorable": o.get("max_favorable", 0),
+            "be_triggered": o.get("be_triggered", False),
+            "trail_active": o.get("trail_active", False),
+        } for lid, o in _active_orders.items() if o["status"] != "closed"}
+
+    return {
+        "longs_enabled": LONGS_ENABLED,
+        "shorts_enabled": SHORTS_ENABLED,
+        "longs_account": _LONGS_ACCOUNT,
+        "shorts_account": _SHORTS_ACCOUNT,
+        "symbol": MES_SYMBOL,
+        "qty": QTY,
+        "max_concurrent_per_dir": MAX_CONCURRENT_PER_DIR,
+        "active_count": len(active),
+        "active_orders": active,
+    }
+
+
+# ====== BROKER QUERIES ======
+
+def _get_broker_position(account_id: str) -> dict | None:
+    """Query broker for actual MES position on a specific account.
+    Returns {'qty': int, 'long_short': str, 'symbol': str} or None if flat."""
+    if account_id not in ACCOUNT_WHITELIST:
+        return None
+    try:
+        pos_data = _ts_api("GET", f"/brokerage/accounts/{account_id}/positions", None, account_id)
+        for pos in (pos_data or {}).get("Positions", []):
+            symbol = pos.get("Symbol", "")
+            qty = int(pos.get("Quantity", "0"))
+            if qty > 0 and "MES" in symbol.upper():
+                return {
+                    "qty": qty,
+                    "long_short": pos.get("LongShort", ""),
+                    "symbol": symbol,
+                }
+    except Exception as e:
+        print(f"[real-trader] broker position query error on {account_id}: {e}", flush=True)
+    return None
+
+
+def _get_buying_power(account_id: str) -> float | None:
+    """Query account buying power from broker."""
+    if account_id not in ACCOUNT_WHITELIST:
+        return None
+    try:
+        data = _ts_api("GET", f"/brokerage/accounts/{account_id}/balances", None, account_id)
+        if not data:
+            return None
+        balances = data.get("Balances", [])
+        if isinstance(balances, list) and balances:
+            b = balances[0]
+        elif isinstance(balances, dict):
+            b = balances
+        else:
+            return None
+        bp = b.get("BuyingPower") or b.get("CashBalance")
+        return float(bp) if bp else None
+    except Exception as e:
+        print(f"[real-trader] buying power query error on {account_id}: {e}", flush=True)
+        return None
+
+
+# ====== TS API HELPER ======
+
+def _ts_api(method: str, path: str, json_body: dict | None,
+            account_id: str) -> dict | None:
+    """Authenticated request to TradeStation REAL API.
+    Every call validates account_id against whitelist before proceeding."""
+    # CRITICAL: validate account on every API call
+    if account_id not in ACCOUNT_WHITELIST:
+        print(f"[real-trader] BLOCKED API call: account {account_id} not in whitelist! "
+              f"method={method} path={path}", flush=True)
+        _alert(f"[REAL-TRADE] SECURITY BLOCK: API call to non-whitelisted account {account_id}\n"
+               f"{method} {path}")
+        return None
+
+    if not _get_token:
+        print("[real-trader] no token function", flush=True)
+        return None
+
+    for attempt in range(2):
+        try:
+            token = _get_token()
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            }
+            url = f"{REAL_BASE}{path}"
+
+            # Log every request (this is real money)
+            if json_body:
+                print(f"[real-trader] API {method} {path} acct={account_id} "
+                      f"payload={json.dumps(json_body, default=str)[:400]}", flush=True)
+            else:
+                print(f"[real-trader] API {method} {path} acct={account_id}", flush=True)
+
+            if method == "GET":
+                r = requests.get(url, headers=headers, timeout=10)
+            elif method == "POST":
+                r = requests.post(url, headers=headers, json=json_body, timeout=10)
+            elif method == "PUT":
+                r = requests.put(url, headers=headers, json=json_body, timeout=10)
+            elif method == "DELETE":
+                r = requests.delete(url, headers=headers, timeout=10)
+            else:
+                return None
+
+            # Log response
+            print(f"[real-trader] API {method} {path} [{r.status_code}] "
+                  f"acct={account_id}", flush=True)
+
+            if r.status_code == 401 and attempt == 0:
+                print(f"[real-trader] API 401 on {account_id}, retrying with fresh token...",
+                      flush=True)
+                continue
+
+            if r.status_code >= 400:
+                print(f"[real-trader] API ERROR {method} {path} [{r.status_code}]: "
+                      f"{r.text[:500]}", flush=True)
+                return None
+
+            result = r.json() if r.text else {}
+
+            # Log order responses fully (this is real money)
+            if method in ("POST", "PUT") and "order" in path.lower():
+                print(f"[real-trader] API RESPONSE {method} {path}: "
+                      f"{json.dumps(result, default=str)[:500]}", flush=True)
+
+            return result
+
+        except Exception as e:
+            print(f"[real-trader] API error {method} {path} acct={account_id}: {e}", flush=True)
+            if attempt == 0:
+                continue
+            return None
+
+    return None
+
+
+# ====== PERSISTENCE ======
+
+def _persist_order(setup_log_id: int):
+    """Save order state to DB for crash recovery."""
+    if not _engine:
+        return
+    with _lock:
+        order = _active_orders.get(setup_log_id)
+        if not order:
+            return
+        state = json.dumps(order)
+
+    try:
+        from sqlalchemy import text
+        with _engine.begin() as conn:
+            conn.execute(text(f"""
+                INSERT INTO {DB_TABLE} (setup_log_id, state, updated_at)
+                VALUES (:id, :s, NOW())
+                ON CONFLICT (setup_log_id) DO UPDATE SET state = :s, updated_at = NOW()
+            """), {"id": setup_log_id, "s": state})
+    except Exception as e:
+        print(f"[real-trader] persist error: {e}", flush=True)
+
+
+def _load_active_orders():
+    """Load non-closed orders from DB on startup.
+    Only loads orders from today -- stale overnight orders are auto-closed."""
+    global _active_orders
+    if not _engine:
+        return
+    try:
+        from sqlalchemy import text
+        with _engine.begin() as conn:
+            rows = conn.execute(text(f"""
+                SELECT setup_log_id, state, updated_at FROM {DB_TABLE}
+                WHERE state->>'status' != 'closed'
+            """)).mappings().all()
+
+        today_str = date.today().isoformat()
+        loaded = 0
+        stale = 0
+        for row in rows:
+            lid = row["setup_log_id"]
+            state = row["state"]
+            if isinstance(state, str):
+                state = json.loads(state)
+            ts_placed = state.get("ts_placed", "")
+            order_date = ts_placed[:10] if len(ts_placed) >= 10 else ""
+            if not order_date and row.get("updated_at"):
+                order_date = str(row["updated_at"])[:10]
+            is_stale = (order_date < today_str) if order_date else True
+            if is_stale:
+                stale += 1
+                state["status"] = "closed"
+                state["close_reason"] = "stale_overnight"
+                _active_orders[lid] = state
+                _persist_order(lid)
+                del _active_orders[lid]
+                print(f"[real-trader] STALE order auto-closed: {state.get('setup_name', '?')} "
+                      f"id={lid} from {order_date or 'unknown'} "
+                      f"acct={state.get('account_id')}", flush=True)
+                continue
+            _active_orders[lid] = state
+            loaded += 1
+
+        if loaded:
+            print(f"[real-trader] restored {loaded} active orders", flush=True)
+        if stale:
+            print(f"[real-trader] auto-closed {stale} stale overnight order(s)", flush=True)
+    except Exception as e:
+        print(f"[real-trader] load error (non-fatal): {e}", flush=True)
+
+
+# ====== TELEGRAM HELPER ======
+
+def _alert(msg: str):
+    """Send Telegram alert for EVERY action -- this is real money."""
+    if _send_telegram:
+        try:
+            _send_telegram(msg)
+        except Exception as e:
+            print(f"[real-trader] alert send failed: {e}", flush=True)
+    print(f"[real-trader] ALERT: {msg}", flush=True)

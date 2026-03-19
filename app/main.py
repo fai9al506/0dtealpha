@@ -763,6 +763,15 @@ def db_init():
         );
         """))
 
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS real_trade_orders (
+            setup_log_id BIGINT PRIMARY KEY,
+            state JSONB NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """))
+
         # Create default admin user if no users exist
         existing = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
         if existing == 0:
@@ -3172,6 +3181,11 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         options_trader.reconcile_with_broker()
     except Exception as _opt_poll_err:
         print(f"[options] poll/reconcile error: {_opt_poll_err}", flush=True)
+    try:
+        from app import real_trader
+        real_trader.poll_order_status()
+    except Exception:
+        pass
 
     from app.setup_detector import format_setup_outcome
 
@@ -3334,6 +3348,17 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                             auto_trader.update_stop(log_id, round(es_stop, 2))
                 except Exception:
                     pass
+                # Real trader: update trail
+                try:
+                    from app import real_trader
+                    log_id = trade.get("setup_log_id")
+                    if log_id:
+                        rt_order = real_trader._active_orders.get(log_id)
+                        if rt_order and rt_order.get("fill_price"):
+                            es_stop = rt_order["fill_price"] + (stop_lvl - entry_price)
+                            real_trader.update_stop(log_id, round(es_stop, 2))
+                except Exception:
+                    pass
             # Check trailing stop hit using cycle extreme (not just current price)
             # ES-based setups: use ES seen_low/high from range bars
             if _es_based:
@@ -3468,6 +3493,13 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 from app import options_trader
                 if log_id:
                     options_trader.close_trade(log_id, result_type)
+            except Exception:
+                pass
+            # Real trader: close position on outcome
+            try:
+                from app import real_trader
+                if log_id:
+                    real_trader.close_trade(log_id, result_type)
             except Exception:
                 pass
 
@@ -3801,6 +3833,28 @@ def _run_setup_check():
                             )
                         except Exception as e:
                             print(f"[options] place error: {e}", flush=True)
+                    # Real trader: MES REAL accounts (SC only, direction-routed)
+                    if not _skip_auto_trade:
+                        try:
+                            from app import real_trader
+                            es_px = None
+                            with _es_quote_lock:
+                                es_px = _es_quote.get("last_price")
+                            if es_px and stop_lvl is not None:
+                                stop_dist = abs(r["spot"] - stop_lvl)
+                                target_dist = 10.0  # SC always targets 10 pts
+                                _mes_charm_limit = None
+                                _charm_limit_spx = r.get("charm_limit_entry")
+                                if _charm_limit_spx and r["direction"] not in ("long", "bullish"):
+                                    _mes_charm_limit = es_px + (_charm_limit_spx - r["spot"])
+                                real_trader.place_trade(
+                                    setup_log_id=_current_setup_log.get(setup_name),
+                                    setup_name=setup_name, direction=r["direction"],
+                                    es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
+                                    charm_limit_price=_mes_charm_limit,
+                                )
+                        except Exception as e:
+                            print(f"[real-trader] place error: {e}", flush=True)
             elif reason == "grade_upgrade":
                 # Suppressed: grade upgrades add noise, initial fire is sufficient
                 print(f"[setups] {setup_name} UPGRADED: {grade} ({score}) — Telegram suppressed", flush=True)
@@ -5029,6 +5083,15 @@ def _auto_trade_eod_flatten():
         print(f"[auto-trade-eod] flatten error: {e}", flush=True)
 
 
+def _real_trade_eod_flatten():
+    """Flatten all open REAL auto-trade positions before market close. Runs at 15:50 ET."""
+    try:
+        from app import real_trader
+        real_trader.flatten_all_eod()
+    except Exception as e:
+        print(f"[real-trade-eod] flatten error: {e}", flush=True)
+
+
 def _options_trade_eod_flatten():
     """Close all open SIM option positions before market close. Runs at 15:55 ET."""
     try:
@@ -5329,6 +5392,8 @@ def start_scheduler():
                 id="auto_trade_eod", coalesce=True, max_instances=1)
     sch.add_job(_options_trade_eod_flatten, "cron", hour=15, minute=55,
                 id="options_trade_eod", coalesce=True, max_instances=1)
+    sch.add_job(_real_trade_eod_flatten, "cron", hour=15, minute=50,
+                id="real_trade_eod", coalesce=True, max_instances=1)
     sch.add_job(_auto_trade_orphan_check, "interval", minutes=5,
                 id="auto_trade_orphan", coalesce=True, max_instances=1)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,
@@ -5382,6 +5447,12 @@ def on_startup():
         options_trader_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[options] init error (non-fatal): {e}", flush=True)
+    # Initialize real trader (MES REAL accounts — disabled by default)
+    try:
+        from app.real_trader import init as real_trader_init
+        real_trader_init(engine, lambda: ts_access_token, send_telegram_setups)
+    except Exception as e:
+        print(f"[real-trader] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)
     try:
         from app.dashboard_v2 import init as dashboard_v2_init

@@ -4500,8 +4500,7 @@ def _run_single_bar_absorption(bars: list):
         })
         print(f"[outcome] tracking SB Absorption: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
 
-    # NO auto-trading: SB Absorption is LOG-ONLY
-    # Grade='LOG' ensures /api/eval/signals also excludes it
+    # No auto-trading yet: monitoring with real grades before enabling
 
     return result
 

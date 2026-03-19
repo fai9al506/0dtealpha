@@ -14,7 +14,7 @@ NY = pytz.timezone("US/Eastern")
 # ── Default settings (exported so main.py can seed its global) ──────────────
 DEFAULT_SETUP_SETTINGS = {
     "gex_long_enabled": True,
-    "gex_max_gap": 5,           # max |spot - LIS| to enter (was 20)
+    "gex_max_gap": 5,           # max |spot - LIS| to enter (base, widened by LIS velocity)
     "gex_min_upside": 10,       # min pts to +GEX and target above spot
     "gex_target_pts": 15,       # outcome tracking target (was 10)
     "gex_stop_pts": 8,          # outcome tracking stop (trail backtest optimal)
@@ -138,7 +138,11 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
 
     # Gap: absolute distance to LIS (allow above OR below)
     gap = abs(spot - lis)
-    if gap > max_gap:
+
+    # Rapid LIS convergence: widen gap when LIS is surging toward spot
+    velocity_bonus, lis_move = _lis_velocity_gap_bonus()
+    adjusted_max_gap = max_gap + velocity_bonus
+    if gap > adjusted_max_gap:
         return None
 
     # +GEX must be above spot with room (magnet up)
@@ -226,6 +230,17 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
 
     composite = lis_score + neg_gex_score + pos_gex_score + target_score + lis_type_score + time_score
 
+    # 7. LIS velocity bonus (0-12): rapid convergence is a bullish force
+    if lis_move >= 80:
+        velocity_score = 12
+    elif lis_move >= 50:
+        velocity_score = 8
+    elif lis_move >= 25:
+        velocity_score = 5
+    else:
+        velocity_score = 0
+    composite += velocity_score
+
     # ── Grade ───────────────────────────────────────────────────────────
     thresholds = settings.get("grade_thresholds", DEFAULT_SETUP_SETTINGS["grade_thresholds"])
     grade = compute_grade(composite, thresholds)
@@ -257,6 +272,8 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
         "floor_cluster_score": pos_gex_score,   # +GEX magnet (0-20)
         "target_cluster_score": target_score,   # Target magnet (0-15)
         "rr_score": lis_type_score + time_score, # LIS type + time (0-20)
+        "lis_velocity": round(lis_move, 1) if lis_move else 0,
+        "lis_velocity_bonus": velocity_bonus,
     }
 
 
@@ -475,6 +492,9 @@ def format_setup_message(result, alignment=None):
     msg = f"{grade_emoji} <b>GEX Long LONG [{result['grade']}]{align_str}</b>\n"
     msg += f"{result['spot']:.0f} → {result['target']:.0f} | SL {result['spot'] - 8:.0f} (8pt) | Trail\n"
     msg += f"{result['paradigm']} | LIS {result['lis']:.0f} | +GEX {result['max_plus_gex']:.0f} | -GEX {result['max_minus_gex']:.0f}"
+    vel = result.get("lis_velocity", 0)
+    if vel >= 25:
+        msg += f"\n⚡ LIS surged +{vel:.0f} pts (gap widened +{result.get('lis_velocity_bonus', 0)})"
     return msg
 
 
@@ -571,6 +591,59 @@ def get_lis_stability(side):
             break
 
     return is_stable, round(drift, 2), max(stable_bars, 6 if is_stable else 0)
+
+
+# ── GEX LIS velocity tracker ─────────────────────────────────────────────
+# Detects rapid LIS convergence toward spot (e.g., LIS surges +100 pts in
+# 20 min).  When LIS is moving fast, price won't pull back to test it before
+# rallying — so we widen the gap allowance proportionally.
+
+_gex_lis_history = deque(maxlen=20)   # (datetime, lis_value) — ~40 min at 2-min cycles
+_gex_lis_last_date = None
+
+
+def update_gex_lis_tracker(lis, paradigm):
+    """Append LIS reading during GEX paradigm.  Resets daily and on paradigm change."""
+    global _gex_lis_last_date
+    today = datetime.now(NY).date()
+    if _gex_lis_last_date != today:
+        _gex_lis_history.clear()
+        _gex_lis_last_date = today
+
+    if not paradigm or "GEX" not in str(paradigm).upper():
+        _gex_lis_history.clear()
+        return
+
+    if lis is not None:
+        _gex_lis_history.append((datetime.now(NY), lis))
+
+
+def get_gex_lis_velocity():
+    """
+    Calculate how far LIS moved over the buffer window.
+    Returns (lis_move, n_readings).
+    lis_move > 0 means LIS is surging UP (bullish convergence toward spot).
+    """
+    if len(_gex_lis_history) < 3:
+        return 0, len(_gex_lis_history)
+    values = [v for _, v in _gex_lis_history]
+    lis_move = values[-1] - values[0]
+    return round(lis_move, 2), len(values)
+
+
+def _lis_velocity_gap_bonus():
+    """
+    Gap widening based on rapid LIS convergence.
+    Stepped thresholds — bigger LIS surge = more gap room.
+    """
+    lis_move, n = get_gex_lis_velocity()
+    if n < 3 or lis_move < 25:
+        return 0, lis_move
+    if lis_move >= 80:
+        return 7, lis_move
+    if lis_move >= 50:
+        return 5, lis_move
+    return 3, lis_move    # lis_move >= 25
 
 
 # ── BofA Scalp cooldown state ────────────────────────────────────────────
@@ -1276,7 +1349,7 @@ def evaluate_single_bar_absorption(bars, volland_stats, settings, spx_spot=None)
     Requires CVD trend alignment (buyers exhausting into top, sellers into bottom)
     and SVB >= 0 (normal market correlation).
 
-    Always returns grade='LOG' (log-only mode, not auto-traded).
+    Graded A+/A/B/C based on volume, delta, CVD trend, and Volland confluence.
     """
     if not settings.get("single_bar_abs_enabled", True):
         return None
@@ -1397,12 +1470,47 @@ def evaluate_single_bar_absorption(bars, volland_stats, settings, spx_spot=None)
     # --- Price trend context (8-bar) ---
     price_trend = trigger["close"] - closed[-(cvd_lookback + 1)]["close"]
 
-    # --- Build result (LOG-ONLY: grade always "LOG", score 0) ---
+    # --- Scoring (0-100) ---
+    # Volume strength (0-25): how much above threshold
+    vol_score = min(25, int((vol_ratio - vol_mult) / vol_mult * 25))
+    # Delta strength (0-25): how much above threshold
+    delta_score = min(25, int((delta_ratio - delta_mult) / delta_mult * 25))
+    # CVD trend strength (0-20): stronger trend = more exhaustion
+    cvd_range = max(abs(cvd_trend), 1)
+    cvd_score = min(20, int(cvd_range / 500 * 20))
+    # Volland confluence (0-30): DD alignment, paradigm, LIS proximity
+    confluence_score = 0
+    if dd_numeric != 0:
+        dd_aligns = (direction == "bullish" and dd_numeric > 0) or (direction == "bearish" and dd_numeric < 0)
+        if dd_aligns:
+            confluence_score += 10
+    if paradigm_str:
+        para_aligns = (direction == "bullish" and "GEX" in paradigm_str) or (direction == "bearish" and "AG" in paradigm_str)
+        if para_aligns:
+            confluence_score += 10
+    if lis_dist is not None:
+        if lis_dist <= 5:
+            confluence_score += 10
+        elif lis_dist <= 15:
+            confluence_score += 5
+
+    total_score = vol_score + delta_score + cvd_score + confluence_score
+
+    # Grade thresholds
+    if total_score >= 70:
+        grade = "A+"
+    elif total_score >= 50:
+        grade = "A"
+    elif total_score >= 30:
+        grade = "B"
+    else:
+        grade = "C"
+
     return {
         "setup_name": "SB Absorption",
         "direction": direction,
-        "grade": "LOG",
-        "score": 0,
+        "grade": grade,
+        "score": total_score,
         "paradigm": paradigm_str,
         "spot": round(trigger["close"], 2),
         "lis": round(lis_val, 2) if lis_val is not None else None,
@@ -1466,15 +1574,16 @@ def should_notify_single_bar_abs(result):
 
 
 def format_single_bar_abs_message(result, alignment=None):
-    """Format Telegram HTML message for Single-Bar Absorption (LOG-ONLY)."""
+    """Format Telegram HTML message for Single-Bar Absorption."""
     side_emoji = "\U0001f7e2" if result["direction"] == "bullish" else "\U0001f534"
     side_label = "BUY" if result["direction"] == "bullish" else "SELL"
+    grade = result.get("grade", "?")
+    score = result.get("score", 0)
     align_str = f" align {alignment:+d}" if alignment is not None else ""
 
     parts = [
-        f"[LOG-ONLY] {side_emoji} <b>SB Abs {side_label}{align_str}</b>",
-        f"ES {result['abs_es_price']:.2f} | Vol {result['abs_vol_ratio']:.1f}x | Delta {result['bar_delta']:+d} ({result['delta_ratio']:.1f}x)",
-        f"CVD trend {result['cvd_trend']:+d} | Price trend {result['price_trend']:+.1f}",
+        f"{side_emoji} <b>SB Abs {side_label} [{grade}]{align_str}</b>",
+        f"ES {result['abs_es_price']:.2f} | Score {score} | Vol {result['abs_vol_ratio']:.1f}x | Delta {result['bar_delta']:+d}({result['delta_ratio']:.1f}x)",
     ]
 
     extras = []
@@ -2704,10 +2813,16 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
     # ── Track paradigm changes (must be before setup evaluations) ──
     update_paradigm_tracker(paradigm)
 
+    # ── Update GEX LIS velocity tracker (before GEX Long evaluation) ──
+    update_gex_lis_tracker(lis, paradigm)
+
     # ── GEX Long cooldown expiry tracking ──
+    # Use velocity-adjusted gap so rapid LIS convergence doesn't expire the setup
+    _vel_bonus, _ = _lis_velocity_gap_bonus()
+    _gex_expiry_gap = 5 + _vel_bonus
     if paradigm and "GEX" not in str(paradigm).upper():
         mark_setup_expired()
-    elif spot is not None and lis is not None and abs(spot - lis) > 5:
+    elif spot is not None and lis is not None and abs(spot - lis) > _gex_expiry_gap:
         mark_setup_expired()
 
     gex_result = evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings)

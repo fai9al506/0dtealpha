@@ -5478,7 +5478,7 @@ def on_startup():
     # Initialize real trader (MES REAL accounts — disabled by default)
     try:
         from app.real_trader import init as real_trader_init
-        real_trader_init(engine, lambda: ts_access_token, send_telegram_setups)
+        real_trader_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[real-trader] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)

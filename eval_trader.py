@@ -158,7 +158,7 @@ def current_mes_symbol(fmt: str = "nt8") -> str:
     for month_num, code in _MES_MONTHS:
         year = today.year
         expiry = _third_friday(year, month_num)
-        rollover = expiry  # roll the day AFTER expiry
+        rollover = expiry - timedelta(days=8)  # 2nd Thursday before expiry (CME convention)
         if today <= rollover:
             if fmt == "ts":
                 return f"MES{code}{year % 100}"
@@ -220,6 +220,7 @@ DEFAULT_CONFIG = {
     # Mirrors production system: same stops, same targets, smaller size
     "setup_rules": {
         "GEX Long":          {"enabled": True,  "stop": 8,  "target": None},
+        "GEX Velocity":      {"enabled": True,  "stop": 8,  "target": None},
         "AG Short":          {"enabled": True,  "stop": 12, "target": None},
         "BofA Scalp":        {"enabled": False, "stop": 12, "target": "msg", "max_hold_min": 30},
         "ES Absorption":    {"enabled": True,  "stop": 8,  "target": 10},
@@ -1282,7 +1283,7 @@ class PositionTracker:
 
         # Use ES/MES price for stop/target calculation (SPX and MES differ by ~15-20 pts)
         # ES price comes from Railway API's quote stream; fall back to SPX spot if unavailable
-        _MAX_ES_SPX_SPREAD = 25  # reject stale ES price if spread > 25 pts
+        _MAX_ES_SPX_SPREAD = 75  # reject stale ES price if spread > 25 pts
         es_price = signal.get("es_price")
         if es_price is not None:
             es_price = float(es_price)
@@ -1347,7 +1348,7 @@ class PositionTracker:
             self._save()
 
             log.info(f"TRADE OPENED (LIMIT): {name} {direction.upper()} [{signal.get('grade', '?')}]")
-            log.info(f"  MES LIMIT Entry: {_round_tick(mes_limit):.2f} (market @ {order_ref:.2f})")
+            log.info(f"  MES LIMIT Entry: {_round_tick(mes_limit)} (market @ {order_ref:.2f})")
             log.info(f"  [CHARM S/R] Deferred stop={stop_price:.2f} target={target_price:.2f}")
             log.info(f"  Waiting for limit fill (30 min timeout)")
         else:
@@ -1545,8 +1546,17 @@ class PositionTracker:
         log.info(f"  Net-off order: {net_side} {net_qty} (close {old_qty} + open {new_qty})")
 
         # Step 4: Compute new stop/target prices
-        es_ref = signal.get("es_price") or es_price or signal["spot"]
-        es_ref = float(es_ref)
+        # Apply same stale ES price guard as open_trade()
+        _MAX_ES_SPX_SPREAD = 75
+        spot = float(signal["spot"])
+        _es = signal.get("es_price") or es_price
+        if _es is not None:
+            _es = float(_es)
+            if abs(_es - spot) > _MAX_ES_SPX_SPREAD:
+                log.warning(f"  STALE ES PRICE: {_es:.2f} vs SPX {spot:.2f} "
+                            f"(spread={abs(_es - spot):.1f} > {_MAX_ES_SPX_SPREAD}) — using SPX spot")
+                _es = None
+        es_ref = _es if _es is not None else spot
         raw_stop = (es_ref - new_stop_pts) if new_is_long else (es_ref + new_stop_pts)
         new_stop_price = round(round(raw_stop / MES_TICK_SIZE) * MES_TICK_SIZE, 2)
 
@@ -1561,7 +1571,7 @@ class PositionTracker:
         raw_target = (es_ref + target_pts) if new_is_long else (es_ref - target_pts)
         new_target_price = round(round(raw_target / MES_TICK_SIZE) * MES_TICK_SIZE, 2)
 
-        es_entry = signal.get("es_price") or es_price
+        es_entry = _es  # use validated es_price (None if stale)
 
         # Step 5: SAVE position immediately after net-off (crash resilience)
         # If we crash before placing stop/target, startup recovery will place them.
@@ -1688,6 +1698,7 @@ class PositionTracker:
     _TRAIL_PARAMS = {
         "DD Exhaustion":  {"mode": "continuous", "activation": 20, "gap": 5},
         "GEX Long":       {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
+        "GEX Velocity":   {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
         "AG Short":       {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
         "Skew Charm":     {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
     }

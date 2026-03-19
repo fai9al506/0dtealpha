@@ -138,11 +138,7 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
 
     # Gap: absolute distance to LIS (allow above OR below)
     gap = abs(spot - lis)
-
-    # Rapid LIS convergence: widen gap when LIS is surging toward spot
-    velocity_bonus, lis_move = _lis_velocity_gap_bonus()
-    adjusted_max_gap = max_gap + velocity_bonus
-    if gap > adjusted_max_gap:
+    if gap > max_gap:
         return None
 
     # +GEX must be above spot with room (magnet up)
@@ -230,17 +226,6 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
 
     composite = lis_score + neg_gex_score + pos_gex_score + target_score + lis_type_score + time_score
 
-    # 7. LIS velocity bonus (0-12): rapid convergence is a bullish force
-    if lis_move >= 80:
-        velocity_score = 12
-    elif lis_move >= 50:
-        velocity_score = 8
-    elif lis_move >= 25:
-        velocity_score = 5
-    else:
-        velocity_score = 0
-    composite += velocity_score
-
     # ── Grade ───────────────────────────────────────────────────────────
     thresholds = settings.get("grade_thresholds", DEFAULT_SETUP_SETTINGS["grade_thresholds"])
     grade = compute_grade(composite, thresholds)
@@ -272,9 +257,194 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
         "floor_cluster_score": pos_gex_score,   # +GEX magnet (0-20)
         "target_cluster_score": target_score,   # Target magnet (0-15)
         "rr_score": lis_type_score + time_score, # LIS type + time (0-20)
-        "lis_velocity": round(lis_move, 1) if lis_move else 0,
-        "lis_velocity_bonus": velocity_bonus,
     }
+
+
+# ── GEX Velocity evaluation (separate from GEX Long) ──────────────────────
+
+def evaluate_gex_velocity(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings):
+    """
+    Separate setup: fires when LIS is surging rapidly toward spot but gap is
+    still too wide for normal GEX Long (5-10 pts).  Rapid LIS convergence =
+    dealer repositioning = price follows before LIS arrives.
+
+    Only fires in the gap 5-10 range that normal GEX Long misses.
+    Uses same risk management as GEX Long (SL=8, trail).
+    """
+    if not settings.get("gex_long_enabled", True):
+        return None
+
+    if not paradigm or "GEX" not in str(paradigm).upper():
+        return None
+    paradigm_upper = str(paradigm).upper()
+    if "TARGET" in paradigm_upper or "MESSY" in paradigm_upper:
+        return None
+    if spot is None or lis is None or target is None:
+        return None
+    if max_plus_gex is None or max_minus_gex is None:
+        return None
+
+    gap = abs(spot - lis)
+
+    # Only fire in the gap range that normal GEX Long misses (5-10)
+    if gap <= 5 or gap > 10:
+        return None
+
+    # Require strong velocity (LIS must be surging toward spot)
+    lis_move, n_readings = get_gex_lis_velocity()
+    if n_readings < 3 or lis_move < 25:
+        return None
+
+    min_upside = settings.get("gex_min_upside", 10)
+
+    # +GEX must be above spot with room
+    upside_gex = max_plus_gex - spot
+    if upside_gex < min_upside:
+        return None
+
+    # Target must be above spot with room
+    upside_target = target - spot
+    if upside_target < min_upside:
+        return None
+
+    upside = min(upside_target, upside_gex)
+
+    # ── Scoring: velocity-weighted ──
+    # Velocity strength (0-30) — the main edge
+    if lis_move >= 80:
+        vel_score = 30
+    elif lis_move >= 50:
+        vel_score = 22
+    else:
+        vel_score = 15   # lis_move >= 25
+
+    # Gap penalty (0-20) — tighter gap is better even for velocity
+    if gap <= 6:
+        gap_score = 20
+    elif gap <= 7:
+        gap_score = 15
+    elif gap <= 8:
+        gap_score = 10
+    else:
+        gap_score = 5
+
+    # +GEX magnet (0-20)
+    if upside_gex >= 20:
+        gex_score = 12
+    elif upside_gex >= 15:
+        gex_score = 16
+    elif upside_gex >= 10:
+        gex_score = 20
+    else:
+        gex_score = 5
+
+    # Time (0-10)
+    first_hour = is_first_hour()
+    t = datetime.now(NY).time()
+    if t >= dtime(14, 0):
+        time_score = 10
+    elif t >= dtime(11, 30):
+        time_score = 8
+    elif first_hour:
+        time_score = 6
+    else:
+        time_score = 4
+
+    # LIS direction bonus (0-10): LIS below spot = support, above = magnet
+    lis_type = "magnet" if lis > spot else "support"
+    lis_dir_score = 8 if lis_type == "magnet" else 6
+
+    composite = vel_score + gap_score + gex_score + time_score + lis_dir_score
+
+    # Grade: minimum 50 to fire
+    thresholds = {"A+": 80, "A": 65, "A-Entry": 50}
+    grade = compute_grade(composite, thresholds)
+    if grade is None:
+        return None
+
+    return {
+        "setup_name": "GEX Velocity",
+        "direction": "long",
+        "grade": grade,
+        "score": round(composite, 1),
+        "paradigm": str(paradigm),
+        "spot": round(spot, 2),
+        "lis": round(lis, 2),
+        "target": round(target, 2),
+        "max_plus_gex": round(max_plus_gex, 2),
+        "max_minus_gex": round(max_minus_gex, 2),
+        "gap_to_lis": round(gap, 2),
+        "upside": round(upside, 2),
+        "rr_ratio": round(upside / gap if gap > 0 else 99, 2),
+        "first_hour": first_hour,
+        "lis_type": lis_type,
+        "lis_velocity": round(lis_move, 1),
+        "lis_readings": n_readings,
+        # Sub-scores
+        "support_score": vel_score,
+        "upside_score": gap_score,
+        "floor_cluster_score": gex_score,
+        "target_cluster_score": lis_dir_score,
+        "rr_score": time_score,
+    }
+
+
+def format_gex_velocity_message(result, alignment=None):
+    """Format Telegram message for GEX Velocity setup."""
+    grade_emoji = {"A+": "🟢", "A": "🔵", "A-Entry": "🟡"}.get(result["grade"], "⚪")
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
+    vel = result.get("lis_velocity", 0)
+    msg = f"{grade_emoji} <b>GEX Velocity LONG [{result['grade']}]{align_str}</b>\n"
+    msg += f"{result['spot']:.0f} -> {result['target']:.0f} | SL {result['spot'] - 8:.0f} (8pt) | Trail\n"
+    msg += f"{result['paradigm']} | LIS {result['lis']:.0f} (gap {result['gap_to_lis']:.1f}) | LIS surged +{vel:.0f} pts"
+    return msg
+
+
+# ── GEX Velocity cooldown ─────────────────────────────────────────────────
+
+_cooldown_gex_vel = {
+    "last_grade": None, "last_gap_to_lis": None,
+    "setup_expired": False, "last_date": None,
+}
+
+
+def should_notify_gex_velocity(result):
+    """Cooldown gate for GEX Velocity — same pattern as GEX Long."""
+    global _cooldown_gex_vel
+    today = datetime.now(NY).date()
+    if _cooldown_gex_vel["last_date"] != today:
+        _cooldown_gex_vel = {"last_grade": None, "last_gap_to_lis": None,
+                             "setup_expired": False, "last_date": today}
+
+    grade = result["grade"]
+    gap = result["gap_to_lis"]
+    grade_rank = _GRADE_ORDER.get(grade, 0)
+    last_rank = _GRADE_ORDER.get(_cooldown_gex_vel["last_grade"], 0)
+
+    fire = False
+    reason = None
+
+    if _cooldown_gex_vel["last_grade"] is None:
+        fire, reason = True, "new"
+    elif grade_rank > last_rank:
+        fire, reason = True, "grade_upgrade"
+    elif _cooldown_gex_vel["last_gap_to_lis"] is not None and (_cooldown_gex_vel["last_gap_to_lis"] - gap) > 2:
+        fire, reason = True, "gap_improvement"
+    elif _cooldown_gex_vel["setup_expired"]:
+        fire, reason = True, "reformed"
+
+    if fire:
+        _cooldown_gex_vel["last_grade"] = grade
+        _cooldown_gex_vel["last_gap_to_lis"] = gap
+        _cooldown_gex_vel["setup_expired"] = False
+
+    return fire, reason
+
+
+def mark_gex_velocity_expired():
+    _cooldown_gex_vel["setup_expired"] = True
+    _cooldown_gex_vel["last_grade"] = None
+    _cooldown_gex_vel["last_gap_to_lis"] = None
 
 
 # ── AG Short evaluation ────────────────────────────────────────────────────
@@ -492,9 +662,6 @@ def format_setup_message(result, alignment=None):
     msg = f"{grade_emoji} <b>GEX Long LONG [{result['grade']}]{align_str}</b>\n"
     msg += f"{result['spot']:.0f} → {result['target']:.0f} | SL {result['spot'] - 8:.0f} (8pt) | Trail\n"
     msg += f"{result['paradigm']} | LIS {result['lis']:.0f} | +GEX {result['max_plus_gex']:.0f} | -GEX {result['max_minus_gex']:.0f}"
-    vel = result.get("lis_velocity", 0)
-    if vel >= 25:
-        msg += f"\n⚡ LIS surged +{vel:.0f} pts (gap widened +{result.get('lis_velocity_bonus', 0)})"
     return msg
 
 
@@ -2813,16 +2980,13 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
     # ── Track paradigm changes (must be before setup evaluations) ──
     update_paradigm_tracker(paradigm)
 
-    # ── Update GEX LIS velocity tracker (before GEX Long evaluation) ──
+    # ── Update GEX LIS velocity tracker (before evaluations) ──
     update_gex_lis_tracker(lis, paradigm)
 
     # ── GEX Long cooldown expiry tracking ──
-    # Use velocity-adjusted gap so rapid LIS convergence doesn't expire the setup
-    _vel_bonus, _ = _lis_velocity_gap_bonus()
-    _gex_expiry_gap = 5 + _vel_bonus
     if paradigm and "GEX" not in str(paradigm).upper():
         mark_setup_expired()
-    elif spot is not None and lis is not None and abs(spot - lis) > _gex_expiry_gap:
+    elif spot is not None and lis is not None and abs(spot - lis) > 5:
         mark_setup_expired()
 
     gex_result = evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings)
@@ -2834,6 +2998,24 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
             "notify_reason": reason,
             "message": format_setup_message(gex_result),
         })
+
+    # ── GEX Velocity (separate setup for wider gap + rapid LIS) ──
+    if paradigm and "GEX" not in str(paradigm).upper():
+        mark_gex_velocity_expired()
+    elif spot is not None and lis is not None and abs(spot - lis) > 10:
+        mark_gex_velocity_expired()
+
+    # Only evaluate if normal GEX Long didn't fire (avoid double signal)
+    if gex_result is None:
+        gex_vel_result = evaluate_gex_velocity(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings)
+        if gex_vel_result is not None:
+            notify_vel, reason_vel = should_notify_gex_velocity(gex_vel_result)
+            results.append({
+                "result": gex_vel_result,
+                "notify": notify_vel,
+                "notify_reason": reason_vel,
+                "message": format_gex_velocity_message(gex_vel_result),
+            })
 
     # ── AG Short cooldown expiry tracking ──
     if paradigm and "AG" not in str(paradigm).upper():
@@ -2952,6 +3134,7 @@ def export_cooldowns() -> dict:
         "skew_tracker": copy.deepcopy(_skew_tracker),
         "vanna_pivot": _serialize(_cooldown_vanna_pivot),
         "single_bar_abs": _serialize(_cooldown_single_bar_abs),
+        "gex_velocity": _serialize(_cooldown_gex_vel),
     }
 
 def import_cooldowns(data: dict):
@@ -3006,3 +3189,5 @@ def import_cooldowns(data: dict):
             dt_keys=("last_long_time", "last_short_time")))
     if "single_bar_abs" in data:
         _cooldown_single_bar_abs.update(_deserialize(data["single_bar_abs"]))
+    if "gex_velocity" in data:
+        _cooldown_gex_vel.update(_deserialize(data["gex_velocity"]))

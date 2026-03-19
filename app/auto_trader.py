@@ -79,6 +79,7 @@ _active_orders: dict[int, dict] = {}  # keyed by setup_log_id
 # Per-setup toggles — all default ON for SIM testing
 _toggles: dict[str, bool] = {
     "GEX Long": True,
+    "GEX Velocity": True,
     "AG Short": True,
     "BofA Scalp": True,
     "ES Absorption": True,
@@ -89,7 +90,7 @@ _toggles: dict[str, bool] = {
 
 # Setup → order flow mapping
 _SINGLE_TARGET_SETUPS = {"BofA Scalp", "Paradigm Reversal"}
-_SPLIT_TARGET_SETUPS = {"GEX Long", "AG Short", "DD Exhaustion", "Skew Charm"}
+_SPLIT_TARGET_SETUPS = {"GEX Long", "GEX Velocity", "AG Short", "DD Exhaustion", "Skew Charm"}
 
 
 def init(engine, get_token_fn, send_telegram_fn):

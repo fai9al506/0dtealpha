@@ -1102,7 +1102,7 @@ def _backfill_outcomes():
             _es_based_bf = entry.get("setup_name") in ("ES Absorption", "SB Absorption")
             entry_price = es_price if _es_based_bf and es_price else spot
 
-            is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long", "AG Short", "Skew Charm")
+            is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long", "GEX Velocity", "AG Short", "Skew Charm")
             is_absorption = _es_based_bf
             if is_absorption:
                 # ES Absorption: split-target. P&L = average of T1 (+10) and T2 (trail).
@@ -1196,7 +1196,7 @@ def _backfill_outcomes():
 
         if legacy_rows:
             patched = 0
-            trailing_setups = ("DD Exhaustion", "GEX Long", "AG Short")
+            trailing_setups = ("DD Exhaustion", "GEX Long", "GEX Velocity", "AG Short")
             for lr in legacy_rows:
                 res = lr["outcome_result"]
                 sname = lr["setup_name"]
@@ -1264,7 +1264,7 @@ def _restore_open_trades():
             print("[restore] no unresolved trades to restore", flush=True)
             return
 
-        _trailing_setups = ("DD Exhaustion", "GEX Long", "AG Short", "Skew Charm")
+        _trailing_setups = ("DD Exhaustion", "GEX Long", "GEX Velocity", "AG Short", "Skew Charm")
         restored = 0
         for row in rows:
             entry = dict(row)
@@ -1410,6 +1410,7 @@ def _save_cooldowns():
 # Track current setup log ID per setup type (for UPDATE on improvements)
 _current_setup_log = {
     "GEX Long": None,
+    "GEX Velocity": None,
     "AG Short": None,
     "BofA Scalp": None,
     "ES Absorption": None,
@@ -1530,7 +1531,7 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
@@ -3079,7 +3080,7 @@ def _compute_setup_levels(r: dict):
         stop_lvl = spot - 12 if is_long else spot + 12
         return None, round(stop_lvl, 2)
 
-    if setup_name == "GEX Long":
+    if setup_name in ("GEX Long", "GEX Velocity"):
         # Trailing stop — no fixed target; initial SL = 8 pts
         # Hybrid trail: BE at +8, continuous trail activation=10, gap=5
         stop_lvl = spot - 8 if is_long else spot + 8
@@ -3248,6 +3249,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         _trail_params = {
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
             "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
+            "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
         }
@@ -3374,7 +3376,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             if log_id and engine:
                 try:
                     # Compute first_event
-                    is_trailing = setup_name in ("DD Exhaustion", "GEX Long", "AG Short", "Skew Charm")
+                    is_trailing = setup_name in ("DD Exhaustion", "GEX Long", "GEX Velocity", "AG Short", "Skew Charm")
                     if result_type == "WIN":
                         first_event = "target" if is_trailing else "10pt"
                     elif result_type == "LOSS":
@@ -3663,12 +3665,14 @@ def _run_setup_check():
             if reason in ("new", "reformed"):
                 # Rebuild message with alignment (alignment computed after check_setups)
                 from app.setup_detector import (
-                    format_setup_message, format_ag_short_message, format_bofa_scalp_message,
+                    format_setup_message, format_gex_velocity_message,
+                    format_ag_short_message, format_bofa_scalp_message,
                     format_paradigm_reversal_message, format_dd_exhaustion_message,
                     format_skew_charm_message, format_vanna_pivot_message,
                 )
                 _fmt_map = {
-                    "GEX Long": format_setup_message, "AG Short": format_ag_short_message,
+                    "GEX Long": format_setup_message, "GEX Velocity": format_gex_velocity_message,
+                    "AG Short": format_ag_short_message,
                     "BofA Scalp": format_bofa_scalp_message, "Paradigm Reversal": format_paradigm_reversal_message,
                     "DD Exhaustion": format_dd_exhaustion_message, "Skew Charm": format_skew_charm_message,
                     "Vanna Pivot Bounce": format_vanna_pivot_message,
@@ -3695,7 +3699,7 @@ def _run_setup_check():
                 # Record open trade for live outcome tracking
                 target_lvl, stop_lvl = _compute_setup_levels(r)
                 # Trailing setups use trailing stop (target_lvl=None is OK)
-                _trailing_setups = ("DD Exhaustion", "GEX Long", "AG Short", "Skew Charm")
+                _trailing_setups = ("DD Exhaustion", "GEX Long", "GEX Velocity", "AG Short", "Skew Charm")
                 if stop_lvl is not None and (target_lvl is not None or setup_name in _trailing_setups):
                     _setup_open_trades.append({
                         "setup_name": setup_name, "direction": r["direction"],
@@ -8400,7 +8404,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         is_bofa = setup_name == "BofA Scalp"
         is_dd = setup_name == "DD Exhaustion"
         is_paradigm = setup_name == "Paradigm Reversal"
-        is_gex = setup_name == "GEX Long"
+        is_gex = setup_name in ("GEX Long", "GEX Velocity")
         is_ag = setup_name == "AG Short"
         is_skew = setup_name == "Skew Charm"
         is_vanna = setup_name == "Vanna Pivot Bounce"
@@ -8453,6 +8457,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         _trail_params = {
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5, "initial_sl": 12},
             "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
+            "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8, "initial_sl": 14},
         }

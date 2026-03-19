@@ -310,6 +310,19 @@ def db_init():
         );
         CREATE INDEX IF NOT EXISTS ix_chain_snapshots_ts ON chain_snapshots (ts DESC);
         """))
+        # Add vix3m and overvix columns to chain_snapshots (migration safety)
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE chain_snapshots ADD COLUMN vix3m REAL;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE chain_snapshots ADD COLUMN overvix REAL;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
 
         # SPY chain snapshots — separate table, same schema as chain_snapshots
         conn.execute(text("""
@@ -322,6 +335,19 @@ def db_init():
             rows JSONB NOT NULL
         );
         CREATE INDEX IF NOT EXISTS ix_spy_chain_snapshots_ts ON spy_chain_snapshots (ts DESC);
+        """))
+        # Add vix3m and overvix columns to spy_chain_snapshots (migration safety)
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE spy_chain_snapshots ADD COLUMN vix3m REAL;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE spy_chain_snapshots ADD COLUMN overvix REAL;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
         """))
 
         conn.execute(text(f"""
@@ -2664,8 +2690,9 @@ def save_history_job():
             pass
         with engine.begin() as conn:
             conn.execute(
-                text("INSERT INTO chain_snapshots (ts, exp, spot, vix, columns, rows) VALUES (:ts, :exp, :spot, :vix, :columns, :rows)"),
+                text("INSERT INTO chain_snapshots (ts, exp, spot, vix, vix3m, overvix, columns, rows) VALUES (:ts, :exp, :spot, :vix, :vix3m, :overvix, :columns, :rows)"),
                 {"ts": now_et(), "exp": exp, "spot": spot, "vix": _vix_last,
+                 "vix3m": _vix3m_last, "overvix": _overvix,
                  "columns": json.dumps(payload["columns"]),
                  "rows": json.dumps(payload["rows"])}
             )
@@ -2701,8 +2728,9 @@ def _save_spy_history():
             pass
         with engine.begin() as conn:
             conn.execute(
-                text("INSERT INTO spy_chain_snapshots (ts, exp, spot, columns, rows) VALUES (:ts, :exp, :spot, :columns, :rows)"),
+                text("INSERT INTO spy_chain_snapshots (ts, exp, spot, vix3m, overvix, columns, rows) VALUES (:ts, :exp, :spot, :vix3m, :overvix, :columns, :rows)"),
                 {"ts": now_et(), "exp": exp, "spot": spot,
+                 "vix3m": _vix3m_last, "overvix": _overvix,
                  "columns": json.dumps(payload["columns"]),
                  "rows": json.dumps(payload["rows"])}
             )
@@ -9082,6 +9110,110 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
     except Exception as e:
         print(f"[setups] log with outcomes query error: {e}", flush=True)
         return []
+
+
+@app.get("/api/setup/filter_analysis")
+def api_setup_filter_analysis(date: str = Query(None, description="Date YYYY-MM-DD, default today ET")):
+    """Analyse V9-SC live filter impact: passed vs blocked trades with full DB data."""
+    if not engine:
+        return {"error": "no database"}
+    try:
+        if date:
+            day = datetime.strptime(date, "%Y-%m-%d").date()
+        else:
+            day = now_et().date()
+        day_start = datetime.combine(day, datetime.min.time())
+        day_end = day_start + timedelta(days=1)
+
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT id, ts, setup_name, direction, grade, score,
+                       outcome_result, outcome_pnl, greek_alignment, vix, overvix
+                FROM setup_log
+                WHERE ts >= :d0 AND ts < :d1
+                  AND grade != 'LOG'
+                ORDER BY ts ASC
+            """), {"d0": day_start, "d1": day_end}).fetchall()
+
+        passed, blocked = [], []
+        for r in rows:
+            sid, ts, sn, d, grade, score, result, pnl, align, vix, ov = r
+            align = int(align) if align is not None else 0
+            vix_f = float(vix) if vix is not None else None
+            ov_f = float(ov) if ov is not None else None
+            pnl_f = float(pnl) if pnl is not None else 0.0
+            is_long = d in ("long", "bullish")
+
+            passes = _passes_live_filter(sn, d, align, vix_f, ov_f)
+
+            # Determine block reason
+            reason = ""
+            if not passes:
+                if is_long:
+                    if align < 2:
+                        reason = f"align {align:+d} < +2"
+                    elif vix_f and vix_f > 22:
+                        reason = f"VIX {vix_f:.1f}>22, overvix={ov_f}"
+                else:
+                    if sn == "DD Exhaustion" and align == 0:
+                        reason = "DD short align=0"
+                    else:
+                        reason = f"{sn} short not whitelisted"
+
+            entry = {
+                "id": sid,
+                "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+                "setup_name": sn,
+                "direction": d,
+                "grade": grade,
+                "score": float(score) if score else 0,
+                "result": result or "OPEN",
+                "pnl": pnl_f,
+                "alignment": align,
+                "vix": vix_f,
+                "overvix": ov_f,
+                "passes_v9sc": passes,
+                "block_reason": reason,
+            }
+            if passes:
+                passed.append(entry)
+            else:
+                blocked.append(entry)
+
+        def _stats(trades):
+            w = sum(1 for t in trades if t["result"] == "WIN")
+            lo = sum(1 for t in trades if t["result"] == "LOSS")
+            ex = sum(1 for t in trades if t["result"] == "EXPIRED")
+            op = sum(1 for t in trades if t["result"] == "OPEN")
+            total_pnl = round(sum(t["pnl"] for t in trades), 1)
+            return {"count": len(trades), "wins": w, "losses": lo, "expired": ex,
+                    "open": op, "pnl": total_pnl,
+                    "win_rate": round(w / (w + lo) * 100, 1) if (w + lo) > 0 else 0}
+
+        # Breakdown by setup+direction for blocked
+        from collections import defaultdict
+        blocked_by = defaultdict(lambda: {"count": 0, "pnl": 0, "wins": 0, "losses": 0})
+        for t in blocked:
+            k = f"{t['setup_name']} {t['direction']}"
+            blocked_by[k]["count"] += 1
+            blocked_by[k]["pnl"] += t["pnl"]
+            if t["result"] == "WIN": blocked_by[k]["wins"] += 1
+            elif t["result"] == "LOSS": blocked_by[k]["losses"] += 1
+        blocked_by = {k: {**v, "pnl": round(v["pnl"], 1)}
+                      for k, v in sorted(blocked_by.items(), key=lambda x: -x[1]["pnl"])}
+
+        return {
+            "date": str(day),
+            "all": _stats(passed + blocked),
+            "passed": _stats(passed),
+            "blocked": _stats(blocked),
+            "blocked_by_setup": blocked_by,
+            "passed_trades": passed,
+            "blocked_trades": blocked,
+        }
+    except Exception as e:
+        print(f"[filter-analysis] error: {e}", flush=True)
+        return {"error": str(e)}
 
 
 @app.get("/api/setup/export")

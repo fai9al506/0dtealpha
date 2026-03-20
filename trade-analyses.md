@@ -1779,3 +1779,384 @@ Apollo's overvix signal (entry when overvix > +2, exit when < 0) is a swing trad
 ### 12-Month Growth (starting $4K, 75% of Mar performance)
 
 Month 1: $5,349 → Month 6: $20,191 → Month 12: $129,480
+
+---
+
+## Analysis #14 — Mar 18, 2026
+
+### BofA Scalp Filter Analysis (67 trades, Feb 11 – Mar 17)
+
+**Trigger:** Trade #897 (BofA SHORT, SPX 6731, align=-3, score=70, Charm S/R) had **0.0 max loss** — price never went against entry even 0.1 pts. Investigated what makes BofA work.
+
+**Baseline:** 67 trades, 20W/21L/26E, 30% WR, **-19.2 pts** (net loser unfiltered)
+
+### By Alignment
+
+| Alignment | Trades | Wins | WR | PnL | Avg MaxLoss |
+|-----------|--------|------|----|-----|-------------|
+| -3 | 12 | 7 | 58% | +32.4 | 5.4 |
+| -2 | 5 | 1 | 20% | -26.5 | 8.7 |
+| **-1** | **7** | **0** | **0%** | **-50.0** | **10.0** |
+| 0 | 16 | 4 | 25% | +26.0 | 10.0 |
+| +1 | 9 | 3 | 33% | +16.0 | 5.7 |
+| +2 | 9 | 4 | 44% | +40.4 | 3.6 |
+| **+3** | **9** | **1** | **11%** | **-57.4** | **8.6** |
+
+**Key findings:**
+- **align=-1 is toxic:** 0% WR across 7 trades, -50 pts. Never wins.
+- **align=+3 is toxic:** 11% WR, -57.4 pts. Max positive alignment is a trap for BofA.
+- **align=-3 and +2 are gold:** 58% and 44% WR, lowest max loss.
+
+### By Score
+
+| Score | Trades | Wins | WR | PnL |
+|-------|--------|------|----|-----|
+| < 65 | 15 | 1 | 7% | -74.4 |
+| 65-80 | 22 | 9 | 41% | +39.9 |
+| 80-100 | 25 | 10 | 40% | +37.1 |
+
+**Score < 65 is poison** — 15 trades, 1 win, -74.4 pts.
+
+### By Direction
+
+| Direction | Trades | WR | PnL |
+|-----------|--------|----|-----|
+| Long | 34 | 26% | -13.5 |
+| Short | 33 | 33% | -5.7 |
+
+Shorts slightly better. **Shorts with Charm S/R:** 8 trades, 50% WR, +18.1 pts, avg ML 5.4.
+
+### Filter Combinations
+
+| Filter | Trades | W/L | WR | PnL | Avg ML |
+|--------|--------|-----|----|-----|--------|
+| ALL (baseline) | 67 | 20/21 | 30% | -19.2 | 7.4 |
+| score>=65 | 52 | 19/14 | 37% | +55.2 | 6.9 |
+| **score>=65 + block align=-1,+3** | **40** | **18/8** | **45%** | **+124.2** | **6.4** |
+| score>=65 + align -3 or +2 | 18 | 11/1 | 61% | +78.7 | 4.9 |
+| shorts + charm S/R | 8 | 4/0 | 50% | +18.1 | 5.4 |
+| VIX<22 + score>=65 | 7 | 4/1 | 57% | +25.7 | 4.6 |
+
+### Recommended Filter (NOT YET IMPLEMENTED)
+
+**`score >= 65 AND alignment NOT IN (-1, +3)`**
+
+- Removes 27 trades (15 low-score + 12 toxic-alignment, with overlap)
+- Keeps 40 trades: 18W/8L, 45% WR, +124.2 pts
+- Turns BofA from -19 pts loser into +124 pts winner
+- Losses cut from 21 to 8
+
+**Stronger but smaller:** `score>=65 + align -3 or +2` = 18 trades, 61% WR, +78.7 pts, only 1 loss. Higher WR but much fewer trades.
+
+### Why #897 Was Perfect
+
+SHORT + align=-3 (full bearish Greek alignment) + score 70 + Charm S/R entry + BOFA-PURE paradigm. Max loss 0.0 — sellers controlled from first tick. All 11 trades matching this profile (short + align=-3 + score>=65): 7W, +37.2 pts.
+
+### Status: COLLECTING DATA — need 100+ trades before implementing filter
+
+---
+
+## Analysis #15 — Mar 20, 2026: Zero-Drawdown Study — DD Hedging Alignment Discovery
+
+### Objective
+
+Find what makes trades achieve near-zero drawdown (MAE). Some trades have 0.1 pts MAE — price never goes against the entry. What setup, Volland regime, alignment, and market conditions produce these "perfect entries"?
+
+### Dataset: 900 trades with outcomes (Feb 3 — Mar 19, 2026)
+
+### Part 1: MAE Bucket Analysis
+
+| MAE Bucket | Trades | Win Rate | Avg PnL | Total PnL | Avg MFE |
+|---|---|---|---|---|---|
+| **0 to -1 pts (zero DD)** | **146** | **86.3%** | **+9.08** | **+1,325** | 17.7 |
+| -1 to -2 pts | 42 | 78.6% | +10.88 | +457 | 20.9 |
+| -2 to -3 pts | 37 | 78.4% | +9.17 | +339 | 16.2 |
+| -3 to -5 pts | 84 | 78.6% | +9.41 | +791 | 16.6 |
+| -5 to -8 pts | 102 | 74.5% | +6.83 | +697 | 14.1 |
+| **-8 or worse** | **450** | **21.1%** | **-6.74** | **-3,031** | 8.0 |
+
+**Critical insight:** If a trade doesn't go against you more than 2 pts, it wins 82%+ of the time. If it goes -8 or worse, 79% loss rate. Entry quality is everything.
+
+146 "golden trades" (MAE >= -1.0) produce 91.1% WR and +1,325 pts total — 47% of ALL profits from 16% of trades.
+
+### Part 2: Per-Setup Zero-DD Rate
+
+| Setup | Total | Zero-DD (MAE>=-1) | Rate | WR | Total PnL | Avg MAE |
+|---|---|---|---|---|---|---|
+| Skew Charm | 198 | 44 | **22.2%** | 67.2% | +510 | -8.84 |
+| ES Absorption | 207 | 48 | 23.2% | 46.9% | -84 | -5.86 |
+| GEX Long | 52 | 10 | 19.2% | 34.6% | -67 | -12.00 |
+| BofA Scalp | 65 | 12 | 18.5% | 29.2% | -18 | -7.13 |
+| AG Short | 51 | 9 | 17.6% | 54.9% | +176 | -12.04 |
+| DD Exhaustion | 249 | 16 | 6.4% | 45.4% | +107 | -9.54 |
+
+SC wins because it has high zero-DD rate AND profitability. ES Abs has more zero-DD trades but loses money overall.
+
+### Part 3: Factors Analyzed
+
+**Factors tested:** Greek alignment, paradigm, VIX, time of day, overvix, SVB, per-strike charm near spot, vanna_all/weekly/monthly, aggregated charm, DD hedging, sub-scores (support, upside, floor_cluster, target_cluster, rr), GEX level distances, multi-setup confluence.
+
+**Factors that DON'T predict low DD:**
+- **Grade/score:** Sub-scores nearly identical across golden (53.1 avg) and high-DD (55.9 avg) SC trades. Grade is NOT predictive.
+- **Greek alignment:** No consistent pattern across DD buckets (low_DD_pct ranges 13-29% across all alignment values).
+- **Overvix:** Nearly identical for low-DD (-1.63) vs high-DD (-1.69). No signal.
+- **SVB:** SC longs: SVB_neg slightly better MAE (-7.18 vs -9.85) but same low-DD rate. Weak signal.
+- **Per-strike charm direction alignment:** Counterintuitive — golden SC trades have charm OPPOSING the direction (-19.8M aligned). SC is contrarian; charm opposition confirms the mispricing. Not actionable as a filter.
+- **Vanna for SC:** Higher vanna actually HURTS SC (PF 1.22 at vanna>=5B vs PF 3.16 at vanna<5B). SC works better in lower-vanna environments.
+- **Multi-setup confluence:** Confluent signals (SC+DD within 2 min) = 53.6% WR vs solo 48.6% WR. Marginal improvement, not significant.
+- **GEX distances:** Nearly identical +GEX and -GEX distances for golden vs high-DD trades.
+
+### Part 4: THE DISCOVERY — DD Hedging Direction Alignment
+
+**DD Hedging direction alignment** = when delta_decay_hedging from Volland agrees with trade direction:
+- Positive DD (>$200M, bullish dealers) + SC Long = ALIGNED
+- Negative DD (<-$200M, bearish dealers) + SC Short = ALIGNED
+
+| SC Filter | Trades | Zero-DD% | Low-DD% | WR | PF | Avg MAE | Total PnL |
+|---|---|---|---|---|---|---|---|
+| SC baseline | 198 | 22.2% | 26.8% | 67.2% | 1.53 | -8.84 | +510.4 |
+| **SC + DD_aligned** | **40** | **30.0%** | **32.5%** | **80.0%** | **3.99** | **-6.17** | **+270.2** |
+| **SC + DD_aligned + no_toxic_paradigm** | **35** | **31.4%** | **34.3%** | **85.7%** | **6.44** | **-5.53** | **+274.7** |
+| SC + DD_aligned_strong (>$1B) + no_toxic | 16 | 37.5% | 37.5% | 81.2% | 4.71 | -5.4 | +113.1 |
+| SC + DD_aligned + VIX 20-26 | 36 | 33.3% | 33.3% | 80.6% | 4.07 | -5.75 | +245.4 |
+
+**Toxic paradigms for SC:** GEX-LIS (-5.35 avg PnL, 40% WR) and AG-LIS (-3.93 avg PnL, 50% WR). Strong dealer positioning regimes that resist SC signals.
+
+**Best SC paradigms (low DD rate):** SIDIAL-MESSY (54.5%), GEX-PURE (41.7%), AG-TARGET (36.4%).
+
+### Part 5: Why DD Alignment Creates Zero Drawdown
+
+SC detects charm skew = a mispricing about to reverse. When DD hedging is ALSO pushing in the same direction, two independent dealer flows support the trade:
+1. **Charm flow** = options expiry pressure pulling price toward the corrected level
+2. **DD flow** = dealers actively hedging their delta-decay exposure in your direction
+
+Price moves immediately because the full market structure is aligned. No adverse movement = zero drawdown.
+
+When DD opposes the direction, the trade eventually works (65% WR) but chops against you first while DD flow fights the reversal.
+
+**Per-strike charm confirms contrarian nature:** Golden SC trades have per-strike charm near spot OPPOSING the direction (-19.8M aligned). SC catches the reversal AGAINST prevailing charm. DD alignment provides the "oomph" to reverse immediately.
+
+### Part 6: Vanna Patterns
+
+| Setup + Direction | Golden Vanna_all | High-DD Vanna_all | Delta |
+|---|---|---|---|
+| DD Exhaustion Short | 5.12B | 3.78B | +34% |
+| SC Short | 6.15B | 5.51B | +12% |
+| SC Long | 5.62B | 6.21B | -10% |
+
+Higher vanna = lower drawdown for **shorts** (dealers hedge more aggressively, sharper moves). But vanna doesn't improve SC filtering — SC actually works better in lower-vanna environments (PF 3.16 at vanna<5B vs PF 1.22 at vanna>=5B).
+
+For DD Exhaustion: `shorts + vanna >= 5B` = 56 trades, 51.8% WR, PF 1.41, +124.6 pts. Meaningful improvement over DD baseline (45.4% WR, PF 1.08).
+
+### Part 7: Other Setup Filters Found
+
+**AG Short + align<=-2 + VIX>=24:** 9 trades, 77.8% WR, 33.3% zero-DD, PF 2.29, +51.4 pts. Small sample but compelling.
+
+**AG Short + vanna>=5B:** 20 trades, 65.0% WR, 30.0% low-DD, PF 3.08, +125.1 pts.
+
+**DD Exhaustion shorts + vanna>=5B:** 56 trades, 51.8% WR, 17.9% low-DD, PF 1.41, +124.6 pts.
+
+### Part 8: The 5 SC_best Losses (DD_aligned + no_toxic)
+
+| ID | Date/Time | Dir | Paradigm | DD Hedging | MAE | PnL |
+|---|---|---|---|---|---|---|
+| 686 | Mar 11 15:21 | Long | SIDIAL-EXTREME | $888M | -20.4 | -20.0 |
+| 910 | Mar 18 14:15 | Long | SIDIAL-EXTREME | $1.56B | -20.6 | -20.0 |
+| 808 | Mar 13 19:07 | Long | BOFA-PURE | $2.19B | -19.4 | -10.5 |
+| 426 | Mar 3 20:44 | Short | BOFA-PURE | -$539M | -2.6 | **+4.2** |
+| 904 | Mar 17 19:16 | Short | BOFA-PURE | -$2.0B | -0.6 | **+8.7** |
+
+- 2 real losses in **SIDIAL-EXTREME** (afternoon longs)
+- 1 loss is **post-market** (19:07 ET — should be filtered)
+- 2 "losses" **actually made money** (+4.2 and +8.7 pts, classified non-WIN by trail/timeout)
+
+### Part 9: SC_best Daily Equity (35 trades, 12 days)
+
+| Date | Trades | Wins | PnL | Cumulative | DD |
+|---|---|---|---|---|---|
+| Mar 2 | 1 | 1 | +10.8 | +10.8 | 0.0 |
+| Mar 3 | 3 | 2 | +29.5 | +40.3 | 0.0 |
+| Mar 4 | 2 | 2 | +16.4 | +56.7 | 0.0 |
+| Mar 5 | 7 | 7 | +62.8 | +119.5 | 0.0 |
+| Mar 9 | 1 | 1 | +10.1 | +129.6 | 0.0 |
+| Mar 10 | 3 | 3 | +39.9 | +169.5 | 0.0 |
+| Mar 11 | 2 | 1 | -8.4 | +161.1 | -8.4 |
+| Mar 13 | 2 | 1 | -1.7 | +159.4 | -10.1 |
+| Mar 16 | 3 | 3 | +41.2 | +200.6 | 0.0 |
+| Mar 17 | 2 | 1 | +18.0 | +218.6 | 0.0 |
+| Mar 18 | 3 | 2 | -5.4 | +213.2 | -5.4 |
+| Mar 19 | 6 | 6 | +61.5 | +274.7 | 0.0 |
+
+**Max portfolio DD: -10.1 pts.** 9 of 12 days positive. Never had 2 consecutive losing days.
+
+### Part 10: Full Filter Comparison — V9-SC vs Proposed
+
+Four filters compared across all metrics:
+
+| Metric | V9-SC (CURRENT) | DD-ALIGN PORTFOLIO | SC DD-ALIGNED ONLY | HYBRID (V9SC + SC DD gate) |
+|---|---|---|---|---|
+| **Total trades** | 397 | 119 | 35 | 238 |
+| **Trading days** | 26 | 17 | 12 | 26 |
+| **Trades/day** | 15.3 | 7.0 | 2.9 | 9.2 |
+| **Total PnL** | **+1,117 pts** | +462 pts | +275 pts | +883 pts |
+| **PnL/trade** | +2.8 | +3.9 | **+7.8** | +3.7 |
+| **PnL/day** | **+43.0** | +27.2 | +22.9 | +34.0 |
+| **Win rate** | 62.0% | 61.3% | **85.7%** | 60.5% |
+| **Profit Factor** | 1.62 | 1.96 | **6.44** | 1.96 |
+| **Avg winner** | +11.5 | +12.3 | +10.4 | +11.9 |
+| **Avg loser** | -11.4 | -9.5 | **-7.5** | -8.9 |
+| **Avg MAE** | -9.1 | -8.4 | **-5.5** | -8.7 |
+| **Worst single MAE** | -74.8 | -71.0 | **-20.6** | -74.8 |
+| **Zero-DD rate** | 19.4% | 17.6% | **31.4%** | 18.5% |
+| **Low-DD rate** | 24.4% | 23.5% | **34.3%** | 23.5% |
+| **Max portfolio DD** | **-107.4** | -54.2 | **-10.1** | -50.1 |
+| **Worst day** | -107.4 | -54.2 | **-8.4** | -50.1 |
+| **Best day** | +172.2 | +95.7 | +62.8 | +124.8 |
+| **Max consec losses** | 8 | 4 | **2** | 8 |
+| **Win days / Loss days** | 18/8 | 12/5 | **9/3** | 19/7 |
+| **Avg MFE** | 15.6 | 15.9 | **19.6** | 15.5 |
+| **Avg hold time** | 56.6 min | 56.3 min | **38.3 min** | 62.0 min |
+| **Sharpe (daily)** | 0.60 | 0.59 | **0.94** | 0.75 |
+| **Recovery factor** | 10.4 | 8.5 | **27.2** | 17.6 |
+
+**Setup breakdown per filter:**
+
+| Setup | V9-SC | DD-ALIGN | SC DD-ONLY | HYBRID |
+|---|---|---|---|---|
+| Skew Charm | 193t, 68% WR, +500 | 35t, 86% WR, +275 | 35t, 86% WR, +275 | 34t, 85% WR, +266 |
+| DD Exhaustion | 134t, 54% WR, +350 | 56t, 52% WR, +125 | — | 134t, 54% WR, +350 |
+| AG Short | 51t, 55% WR, +176 | 28t, 50% WR, +63 | — | 51t, 55% WR, +176 |
+
+### Part 11: Dollar Projections (8 MES = $40/pt)
+
+| | V9-SC | DD-ALIGN | SC DD-ONLY | HYBRID |
+|---|---|---|---|---|
+| **$/day** | $1,719 | $1,087 | $916 | $1,359 |
+| **$/month (21 days)** | $36,099 | $22,824 | $19,226 | $28,533 |
+| **$/year** | $433,192 | $273,891 | $230,714 | $342,398 |
+| **Max DD ($)** | **-$4,296** | -$2,168 | **-$404** | -$2,005 |
+
+### Part 12: Filter Definitions
+
+**V9-SC (current, deployed):**
+- Longs: alignment >= +2 AND (Skew Charm OR VIX <= 22 OR overvix >= +2)
+- Shorts whitelist: SC (all), AG (all), DD (align!=0). No VIX gate on shorts.
+
+**DD-ALIGN PORTFOLIO (proposed):**
+- SC: DD hedging aligned with direction (>$200M in trade direction) AND paradigm NOT IN (GEX-LIS, AG-LIS)
+- DD: shorts only + vanna_all >= 5B
+- AG: alignment <= -2
+
+**SC DD-ALIGNED ONLY:**
+- Only SC trades where DD hedging aligned + no toxic paradigm
+
+**HYBRID (recommended):**
+- All V9-SC signals, BUT SC additionally requires DD hedging alignment + no toxic paradigm
+- Keeps DD and AG from V9-SC unchanged
+- Gets 79% of V9-SC profits with 53% less max drawdown
+
+### Conclusions
+
+1. **DD Hedging alignment is the single strongest predictor** of zero-drawdown entries for Skew Charm. When DD agrees with SC direction and paradigm isn't GEX-LIS or AG-LIS: 85.7% WR, PF 6.44, max DD -10 pts.
+
+2. **The mechanism:** SC catches charm mispricing. DD alignment means dealers are ALSO hedging in your direction. Two concurrent flows = instant price movement = zero adverse excursion.
+
+3. **Grade/score is NOT predictive** of entry quality. Golden trades and losers have nearly identical scores.
+
+4. **Toxic paradigms (GEX-LIS, AG-LIS)** reduce SC WR from 71.3% to ~45%. These are strong structural regimes that resist charm reversals.
+
+5. **Higher vanna helps shorts** (DD shorts especially) but hurts SC. SC works better in calmer vanna environments.
+
+6. **HYBRID approach recommended** for implementation: keep V9-SC as-is, add DD-alignment gate only to SC. Captures most V9-SC profits while halving max drawdown.
+
+### Status: PENDING REVIEW — awaiting user decision on implementation approach
+
+---
+
+## Analysis #16 — Mar 20, 2026: V10 Filter — GEX-LIS Paradigm Block
+
+### Trigger
+
+Mar 20 live filter lost -34.5 pts. All 5 resolved SC/DD short losses were on GEX-LIS paradigm at VIX 25-26.5. After a 45pt selloff from 6591 to 6545, the system kept firing shorts into the bounce. LIS acted as support floor.
+
+### Investigation
+
+Tested 7 hypotheses on 208 V9-SC SC/DD short trades:
+
+| Hypothesis | Signal Strength |
+|-----------|----------------|
+| **GEX-LIS paradigm** | 33.3% WR, -87.6 pts (TOXIC) |
+| BOFA-PURE paradigm | 50.0% WR, -82.7 pts (coin flip) |
+| VIX >= 25 | 47.5% WR, -134.3 pts |
+| Drop from session high > 40pts | 45.8% WR, -102.4 pts |
+| Position in day range < 20% | 54.3% WR, -14.3 pts |
+| Nth short of day (cluster fatigue) | No clear signal |
+| Time of day | No clear signal |
+
+### GEX Subtype Breakdown (SC/DD shorts)
+
+| Subtype | Trades | WR | PnL | Action |
+|---------|--------|------|------|--------|
+| **GEX-LIS** | 24 | **43.5%** | **-57.6** | BLOCK |
+| GEX-TARGET | 13 | 50.0% | -4.7 | borderline |
+| **GEX-PURE** | 22 | **81.0%** | **+119.3** | KEEP |
+| **GEX-MESSY** | 7 | **83.3%** | **+72.9** | KEEP |
+
+Blocking ALL GEX would sacrifice +192 pts of edge from GEX-PURE/MESSY. Only GEX-LIS is toxic.
+
+### Why GEX-LIS Fails for Shorts
+
+GEX paradigm = dealers long gamma. LIS = Lines in Sand = support floor. When paradigm is GEX-LIS, dealers buy dips at LIS → price bounces → shorts get run over. GEX-PURE and GEX-MESSY don't anchor to LIS, so charm/DD divergence shorts still work.
+
+### Charm/Vanna Analysis — No Sub-Filter Possible
+
+Tested whether charm or vanna could distinguish GEX-LIS winners from losers:
+
+- **Aggregated charm:** ALL 24 GEX-LIS trades had negative charm. Winners range -0M to -124M, losers range -20M to -215M — completely overlapping. No threshold separates them.
+- **Vanna 0DTE:** v0 < 0 showed 80% WR (5 trades) vs v0 >= 0 at 33% WR (19 trades). Interesting but only 5 trades — too few for a carve-out.
+- **Vanna weekly/monthly/ALL:** All positive across winners and losers. No differentiation.
+- **DD hedging:** Both winners and losers mostly DD positive. No signal.
+
+Conclusion: GEX-LIS is structurally bad for shorts regardless of Volland metrics. Block entirely.
+
+### Filter Comparison
+
+| Filter | SC/DD Short PnL | Full System PnL | MaxDD |
+|--------|----------------|-----------------|-------|
+| V9-SC (baseline) | +515.1 | +1,138.4 | 230.5 |
+| **V10 (!GEX-LIS)** | **+596.7** | **+1,220.0** | **178.5** |
+| Block ALL GEX | +409.1 | +1,032.4 | 150.5 |
+| VIX < 25 on shorts | +636.6 | — | 99.9 |
+| C8 (!GEX-LIS + !BOFA-PURE) | +672.5 | +1,295.9 | 87.0 |
+
+### March Day-by-Day Impact
+
+| Date | V9-SC | V10 | Diff | Notes |
+|------|-------|-----|------|-------|
+| Mar 9 | -107.4 | -55.4 | +52.0 | Crash day: 3 GEX-LIS losses saved |
+| Mar 10 | +152.8 | +137.6 | -15.2 | 1 GEX-LIS winner blocked |
+| Mar 13 | -54.0 | -60.4 | -6.4 | 1 GEX-LIS winner blocked |
+| Mar 18 | +132.6 | +96.6 | -36.0 | 2 GEX-LIS winners blocked (rare) |
+| Mar 19 | +34.5 | +86.5 | +52.0 | 3 GEX-LIS losses saved |
+| Mar 20 | -21.7 | +6.8 | +28.5 | 5 losses + 2 small wins blocked |
+| **Total** | **+817.0** | **+898.6** | **+81.6** | |
+
+### Decision
+
+**Implemented V10 = V9-SC + block GEX-LIS paradigm on SC/DD shorts.**
+
+- Only GEX-LIS blocked. GEX-PURE (81% WR) and GEX-MESSY (83% WR) kept.
+- AG Short not affected (only SC/DD check paradigm).
+- Longs not affected.
+- BOFA-PURE (50% WR, -62.9 pts) deferred — needs more data. Candidate for V11.
+- Vanna 0DTE carve-out deferred — only 5 trades, need 20+ before acting.
+
+### Implementation
+
+- `_passes_live_filter()` in main.py: added `paradigm` parameter, blocks GEX-LIS on SC/DD shorts
+- All 4 callers updated to pass paradigm
+- `eval_trader.py`: independent GEX-LIS block in ComplianceGate
+- Admin API shows "GEX-LIS paradigm blocked" in block reason
+- Commit: `ed340c3`
+
+### Status: DEPLOYED — V10 live on Railway (SIM + E2T + real trader)

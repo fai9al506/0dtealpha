@@ -3091,8 +3091,9 @@ def send_summary_alert(time_label: str):
         print(f"[alerts] summary error: {e}", flush=True)
 
 def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
-                        vix: float | None = None, overvix: float | None = None) -> bool:
-    """Single source of truth for the LIVE auto-trade filter (currently V9-SC).
+                        vix: float | None = None, overvix: float | None = None,
+                        paradigm: str | None = None) -> bool:
+    """Single source of truth for the LIVE auto-trade filter (currently V9-SC + GEX-LIS block).
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Change this ONE function when the filter evolves."""
     if setup_name == "VIX Compression":
@@ -3110,6 +3111,10 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                 return False
         return True
     else:
+        if setup_name in ("Skew Charm", "DD Exhaustion"):
+            # Block GEX-LIS paradigm shorts: 24t, 43% WR, -57.6 pts (LIS = support floor)
+            if paradigm == "GEX-LIS":
+                return False
         if setup_name in ("Skew Charm", "AG Short"):
             return True
         if setup_name == "DD Exhaustion" and align != 0:
@@ -3797,7 +3802,8 @@ def _run_setup_check():
                     _msg += _vix_tag
                 # Live filter: only send Telegram for signals that pass the active auto-trade filter
                 _passes_live = _passes_live_filter(setup_name, r["direction"],
-                                                   r.get("greek_alignment", 0), _vix_last, _overvix)
+                                                   r.get("greek_alignment", 0), _vix_last, _overvix,
+                                                   paradigm=r.get("paradigm"))
                 if _passes_live:
                     send_telegram_setups(_msg)
                 else:
@@ -4418,7 +4424,8 @@ def _run_absorption_detection(bars: list) -> dict | None:
 
     # Send Telegram only when notification gate passes AND live filter
     _abs_passes_live = _passes_live_filter("ES Absorption", result["direction"],
-                                           result.get("greek_alignment", 0), _vix_last, _overvix)
+                                           result.get("greek_alignment", 0), _vix_last, _overvix,
+                                           paradigm=result.get("paradigm"))
     if fire and _abs_passes_live:
         try:
             msg = rw["message"]
@@ -5302,7 +5309,7 @@ def _send_setup_eod_summary():
                 rows = conn.execute(text("""
                     SELECT setup_name, direction, grade, ts,
                            outcome_result, outcome_pnl, outcome_elapsed_min,
-                           greek_alignment, vix, overvix
+                           greek_alignment, vix, overvix, paradigm
                     FROM setup_log
                     WHERE ts >= :today_start
                       AND outcome_result IS NOT NULL
@@ -5314,8 +5321,9 @@ def _send_setup_eod_summary():
                 _align = int(row[7]) if row[7] is not None else 0
                 _v = float(row[8]) if row[8] is not None else None
                 _ov = float(row[9]) if row[9] is not None else None
+                _par = row[10] if len(row) > 10 else None
                 # Only include trades that pass the live filter
-                if not _passes_live_filter(_sn, _dir, _align, _v, _ov):
+                if not _passes_live_filter(_sn, _dir, _align, _v, _ov, paradigm=_par):
                     continue
                 ts_val = row[3]
                 ts_str = ts_val.strftime("%H:%M") if hasattr(ts_val, "strftime") else ""
@@ -9161,7 +9169,7 @@ def api_setup_filter_analysis(date: str = Query(None, description="Date YYYY-MM-
         with engine.connect() as conn:
             rows = conn.execute(text("""
                 SELECT id, ts, setup_name, direction, grade, score,
-                       outcome_result, outcome_pnl, greek_alignment, vix, overvix
+                       outcome_result, outcome_pnl, greek_alignment, vix, overvix, paradigm
                 FROM setup_log
                 WHERE ts >= :d0 AND ts < :d1
                   AND grade != 'LOG'
@@ -9170,14 +9178,14 @@ def api_setup_filter_analysis(date: str = Query(None, description="Date YYYY-MM-
 
         passed, blocked = [], []
         for r in rows:
-            sid, ts, sn, d, grade, score, result, pnl, align, vix, ov = r
+            sid, ts, sn, d, grade, score, result, pnl, align, vix, ov, par = r
             align = int(align) if align is not None else 0
             vix_f = float(vix) if vix is not None else None
             ov_f = float(ov) if ov is not None else None
             pnl_f = float(pnl) if pnl is not None else 0.0
             is_long = d in ("long", "bullish")
 
-            passes = _passes_live_filter(sn, d, align, vix_f, ov_f)
+            passes = _passes_live_filter(sn, d, align, vix_f, ov_f, paradigm=par)
 
             # Determine block reason
             reason = ""
@@ -9190,6 +9198,8 @@ def api_setup_filter_analysis(date: str = Query(None, description="Date YYYY-MM-
                 else:
                     if sn == "DD Exhaustion" and align == 0:
                         reason = "DD short align=0"
+                    elif par == "GEX-LIS":
+                        reason = "GEX-LIS paradigm blocked"
                     else:
                         reason = f"{sn} short not whitelisted"
 

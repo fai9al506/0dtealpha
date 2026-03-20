@@ -804,6 +804,10 @@ class ComplianceGate:
                     _short_allowed = True
                 if not _short_allowed:
                     return False, f"Greek filter: {sname} short not in V7+AG whitelist (align={alignment:+d})"
+                # Block GEX-LIS paradigm on SC/DD shorts (43% WR, -57.6 pts — LIS = support floor)
+                _paradigm = signal.get("paradigm") or ""
+                if _paradigm == "GEX-LIS" and sname in ("Skew Charm", "DD Exhaustion"):
+                    return False, f"GEX-LIS paradigm blocked for {sname} short"
 
         # Already in position?
         # Opposite-direction signals return "reverse" so main loop can close + reopen

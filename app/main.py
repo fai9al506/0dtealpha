@@ -3093,7 +3093,8 @@ def send_summary_alert(time_label: str):
 def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None) -> bool:
-    """Single source of truth for the LIVE auto-trade filter (currently V9-SC + GEX-LIS block).
+    """Single source of truth for the LIVE auto-trade filter (currently V10).
+    V10 = V9-SC + block GEX-LIS paradigm on SC/DD shorts.
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Change this ONE function when the filter evolves."""
     if setup_name == "VIX Compression":

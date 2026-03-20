@@ -3335,6 +3335,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
+            "SB Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
         }
         _tp = _trail_params.get(setup_name)
         if _tp is not None:
@@ -8392,7 +8393,8 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
         first_event = None
         bars_after = 0
 
-        # Trail state (for analysis only — live uses Flow A fixed SL=8/T=10)
+        # Trail state — SB Absorption: BE@10, gap=5. ES Absorption: BE@10, gap=8.
+        _trail_gap = 5 if entry.get("setup_name") == "SB Absorption" else 8
         trail_active = False
         trail_stop = initial_stop  # starts as initial fixed -8 stop
         trail_peak = 0.0  # max favorable excursion in pts
@@ -8442,10 +8444,10 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
                 if profit_high > trail_peak:
                     trail_peak = profit_high
 
-                # Hybrid trail: BE at +10, then trail with gap=8 (matches live tracker)
+                # Hybrid trail: BE at +10, then trail with gap (SB=5, ES=8)
                 if trail_peak >= 10:
                     trail_active = True
-                    trail_lock = max(trail_peak - 8, 0)  # gap=8, min=breakeven
+                    trail_lock = max(trail_peak - _trail_gap, 0)  # min=breakeven
                     if is_long:
                         new_stop = es_entry + trail_lock
                         if new_stop > trail_stop:

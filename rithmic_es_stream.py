@@ -19,6 +19,7 @@ RITHMIC_URL = os.getenv("RITHMIC_URL", "")
 RITHMIC_SYMBOL = "@ES-R"   # parallel symbol — change to @ES when migrating
 RITHMIC_CONFORMANCE = os.getenv("RITHMIC_CONFORMANCE", "").lower() == "true"
 RANGE_PTS = 5.0
+RANGE_PTS_10 = 10.0
 
 # ====== STATE ======
 _lock = threading.Lock()
@@ -46,18 +47,31 @@ _state = {
     "_connection_errors": 0,
     "_last_connect_time": None,
     "_front_month": None,
+    # ── 10-pt range bar state (parallel pipeline) ──
+    "_forming_bar_10": None,
+    "_completed_bars_10": [],
+    "_bar_idx_10": 0,
+    "_flush_buffer_10": [],
+    "_live_since_idx_10": 0,
 }
 
 # Callback invoked (outside lock) whenever a range bar completes.
 # Signature: callback(all_completed_bars: list[dict])
 # Set by main.py via set_on_bar_complete().
 _on_bar_complete = None
+_on_bar_10_complete = None
 
 
 def set_on_bar_complete(callback):
-    """Register a callback that fires each time a range bar completes."""
+    """Register a callback that fires each time a 5-pt range bar completes."""
     global _on_bar_complete
     _on_bar_complete = callback
+
+
+def set_on_bar_10_complete(callback):
+    """Register a callback that fires each time a 10-pt range bar completes."""
+    global _on_bar_10_complete
+    _on_bar_10_complete = callback
 
 
 def _now_et():
@@ -171,7 +185,8 @@ def _process_trade(price, volume, aggressor, bid, ask, ts):
     bar["cvd_high"] = max(bar["cvd_high"], s["_cvd"])
     bar["cvd_low"] = min(bar["cvd_low"], s["_cvd"])
 
-    # Check if range bar is complete
+    # Check if 5-pt range bar is complete
+    bar_5_snapshot = None
     if bar["high"] - bar["low"] >= RANGE_PTS - 0.001:
         completed = {
             "idx": s["_bar_idx"],
@@ -197,12 +212,53 @@ def _process_trade(price, volume, aggressor, bid, ask, ts):
               f"vol={completed['volume']} delta={completed['delta']:+d} "
               f"cvd={completed['cvd']:+d} agg={agg_pct:.0f}%", flush=True)
         s["_forming_bar"] = _new_range_bar(price, ts)
-
-        # Return snapshot for caller to fire callback OUTSIDE the lock
         if _on_bar_complete:
-            return list(s["_completed_bars"])
+            bar_5_snapshot = list(s["_completed_bars"])
 
-    return None
+    # ── 10-pt range bar builder (parallel, same tick) ──
+    bar_10_snapshot = None
+    if s["_forming_bar_10"] is None:
+        s["_forming_bar_10"] = _new_range_bar(price, ts)
+    b10 = s["_forming_bar_10"]
+    b10["close"] = price
+    b10["high"] = max(b10["high"], price)
+    b10["low"] = min(b10["low"], price)
+    b10["volume"] += volume
+    b10["buy"] += buy_vol
+    b10["sell"] += sell_vol
+    b10["delta"] += delta
+    b10["ts_end"] = ts
+    b10["cvd_high"] = max(b10["cvd_high"], s["_cvd"])
+    b10["cvd_low"] = min(b10["cvd_low"], s["_cvd"])
+
+    if b10["high"] - b10["low"] >= RANGE_PTS_10 - 0.001:
+        completed_10 = {
+            "idx": s["_bar_idx_10"],
+            "open": b10["open"], "high": b10["high"],
+            "low": b10["low"], "close": b10["close"],
+            "volume": b10["volume"], "delta": b10["delta"],
+            "buy_volume": b10["buy"], "sell_volume": b10["sell"],
+            "cvd": s["_cvd"],
+            "cvd_open": b10["cvd_open"],
+            "cvd_high": b10["cvd_high"],
+            "cvd_low": b10["cvd_low"],
+            "cvd_close": s["_cvd"],
+            "ts_start": b10["ts_start"], "ts_end": b10["ts_end"],
+            "status": "closed",
+        }
+        s["_completed_bars_10"].append(completed_10)
+        s["_flush_buffer_10"].append(completed_10)
+        s["_bar_idx_10"] += 1
+        print(f"[rithmic-10pt] bar #{completed_10['idx']} closed: "
+              f"O={completed_10['open']:.2f} H={completed_10['high']:.2f} "
+              f"L={completed_10['low']:.2f} C={completed_10['close']:.2f} "
+              f"vol={completed_10['volume']} delta={completed_10['delta']:+d} "
+              f"cvd={completed_10['cvd']:+d}", flush=True)
+        s["_forming_bar_10"] = _new_range_bar(price, ts)
+        if _on_bar_10_complete:
+            bar_10_snapshot = list(s["_completed_bars_10"])
+
+    return bar_5_snapshot, bar_10_snapshot
 
 
 # ====== SESSION RESET ======
@@ -211,10 +267,12 @@ def _reset_session(engine):
     """Reset state for new session. Reloads prior bars from DB."""
     session_date = _es_session_date()
     db_bars = []
+    db_bars_10 = []
     if engine:
         try:
             from sqlalchemy import text
             with engine.begin() as conn:
+                # Load 5-pt bars
                 rows = conn.execute(text("""
                     SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
                            bar_volume, bar_buy_volume, bar_sell_volume, bar_delta,
@@ -226,6 +284,30 @@ def _reset_session(engine):
                 """), {"td": session_date, "sym": RITHMIC_SYMBOL, "rp": RANGE_PTS}).mappings().all()
                 for r in rows:
                     db_bars.append({
+                        "idx": r["bar_idx"],
+                        "open": r["bar_open"], "high": r["bar_high"],
+                        "low": r["bar_low"], "close": r["bar_close"],
+                        "volume": r["bar_volume"], "delta": r["bar_delta"],
+                        "buy_volume": r["bar_buy_volume"], "sell_volume": r["bar_sell_volume"],
+                        "cvd": r["cvd_close"],
+                        "cvd_open": r["cvd_open"], "cvd_high": r["cvd_high"],
+                        "cvd_low": r["cvd_low"], "cvd_close": r["cvd_close"],
+                        "ts_start": r["ts_start"].isoformat() if r["ts_start"] else "",
+                        "ts_end": r["ts_end"].isoformat() if r["ts_end"] else "",
+                        "status": r["status"],
+                    })
+                # Load 10-pt bars
+                rows10 = conn.execute(text("""
+                    SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
+                           bar_volume, bar_buy_volume, bar_sell_volume, bar_delta,
+                           cumulative_delta, cvd_open, cvd_high, cvd_low, cvd_close,
+                           ts_start, ts_end, status
+                    FROM es_range_bars
+                    WHERE trade_date = :td AND symbol = :sym AND range_pts = :rp
+                    ORDER BY bar_idx ASC
+                """), {"td": session_date, "sym": RITHMIC_SYMBOL, "rp": RANGE_PTS_10}).mappings().all()
+                for r in rows10:
+                    db_bars_10.append({
                         "idx": r["bar_idx"],
                         "open": r["bar_open"], "high": r["bar_high"],
                         "low": r["bar_low"], "close": r["bar_close"],
@@ -263,12 +345,20 @@ def _reset_session(engine):
             "_last_trade_time": None,
             "_aggressor_count": 0,
             "_inferred_count": 0,
+            # 10-pt state
+            "_forming_bar_10": None,
+            "_completed_bars_10": db_bars_10,
+            "_bar_idx_10": (db_bars_10[-1]["idx"] + 1) if db_bars_10 else 0,
+            "_flush_buffer_10": [],
+            "_live_since_idx_10": (db_bars_10[-1]["idx"] + 1) if db_bars_10 else 0,
         })
     if db_bars:
-        print(f"[rithmic] restored {len(db_bars)} bars from DB (session {session_date}, "
+        print(f"[rithmic] restored {len(db_bars)} 5pt bars from DB (session {session_date}, "
               f"cvd={_state['_cvd']:+d})", flush=True)
     else:
         print(f"[rithmic] fresh session {session_date} (no prior bars)", flush=True)
+    if db_bars_10:
+        print(f"[rithmic] restored {len(db_bars_10)} 10pt bars from DB", flush=True)
 
 
 # ====== DB FLUSH ======
@@ -331,6 +421,45 @@ def flush_rithmic_bars(engine):
                     "ts0": b["ts_start"], "ts1": b["ts_end"], "st": b["status"],
                 })
         print(f"[rithmic] flushed {len(bars)} range bars to DB", flush=True)
+
+        # Flush 10-pt bars (same table, different range_pts)
+        with _lock:
+            bars_10 = _state["_flush_buffer_10"]
+            _state["_flush_buffer_10"] = []
+        if bars_10:
+            with engine.begin() as conn:
+                for b in bars_10:
+                    conn.execute(text("""
+                        INSERT INTO es_range_bars
+                            (trade_date, symbol, bar_idx, range_pts,
+                             bar_open, bar_high, bar_low, bar_close,
+                             bar_volume, bar_buy_volume, bar_sell_volume, bar_delta,
+                             cumulative_delta, cvd_open, cvd_high, cvd_low, cvd_close,
+                             ts_start, ts_end, status, source)
+                        VALUES (:td, :sym, :idx, :rp,
+                                :bo, :bh, :bl, :bc,
+                                :bv, :bbv, :bsv, :bd,
+                                :cd, :co, :ch, :cl, :cc,
+                                :ts0, :ts1, :st, 'rithmic')
+                        ON CONFLICT (trade_date, symbol, bar_idx, range_pts) DO UPDATE SET
+                            bar_open = EXCLUDED.bar_open, bar_high = EXCLUDED.bar_high,
+                            bar_low = EXCLUDED.bar_low, bar_close = EXCLUDED.bar_close,
+                            bar_volume = EXCLUDED.bar_volume, bar_buy_volume = EXCLUDED.bar_buy_volume,
+                            bar_sell_volume = EXCLUDED.bar_sell_volume, bar_delta = EXCLUDED.bar_delta,
+                            cumulative_delta = EXCLUDED.cumulative_delta,
+                            cvd_open = EXCLUDED.cvd_open, cvd_high = EXCLUDED.cvd_high,
+                            cvd_low = EXCLUDED.cvd_low, cvd_close = EXCLUDED.cvd_close,
+                            ts_start = EXCLUDED.ts_start, ts_end = EXCLUDED.ts_end,
+                            status = EXCLUDED.status
+                    """), {
+                        "td": today, "sym": RITHMIC_SYMBOL, "idx": b["idx"], "rp": RANGE_PTS_10,
+                        "bo": b["open"], "bh": b["high"], "bl": b["low"], "bc": b["close"],
+                        "bv": b["volume"], "bbv": b["buy_volume"], "bsv": b["sell_volume"], "bd": b["delta"],
+                        "cd": b["cvd"], "co": b["cvd_open"], "ch": b["cvd_high"],
+                        "cl": b["cvd_low"], "cc": b["cvd_close"],
+                        "ts0": b["ts_start"], "ts1": b["ts_end"], "st": b["status"],
+                    })
+            print(f"[rithmic] flushed {len(bars_10)} 10pt range bars to DB", flush=True)
     except Exception as e:
         print(f"[rithmic] save error: {e}", flush=True)
 
@@ -371,6 +500,38 @@ def get_live_since_idx():
     """
     with _lock:
         return _state.get("_live_since_idx", 0)
+
+
+def get_rithmic_bars_10pt():
+    """Thread-safe snapshot of completed + forming 10-pt bars for API."""
+    with _lock:
+        completed = list(_state["_completed_bars_10"])
+        forming = _state["_forming_bar_10"]
+        cvd_now = _state["_cvd"]
+
+    result = list(completed)
+    if forming and (forming["volume"] > 0 or abs(forming["open"] - forming["close"]) > 0.001):
+        result.append({
+            "idx": len(completed),
+            "open": forming["open"], "high": forming["high"],
+            "low": forming["low"], "close": forming["close"],
+            "volume": forming["volume"], "delta": forming["delta"],
+            "buy_volume": forming["buy"], "sell_volume": forming["sell"],
+            "cvd": cvd_now,
+            "cvd_open": forming["cvd_open"],
+            "cvd_high": forming["cvd_high"],
+            "cvd_low": forming["cvd_low"],
+            "cvd_close": cvd_now,
+            "ts_start": forming["ts_start"], "ts_end": forming["ts_end"],
+            "status": "open",
+        })
+    return result
+
+
+def get_live_since_idx_10pt():
+    """Return the first 10-pt bar index built from live ticks."""
+    with _lock:
+        return _state.get("_live_since_idx_10", 0)
 
 
 def get_rithmic_state():
@@ -474,12 +635,12 @@ async def _rithmic_stream_async(engine, send_telegram_fn):
                 buf = _agg_buf
                 if buf["order_id"] is None or buf["size"] == 0:
                     return
-                bar_snapshot = None
+                result = None
                 with _lock:
                     new_session = _es_session_date()
                     if _state["trade_date"] != new_session:
                         pass  # Will be caught in outer loop
-                    bar_snapshot = _process_trade(buf["price"], buf["size"], buf["aggressor"],
+                    result = _process_trade(buf["price"], buf["size"], buf["aggressor"],
                                    buf["bid"], buf["ask"], buf["ts"])
                     tc = _state["trade_count"]
                     if tc <= 5 or tc % 1000 == 0:
@@ -494,13 +655,19 @@ async def _rithmic_stream_async(engine, send_telegram_fn):
                 buf["order_id"] = None
                 buf["size"] = 0
 
-                # Fire bar-complete callback OUTSIDE the lock to avoid deadlocks
-                # (indented to be inside _flush_agg_buf but outside `with _lock`)
-                if bar_snapshot and _on_bar_complete:
-                    try:
-                        _on_bar_complete(bar_snapshot)
-                    except Exception as e:
-                        print(f"[rithmic] bar_complete callback error: {e}", flush=True)
+                # Fire bar-complete callbacks OUTSIDE the lock to avoid deadlocks
+                if result:
+                    bar_5_snapshot, bar_10_snapshot = result
+                    if bar_5_snapshot and _on_bar_complete:
+                        try:
+                            _on_bar_complete(bar_5_snapshot)
+                        except Exception as e:
+                            print(f"[rithmic] bar_complete callback error: {e}", flush=True)
+                    if bar_10_snapshot and _on_bar_10_complete:
+                        try:
+                            _on_bar_10_complete(bar_10_snapshot)
+                        except Exception as e:
+                            print(f"[rithmic] bar_10_complete callback error: {e}", flush=True)
 
             # Tick callback
             async def on_tick(data):

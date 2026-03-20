@@ -1511,7 +1511,7 @@ def reset_single_bar_abs_session():
     _cooldown_single_bar_abs["last_checked_idx"] = -1
 
 
-def evaluate_single_bar_absorption(bars, volland_stats, settings, spx_spot=None):
+def evaluate_single_bar_absorption(bars, volland_stats, settings, spx_spot=None, cooldown_state=None):
     """
     Detect single-bar absorption: bar closes against delta direction.
 
@@ -1524,7 +1524,11 @@ def evaluate_single_bar_absorption(bars, volland_stats, settings, spx_spot=None)
     and SVB >= 0 (normal market correlation).
 
     Graded A+/A/B/C based on volume, delta, CVD trend, and Volland confluence.
+    cooldown_state: optional dict for dedup (default: _cooldown_single_bar_abs).
+                    Pass _cooldown_sb10_abs for 10-pt bar variant.
     """
+    cd = cooldown_state or _cooldown_single_bar_abs
+
     if not settings.get("single_bar_abs_enabled", True):
         return None
 
@@ -1543,9 +1547,9 @@ def evaluate_single_bar_absorption(bars, volland_stats, settings, spx_spot=None)
     trigger_idx = trigger["idx"]
 
     # Dedup: skip if already checked this bar
-    if trigger_idx <= _cooldown_single_bar_abs["last_checked_idx"]:
+    if trigger_idx <= cd["last_checked_idx"]:
         return None
-    _cooldown_single_bar_abs["last_checked_idx"] = trigger_idx
+    cd["last_checked_idx"] = trigger_idx
 
     # --- Volume gate ---
     recent_vols = [b["volume"] for b in closed[-(vol_window + 1):-1]]
@@ -1757,6 +1761,71 @@ def format_single_bar_abs_message(result, alignment=None):
 
     parts = [
         f"{side_emoji} <b>SB Abs {side_label} [{grade}]{align_str}</b>",
+        f"ES {result['abs_es_price']:.2f} | Score {score} | Vol {result['abs_vol_ratio']:.1f}x | Delta {result['bar_delta']:+d}({result['delta_ratio']:.1f}x)",
+    ]
+
+    extras = []
+    if result.get("svb") is not None:
+        extras.append(f"SVB {result['svb']:.2f}")
+    if result.get("paradigm"):
+        extras.append(result["paradigm"])
+    if extras:
+        parts.append(" | ".join(extras))
+
+    return "\n".join(parts)
+
+
+# ── SB10 Absorption (10-pt bars) — cooldown and formatting ─────────────────
+
+_cooldown_sb10_abs = {
+    "last_bullish_bar": -100,
+    "last_bearish_bar": -100,
+    "last_checked_idx": -1,
+    "last_date": None,
+}
+
+
+def reset_sb10_abs_session():
+    """Reset SB10 absorption detector state for a new ES session."""
+    _cooldown_sb10_abs["last_bullish_bar"] = -100
+    _cooldown_sb10_abs["last_bearish_bar"] = -100
+    _cooldown_sb10_abs["last_checked_idx"] = -1
+
+
+def should_notify_sb10_abs(result):
+    """Cooldown gate for SB10 Absorption. Bar-index based (5-bar cooldown for 10-pt bars)."""
+    today = datetime.now(NY).date()
+    if _cooldown_sb10_abs["last_date"] != today:
+        _cooldown_sb10_abs["last_bullish_bar"] = -100
+        _cooldown_sb10_abs["last_bearish_bar"] = -100
+        _cooldown_sb10_abs["last_date"] = today
+
+    bar_idx = result["bar_idx"]
+    direction = result["direction"]
+    cooldown = 5  # 5 bars of 10-pt = 50 pts between signals
+
+    if direction == "bullish":
+        if bar_idx - _cooldown_sb10_abs["last_bullish_bar"] < cooldown:
+            return False, None
+        _cooldown_sb10_abs["last_bullish_bar"] = bar_idx
+    else:
+        if bar_idx - _cooldown_sb10_abs["last_bearish_bar"] < cooldown:
+            return False, None
+        _cooldown_sb10_abs["last_bearish_bar"] = bar_idx
+
+    return True, "new"
+
+
+def format_sb10_abs_message(result, alignment=None):
+    """Format Telegram HTML message for SB10 Absorption (10-pt bars)."""
+    side_emoji = "\U0001f7e2" if result["direction"] == "bullish" else "\U0001f534"
+    side_label = "BUY" if result["direction"] == "bullish" else "SELL"
+    grade = result.get("grade", "?")
+    score = result.get("score", 0)
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
+
+    parts = [
+        f"{side_emoji} <b>SB10 Abs {side_label} [{grade}]{align_str}</b>",
         f"ES {result['abs_es_price']:.2f} | Score {score} | Vol {result['abs_vol_ratio']:.1f}x | Delta {result['bar_delta']:+d}({result['delta_ratio']:.1f}x)",
     ]
 
@@ -3350,6 +3419,7 @@ def export_cooldowns() -> dict:
         "skew_tracker": copy.deepcopy(_skew_tracker),
         "vanna_pivot": _serialize(_cooldown_vanna_pivot),
         "single_bar_abs": _serialize(_cooldown_single_bar_abs),
+        "sb10_abs": _serialize(_cooldown_sb10_abs),
         "gex_velocity": _serialize(_cooldown_gex_vel),
         "vix_compress": _serialize(_cooldown_vix_compress),
         "vix_history": _vix_history[-60:],  # save last ~30 min for restart recovery
@@ -3407,6 +3477,8 @@ def import_cooldowns(data: dict):
             dt_keys=("last_long_time", "last_short_time")))
     if "single_bar_abs" in data:
         _cooldown_single_bar_abs.update(_deserialize(data["single_bar_abs"]))
+    if "sb10_abs" in data:
+        _cooldown_sb10_abs.update(_deserialize(data["sb10_abs"]))
     if "gex_velocity" in data:
         _cooldown_gex_vel.update(_deserialize(data["gex_velocity"]))
     if "vix_compress" in data:

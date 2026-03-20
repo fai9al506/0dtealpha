@@ -1134,7 +1134,7 @@ def _backfill_outcomes():
             is_long = entry.get("direction", "long").lower() in ("long", "bullish")
             spot = entry.get("spot") or 0
             es_price = entry.get("abs_es_price")
-            _es_based_bf = entry.get("setup_name") in ("ES Absorption", "SB Absorption")
+            _es_based_bf = entry.get("setup_name") in ("ES Absorption", "SB Absorption", "SB10 Absorption")
             entry_price = es_price if _es_based_bf and es_price else spot
 
             is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long", "GEX Velocity", "AG Short", "Skew Charm")
@@ -1566,7 +1566,7 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "SB Absorption": None, "SB10 Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
@@ -3279,7 +3279,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         is_long = direction.lower() in ("long", "bullish")
 
         # Use ES price for ES-based setups (absorption), SPX spot for everything else
-        _es_based = setup_name in ("ES Absorption", "SB Absorption")
+        _es_based = setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption")
         if _es_based:
             if not es_price:
                 still_open.append(trade)
@@ -3336,6 +3336,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
             "SB Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
+            "SB10 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
         }
         _tp = _trail_params.get(setup_name)
         if _tp is not None:
@@ -4220,11 +4221,13 @@ def _es_quote_reset():
         print(f"[es-quote] fresh session {session_date} (no prior bars)", flush=True)
 
     # Reset absorption detector for new session
-    global _last_absorption_bar_idx
+    global _last_absorption_bar_idx, _last_sb10_bar_idx
     _last_absorption_bar_idx = -1
-    from app.setup_detector import reset_absorption_session, reset_single_bar_abs_session
+    _last_sb10_bar_idx = -1
+    from app.setup_detector import reset_absorption_session, reset_single_bar_abs_session, reset_sb10_abs_session
     reset_absorption_session()
     reset_single_bar_abs_session()
+    reset_sb10_abs_session()
     _absorption_signals.clear()
 
 def _run_absorption_detection(bars: list) -> dict | None:
@@ -4695,6 +4698,152 @@ def _run_absorption_in_thread(bars: list):
             _run_single_bar_absorption(bars)
         except Exception as e:
             print(f"[sb-absorption] eval error: {e}", flush=True)
+
+
+# ── 10-pt range bar callback for SB10 Absorption ──────────────────────────
+
+_last_sb10_bar_idx = -1
+
+def _on_rithmic_bar_10pt_complete(bars: list):
+    """Callback from Rithmic stream when a 10-pt range bar completes."""
+    global _last_sb10_bar_idx
+    if not bars:
+        return
+    t = now_et()
+    if not (dtime(10, 0) <= t.time() <= dtime(16, 0)):
+        return
+    last_bar = bars[-1]
+    bar_idx = last_bar.get("idx", -1)
+    if bar_idx <= _last_sb10_bar_idx:
+        return
+    _last_sb10_bar_idx = bar_idx
+    try:
+        from rithmic_es_stream import get_live_since_idx_10pt
+        live_idx = get_live_since_idx_10pt()
+        if bar_idx < live_idx:
+            print(f"[sb10] bar #{bar_idx} skipped: stale (live_since={live_idx})", flush=True)
+            return
+    except (ImportError, Exception):
+        pass
+    bars_copy = list(bars)
+    print(f"[sb10] evaluating bar #{bar_idx} ({len(bars_copy)} bars total)", flush=True)
+    Thread(target=_run_sb10_in_thread, args=(bars_copy,), daemon=True).start()
+
+
+def _run_sb10_in_thread(bars: list):
+    """Thread wrapper for SB10 Absorption detection."""
+    with _absorption_thread_lock:
+        try:
+            _run_sb10_absorption(bars)
+        except Exception as e:
+            print(f"[sb10] eval error: {e}", flush=True)
+
+
+def _run_sb10_absorption(bars: list):
+    """Evaluate SB10 Absorption (10-pt bars, LOG-ONLY)."""
+    from app.setup_detector import (
+        evaluate_single_bar_absorption, should_notify_sb10_abs,
+        format_sb10_abs_message,
+    )
+
+    volland_stats = None
+    try:
+        vstat = db_volland_stats()
+        if vstat and vstat.get("stats") and vstat["stats"].get("has_statistics"):
+            volland_stats = vstat["stats"]
+    except Exception as e:
+        print(f"[sb10] volland lookup error: {e}", flush=True)
+
+    from app.setup_detector import _cooldown_sb10_abs
+    result = evaluate_single_bar_absorption(bars, volland_stats, _setup_settings, spx_spot=None,
+                                            cooldown_state=_cooldown_sb10_abs)
+    if result is None:
+        return None
+
+    # Override setup name for 10-pt variant
+    result["setup_name"] = "SB10 Absorption"
+
+    # Block signals in last 5 minutes
+    t_now = now_et().time()
+    if t_now >= dtime(15, 55):
+        print(f"[sb10] BLOCKED: {result['direction'].upper()} at {t_now} — too close to close", flush=True)
+        return None
+
+    print(f"[sb10] SIGNAL: {result['direction'].upper()} "
+          f"ES={result['abs_es_price']:.2f} vol={result['abs_vol_ratio']:.1f}x "
+          f"delta={result['bar_delta']:+d}({result['delta_ratio']:.1f}x) "
+          f"cvd_trend={result['cvd_trend']:+d} svb={result.get('svb')} "
+          f"bar_idx={result['bar_idx']}", flush=True)
+
+    # SPX spot
+    spx_spot = None
+    try:
+        msg = last_run_status.get("msg") or ""
+        parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+        spx_spot = float(parts.get("spot", ""))
+    except Exception:
+        pass
+    if spx_spot:
+        result["spot"] = round(spx_spot, 2)
+
+    # Greek alignment
+    _sb10_charm = None
+    if volland_stats and isinstance(volland_stats, dict):
+        _c = volland_stats.get("aggregatedCharm")
+        if _c is not None:
+            try:
+                _sb10_charm = float(_c)
+            except (ValueError, TypeError):
+                pass
+    result["vanna_all"] = _vanna_cache.get("all")
+    result["vanna_weekly"] = _vanna_cache.get("weekly")
+    result["vanna_monthly"] = _vanna_cache.get("monthly")
+    result["spot_vol_beta"] = result.get("svb")
+    result["greek_alignment"] = _compute_greek_alignment(
+        result.get("direction"), _sb10_charm, _vanna_cache.get("all"),
+        result.get("spot"), None)
+    result["charm_limit_entry"] = None
+
+    # Notification gate
+    fire, reason = should_notify_sb10_abs(result)
+
+    # Log to setup_log
+    rw = {
+        "result": result,
+        "notify": fire,
+        "notify_reason": reason or "cooldown",
+        "message": format_sb10_abs_message(result, alignment=result.get("greek_alignment")),
+    }
+    log_setup(rw)
+
+    # SB10 Absorption: LOG-ONLY — suppress Telegram
+    # if fire:
+    #     send_telegram_setups(rw["message"])
+
+    # Outcome tracking
+    if fire:
+        stop_pts = _setup_settings.get("sba_stop_pts", 8)
+        target_pts = _setup_settings.get("sba_target_pts", 10)
+        es_entry = result.get("abs_es_price", result["spot"])
+        if result["direction"] == "bullish":
+            target_lvl = es_entry + target_pts
+            stop_lvl = es_entry - stop_pts
+        else:
+            target_lvl = es_entry - target_pts
+            stop_lvl = es_entry + stop_pts
+        _setup_open_trades.append({
+            "setup_name": "SB10 Absorption", "direction": result["direction"],
+            "spot": result["spot"], "grade": result["grade"],
+            "target_level": target_lvl, "stop_level": stop_lvl,
+            "initial_stop_level": stop_lvl,
+            "ts": now_et(), "result_data": result,
+            "_seen_high": es_entry, "_seen_low": es_entry,
+            "_es_last_bar_idx": result.get("bar_idx", 0),
+            "max_hold_minutes": None,
+            "_trade_date": now_et().date(),
+            "setup_log_id": _current_setup_log.get("SB10 Absorption"),
+        })
+        print(f"[outcome] tracking SB10 Absorption: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
 
 
 def _es_session_date() -> str:
@@ -5501,11 +5650,12 @@ def on_startup():
     Thread(target=_es_quote_stream_loop, daemon=True).start()
     print("[es-quote] streaming thread started", flush=True)
     # Start Rithmic ES stream (parallel pipeline — skips if RITHMIC_USER not set)
-    from rithmic_es_stream import start_rithmic_stream, set_on_bar_complete
+    from rithmic_es_stream import start_rithmic_stream, set_on_bar_complete, set_on_bar_10_complete
     start_rithmic_stream(engine, send_telegram)
-    # Register absorption detection callback on Rithmic bar completion
+    # Register absorption detection callbacks on Rithmic bar completion
     set_on_bar_complete(_on_rithmic_bar_complete)
-    print("[absorption] registered proactive callback on Rithmic bar completion", flush=True)
+    set_on_bar_10_complete(_on_rithmic_bar_10pt_complete)
+    print("[absorption] registered proactive callbacks on Rithmic bar completion (5pt + 10pt)", flush=True)
     # Initialize auto-trader (SIM ES execution — disabled by default)
     try:
         from app.auto_trader import init as auto_trader_init
@@ -8354,7 +8504,8 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
         ten_pt_level = es_entry + 10 if is_long else es_entry - 10
         initial_stop = es_entry - 8 if is_long else es_entry + 8
 
-        # Get ES range bars for that session date
+        # Get ES range bars for that session date (5-pt for ES/SB, 10-pt for SB10)
+        _rp = 10.0 if entry.get("setup_name") == "SB10 Absorption" else 5.0
         alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
         with engine.begin() as conn:
             bar_rows = conn.execute(text("""
@@ -8362,8 +8513,9 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
                        ts_start, ts_end, status
                 FROM es_range_bars
                 WHERE trade_date = :td AND source = 'rithmic' AND status = 'closed'
+                  AND range_pts = :rp
                 ORDER BY bar_idx ASC
-            """), {"td": alert_date.isoformat()}).mappings().all()
+            """), {"td": alert_date.isoformat(), "rp": _rp}).mappings().all()
 
         if not bar_rows:
             return {"no_data": True}
@@ -8394,7 +8546,7 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
         bars_after = 0
 
         # Trail state — SB Absorption: BE@10, act=20, gap=10. ES Absorption: BE@10, gap=8.
-        _is_sb = entry.get("setup_name") == "SB Absorption"
+        _is_sb = entry.get("setup_name") in ("SB Absorption", "SB10 Absorption")
         _trail_gap = 10 if _is_sb else 8
         _trail_activation = 20 if _is_sb else 10
         trail_active = False
@@ -8543,7 +8695,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         return {}
 
     # ES-based setups: outcome tracking using ES range bars
-    if entry.get("setup_name") in ("ES Absorption", "SB Absorption"):
+    if entry.get("setup_name") in ("ES Absorption", "SB Absorption", "SB10 Absorption"):
         return _calculate_absorption_outcome(entry)
 
     try:
@@ -10841,7 +10993,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="options">Options Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>GEX Velocity</option><option>VIX Compression</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>GEX Velocity</option><option>VIX Compression</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
@@ -14052,7 +14204,7 @@ DASH_HTML_TEMPLATE = """
 
       let html = '';
       filtered.forEach((l, i) => {
-        const isAbs = l.setup_name === 'ES Absorption' || l.setup_name === 'SB Absorption';
+        const isAbs = l.setup_name === 'ES Absorption' || l.setup_name === 'SB Absorption' || l.setup_name === 'SB10 Absorption';
         const isBofa = l.setup_name === 'BofA Scalp';
         const pillColor = _tlPillColors[l.setup_name] || '#888';
         const dir = isAbs ? (l.direction === 'bullish' ? '▲' : '▼') : (l.direction === 'long' ? '▲' : '▼');
@@ -14601,7 +14753,7 @@ DASH_HTML_TEMPLATE = """
           const color = gradeColor[l.grade] || '#888';
           const bell = l.notified ? '&#128276;' : '';
           const isBofa = l.setup_name === 'BofA Scalp';
-          const isAbs = l.setup_name === 'ES Absorption' || l.setup_name === 'SB Absorption';
+          const isAbs = l.setup_name === 'ES Absorption' || l.setup_name === 'SB Absorption' || l.setup_name === 'SB10 Absorption';
           const dir = isAbs ? (l.direction === 'bullish' ? '▲' : '▼') : (l.direction === 'long' ? '▲' : '▼');
           const dirColor = (l.direction === 'long' || l.direction === 'bullish') ? '#22c55e' : '#ef4444';
           const o = l.outcome || {};
@@ -14682,7 +14834,7 @@ DASH_HTML_TEMPLATE = """
 
         // Title
         const isBofa = e.setup_name === 'BofA Scalp';
-        const isAbs = e.setup_name === 'ES Absorption' || e.setup_name === 'SB Absorption';
+        const isAbs = e.setup_name === 'ES Absorption' || e.setup_name === 'SB Absorption' || e.setup_name === 'SB10 Absorption';
         const dir = isAbs ? (e.direction === 'bullish' ? 'BUY' : 'SELL') : (e.direction === 'long' ? 'LONG' : 'SHORT');
         const dirColor = (e.direction === 'long' || e.direction === 'bullish') ? '#22c55e' : '#ef4444';
         const displayPrice = isAbs ? (e.abs_es_price || e.spot)?.toFixed(2) : e.spot?.toFixed(0);

@@ -141,7 +141,7 @@ Append new analysis sections to this file after each review session.
 - Thread safety: `_es_delta_lock` and `_es_quote_lock` protect shared ES state from concurrent access
 - Dashboard auto-refresh: per-tab polling with `Plotly.react()` (no page reload), tab persistence via `sessionStorage`
 - Setup cooldown persistence: saves to `setup_cooldowns` DB table, restored on startup
-- Live outcome tracking: `_setup_open_trades` list tracks open setups, `_check_setup_outcomes(spot)` checks each ~30s cycle for WIN/LOSS/EXPIRED, sends per-trade Telegram. `_compute_setup_levels(r)` extracts target/stop from any setup result dict.
+- Live outcome tracking: `_setup_open_trades` list tracks open setups, `_check_setup_outcomes(spot)` checks each ~30s cycle for WIN/LOSS/EXPIRED, sends per-trade Telegram. `_compute_setup_levels(r)` extracts target/stop from any setup result dict. ES-based setups (ES Absorption, SB Absorption) use `_es_based` flag for consistent ES price space in all checks.
 - EOD summary: `_send_setup_eod_summary()` cron at 16:05 ET — expires remaining open trades, sends daily summary Telegram (trades, wins/losses, net P&L, win rate)
 - Admin password from `ADMIN_PASSWORD` env var (not hardcoded)
 - API endpoints: `/api/series`, `/api/snapshot`, `/api/history`, `/api/volland/*`, `/api/es/delta/*`, `/api/es/delta/rangebars`, `/api/health`, `/api/eval/signals` (Bearer token auth, returns signals+outcomes+es_price)
@@ -192,7 +192,7 @@ Volume-gated price vs CVD divergence on ES 5-pt range bars, with Volland conflue
 
 **Risk Management:** Fixed SL=8pt / T=10pt. Entry at ES price from Rithmic range bars.
 
-**V8 filter (V7+AG + Smart VIX Gate, Analysis #12):** Longs: alignment >= +2 AND (VIX <= 26 OR overvix >= +2). Shorts whitelist: Skew Charm (all), AG Short (all), DD Exhaustion (align!=0). Overvix = VIX - VIX3M; when >= +2 means market overvixed (mean reversion bullish signal, allow longs even at high VIX). VIX/VIX3M fetched from TradeStation every 30s. Backtest: +483 pts improvement over V7+AG, MaxDD 472→50, Sharpe 0.29→0.77.
+**V10 filter (current, Analysis #16):** V9-SC + block GEX-LIS paradigm on SC/DD shorts. Longs: alignment >= +2 AND (VIX <= 22 OR overvix >= +2), SC exempt from VIX gate. Shorts whitelist: Skew Charm (all), AG Short (all), DD Exhaustion (align!=0). **SC/DD shorts blocked when paradigm = GEX-LIS** (24t, 43% WR — LIS acts as support floor). GEX-PURE (81% WR) and GEX-MESSY (83% WR) NOT blocked. Overvix = VIX - VIX3M; when >= +2 means market overvixed. `_passes_live_filter()` accepts `paradigm` param, all 4 callers pass it. Filter history: R1 → V7 → V7+AG → V8 → V9-SC → **V10**.
 
 **Charm S/R Limit Entry (shorts only, added 2026-03-12):** For short setups, uses charm per-strike S/R levels to improve entry price. Queries `volland_exposure_points` for strongest positive charm strike above spot (resistance) and strongest negative below (support). If entry is NOT in the top 30% of the S/R range, places a LIMIT order at `resistance - range × 0.3` instead of MARKET. Backtest: +822 pts improvement, WR 69%→81%, DD halved.
 
@@ -280,18 +280,25 @@ Self-contained module that buys SPXW 0DTE options at ~0.30 delta when Skew Charm
 
 **Safety:** Hardcoded to `sim-api.tradestation.com`. Equities SIM account `SIM2609238M` (separate from futures SIM).
 
-**Config:** `OPTIONS_TRADE_ENABLED` (master switch, default OFF), `OPTIONS_SIM_ACCOUNT`, `OPTIONS_QTY` (default 1), `OPTIONS_TARGET_DELTA` (0.30), `OPTIONS_STOP_LOSS_PCT` (0.40), `OPTIONS_MAX_HOLD_MIN` (20).
+**Config:** `OPTIONS_TRADE_ENABLED` (master switch, default OFF), `OPTIONS_SIM_ACCOUNT`, `OPTIONS_QTY` (default 1), `OPTIONS_TARGET_DELTA` (0.50), `OPTIONS_STRATEGY` ("credit_spread" or "single_leg"), `OPTIONS_SPREAD_WIDTH` (1 or 2, default 2).
 
-**Order flow:** Limit orders only (no Market) to avoid terrible SIM fills. Entry at ask price, exit at bid price. `_get_option_bid()` uses live TS API (`api.tradestation.com`) for quotes since SIM API may not serve marketdata.
+**Two strategies:**
+- **credit_spread** (default, added 2026-03-19): Sells ATM credit spreads. Bullish = bull put spread (sell ATM put + buy lower put). Bearish = bear call spread (sell ATM call + buy higher call). Theta works FOR us. No time exit needed. Two separate orders (SELLTOOPEN + BUYTOOPEN), tracked as single spread in state.
+- **single_leg**: Original behavior — buys call/put. 90-min time exit. Theta works against.
 
-**Risk management:**
-- Stop-loss: `poll_order_status()` checks filled positions each ~30s cycle. If option drops ≥40% from entry, auto-closes.
-- Time exit: If held >20 minutes with no resolution, auto-closes.
-- Both configurable via env vars.
+**Credit spread backtest (Mar 18):** Single-leg lost -$79 on 26 trades (+132 setup pts). Credit spread $2-wide ATM would have made +$587. Key: theta ate -$742 on single-leg; credit spreads collect theta instead.
 
-**Key functions:** `place_trade()`, `close_trade()`, `poll_order_status()`, `_find_strike()`, `_get_option_bid()`, `_check_fills()`.
+**Order flow:** Limit orders only. Entry: short leg at bid (SELLTOOPEN), long leg at ask (BUYTOOPEN). Close: short leg at ask (BUYTOCLOSE), long leg at bid (SELLTOCLOSE). `_get_option_quote()` uses live TS API.
+
+**Key functions:** `place_trade()` dispatches to `_place_credit_spread()` or `_place_single_leg()`. `close_trade()` dispatches to `_close_credit_spread()` or `_close_single_leg()`. `_find_strike_in_rows()`, `_find_exact_strike()` for chain scanning.
+
+**Credit spread state fields:** `strategy`, `short_symbol`, `long_symbol`, `short_strike`, `long_strike`, `spread_width`, `theo_credit`, `theo_debit`, `theo_pnl` (pre-computed at close). Backward-compatible: `symbol` = short_sym, `theo_entry_price` = credit, `entry_price` = net SIM credit.
 
 **DB table:** `options_trade_orders` (setup_log_id PK, JSONB state, crash recovery).
+
+**EOD flatten (added 2026-03-17):** `_options_trade_eod_flatten()` at 15:55 ET closes all open option positions. EOD summary at 16:05 ET also calls `close_trade()` for expired trades. Poll errors are logged (not silently swallowed).
+
+**CRITICAL: TS SIM fills are fake.** SIM returns stale per-strike prices for option exits (e.g., C670 always $1.61, P668 always $7.87). Always use `theo_exit` (from live API `_get_option_bid()`) for real P&L, never `sim_exit`.
 
 ### Eval Trader (`eval_trader.py` — Local E2T Auto-Trader)
 

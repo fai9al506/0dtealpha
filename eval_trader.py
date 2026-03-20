@@ -775,9 +775,9 @@ class ComplianceGate:
                 if "BOFA" in paradigm and "PURE" in paradigm:
                     return False, "DD blocked on BOFA-PURE paradigm (18% WR)"
 
-        # V8 filter (V7+AG + Smart VIX Gate)
-        # Longs: alignment >= +2, block when VIX>26 unless overvixed
-        # Shorts: whitelist SC + DD(align!=0) + AG only
+        # V10 filter (V9-SC + GEX-LIS block)
+        # Longs: alignment >= +2, VIX gate at 22 (SC exempt), overvix override
+        # Shorts: whitelist SC + DD(align!=0) + AG, block GEX-LIS paradigm on SC/DD
         if cfg.get("greek_filter_enabled"):
             alignment = signal.get("greek_alignment", 0)
             _is_long = signal.get("direction", "") in ("long", "bullish")
@@ -785,7 +785,7 @@ class ComplianceGate:
             if _is_long:
                 if alignment < 2:
                     return False, f"Greek filter: long alignment {alignment:+d} < +2"
-                # V9-SC: Skew Charm exempt from VIX gate (82% WR at VIX 22-26)
+                # V10: Skew Charm exempt from VIX gate (82% WR at VIX 22-26)
                 if sname != "Skew Charm":
                     _sig_vix = signal.get("vix")
                     _sig_ov = signal.get("overvix")
@@ -794,7 +794,7 @@ class ComplianceGate:
                         if _ov < 2:
                             return False, f"V9 VIX gate: VIX={_sig_vix:.1f}>22, overvix={_ov:+.1f}<+2"
             else:
-                # V7+AG short whitelist
+                # V10 short whitelist
                 _short_allowed = False
                 if sname == "Skew Charm":
                     _short_allowed = True
@@ -803,7 +803,7 @@ class ComplianceGate:
                 elif sname == "DD Exhaustion" and alignment != 0:
                     _short_allowed = True
                 if not _short_allowed:
-                    return False, f"Greek filter: {sname} short not in V7+AG whitelist (align={alignment:+d})"
+                    return False, f"Greek filter: {sname} short not in V10 whitelist (align={alignment:+d})"
                 # Block GEX-LIS paradigm on SC/DD shorts (43% WR, -57.6 pts — LIS = support floor)
                 _paradigm = signal.get("paradigm") or ""
                 if _paradigm == "GEX-LIS" and sname in ("Skew Charm", "DD Exhaustion"):

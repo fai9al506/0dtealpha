@@ -4458,7 +4458,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
         })
         print(f"[outcome] tracking ES Absorption: target={target_lvl} stop={stop_lvl:.1f}", flush=True)
         # Auto-trade: ES Absorption uses ES price directly
-        # V9 filter (V8 + tighter VIX gate at 22): ES Absorption not in short whitelist
+        # V10 filter: ES Absorption not in short whitelist
         _abs_skip_greek = False
         _abs_align = result.get("greek_alignment", 0)
         _abs_is_long_dir = result["direction"] in ("long", "bullish")
@@ -4601,7 +4601,7 @@ def _run_single_bar_absorption(bars: list):
     }
     log_setup(rw)
 
-    # SB Absorption: LOG-ONLY, not in V9-SC — suppress Telegram
+    # SB Absorption: LOG-ONLY, not in V10 — suppress Telegram
     # if fire:
     #     send_telegram_setups(rw["message"])
 
@@ -9156,7 +9156,7 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
 
 @app.get("/api/setup/filter_analysis")
 def api_setup_filter_analysis(date: str = Query(None, description="Date YYYY-MM-DD, default today ET")):
-    """Analyse V9-SC live filter impact: passed vs blocked trades with full DB data."""
+    """Analyse V10 live filter impact: passed vs blocked trades with full DB data."""
     if not engine:
         return {"error": "no database"}
     try:
@@ -10842,7 +10842,7 @@ DASH_HTML_TEMPLATE = """
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v9">V9-SC (live)</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v10">V10 (live)</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
         </div>
         <div class="tl-stats" id="tlStats"></div>
@@ -13866,11 +13866,27 @@ DASH_HTML_TEMPLATE = """
         if (sn === 'DD Exhaustion' && align !== 0) return true;
         return false;
       }
-      if (strat === 'v9') {
-        // V9-SC (live): VIX gate at 22, SC exempt (82% WR at VIX 22-26)
+      if (strat === 'v10') {
+        // V10 (live): V9-SC + block GEX-LIS paradigm on SC/DD shorts
         if (isLong) {
           if (align < 2) return false;
-          if (sn === 'Skew Charm') return true; // SC exempt from VIX gate
+          if (sn === 'Skew Charm') return true;
+          const vix = l.vix != null ? l.vix : 0;
+          const ov = l.overvix != null ? l.overvix : -99;
+          if (vix > 22 && ov < 2) return false;
+          return true;
+        }
+        if ((sn === 'Skew Charm' || sn === 'DD Exhaustion') && l.paradigm === 'GEX-LIS') return false;
+        if (sn === 'Skew Charm') return true;
+        if (sn === 'AG Short') return true;
+        if (sn === 'DD Exhaustion' && align !== 0) return true;
+        return false;
+      }
+      if (strat === 'v9') {
+        // V9-SC: VIX gate at 22, SC exempt
+        if (isLong) {
+          if (align < 2) return false;
+          if (sn === 'Skew Charm') return true;
           const vix = l.vix != null ? l.vix : 0;
           const ov = l.overvix != null ? l.overvix : -99;
           if (vix > 22 && ov < 2) return false;

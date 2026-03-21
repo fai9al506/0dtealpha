@@ -6865,6 +6865,15 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
         signals, outcomes = [], []
         for r in rows:
             row = dict(r)
+            # V11: filter at API level so all consumers (eval, real) get clean signals
+            if not _passes_live_filter(
+                row["setup_name"], row["direction"],
+                row.get("greek_alignment") or 0,
+                vix=float(row["vix"]) if row.get("vix") else None,
+                overvix=float(row["overvix"]) if row.get("overvix") else None,
+                paradigm=row.get("paradigm"),
+            ):
+                continue
             # Compute target/stop levels
             tgt_lvl, stop_lvl = _compute_setup_levels(row)
             entry = {

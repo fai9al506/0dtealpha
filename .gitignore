@@ -1,3 +1,6 @@
+# Historical data (ThetaData downloads — too large for git)
+data/
+
 # Python
 __pycache__/
 *.py[cod]

@@ -47,7 +47,7 @@ TIER_A = {
 }
 
 # Filters
-MIN_GEX_RATIO = 3.0
+MIN_GEX_RATIO = 2.0
 MIN_SUPPORT_BELOW = 1
 MIN_MAGNETS_ABOVE = 1
 ENTRY_OFFSET_PCT = 1.0  # entry at -GEX minus this %

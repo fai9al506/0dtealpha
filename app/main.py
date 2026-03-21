@@ -5620,6 +5620,13 @@ def start_scheduler():
                 id="setup_eod", coalesce=True, max_instances=1)
     sch.add_job(fetch_economic_calendar, "cron", day_of_week="mon", hour=8, minute=0,
                 id="econ_cal", coalesce=True, max_instances=1)
+    # Stock GEX scanner — every 30 min during market hours (data collection only)
+    try:
+        from app import stock_gex_scanner
+        sch.add_job(stock_gex_scanner.run_scan, "interval",
+                    minutes=30, id="stock_gex_scan", coalesce=True, max_instances=1)
+    except Exception:
+        pass
     sch.start()
     print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min; ES delta save every", SAVE_EVERY_MIN, "min", flush=True)
     return sch
@@ -5674,6 +5681,12 @@ def on_startup():
         real_trader_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[real-trader] init error (non-fatal): {e}", flush=True)
+    # Initialize stock GEX scanner (independent data collection — separate from 0DTE)
+    try:
+        from app.stock_gex_scanner import init as stock_gex_init
+        stock_gex_init(engine, api_get)
+    except Exception as e:
+        print(f"[stock-gex] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)
     try:
         from app.dashboard_v2 import init as dashboard_v2_init
@@ -5848,6 +5861,58 @@ def api_auto_trade_toggle(setup_name: str = Query(...), enabled: bool = Query(..
         if not ok:
             return {"error": f"Unknown setup: {setup_name}"}
         return {"ok": True, "toggles": auto_trader.get_toggles()}
+    except Exception as e:
+        return {"error": str(e)}
+
+# ── Stock GEX Scanner API (independent from 0DTE) ──────────────────
+@app.get("/api/stock-gex/levels")
+def api_stock_gex_levels():
+    """Latest GEX levels for all tracked stocks."""
+    try:
+        from app import stock_gex_scanner
+        return stock_gex_scanner.get_all_levels()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/stock-gex/detail")
+def api_stock_gex_detail(symbol: str = Query(...)):
+    """Full GEX detail for a single stock (includes raw per-strike data)."""
+    try:
+        from app import stock_gex_scanner
+        detail = stock_gex_scanner.get_stock_detail(symbol)
+        if detail is None:
+            return {"error": f"No data for {symbol}"}
+        return detail
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/stock-gex/history")
+def api_stock_gex_history(symbol: str = Query(...), days: int = Query(5), exp_label: str = Query(None)):
+    """Scan history for a stock (for backtesting). Filter by exp_label: weekly or opex."""
+    try:
+        from app import stock_gex_scanner
+        return stock_gex_scanner.get_scan_history(symbol, days, exp_label)
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/stock-gex/status")
+def api_stock_gex_status():
+    """Scanner status: tracked stocks, last scan timestamp."""
+    try:
+        from app import stock_gex_scanner
+        return stock_gex_scanner.get_status()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api/stock-gex/scan")
+def api_stock_gex_trigger_scan():
+    """Manually trigger a GEX scan (async, returns immediately)."""
+    try:
+        from app import stock_gex_scanner
+        import threading
+        t = threading.Thread(target=stock_gex_scanner.run_scan, daemon=True)
+        t.start()
+        return {"status": "scan started"}
     except Exception as e:
         return {"error": str(e)}
 

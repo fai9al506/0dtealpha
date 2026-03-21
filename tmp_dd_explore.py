@@ -1,131 +1,150 @@
-"""
-Step 1: Explore Delta Decay data in the database
-"""
-import json, os, psycopg2
+"""Explore DD per-strike data shape and availability."""
+from sqlalchemy import create_engine, text
+from collections import defaultdict
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
-conn = psycopg2.connect(DATABASE_URL)
-cur = conn.cursor()
+DB_URL = 'postgresql://postgres:JwLVqJOvxdzflxJsCZHrPzcdPUYrmVYY@nozomi.proxy.rlwy.net:55417/railway'
+engine = create_engine(DB_URL)
 
-out = []
-def p(s=""):
-    out.append(str(s))
+with engine.connect() as conn:
+    # 1. Basic stats
+    r = conn.execute(text("""
+        SELECT COUNT(*) as cnt,
+               MIN(ts_utc) as first_ts, MAX(ts_utc) as last_ts,
+               COUNT(DISTINCT ts_utc::date) as n_dates
+        FROM volland_exposure_points
+        WHERE greek = 'deltaDecay'
+    """)).fetchone()
+    print(f"DD per-strike rows: {r.cnt}")
+    print(f"Date range: {r.first_ts} to {r.last_ts}")
+    print(f"Trading days: {r.n_dates}")
 
-# 1. Table schema
-p("=== volland_exposure_points schema ===")
-cur.execute("""
-    SELECT column_name, data_type
-    FROM information_schema.columns
-    WHERE table_name = 'volland_exposure_points'
-    ORDER BY ordinal_position
-""")
-for row in cur.fetchall():
-    p(f"  {row[0]:30} {row[1]}")
+    # 2. expiration_option values
+    r2 = conn.execute(text("""
+        SELECT expiration_option, COUNT(*) as cnt
+        FROM volland_exposure_points
+        WHERE greek = 'deltaDecay'
+        GROUP BY expiration_option
+    """)).fetchall()
+    print(f"\nExpiration options:")
+    for row in r2:
+        print(f"  {row.expiration_option}: {row.cnt} rows")
 
-# 2. Distinct greek types
-p("\n=== Distinct greek types ===")
-cur.execute("SELECT DISTINCT greek FROM volland_exposure_points ORDER BY 1")
-for row in cur.fetchall():
-    p(f"  {row[0]}")
+    # 3. Snapshots per day
+    r3 = conn.execute(text("""
+        SELECT ts_utc::date as d, COUNT(DISTINCT ts_utc) as snaps,
+               COUNT(*) as rows, AVG(current_price::numeric) as avg_spot
+        FROM volland_exposure_points
+        WHERE greek = 'deltaDecay'
+        GROUP BY ts_utc::date
+        ORDER BY d
+    """)).fetchall()
+    print(f"\nSnapshots per day:")
+    print(f"  {'Date':>12} {'Snaps':>6} {'Rows':>7} {'AvgSpot':>8}")
+    for row in r3:
+        print(f"  {str(row.d):>12} {row.snaps:>6} {row.rows:>7} {float(row.avg_spot):>8.1f}")
 
-# 3. DD date range and count
-p("\n=== DD data range ===")
-cur.execute("""
-    SELECT MIN(ts_utc), MAX(ts_utc), COUNT(*), COUNT(DISTINCT ts_utc::date)
-    FROM volland_exposure_points
-    WHERE greek = 'deltaDecay'
-""")
-row = cur.fetchone()
-p(f"  From: {row[0]}  To: {row[1]}  Total rows: {row[2]}  Days: {row[3]}")
+    # 4. Sample snapshot: what does a single DD snapshot look like?
+    r4 = conn.execute(text("""
+        SELECT ts_utc, strike::numeric as strike, value::numeric as val,
+               current_price::numeric as spot
+        FROM volland_exposure_points
+        WHERE greek = 'deltaDecay'
+          AND ts_utc = (SELECT MAX(ts_utc) FROM volland_exposure_points WHERE greek = 'deltaDecay' AND ts_utc::date = '2026-03-19')
+        ORDER BY strike
+    """)).fetchall()
+    print(f"\nSample DD snapshot (latest on Mar 19, {len(r4)} strikes):")
+    if r4:
+        spot = float(r4[0].spot) if r4[0].spot else 0
+        print(f"  Spot: {spot:.1f}")
+        print(f"  {'Strike':>8} {'DD Value':>15} {'Dist':>6} {'Sign':>5}")
+        for row in r4:
+            s = float(row.strike)
+            v = float(row.val)
+            dist = s - spot
+            sign = "+" if v > 0 else "-"
+            # Only show strikes near spot
+            if abs(dist) <= 50:
+                print(f"  {s:>8.0f} {v:>15.0f} {dist:>+6.0f} {sign:>5}")
 
-# 4. DD points per snapshot
-p("\n=== DD points per snapshot (recent) ===")
-cur.execute("""
-    SELECT ts_utc, COUNT(*) as pts, MIN(strike) as min_s, MAX(strike) as max_s,
-           MIN(value) as min_v, MAX(value) as max_v, SUM(value) as total_v,
-           MIN(current_price) as spot
-    FROM volland_exposure_points
-    WHERE greek = 'deltaDecay'
-    GROUP BY ts_utc
-    ORDER BY ts_utc DESC
-    LIMIT 10
-""")
-for row in cur.fetchall():
-    p(f"  ts={row[0]}  pts={row[1]}  strikes={float(row[2]):.0f}-{float(row[3]):.0f}  "
-      f"val={float(row[4]):.0f} to {float(row[5]):.0f}  total={float(row[6]):.0f}  spot={float(row[7]):.1f}")
+    # 5. Compare with charm at same time
+    if r4:
+        ts = r4[0].ts_utc
+        r5 = conn.execute(text("""
+            SELECT strike::numeric as strike, value::numeric as val
+            FROM volland_exposure_points
+            WHERE greek = 'charm'
+              AND (expiration_option IS NULL OR expiration_option = 'TODAY')
+              AND ts_utc BETWEEN :ts - INTERVAL '3 minutes' AND :ts + INTERVAL '3 minutes'
+            ORDER BY strike
+        """), {'ts': ts}).fetchall()
+        print(f"\n  Charm at same time ({len(r5)} strikes):")
+        print(f"  {'Strike':>8} {'Charm':>15} {'DD':>15} {'Same Sign?':>11}")
+        charm_by_strike = {float(r.strike): float(r.val) for r in r5}
+        dd_by_strike = {float(r.strike): float(r.val) for r in r4}
+        for s in sorted(set(charm_by_strike.keys()) & set(dd_by_strike.keys())):
+            if abs(s - spot) <= 30:
+                c = charm_by_strike[s]
+                d = dd_by_strike[s]
+                same = "YES" if (c > 0) == (d > 0) else "NO"
+                print(f"  {s:>8.0f} {c:>15.0f} {d:>15.0f} {same:>11}")
 
-# 5. Sample DD exposure points near spot
-p("\n=== DD values near spot (latest snapshot) ===")
-cur.execute("""
-    WITH latest AS (
-        SELECT MAX(ts_utc) as ts FROM volland_exposure_points WHERE greek = 'deltaDecay'
-    )
-    SELECT e.strike, e.value, e.current_price
-    FROM volland_exposure_points e, latest l
-    WHERE e.ts_utc = l.ts AND e.greek = 'deltaDecay'
-    AND e.strike BETWEEN e.current_price - 50 AND e.current_price + 50
-    ORDER BY e.strike
-""")
-for row in cur.fetchall():
-    p(f"  Strike {float(row[0]):8.0f}  DD={float(row[1]):12.0f}  Spot={float(row[2]):.1f}")
+    # 6. DD value distribution
+    r6 = conn.execute(text("""
+        SELECT
+            percentile_cont(0.25) WITHIN GROUP (ORDER BY ABS(value::numeric)) as p25,
+            percentile_cont(0.50) WITHIN GROUP (ORDER BY ABS(value::numeric)) as p50,
+            percentile_cont(0.75) WITHIN GROUP (ORDER BY ABS(value::numeric)) as p75,
+            percentile_cont(0.95) WITHIN GROUP (ORDER BY ABS(value::numeric)) as p95,
+            MAX(ABS(value::numeric)) as max_val
+        FROM volland_exposure_points
+        WHERE greek = 'deltaDecay'
+    """)).fetchone()
+    print(f"\nDD value distribution (absolute):")
+    print(f"  P25: {float(r6.p25)/1e6:.1f}M")
+    print(f"  P50: {float(r6.p50)/1e6:.1f}M")
+    print(f"  P75: {float(r6.p75)/1e6:.1f}M")
+    print(f"  P95: {float(r6.p95)/1e6:.1f}M")
+    print(f"  Max: {float(r6.max_val)/1e6:.1f}M")
 
-# 6. Volland snapshots - DD in statistics
-p("\n=== DD in volland_snapshots statistics (recent) ===")
-cur.execute("""
-    SELECT ts,
-           payload->'statistics'->>'delta_decay_hedging' as dd_hedge,
-           payload->'statistics'->>'aggregatedDeltaDecay' as dd_raw,
-           payload->'statistics'->>'aggregatedCharm' as charm,
-           payload->'statistics'->>'paradigm' as paradigm,
-           payload->>'current_price' as spot
-    FROM volland_snapshots
-    WHERE payload->'statistics' IS NOT NULL
-      AND payload->'statistics'->>'aggregatedDeltaDecay' IS NOT NULL
-    ORDER BY ts DESC
-    LIMIT 15
-""")
-for row in cur.fetchall():
-    p(f"  ts={row[0]}  DD={row[1]}  raw={row[2]}  charm={row[3]}  para={row[4]}  spot={row[5]}")
+    # 7. Find DD "neutral zone" — where does net DD cross zero?
+    print(f"\n=== DD Neutral Zone Analysis (EOD target) ===")
+    # For several snapshots near EOD (15:00-15:30), find where DD crosses zero
+    r7 = conn.execute(text("""
+        WITH eod_snaps AS (
+            SELECT DISTINCT ON (ts_utc::date) ts_utc, ts_utc::date as d
+            FROM volland_exposure_points
+            WHERE greek = 'deltaDecay'
+              AND EXTRACT(HOUR FROM ts_utc AT TIME ZONE 'America/New_York') >= 15
+              AND EXTRACT(HOUR FROM ts_utc AT TIME ZONE 'America/New_York') < 16
+            ORDER BY ts_utc::date, ts_utc DESC
+        )
+        SELECT e.d, e.ts_utc, v.strike::numeric as strike, v.value::numeric as val,
+               v.current_price::numeric as spot
+        FROM eod_snaps e
+        JOIN volland_exposure_points v ON v.ts_utc = e.ts_utc AND v.greek = 'deltaDecay'
+        ORDER BY e.d, v.strike::numeric
+    """)).fetchall()
 
-# 7. How many snapshots have DD data?
-p("\n=== Snapshot count with DD data ===")
-cur.execute("""
-    SELECT COUNT(*), COUNT(DISTINCT ts::date)
-    FROM volland_snapshots
-    WHERE payload->'statistics'->>'aggregatedDeltaDecay' IS NOT NULL
-""")
-row = cur.fetchone()
-p(f"  Snapshots with DD: {row[0]}  Days: {row[1]}")
+    # Group by date, find zero-crossing strike
+    by_date = defaultdict(list)
+    for r in r7:
+        by_date[str(r.d)].append((float(r.strike), float(r.val), float(r.spot) if r.spot else 0))
 
-# 8. DD data alongside spot price changes
-p("\n=== DD value evolution (first 3 snapshots per day, last 5 days) ===")
-cur.execute("""
-    WITH ranked AS (
-        SELECT ts, ts::date as trade_date,
-               payload->'statistics'->>'aggregatedDeltaDecay' as dd_raw,
-               payload->'statistics'->>'aggregatedCharm' as charm,
-               payload->'statistics'->>'paradigm' as paradigm,
-               payload->>'current_price' as spot,
-               ROW_NUMBER() OVER (PARTITION BY ts::date ORDER BY ts) as rn
-        FROM volland_snapshots
-        WHERE payload->'statistics'->>'aggregatedDeltaDecay' IS NOT NULL
-    )
-    SELECT trade_date, ts, dd_raw, charm, paradigm, spot
-    FROM ranked
-    WHERE rn <= 3
-    ORDER BY trade_date DESC, ts
-    LIMIT 30
-""")
-cur_date = None
-for row in cur.fetchall():
-    if row[0] != cur_date:
-        cur_date = row[0]
-        p(f"\n  --- {cur_date} ---")
-    p(f"    {row[1]}  DD={row[2]}  Charm={row[3]}  Para={row[4]}  Spot={row[5]}")
-
-cur.close()
-conn.close()
-
-with open("tmp_dd_explore_output.txt", "w") as f:
-    f.write("\n".join(out))
-print(f"Done. {len(out)} lines -> tmp_dd_explore_output.txt")
+    print(f"\n  {'Date':>12} {'Spot':>8} {'DD Neutral':>11} {'Dist':>6}")
+    for d in sorted(by_date.keys()):
+        strikes = by_date[d]
+        spot = strikes[0][2]
+        # Find where DD crosses zero (sign change between adjacent strikes)
+        neutral = None
+        for i in range(len(strikes)-1):
+            s1, v1, _ = strikes[i]
+            s2, v2, _ = strikes[i+1]
+            if v1 * v2 < 0:  # sign change
+                # Interpolate
+                frac = abs(v1) / (abs(v1) + abs(v2))
+                neutral = s1 + frac * (s2 - s1)
+                break
+        if neutral:
+            print(f"  {d:>12} {spot:>8.1f} {neutral:>11.1f} {neutral-spot:>+6.1f}")
+        else:
+            print(f"  {d:>12} {spot:>8.1f} {'---':>11} {'---':>6}")

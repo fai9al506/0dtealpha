@@ -1224,6 +1224,38 @@ class PositionTracker:
                         except Exception:
                             pass
 
+                    # Check if pending_limit entry is stale (>30 min old → expired)
+                    # Can't cancel broker order here (bridge not connected yet),
+                    # so save the entry_oid for cancellation after bridge.connect()
+                    if pos.get("pending_limit"):
+                        is_stale_limit = False
+                        placed_at = pos.get("limit_placed_at", "")
+                        if placed_at:
+                            try:
+                                placed_dt = datetime.fromisoformat(placed_at)
+                                elapsed = (datetime.now(CT) - placed_dt).total_seconds()
+                                if elapsed > self._LIMIT_ENTRY_TIMEOUT_S:
+                                    log.warning(f"STALE PENDING LIMIT from {placed_at}: "
+                                                f"{pos['setup_name']} {pos['direction']} "
+                                                f"limit={pos.get('limit_entry_price', '?')}")
+                                    log.warning(f"  Elapsed {elapsed/60:.0f}min > "
+                                                f"{self._LIMIT_ENTRY_TIMEOUT_S/60:.0f}min — expired")
+                                    is_stale_limit = True
+                            except Exception as e:
+                                log.warning(f"  pending_limit date parse failed: {e}")
+                                is_stale_limit = True
+                        else:
+                            log.warning(f"  pending_limit has no limit_placed_at — treating as stale")
+                            is_stale_limit = True
+                        if is_stale_limit:
+                            # Save entry_oid so startup code can cancel it after bridge connects
+                            self._stale_pending_cancel_oid = pos.get("entry_oid")
+                            log.warning(f"  Will cancel broker order {self._stale_pending_cancel_oid} "
+                                        f"after bridge connects")
+                            POSITION_FILE.write_text("{}")
+                            self._stale_flatten = False
+                            return
+
                     self.position = pos
                     self.compliance.has_open_position = True
                     tgt = pos.get('target_price')
@@ -1234,6 +1266,8 @@ class PositionTracker:
             except Exception:
                 pass
         self._stale_flatten = False
+        if not hasattr(self, '_stale_pending_cancel_oid'):
+            self._stale_pending_cancel_oid = None
 
     def _save(self):
         if self.position:
@@ -1865,15 +1899,15 @@ class PositionTracker:
                     elapsed = (datetime.now(CT) - placed_dt).total_seconds()
                     if elapsed > self._LIMIT_ENTRY_TIMEOUT_S:
                         self.nt8.cancel(entry_oid)
+                        limit_px = self.position.get('limit_entry_price', '?')
                         log.info(f"NT8: LIMIT TIMEOUT — cancelled {entry_oid} after {elapsed/60:.0f}min")
-                        log.info(f"  [CHARM S/R] {self.position.get('limit_entry_price', 0):.2f} "
-                                 f"not reached — trade skipped")
+                        log.info(f"  [CHARM S/R] {limit_px} not reached — trade skipped")
                         self.position = None
                         self.compliance.has_open_position = False
                         self._save()
                         return
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as e:
+                    log.warning(f"  pending_limit timeout check failed: {e}")
             return  # Still waiting for fill, skip normal fill checks
 
         # Check if entry was rejected
@@ -2153,6 +2187,13 @@ def main():
     if getattr(tracker, '_stale_flatten', False):
         tracker.flatten("STALE_OVERNIGHT")
         tracker._stale_flatten = False
+
+    # Cancel orphaned pending limit order from previous session
+    stale_oid = getattr(tracker, '_stale_pending_cancel_oid', None)
+    if stale_oid:
+        log.warning(f"Cancelling orphaned limit order: {stale_oid}")
+        nt8.cancel(stale_oid)
+        tracker._stale_pending_cancel_oid = None
 
     # ── Startup reconciliation: verify restored position is still open ──
     if tracker.is_open:

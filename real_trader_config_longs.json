@@ -1,0 +1,35 @@
+{
+  "enabled": false,
+  "account_id": "210VYX65",
+  "direction": "long",
+
+  "ts_client_id": "",
+  "ts_client_secret": "",
+  "ts_refresh_token": "",
+
+  "railway_api_url": "https://0dtealpha.com",
+  "eval_api_key": "",
+
+  "telegram_bot_token": "",
+  "telegram_chat_id": "",
+
+  "mes_symbol": "auto",
+
+  "qty_per_trade": 1,
+  "max_concurrent": 2,
+
+  "stop_pts": 14,
+  "target_pts": 10,
+  "trail_be_trigger": 10,
+  "trail_activation": 10,
+  "trail_gap": 8,
+
+  "daily_loss_limit": 300,
+
+  "market_open_ct": "08:30",
+  "no_new_trades_after_ct": "15:20",
+  "flatten_time_ct": "15:50",
+
+  "max_signal_age_s": 120,
+  "poll_interval_s": 2
+}

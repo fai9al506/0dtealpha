@@ -1,0 +1,12 @@
+{
+  "daily_pnl": 0.0,
+  "total_pnl": -658.6799999999998,
+  "trades_today": 0,
+  "losses_today": 0,
+  "daily_commissions": 0.0,
+  "trade_days": [
+    "2026-03-19"
+  ],
+  "last_reset_date": "2026-03-20",
+  "peak_balance": 50000
+}

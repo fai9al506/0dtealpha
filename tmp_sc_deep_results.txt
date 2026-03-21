@@ -1,0 +1,416 @@
+Total SC trades: 167
+
+Fetching Volland data for each trade...
+Enriched 167 trades
+  With volland snapshot: 167
+  With exposure points: 167
+
+======================================================================
+ANALYSIS 1: Setup Log Fields -- Wins vs Losses
+======================================================================
+
+  Greek Alignment:
+    WIN  (n=110): avg=      1.17  med=      2.00
+    LOSS (n= 33): avg=      0.97  med=      0.00
+    DIFF:      +0.20
+
+  VIX:
+    WIN  (n=110): avg=     24.34  med=     24.37
+    LOSS (n= 33): avg=     25.47  med=     25.61
+    DIFF:      -1.13
+
+  Score (total):
+    WIN  (n=110): avg=     52.98  med=     55.00
+    LOSS (n= 33): avg=     54.82  med=     53.00
+    DIFF:      -1.84
+
+  Spot Vol Beta: ***
+    WIN  (n=110): avg=     -0.03  med=     -0.29
+    LOSS (n= 32): avg=     -0.33  med=     -0.40
+    DIFF:      +0.31
+
+  Vanna All:
+    WIN  (n=110): avg=5453294334.68  med=5703630488.59
+    LOSS (n= 33): avg=6018800530.83  med=6420526181.11
+    DIFF: -565506196.15
+
+  Support Score (Skew magnitude, 0-30):
+    WIN  (n=110): avg=     19.27  med=     20.00
+    LOSS (n= 33): avg=     18.33  med=     15.00
+    DIFF:      +0.94
+
+  Upside Score (Charm strength, 0-25):
+    WIN  (n=110): avg=     10.21  med=      8.00
+    LOSS (n= 33): avg=     11.61  med=      8.00
+    DIFF:      -1.40
+
+  Floor Cluster Score (Time-of-day, 0-15):
+    WIN  (n=110): avg=     10.38  med=     12.00
+    LOSS (n= 33): avg=     10.70  med=     12.00
+    DIFF:      -0.32
+
+  Target Cluster Score (Paradigm, 0-15):
+    WIN  (n=110): avg=      8.85  med=     10.00
+    LOSS (n= 33): avg=      8.48  med=     10.00
+    DIFF:      +0.36
+
+  RR Score (Skew level, 0-15):
+    WIN  (n=110): avg=      8.77  med=      5.00
+    LOSS (n= 33): avg=      9.24  med=     10.00
+    DIFF:      -0.47
+
+======================================================================
+ANALYSIS 2: Volland Snapshot Data -- Wins vs Losses
+======================================================================
+
+  DD Hedging Numeric ($):
+    WIN  (n=110): avg=237641325.09  med=389769755.50
+    LOSS (n= 33): avg=211890955.52  med=786346671.00
+    DIFF: +25750369.58
+
+  Aggregated Charm:
+    WIN  (n=110): avg=-4069954.55  med=4383643.50
+    LOSS (n= 33): avg=-6753388.21  med=-2558615.00
+    DIFF: +2683433.67
+
+  SVB Correlation: ***
+    WIN  (n=110): avg=     -0.02  med=     -0.28
+    LOSS (n= 32): avg=     -0.36  med=     -0.40
+    DIFF:      +0.34
+
+======================================================================
+ANALYSIS 3: Paradigm Context
+======================================================================
+
+  Paradigm                  | Total |  Wins |    WR% |      PnL
+  --------------------------+-------+-------+--------+---------
+  BOFA-PURE                 |    66 |    40 |  60.6% |   +106.2
+  BofA-LIS                  |    20 |    16 |  80.0% |   +103.4
+  SIDIAL-MESSY              |    11 |    10 |  90.9% |   +101.2
+  SIDIAL-EXTREME            |     8 |     7 |  87.5% |    +74.0
+  GEX-PURE                  |     9 |     8 |  88.9% |    +53.4
+  GEX-TARGET                |    10 |     5 |  50.0% |    +42.3
+  AG-PURE                   |    12 |     8 |  66.7% |    +40.0
+  GEX-MESSY                 |     1 |     1 | 100.0% |    +10.8
+  AG-TARGET                 |     3 |     2 |  66.7% |     -1.0
+  BOFA-MESSY                |     1 |     0 |   0.0% |    -20.0
+  GEX-LIS                   |    11 |     5 |  45.5% |    -38.9
+  AG-LIS                    |    15 |     8 |  53.3% |    -42.8
+
+  Volland real-time paradigm:
+
+  Vol Paradigm              | Total |  Wins |    WR% |      PnL
+  --------------------------+-------+-------+--------+---------
+  BofA-LIS                  |    20 |    16 |  80.0% |   +103.4
+  BOFA-PURE                 |    66 |    40 |  60.6% |    +99.2
+  SIDIAL-MESSY              |    13 |    11 |  84.6% |    +89.8
+  SIDIAL-EXTREME            |     8 |     7 |  87.5% |    +74.0
+  AG-PURE                   |    12 |     8 |  66.7% |    +40.0
+  GEX-TARGET                |     9 |     4 |  44.4% |    +33.7
+  GEX-PURE                  |    10 |     8 |  80.0% |    +33.4
+  AG-TARGET                 |     2 |     2 | 100.0% |    +19.0
+  GEX-MESSY                 |     1 |     1 | 100.0% |    +10.8
+  GEX-LIS                   |    11 |     6 |  54.5% |     -5.5
+  BOFA-MESSY                |     1 |     0 |   0.0% |    -20.0
+  AG-LIS                    |    14 |     7 |  50.0% |    -49.2
+
+======================================================================
+ANALYSIS 4: Per-Strike Exposure Near Spot
+======================================================================
+
+  charm net near spot (15pts): ***
+    WIN  (n= 85): avg=-8349706.67  med=  -6369.64
+    LOSS (n= 27): avg=10172259.38  med= 521914.09
+    DIFF: -18521966.04
+
+  gamma net near spot (15pts):
+    WIN  (n=110): avg=-173719450.09  med=-56778045.70
+    LOSS (n= 33): avg=-214513268.08  med=-110084276.93
+    DIFF: +40793817.99
+
+  deltaDecay net near spot (15pts): ***
+    WIN  (n= 79): avg=-154245076.16  med=-307971233.14
+    LOSS (n= 24): avg=346808023.12  med=248186673.51
+    DIFF: -501053099.28
+
+======================================================================
+ANALYSIS 5: Charm Direction Alignment
+======================================================================
+
+  === LONG ===
+    Charm ALIGNED: 89 trades, 60W/16L (67% WR), +239.5 pts
+    Charm AGAINST: 1 trades, 1W/0L (100% WR), +11.6 pts
+
+  === SHORT ===
+    Charm ALIGNED: 75 trades, 47W/17L (63% WR), +139.1 pts
+    Charm AGAINST: 2 trades, 2W/0L (100% WR), +38.4 pts
+
+======================================================================
+ANALYSIS 6: Direction + Time-of-Day Breakdown
+======================================================================
+
+  === LONG ===
+    Hour | Total |  Wins |  Loss |    WR% |      PnL
+  -------+-------+-------+-------+--------+---------
+      9h |     8 |     5 |     3 |  62.5% |     +3.7
+     10h |    13 |    12 |     1 |  92.3% |   +165.2
+     11h |    12 |     8 |     3 |  66.7% |     -6.7
+     12h |    14 |    12 |     2 |  85.7% |    +59.2
+     13h |    12 |     8 |     3 |  66.7% |     +6.6
+     14h |    15 |     8 |     3 |  53.3% |    -30.1
+     15h |    16 |     8 |     1 |  50.0% |    +53.2
+
+  === SHORT ===
+    Hour | Total |  Wins |  Loss |    WR% |      PnL
+  -------+-------+-------+-------+--------+---------
+      9h |     6 |     6 |     0 | 100.0% |    +59.2
+     10h |    14 |    11 |     3 |  78.6% |    +71.2
+     11h |    10 |     5 |     4 |  50.0% |    -28.6
+     12h |    10 |     6 |     3 |  60.0% |    +16.8
+     13h |    13 |     9 |     2 |  69.2% |    +62.5
+     14h |    13 |     9 |     3 |  69.2% |    +25.3
+     15h |    11 |     3 |     2 |  27.3% |    -29.0
+
+======================================================================
+ANALYSIS 7: Grade Breakdown
+======================================================================
+
+  Grade    | Total |  Wins |  Loss |  Exp |    WR% |      PnL |  AvgPnL
+  ---------+-------+-------+-------+------+--------+----------+--------
+  A+       |     1 |     0 |     0 |    1 |   0.0% |    -15.2 |  -15.20
+  A        |    23 |     0 |     0 |    7 |   0.0% |    -20.0 |   -0.87
+  A-Entry  |    49 |     0 |     0 |   11 |   0.0% |   +112.1 |   +2.29
+  B        |    66 |     0 |     0 |    5 |   0.0% |   +244.1 |   +3.70
+  C        |    19 |     0 |     0 |    0 |   0.0% |    +69.9 |   +3.68
+  LOG      |     9 |     0 |     0 |    0 |   0.0% |    +37.7 |   +4.19
+
+======================================================================
+ANALYSIS 8: VIX Buckets
+======================================================================
+
+  VIX Range    | Total |  Wins |  Loss |    WR% |      PnL |  AvgPnL
+  -------------+-------+-------+-------+--------+----------+--------
+   0-21      |    14 |    10 |     0 |  71.4% |    +85.7 |   +6.12
+  21-23      |    39 |    27 |     3 |  69.2% |   +201.8 |   +5.17
+  23-25      |    49 |    32 |    11 |  65.3% |   +119.2 |   +2.43
+  25-27      |    42 |    28 |    10 |  66.7% |    +34.1 |   +0.81
+  27-30      |    21 |    11 |     9 |  52.4% |    -33.8 |   -1.61
+  30-50      |     2 |     2 |     0 | 100.0% |    +21.6 |  +10.80
+
+  VIX Buckets - LONG only:
+    21-23:  21 trades, 14W/0L (67% WR), +83.5 pts
+    23-25:  28 trades, 20W/5L (71% WR), +124.9 pts
+    25-27:  27 trades, 18W/7L (67% WR), -10.3 pts
+    27-30:  12 trades, 7W/4L (58% WR), +31.4 pts
+    30-50:   2 trades, 2W/0L (100% WR), +21.6 pts
+
+  VIX Buckets - SHORT only:
+     0-21:  14 trades, 10W/0L (71% WR), +85.7 pts
+    21-23:  18 trades, 13W/3L (72% WR), +118.3 pts
+    23-25:  21 trades, 12W/6L (57% WR), -5.8 pts
+    25-27:  15 trades, 10W/3L (67% WR), +44.4 pts
+    27-30:   9 trades, 4W/5L (44% WR), -65.2 pts
+
+======================================================================
+ANALYSIS 9: LIS Position
+======================================================================
+
+  === LONG ===
+
+  === SHORT ===
+
+======================================================================
+ANALYSIS 10: Daily Performance (Loss Clustering)
+======================================================================
+
+  Date         | Total |   W |   L |   E |    WR% |      PnL |   VIX
+  -------------+-------+-----+-----+-----+--------+----------+------
+  2026-03-02   |    10 |   8 |   2 |   0 |  80.0% |    +48.5 |  21.1
+  2026-03-03   |    13 |   9 |   1 |   3 |  69.2% |   +100.4 |  24.4
+  2026-03-04   |    16 |  11 |   0 |   5 |  68.8% |   +100.0 |  21.1
+  2026-03-05   |    15 |  12 |   2 |   1 |  80.0% |    +93.9 |  24.0
+  2026-03-06   |    11 |  10 |   1 |   0 |  90.9% |   +103.2 |  26.7
+  2026-03-09   |    13 |   6 |   7 |   0 |  46.2% |    -57.7 |  28.0 *** BAD
+  2026-03-10   |    18 |  14 |   3 |   1 |  77.8% |   +106.0 |  23.8
+  2026-03-11   |    15 |   8 |   3 |   4 |  53.3% |     +1.2 |  24.9
+  2026-03-12   |    12 |   6 |   5 |   1 |  50.0% |    -72.1 |  26.2 *** BAD
+  2026-03-13   |    14 |   8 |   5 |   1 |  57.1% |    -48.8 |  26.8 *** BAD
+  2026-03-16   |    16 |  11 |   4 |   1 |  68.8% |    +32.0 |  24.0
+  2026-03-17   |    14 |   7 |   0 |   7 |  50.0% |    +22.0 |  22.5
+
+======================================================================
+ANALYSIS 11: DD Hedging Direction Alignment
+======================================================================
+
+  === LONG ===
+    DD ALIGNED: 22 trades, 19W/2L (86% WR), +155.2 pts
+    DD NEUTRAL: 6 trades, 3W/2L (50% WR), +8.3 pts
+    DD AGAINST: 62 trades, 39W/12L (63% WR), +87.6 pts
+
+  === SHORT ===
+    DD ALIGNED: 8 trades, 5W/0L (62% WR), +78.8 pts
+    DD NEUTRAL: 5 trades, 2W/1L (40% WR), -13.4 pts
+    DD AGAINST: 64 trades, 42W/16L (66% WR), +112.0 pts
+
+======================================================================
+ANALYSIS 12: Filter Combinations Testing
+======================================================================
+
+  F1: VIX < 25:
+    PASS:  102 trades, 69W/14L (68% WR), +406.7 pts
+    BLOCK:  65 trades, 41W/19L (63% WR), +21.9 pts
+    Effect: blocking removes +21.9 pts -> new total = +406.7 (-21.9 vs baseline)
+
+  F2: VIX < 27:
+    PASS:  144 trades, 97W/24L (67% WR), +440.8 pts
+    BLOCK:  23 trades, 13W/9L (57% WR), -12.2 pts
+    Effect: blocking removes -12.2 pts -> new total = +440.8 (+12.2 vs baseline)
+
+  F3: Grade >= B (exclude C, LOG):
+    PASS:  139 trades, 89W/26L (64% WR), +320.9 pts
+    BLOCK:  28 trades, 21W/7L (75% WR), +107.6 pts
+    Effect: blocking removes +107.6 pts -> new total = +320.9 (-107.6 vs baseline)
+
+  F4: Grade >= A-Entry:
+    PASS:   73 trades, 40W/14L (55% WR), +76.8 pts
+    BLOCK:  94 trades, 70W/19L (74% WR), +351.7 pts
+    Effect: blocking removes +351.7 pts -> new total = +76.8 (-351.7 vs baseline)
+
+  F5: Only before 14:00:
+    PASS:  112 trades, 82W/24L (73% WR), +409.1 pts
+    BLOCK:  55 trades, 28W/9L (51% WR), +19.5 pts
+    Effect: blocking removes +19.5 pts -> new total = +409.1 (-19.5 vs baseline)
+
+  F6: Only before 15:00:
+    PASS:  140 trades, 99W/30L (71% WR), +404.4 pts
+    BLOCK:  27 trades, 11W/3L (41% WR), +24.2 pts
+    Effect: blocking removes +24.2 pts -> new total = +404.4 (-24.2 vs baseline)
+
+  F7: Score >= 50:
+    PASS:  115 trades, 69W/25L (60% WR), +147.5 pts
+    BLOCK:  52 trades, 41W/8L (79% WR), +281.0 pts
+    Effect: blocking removes +281.0 pts -> new total = +147.5 (-281.0 vs baseline)
+
+  F8: Score >= 40:
+    PASS:  147 trades, 94W/29L (64% WR), +328.4 pts
+    BLOCK:  20 trades, 16W/4L (80% WR), +100.2 pts
+    Effect: blocking removes +100.2 pts -> new total = +328.4 (-100.2 vs baseline)
+
+  F9: Charm aligned with direction:
+    PASS:  164 trades, 107W/33L (65% WR), +378.6 pts
+    BLOCK:   3 trades, 3W/0L (100% WR), +50.0 pts
+    Effect: blocking removes +50.0 pts -> new total = +378.6 (-50.0 vs baseline)
+
+  F10: DD aligned or neutral (not against):
+    PASS:   41 trades, 29W/5L (71% WR), +229.0 pts
+    BLOCK: 126 trades, 81W/28L (64% WR), +199.6 pts
+    Effect: blocking removes +199.6 pts -> new total = +229.0 (-199.6 vs baseline)
+
+  F11: VIX < 25 + Grade >= B:
+    PASS:   77 trades, 49W/9L (64% WR), +270.7 pts
+    BLOCK:  90 trades, 61W/24L (68% WR), +157.9 pts
+    Effect: blocking removes +157.9 pts -> new total = +270.7 (-157.9 vs baseline)
+
+  F12: Alignment >= 1 (abs):
+    PASS:  159 trades, 105W/31L (66% WR), +415.8 pts
+    BLOCK:   8 trades, 5W/2L (62% WR), +12.8 pts
+    Effect: blocking removes +12.8 pts -> new total = +415.8 (-12.8 vs baseline)
+
+  F13: Skip grade C:
+    PASS:  148 trades, 96W/28L (65% WR), +358.6 pts
+    BLOCK:  19 trades, 14W/5L (74% WR), +69.9 pts
+    Effect: blocking removes +69.9 pts -> new total = +358.6 (-69.9 vs baseline)
+
+  F14: Skip grade C + LOG:
+    PASS:  139 trades, 89W/26L (64% WR), +320.9 pts
+    BLOCK:  28 trades, 21W/7L (75% WR), +107.6 pts
+    Effect: blocking removes +107.6 pts -> new total = +320.9 (-107.6 vs baseline)
+
+  F15: Exclude VIX 25-28 longs:
+    PASS:  129 trades, 86W/22L (67% WR), +423.9 pts
+    BLOCK:  38 trades, 24W/11L (63% WR), +4.7 pts
+    Effect: blocking removes +4.7 pts -> new total = +423.9 (-4.7 vs baseline)
+
+  F16: Exclude VIX > 25 longs only:
+    PASS:  127 trades, 84W/22L (66% WR), +397.5 pts
+    BLOCK:  40 trades, 26W/11L (65% WR), +31.1 pts
+    Effect: blocking removes +31.1 pts -> new total = +397.5 (-31.1 vs baseline)
+
+  F17: Exclude VIX > 26 longs only:
+    PASS:  139 trades, 93W/24L (67% WR), +432.8 pts
+    BLOCK:  28 trades, 17W/9L (61% WR), -4.2 pts
+    Effect: blocking removes -4.2 pts -> new total = +432.8 (+4.2 vs baseline)
+
+  F18: Exclude after 15:00:
+    PASS:  140 trades, 99W/30L (71% WR), +404.4 pts
+    BLOCK:  27 trades, 11W/3L (41% WR), +24.2 pts
+    Effect: blocking removes +24.2 pts -> new total = +404.4 (-24.2 vs baseline)
+
+  F20: Upside Score >= 10 (strong charm):
+    PASS:   78 trades, 47W/14L (60% WR), +113.1 pts
+    BLOCK:  89 trades, 63W/19L (71% WR), +315.5 pts
+    Effect: blocking removes +315.5 pts -> new total = +113.1 (-315.5 vs baseline)
+
+  F21: VIX<25 + no C/LOG + charm aligned:
+    PASS:   75 trades, 47W/9L (63% WR), +232.3 pts
+    BLOCK:  92 trades, 63W/24L (68% WR), +196.3 pts
+    Effect: blocking removes +196.3 pts -> new total = +232.3 (-196.3 vs baseline)
+
+  F22: No C/LOG + no VIX>25 longs:
+    PASS:  101 trades, 63W/17L (62% WR), +249.9 pts
+    BLOCK:  66 trades, 47W/16L (71% WR), +178.7 pts
+    Effect: blocking removes +178.7 pts -> new total = +249.9 (-178.7 vs baseline)
+
+  F23: No C/LOG + no VIX>26 longs:
+    PASS:  113 trades, 72W/19L (64% WR), +285.2 pts
+    BLOCK:  54 trades, 38W/14L (70% WR), +143.4 pts
+    Effect: blocking removes +143.4 pts -> new total = +285.2 (-143.4 vs baseline)
+
+======================================================================
+ANALYSIS 13: Time-to-Resolution
+======================================================================
+
+  Elapsed Minutes:
+    WIN  (n=110): avg=     40.85  med=     31.00
+    LOSS (n= 33): avg=     44.33  med=     37.00
+    DIFF:      -3.48
+
+======================================================================
+ANALYSIS 14: SVB Correlation Breakdown
+======================================================================
+
+  === LONG ===
+    SVB [-1.0, -0.7):   9 trades, 3W/1L (33% WR), +9.8 pts
+    SVB [-0.7, -0.3):  13 trades, 7W/3L (54% WR), -39.3 pts
+    SVB [-0.3, +0.0):   5 trades, 4W/0L (80% WR), +37.2 pts
+    SVB [+0.0, +0.3):   3 trades, 1W/2L (33% WR), -28.4 pts
+    SVB [+0.3, +0.7):   4 trades, 3W/1L (75% WR), +9.2 pts
+    SVB [+0.7, +1.0):   9 trades, 5W/3L (56% WR), -20.3 pts
+
+  === SHORT ===
+    SVB [-1.0, -0.7):   4 trades, 3W/0L (75% WR), +40.9 pts
+    SVB [-0.7, -0.3):   4 trades, 4W/0L (100% WR), +38.5 pts
+    SVB [-0.3, +0.0):   4 trades, 2W/0L (50% WR), -0.6 pts
+    SVB [+0.0, +0.3):   2 trades, 1W/1L (50% WR), -10.9 pts
+    SVB [+0.3, +0.7):   3 trades, 2W/0L (67% WR), +22.3 pts
+    SVB [+0.7, +1.0):   2 trades, 2W/0L (100% WR), +26.9 pts
+
+======================================================================
+ANALYSIS 15: Per-Strike Charm Support/Resistance Quality
+======================================================================
+
+  === LONG ===
+    Charm S/R Quality (higher = more supportive):
+      WIN:  avg=24129512.2  med=20877218.5  n=48
+      LOSS: avg=56697077.5  med=61940149.1  n=13
+      DIFF: -32567565.2
+
+  === SHORT ===
+    Charm S/R Quality (higher = more supportive):
+      WIN:  avg=7145838.2  med=1021630.6  n=37
+      LOSS: avg=-428811.5  med=-4288974.3  n=14
+      DIFF: +7574649.7
+
+======================================================================
+DONE
+======================================================================

@@ -100,7 +100,7 @@ This file scrapes a third-party website using Playwright with carefully tuned:
 
 ## Repo Structure
 
-- `app/` — production code (main.py, setup_detector.py, auto_trader.py) — **this is the main codebase**
+- `app/` — production code (main.py, setup_detector.py, auto_trader.py, stock_gex_scanner.py) — **this is the main codebase**
 - `eval_trader.py` — local E2T auto-trader (polls Railway API → OIF → NT8 → MES). Runs on user's PC, not Railway.
 - `volland_worker_v2.py` — **ACTIVE** Playwright scraper (see warning above)
 - `volland_worker.py` — **LEGACY/SUSPENDED** v1 scraper (do NOT run)
@@ -341,6 +341,33 @@ Completely isolated from SPX — separate table, globals, scheduler job, lock.
 - **NOT used by:** setup detection, auto-trader, eval trader, pipeline health — analysis/portal only
 - **Rollback:** `stable-20260310-spy-before-push` tag
 
+### Stock GEX Scanner (`app/stock_gex_scanner.py`) — added 2026-03-21
+
+Completely independent from 0DTE SPX pipeline. **Data collection only** — no alerts, no signals, no Telegram. Scans ~23 stocks every 30 min during market hours, saves GEX + price to DB for future backtesting.
+
+**Data collected per scan:**
+- Current spot price for each stock
+- Full options chain → GEX per strike (gamma × OI × 100)
+- Key levels: -GEX support, +GEX magnets, strongest positive/negative
+- Two expirations per stock: **weekly** (this week's Friday) and **opex** (nearest 3rd Friday / monthly)
+
+**Isolation:** Zero imports from main.py/setup_detector.py. Receives `engine`, `api_get` via `init()`. Own DB table, own scheduler job, own state.
+
+**Stock list (23):** AAPL, MSFT, GOOGL, META, NVDA, AMD, QCOM, AMZN, SHOP, NFLX, PYPL, BA, AVGO, SMCI, TSLA, COST, LULU, RBLX, ROKU, SNOW, BABA, ENPH, JNJ
+
+**Scheduler:** `run_scan()` interval every 30 min. Market hours guard (9:30-16:00 ET). Batch quotes (1 API call for all stocks), then chain fetch per stock per expiration. Expirations cached per day.
+
+**DB table:** `stock_gex_scans` — symbol, scan_ts, scan_date, spot, expiration, exp_label (weekly/opex), key_levels JSONB, gex_data JSONB, totals.
+
+**API endpoints:**
+- `GET /api/stock-gex/levels` — latest levels grouped by symbol → weekly/opex
+- `GET /api/stock-gex/detail?symbol=NVDA` — full per-strike GEX data (both expirations)
+- `GET /api/stock-gex/history?symbol=NVDA&days=5&exp_label=opex` — scan history for backtesting
+- `GET /api/stock-gex/status` — scanner status
+- `POST /api/stock-gex/scan` — manual trigger (async)
+
+**DB tables:** `stock_gex_scans` (weekly scans), `stock_gex_alerts` (triggered alerts)
+
 ### Database Tables
 - `chain_snapshots` - SPX/SPXW options chain data with Greeks
 - `spy_chain_snapshots` - SPY options chain data (same schema, isolated table)
@@ -350,6 +377,7 @@ Completely isolated from SPX — separate table, globals, scheduler job, lock.
 - `es_delta_bars` - ES 1-minute delta bars (UpVolume - DownVolume per bar)
 - `setup_cooldowns` - persisted cooldown state (trade_date, JSONB state including swing tracker)
 - `auto_trade_orders` - MES SIM auto-trade order state (setup_log_id PK, JSONB state with split-target tracking, crash recovery)
+- `stock_gex_scans` - Stock GEX data every 30 min (symbol, scan_date, spot, expiration, exp_label weekly/opex, key_levels JSONB, gex_data JSONB)
 
 ## Railway Deployment
 

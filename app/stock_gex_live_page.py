@@ -103,22 +103,35 @@ function selectStock(sym) {
 
 async function doRefresh() {
   try {
-    const [wl, active, trades, levels, status] = await Promise.all([
+    const results = await Promise.allSettled([
       fetch('/api/stock-gex-live/watchlist').then(r=>r.json()),
       fetch('/api/stock-gex-live/active').then(r=>r.json()),
       fetch('/api/stock-gex-live/trades?days=30').then(r=>r.json()),
       fetch('/api/stock-gex-live/levels').then(r=>r.json()),
       fetch('/api/stock-gex-live/status').then(r=>r.json()),
     ]);
-    data = {watchlist:wl, active, trades, levels, status};
+    const wl = results[0].status==='fulfilled' ? results[0].value : {};
+    const active = results[1].status==='fulfilled' ? results[1].value : [];
+    const trades = results[2].status==='fulfilled' ? results[2].value : [];
+    const levels = results[3].status==='fulfilled' ? results[3].value : {};
+    const status = results[4].status==='fulfilled' ? results[4].value : {};
+    // Handle error responses
+    data = {
+      watchlist: (wl && !wl.error) ? wl : {},
+      active: Array.isArray(active) ? active : [],
+      trades: Array.isArray(trades) ? trades : [],
+      levels: (levels && !levels.error) ? levels : {},
+      status: (status && !status.error) ? status : {},
+    };
     renderSidebar();
     render();
     document.getElementById('lastUpdate').textContent =
       new Date().toLocaleTimeString() +
-      ' | WL:' + (status.watchlist_count||0) +
-      ' | Active:' + (status.active_trades||0);
+      ' | WL:' + (data.status.watchlist_count||0) +
+      ' | Active:' + (data.status.active_trades||0);
   } catch(e) {
-    document.getElementById('main').innerHTML = '<p style="color:#f85149">Error: '+e+'</p>';
+    console.error('Refresh error:', e);
+    render();
   }
 }
 

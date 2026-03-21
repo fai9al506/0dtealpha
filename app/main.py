@@ -3104,12 +3104,27 @@ def send_summary_alert(time_label: str):
 def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None) -> bool:
-    """Single source of truth for the LIVE auto-trade filter (currently V10).
-    V10 = V9-SC + block GEX-LIS paradigm on SC/DD shorts.
+    """Single source of truth for the LIVE auto-trade filter (currently V11).
+    V11 = V10 + time-of-day gates (14:30-15:00 charm block, BofA PM block, SC/DD 15:30+ block).
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Change this ONE function when the filter evolves."""
     if setup_name in ("VIX Compression", "IV Momentum"):
         return False
+
+    # ── V11: Time-of-day gates ──
+    # 14:30-15:00 ET is a dead zone for charm setups (35% WR, -114 pts, time starvation)
+    # 15:30-16:00 ET: SC/DD signals expire too quickly (15% WR)
+    # BofA Scalp after 14:30: 0% WR in 10 trades
+    from datetime import time as dtime
+    t = now_et().time()
+    if setup_name in ("Skew Charm", "DD Exhaustion"):
+        if dtime(14, 30) <= t < dtime(15, 0):
+            return False  # 14:30-15:00 dead zone: 35% WR, thesis plays out then reverses
+        if t >= dtime(15, 30):
+            return False  # 15:30-16:00: too little time, mostly EXPIRED
+    if setup_name == "BofA Scalp" and t >= dtime(14, 30):
+        return False  # BofA after 14:30: 0% WR in 10 trades
+
     is_long = direction in ("long", "bullish")
     align = greek_alignment or 0
     if is_long:

@@ -10656,7 +10656,6 @@ DASH_HTML_TEMPLATE = """
     <aside class="sidebar">
       <div class="brand">SPXW 0DTE</div>
       <div class="status">
-        <span class="dot" id="statusDot"></span>
         <div style="flex:1">
           <div style="font-weight:600; font-size:12px;" id="statusText">__STATUS_TEXT__</div>
           <div class="small" id="lastRunTs">Last run: __LAST_TS__</div>

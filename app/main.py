@@ -44,6 +44,7 @@ MIN_REQUIRED_STRIKES = 30  # Minimum rows required; reject data below this thres
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 TELEGRAM_CHAT_ID_SETUPS = os.getenv("TELEGRAM_CHAT_ID_SETUPS", "")
+TELEGRAM_CHAT_ID_STOCK_GEX = os.getenv("TELEGRAM_CHAT_ID_STOCK_GEX", "")
 EVAL_API_KEY = os.getenv("EVAL_API_KEY", "")
 
 # Alert state tracking
@@ -1692,6 +1693,30 @@ def send_telegram_setups(message: str) -> bool:
     except Exception as e:
         print(f"[setups-tg] exception: {e}", flush=True)
         return False
+
+
+def send_telegram_stock_gex(message: str) -> bool:
+    """Send to stock GEX Telegram channel (falls back to setups, then main)."""
+    chat_id = TELEGRAM_CHAT_ID_STOCK_GEX or TELEGRAM_CHAT_ID_SETUPS or TELEGRAM_CHAT_ID
+    if not TELEGRAM_BOT_TOKEN or not chat_id:
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        resp = requests.post(url, json={
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "HTML"
+        }, timeout=10)
+        if resp.status_code == 200:
+            print(f"[stock-gex-tg] sent: {message[:60]}...", flush=True)
+            return True
+        else:
+            print(f"[stock-gex-tg] error: {resp.status_code}", flush=True)
+            return False
+    except Exception as e:
+        print(f"[stock-gex-tg] exception: {e}", flush=True)
+        return False
+
 
 def _json_load_maybe(v: Any) -> Any:
     if v is None:
@@ -5690,6 +5715,17 @@ def start_scheduler():
                     minutes=30, id="stock_gex_scan", coalesce=True, max_instances=1)
     except Exception:
         pass
+    # Stock GEX live scanner — GEX scan every 30 min + spot monitor every 2 min
+    try:
+        from app import stock_gex_live
+        sch.add_job(stock_gex_live.run_gex_scan, "interval",
+                    minutes=30, id="stock_gex_live_scan", coalesce=True, max_instances=1)
+        sch.add_job(stock_gex_live.run_spot_monitor, "interval",
+                    minutes=2, id="stock_gex_live_monitor", coalesce=True, max_instances=1)
+        sch.add_job(stock_gex_live.run_eod_summary, "cron",
+                    hour=16, minute=5, timezone=ET, id="stock_gex_live_eod")
+    except Exception:
+        pass
     sch.start()
     print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min; ES delta save every", SAVE_EVERY_MIN, "min", flush=True)
     return sch
@@ -5750,6 +5786,12 @@ def on_startup():
         stock_gex_init(engine, api_get)
     except Exception as e:
         print(f"[stock-gex] init error (non-fatal): {e}", flush=True)
+    # Initialize stock GEX live scanner (support bounce strategy)
+    try:
+        from app.stock_gex_live import init as stock_gex_live_init
+        stock_gex_live_init(engine, api_get, send_telegram_stock_gex)
+    except Exception as e:
+        print(f"[stock-gex-live] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)
     try:
         from app.dashboard_v2 import init as dashboard_v2_init
@@ -5937,6 +5979,15 @@ def stock_gex_page(session: str = Cookie(None)):
     from app.stock_gex_page import STOCK_GEX_HTML
     return HTMLResponse(STOCK_GEX_HTML)
 
+@app.get("/stock-gex-live")
+def stock_gex_live_page(session: str = Cookie(None)):
+    """Stock GEX Live Scanner — Support Bounce Strategy dashboard."""
+    user = get_current_user(session)
+    if not user:
+        return RedirectResponse("/login")
+    from app.stock_gex_live_page import STOCK_GEX_LIVE_HTML
+    return HTMLResponse(STOCK_GEX_LIVE_HTML)
+
 # ── Stock GEX Scanner API (independent from 0DTE) ──────────────────
 @app.get("/api/stock-gex/levels")
 def api_stock_gex_levels():
@@ -5986,6 +6037,65 @@ def api_stock_gex_trigger_scan():
         t = threading.Thread(target=stock_gex_scanner.run_scan, daemon=True)
         t.start()
         return {"status": "scan started"}
+    except Exception as e:
+        return {"error": str(e)}
+
+# ── Stock GEX Live Scanner API ──────────────────────────────────────
+
+@app.get("/api/stock-gex-live/watchlist")
+def api_stock_gex_live_watchlist():
+    """Current watchlist: stocks passing filters with trigger prices."""
+    try:
+        from app import stock_gex_live
+        return stock_gex_live.get_watchlist()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/stock-gex-live/active")
+def api_stock_gex_live_active():
+    """Currently open positions."""
+    try:
+        from app import stock_gex_live
+        return stock_gex_live.get_active_trades()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/stock-gex-live/trades")
+def api_stock_gex_live_trades(days: int = 7):
+    """Trade log for recent days."""
+    try:
+        from app import stock_gex_live
+        return stock_gex_live.get_trade_log(days)
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/stock-gex-live/levels")
+def api_stock_gex_live_levels():
+    """Current GEX levels for all scanned stocks."""
+    try:
+        from app import stock_gex_live
+        return stock_gex_live.get_all_levels()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/stock-gex-live/status")
+def api_stock_gex_live_status():
+    """Live scanner status."""
+    try:
+        from app import stock_gex_live
+        return stock_gex_live.get_status()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api/stock-gex-live/scan")
+def api_stock_gex_live_trigger():
+    """Manually trigger a live GEX scan."""
+    try:
+        from app import stock_gex_live
+        import threading
+        t = threading.Thread(target=stock_gex_live.run_gex_scan, daemon=True)
+        t.start()
+        return {"status": "live scan started"}
     except Exception as e:
         return {"error": str(e)}
 

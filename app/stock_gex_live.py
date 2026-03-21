@@ -28,17 +28,22 @@ from sqlalchemy import text
 ET = ZoneInfo("US/Eastern")
 
 STOCKS = [
+    # Tier 1 - Mega options volume
     "AAPL", "MSFT", "GOOGL", "GOOG", "META", "NVDA", "AMZN", "NFLX", "TSLA",
-    "AMD", "INTC", "MU", "QCOM", "AVGO", "SMCI",
-    "PYPL", "SOFI", "COIN", "AFRM", "UPST",
+    "AMD", "PLTR",
+    # Tier 2 - High options volume
+    "INTC", "MU", "QCOM", "AVGO", "SMCI", "MSTR", "ORCL", "GS",
+    "PYPL", "SOFI", "COIN", "AFRM", "UPST", "SQ",
     "SNAP", "SHOP", "ROKU", "RBLX", "LULU", "SNOW",
-    "AMC", "GME", "PLTR", "MARA", "LCID",
-    "RIVN",
-    "BAC", "JPM", "WFC", "C",
+    "AMC", "GME", "MARA", "LCID", "RIVN", "RKLB",
+    # Tier 3 - Active options volume
+    "BAC", "JPM", "WFC", "C", "GE",
     "BA", "DIS", "GM", "T", "AAL", "CCL", "F",
-    "OXY",
-    "PFE", "JNJ",
+    "IBM", "ABNB", "PINS", "U",
+    "OXY", "PFE", "JNJ",
     "UBER", "CVNA", "AI", "BABA", "COST", "ENPH",
+    # Tier 4 - Semi/Tech volume
+    "TSM", "AMAT", "LRCX", "PDD", "WBD",
 ]
 
 TIER_A = {

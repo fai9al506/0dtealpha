@@ -10655,13 +10655,16 @@ DASH_HTML_TEMPLATE = """
   <div class="layout">
     <aside class="sidebar">
       <div class="brand">SPXW 0DTE</div>
-      <div class="small">Live chain + charts</div>
       <div class="status">
         <span class="dot" id="statusDot"></span>
-        <div>
+        <div style="flex:1">
           <div style="font-weight:600; font-size:12px;" id="statusText">__STATUS_TEXT__</div>
           <div class="small" id="lastRunTs">Last run: __LAST_TS__</div>
           <div class="small" id="dataFreshness" style="margin-top:4px">Loading...</div>
+          <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+            <div style="font-weight:600;font-size:11px;color:var(--text);margin-bottom:3px">SPX Statistics</div>
+            <div id="statsContent" style="color:var(--muted);font-size:11px">Loading...</div>
+          </div>
         </div>
       </div>
       <div class="nav">
@@ -10672,11 +10675,6 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabHistorical">Historical</button>
         <button class="btn" id="tabTradeLog">Trade Log</button>
         <a href="/stock-gex-live" class="btn" style="display:block;text-decoration:none;text-align:center;background:#2d1b4e;color:#b39ddb">Stock GEX</a>
-      </div>
-      <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
-      <div class="stats-box">
-        <h4>SPX Statistics</h4>
-        <div id="statsContent" style="color:var(--muted);font-size:11px">Loading...</div>
       </div>
       <div style="margin-top:14px">
         <button id="alertSettingsBtn" class="strike-btn" style="padding:5px 12px;font-size:11px;width:100%">Settings</button>

@@ -10673,7 +10673,7 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabTradeLog">Trade Log</button>
       </div>
       <div style="margin-top:12px">
-        <a href="/stock-gex-live" style="display:block;text-align:center;background:#1f6feb;color:#fff;padding:8px 12px;border-radius:8px;font-weight:700;font-size:12px;text-decoration:none">Stock GEX Scanner</a>
+        <a href="/stock-gex-live" style="display:block;text-align:center;background:#1a3a5c;color:#8ab4f8;padding:5px 10px;border-radius:6px;font-weight:600;font-size:11px;text-decoration:none;border:1px solid #2a4a6c">Stock GEX Scanner</a>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
       <div class="stats-box">

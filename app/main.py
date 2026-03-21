@@ -10671,7 +10671,7 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabEsDelta">ES Delta</button>
         <button class="btn" id="tabHistorical">Historical</button>
         <button class="btn" id="tabTradeLog">Trade Log</button>
-        <a href="/stock-gex-live" class="btn" style="display:block;text-decoration:none;text-align:center;background:#162d50;color:#7aa2d4">Stock GEX</a>
+        <a href="/stock-gex-live" class="btn" style="display:block;text-decoration:none;text-align:center;background:#2d1b4e;color:#b39ddb">Stock GEX</a>
       </div>
       <div class="small" style="margin-top:10px">Charts auto-refresh while visible.</div>
       <div class="stats-box">

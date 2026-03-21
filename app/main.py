@@ -5864,6 +5864,16 @@ def api_auto_trade_toggle(setup_name: str = Query(...), enabled: bool = Query(..
     except Exception as e:
         return {"error": str(e)}
 
+# ── Stock GEX Dashboard (separate from 0DTE dashboard) ─────────────
+@app.get("/stock-gex")
+def stock_gex_page(session: str = Cookie(None)):
+    """Standalone Stock GEX dashboard — completely separate from 0DTE."""
+    user = get_current_user(session)
+    if not user:
+        return RedirectResponse("/login")
+    from app.stock_gex_page import STOCK_GEX_HTML
+    return HTMLResponse(STOCK_GEX_HTML)
+
 # ── Stock GEX Scanner API (independent from 0DTE) ──────────────────
 @app.get("/api/stock-gex/levels")
 def api_stock_gex_levels():

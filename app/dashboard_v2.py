@@ -462,6 +462,7 @@ DASH_V2_TEMPLATE = """<!doctype html>
     <div class="header-right">
       <div class="freshness-bar" id="freshnessBar">Loading...</div>
       <span id="userEmail">__USER_EMAIL__</span>
+      <a href="/stock-gex-live" title="Stock GEX Scanner" style="background:#1f6feb;color:#fff;padding:4px 10px;border-radius:4px;font-weight:600;font-size:11px">Stock GEX</a>
       <a href="/dashboard" title="Original dashboard">V1</a>
       <a href="/logout">Sign out</a>
     </div>

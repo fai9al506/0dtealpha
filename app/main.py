@@ -2563,6 +2563,17 @@ def run_market_job():
             except Exception:
                 pass
 
+        # Update IV Momentum tracker (needs per-strike IV from chain)
+        if spot:
+            try:
+                with _df_lock:
+                    _iv_chain = latest_df.copy() if latest_df is not None else None
+                if _iv_chain is not None and not _iv_chain.empty:
+                    from app.setup_detector import update_iv_momentum_tracker
+                    update_iv_momentum_tracker(spot, _iv_chain)
+            except Exception:
+                pass
+
         # Derive intra-cycle extremes from session H/L changes
         today = now_et().date()
         if _spx_session["date"] != today:
@@ -3097,7 +3108,7 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     V10 = V9-SC + block GEX-LIS paradigm on SC/DD shorts.
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Change this ONE function when the filter evolves."""
-    if setup_name == "VIX Compression":
+    if setup_name in ("VIX Compression", "IV Momentum"):
         return False
     is_long = direction in ("long", "bullish")
     align = greek_alignment or 0
@@ -3178,6 +3189,12 @@ def _compute_setup_levels(r: dict):
     if setup_name == "Vanna Pivot Bounce":
         target_lvl = spot + 10 if is_long else spot - 10
         stop_lvl = spot - 8 if is_long else spot + 8
+        return round(target_lvl, 2), round(stop_lvl, 2)
+
+    if setup_name == "IV Momentum":
+        # Fixed SL=8/TP=20 (short only, backtest: 64% WR, PF 4.02)
+        target_lvl = spot - 20  # SHORT: target below
+        stop_lvl = spot + 8     # SHORT: stop above
         return round(target_lvl, 2), round(stop_lvl, 2)
 
     # AG Short — trailing mode (hybrid: BE at +10, trail at +15 gap=5)
@@ -3776,7 +3793,7 @@ def _run_setup_check():
                     format_ag_short_message, format_bofa_scalp_message,
                     format_paradigm_reversal_message, format_dd_exhaustion_message,
                     format_skew_charm_message, format_vanna_pivot_message,
-                    format_vix_compress_message,
+                    format_vix_compress_message, format_iv_momentum_message,
                 )
                 _fmt_map = {
                     "GEX Long": format_setup_message, "GEX Velocity": format_gex_velocity_message,
@@ -3785,6 +3802,7 @@ def _run_setup_check():
                     "DD Exhaustion": format_dd_exhaustion_message, "Skew Charm": format_skew_charm_message,
                     "Vanna Pivot Bounce": format_vanna_pivot_message,
                     "VIX Compression": format_vix_compress_message,
+                    "IV Momentum": format_iv_momentum_message,
                 }
                 _fmt_fn = _fmt_map.get(setup_name)
                 _align = r.get("greek_alignment")
@@ -11068,7 +11086,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="options">Options Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>GEX Velocity</option><option>VIX Compression</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>GEX Velocity</option><option>VIX Compression</option><option>IV Momentum</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>

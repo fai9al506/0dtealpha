@@ -1503,6 +1503,26 @@ _cooldown_vix_compress = {
     "last_long_time": None,
 }
 
+# ── IV Momentum state ─────────────────────────────────────────────────
+# Apollo's insight: vol-confirmed momentum shorts.
+# Track per-strike put IV over time to detect trend + vol alignment.
+_iv_momentum_history: list = []  # list of (timestamp_str, spot, {strike: p_iv}) tuples
+_cooldown_iv_momentum = {
+    "last_date": "",
+    "last_short_time": None,
+}
+
+DEFAULT_IV_MOMENTUM_SETTINGS = {
+    "ivm_lookback_min": 10,        # lookback window (minutes)
+    "ivm_min_spot_drop": 5,        # minimum spot drop (pts) to confirm downtrend
+    "ivm_min_iv_rise": 0.05,       # minimum avg put IV rise to confirm vol buying
+    "ivm_cooldown_min": 30,        # minutes between signals
+    "ivm_stop_pts": 8,             # stop loss
+    "ivm_target_pts": 20,          # take profit
+    "ivm_market_start": "10:00",   # skip the open (11 ET = best hour, skip 9:30-10)
+    "ivm_market_end": "15:50",     # stop before close
+}
+
 
 def reset_single_bar_abs_session():
     """Reset single-bar absorption detector state for a new ES session."""
@@ -2357,6 +2377,232 @@ def format_vix_compress_message(result, alignment=None):
     msg = f"\U0001f535 <b>VIX Compression LONG [{grade}]{align_str}</b>\n"
     msg += f"{result['spot']:.0f} \u2192 T {result.get('target_price', 0):.0f} | SL {result.get('stop_price', 0):.0f} (20pt)\n"
     msg += f"VIX {vix_level:.1f} \u2193{vix_drop:.1f} | SPX \u0394{spx_move:.0f}pt | {w_start_short}-{w_end_short} | sc={score:.0f}"
+    return msg
+
+
+# ── IV Momentum (Apollo) ───────────────────────────────────────────────
+
+def update_iv_momentum_tracker(spot, chain_df):
+    """Track per-strike put IV for momentum detection. Called every 30s from main.py."""
+    if spot is None or chain_df is None or chain_df.empty:
+        return
+    now_str = datetime.now(NY).strftime("%Y-%m-%d %H:%M:%S")
+
+    # Extract put IV at ATM and nearby strikes (ATM, ATM-5, ATM-10)
+    strike_ivs = {}
+    try:
+        for _, row in chain_df.iterrows():
+            strike = float(row.get("Strike", 0))
+            p_iv = row.get("P_IV")
+            if strike > 0 and p_iv is not None and float(p_iv) > 0:
+                # Only keep strikes within 15 pts of spot
+                if abs(strike - spot) <= 15:
+                    strike_ivs[strike] = float(p_iv)
+    except Exception:
+        return
+
+    if not strike_ivs:
+        return
+
+    _iv_momentum_history.append((now_str, float(spot), strike_ivs))
+    # Keep last 30 min of data (~60 entries at 30s intervals)
+    if len(_iv_momentum_history) > 80:
+        _iv_momentum_history[:] = _iv_momentum_history[-80:]
+
+
+def evaluate_iv_momentum(spot, vix, settings):
+    """
+    Evaluate IV Momentum SHORT setup (Apollo's vol-confirmed downtrend).
+    Signal: spot dropped >= X pts in N min AND put IV at nearby strikes rose >= Y.
+    SHORTS ONLY — momentum longs tested poorly (34% WR).
+    Returns result dict or None.
+    """
+    if spot is None or len(_iv_momentum_history) < 5:
+        return None
+
+    s = {**DEFAULT_IV_MOMENTUM_SETTINGS, **(settings or {})}
+
+    # Time gate
+    now = datetime.now(NY)
+    try:
+        start = dtime(*[int(x) for x in s["ivm_market_start"].split(":")])
+        end = dtime(*[int(x) for x in s["ivm_market_end"].split(":")])
+    except Exception:
+        start, end = dtime(10, 0), dtime(15, 50)
+    if not (start <= now.time() <= end):
+        return None
+
+    lookback_min = s["ivm_lookback_min"]
+    min_spot_drop = s["ivm_min_spot_drop"]
+    min_iv_rise = s["ivm_min_iv_rise"]
+
+    # Find the lookback snapshot (~N minutes ago)
+    target_ts = now - timedelta(minutes=lookback_min)
+    target_str = target_ts.strftime("%Y-%m-%d %H:%M:%S")
+
+    lb_snap = None
+    best_diff = 999
+    for ts_str, lb_spot, lb_ivs in _iv_momentum_history:
+        try:
+            diff = abs((datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S") - target_ts).total_seconds())
+        except Exception:
+            continue
+        if diff < best_diff and diff < 180:  # within 3 min of target
+            best_diff = diff
+            lb_snap = (ts_str, lb_spot, lb_ivs)
+
+    if lb_snap is None:
+        return None
+
+    lb_ts_str, lb_spot, lb_ivs = lb_snap
+    current_snap = _iv_momentum_history[-1]
+    curr_ts_str, curr_spot, curr_ivs = current_snap
+
+    # Check spot drop (SHORT only: spot must have fallen)
+    spot_move = curr_spot - lb_spot
+    if spot_move > -min_spot_drop:
+        return None  # spot didn't drop enough
+
+    # Compute avg put IV change at common strikes
+    iv_changes = []
+    for strike, curr_iv in curr_ivs.items():
+        # Find same strike in lookback (exact match or within 0.5)
+        lb_iv = lb_ivs.get(strike)
+        if lb_iv is None:
+            # Try nearby
+            for s_key, s_val in lb_ivs.items():
+                if abs(s_key - strike) < 1:
+                    lb_iv = s_val
+                    break
+        if lb_iv is not None and lb_iv > 0:
+            iv_changes.append(curr_iv - lb_iv)
+
+    if len(iv_changes) < 2:
+        return None
+
+    avg_iv_change = sum(iv_changes) / len(iv_changes)
+
+    # Put IV must have RISEN (vol buyers confirming fear)
+    if avg_iv_change < min_iv_rise:
+        return None
+
+    # ── Scoring (3 components, max 100) ──
+
+    # 1. Spot momentum magnitude (0-35): bigger drop = stronger signal
+    spot_drop = abs(spot_move)
+    if spot_drop >= 15:
+        mom_score = 35
+    elif spot_drop >= 12:
+        mom_score = 30
+    elif spot_drop >= 10:
+        mom_score = 25
+    elif spot_drop >= 8:
+        mom_score = 20
+    elif spot_drop >= 5:
+        mom_score = 12
+    else:
+        mom_score = 5
+
+    # 2. IV confirmation strength (0-35): bigger IV rise = more vol buying
+    if avg_iv_change >= 0.20:
+        iv_score = 35
+    elif avg_iv_change >= 0.15:
+        iv_score = 30
+    elif avg_iv_change >= 0.10:
+        iv_score = 25
+    elif avg_iv_change >= 0.08:
+        iv_score = 18
+    elif avg_iv_change >= 0.05:
+        iv_score = 12
+    else:
+        iv_score = 5
+
+    # 3. VIX environment (0-30): higher VIX = vol moves faster
+    vix_val = vix or 0
+    if vix_val >= 28:
+        vix_score = 30
+    elif vix_val >= 25:
+        vix_score = 25
+    elif vix_val >= 22:
+        vix_score = 18
+    elif vix_val >= 18:
+        vix_score = 12
+    else:
+        vix_score = 5
+
+    composite = mom_score + iv_score + vix_score
+
+    # Grade (LOG-ONLY for now until validated with live signals)
+    if composite >= 80:
+        grade = "A+"
+    elif composite >= 60:
+        grade = "A"
+    elif composite >= 45:
+        grade = "B"
+    elif composite >= 30:
+        grade = "C"
+    else:
+        return None  # below threshold
+
+    stop_pts = s["ivm_stop_pts"]
+    target_pts = s["ivm_target_pts"]
+
+    return {
+        "setup_name": "IV Momentum",
+        "direction": "short",
+        "grade": grade,
+        "score": round(composite, 1),
+        "spot": round(spot, 2),
+        "vix": round(vix_val, 2) if vix_val else None,
+        "spot_drop": round(spot_drop, 2),
+        "avg_iv_change": round(avg_iv_change, 4),
+        "iv_strikes_used": len(iv_changes),
+        "lookback_min": lookback_min,
+        "lb_spot": round(lb_spot, 2),
+        "lb_ts": lb_ts_str,
+        "mom_score": mom_score,
+        "iv_score": iv_score,
+        "vix_score": vix_score,
+        "target_pts": target_pts,
+        "stop_pts": stop_pts,
+        "target_price": round(spot - target_pts, 2),  # SHORT: target is below
+        "stop_price": round(spot + stop_pts, 2),       # SHORT: stop is above
+    }
+
+
+def should_notify_iv_momentum(result):
+    """30-min cooldown for IV Momentum (short-only)."""
+    if result is None:
+        return False, None
+
+    now = datetime.now(NY)
+    today = str(now.date())
+    cooldown_min = DEFAULT_IV_MOMENTUM_SETTINGS["ivm_cooldown_min"]
+
+    if _cooldown_iv_momentum.get("last_date") != today:
+        _cooldown_iv_momentum["last_short_time"] = None
+        _cooldown_iv_momentum["last_date"] = today
+
+    last_fire = _cooldown_iv_momentum.get("last_short_time")
+    if last_fire is not None:
+        elapsed = (now - last_fire).total_seconds() / 60
+        if elapsed < cooldown_min:
+            return False, None
+
+    _cooldown_iv_momentum["last_short_time"] = now
+    return True, "new"
+
+
+def format_iv_momentum_message(result, alignment=None):
+    """Format a concise Telegram HTML message for IV Momentum."""
+    grade = result.get("grade", "?")
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
+    spot_drop = result.get("spot_drop", 0)
+    iv_chg = result.get("avg_iv_change", 0)
+    score = result.get("score", 0)
+    msg = f"\U0001f534 <b>IV Momentum SHORT [{grade}]{align_str}</b>\n"
+    msg += f"{result['spot']:.0f} \u2192 T {result.get('target_price', 0):.0f} | SL {result.get('stop_price', 0):.0f}\n"
+    msg += f"Drop {spot_drop:.0f}pt | IV \u2191{iv_chg:.3f} ({result.get('iv_strikes_used', 0)}stk) | sc={score:.0f}"
     return msg
 
 
@@ -3388,6 +3634,17 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
             "message": format_vix_compress_message(vc_result),
         })
 
+    # ── IV Momentum (Apollo) — SHORT only ──
+    ivm_result = evaluate_iv_momentum(spot, vix, settings)
+    if ivm_result is not None:
+        notify_ivm, reason_ivm = should_notify_iv_momentum(ivm_result)
+        results.append({
+            "result": ivm_result,
+            "notify": notify_ivm,
+            "notify_reason": reason_ivm,
+            "message": format_iv_momentum_message(ivm_result),
+        })
+
     return results
 
 
@@ -3423,6 +3680,8 @@ def export_cooldowns() -> dict:
         "gex_velocity": _serialize(_cooldown_gex_vel),
         "vix_compress": _serialize(_cooldown_vix_compress),
         "vix_history": _vix_history[-60:],  # save last ~30 min for restart recovery
+        "iv_momentum": _serialize(_cooldown_iv_momentum),
+        "iv_momentum_history": _iv_momentum_history[-30:],  # save last ~15 min
     }
 
 def import_cooldowns(data: dict):
@@ -3488,3 +3747,10 @@ def import_cooldowns(data: dict):
     if "vix_history" in data:
         _vix_history.clear()
         _vix_history.extend(data["vix_history"])
+    if "iv_momentum" in data:
+        _cooldown_iv_momentum.update(_deserialize(
+            data["iv_momentum"], has_datetimes=True,
+            dt_keys=("last_short_time",)))
+    if "iv_momentum_history" in data:
+        _iv_momentum_history.clear()
+        _iv_momentum_history.extend(data["iv_momentum_history"])

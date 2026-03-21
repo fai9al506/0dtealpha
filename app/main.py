@@ -3108,7 +3108,7 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     V11 = V10 + time-of-day gates (14:30-15:00 charm block, BofA PM block, SC/DD 15:30+ block).
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Change this ONE function when the filter evolves."""
-    if setup_name in ("VIX Compression", "IV Momentum"):
+    if setup_name in ("VIX Compression", "IV Momentum", "Vanna Butterfly"):
         return False
 
     # ── V11: Time-of-day gates ──
@@ -3762,6 +3762,32 @@ def _run_setup_check():
         except Exception as e:
             print(f"[vanna-pivot] range bars query error: {e}", flush=True)
 
+    # Query 0DTE vanna pin strike for Vanna Butterfly
+    _vanna_pin_strike = None
+    _vanna_pin_value = None
+    if engine:
+        try:
+            with engine.begin() as conn:
+                pin_row = conn.execute(text("""
+                    SELECT strike, value::float AS value
+                    FROM volland_exposure_points
+                    WHERE greek = 'vanna' AND expiration_option = 'TODAY'
+                      AND ts_utc = (SELECT MAX(ts_utc) FROM volland_exposure_points
+                                    WHERE greek = 'vanna' AND expiration_option = 'TODAY')
+                    ORDER BY ABS(value::float) DESC LIMIT 1
+                """)).mappings().first()
+                if pin_row:
+                    _vanna_pin_strike = float(pin_row["strike"])
+                    _vanna_pin_value = float(pin_row["value"])
+        except Exception:
+            pass
+
+    # Get chain DataFrame for butterfly pricing
+    _chain_for_butterfly = None
+    with _df_lock:
+        if latest_df is not None and not latest_df.empty:
+            _chain_for_butterfly = latest_df.copy()
+
     from app.setup_detector import check_setups as _check_setups_fn
     result_wrappers = _check_setups_fn(
         spot, paradigm, lis, target, max_plus_gex, max_minus_gex, _setup_settings,
@@ -3771,6 +3797,8 @@ def _run_setup_check():
         skew_value=skew_value, skew_change_pct=skew_change_pct,
         vanna_levels=vanna_levels, es_range_bars=es_range_bars_vp,
         vix=_vix_last,
+        vanna_pin_strike=_vanna_pin_strike, vanna_pin_value=_vanna_pin_value,
+        chain_df=_chain_for_butterfly,
     )
     for rw in result_wrappers:
         setup_name = rw["result"]["setup_name"]
@@ -3809,6 +3837,7 @@ def _run_setup_check():
                     format_paradigm_reversal_message, format_dd_exhaustion_message,
                     format_skew_charm_message, format_vanna_pivot_message,
                     format_vix_compress_message, format_iv_momentum_message,
+                    format_vanna_butterfly_message,
                 )
                 _fmt_map = {
                     "GEX Long": format_setup_message, "GEX Velocity": format_gex_velocity_message,
@@ -3818,6 +3847,7 @@ def _run_setup_check():
                     "Vanna Pivot Bounce": format_vanna_pivot_message,
                     "VIX Compression": format_vix_compress_message,
                     "IV Momentum": format_iv_momentum_message,
+                    "Vanna Butterfly": format_vanna_butterfly_message,
                 }
                 _fmt_fn = _fmt_map.get(setup_name)
                 _align = r.get("greek_alignment")
@@ -11110,7 +11140,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="options">Options Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>GEX Velocity</option><option>VIX Compression</option><option>IV Momentum</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>GEX Velocity</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>

@@ -1524,6 +1524,15 @@ DEFAULT_IV_MOMENTUM_SETTINGS = {
 }
 
 
+# ── Vanna Butterfly state ──────────────────────────────────────────────
+# 30pt call butterfly centered on max absolute 0DTE vanna strike.
+# Entered at ~15:00 ET, held to close. Backtest: 59% WR, PF 3.1x.
+_cooldown_vanna_butterfly = {
+    "last_date": "",
+    "fired": False,
+}
+
+
 def reset_single_bar_abs_session():
     """Reset single-bar absorption detector state for a new ES session."""
     _cooldown_single_bar_abs["last_bullish_bar"] = -100
@@ -2606,6 +2615,198 @@ def format_iv_momentum_message(result, alignment=None):
     return msg
 
 
+# ── Vanna Butterfly (Pin Setup) ────────────────────────────────────────
+
+def evaluate_vanna_butterfly(spot, chain_df, vanna_pin_strike, vanna_pin_value, vix):
+    """
+    Evaluate Vanna Pin Butterfly setup.
+    30pt call butterfly centered on max absolute 0DTE vanna strike.
+    Fires once per day at ~15:00 ET. Backtest: 59% WR, PF 3.1x.
+    Returns result dict or None.
+    """
+    if spot is None or chain_df is None or chain_df.empty:
+        return None
+    if vanna_pin_strike is None or vanna_pin_value is None:
+        return None
+
+    # Time gate: only fire 14:55-15:10 ET
+    now = datetime.now(NY)
+    if not (dtime(14, 55) <= now.time() <= dtime(15, 10)):
+        return None
+
+    # One signal per day
+    today = str(now.date())
+    if _cooldown_vanna_butterfly.get("last_date") == today and _cooldown_vanna_butterfly.get("fired"):
+        return None
+
+    pin = round(vanna_pin_strike / 5) * 5  # Round to nearest 5-pt strike
+    gap = abs(spot - pin)
+
+    # Gap filter: skip if spot is too far from pin (>20 pts = low probability)
+    if gap > 20:
+        return None
+
+    # ── Price the butterfly from chain bid/ask ──
+    # 30pt butterfly: buy call at pin-15, sell 2x call at pin, buy call at pin+15
+    lower = pin - 15
+    center = pin
+    upper = pin + 15
+
+    def get_call_price(strike, side='ask'):
+        """Get call bid or ask at a strike from chain_df."""
+        idx_col = 'Strike'
+        try:
+            row = chain_df[chain_df[idx_col].astype(float) == strike]
+            if row.empty:
+                return None
+            if side == 'ask':
+                val = row.iloc[0].get('C_Ask')
+            else:
+                val = row.iloc[0].get('C_Bid')
+            if val is None or float(val) <= 0:
+                return None
+            return float(val)
+        except Exception:
+            return None
+
+    lower_ask = get_call_price(lower, 'ask')
+    center_bid = get_call_price(center, 'bid')
+    upper_ask = get_call_price(upper, 'ask')
+
+    if lower_ask is None or center_bid is None or upper_ask is None:
+        return None
+
+    cost = lower_ask - 2 * center_bid + upper_ask
+    if cost <= 0 or cost > 10:
+        return None  # Invalid or too expensive
+
+    max_payout = 15.0  # Width of one wing
+    max_profit = max_payout - cost
+
+    # ── Scoring (4 components, max 100) ──
+
+    # 1. Gap proximity (0-35): closer = better
+    if gap <= 5:
+        gap_score = 35
+    elif gap <= 8:
+        gap_score = 28
+    elif gap <= 10:
+        gap_score = 22
+    elif gap <= 15:
+        gap_score = 15
+    else:
+        gap_score = 5
+
+    # 2. Cost efficiency (0-25): cheaper = better R:R
+    if cost <= 2.0:
+        cost_score = 25
+    elif cost <= 3.0:
+        cost_score = 20
+    elif cost <= 4.0:
+        cost_score = 15
+    elif cost <= 5.0:
+        cost_score = 10
+    else:
+        cost_score = 5
+
+    # 3. Vanna strength (0-20): stronger absolute vanna = stronger pin
+    abs_vanna = abs(vanna_pin_value)
+    if abs_vanna >= 100_000_000:  # 100M+
+        vanna_score = 20
+    elif abs_vanna >= 50_000_000:
+        vanna_score = 15
+    elif abs_vanna >= 20_000_000:
+        vanna_score = 10
+    else:
+        vanna_score = 5
+
+    # 4. VIX environment (0-20): lower VIX = calmer = pins better
+    vix_val = vix or 0
+    if vix_val <= 18:
+        vix_bfly_score = 20
+    elif vix_val <= 22:
+        vix_bfly_score = 15
+    elif vix_val <= 25:
+        vix_bfly_score = 10
+    else:
+        vix_bfly_score = 5
+
+    composite = gap_score + cost_score + vanna_score + vix_bfly_score
+
+    if composite >= 80:
+        grade = "A+"
+    elif composite >= 65:
+        grade = "A"
+    elif composite >= 50:
+        grade = "B"
+    elif composite >= 35:
+        grade = "C"
+    else:
+        return None
+
+    return {
+        "setup_name": "Vanna Butterfly",
+        "direction": "long",  # Butterfly is non-directional but logged as "long"
+        "grade": grade,
+        "score": round(composite, 1),
+        "spot": round(spot, 2),
+        "vix": round(vix_val, 2) if vix_val else None,
+        "pin_strike": pin,
+        "entry_gap": round(gap, 1),
+        "butterfly_lower": lower,
+        "butterfly_center": center,
+        "butterfly_upper": upper,
+        "butterfly_cost": round(cost, 2),
+        "max_profit": round(max_profit, 2),
+        "vanna_value": round(vanna_pin_value, 0),
+        "gap_score": gap_score,
+        "cost_score": cost_score,
+        "vanna_score": vanna_score,
+        "vix_bfly_score": vix_bfly_score,
+        # For outcome tracking: target = pin strike (where we want close)
+        "target_price": pin,
+        "stop_price": None,  # No stop — max loss is the cost
+        "target_pts": max_profit,
+        "stop_pts": cost,  # Max loss = cost
+    }
+
+
+def should_notify_vanna_butterfly(result):
+    """One signal per day for Vanna Butterfly."""
+    if result is None:
+        return False, None
+
+    now = datetime.now(NY)
+    today = str(now.date())
+
+    if _cooldown_vanna_butterfly.get("last_date") != today:
+        _cooldown_vanna_butterfly["fired"] = False
+        _cooldown_vanna_butterfly["last_date"] = today
+
+    if _cooldown_vanna_butterfly.get("fired"):
+        return False, None
+
+    _cooldown_vanna_butterfly["fired"] = True
+    return True, "new"
+
+
+def format_vanna_butterfly_message(result, alignment=None):
+    """Format Telegram message for Vanna Butterfly."""
+    grade = result.get("grade", "?")
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
+    pin = result.get("pin_strike", 0)
+    gap = result.get("entry_gap", 0)
+    cost = result.get("butterfly_cost", 0)
+    mx = result.get("max_profit", 0)
+    lower = result.get("butterfly_lower", 0)
+    upper = result.get("butterfly_upper", 0)
+    score = result.get("score", 0)
+    msg = f"\U0001f98b <b>Vanna Butterfly [{grade}]{align_str}</b>\n"
+    msg += f"Pin {pin:.0f} | {lower:.0f}/{pin:.0f}/{upper:.0f} | Cost ${cost:.2f}\n"
+    msg += f"Gap {gap:.0f}pt | MaxProfit ${mx:.2f} | sc={score:.0f}"
+    return msg
+
+
 def evaluate_dd_exhaustion(spot, dd_value, dd_shift, charm, paradigm, settings):
     """
     Evaluate DD Exhaustion setup.
@@ -3476,7 +3677,8 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
                  dd_value=None, dd_shift=None,
                  skew_value=None, skew_change_pct=None,
                  vanna_levels=None, es_range_bars=None,
-                 vix=None):
+                 vix=None,
+                 vanna_pin_strike=None, vanna_pin_value=None, chain_df=None):
     """
     Main entry point called from main.py.
     Returns a list of result wrappers (each has keys: result, notify, notify_reason, message).
@@ -3494,6 +3696,9 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
       vanna_levels: list of dominant vanna level dicts (Vanna Pivot Bounce)
       es_range_bars: list of ES range bar dicts from DB (Vanna Pivot Bounce)
       vix: current VIX value (VIX Compression)
+      vanna_pin_strike: max absolute 0DTE vanna strike (Vanna Butterfly)
+      vanna_pin_value: vanna notional at pin strike (Vanna Butterfly)
+      chain_df: current options chain DataFrame (Vanna Butterfly pricing)
     """
     results = []
 
@@ -3645,6 +3850,17 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
             "message": format_iv_momentum_message(ivm_result),
         })
 
+    # ── Vanna Butterfly (Pin Setup) — once per day at ~15:00 ET ──
+    vb_result = evaluate_vanna_butterfly(spot, chain_df, vanna_pin_strike, vanna_pin_value, vix)
+    if vb_result is not None:
+        notify_vb, reason_vb = should_notify_vanna_butterfly(vb_result)
+        results.append({
+            "result": vb_result,
+            "notify": notify_vb,
+            "notify_reason": reason_vb,
+            "message": format_vanna_butterfly_message(vb_result),
+        })
+
     return results
 
 
@@ -3682,6 +3898,7 @@ def export_cooldowns() -> dict:
         "vix_history": _vix_history[-60:],  # save last ~30 min for restart recovery
         "iv_momentum": _serialize(_cooldown_iv_momentum),
         "iv_momentum_history": _iv_momentum_history[-30:],  # save last ~15 min
+        "vanna_butterfly": _serialize(_cooldown_vanna_butterfly),
     }
 
 def import_cooldowns(data: dict):
@@ -3754,3 +3971,5 @@ def import_cooldowns(data: dict):
     if "iv_momentum_history" in data:
         _iv_momentum_history.clear()
         _iv_momentum_history.extend(data["iv_momentum_history"])
+    if "vanna_butterfly" in data:
+        _cooldown_vanna_butterfly.update(_deserialize(data["vanna_butterfly"]))

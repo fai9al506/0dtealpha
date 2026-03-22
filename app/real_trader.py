@@ -65,7 +65,7 @@ FIRST_TARGET_PTS = 10.0
 MES_TICK_SIZE = 0.25
 MES_POINT_VALUE = 5.0
 MARGIN_PER_MES = float(os.getenv("REAL_TRADE_MARGIN_PER_MES", "500"))  # day trade margin (~$500 MES)
-DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_DAILY_LOSS_LIMIT", "150"))  # max daily loss in $
+DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_DAILY_LOSS_LIMIT", "300"))  # max daily loss in $
 
 # SC Trail parameters
 BE_TRIGGER_PTS = 10.0    # move stop to breakeven after 10pts profit

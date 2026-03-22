@@ -1981,12 +1981,17 @@ def update_skew_tracker(skew_value, settings=None):
     return round(change_pct, 2), round(old_skew, 4)
 
 
-def evaluate_skew_charm(spot, skew_value, skew_change_pct, charm, paradigm, settings):
+def evaluate_skew_charm(spot, skew_value, skew_change_pct, charm, paradigm, settings,
+                        vix=None):
     """
     Evaluate Skew+Charm setup.
     LONG: skew drops >threshold% AND charm > 0
     SHORT: skew rises >threshold% AND charm < 0
     Returns result dict or None.
+
+    Grading v2 (Mar 22): Data-driven scoring from 210 trades analysis.
+    Old grading was anti-predictive (r=-0.19). New grading r=+0.32.
+    Key insight: paradigm subtype is #1 predictor, charm/time were INVERTED.
     """
     if not settings.get("skew_charm_enabled", True):
         return None
@@ -2025,83 +2030,87 @@ def evaluate_skew_charm(spot, skew_value, skew_change_pct, charm, paradigm, sett
     target_price = round(spot + target_pts, 2) if is_long else round(spot - target_pts, 2)
     stop_price = round(spot - stop_pts, 2) if is_long else round(spot + stop_pts, 2)
 
-    # --- Scoring (5 components, max 100) ---
+    # --- Scoring v2: Data-driven (5 components, max 100) ---
+    # Based on 210-trade analysis (Mar 2-20, 2026). Correlation with outcome:
+    #   Old total score: r=-0.193 (anti-predictive)
+    #   New total score: r=+0.320 (correctly predictive)
 
-    # 1. Skew magnitude (0-30): bigger skew change = stronger signal
-    abs_change = abs(skew_change_pct)
-    if abs_change >= 10:
-        skew_score = 30
-    elif abs_change >= 7:
-        skew_score = 25
-    elif abs_change >= 5:
-        skew_score = 20
-    elif abs_change >= 3:
-        skew_score = 15
+    # 1. Paradigm subtype (0-30) — strongest predictor by far
+    #    GOOD paradigms (84% WR, +478 pts): SIDIAL*, GEX-PURE, AG-TARGET, BofA-LIS, AG-PURE
+    #    BAD paradigms (45% WR, -164 pts): GEX-LIS, AG-LIS
+    #    NEUTRAL (61% WR): BOFA-PURE, GEX-TARGET, others
+    _GOOD_PARADIGMS = {"GEX-PURE", "SIDIAL-EXTREME", "SIDIAL-MESSY", "AG-TARGET",
+                       "BOFA-LIS", "BofA-LIS", "AG-PURE", "GEX-MESSY"}
+    _BAD_PARADIGMS = {"GEX-LIS", "AG-LIS"}
+    p_val = str(paradigm) if paradigm else ""
+    if p_val in _GOOD_PARADIGMS:
+        para_score = 30
+    elif p_val in _BAD_PARADIGMS:
+        para_score = 0
     else:
-        skew_score = 5
+        para_score = 15
 
-    # 2. Charm alignment strength (0-25)
-    abs_charm = abs(charm)
-    if abs_charm < 20_000_000:
-        charm_score = 0
-    elif abs_charm < 50_000_000:
-        charm_score = 8
-    elif abs_charm < 100_000_000:
-        charm_score = 15
-    elif abs_charm < 250_000_000:
-        charm_score = 22
-    else:
-        charm_score = 25
-
-    # 3. Time-of-day (0-15)
+    # 2. Time of day (0-25) — morning is better (INVERTED from old scoring)
+    #    09-12 ET: ~74% WR, 14:30/15:30 ET: 36-43% WR (death zones)
     t = now.time()
-    if t >= dtime(14, 0):
+    if t < dtime(12, 0):
+        time_score = 25
+    elif t < dtime(14, 0):
         time_score = 15
-    elif t >= dtime(11, 30):
-        time_score = 12
-    elif t >= dtime(10, 30):
+    elif t < dtime(14, 30):
+        time_score = 10
+    elif t < dtime(15, 0):
+        time_score = 3   # 14:30 = 43% WR death zone
+    elif t < dtime(15, 30):
         time_score = 8
     else:
-        time_score = 3
+        time_score = 0   # 15:30+ = 36% WR death zone
 
-    # 4. Paradigm context (0-15)
-    para_score = 0
-    if paradigm:
-        p = str(paradigm).upper()
-        if "GEX" in p and direction == "long":
-            para_score = 15
-        elif "AG" in p and direction == "short":
-            para_score = 15
-        elif "BOFA" in p:
-            para_score = 10
-        elif "MESSY" in p:
-            para_score = 8
-        else:
-            para_score = 5
-
-    # 5. Skew level (0-15): extreme skew values strengthen the signal
-    # Low skew (<1.0) + dropping = strong compression momentum
-    # High skew (>1.1) + rising = strong expansion momentum
-    if (direction == "long" and skew_value < 0.95) or (direction == "short" and skew_value > 1.10):
-        level_score = 15
-    elif (direction == "long" and skew_value < 1.0) or (direction == "short" and skew_value > 1.05):
-        level_score = 10
+    # 3. VIX regime (0-20)
+    #    VIX<22: 72% WR (+514 pts). VIX>=25 + bad paradigm: 41% WR (-148 pts)
+    _vix = float(vix) if vix is not None else 22.0
+    if _vix < 22:
+        vix_score = 20
+    elif _vix < 25:
+        vix_score = 12
     else:
-        level_score = 5
+        vix_score = 5
 
-    total_score = skew_score + charm_score + time_score + para_score + level_score
+    # 4. Charm alignment INVERTED (0-15)
+    #    Low charm (score=0): 78% WR, +310 pts. High charm (score=25): 37% WR, -33 pts.
+    #    Mechanism: extreme charm = over-stretched, snaps back against the trade.
+    abs_charm = abs(charm)
+    if abs_charm < 50_000_000:
+        charm_score = 15   # low charm = best
+    elif abs_charm < 100_000_000:
+        charm_score = 10
+    elif abs_charm < 250_000_000:
+        charm_score = 5
+    else:
+        charm_score = 0    # extreme charm = worst
 
-    # Grade based on composite score (same thresholds as GEX Long / AG Short)
-    if total_score >= 90:
+    # 5. Skew magnitude (0-10) — downweighted (r=-0.03, near zero predictive power)
+    abs_change = abs(skew_change_pct)
+    if abs_change >= 7:
+        skew_score = 10
+    elif abs_change >= 5:
+        skew_score = 7
+    else:
+        skew_score = 3
+
+    total_score = para_score + time_score + vix_score + charm_score + skew_score
+
+    # Grade thresholds (calibrated to new score distribution)
+    if total_score >= 80:
         grade = "A+"
-    elif total_score >= 75:
+    elif total_score >= 65:
         grade = "A"
-    elif total_score >= 60:
-        grade = "A-Entry"
-    elif total_score >= 45:
+    elif total_score >= 50:
         grade = "B"
-    else:
+    elif total_score >= 35:
         grade = "C"
+    else:
+        grade = "LOG"
 
     return {
         "setup_name": "Skew Charm",
@@ -2120,12 +2129,12 @@ def evaluate_skew_charm(spot, skew_value, skew_change_pct, charm, paradigm, sett
         "upside": target_pts,
         "rr_ratio": round(target_pts / stop_pts, 2) if stop_pts > 0 else None,
         "first_hour": False,
-        # Sub-scores in existing columns
-        "support_score": skew_score,          # skew magnitude (0-30)
-        "upside_score": charm_score,          # charm strength (0-25)
-        "floor_cluster_score": time_score,    # time-of-day (0-15)
-        "target_cluster_score": para_score,   # paradigm context (0-15)
-        "rr_score": level_score,              # skew level (0-15)
+        # Sub-scores in existing columns (repurposed for v2)
+        "support_score": skew_score,          # skew magnitude (0-10)
+        "upside_score": charm_score,          # charm INVERTED (0-15)
+        "floor_cluster_score": time_score,    # time-of-day INVERTED (0-25)
+        "target_cluster_score": para_score,   # paradigm subtype (0-30)
+        "rr_score": vix_score,                # VIX regime (0-20)
         # Skew-specific fields
         "skew_value": round(skew_value, 4),
         "skew_change_pct": round(skew_change_pct, 2),
@@ -3807,6 +3816,7 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
     # ── Skew Charm ──
     skew_charm_result = evaluate_skew_charm(
         spot, skew_value, skew_change_pct, aggregated_charm, paradigm, settings,
+        vix=vix,
     )
     if skew_charm_result is not None:
         notify_sc, reason_sc = should_notify_skew_charm(skew_charm_result)

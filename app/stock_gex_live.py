@@ -231,6 +231,28 @@ def _compute_stock_gex(symbol, chain_rows, spot):
     }
 
 
+def _grade_setup(levels, day_name):
+    """Grade the setup A+/A/B/C based on day + GEX structure.
+
+    Grading (data-driven from 12-month backtest):
+      A+: Mon-Wed + ratio>3 = 93-96% WR, avg winners +1200%
+      A:  Mon-Wed + ratio>2 = 93% WR, solid
+      B:  Thu + ratio>2 = 40% WR but avg winner +1848% (cheap premium)
+      C:  Fri + ratio>2 = 36% WR but avg winner +1373% (very cheap)
+    All grades fire. Grade is for sizing and expectation, not filtering.
+    """
+    ratio = levels["ratio"]
+    if day_name in ("Mon", "Tue", "Wed"):
+        if ratio >= 3:
+            return "A+"
+        else:
+            return "A"
+    elif day_name == "Thu":
+        return "B"
+    else:  # Fri
+        return "C"
+
+
 def _passes_filters(levels):
     """Check if a stock's GEX levels pass all filters."""
     if levels["ratio"] < MIN_GEX_RATIO:
@@ -496,6 +518,7 @@ def _db_init():
                 id SERIAL PRIMARY KEY,
                 symbol VARCHAR(10) NOT NULL,
                 tier VARCHAR(1),
+                grade VARCHAR(2),
                 trade_date DATE NOT NULL,
                 entry_ts TIMESTAMPTZ,
                 entry_price FLOAT,
@@ -557,16 +580,17 @@ def _save_trade(trade):
         with _engine.begin() as conn:
             conn.execute(text("""
                 INSERT INTO stock_gex_live_trades
-                (symbol, tier, trade_date, entry_ts, entry_price, entry_spot,
+                (symbol, tier, grade, trade_date, entry_ts, entry_price, entry_spot,
                  strike, expiration, call_bid, call_ask, call_delta, call_iv,
                  gex_ratio, zone_width, highest_neg, lowest_pos,
                  neg_levels, pos_levels, t1_price, t2_price, status)
-                VALUES (:sym, :tier, :td, :ets, :ep, :es,
+                VALUES (:sym, :tier, :grade, :td, :ets, :ep, :es,
                         :strike, :exp, :cb, :ca, :cd, :civ,
                         :ratio, :zw, :hn, :lp,
                         :nl, :pl, :t1, :t2, 'open')
             """), {
                 "sym": trade["symbol"], "tier": trade.get("tier", "B"),
+                "grade": trade.get("grade", "B"),
                 "td": date.today(),
                 "ets": trade["entry_ts"], "ep": trade["entry_price"],
                 "es": trade["entry_spot"],
@@ -847,7 +871,9 @@ def run_spot_monitor():
             continue
 
         # TRIGGERED! Stock hit -GEX minus 1%
-        print(f"[stock-gex-live] TRIGGER: {sym} spot=${spot:.2f} <= trigger=${trigger:.2f}", flush=True)
+        day_name = now.strftime("%a")
+        grade = _grade_setup(levels, day_name)
+        print(f"[stock-gex-live] TRIGGER: {sym} [{grade}] spot=${spot:.2f} <= trigger=${trigger:.2f}", flush=True)
 
         # Fetch option quote for entry
         opt_quote = _fetch_option_quote(sym, levels["expiration"], levels["highest_neg"], "C")
@@ -861,6 +887,7 @@ def run_spot_monitor():
         trade = {
             "symbol": sym,
             "tier": levels.get("tier", "B"),
+            "grade": grade,
             "entry_ts": now,
             "entry_price": call_mid,
             "entry_spot": spot,
@@ -896,7 +923,7 @@ def run_spot_monitor():
         neg_str = " | ".join(f"${s:.0f}" for s in levels["neg_strikes"])
         pos_str = " | ".join(f"${s:.0f}" for s in levels["pos_strikes"])
 
-        msg = (f"<b>ENTRY: {sym}</b> [Tier {levels.get('tier', 'B')}]\n"
+        msg = (f"<b>ENTRY: {sym}</b> [Grade {grade}] [Tier {levels.get('tier', 'B')}]\n"
                f"\n"
                f"<b>Stock:</b> ${spot:.2f} at {now.strftime('%H:%M:%S')} ET\n"
                f"<b>Trigger:</b> -GEX-1% = ${trigger:.2f}\n"

@@ -449,15 +449,20 @@ def mark_gex_velocity_expired():
 
 # ── AG Short evaluation ────────────────────────────────────────────────────
 
-def evaluate_ag_short(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings):
+def evaluate_ag_short(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings,
+                      vix=None):
     """
-    Evaluate AG Short setup.  Returns a result dict or None.
-    Mirror of GEX Long with flipped direction inputs.
+    Evaluate AG Short setup. Returns a result dict or None.
+
+    Grading v2 (Mar 22): Data-driven scoring from 52 trades.
+    Old grading was anti-predictive (r=-0.105). New grading r=+0.405.
+    Key insight: paradigm subtype, VIX, time of day matter most.
+    support_score had r=-0.422 (strongest negative in any setup).
     """
     if not settings.get("ag_short_enabled", True):
         return None
 
-    # Base conditions
+    # Base conditions (unchanged)
     if not paradigm or "AG" not in str(paradigm).upper():
         return None
     if spot is None or lis is None or target is None:
@@ -478,54 +483,78 @@ def evaluate_ag_short(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
     if gap > 20:
         return None
 
-    # ── Component scores (same brackets, mirrored inputs) ────────────
-    brackets = settings.get("brackets", DEFAULT_SETUP_SETTINGS["brackets"])
-
-    support_score = score_component_max(gap, brackets.get("support", DEFAULT_SETUP_SETTINGS["brackets"]["support"]))
     downside = min(downside_target, downside_gex)
+    rr_ratio = downside / gap if gap > 0 else 99
+    first_hour = is_first_hour()
+
+    # Keep old component scores for portal display
+    brackets = settings.get("brackets", DEFAULT_SETUP_SETTINGS["brackets"])
+    support_score = score_component_max(gap, brackets.get("support", DEFAULT_SETUP_SETTINGS["brackets"]["support"]))
     upside_score = score_component_min(downside, brackets.get("upside", DEFAULT_SETUP_SETTINGS["brackets"]["upside"]))
     floor_cluster_score = score_component_max(abs(lis - max_plus_gex), brackets.get("floor_cluster", DEFAULT_SETUP_SETTINGS["brackets"]["floor_cluster"]))
     target_cluster_score = score_component_max(abs(target - max_minus_gex), brackets.get("target_cluster", DEFAULT_SETUP_SETTINGS["brackets"]["target_cluster"]))
-
-    # If minimum downside is excellent (both targets give 15+ pts), target clustering doesn't matter
-    # You'll easily hit your 10pt first target regardless of cluster distance
-    if downside >= 15:
-        target_cluster_score = max(target_cluster_score, 100)
-    elif downside >= 10:
-        target_cluster_score = max(target_cluster_score, 75)
-
-    rr_ratio = downside / gap if gap > 0 else 99
     rr_score = score_component_min(rr_ratio, brackets.get("rr", DEFAULT_SETUP_SETTINGS["brackets"]["rr"]))
 
-    # ── Weighted composite ──────────────────────────────────────────────
-    w_support = settings.get("weight_support", 20)
-    w_upside = settings.get("weight_upside", 20)
-    w_floor = settings.get("weight_floor_cluster", 20)
-    w_target = settings.get("weight_target_cluster", 20)
-    w_rr = settings.get("weight_rr", 20)
-    total_weight = w_support + w_upside + w_floor + w_target + w_rr
+    # --- Scoring v2: Data-driven (4 components, max 90) ---
+    # Based on 52-trade analysis. Old r=-0.105, New r=+0.405.
 
-    if total_weight == 0:
-        return None
+    # 1. Paradigm subtype (0-25) — AG-PURE 62% WR best, AG-TARGET 39% WR worst
+    _p = str(paradigm)
+    if _p in ("AG-PURE", "AG-LIS"):
+        para_v2 = 25
+    elif _p == "AG-TARGET":
+        para_v2 = 0
+    else:
+        para_v2 = 12
 
-    composite = (
-        support_score * w_support
-        + upside_score * w_upside
-        + floor_cluster_score * w_floor
-        + target_cluster_score * w_target
-        + rr_score * w_rr
-    ) / total_weight
+    # 2. VIX (0-20) — higher VIX = better for shorts (r=+0.214)
+    #    VIX<20: 13% WR (-60 pts). VIX>=25: 62% WR
+    _vix = float(vix) if vix is not None else 22.0
+    if _vix >= 25:
+        vix_v2 = 20
+    elif _vix >= 20:
+        vix_v2 = 12
+    else:
+        vix_v2 = 0   # VIX<20 = 13% WR, terrible
 
-    first_hour = is_first_hour()
-    if first_hour:
-        composite = min(composite + 10, 100)
+    # 3. Time of day (0-25) — 10xx=79% WR, 12xx=20% WR
+    now_et = datetime.now(NY)
+    et_h = now_et.hour
+    if et_h <= 10:
+        time_v2 = 25   # 79% WR
+    elif et_h == 11:
+        time_v2 = 18   # 60% WR
+    elif et_h == 13:
+        time_v2 = 12   # 50% WR
+    elif et_h == 12:
+        time_v2 = 0    # 20% WR death zone
+    else:
+        time_v2 = 5
 
-    # ── Grade ───────────────────────────────────────────────────────────
-    thresholds = settings.get("grade_thresholds", DEFAULT_SETUP_SETTINGS["grade_thresholds"])
-    grade = compute_grade(composite, thresholds)
+    # 4. Downside room (0-20) — basic structural quality
+    if downside >= 20:
+        down_v2 = 20
+    elif downside >= 15:
+        down_v2 = 15
+    elif downside >= 10:
+        down_v2 = 8
+    else:
+        down_v2 = 0
 
-    if grade is None:
-        return None
+    composite = para_v2 + vix_v2 + time_v2 + down_v2
+    composite = max(0, min(100, composite))
+
+    # Grade thresholds
+    if composite >= 70:
+        grade = "A+"
+    elif composite >= 55:
+        grade = "A"
+    elif composite >= 40:
+        grade = "B"
+    elif composite >= 25:
+        grade = "C"
+    else:
+        grade = "LOG"
 
     return {
         "setup_name": "AG Short",
@@ -1204,7 +1233,7 @@ def reset_absorption_session():
 
 
 
-def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
+def evaluate_absorption(bars, volland_stats, settings, spx_spot=None, vix=None):
     """
     Evaluate ES Absorption setup on completed range bars.
 
@@ -1213,8 +1242,12 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
       volland_stats: dict with keys paradigm, delta_decay_hedging, lines_in_sand (or None)
       settings: setup settings dict with abs_* keys
       spx_spot: (unused, kept for API compat)
+      vix: current VIX value (for grading v2)
 
     Returns result dict or None.
+
+    Grading v2 (Mar 22): Data-driven scoring from 217 trades.
+    Old grading was anti-predictive (r=-0.238). New grading r=+0.271.
     """
     if not settings.get("absorption_enabled", True):
         return None
@@ -1346,40 +1379,78 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
             elif lis_dist <= 15:
                 lis_raw = 1
 
-    # --- Normalize to 0-100 ---
+    # --- Normalize raw scores to 0-100 (kept for portal display) ---
     div_score = {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}.get(div_raw, 0)
     vol_score = {1: 33, 2: 67, 3: 100}.get(vol_raw, 33)
     dd_score = 100 if dd_raw else 0
-    para_score = 100 if para_raw else 0
+    para_score_raw = 100 if para_raw else 0
     lis_score = {0: 0, 1: 50, 2: 100}.get(lis_raw, 0)
 
-    # --- Weighted composite ---
-    w_div = settings.get("abs_weight_divergence", 25)
-    w_vol = settings.get("abs_weight_volume", 25)
-    w_dd = settings.get("abs_weight_dd", 15)
-    w_para = settings.get("abs_weight_paradigm", 15)
-    w_lis = settings.get("abs_weight_lis", 20)
-    total_weight = w_div + w_vol + w_dd + w_para + w_lis
+    # --- Scoring v2: Data-driven (5 components, max 95) ---
+    # Based on 217-trade analysis (Feb 19 - Mar 20, 2026).
+    #   Old score: r=-0.238 (anti-predictive)
+    #   New score: r=+0.271 (correctly predictive)
 
-    if total_weight == 0:
-        return None
+    # 1. Paradigm subtype (0-25) — strongest predictor
+    #    GOOD (57% WR): BofA-LIS, AG-PURE, SIDIAL-MESSY, GEX-PURE
+    #    BAD (32% WR, -171 pts): AG-LIS, AG-TARGET, SIDIAL-EXTREME, GEX-LIS
+    _GOOD_ES = {"BofA-LIS", "BOFA-LIS", "AG-PURE", "SIDIAL-MESSY", "GEX-PURE"}
+    _BAD_ES = {"AG-LIS", "AG-TARGET", "SIDIAL-EXTREME", "GEX-LIS"}
+    if paradigm_str in _GOOD_ES:
+        para_v2 = 25
+    elif paradigm_str in _BAD_ES:
+        para_v2 = 0
+    else:
+        para_v2 = 12
 
-    composite = (
-        div_score * w_div
-        + vol_score * w_vol
-        + dd_score * w_dd
-        + para_score * w_para
-        + lis_score * w_lis
-    ) / total_weight
+    # 2. Direction (0-15) — bullish 53% WR, bearish 40% WR
+    dir_v2 = 15 if direction == "bullish" else 5
 
+    # 3. Time of day (0-20) — 11xx=56% best, 10xx/15xx=27-29% worst
+    now_et = datetime.now(NY)
+    et_h = now_et.hour
+    if et_h in (11, 13):
+        time_v2 = 20
+    elif et_h in (12, 14):
+        time_v2 = 12
+    elif et_h == 10:
+        time_v2 = 3
+    else:
+        time_v2 = 0  # 15xx = 29% WR
+
+    # 4. Alignment (0-20) — directional, r=+0.087
+    #    align=+2: 65% WR, align=-1: 39% WR
+    # Note: greek_alignment not directly available here, approximate from Volland stats
+    # DD + paradigm alignment serves as proxy
+    align_proxy = 0
+    if dd_raw:
+        align_proxy += 10
+    if para_raw:
+        align_proxy += 10
+
+    # 5. VIX (0-15) — VIX<20: 67% WR, VIX 20-24: 42%
+    _vix_val = float(vix) if vix is not None else 22.0
+    if _vix_val < 20:
+        vix_v2 = 15
+    elif _vix_val >= 25:
+        vix_v2 = 10  # VIX 25+ slightly better than 20-24
+    else:
+        vix_v2 = 5
+
+    composite = para_v2 + dir_v2 + time_v2 + align_proxy + vix_v2
     composite = max(0, min(100, composite))
 
-    # --- Grade ---
-    abs_thresholds = settings.get("abs_grade_thresholds", DEFAULT_ABSORPTION_SETTINGS["abs_grade_thresholds"])
-    grade = compute_grade(composite, abs_thresholds)
-
-    if grade is None:
-        return None
+    # --- Grade v2 ---
+    if composite >= 75:
+        grade = "A+"
+    elif composite >= 60:
+        grade = "A"
+    elif composite >= 45:
+        grade = "B"
+    elif composite >= 30:
+        grade = "C"
+    else:
+        grade = "LOG"
 
     return {
         "setup_name": "ES Absorption",
@@ -1396,11 +1467,11 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None):
         "upside": None,
         "rr_ratio": None,
         "first_hour": False,
-        # Column mapping: support=divergence, upside=volume, floor=dd, target=paradigm, rr=lis
+        # Column mapping (v2): support=divergence, upside=volume, floor=dd, target=paradigm, rr=lis
         "support_score": div_score,
         "upside_score": vol_score,
         "floor_cluster_score": dd_score,
-        "target_cluster_score": para_score,
+        "target_cluster_score": para_score_raw,
         "rr_score": lis_score,
         # Absorption-specific extras
         "bar_idx": trigger_idx,
@@ -3791,7 +3862,8 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
     elif spot is not None and lis is not None and (lis - spot) > 20:
         mark_ag_expired()
 
-    ag_result = evaluate_ag_short(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings)
+    ag_result = evaluate_ag_short(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings,
+                                   vix=vix)
     if ag_result is not None:
         notify_ag, reason_ag = should_notify_ag(ag_result)
         results.append({

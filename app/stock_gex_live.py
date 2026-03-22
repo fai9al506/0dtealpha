@@ -674,6 +674,8 @@ def run_gex_scan():
 
     now = datetime.now(ET)
     t = now.time()
+    if now.weekday() >= 5:  # Skip weekends (5=Sat, 6=Sun)
+        return
     if not (dtime(9, 30) <= t <= dtime(16, 0)):
         return
 
@@ -796,6 +798,8 @@ def run_spot_monitor():
         return
 
     now = datetime.now(ET)
+    if now.weekday() >= 5:  # Skip weekends
+        return
     t = now.time()
     if not (dtime(10, 0) <= t <= dtime(15, 55)):
         return

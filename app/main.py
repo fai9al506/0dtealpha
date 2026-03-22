@@ -4362,7 +4362,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
         pass
 
     closed_count = sum(1 for b in bars if b.get("status") == "closed")
-    result = evaluate_absorption(bars, volland_stats, _setup_settings, spx_spot=spx_spot)
+    result = evaluate_absorption(bars, volland_stats, _setup_settings, spx_spot=spx_spot, vix=_vix_last)
     if result is None:
         print(f"[absorption] no signal (closed_bars={closed_count}, enabled={_setup_settings.get('absorption_enabled', True)})", flush=True)
         return None

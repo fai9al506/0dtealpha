@@ -413,6 +413,8 @@ def run_scan():
         return
 
     now = _now_et()
+    if now.weekday() >= 5:  # Skip weekends (5=Sat, 6=Sun)
+        return
     t = now.time()
     # Only during market hours (9:30-16:00 ET)
     if not (dtime(9, 30) <= t <= dtime(16, 0)):

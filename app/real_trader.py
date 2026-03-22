@@ -64,6 +64,8 @@ MAX_CONCURRENT_PER_DIR = 2
 FIRST_TARGET_PTS = 10.0
 MES_TICK_SIZE = 0.25
 MES_POINT_VALUE = 5.0
+MARGIN_PER_MES = float(os.getenv("REAL_TRADE_MARGIN_PER_MES", "500"))  # day trade margin (~$500 MES)
+DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_DAILY_LOSS_LIMIT", "150"))  # max daily loss in $
 
 # SC Trail parameters
 BE_TRIGGER_PTS = 10.0    # move stop to breakeven after 10pts profit
@@ -309,13 +311,22 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     # Margin/buying power pre-check
     bp = _get_buying_power(account_id)
     if bp is not None:
-        margin_needed = QTY * 2737  # ~$2,737/MES contract
+        margin_needed = QTY * MARGIN_PER_MES
         if bp < margin_needed:
             print(f"[real-trader] skip {setup_name}: insufficient buying power on {account_id} "
                   f"(${bp:,.0f} < ${margin_needed:,.0f})", flush=True)
             _alert(f"[REAL-TRADE] SKIPPED {setup_name}: insufficient margin\n"
                    f"Account: {account_id} | BP: ${bp:,.0f} < ${margin_needed:,.0f}")
             return
+
+    # Daily loss circuit breaker
+    daily_loss = _get_daily_realized_loss()
+    if daily_loss >= DAILY_LOSS_LIMIT:
+        print(f"[real-trader] CIRCUIT BREAKER: daily loss ${daily_loss:,.0f} >= limit ${DAILY_LOSS_LIMIT:,.0f}", flush=True)
+        _alert(f"[REAL-TRADE] CIRCUIT BREAKER HIT\n"
+               f"Daily loss: ${daily_loss:,.0f} >= ${DAILY_LOSS_LIMIT:,.0f}\n"
+               f"No more trades today.")
+        return
 
     # Charm S/R limit entry for shorts ONLY (safety: ignore for longs)
     if charm_limit_price is not None and not is_long:
@@ -1500,6 +1511,39 @@ def _get_broker_position(account_id: str) -> dict | None:
     except Exception as e:
         print(f"[real-trader] broker position query error on {account_id}: {e}", flush=True)
     return None
+
+
+def _get_daily_realized_loss() -> float:
+    """Sum realized losses for today from setup_log outcomes for real trades.
+    Uses setup_log.outcome_pnl × MES_POINT_VALUE for closed real trades.
+    Returns positive $ amount of losses only."""
+    if not _engine:
+        return 0.0
+    try:
+        from sqlalchemy import text
+        today = datetime.now(NY).strftime("%Y-%m-%d")
+        with _engine.begin() as conn:
+            # Find today's real trades via real_trade_orders table
+            rows = conn.execute(text(
+                f"SELECT setup_log_id, state FROM {DB_TABLE} "
+                f"WHERE state->>'status' = 'closed'"
+            )).fetchall()
+            total_loss = 0.0
+            for row in rows:
+                log_id = row[0]
+                state = row[1] if isinstance(row[1], dict) else {}
+                # Check setup_log for outcome_pnl
+                pnl_row = conn.execute(text(
+                    "SELECT outcome_pnl FROM setup_log "
+                    "WHERE id = :lid AND ts::date = :today AND outcome_pnl < 0"
+                ), {"lid": log_id, "today": today}).fetchone()
+                if pnl_row:
+                    loss_pts = abs(float(pnl_row[0]))
+                    total_loss += loss_pts * MES_POINT_VALUE * QTY
+            return total_loss
+    except Exception as e:
+        print(f"[real-trader] daily loss query error: {e}", flush=True)
+        return 0.0
 
 
 def _get_buying_power(account_id: str) -> float | None:

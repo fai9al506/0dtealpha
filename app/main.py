@@ -3839,6 +3839,7 @@ def _run_setup_check():
         vix=_vix_last,
         vanna_pin_strike=_vanna_pin_strike, vanna_pin_value=_vanna_pin_value,
         chain_df=_chain_for_butterfly,
+        vanna_all=_vanna_cache.get("all"),
     )
     for rw in result_wrappers:
         setup_name = rw["result"]["setup_name"]

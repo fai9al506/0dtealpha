@@ -2816,12 +2816,17 @@ def format_vanna_butterfly_message(result, alignment=None):
     return msg
 
 
-def evaluate_dd_exhaustion(spot, dd_value, dd_shift, charm, paradigm, settings):
+def evaluate_dd_exhaustion(spot, dd_value, dd_shift, charm, paradigm, settings,
+                           vix=None, greek_alignment=None):
     """
     Evaluate DD Exhaustion setup.
     LONG: dd_shift < -threshold AND charm > 0  (dealers over-hedged bearish, price bounces)
     SHORT: dd_shift > +threshold AND charm < 0  (dealers over-positioned bullish, price fades)
     Returns result dict or None.
+
+    Grading v2 (Mar 22): Data-driven scoring from 289 trades analysis.
+    Old grading was random (r=-0.017). New grading r=+0.296.
+    Key insight: DD is CONTRARIAN — anti-alignment is best. Paradigm subtype matters.
     """
     if not settings.get("dd_exhaust_enabled", True):
         return None
@@ -2859,85 +2864,112 @@ def evaluate_dd_exhaustion(spot, dd_value, dd_shift, charm, paradigm, settings):
     else:
         stop_price = round(spot + stop_pts, 2)
 
-    # --- Scoring (5 components, max 100) ---
-    # Based on backtest (24 trades, 58% WR, PF 1.55x) + Volland Discord research
+    # --- Scoring v2: Data-driven (5 components, max 100) ---
+    # Based on 289-trade analysis (Feb 18 - Mar 20, 2026). Correlation with outcome:
+    #   Old total score: r=-0.017 (random — grade meant nothing)
+    #   New total score: r=+0.296 (correctly predictive)
 
-    # 1. DD Shift magnitude (0-30 pts): bell-curve, sweet spot $500M-$2B
-    #    Backtest: $3B+ trades (#3, #21) showed 0 maxFav → regime change not exhaustion
+    # 1. Paradigm subtype (0-25) — strongest predictor (r=+0.192)
+    #    GOOD (60% WR, +251 pts): AG-TARGET (79%), SIDIAL-MESSY (58%), SIDIAL-EXTREME (50%)
+    #    BAD (28% WR, -127 pts): AG-LIS (28%), BOFA-MESSY (25%)
+    #    NEUTRAL (45% WR): BOFA-PURE, GEX-*, BofA-LIS
+    _GOOD_PARADIGMS = {"AG-TARGET", "SIDIAL-MESSY", "SIDIAL-EXTREME", "AG-PURE",
+                       "SIDIAL-BALANCE"}
+    _BAD_PARADIGMS = {"AG-LIS", "BOFA-MESSY"}
+    p_val = str(paradigm) if paradigm else ""
+    if p_val in _GOOD_PARADIGMS:
+        para_score = 25
+    elif p_val in _BAD_PARADIGMS:
+        para_score = 0
+    else:
+        para_score = 12
+
+    # 2. Greek alignment — CONTRARIAN (0-25) — unique to DD (r=+0.150)
+    #    DD is a contrarian setup: anti-alignment means the signal is STRONGEST.
+    #    short align=-1: 56% WR, +252 pts (anti-aligned short = dealers overextended)
+    #    long  align=+2: 55% WR, +118 pts (moderate alignment works for longs)
+    #    long  align=+3: 41% WR, -184 pts (over-aligned = exhaustion already resolved)
+    #    short align= 0: 26% WR, -97 pts (no conviction either way)
+    align = int(greek_alignment) if greek_alignment is not None else 0
+    if direction == "short":
+        # Shorts: anti-alignment is BEST (dealers overextended bullish)
+        if align <= -1:
+            align_score = 25
+        elif align <= 0:
+            align_score = 5    # neutral = no conviction
+        elif align <= 2:
+            align_score = 15   # moderate alignment
+        else:
+            align_score = 8    # align=+3 for shorts is mixed
+    else:
+        # Longs: moderate alignment works, over-alignment = already resolved
+        if align == 2:
+            align_score = 25   # sweet spot for longs
+        elif align == 1:
+            align_score = 18
+        elif align == 0:
+            align_score = 10
+        elif align == -1:
+            align_score = 5    # anti-aligned long = risky
+        else:  # align=+3
+            align_score = 0    # over-aligned = worst (41% WR, -184 PnL)
+
+    # 3. VIX sweet spot (0-20) — (r=+0.175)
+    #    VIX 21-26: 52% WR, +266 pts — sweet spot for contrarian exhaustion
+    #    VIX 18-20: 39% WR — low vol, not enough pressure for exhaustion reversal
+    #    VIX 27+: 25% WR, -132 pts — too much vol, exhaustion signals are noise
+    _vix = float(vix) if vix is not None else 22.0
+    if 21 <= _vix < 26:
+        vix_score = 20   # sweet spot
+    elif 20 <= _vix < 21:
+        vix_score = 12   # borderline
+    elif 18 <= _vix < 20:
+        vix_score = 5    # low VIX = weak exhaustion signals
+    elif 26 <= _vix < 27:
+        vix_score = 8    # borderline high
+    else:
+        vix_score = 0    # VIX >= 27 or < 18
+
+    # 4. DD shift magnitude (0-15) — only positive correlation from old scoring (r=+0.114)
     abs_shift = abs(dd_shift)
-    if abs_shift >= 3_000_000_000:
-        shift_score = 15       # extreme: possibly regime change, not just exhaustion
-    elif abs_shift >= 2_000_000_000:
-        shift_score = 25       # strong but may be overdone
-    elif abs_shift >= 1_000_000_000:
-        shift_score = 30       # sweet spot: most winners cluster here
+    if abs_shift >= 1_000_000_000:
+        shift_score = 15   # strong shift = stronger contrarian signal
     elif abs_shift >= 500_000_000:
-        shift_score = 20       # moderate, reliable range
+        shift_score = 10
+    elif abs_shift >= 300_000_000:
+        shift_score = 5
     else:
-        shift_score = 10       # minimum threshold met ($200M+)
+        shift_score = 0
 
-    # 2. Charm alignment strength (0-25 pts): structural anchor for the divergence
-    #    WizOps: "all 0DTE vanna, charm, gamma captured in delta decay"
-    #    Apollo: "bearish charm won't effect much with elevated skew"
-    #    Backtest: charm <20M → unreliable (trade #24: charm=$3M → LOSS)
-    abs_charm = abs(charm)
-    if abs_charm < 20_000_000:
-        charm_score = 0        # too weak — no structural support
-    elif abs_charm < 50_000_000:
-        charm_score = 8
-    elif abs_charm < 100_000_000:
-        charm_score = 15
-    elif abs_charm < 250_000_000:
-        charm_score = 22
-    else:
-        charm_score = 25       # strong structural conviction
-
-    # 3. Time-of-day (0-15 pts)
-    #    WizOps: "0DTE delta decay is more actionable in the middle of the day"
-    #    Dark Matter: "Post 2 pm is dealer o'clock"
-    #    Backtest: trades #19 (14:21), #20 (14:52) both won
+    # 5. Time of day (0-15) — (r=+0.108)
+    #    10:00-14:00: 49% WR (best window)
+    #    14:30: 31% WR (death zone — same as SC)
+    #    15:00: 36% WR (near end of day)
     t = now.time()
-    if t >= dtime(14, 0):
-        time_score = 15        # dealer o'clock — highest conviction
-    elif t >= dtime(11, 30):
-        time_score = 12        # mid-day sweet spot
-    elif t >= dtime(10, 30):
-        time_score = 8         # settling period
+    if t < dtime(14, 0):
+        time_score = 15    # core hours
+    elif t < dtime(14, 30):
+        time_score = 10    # 14:00-14:30 still OK (52% WR)
+    elif t < dtime(15, 0):
+        time_score = 0     # 14:30 death zone (31% WR)
+    elif t < dtime(15, 30):
+        time_score = 3     # 15:00-15:30 (36% WR)
     else:
-        time_score = 3         # 10:00-10:30 — opening noise
+        time_score = 5     # 15:30+ (50% WR, small sample)
 
-    # 4. Paradigm context (0-15 pts) — actual Volland paradigm names
-    #    Apollo: "Paradigm is AG pure BUT 0dte Delta Decay is +3B"
-    #    DK5000: "Sidial = consolidation" → DD signals are noise
-    para_score = 0
-    if paradigm:
-        p = str(paradigm).upper()
-        if "BOFA" in p or "BOF" in p:
-            para_score = 10    # range-bound: exhaustion at extremes fits well
-        elif "GEX" in p and "AG" not in p and "ANTI" not in p:
-            # GEX-PURE is bullish regime
-            para_score = 15 if direction == "long" else 5
-        elif "AG" in p or "ANTI" in p:
-            # AG is bearish regime
-            para_score = 5 if direction == "long" else 15
-        elif "SIDIAL" in p:
-            para_score = 3     # consolidation, DD signals are noise
-        # Messy / unknown: 0
+    total_score = para_score + align_score + vix_score + shift_score + time_score
 
-    # 5. Direction bonus (0-15 pts)
-    #    Backtest: shorts avg +4.7/trade vs longs +1.3/trade (3.6x better)
-    #    Market microstructure: bullish over-positioning creates stronger fades
-    dir_score = 15 if direction == "short" else 8
-
-    total_score = shift_score + charm_score + time_score + para_score + dir_score
-
-    # Grade thresholds
-    if total_score >= 75:
+    # Grade thresholds (calibrated to new score distribution)
+    if total_score >= 80:
         grade = "A+"
-    elif total_score >= 55:
+    elif total_score >= 65:
         grade = "A"
+    elif total_score >= 50:
+        grade = "B"
+    elif total_score >= 35:
+        grade = "C"
     else:
-        grade = "A-Entry"
+        grade = "LOG"
 
     return {
         "setup_name": "DD Exhaustion",
@@ -2955,16 +2987,16 @@ def evaluate_dd_exhaustion(spot, dd_value, dd_shift, charm, paradigm, settings):
         "target": None,
         "max_plus_gex": None,
         "max_minus_gex": None,
-        # Sub-scores stored in existing columns for breakdown display
+        # Sub-scores stored in existing columns for breakdown display (repurposed for v2)
         "gap_to_lis": None,
         "upside": None,
         "rr_ratio": None,
         "first_hour": False,
-        "support_score": shift_score,       # DD shift magnitude (0-30)
-        "upside_score": charm_score,        # charm strength (0-25)
+        "support_score": shift_score,       # DD shift magnitude (0-15)
+        "upside_score": align_score,        # alignment CONTRARIAN (0-25)
         "floor_cluster_score": time_score,  # time-of-day (0-15)
-        "target_cluster_score": para_score, # paradigm context (0-15)
-        "rr_score": dir_score,              # direction bonus (0-15)
+        "target_cluster_score": para_score, # paradigm subtype (0-25)
+        "rr_score": vix_score,              # VIX sweet spot (0-20)
     }
 
 
@@ -3687,7 +3719,8 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
                  skew_value=None, skew_change_pct=None,
                  vanna_levels=None, es_range_bars=None,
                  vix=None,
-                 vanna_pin_strike=None, vanna_pin_value=None, chain_df=None):
+                 vanna_pin_strike=None, vanna_pin_value=None, chain_df=None,
+                 vanna_all=None):
     """
     Main entry point called from main.py.
     Returns a list of result wrappers (each has keys: result, notify, notify_reason, message).
@@ -3708,6 +3741,7 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
       vanna_pin_strike: max absolute 0DTE vanna strike (Vanna Butterfly)
       vanna_pin_value: vanna notional at pin strike (Vanna Butterfly)
       chain_df: current options chain DataFrame (Vanna Butterfly pricing)
+      vanna_all: vanna ALL value for greek alignment (DD Exhaustion contrarian scoring)
     """
     results = []
 
@@ -3801,8 +3835,24 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
         })
 
     # ── DD Exhaustion (log-only) ──
+    # Pre-compute greek alignment for DD scoring (contrarian: anti-alignment is best)
+    # DD direction is deterministic: long if dd_shift<0+charm>0, short if dd_shift>0+charm<0
+    _dd_align = None
+    if dd_shift is not None and aggregated_charm is not None:
+        _dd_dir = "long" if dd_shift < 0 and aggregated_charm > 0 else "short"
+        _dd_align_score = 0
+        _dd_is_long = _dd_dir == "long"
+        if aggregated_charm is not None:
+            _dd_align_score += 1 if (aggregated_charm > 0) == _dd_is_long else -1
+        if vanna_all is not None:
+            _dd_align_score += 1 if (vanna_all > 0) == _dd_is_long else -1
+        if spot and max_plus_gex:
+            _dd_align_score += 1 if (spot <= max_plus_gex) == _dd_is_long else -1
+        _dd_align = _dd_align_score
+
     dd_exhaust_result = evaluate_dd_exhaustion(
         spot, dd_value, dd_shift, aggregated_charm, paradigm, settings,
+        vix=vix, greek_alignment=_dd_align,
     )
     if dd_exhaust_result is not None:
         notify_dde, reason_dde = should_notify_dd_exhaust(dd_exhaust_result)

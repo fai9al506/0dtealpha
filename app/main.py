@@ -188,7 +188,22 @@ from app.dashboard_v2 import router as _v2_router
 app.include_router(_v2_router)
 
 # Public paths that don't require authentication
-PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png", "/api/ts/authorize", "/api/ts/callback", "/api/debug/sim-orders", "/api/debug/gex-analysis", "/api/debug/vix3m-test", "/api/debug/options-sim"}
+PUBLIC_PATHS = {"/", "/login", "/logout", "/request-access", "/api/health", "/favicon.ico", "/favicon.png", "/api/ts/authorize", "/api/ts/callback"}
+
+# Login rate limiting — simple in-memory tracker (IP → list of timestamps)
+_login_attempts: dict[str, list[float]] = {}
+_LOGIN_RATE_LIMIT = 5       # max attempts
+_LOGIN_RATE_WINDOW = 300    # per 5 minutes
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """Add security headers to all responses."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
@@ -5873,8 +5888,9 @@ def api_economic_calendar(country: str = "USD", impact: str = None):
              "impact": r[3], "forecast": r[4], "previous": r[5], "actual": r[6]} for r in rows]
 
 @app.get("/api/health")
-def api_health():
-    """Component-level health with freshness, stale flags, and overall status."""
+def api_health(request: Request):
+    """Component-level health with freshness, stale flags, and overall status.
+    Public access returns minimal info only. Full details require auth."""
     freshness = api_data_freshness()
     is_open = market_open_now()
 
@@ -5911,6 +5927,11 @@ def api_health():
         overall = "degraded"
     else:
         overall = "healthy"
+
+    # Public access: minimal info only (no VIX, no component details)
+    session = request.cookies.get("session")
+    if not session or not verify_session(session):
+        return {"status": overall, "market_open": is_open}
 
     return {
         "status": overall,
@@ -6399,7 +6420,7 @@ def api_debug_options_sim(date: str = "2026-03-10"):
     except Exception as e:
         import traceback
         result["error"] = str(e)
-        result["traceback"] = traceback.format_exc()
+        print(f"[debug] options-sim traceback: {traceback.format_exc()}", flush=True)
     return result
 
 @app.get("/api/debug/vix3m-test")
@@ -7189,7 +7210,8 @@ def api_volland_stats():
         return result
     except Exception as e:
         import traceback
-        return JSONResponse({"error": str(e), "trace": traceback.format_exc()[-500:]}, status_code=500)
+        print(f"[volland-stats] error: {traceback.format_exc()}", flush=True)
+        return JSONResponse({"error": "Server error"}, status_code=500)
 
 # ====== ES DELTA ENDPOINTS ======
 
@@ -15814,7 +15836,19 @@ def root(request: Request, session: str = Cookie(default=None)):
 
 @app.post("/login")
 def login(request: Request, email: str = Form(...), password: str = Form(...)):
-    """Handle login form submission."""
+    """Handle login form submission with rate limiting."""
+    import time as _time
+
+    # Rate limiting by IP
+    client_ip = request.client.host if request.client else "unknown"
+    now = _time.time()
+    attempts = _login_attempts.get(client_ip, [])
+    # Remove attempts outside the window
+    attempts = [t for t in attempts if now - t < _LOGIN_RATE_WINDOW]
+    if len(attempts) >= _LOGIN_RATE_LIMIT:
+        html = LOGIN_HTML_TEMPLATE.replace("__ERROR__", '<div class="error">Too many login attempts. Try again later.</div>')
+        return HTMLResponse(html, status_code=429)
+
     if not engine:
         html = LOGIN_HTML_TEMPLATE.replace("__ERROR__", '<div class="error">Database not available</div>')
         return HTMLResponse(html, status_code=500)
@@ -15827,6 +15861,8 @@ def login(request: Request, email: str = Form(...), password: str = Form(...)):
             ).mappings().first()
 
             if row and verify_password(password, row["password_hash"]):
+                # Successful login — clear rate limit for this IP
+                _login_attempts.pop(client_ip, None)
                 session_token = create_session(row["id"])
                 response = RedirectResponse(url="/dashboard", status_code=302)
                 response.set_cookie(
@@ -15834,11 +15870,16 @@ def login(request: Request, email: str = Form(...), password: str = Form(...)):
                     value=session_token,
                     max_age=SESSION_MAX_AGE,
                     httponly=True,
-                    samesite="lax"
+                    samesite="strict",
+                    secure=True,
                 )
                 return response
     except Exception as e:
         print(f"[auth] login error: {e}", flush=True)
+
+    # Track failed attempt
+    attempts.append(now)
+    _login_attempts[client_ip] = attempts
 
     html = LOGIN_HTML_TEMPLATE.replace("__ERROR__", '<div class="error">Invalid email or password</div>')
     return HTMLResponse(html, status_code=401)

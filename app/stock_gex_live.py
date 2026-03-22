@@ -637,6 +637,9 @@ def _update_trade_exit(trade):
 
 # ── Telegram ────────────────────────────────────────────────────────
 
+_error_cooldowns = {}  # {error_key: last_alert_time} to avoid spam
+
+
 def _alert(message):
     """Send alert to stock GEX Telegram channel."""
     if _send_telegram:
@@ -645,6 +648,17 @@ def _alert(message):
         except Exception as e:
             print(f"[stock-gex-live] telegram error: {e}", flush=True)
     print(f"[stock-gex-live] {message}", flush=True)
+
+
+def _alert_error(error_key, message):
+    """Send error alert with 10-min cooldown per error type to avoid spam."""
+    now = datetime.now(ET)
+    last = _error_cooldowns.get(error_key)
+    if last and (now - last).total_seconds() < 600:
+        print(f"[stock-gex-live] ERROR (cooldown): {message}", flush=True)
+        return
+    _error_cooldowns[error_key] = now
+    _alert(f"<b>ERROR:</b> {message}")
 
 
 # ── Scanner Job (every 30 min) ──────────────────────────────────────
@@ -665,6 +679,16 @@ def run_gex_scan():
     if t < dtime(10, 0):
         return
 
+    try:
+        _run_gex_scan_inner(now)
+    except Exception as e:
+        _alert_error("scan_crash", f"GEX scan crashed: {e}")
+        print(f"[stock-gex-live] SCAN CRASH: {traceback.format_exc()}", flush=True)
+
+
+def _run_gex_scan_inner(now):
+    global _gex_levels, _watchlist, _last_scan_at, _scan_count
+
     print(f"[stock-gex-live] GEX scan starting ({len(STOCKS)} stocks)...", flush=True)
 
     exp = _get_weekly_expiration()
@@ -672,10 +696,19 @@ def run_gex_scan():
     # Batch fetch all stock quotes
     quotes = _fetch_batch_quotes(STOCKS)
 
+    if not quotes:
+        _alert_error("batch_quotes", "Failed to fetch batch stock quotes. TS API may be down.")
+        return
+
+    if len(quotes) < len(STOCKS) * 0.5:
+        _alert_error("partial_quotes",
+                     f"Only got {len(quotes)}/{len(STOCKS)} stock quotes. TS API partial failure.")
+
     new_levels = {}
     new_watchlist = {}
     scanned = 0
     passed = 0
+    chain_errors = 0
 
     for symbol in STOCKS:
         try:
@@ -688,6 +721,7 @@ def run_gex_scan():
             # Fetch chain and compute GEX
             chain = _fetch_chain(symbol, exp, spot)
             if not chain:
+                chain_errors += 1
                 continue
 
             levels = _compute_stock_gex(symbol, chain, spot)
@@ -716,6 +750,16 @@ def run_gex_scan():
 
         except Exception as e:
             print(f"[stock-gex-live] scan error {symbol}: {e}", flush=True)
+
+    if chain_errors > len(STOCKS) * 0.5:
+        _alert_error("chain_errors",
+                     f"Chain fetch failed for {chain_errors}/{len(STOCKS)} stocks. "
+                     f"TS API issue or expiration problem. exp={exp}")
+
+    if scanned == 0:
+        _alert_error("no_scans",
+                     f"GEX scan completed but 0 stocks scanned. "
+                     f"Quotes: {len(quotes)}, Chain errors: {chain_errors}")
 
     with _lock:
         _gex_levels = new_levels
@@ -754,6 +798,16 @@ def run_spot_monitor():
     if not (dtime(10, 0) <= t <= dtime(15, 55)):
         return
 
+    try:
+        _run_spot_monitor_inner(now)
+    except Exception as e:
+        _alert_error("monitor_crash", f"Spot monitor crashed: {e}")
+        print(f"[stock-gex-live] MONITOR CRASH: {traceback.format_exc()}", flush=True)
+
+
+def _run_spot_monitor_inner(now):
+    global _active_trades, _trade_log, _last_monitor_at, _today_trades, _today_pnl
+
     with _lock:
         watchlist = dict(_watchlist)
         active = list(_active_trades)
@@ -769,6 +823,14 @@ def run_spot_monitor():
         return
 
     quotes = _fetch_batch_quotes(all_symbols)
+
+    if not quotes:
+        _alert_error("monitor_quotes", "Spot monitor: failed to fetch quotes. TS API may be down.")
+        return
+
+    if active and not any(quotes.get(t["symbol"]) for t in active):
+        _alert_error("monitor_active_quotes",
+                     f"Cannot fetch quotes for active trades: {[t['symbol'] for t in active]}")
 
     # ── Check active trades for exits ──
     for trade in list(active):

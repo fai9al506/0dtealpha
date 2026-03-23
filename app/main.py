@@ -1582,7 +1582,7 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "SB Absorption": None, "SB10 Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "Vanna Butterfly": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "SB Absorption": None, "SB10 Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "Vanna Butterfly": None, "VIX Compression": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
@@ -3252,6 +3252,13 @@ def _compute_setup_levels(r: dict):
         # Outcome resolved at EOD via _send_setup_eod_summary
         pin = r.get("pin_strike") or r.get("target")
         return pin, None
+
+    if setup_name == "VIX Compression":
+        # SL=20, ride to close (no BE, no trail — long-tail winners)
+        # target set very high so outcome resolves at EOD as EXPIRED
+        target_lvl = spot + 100  # effectively no target
+        stop_lvl = spot - 20
+        return round(target_lvl, 2), round(stop_lvl, 2)
 
     if setup_name == "IV Momentum":
         # Fixed SL=8/TP=20 (short only, backtest: 64% WR, PF 4.02)

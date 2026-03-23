@@ -2284,11 +2284,17 @@ def update_vix_tracker(vix: float, spot: float):
         _vix_history[:] = _vix_history[-240:]
 
 
-def evaluate_vix_compression(spot, vix, settings):
+def evaluate_vix_compression(spot, vix, settings, paradigm=None):
     """
     Evaluate VIX Compression setup (LONG only).
-    Detects when VIX drops >0.8 in a rolling 45-min window while SPX stays flat (<20 pts).
+    Detects when VIX drops >1.0 in a rolling 45-min window while SPX stays flat (<20 pts).
     This divergence (fear dropping + price not rallying yet) precedes a bullish move.
+
+    Tuning v2 (Mar 23): Data-driven from 13 signals (Feb 24 - Mar 20).
+    - VIX drop threshold raised 0.8→1.0 (drops 4 weak signals: 25% WR → filtered)
+    - RM: SL=20, no BE, no trail — ride to close (long-tail winners reach +40-120 pts)
+    - SPX flatness score removed (all signals cluster at 15-20 pts, not discriminative)
+    - Added signal time score (later = better, r=+0.268 with WIN)
     Returns result dict or None.
     """
     if spot is None or vix is None:
@@ -2311,12 +2317,12 @@ def evaluate_vix_compression(spot, vix, settings):
         return None
 
     # Scan rolling 45-min windows in _vix_history
-    # Each entry is ~30s apart; 45 min = ~90 entries
     best_vix_drop = 0.0
     best_spx_move = None
     best_window_start = None
     best_window_end = None
     best_vix_start = None
+    best_window_min = 0
 
     for i in range(len(_vix_history)):
         ts_start_str, vix_start, spot_start = _vix_history[i]
@@ -2339,19 +2345,20 @@ def evaluate_vix_compression(spot, vix, settings):
             vix_drop = vix_start - vix_end
             spx_move = abs(spot_end - spot_start)
 
-            if vix_drop > 0.8 and spx_move < 20 and vix_drop > best_vix_drop:
+            if vix_drop > 1.0 and spx_move < 20 and vix_drop > best_vix_drop:
                 best_vix_drop = vix_drop
                 best_spx_move = spx_move
                 best_window_start = ts_start_str
                 best_window_end = ts_end_str
                 best_vix_start = vix_start
+                best_window_min = window_min
             break  # only check furthest valid endpoint per start
 
-    if best_vix_drop <= 0.8:
+    if best_vix_drop <= 1.0:
         return None
 
-    # ── Scoring (3 components, max 100) ──
-    # 1. VIX drop magnitude (0-40): bigger drop = stronger compression signal
+    # ── Scoring v2 (3 components, max 100) ──
+    # 1. VIX drop magnitude (0-40): bigger drop = stronger signal (r=+0.224 with P&L)
     if best_vix_drop >= 2.5:
         vix_drop_score = 40
     elif best_vix_drop >= 2.0:
@@ -2360,24 +2367,24 @@ def evaluate_vix_compression(spot, vix, settings):
         vix_drop_score = 30
     elif best_vix_drop >= 1.2:
         vix_drop_score = 22
-    elif best_vix_drop >= 1.0:
+    else:
         vix_drop_score = 15
-    else:
-        vix_drop_score = 8
 
-    # 2. SPX flatness (0-30): flatter = more coiled energy to release
-    if best_spx_move < 5:
-        spx_flat_score = 30
-    elif best_spx_move < 8:
-        spx_flat_score = 25
-    elif best_spx_move < 12:
-        spx_flat_score = 18
-    elif best_spx_move < 16:
-        spx_flat_score = 10
+    # 2. Signal time of day (0-30): later = better (r=+0.268 with WIN)
+    # More market data confirms the compression pattern
+    signal_hour = now.hour + now.minute / 60.0
+    if signal_hour >= 13.0:
+        time_score = 30
+    elif signal_hour >= 12.0:
+        time_score = 25
+    elif signal_hour >= 11.0:
+        time_score = 18
+    elif signal_hour >= 10.0:
+        time_score = 10
     else:
-        spx_flat_score = 5
+        time_score = 5
 
-    # 3. VIX level (0-30): higher VIX = more room to compress = stronger signal
+    # 3. VIX level (0-30): higher VIX = more room to compress
     if vix >= 30:
         vix_level_score = 30
     elif vix >= 25:
@@ -2391,9 +2398,8 @@ def evaluate_vix_compression(spot, vix, settings):
     else:
         vix_level_score = 0
 
-    composite = vix_drop_score + spx_flat_score + vix_level_score
+    composite = vix_drop_score + time_score + vix_level_score
 
-    # Grade
     if composite >= 80:
         grade = "A+"
     elif composite >= 60:
@@ -2403,8 +2409,9 @@ def evaluate_vix_compression(spot, vix, settings):
     else:
         return None  # below B = no signal
 
+    # RM v2: SL=20, ride to close (no BE, no trail)
+    # Long-tail winners (+40 to +120 pts) get killed by BE/trail
     stop_pts = 20
-    target_pts = 20
 
     return {
         "setup_name": "VIX Compression",
@@ -2418,13 +2425,29 @@ def evaluate_vix_compression(spot, vix, settings):
         "spx_move": round(best_spx_move, 2) if best_spx_move is not None else None,
         "window_start": best_window_start,
         "window_end": best_window_end,
+        "window_min": round(best_window_min, 0),
         "vix_drop_score": vix_drop_score,
-        "spx_flat_score": spx_flat_score,
+        "time_score": time_score,
         "vix_level_score": vix_level_score,
-        "target_pts": target_pts,
+        "target_pts": stop_pts,  # placeholder for outcome tracking
         "stop_pts": stop_pts,
         "stop_price": round(spot - stop_pts, 2),
-        "target_price": round(spot + target_pts, 2),
+        "target_price": round(spot + 100, 2),  # ride to close (no fixed target)
+        # Columns required by setup_log INSERT
+        "paradigm": paradigm,
+        "lis": None,
+        "target": round(spot + 100, 2),
+        "max_plus_gex": None,
+        "max_minus_gex": None,
+        "gap_to_lis": None,
+        "upside": round(best_vix_drop, 2),
+        "rr_ratio": round(best_vix_drop / 0.8, 2),
+        "first_hour": signal_hour < 10.5,
+        "support_score": vix_drop_score,
+        "upside_score": time_score,
+        "floor_cluster_score": vix_level_score,
+        "target_cluster_score": 0,
+        "rr_score": 0,
     }
 
 
@@ -3998,7 +4021,7 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
         })
 
     # ── VIX Compression ──
-    vc_result = evaluate_vix_compression(spot, vix, settings)
+    vc_result = evaluate_vix_compression(spot, vix, settings, paradigm=paradigm)
     if vc_result is not None:
         notify_vc, reason_vc = should_notify_vix_compress(vc_result)
         results.append({

@@ -342,7 +342,8 @@ def _fetch_chain(symbol, expiration, spot):
                         "Ask": _safe_float(it.get("Ask")),
                         "Last": _safe_float(it.get("Last")),
                     })
-            except Exception:
+            except Exception as e:
+                print(f"[stock-gex-live] chain {symbol} exp={exp_str}: {e}", flush=True)
                 continue  # try next expiration format
 
         return rows if rows else None

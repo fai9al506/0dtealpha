@@ -203,14 +203,14 @@ def _compute_stock_gex(symbol, chain_rows, spot):
     highest_neg = max(neg_strikes)
     lowest_pos = min(pos_strikes)
 
-    if highest_neg >= lowest_pos:
-        return None
+    # Note: for stocks with $1 strike intervals, zones can overlap — that's OK
+    # We still use highest_neg and lowest_pos as key levels
 
     total_pos = sum(v for k, v in top_pos)
     total_neg = sum(abs(v) for k, v in top_neg)
     ratio = total_pos / total_neg if total_neg > 0 else 0
 
-    zone_width = (lowest_pos - highest_neg) / highest_neg * 100
+    zone_width = abs(lowest_pos - highest_neg) / highest_neg * 100 if highest_neg > 0 else 0
     support_below = [s for s in neg_strikes if s < highest_neg]
     magnets_above = [k for k, v in top_pos if k > highest_neg]
 

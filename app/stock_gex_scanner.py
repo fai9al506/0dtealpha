@@ -179,9 +179,9 @@ def _get_batch_quotes(symbols: list[str]) -> dict[str, float]:
         return {}
     sym_str = ",".join(symbols)
     try:
-        data = _api_get(f"/marketdata/quotes/{sym_str}", timeout=10)
+        r = _api_get(f"/marketdata/quotes/{sym_str}", timeout=10)
         result = {}
-        for q in (data.get("Quotes", []) if isinstance(data, dict) else data if isinstance(data, list) else []):
+        for q in r.json().get("Quotes", []):
             sym = q.get("Symbol", "")
             last = q.get("Last") or q.get("Close")
             if sym and last:
@@ -209,9 +209,9 @@ def _get_target_expirations(symbol: str) -> list[dict]:
         return _exp_cache[cache_key]
 
     try:
-        data = _api_get(f"/marketdata/options/expirations/{symbol}", timeout=10)
+        r = _api_get(f"/marketdata/options/expirations/{symbol}", timeout=10)
         exps = []
-        for e in (data.get("Expirations", []) if isinstance(data, dict) else []):
+        for e in r.json().get("Expirations", []):
             d = str(e.get("Date") or e.get("Expiration") or "")[:10]
             if d:
                 exps.append(d)
@@ -284,9 +284,10 @@ def _fetch_chain(symbol: str, exp: str, spot: float) -> list[dict]:
             "expiration": exp_fmt,
         }
         try:
-            js = _api_get("/marketdata/options/chains", params=params, timeout=12)
+            r = _api_get("/marketdata/options/chains", params=params, timeout=12)
+            js = r.json()
             rows = []
-            for it in (js.get("Options", []) if isinstance(js, dict) else []):
+            for it in js.get("Options", []):
                 legs = it.get("Legs") or []
                 leg = legs[0] if legs else {}
                 side = (leg.get("OptionType") or it.get("OptionType") or "").lower()

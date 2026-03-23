@@ -321,8 +321,9 @@ def _fetch_chain(symbol, expiration, spot):
                 "expiration": exp_str,
             }, timeout=12)
 
-            if resp and isinstance(resp, dict):
-                for it in resp.get("Options", []):
+            if resp and hasattr(resp, 'json'):
+                js = resp.json()
+                for it in js.get("Options", []):
                     legs = it.get("Legs") or []
                     leg0 = legs[0] if legs else {}
                     side = (leg0.get("OptionType") or it.get("OptionType") or "").lower()
@@ -406,11 +407,8 @@ def _fetch_stock_quote(symbol):
     if not _api_get:
         return None
     try:
-        data = _api_get(f"/marketdata/quotes/{symbol}")
-        if not data:
-            return None
-        quotes = data.get("Quotes", []) if isinstance(data, dict) else data if isinstance(data, list) else []
-        for q in quotes:
+        r = _api_get(f"/marketdata/quotes/{symbol}")
+        for q in r.json().get("Quotes", []):
             return {
                 "last": q.get("Last", q.get("Close", 0)),
                 "bid": q.get("Bid", 0),
@@ -427,15 +425,10 @@ def _fetch_batch_quotes(symbols):
         return {}
     try:
         sym_str = ",".join(symbols)
-        data = _api_get(f"/marketdata/quotes/{sym_str}")
-        if not data:
-            print(f"[stock-gex-live] batch quote: api returned None/empty", flush=True)
-            return {}
-        quotes = data.get("Quotes", []) if isinstance(data, dict) else data if isinstance(data, list) else []
-        if not quotes:
-            print(f"[stock-gex-live] batch quote: no Quotes in response (keys={list(data.keys()) if isinstance(data, dict) else type(data).__name__})", flush=True)
+        r = _api_get(f"/marketdata/quotes/{sym_str}")
+        js = r.json()
         result = {}
-        for q in quotes:
+        for q in js.get("Quotes", []):
             sym = q.get("Symbol", "")
             if sym:
                 result[sym] = {
@@ -472,8 +465,9 @@ def _fetch_option_quote(symbol, expiration, strike, right="C"):
             "expiration": exp_str,
         }, timeout=8)
 
-        if resp and isinstance(resp, dict):
-            for it in resp.get("Options", []):
+        if resp and hasattr(resp, 'json'):
+            js = resp.json()
+            for it in js.get("Options", []):
                 legs = it.get("Legs") or []
                 leg0 = legs[0] if legs else {}
                 st = _safe_float(leg0.get("StrikePrice"))

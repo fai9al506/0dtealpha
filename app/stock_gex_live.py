@@ -1406,8 +1406,13 @@ def _0dte_fetch_spot(display_sym, cfg):
     """
     quote_sym = "$SPX.X" if display_sym == "SPX" else display_sym
     q = _fetch_stock_quote(quote_sym)
-    if q and q["last"] > 0:
-        return q["last"]
+    if q:
+        try:
+            last = float(q.get("last") or 0)
+            if last > 0:
+                return last
+        except (ValueError, TypeError):
+            pass
     return None
 
 

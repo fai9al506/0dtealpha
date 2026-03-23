@@ -523,7 +523,7 @@ function render0DTE(){
     const borderColor=sel?'var(--blue)':'var(--border)';
     const bg=sel?'var(--blue-bg)':'var(--bg-1)';
 
-    html+='<div class="card" onclick="select0DTE(\''+sym+'\')" style="cursor:pointer;border-color:'+borderColor+';background:'+bg+';padding:12px">';
+    html+='<div class="card" onclick="select0DTE(\\''+sym+'\\')" style="cursor:pointer;border-color:'+borderColor+';background:'+bg+';padding:12px">';
     html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
     html+='<span style="font-size:14px;font-weight:700;color:var(--text)">'+sym+'</span>';
     if(isActive)html+='<span class="badge badge-active">ACTIVE</span>';

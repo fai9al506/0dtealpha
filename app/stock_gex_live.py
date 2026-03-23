@@ -491,10 +491,11 @@ def _db_init():
     if not _engine:
         return
     with _engine.begin() as conn:
-        # Add missing columns to existing tables (safe if already exists)
+        # Add missing columns to existing tables (each in its own transaction)
         for col, typ in [("grade", "VARCHAR(2)"), ("neg_levels", "JSONB"), ("pos_levels", "JSONB")]:
             try:
-                conn.execute(text(f"ALTER TABLE stock_gex_live_trades ADD COLUMN {col} {typ}"))
+                with _engine.begin() as c2:
+                    c2.execute(text(f"ALTER TABLE stock_gex_live_trades ADD COLUMN {col} {typ}"))
             except Exception:
                 pass  # column already exists
         conn.execute(text("""

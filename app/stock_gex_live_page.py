@@ -266,8 +266,17 @@ function renderChart(){
 }
 
 function drawGexChart(sym,s){
-  // Use all_levels if available (full GEX landscape), fallback to top 3
-  const all=(s.all_levels&&s.all_levels.length)?s.all_levels:[...(s.neg_levels||[]),...(s.pos_levels||[])].sort((a,b)=>a.strike-b.strike);
+  let all;
+  if(s.all_levels&&s.all_levels.length){
+    all=s.all_levels;
+  }else{
+    // Fallback: merge neg+pos and net-deduplicate by strike
+    const byStrike={};
+    for(const l of [...(s.neg_levels||[]),...(s.pos_levels||[])]){
+      byStrike[l.strike]=(byStrike[l.strike]||0)+l.gex;
+    }
+    all=Object.entries(byStrike).map(([k,v])=>({strike:parseFloat(k),gex:v})).sort((a,b)=>a.strike-b.strike);
+  }
   if(!all.length)return;
   const strikes=all.map(l=>'$'+l.strike.toFixed(0));
   const vals=all.map(l=>l.gex);

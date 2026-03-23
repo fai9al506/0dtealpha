@@ -431,10 +431,14 @@ def _fetch_batch_quotes(symbols):
         for q in js.get("Quotes", []):
             sym = q.get("Symbol", "")
             if sym:
+                try:
+                    last = float(q.get("Last") or q.get("Close") or 0)
+                except (ValueError, TypeError):
+                    last = 0
                 result[sym] = {
-                    "last": q.get("Last", q.get("Close", 0)),
-                    "bid": q.get("Bid", 0),
-                    "ask": q.get("Ask", 0),
+                    "last": last,
+                    "bid": float(q.get("Bid", 0) or 0),
+                    "ask": float(q.get("Ask", 0) or 0),
                 }
         return result
     except Exception as e:

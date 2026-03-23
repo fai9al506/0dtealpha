@@ -334,15 +334,22 @@ function renderWatchlist(){
 function renderActive(){
   const trades=data.active||[];
   if(!trades.length)return '<div class="empty"><h3>No active trades</h3><p>Monitoring watchlist every 2 min for bounce entries</p></div>';
-  let html='<div class="tbl-wrap"><table><thead><tr><th>Stock</th><th>Tier</th><th>Entry</th><th>Spot</th><th>Strike</th><th>T1</th><th>T2</th><th>Delta</th><th>Bid/Ask</th><th>Ratio</th></tr></thead><tbody>';
+  const levels=data.levels||{};
+  let html='<div class="tbl-wrap"><table><thead><tr><th>Stock</th><th>Tier</th><th>Entry</th><th>Entry $</th><th>Now $</th><th>Stock P&L</th><th>Strike</th><th>T1</th><th>T2</th><th>Bid/Ask</th><th>Ratio</th></tr></thead><tbody>';
   for(const t of trades){
     const tier=t.tier==='A'?'<span class="tier-a">A</span>':'<span class="tier-b">B</span>';
     const ts=t.entry_ts?new Date(t.entry_ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'?';
+    const entry=t.entry_spot||0;
+    const now=(levels[t.symbol]||{}).spot||entry;
+    const pnlPct=entry>0?((now-entry)/entry*100):0;
+    const pnlCls=pnlPct>0?'c-green':(pnlPct<0?'c-red':'');
     html+='<tr><td><b>'+t.symbol+'</b> <span class="badge badge-active">OPEN</span></td>';
     html+='<td>'+tier+'</td><td>'+ts+'</td>';
-    html+='<td>$'+(t.entry_spot||0).toFixed(2)+'</td><td>'+fmtK(t.strike||0)+'</td>';
+    html+='<td>$'+entry.toFixed(2)+'</td>';
+    html+='<td>$'+now.toFixed(2)+'</td>';
+    html+='<td class="'+pnlCls+'" style="font-weight:600">'+(pnlPct>0?'+':'')+pnlPct.toFixed(2)+'%</td>';
+    html+='<td>'+fmtK(t.strike||0)+'</td>';
     html+='<td class="c-green">'+fmtK(t.t1_price||0)+'</td><td class="c-purple">'+fmtK(t.t2_price||0)+'</td>';
-    html+='<td>'+(t.call_delta?t.call_delta.toFixed(2):'?')+'</td>';
     html+='<td>$'+(t.call_bid||0).toFixed(2)+' / $'+(t.call_ask||0).toFixed(2)+'</td>';
     html+='<td>'+(t.ratio||'?')+'x</td></tr>';
   }

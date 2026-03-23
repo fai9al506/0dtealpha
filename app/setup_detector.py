@@ -50,6 +50,7 @@ _cooldown = {
     "last_gap_to_lis": None,
     "setup_expired": False,
     "last_date": None,
+    "_gone_count": 0,
 }
 
 _cooldown_ag = {
@@ -57,7 +58,12 @@ _cooldown_ag = {
     "last_gap_to_lis": None,
     "setup_expired": False,
     "last_date": None,
+    "_gone_count": 0,
 }
+
+# How many consecutive non-paradigm cycles before marking expired
+# 3 cycles = ~90 seconds — survives deploys and brief paradigm flickers
+_EXPIRY_DEBOUNCE = 3
 
 _GRADE_ORDER = {"A+": 3, "A": 2, "A-Entry": 1}
 
@@ -404,7 +410,7 @@ def format_gex_velocity_message(result, alignment=None):
 
 _cooldown_gex_vel = {
     "last_grade": None, "last_gap_to_lis": None,
-    "setup_expired": False, "last_date": None,
+    "setup_expired": False, "last_date": None, "_gone_count": 0,
 }
 
 
@@ -414,7 +420,7 @@ def should_notify_gex_velocity(result):
     today = datetime.now(NY).date()
     if _cooldown_gex_vel["last_date"] != today:
         _cooldown_gex_vel = {"last_grade": None, "last_gap_to_lis": None,
-                             "setup_expired": False, "last_date": today}
+                             "setup_expired": False, "last_date": today, "_gone_count": 0}
 
     grade = result["grade"]
     gap = result["gap_to_lis"]
@@ -596,7 +602,7 @@ def should_notify(result):
 
     today = datetime.now(NY).date()
     if _cooldown["last_date"] != today:
-        _cooldown = {"last_grade": None, "last_gap_to_lis": None, "setup_expired": False, "last_date": today}
+        _cooldown = {"last_grade": None, "last_gap_to_lis": None, "setup_expired": False, "last_date": today, "_gone_count": 0}
 
     grade = result["grade"]
     gap = result["gap_to_lis"]
@@ -644,7 +650,7 @@ def should_notify_ag(result):
 
     today = datetime.now(NY).date()
     if _cooldown_ag["last_date"] != today:
-        _cooldown_ag = {"last_grade": None, "last_gap_to_lis": None, "setup_expired": False, "last_date": today}
+        _cooldown_ag = {"last_grade": None, "last_gap_to_lis": None, "setup_expired": False, "last_date": today, "_gone_count": 0}
 
     grade = result["grade"]
     gap = result["gap_to_lis"]
@@ -2593,7 +2599,7 @@ def evaluate_vix_compression(spot, vix, settings, paradigm=None,
 
     # One signal per day
     today = now.date()
-    if _cooldown_vix_compress.get("last_date") == str(today) and _cooldown_vix_compress.get("last_long_time") is not None:
+    if str(_cooldown_vix_compress.get("last_date", "")) == str(today) and _cooldown_vix_compress.get("last_long_time") is not None:
         return None
 
     # Scan rolling 45-min windows in _vix_history
@@ -2752,7 +2758,7 @@ def should_notify_vix_compress(result):
     now = datetime.now(NY)
     today = str(now.date())
 
-    if _cooldown_vix_compress.get("last_date") != today:
+    if str(_cooldown_vix_compress.get("last_date", "")) != today:
         _cooldown_vix_compress["last_long_time"] = None
         _cooldown_vix_compress["last_date"] = today
 
@@ -2987,7 +2993,7 @@ def should_notify_iv_momentum(result):
     today = str(now.date())
     cooldown_min = DEFAULT_IV_MOMENTUM_SETTINGS["ivm_cooldown_min"]
 
-    if _cooldown_iv_momentum.get("last_date") != today:
+    if str(_cooldown_iv_momentum.get("last_date", "")) != today:
         _cooldown_iv_momentum["last_short_time"] = None
         _cooldown_iv_momentum["last_date"] = today
 
@@ -4183,11 +4189,15 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
     # ── Update GEX LIS velocity tracker (before evaluations) ──
     update_gex_lis_tracker(lis, paradigm)
 
-    # ── GEX Long cooldown expiry tracking ──
-    if paradigm and "GEX" not in str(paradigm).upper():
-        mark_setup_expired()
-    elif spot is not None and lis is not None and abs(spot - lis) > 5:
-        mark_setup_expired()
+    # ── GEX Long cooldown expiry tracking (debounced — survives deploys) ──
+    _gex_gone = (paradigm and "GEX" not in str(paradigm).upper()) or \
+                (spot is not None and lis is not None and abs(spot - lis) > 5)
+    if _gex_gone:
+        _cooldown["_gone_count"] = _cooldown.get("_gone_count", 0) + 1
+        if _cooldown["_gone_count"] >= _EXPIRY_DEBOUNCE:
+            mark_setup_expired()
+    else:
+        _cooldown["_gone_count"] = 0
 
     gex_result = evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings)
     if gex_result is not None:
@@ -4199,11 +4209,15 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
             "message": format_setup_message(gex_result),
         })
 
-    # ── GEX Velocity (separate setup for wider gap + rapid LIS) ──
-    if paradigm and "GEX" not in str(paradigm).upper():
-        mark_gex_velocity_expired()
-    elif spot is not None and lis is not None and abs(spot - lis) > 10:
-        mark_gex_velocity_expired()
+    # ── GEX Velocity cooldown expiry (debounced) ──
+    _gv_gone = (paradigm and "GEX" not in str(paradigm).upper()) or \
+               (spot is not None and lis is not None and abs(spot - lis) > 10)
+    if _gv_gone:
+        _cooldown_gex_vel["_gone_count"] = _cooldown_gex_vel.get("_gone_count", 0) + 1
+        if _cooldown_gex_vel["_gone_count"] >= _EXPIRY_DEBOUNCE:
+            mark_gex_velocity_expired()
+    else:
+        _cooldown_gex_vel["_gone_count"] = 0
 
     # Only evaluate if normal GEX Long didn't fire (avoid double signal)
     if gex_result is None:
@@ -4217,11 +4231,15 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
                 "message": format_gex_velocity_message(gex_vel_result),
             })
 
-    # ── AG Short cooldown expiry tracking ──
-    if paradigm and "AG" not in str(paradigm).upper():
-        mark_ag_expired()
-    elif spot is not None and lis is not None and (lis - spot) > 20:
-        mark_ag_expired()
+    # ── AG Short cooldown expiry tracking (debounced — survives deploys) ──
+    _ag_gone = (paradigm and "AG" not in str(paradigm).upper()) or \
+               (spot is not None and lis is not None and (lis - spot) > 20)
+    if _ag_gone:
+        _cooldown_ag["_gone_count"] = _cooldown_ag.get("_gone_count", 0) + 1
+        if _cooldown_ag["_gone_count"] >= _EXPIRY_DEBOUNCE:
+            mark_ag_expired()
+    else:
+        _cooldown_ag["_gone_count"] = 0
 
     ag_result = evaluate_ag_short(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings,
                                    vix=vix)
@@ -4404,6 +4422,13 @@ def import_cooldowns(data: dict):
         return
     def _deserialize(d, has_datetimes=False, dt_keys=None):
         out = dict(d)
+        # Fix: convert last_date string back to date object
+        # Without this, "2026-03-23" != date(2026,3,23) causes cooldown reset on every deploy
+        if "last_date" in out and isinstance(out["last_date"], str) and out["last_date"]:
+            try:
+                out["last_date"] = date.fromisoformat(out["last_date"])
+            except Exception:
+                pass
         if has_datetimes:
             keys = dt_keys or ("last_trade_time_long", "last_trade_time_short")
             for k in keys:

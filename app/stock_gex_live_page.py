@@ -22,7 +22,7 @@ STOCK_GEX_LIVE_HTML = """<!DOCTYPE html>
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.12);
   --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.12);
 }
-body{background:var(--bg-0);color:var(--text);font-family:'Inter',system-ui,-apple-system,sans-serif;font-size:13px;line-height:1.5}
+body{background:var(--bg-0);color:var(--text);font-family:'Inter',system-ui,-apple-system,sans-serif;font-size:12px;line-height:1.4;font-weight:400}
 ::selection{background:var(--blue);color:#fff}
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-track{background:var(--bg-1)}
@@ -31,7 +31,7 @@ body{background:var(--bg-0);color:var(--text);font-family:'Inter',system-ui,-app
 /* ── Header ────────────────────────────────── */
 .header{background:var(--bg-1);border-bottom:1px solid var(--border);padding:10px 24px;display:flex;justify-content:space-between;align-items:center}
 .header-left{display:flex;align-items:center;gap:12px}
-.header-left h1{font-size:16px;font-weight:700;color:#fff;letter-spacing:-0.3px}
+.header-left h1{font-size:14px;font-weight:600;color:var(--text);letter-spacing:-0.2px}
 .header-left .logo{width:28px;height:28px;border-radius:6px;background:linear-gradient(135deg,var(--blue),var(--purple));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff}
 .header-right{display:flex;align-items:center;gap:10px}
 .status-pill{display:flex;align-items:center;gap:6px;background:var(--bg-2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:11px;color:var(--text-2)}
@@ -54,15 +54,15 @@ body{background:var(--bg-0);color:var(--text);font-family:'Inter',system-ui,-app
 .layout{display:flex;height:calc(100vh - 89px)}
 
 /* ── Sidebar ───────────────────────────────── */
-.sidebar{width:240px;background:var(--bg-1);border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0}
-.sidebar-header{padding:12px 14px 8px;font-size:10px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)}
-.stock-item{padding:10px 14px;cursor:pointer;border-bottom:1px solid rgba(30,45,69,0.5);display:flex;justify-content:space-between;align-items:center;transition:all .1s}
+.sidebar{width:210px;background:var(--bg-1);border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0}
+.sidebar-header{padding:8px 12px 6px;font-size:9px;font-weight:500;color:var(--text-3);text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--border)}
+.stock-item{padding:7px 12px;cursor:pointer;border-bottom:1px solid rgba(30,45,69,0.4);display:flex;justify-content:space-between;align-items:center;transition:all .1s}
 .stock-item:hover{background:var(--bg-2)}
 .stock-item.selected{background:var(--blue-bg);border-left:3px solid var(--blue)}
-.stock-item .sym{font-weight:600;font-size:13px;color:#fff}
-.stock-item .price{font-size:11px;color:var(--text-2);margin-top:1px}
+.stock-item .sym{font-weight:500;font-size:12px;color:var(--text)}
+.stock-item .price{font-size:10px;color:var(--text-3);margin-top:1px}
 .stock-item .right{text-align:right}
-.stock-item .ratio{font-size:12px;font-weight:600}
+.stock-item .ratio{font-size:11px;font-weight:500}
 .stock-item .ratio.good{color:var(--green)}
 .stock-item .ratio.bad{color:var(--text-3)}
 .wl-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-left:5px;vertical-align:middle}
@@ -71,24 +71,24 @@ body{background:var(--bg-0);color:var(--text);font-family:'Inter',system-ui,-app
 .main-panel{flex:1;overflow-y:auto;padding:20px 24px;background:var(--bg-0)}
 
 /* ── Tables ────────────────────────────────── */
-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:11px}
 thead{position:sticky;top:0;z-index:1}
-th{background:var(--bg-1);color:var(--text-3);text-align:left;padding:10px 12px;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
+th{background:var(--bg-1);color:var(--text-3);text-align:left;padding:7px 10px;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border)}
 th:first-child{border-radius:8px 0 0 0}
 th:last-child{border-radius:0 8px 0 0}
-td{padding:10px 12px;border-bottom:1px solid rgba(30,45,69,0.3)}
+td{padding:6px 10px;border-bottom:1px solid rgba(30,45,69,0.3);font-weight:400}
 tr{transition:background .1s}
 tbody tr:hover{background:var(--bg-2)}
 .tbl-wrap{background:var(--bg-1);border:1px solid var(--border);border-radius:10px;overflow:hidden}
 
 /* ── Cards / KPIs ──────────────────────────── */
 .card{background:var(--bg-1);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px}
-.card h3{color:#fff;font-size:14px;margin-bottom:6px;font-weight:600}
+.card h3{color:var(--text);font-size:13px;margin-bottom:6px;font-weight:500}
 .card p{color:var(--text-3);font-size:12px}
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px}
-.kpi{background:var(--bg-1);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
-.kpi .label{color:var(--text-3);font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
-.kpi .value{color:#fff;font-size:22px;font-weight:700;margin-top:4px;letter-spacing:-0.5px}
+.kpi{background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:10px 14px}
+.kpi .label{color:var(--text-3);font-size:9px;text-transform:uppercase;letter-spacing:.4px;font-weight:500}
+.kpi .value{color:var(--text);font-size:16px;font-weight:600;margin-top:2px}
 .kpi .value.green{color:var(--green)}
 .kpi .value.red{color:var(--red)}
 
@@ -112,16 +112,16 @@ tbody tr:hover{background:var(--bg-2)}
 .link:hover{text-decoration:underline}
 
 /* ── GEX Chart ─────────────────────────────── */
-.chart-container{height:380px;margin-bottom:16px;background:var(--bg-1);border:1px solid var(--border);border-radius:10px;overflow:hidden}
-.info-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
-.info-item{background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:10px 14px}
-.info-item .lbl{color:var(--text-3);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
-.info-item .val{font-size:16px;font-weight:700;margin-top:3px;color:#fff}
+.chart-container{height:260px;margin-bottom:12px;background:var(--bg-1);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.info-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
+.info-item{background:var(--bg-1);border:1px solid var(--border);border-radius:6px;padding:7px 10px}
+.info-item .lbl{color:var(--text-3);font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.3px}
+.info-item .val{font-size:13px;font-weight:600;margin-top:2px;color:var(--text)}
 
 /* ── Empty state ───────────────────────────── */
-.empty{text-align:center;padding:60px 20px}
-.empty h3{color:var(--text-2);font-size:16px;margin-bottom:8px}
-.empty p{color:var(--text-3);font-size:13px}
+.empty{text-align:center;padding:50px 20px}
+.empty h3{color:var(--text-2);font-size:13px;font-weight:500;margin-bottom:6px}
+.empty p{color:var(--text-3);font-size:11px}
 </style>
 </head>
 <body>
@@ -265,10 +265,10 @@ function drawGexChart(sym,s){
   const spot='$'+(s.spot||0).toFixed(0);
   const layout={
     paper_bgcolor:'#111827',plot_bgcolor:'#111827',
-    font:{color:'#94a3b8',size:11,family:'Inter'},
-    margin:{t:10,b:50,l:60,r:20},
-    xaxis:{gridcolor:'#1e2d45',tickangle:-45,tickfont:{size:10}},
-    yaxis:{gridcolor:'#1e2d45',zeroline:true,zerolinecolor:'#2a3f63',title:{text:'Gamma Exposure',font:{size:11}}},
+    font:{color:'#94a3b8',size:10,family:'Inter'},
+    margin:{t:6,b:40,l:50,r:14},
+    xaxis:{gridcolor:'#1e2d45',tickangle:-45,tickfont:{size:9}},
+    yaxis:{gridcolor:'#1e2d45',zeroline:true,zerolinecolor:'#2a3f63',title:{text:'GEX',font:{size:9}}},
     shapes:[{type:'line',yref:'paper',y0:0,y1:1,x0:spot,x1:spot,line:{color:'#3b82f6',width:2,dash:'dot'}}],
     annotations:[{x:spot,y:1,yref:'paper',text:'SPOT $'+(s.spot||0).toFixed(2),showarrow:false,font:{color:'#3b82f6',size:10,family:'Inter'},yanchor:'bottom',bgcolor:'#111827'}],
   };

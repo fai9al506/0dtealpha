@@ -281,15 +281,13 @@ def _fetch_chain(symbol, expiration, spot):
         return None
 
     try:
-        # Strike interval based on stock price
+        # Strike interval based on stock price (must be integer for TS API)
         if spot > 500:
             interval = 5
-        elif spot > 100:
-            interval = 2.5
         elif spot > 50:
             interval = 1
         else:
-            interval = 0.5
+            interval = 1
 
         proximity = int(interval * 15)  # +/- 15 strikes
 

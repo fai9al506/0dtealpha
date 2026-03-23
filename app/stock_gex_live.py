@@ -290,7 +290,7 @@ def _fetch_chain(symbol, expiration, spot):
         else:
             interval = 1
 
-        proximity = int(interval * 15)  # +/- 15 strikes
+        proximity = int(interval * 20)  # +/- 20 strikes = ~40 total
 
         # Try multiple expiration formats (TS API is inconsistent)
         exp_variants = [expiration]  # YYYY-MM-DD

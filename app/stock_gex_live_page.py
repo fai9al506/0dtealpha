@@ -259,7 +259,8 @@ function renderChart(){
   const _hn=s.highest_neg||0;const _gDist=_hn>0?((s.spot-_hn)/_hn*100):0;const _below=s.spot<_hn;
   html+='<div class="info-item"><div class="lbl">Spot vs -GEX</div><div class="val" style="color:'+(_below?'var(--red)':(_gDist<2?'var(--amber)':'var(--green)'))+'">'+ (_below?'':'+')+ _gDist.toFixed(1)+'%</div></div>';
   html+='<div class="info-item"><div class="lbl">Trigger (-1%)</div><div class="val c-amber">$'+(wl?wl.trigger_price.toFixed(2):'n/a')+'</div></div>';
-  html+='<div class="info-item"><div class="lbl">Support Below</div><div class="val">'+(s.n_support_below||0)+'</div></div>';
+  const _str=s.structure||'?';const _strCls=_str==='CLEAN'?'c-green':(_str==='MIXED'?'c-amber':'c-red');
+  html+='<div class="info-item"><div class="lbl">GEX Structure</div><div class="val '+_strCls+'">'+_str+' '+(s.structure_score||0)+'%</div></div>';
   html+='<div class="info-item"><div class="lbl">Magnets Above</div><div class="val">'+(s.n_magnets_above||0)+'</div></div>';
   html+='</div>';
   html+='<div id="gexChart" class="chart-container"></div>';
@@ -395,7 +396,7 @@ function _lvlData(levels){
     const below=sp<hn;const ratio=s.ratio||0;
     const goodRatio=ratio>=3;
     const status=goodRatio?'watching':'low';
-    return{sym,s,hn,sp,distPct,below,ratio,status,goodRatio,neg:s.neg_strikes||[],pos:s.pos_strikes||[]};
+    return{sym,s,hn,sp,distPct,below,ratio,status,goodRatio,structure:s.structure||'?',structureScore:s.structure_score||0,neg:s.neg_strikes||[],pos:s.pos_strikes||[]};
   });
 }
 function setLvlSort(col){
@@ -416,6 +417,7 @@ function renderLevels(){
   else if(lvlFilter==='below')rows=rows.filter(r=>r.below);
   else if(lvlFilter==='low')rows=rows.filter(r=>!r.goodRatio);
   else if(lvlFilter==='close')rows=rows.filter(r=>!r.below&&r.distPct<3&&r.goodRatio);
+  else if(lvlFilter==='clean')rows=rows.filter(r=>r.structure==='CLEAN'&&r.goodRatio);
 
   // Sort
   const dir=lvlSortAsc?1:-1;
@@ -423,6 +425,7 @@ function renderLevels(){
   else if(lvlSort==='ratio')rows.sort((a,b)=>(a.ratio-b.ratio)*dir);
   else if(lvlSort==='sym')rows.sort((a,b)=>a.sym.localeCompare(b.sym)*dir);
   else if(lvlSort==='spot')rows.sort((a,b)=>(a.sp-b.sp)*dir);
+  else if(lvlSort==='structure')rows.sort((a,b)=>(b.structureScore-a.structureScore)*dir);
 
   const total=_lvlData(levels);
   const cW=total.filter(r=>r.goodRatio).length;
@@ -430,11 +433,12 @@ function renderLevels(){
   const cB=total.filter(r=>r.below).length;
   const cL=total.filter(r=>!r.goodRatio).length;
   const cC=total.filter(r=>!r.below&&r.distPct<3&&r.goodRatio).length;
+  const cCL=total.filter(r=>r.structure==='CLEAN'&&r.goodRatio).length;
 
   // Filter bar
   const fb=(id,label,cnt)=>{const act=lvlFilter===id;return '<span class="fbtn'+(act?' fbtn-act':'')+'" onclick="setLvlFilter(\\''+id+'\\')">'+label+' <span class="count">'+cnt+'</span></span>'};
   let html='<div class="filter-bar">';
-  html+=fb('all','All',total.length)+fb('watching','Watching',cW)+fb('tradezone','Trade Zone',cTZ)+fb('close','Near -GEX',cC)+fb('below','Below -GEX',cB)+fb('low','Low Ratio',cL);
+  html+=fb('all','All',total.length)+fb('watching','Watching',cW)+fb('clean','Clean GEX',cCL)+fb('tradezone','Trade Zone',cTZ)+fb('close','Near -GEX',cC)+fb('below','Below -GEX',cB)+fb('low','Low Ratio',cL);
   html+='</div>';
 
   // Sort arrow helper
@@ -447,7 +451,7 @@ function renderLevels(){
   html+='<th>-GEX 1</th><th>-GEX 2</th><th>-GEX 3</th><th>+GEX 1</th><th>+GEX 2</th><th>+GEX 3</th>';
   html+='<th class="sortable" onclick="setLvlSort(\\'ratio\\')">Ratio'+sa('ratio')+'</th>';
   html+='<th class="sortable" onclick="setLvlSort(\\'gexdist\\')">Spot vs -GEX'+sa('gexdist')+'</th>';
-  html+='<th>Status</th><th></th></tr></thead><tbody>';
+  html+='<th class="sortable" onclick="setLvlSort(\\'structure\\')">Structure'+sa('structure')+'</th><th>Status</th><th></th></tr></thead><tbody>';
 
   for(const r of rows){
     const close=!r.below&&r.distPct<2;
@@ -457,7 +461,9 @@ function renderLevels(){
     html+='<tr><td><b>'+r.sym+'</b></td><td>$'+r.sp.toFixed(2)+'</td>';
     for(let i=0;i<3;i++)html+='<td class="c-red">'+(r.neg[i]?fmtK(r.neg[i]):'-')+'</td>';
     for(let i=0;i<3;i++)html+='<td class="c-green">'+(r.pos[i]?fmtK(r.pos[i]):'-')+'</td>';
+    const str=r.s.structure||'?';const strCls=str==='CLEAN'?'c-green':(str==='MIXED'?'c-amber':'c-red');
     html+='<td>'+r.ratio.toFixed(1)+'x</td><td class="'+distCls+'" style="font-weight:500">'+distTxt+'</td>';
+    html+='<td class="'+strCls+'">'+str+'</td>';
     html+='<td>'+statusBadge+'</td>';
     html+='<td><span class="link" onclick="selectedSym=\\''+r.sym+'\\';showTab(\\'chart\\',document.querySelector(\\'.tab\\'))">View</span></td></tr>';
   }

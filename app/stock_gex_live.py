@@ -204,6 +204,23 @@ def _compute_stock_gex(symbol, chain_rows, spot):
     support_below = [s for s in neg_strikes if s < highest_neg]
     magnets_above = [k for k, v in top_pos if k > highest_neg]
 
+    # GEX structure quality: how cleanly separated are -GEX (below) and +GEX (above)?
+    # Only consider SIGNIFICANT strikes (>= 10% of max) — ignore noise like -17K when max is 242K
+    # Clean = all neg below all pos. Mixed = some overlap. Messy = fully interleaved.
+    max_abs = max(abs(v) for v in gex_by_strike.values()) if gex_by_strike else 0
+    sig_threshold = max_abs * 0.10
+    all_neg_strikes = sorted([k for k, v in gex_by_strike.items() if v < -sig_threshold])
+    all_pos_strikes = sorted([k for k, v in gex_by_strike.items() if v > sig_threshold])
+    if all_neg_strikes and all_pos_strikes:
+        # What fraction of negative GEX is cleanly below the positive zone?
+        neg_below_pos = sum(1 for s in all_neg_strikes if s < min(all_pos_strikes))
+        pos_above_neg = sum(1 for s in all_pos_strikes if s > max(all_neg_strikes))
+        structure_score = round((neg_below_pos / len(all_neg_strikes) + pos_above_neg / len(all_pos_strikes)) / 2 * 100)
+    else:
+        structure_score = 0
+    # CLEAN (>=70): clear zones, no mixing. MIXED (30-69): some overlap. MESSY (<30): fully interleaved
+    structure = "CLEAN" if structure_score >= 70 else ("MIXED" if structure_score >= 30 else "MESSY")
+
     return {
         "symbol": symbol,
         "spot": round(spot, 2),
@@ -220,6 +237,8 @@ def _compute_stock_gex(symbol, chain_rows, spot):
         "n_magnets_above": len(magnets_above),
         "total_pos_gex": round(total_pos),
         "total_neg_gex": round(total_neg),
+        "structure": structure,
+        "structure_score": structure_score,
     }
 
 

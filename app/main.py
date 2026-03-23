@@ -5890,6 +5890,9 @@ def on_startup():
     try:
         from app.stock_gex_live import init as stock_gex_live_init
         stock_gex_live_init(engine, api_get, send_telegram_stock_gex)
+        # Run initial scan in background (bypasses market hours, uses last-close prices)
+        from app.stock_gex_live import _startup_scan
+        Thread(target=_startup_scan, daemon=True).start()
     except Exception as e:
         print(f"[stock-gex-live] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)

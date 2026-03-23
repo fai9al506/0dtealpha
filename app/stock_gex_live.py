@@ -1161,6 +1161,15 @@ def _load_latest_levels():
         print(f"[stock-gex-live] load latest levels error: {e}", flush=True)
 
 
+def _startup_scan():
+    """Run one GEX scan at startup regardless of market hours (uses last-close prices)."""
+    try:
+        now = datetime.now(ET)
+        _run_gex_scan_inner(now)
+    except Exception as e:
+        print(f"[stock-gex-live] startup scan error: {e}", flush=True)
+
+
 def init(engine, api_get_fn, send_telegram_fn=None):
     """Initialize module. Called from main.py at startup."""
     global _engine, _api_get, _send_telegram, _initialized

@@ -136,7 +136,7 @@ th.sortable:hover{color:var(--text)}
 <body>
 <div class="header">
   <div class="header-left">
-    <div class="logo">G</div>
+    <img src="/stock-gex-logo.jpg" alt="Stock GEX" style="width:28px;height:28px;border-radius:6px;object-fit:cover">
     <h1>Stock GEX Scanner</h1>
   </div>
   <div class="header-right">
@@ -151,6 +151,7 @@ th.sortable:hover{color:var(--text)}
   <div class="tab" onclick="showTab('active',this)">Active <span class="count" id="actCount">0</span></div>
   <div class="tab" onclick="showTab('log',this)">Trade Log</div>
   <div class="tab" onclick="showTab('levels',this)">All Levels</div>
+  <div class="tab" onclick="showTab('dte',this)" style="border-left:1px solid var(--border);margin-left:6px;padding-left:18px">0DTE <span class="count" id="dteCount">0</span></div>
 </div>
 <div class="layout">
   <div class="sidebar">
@@ -161,7 +162,7 @@ th.sortable:hover{color:var(--text)}
 </div>
 
 <script>
-let currentTab='chart',selectedSym=null,data={};
+let currentTab='chart',selectedSym=null,selected0DTE=null,data={};
 let lvlSort='gexdist',lvlSortAsc=true,lvlFilter='all';
 
 function showTab(tab,el){
@@ -186,27 +187,44 @@ async function doRefresh(){
       fetch('/api/stock-gex-live/trades?days=30').then(r=>r.json()),
       fetch('/api/stock-gex-live/levels').then(r=>r.json()),
       fetch('/api/stock-gex-live/status').then(r=>r.json()),
+      fetch('/api/stock-gex-live/0dte/levels').then(r=>r.json()),
+      fetch('/api/stock-gex-live/0dte/watchlist').then(r=>r.json()),
+      fetch('/api/stock-gex-live/0dte/active').then(r=>r.json()),
+      fetch('/api/stock-gex-live/0dte/trades?days=30').then(r=>r.json()),
+      fetch('/api/stock-gex-live/0dte/status').then(r=>r.json()),
     ]);
     const wl=results[0].status==='fulfilled'?results[0].value:{};
     const active=results[1].status==='fulfilled'?results[1].value:[];
     const trades=results[2].status==='fulfilled'?results[2].value:[];
     const levels=results[3].status==='fulfilled'?results[3].value:{};
     const status=results[4].status==='fulfilled'?results[4].value:{};
+    const dteLvl=results[5].status==='fulfilled'?results[5].value:{};
+    const dteWl=results[6].status==='fulfilled'?results[6].value:{};
+    const dteAct=results[7].status==='fulfilled'?results[7].value:[];
+    const dteTrades=results[8].status==='fulfilled'?results[8].value:[];
+    const dteStat=results[9].status==='fulfilled'?results[9].value:{};
     data={
       watchlist:(wl&&!wl.error)?wl:{},
       active:Array.isArray(active)?active:[],
       trades:Array.isArray(trades)?trades:[],
       levels:(levels&&!levels.error)?levels:{},
       status:(status&&!status.error)?status:{},
+      dte_levels:(dteLvl&&!dteLvl.error)?dteLvl:{},
+      dte_watchlist:(dteWl&&!dteWl.error)?dteWl:{},
+      dte_active:Array.isArray(dteAct)?dteAct:[],
+      dte_trades:Array.isArray(dteTrades)?dteTrades:[],
+      dte_status:(dteStat&&!dteStat.error)?dteStat:{},
     };
     renderSidebar();render();
     const wlC=Object.keys(data.watchlist).length;
     const actC=(data.active||[]).length;
     const levC=Object.keys(data.levels).length;
+    const dteC=Object.keys(data.dte_levels).length;
     document.getElementById('lastUpdate').textContent=new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit'})+' ET | '+levC+' stocks';
     document.getElementById('wlCount').textContent=wlC;
     document.getElementById('actCount').textContent=actC;
     document.getElementById('stockCount').textContent='('+levC+')';
+    document.getElementById('dteCount').textContent=dteC;
   }catch(e){console.error('Refresh error:',e);render()}
 }
 
@@ -243,6 +261,7 @@ function render(){
   else if(currentTab==='active')el.innerHTML=renderActive();
   else if(currentTab==='log')el.innerHTML=renderLog();
   else if(currentTab==='levels')el.innerHTML=renderLevels();
+  else if(currentTab==='dte')el.innerHTML=render0DTE();
 }
 
 function renderChart(){
@@ -264,16 +283,15 @@ function renderChart(){
   html+='<div class="info-item"><div class="lbl">Magnets Above</div><div class="val">'+(s.n_magnets_above||0)+'</div></div>';
   html+='</div>';
   html+='<div id="gexChart" class="chart-container"></div>';
-  setTimeout(()=>drawGexChart(selectedSym,s),50);
+  setTimeout(()=>drawGexChart('gexChart',selectedSym,s),50);
   return html;
 }
 
-function drawGexChart(sym,s){
+function drawGexChart(containerId,sym,s){
   let all;
   if(s.all_levels&&s.all_levels.length){
     all=s.all_levels;
   }else{
-    // Fallback: merge neg+pos and net-deduplicate by strike
     const byStrike={};
     for(const l of [...(s.neg_levels||[]),...(s.pos_levels||[])]){
       byStrike[l.strike]=(byStrike[l.strike]||0)+l.gex;
@@ -295,13 +313,14 @@ function drawGexChart(sym,s){
     shapes:[{type:'line',yref:'paper',y0:0,y1:1,x0:spot,x1:spot,line:{color:'#3b82f6',width:2,dash:'dot'}}],
     annotations:[{x:spot,y:1,yref:'paper',text:'SPOT $'+(s.spot||0).toFixed(2),showarrow:false,font:{color:'#3b82f6',size:10,family:'Inter'},yanchor:'bottom',bgcolor:'#111827'}],
   };
-  const wl=(data.watchlist||{})[sym];
-  if(wl){
+  // Check both stock and 0DTE watchlists for trigger line
+  const wl=(data.watchlist||{})[sym]||(data.dte_watchlist||{})[sym];
+  if(wl&&wl.trigger_price){
     const trig='$'+wl.trigger_price.toFixed(0);
     layout.shapes.push({type:'line',yref:'paper',y0:0,y1:1,x0:trig,x1:trig,line:{color:'#f59e0b',width:2,dash:'dash'}});
     layout.annotations.push({x:trig,y:0.92,yref:'paper',text:'TRIGGER $'+wl.trigger_price.toFixed(2),showarrow:false,font:{color:'#f59e0b',size:10},bgcolor:'#111827'});
   }
-  Plotly.react('gexChart',[trace],layout,{displayModeBar:false,responsive:true});
+  Plotly.react(containerId,[trace],layout,{displayModeBar:false,responsive:true});
 }
 
 function renderWatchlist(){
@@ -468,6 +487,127 @@ function renderLevels(){
     html+='<td><span class="link" onclick="selectedSym=\\''+r.sym+'\\';showTab(\\'chart\\',document.querySelector(\\'.tab\\'))">View</span></td></tr>';
   }
   html+='</tbody></table></div>';
+  return html;
+}
+
+// ── 0DTE Tab ─────────────────────────────────────────────────────
+function select0DTE(sym){
+  selected0DTE=sym;
+  render();
+}
+
+function render0DTE(){
+  const levels=data.dte_levels||{};
+  const wl=data.dte_watchlist||{};
+  const active=data.dte_active||[];
+  const trades=data.dte_trades||[];
+  const syms=["SPX","SPY","QQQ","IWM"];
+
+  if(!Object.keys(levels).length)return '<div class="empty"><h3>No 0DTE GEX data yet</h3><p>Waiting for first scan (every 30 min during market hours, 10:00-16:00 ET)</p></div>';
+
+  // Auto-select first symbol
+  if(!selected0DTE||!levels[selected0DTE])selected0DTE=syms.find(s=>levels[s])||Object.keys(levels)[0];
+
+  // ── Symbol cards (top row) ──
+  let html='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">';
+  for(const sym of syms){
+    const s=levels[sym];
+    if(!s){html+='<div class="card" style="opacity:0.4;cursor:default"><h3>'+sym+'</h3><p class="c-muted">No data</p></div>';continue;}
+    const sel=sym===selected0DTE;
+    const hn=s.highest_neg||0;
+    const dist=hn>0?((s.spot-hn)/hn*100):0;
+    const below=s.spot<hn;
+    const onWL=sym in wl;
+    const isActive=active.some(t=>t.symbol===sym);
+    const distCls=below?'c-red':(dist<1?'c-amber':'c-green');
+    const borderColor=sel?'var(--blue)':'var(--border)';
+    const bg=sel?'var(--blue-bg)':'var(--bg-1)';
+
+    html+='<div class="card" onclick="select0DTE(\''+sym+'\')" style="cursor:pointer;border-color:'+borderColor+';background:'+bg+';padding:12px">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+    html+='<span style="font-size:14px;font-weight:700;color:var(--text)">'+sym+'</span>';
+    if(isActive)html+='<span class="badge badge-active">ACTIVE</span>';
+    else if(onWL)html+='<span class="badge badge-wl">WATCHING</span>';
+    else if(below)html+='<span class="badge badge-fail">BELOW -GEX</span>';
+    html+='</div>';
+    html+='<div style="font-size:18px;font-weight:600;color:var(--text)">$'+s.spot.toFixed(2)+'</div>';
+    html+='<div style="display:flex;gap:12px;margin-top:6px;font-size:10px">';
+    html+='<span><span class="c-muted">-GEX</span> <span class="c-red">'+fmtK(hn)+'</span></span>';
+    html+='<span><span class="c-muted">+GEX</span> <span class="c-green">'+fmtK(s.lowest_pos||0)+'</span></span>';
+    html+='<span><span class="c-muted">Dist</span> <span class="'+distCls+'" style="font-weight:600">'+(below?'':'+')+ dist.toFixed(1)+'%</span></span>';
+    html+='<span><span class="c-muted">R</span> <span style="color:'+((s.ratio||0)>=3?'var(--green)':'var(--text-3)')+'">'+(s.ratio||0).toFixed(1)+'x</span></span>';
+    html+='</div>';
+    html+='</div>';
+  }
+  html+='</div>';
+
+  // ── Selected symbol detail ──
+  const s=levels[selected0DTE];
+  if(s){
+    const hn=s.highest_neg||0;
+    const dist=hn>0?((s.spot-hn)/hn*100):0;
+    const below=s.spot<hn;
+    const onWL=wl[selected0DTE];
+    const str=s.structure||'?';const strCls=str==='CLEAN'?'c-green':(str==='MIXED'?'c-amber':'c-red');
+
+    html+='<div class="info-grid" style="grid-template-columns:repeat(6,1fr)">';
+    html+='<div class="info-item"><div class="lbl">Spot Price</div><div class="val">$'+s.spot.toFixed(2)+'</div></div>';
+    html+='<div class="info-item"><div class="lbl">GEX Ratio</div><div class="val" style="color:'+((s.ratio||0)>=3?'var(--green)':'var(--red)')+'">'+(s.ratio||0).toFixed(1)+'x</div></div>';
+    html+='<div class="info-item"><div class="lbl">-GEX (Support)</div><div class="val c-red">'+fmtK(hn)+'</div></div>';
+    html+='<div class="info-item"><div class="lbl">+GEX (Magnet)</div><div class="val c-green">'+fmtK(s.lowest_pos||0)+'</div></div>';
+    html+='<div class="info-item"><div class="lbl">Spot vs -GEX</div><div class="val" style="color:'+(below?'var(--red)':(dist<1?'var(--amber)':'var(--green)'))+'">'+(below?'':'+')+ dist.toFixed(1)+'%</div></div>';
+    const trigStr=onWL?'$'+onWL.trigger_price.toFixed(2):'n/a';
+    html+='<div class="info-item"><div class="lbl">Trigger (dip)</div><div class="val c-amber">'+trigStr+'</div></div>';
+    html+='</div>';
+
+    html+='<div id="dteChart" class="chart-container"></div>';
+    setTimeout(()=>drawGexChart('dteChart',selected0DTE,s),50);
+  }
+
+  // ── Active 0DTE trades ──
+  if(active.length){
+    html+='<h3 style="margin:16px 0 8px;font-size:13px;font-weight:600;color:var(--text)">Active Trades</h3>';
+    html+='<div class="tbl-wrap"><table><thead><tr><th>Symbol</th><th>Entry</th><th>Entry $</th><th>Now $</th><th>P&L</th><th>Strike</th><th>T1</th><th>T2</th></tr></thead><tbody>';
+    for(const t of active){
+      const ts=t.entry_ts?new Date(t.entry_ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit'}):'?';
+      const entry=t.entry_spot||0;
+      const now=(levels[t.symbol]||{}).spot||entry;
+      const pnlPct=entry>0?((now-entry)/entry*100):0;
+      const pnlCls=pnlPct>0?'c-green':(pnlPct<0?'c-red':'');
+      html+='<tr><td><b>'+t.symbol+'</b> <span class="badge badge-active">OPEN</span></td>';
+      html+='<td>'+ts+'</td><td>$'+entry.toFixed(2)+'</td><td>$'+now.toFixed(2)+'</td>';
+      html+='<td class="'+pnlCls+'" style="font-weight:600">'+(pnlPct>0?'+':'')+pnlPct.toFixed(2)+'%</td>';
+      html+='<td>'+fmtK(t.strike||0)+'</td><td class="c-green">'+fmtK(t.t1_price||0)+'</td><td class="c-purple">'+fmtK(t.t2_price||0)+'</td></tr>';
+    }
+    html+='</tbody></table></div>';
+  }
+
+  // ── Recent 0DTE trades log ──
+  if(trades.length){
+    const wins=trades.filter(t=>(t.option_pnl_pct||0)>0).length;
+    const tot=trades.reduce((s,t)=>s+(t.option_pnl_pct||0),0);
+    html+='<h3 style="margin:16px 0 8px;font-size:13px;font-weight:600;color:var(--text)">Recent 0DTE Trades</h3>';
+    html+='<div class="kpi-row">';
+    html+='<div class="kpi"><div class="label">Trades</div><div class="value">'+trades.length+'</div></div>';
+    html+='<div class="kpi"><div class="label">Win Rate</div><div class="value '+(wins/trades.length>0.6?'green':'red')+'">'+(trades.length?Math.round(wins/trades.length*100):0)+'%</div></div>';
+    html+='<div class="kpi"><div class="label">Avg ROI</div><div class="value '+(tot>0?'green':'red')+'">'+(trades.length?(tot/trades.length).toFixed(0):0)+'%</div></div>';
+    html+='</div>';
+    html+='<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Symbol</th><th>Entry</th><th>Exit</th><th>Strike</th><th>-GEX</th><th>+GEX</th><th>R</th><th>Exit</th><th>Stk%</th><th>Opt%</th><th>Hold</th></tr></thead><tbody>';
+    for(const t of trades){
+      const p=t.option_pnl_pct||0;const c=p>0?'win':(p<0?'loss':'');
+      const bg=t.exit_reason==='T2'?'badge-t2':(t.exit_reason==='T1'?'badge-t1':'badge-eod');
+      html+='<tr><td>'+(t.trade_date||'?')+'</td><td><b>'+(t.symbol||'?')+'</b></td>';
+      html+='<td>$'+(t.entry_spot||0).toFixed(2)+'</td><td>$'+(t.exit_spot||0).toFixed(2)+'</td>';
+      html+='<td>'+fmtK(t.strike||0)+'</td><td class="c-red">'+fmtK(t.highest_neg||0)+'</td>';
+      html+='<td class="c-green">'+fmtK(t.lowest_pos||0)+'</td><td>'+(t.gex_ratio||'?')+'</td>';
+      html+='<td><span class="badge '+bg+'">'+(t.exit_reason||'?')+'</span></td>';
+      html+='<td class="'+c+'">'+(t.stock_pnl_pct||0).toFixed(2)+'%</td>';
+      html+='<td class="'+c+'" style="font-weight:700">'+p.toFixed(0)+'%</td>';
+      html+='<td>'+(t.hold_minutes||'?')+'m</td></tr>';
+    }
+    html+='</tbody></table></div>';
+  }
+
   return html;
 }
 

@@ -281,26 +281,30 @@ def _passes_filters(levels):
 
 # ── Chain Fetching (via TS API) ─────────────────────────────────────
 
-def _fetch_chain(symbol, expiration, spot):
+def _fetch_chain(symbol, expiration, spot, interval=None, proximity=None):
     """Fetch options chain for a stock via TS API streaming endpoint.
 
     Uses /marketdata/stream/options/chains/{symbol} (same as main.py).
     The snapshot endpoint (/marketdata/options/chains) returns 404 for stocks.
     Returns list of {Strike, Type, Gamma, OpenInterest, Delta, IV, Bid, Ask, ...} or None.
+
+    Optional interval/proximity overrides for 0DTE symbols (e.g., SPX interval=5, proximity=125).
     """
     if not _api_get:
         return None
 
     try:
         # Strike interval based on stock price (must be integer for TS API)
-        if spot > 500:
-            interval = 5
-        elif spot > 50:
-            interval = 1
-        else:
-            interval = 1
+        if interval is None:
+            if spot > 500:
+                interval = 5
+            elif spot > 50:
+                interval = 1
+            else:
+                interval = 1
 
-        proximity = int(interval * 20)  # +/- 20 strikes = ~40 total
+        if proximity is None:
+            proximity = int(interval * 20)  # +/- 20 strikes = ~40 total
 
         # Try multiple expiration formats (TS API is inconsistent)
         exp_variants = [expiration]  # YYYY-MM-DD
@@ -1199,6 +1203,651 @@ def init(engine, api_get_fn, send_telegram_fn=None):
 
     _db_init()
     _load_latest_levels()
+    _0dte_db_init()
+    _load_latest_0dte_levels()
 
     print(f"[stock-gex-live] initialized. {len(STOCKS)} stocks, "
           f"ratio>{MIN_GEX_RATIO}, entry=-GEX-{ENTRY_OFFSET_PCT}%", flush=True)
+    print(f"[0dte-gex] initialized. {len(_0DTE_CONFIG)} symbols: {list(_0DTE_CONFIG.keys())}", flush=True)
+
+
+# ════════════════════════════════════════════════════════════════════
+#  0DTE GEX — SPX / SPY / QQQ / IWM  (same dip-bounce strategy)
+# ════════════════════════════════════════════════════════════════════
+
+_0DTE_CONFIG = {
+    "SPX": {
+        "chain_sym": "$SPXW.X",   # TS API symbol for SPXW 0DTE
+        "interval": 5,             # $5 strike intervals
+        "proximity": 125,          # ±25 strikes
+        "dip_pts": 10,             # 10-pt dip below -GEX
+    },
+    "SPY": {
+        "chain_sym": "SPY",
+        "interval": 1,
+        "proximity": 25,
+        "dip_pts": 1,
+    },
+    "QQQ": {
+        "chain_sym": "QQQ",
+        "interval": 1,
+        "proximity": 25,
+        "dip_pts": 1,
+    },
+    "IWM": {
+        "chain_sym": "IWM",
+        "interval": 1,
+        "proximity": 15,
+        "dip_pts": 0.5,
+    },
+}
+
+# ── 0DTE Module State ──────────────────────────────────────────────
+
+_0dte_levels = {}           # {display_sym: {levels dict}}
+_0dte_watchlist = {}        # {display_sym: {levels + trigger_price}}
+_0dte_active_trades = []    # [{symbol, entry_ts, ...}]
+_0dte_trade_log = []
+_last_0dte_scan_at = None
+_0dte_scan_count = 0
+_0dte_today_trades = 0
+_0dte_today_pnl = 0.0
+
+
+def _get_0dte_expiration():
+    """Get today's date as YYYY-MM-DD for 0DTE options."""
+    return datetime.now(ET).date().isoformat()
+
+
+def _0dte_db_init():
+    """Create 0DTE tables if needed."""
+    if not _engine:
+        return
+    with _engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS dte0_gex_levels (
+                id SERIAL PRIMARY KEY,
+                symbol VARCHAR(10) NOT NULL,
+                scan_ts TIMESTAMPTZ DEFAULT NOW(),
+                scan_date DATE NOT NULL,
+                spot FLOAT,
+                expiration VARCHAR(12),
+                levels JSONB,
+                ratio FLOAT,
+                zone_width FLOAT,
+                passes_filter BOOLEAN DEFAULT FALSE,
+                filter_reason VARCHAR(100)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS dte0_gex_trades (
+                id SERIAL PRIMARY KEY,
+                symbol VARCHAR(10) NOT NULL,
+                grade VARCHAR(2),
+                trade_date DATE NOT NULL,
+                entry_ts TIMESTAMPTZ,
+                entry_price FLOAT,
+                entry_spot FLOAT,
+                strike FLOAT,
+                expiration VARCHAR(12),
+                call_bid FLOAT,
+                call_ask FLOAT,
+                call_delta FLOAT,
+                call_iv FLOAT,
+                gex_ratio FLOAT,
+                zone_width FLOAT,
+                highest_neg FLOAT,
+                lowest_pos FLOAT,
+                neg_levels JSONB,
+                pos_levels JSONB,
+                t1_price FLOAT,
+                t2_price FLOAT,
+                exit_ts TIMESTAMPTZ,
+                exit_price FLOAT,
+                exit_spot FLOAT,
+                exit_call_bid FLOAT,
+                exit_call_ask FLOAT,
+                exit_reason VARCHAR(20),
+                option_pnl_pct FLOAT,
+                stock_pnl_pct FLOAT,
+                hold_minutes INT,
+                status VARCHAR(20) DEFAULT 'open'
+            )
+        """))
+
+
+def _save_0dte_levels(symbol, levels, exp, passes, reason):
+    """Save 0DTE GEX levels to DB."""
+    if not _engine:
+        return
+    try:
+        with _engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO dte0_gex_levels
+                (symbol, scan_date, spot, expiration, levels, ratio, zone_width,
+                 passes_filter, filter_reason)
+                VALUES (:sym, :d, :spot, :exp, :levels, :ratio, :zw, :pf, :fr)
+            """), {
+                "sym": symbol, "d": date.today(), "spot": levels.get("spot"),
+                "exp": exp, "levels": json.dumps(levels),
+                "ratio": levels.get("ratio"), "zw": levels.get("zone_width"),
+                "pf": passes, "fr": reason,
+            })
+    except Exception as e:
+        print(f"[0dte-gex] DB save error: {e}", flush=True)
+
+
+def _save_0dte_trade(trade):
+    """Save 0DTE trade to DB."""
+    if not _engine:
+        return
+    try:
+        with _engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO dte0_gex_trades
+                (symbol, grade, trade_date, entry_ts, entry_price, entry_spot,
+                 strike, expiration, call_bid, call_ask, call_delta, call_iv,
+                 gex_ratio, zone_width, highest_neg, lowest_pos,
+                 neg_levels, pos_levels, t1_price, t2_price, status)
+                VALUES (:sym, :grade, :td, :ets, :ep, :es,
+                        :strike, :exp, :cb, :ca, :cd, :civ,
+                        :ratio, :zw, :hn, :lp,
+                        :nl, :pl, :t1, :t2, 'open')
+            """), {
+                "sym": trade["symbol"], "grade": trade.get("grade", "B"),
+                "td": date.today(),
+                "ets": trade["entry_ts"], "ep": trade["entry_price"],
+                "es": trade["entry_spot"],
+                "strike": trade["strike"], "exp": trade["expiration"],
+                "cb": trade.get("call_bid"), "ca": trade.get("call_ask"),
+                "cd": trade.get("call_delta"), "civ": trade.get("call_iv"),
+                "ratio": trade["ratio"], "zw": trade["zone_width"],
+                "hn": trade["highest_neg"], "lp": trade["lowest_pos"],
+                "nl": json.dumps(trade.get("neg_levels", [])),
+                "pl": json.dumps(trade.get("pos_levels", [])),
+                "t1": trade["t1_price"], "t2": trade["t2_price"],
+            })
+    except Exception as e:
+        print(f"[0dte-gex] trade save error: {e}", flush=True)
+
+
+def _update_0dte_trade_exit(trade):
+    """Update 0DTE trade with exit details."""
+    if not _engine:
+        return
+    try:
+        with _engine.begin() as conn:
+            conn.execute(text("""
+                UPDATE dte0_gex_trades
+                SET exit_ts = :ets, exit_price = :ep, exit_spot = :es,
+                    exit_call_bid = :ecb, exit_call_ask = :eca,
+                    exit_reason = :er, option_pnl_pct = :opnl,
+                    stock_pnl_pct = :spnl, hold_minutes = :hm,
+                    status = 'closed'
+                WHERE symbol = :sym AND trade_date = :td AND status = 'open'
+            """), {
+                "ets": trade["exit_ts"], "ep": trade["exit_price"],
+                "es": trade["exit_spot"],
+                "ecb": trade.get("exit_call_bid"), "eca": trade.get("exit_call_ask"),
+                "er": trade["exit_reason"],
+                "opnl": trade.get("option_pnl_pct"),
+                "spnl": trade.get("stock_pnl_pct"),
+                "hm": trade.get("hold_minutes"),
+                "sym": trade["symbol"], "td": date.today(),
+            })
+    except Exception as e:
+        print(f"[0dte-gex] trade update error: {e}", flush=True)
+
+
+def _0dte_fetch_spot(display_sym, cfg):
+    """Fetch current spot for a 0DTE symbol.
+
+    SPX uses $SPX.X quote. Others use their own symbol.
+    """
+    quote_sym = "$SPX.X" if display_sym == "SPX" else display_sym
+    q = _fetch_stock_quote(quote_sym)
+    if q and q["last"] > 0:
+        return q["last"]
+    return None
+
+
+# ── 0DTE GEX Scan (every 30 min) ─────────────────────────────────
+
+def run_0dte_scan():
+    """Main 0DTE GEX scan. Compute levels for SPX/SPY/QQQ/IWM."""
+    global _0dte_levels, _0dte_watchlist, _last_0dte_scan_at, _0dte_scan_count
+
+    if not _initialized:
+        return
+
+    now = datetime.now(ET)
+    t = now.time()
+    if now.weekday() >= 5:
+        return
+    if not (dtime(9, 30) <= t <= dtime(16, 0)):
+        return
+    if t < dtime(10, 0):
+        return
+
+    try:
+        _run_0dte_scan_inner(now)
+    except Exception as e:
+        _alert_error("0dte_scan_crash", f"0DTE GEX scan crashed: {e}")
+        print(f"[0dte-gex] SCAN CRASH: {traceback.format_exc()}", flush=True)
+
+
+def _run_0dte_scan_inner(now):
+    global _0dte_levels, _0dte_watchlist, _last_0dte_scan_at, _0dte_scan_count
+
+    print(f"[0dte-gex] scan starting ({len(_0DTE_CONFIG)} symbols)...", flush=True)
+
+    exp = _get_0dte_expiration()
+    new_levels = {}
+    new_watchlist = {}
+    scanned = 0
+
+    for display_sym, cfg in _0DTE_CONFIG.items():
+        try:
+            spot = _0dte_fetch_spot(display_sym, cfg)
+            if not spot:
+                print(f"[0dte-gex] SKIP {display_sym}: no spot quote", flush=True)
+                continue
+
+            chain = _fetch_chain(
+                cfg["chain_sym"], exp, spot,
+                interval=cfg["interval"],
+                proximity=cfg["proximity"],
+            )
+            if not chain:
+                print(f"[0dte-gex] SKIP {display_sym}: chain fetch returned no data (exp={exp})", flush=True)
+                continue
+
+            levels = _compute_stock_gex(display_sym, chain, spot)
+            if not levels:
+                print(f"[0dte-gex] SKIP {display_sym}: compute_gex returned None", flush=True)
+                continue
+
+            scanned += 1
+            levels["expiration"] = exp
+            levels["dip_pts"] = cfg["dip_pts"]
+
+            # Filter: ratio >= 2, has support + magnets (same as stocks)
+            passes, reason = _passes_filters(levels)
+            _save_0dte_levels(display_sym, levels, exp, passes, reason)
+
+            with _lock:
+                new_levels[display_sym] = levels
+
+            if passes:
+                trigger_price = levels["highest_neg"] - cfg["dip_pts"]
+                levels["trigger_price"] = round(trigger_price, 2)
+                new_watchlist[display_sym] = levels
+
+            time.sleep(0.5)
+
+        except Exception as e:
+            print(f"[0dte-gex] scan error {display_sym}: {e}", flush=True)
+
+    with _lock:
+        _0dte_levels = new_levels
+        _0dte_watchlist = new_watchlist
+
+    _last_0dte_scan_at = now
+    _0dte_scan_count += 1
+
+    wl_syms = list(new_watchlist.keys())
+    print(f"[0dte-gex] scan done: {scanned}/{len(_0DTE_CONFIG)} scanned, "
+          f"watchlist={wl_syms}, exp={exp}", flush=True)
+
+
+# ── 0DTE Spot Monitor (every 2 min) ──────────────────────────────
+
+def run_0dte_monitor():
+    """Monitor 0DTE watchlist for dip entries and active trade exits."""
+    global _0dte_active_trades, _0dte_trade_log, _0dte_today_trades, _0dte_today_pnl
+
+    if not _initialized:
+        return
+
+    now = datetime.now(ET)
+    if now.weekday() >= 5:
+        return
+    t = now.time()
+    if not (dtime(10, 0) <= t <= dtime(15, 55)):
+        return
+
+    try:
+        _run_0dte_monitor_inner(now)
+    except Exception as e:
+        _alert_error("0dte_monitor_crash", f"0DTE spot monitor crashed: {e}")
+        print(f"[0dte-gex] MONITOR CRASH: {traceback.format_exc()}", flush=True)
+
+
+def _run_0dte_monitor_inner(now):
+    global _0dte_active_trades, _0dte_trade_log, _0dte_today_trades, _0dte_today_pnl
+
+    t = now.time()
+
+    with _lock:
+        watchlist = dict(_0dte_watchlist)
+        active = list(_0dte_active_trades)
+
+    if not watchlist and not active:
+        return
+
+    # Fetch spots for all symbols we're tracking
+    all_syms = set(list(watchlist.keys()) + [t_["symbol"] for t_ in active])
+    spots = {}
+    for sym in all_syms:
+        cfg = _0DTE_CONFIG.get(sym)
+        if cfg:
+            s = _0dte_fetch_spot(sym, cfg)
+            if s:
+                spots[sym] = s
+
+    if not spots:
+        return
+
+    # ── Check active trades for exits ──
+    for trade in list(active):
+        sym = trade["symbol"]
+        spot = spots.get(sym)
+        if not spot:
+            continue
+
+        exit_reason = None
+        exit_spot = spot
+
+        if spot >= trade["t2_price"]:
+            exit_reason = "T2"
+        elif spot >= trade["t1_price"]:
+            exit_reason = "T1"
+        elif t >= dtime(15, 50):
+            exit_reason = "EOD"
+
+        if exit_reason:
+            cfg = _0DTE_CONFIG.get(sym, {})
+            opt_quote = _fetch_option_quote(
+                cfg.get("chain_sym", sym), trade["expiration"],
+                trade["strike"], "C")
+
+            exit_call_bid = opt_quote["bid"] if opt_quote else None
+            exit_call_ask = opt_quote["ask"] if opt_quote else None
+
+            entry_mid = (trade.get("call_bid", 0) + trade.get("call_ask", 0)) / 2
+            exit_mid = (exit_call_bid + exit_call_ask) / 2 if exit_call_bid and exit_call_ask else 0
+            opt_pnl = ((exit_mid - entry_mid) / entry_mid * 100) if entry_mid > 0 else 0
+            stock_pnl = (exit_spot - trade["entry_spot"]) / trade["entry_spot"] * 100
+
+            hold_min = int((now - trade["entry_ts"]).total_seconds() / 60)
+
+            trade["exit_ts"] = now
+            trade["exit_price"] = exit_mid
+            trade["exit_spot"] = exit_spot
+            trade["exit_call_bid"] = exit_call_bid
+            trade["exit_call_ask"] = exit_call_ask
+            trade["exit_reason"] = exit_reason
+            trade["option_pnl_pct"] = round(opt_pnl, 1)
+            trade["stock_pnl_pct"] = round(stock_pnl, 2)
+            trade["hold_minutes"] = hold_min
+
+            _update_0dte_trade_exit(trade)
+
+            with _lock:
+                _0dte_active_trades.remove(trade)
+                _0dte_trade_log.append(trade)
+                _0dte_today_pnl += opt_pnl
+
+            tag = "WIN" if opt_pnl > 0 else "LOSS"
+            msg = (f"<b>0DTE EXIT {exit_reason}: {sym}</b> [{tag}]\n"
+                   f"\n"
+                   f"<b>Spot:</b> ${trade['entry_spot']:.2f} -> ${exit_spot:.2f} ({stock_pnl:+.2f}%)\n"
+                   f"<b>Time:</b> {trade['entry_ts'].strftime('%H:%M')} -> {now.strftime('%H:%M')} ET ({hold_min} min)\n"
+                   f"\n"
+                   f"<b>Option:</b> ${trade['strike']:.0f}C {trade['expiration']}\n"
+                   f"  Entry: ${entry_mid:.2f} | Exit: ${exit_mid:.2f}\n"
+                   f"  <b>P&L: {opt_pnl:+.0f}%</b>\n"
+                   f"\n"
+                   f"  -GEX: ${trade['highest_neg']:.0f} | +GEX: ${trade['lowest_pos']:.0f} | R: {trade.get('ratio','?')}x")
+            _alert(msg)
+
+    # ── Check watchlist for dip entries ──
+    today_symbols = set(t_["symbol"] for t_ in active)
+    today_symbols.update(t_["symbol"] for t_ in _0dte_trade_log
+                         if t_.get("entry_ts") and t_["entry_ts"].date() == now.date())
+
+    for sym, levels in watchlist.items():
+        if sym in today_symbols:
+            continue
+
+        spot = spots.get(sym)
+        if not spot:
+            continue
+
+        trigger = levels["trigger_price"]
+        if spot > trigger:
+            continue
+
+        # TRIGGERED! Dip below -GEX threshold
+        cfg = _0DTE_CONFIG.get(sym, {})
+        dip_pts = cfg.get("dip_pts", 1)
+        print(f"[0dte-gex] TRIGGER: {sym} spot=${spot:.2f} <= trigger=${trigger:.2f} "
+              f"(-GEX ${levels['highest_neg']:.2f} - {dip_pts}pts)", flush=True)
+
+        # Fetch option quote for entry
+        opt_quote = _fetch_option_quote(
+            cfg.get("chain_sym", sym), levels["expiration"],
+            levels["highest_neg"], "C")
+
+        call_bid = opt_quote["bid"] if opt_quote else None
+        call_ask = opt_quote["ask"] if opt_quote else None
+        call_delta = opt_quote.get("delta") if opt_quote else None
+        call_iv = opt_quote.get("iv") if opt_quote else None
+        call_mid = (call_bid + call_ask) / 2 if call_bid and call_ask else None
+
+        trade = {
+            "symbol": sym,
+            "grade": "A",  # 0DTE grading TBD — all A for now
+            "entry_ts": now,
+            "entry_price": call_mid,
+            "entry_spot": spot,
+            "strike": levels["highest_neg"],
+            "expiration": levels["expiration"],
+            "call_bid": call_bid,
+            "call_ask": call_ask,
+            "call_delta": call_delta,
+            "call_iv": call_iv,
+            "ratio": levels["ratio"],
+            "zone_width": levels["zone_width"],
+            "highest_neg": levels["highest_neg"],
+            "lowest_pos": levels["lowest_pos"],
+            "neg_levels": levels.get("neg_levels", []),
+            "pos_levels": levels.get("pos_levels", []),
+            "t1_price": levels["highest_neg"],
+            "t2_price": levels["lowest_pos"],
+        }
+
+        _save_0dte_trade(trade)
+
+        with _lock:
+            _0dte_active_trades.append(trade)
+            _0dte_today_trades += 1
+
+        delta_str = f"{call_delta:.2f}" if call_delta else "?"
+        iv_str = f"{call_iv*100:.0f}%" if call_iv else "?"
+        bid_str = f"${call_bid:.2f}" if call_bid else "?"
+        ask_str = f"${call_ask:.2f}" if call_ask else "?"
+        mid_str = f"${call_mid:.2f}" if call_mid else "?"
+
+        msg = (f"<b>0DTE ENTRY: {sym}</b>\n"
+               f"\n"
+               f"<b>Spot:</b> ${spot:.2f} at {now.strftime('%H:%M:%S')} ET\n"
+               f"<b>Trigger:</b> -GEX - {dip_pts}pts = ${trigger:.2f}\n"
+               f"\n"
+               f"<b>Option:</b> ${levels['highest_neg']:.0f}C {levels['expiration']}\n"
+               f"  Bid/Ask: {bid_str} / {ask_str} (mid {mid_str})\n"
+               f"  Delta: {delta_str} | IV: {iv_str}\n"
+               f"\n"
+               f"<b>Targets:</b>\n"
+               f"  T1: ${levels['highest_neg']:.0f} (recover to -GEX)\n"
+               f"  T2: ${levels['lowest_pos']:.0f} (+GEX magnet)\n"
+               f"\n"
+               f"<b>GEX:</b> Ratio {levels['ratio']}x | Zone {levels['zone_width']:.1f}%\n"
+               f"  -GEX: {' | '.join(f'${s:.0f}' for s in levels['neg_strikes'])}\n"
+               f"  +GEX: {' | '.join(f'${s:.0f}' for s in levels['pos_strikes'])}")
+        _alert(msg)
+
+
+# ── 0DTE EOD Summary ──────────────────────────────────────────────
+
+def run_0dte_eod_summary():
+    """Send 0DTE end-of-day summary."""
+    now = datetime.now(ET)
+
+    with _lock:
+        remaining = list(_0dte_active_trades)
+
+    for trade in remaining:
+        trade["exit_ts"] = now
+        trade["exit_reason"] = "EOD"
+        trade["exit_spot"] = trade.get("entry_spot", 0)
+        _update_0dte_trade_exit(trade)
+        with _lock:
+            _0dte_active_trades.remove(trade)
+            _0dte_trade_log.append(trade)
+
+    today = [t for t in _0dte_trade_log
+             if t.get("entry_ts") and t["entry_ts"].date() == now.date()]
+
+    if not today:
+        return  # no 0DTE trades — no summary needed
+
+    wins = sum(1 for t in today if t.get("option_pnl_pct", 0) > 0)
+    total_pnl = sum(t.get("option_pnl_pct", 0) for t in today)
+
+    msg = f"<b>0DTE GEX EOD Summary</b>\n"
+    msg += f"Trades: {len(today)} | Wins: {wins} | WR: {wins/len(today)*100:.0f}%\n\n"
+    for t in today:
+        pnl = t.get("option_pnl_pct", 0)
+        tag = "W" if pnl > 0 else "L"
+        msg += (f"{tag} {t['symbol']} "
+                f"${t.get('entry_spot',0):.2f}->${t.get('exit_spot',0):.2f} "
+                f"opt:{pnl:+.0f}% ({t.get('exit_reason','?')})\n")
+    _alert(msg)
+
+
+# ── 0DTE API Getters ──────────────────────────────────────────────
+
+def get_0dte_levels():
+    """Current 0DTE GEX levels for all symbols."""
+    with _lock:
+        return dict(_0dte_levels)
+
+
+def get_0dte_watchlist():
+    """0DTE symbols on watchlist with trigger prices."""
+    with _lock:
+        return dict(_0dte_watchlist)
+
+
+def get_0dte_active_trades():
+    """Currently open 0DTE positions."""
+    with _lock:
+        result = []
+        for t in _0dte_active_trades:
+            result.append({
+                "symbol": t["symbol"],
+                "entry_ts": str(t["entry_ts"]) if t.get("entry_ts") else None,
+                "entry_spot": t.get("entry_spot"),
+                "strike": t.get("strike"),
+                "t1_price": t.get("t1_price"),
+                "t2_price": t.get("t2_price"),
+                "ratio": t.get("ratio"),
+                "call_bid": t.get("call_bid"),
+                "call_ask": t.get("call_ask"),
+                "call_delta": t.get("call_delta"),
+            })
+        return result
+
+
+def get_0dte_trade_log(days=7):
+    """Recent completed 0DTE trades."""
+    if not _engine:
+        return []
+    try:
+        with _engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT * FROM dte0_gex_trades
+                WHERE trade_date >= :d
+                ORDER BY entry_ts DESC
+            """), {"d": date.today() - timedelta(days=days)}).mappings().all()
+            return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+def get_0dte_status():
+    """0DTE scanner status."""
+    with _lock:
+        return {
+            "initialized": _initialized,
+            "last_scan_at": str(_last_0dte_scan_at) if _last_0dte_scan_at else None,
+            "scan_count": _0dte_scan_count,
+            "watchlist_count": len(_0dte_watchlist),
+            "active_trades": len(_0dte_active_trades),
+            "today_trades": _0dte_today_trades,
+            "symbols": list(_0DTE_CONFIG.keys()),
+        }
+
+
+def _load_latest_0dte_levels():
+    """Load last known 0DTE GEX levels from DB so page works after hours."""
+    global _0dte_levels, _0dte_watchlist, _last_0dte_scan_at
+    if not _engine:
+        return
+    try:
+        with _engine.connect() as conn:
+            row = conn.execute(text(
+                "SELECT MAX(scan_date) as d FROM dte0_gex_levels"
+            )).mappings().first()
+            if not row or not row["d"]:
+                return
+            last_date = row["d"]
+            rows = conn.execute(text("""
+                SELECT DISTINCT ON (symbol) symbol, levels, passes_filter, scan_ts
+                FROM dte0_gex_levels
+                WHERE scan_date = :d
+                ORDER BY symbol, scan_ts DESC
+            """), {"d": last_date}).mappings().all()
+            new_levels = {}
+            new_watchlist = {}
+            for r in rows:
+                sym = r["symbol"]
+                if sym not in _0DTE_CONFIG:
+                    continue
+                lvls = json.loads(r["levels"]) if isinstance(r["levels"], str) else r["levels"]
+                if not lvls:
+                    continue
+                new_levels[sym] = lvls
+                cfg = _0DTE_CONFIG[sym]
+                if r["passes_filter"] and lvls.get("highest_neg"):
+                    trigger = lvls["highest_neg"] - cfg["dip_pts"]
+                    lvls["trigger_price"] = round(trigger, 2)
+                    new_watchlist[sym] = lvls
+            with _lock:
+                _0dte_levels = new_levels
+                _0dte_watchlist = new_watchlist
+                if rows:
+                    _last_0dte_scan_at = rows[0].get("scan_ts")
+            print(f"[0dte-gex] loaded {len(new_levels)} levels from DB (date={last_date})", flush=True)
+    except Exception as e:
+        print(f"[0dte-gex] load latest levels error: {e}", flush=True)
+
+
+def _startup_0dte_scan():
+    """Run one 0DTE scan at startup."""
+    try:
+        now = datetime.now(ET)
+        _run_0dte_scan_inner(now)
+    except Exception as e:
+        print(f"[0dte-gex] startup scan error: {e}", flush=True)

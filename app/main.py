@@ -5939,6 +5939,14 @@ def start_scheduler():
                     minutes=2, id="stock_gex_live_monitor", coalesce=True, max_instances=1)
         sch.add_job(stock_gex_live.run_eod_summary, "cron",
                     hour=16, minute=5, timezone=ET, id="stock_gex_live_eod")
+        # 0DTE GEX — SPX/SPY/QQQ/IWM scan + monitor (same intervals)
+        sch.add_job(stock_gex_live.run_0dte_scan, "interval",
+                    minutes=30, id="0dte_gex_scan", coalesce=True, max_instances=1,
+                    next_run_time=_dt.now())
+        sch.add_job(stock_gex_live.run_0dte_monitor, "interval",
+                    minutes=2, id="0dte_gex_monitor", coalesce=True, max_instances=1)
+        sch.add_job(stock_gex_live.run_0dte_eod_summary, "cron",
+                    hour=16, minute=5, timezone=ET, id="0dte_gex_eod")
     except Exception:
         pass
     sch.start()
@@ -6006,8 +6014,9 @@ def on_startup():
         from app.stock_gex_live import init as stock_gex_live_init
         stock_gex_live_init(engine, api_get, send_telegram_stock_gex)
         # Run initial scan in background (bypasses market hours, uses last-close prices)
-        from app.stock_gex_live import _startup_scan
+        from app.stock_gex_live import _startup_scan, _startup_0dte_scan
         Thread(target=_startup_scan, daemon=True).start()
+        Thread(target=_startup_0dte_scan, daemon=True).start()
     except Exception as e:
         print(f"[stock-gex-live] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)
@@ -6320,6 +6329,65 @@ def api_stock_gex_live_trigger():
         t = threading.Thread(target=stock_gex_live.run_gex_scan, daemon=True)
         t.start()
         return {"status": "live scan started"}
+    except Exception as e:
+        return {"error": str(e)}
+
+# ── 0DTE GEX API (SPX/SPY/QQQ/IWM) ──────────────────────────────
+
+@app.get("/api/stock-gex-live/0dte/levels")
+def api_0dte_gex_levels():
+    """Current 0DTE GEX levels for SPX/SPY/QQQ/IWM."""
+    try:
+        from app import stock_gex_live
+        return stock_gex_live.get_0dte_levels()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/stock-gex-live/0dte/watchlist")
+def api_0dte_gex_watchlist():
+    """0DTE symbols on watchlist with trigger prices."""
+    try:
+        from app import stock_gex_live
+        return stock_gex_live.get_0dte_watchlist()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/stock-gex-live/0dte/active")
+def api_0dte_gex_active():
+    """Currently open 0DTE positions."""
+    try:
+        from app import stock_gex_live
+        return stock_gex_live.get_0dte_active_trades()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/stock-gex-live/0dte/trades")
+def api_0dte_gex_trades(days: int = 7):
+    """0DTE trade log for recent days."""
+    try:
+        from app import stock_gex_live
+        return stock_gex_live.get_0dte_trade_log(days)
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/stock-gex-live/0dte/status")
+def api_0dte_gex_status():
+    """0DTE scanner status."""
+    try:
+        from app import stock_gex_live
+        return stock_gex_live.get_0dte_status()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api/stock-gex-live/0dte/scan")
+def api_0dte_gex_trigger():
+    """Manually trigger a 0DTE GEX scan."""
+    try:
+        from app import stock_gex_live
+        import threading
+        t = threading.Thread(target=stock_gex_live.run_0dte_scan, daemon=True)
+        t.start()
+        return {"status": "0DTE scan started"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -16102,6 +16170,15 @@ def favicon():
     favicon_path = pathlib.Path(__file__).parent.parent / "0dte-alpha-favicon.png"
     if favicon_path.exists():
         return FileResponse(favicon_path, media_type="image/png")
+    return Response(status_code=404)
+
+@app.get("/stock-gex-logo.jpg")
+def stock_gex_logo():
+    """Serve Stock GEX logo."""
+    import pathlib
+    logo_path = pathlib.Path(__file__).parent.parent / "Stock GEX Logo.jpg"
+    if logo_path.exists():
+        return FileResponse(logo_path, media_type="image/jpeg")
     return Response(status_code=404)
 
 @app.get("/request-access", response_class=HTMLResponse)

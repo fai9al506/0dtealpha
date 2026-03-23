@@ -693,6 +693,7 @@ def _run_gex_scan_inner(now):
         try:
             quote = quotes.get(symbol)
             if not quote or quote["last"] <= 0:
+                print(f"[stock-gex-live] SKIP {symbol}: no quote or price=0", flush=True)
                 continue
 
             spot = quote["last"]
@@ -701,10 +702,12 @@ def _run_gex_scan_inner(now):
             chain = _fetch_chain(symbol, exp, spot)
             if not chain:
                 chain_errors += 1
+                print(f"[stock-gex-live] SKIP {symbol}: chain fetch returned no data", flush=True)
                 continue
 
             levels = _compute_stock_gex(symbol, chain, spot)
             if not levels:
+                print(f"[stock-gex-live] SKIP {symbol}: compute_gex returned None (chain had {len(chain)} rows)", flush=True)
                 continue
 
             scanned += 1

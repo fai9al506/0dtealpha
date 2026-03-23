@@ -28,22 +28,17 @@ from sqlalchemy import text
 ET = ZoneInfo("US/Eastern")
 
 _ALL_STOCKS = [
-    # Tier 1 - Mega options volume
-    "AAPL", "MSFT", "GOOGL", "GOOG", "META", "NVDA", "AMZN", "NFLX", "TSLA",
-    "AMD", "PLTR",
-    # Tier 2 - High options volume
-    "INTC", "MU", "QCOM", "AVGO", "SMCI", "MSTR", "ORCL", "GS",
-    "PYPL", "SOFI", "COIN", "AFRM", "UPST", "XYZ",
-    "SNAP", "SHOP", "ROKU", "RBLX", "LULU", "SNOW",
-    "GME", "MARA", "LCID", "RIVN", "RKLB",
-    # Tier 3 - Active options volume
-    "BAC", "JPM", "WFC", "C", "GE",
-    "BA", "DIS", "GM", "T", "AAL", "CCL", "F",
-    "IBM", "ABNB", "PINS", "U",
-    "OXY", "PFE", "JNJ",
-    "UBER", "CVNA", "AI", "BABA", "COST", "ENPH",
-    # Tier 4 - Semi/Tech volume
-    "TSM", "AMAT", "LRCX", "PDD", "WBD",
+    # Tier 1 - Mega options volume (>500K)
+    "NVDA", "TSLA", "PLTR", "AMD", "MU", "SMCI", "MSTR",
+    # Tier 2 - High options volume (100K-500K)
+    "AMZN", "SOFI", "INTC", "META", "NFLX", "AAPL", "COIN",
+    "AAL", "MARA", "GOOG", "TSM", "BAC", "BABA", "ORCL",
+    "AVGO", "RIVN", "GME", "PYPL", "PFE", "F", "RKLB", "CCL",
+    # Tier 3 - Active options volume (10K-100K)
+    "UBER", "UPST", "T", "OXY", "MSFT", "CVNA", "BA", "C",
+    "JPM", "SNAP", "GOOGL", "DIS", "GS", "QCOM", "XYZ", "PDD",
+    "WFC", "AMAT", "SNOW", "RBLX", "ROKU", "LULU", "U", "GE",
+    "SHOP", "GM", "PINS", "IBM", "COST", "ENPH",
 ]
 STOCKS = _ALL_STOCKS
 

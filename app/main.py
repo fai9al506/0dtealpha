@@ -1588,10 +1588,12 @@ def log_setup(result_wrapper):
         with engine.begin() as conn:
             if reason in ("new", "reformed") or _current_setup_log.get(setup_name) is None:
                 # DEDUP: skip if same setup+direction inserted recently (deploy overlap guard)
-                dup_check = conn.execute(text("""
+                # Once-per-day setups (Vanna Butterfly) use full-day dedup window
+                _dedup_interval = '1 day' if setup_name == 'Vanna Butterfly' else '90 seconds'
+                dup_check = conn.execute(text(f"""
                     SELECT id FROM setup_log
                     WHERE setup_name = :name AND direction = :dir
-                      AND ts > NOW() - INTERVAL '90 seconds'
+                      AND ts > NOW() - INTERVAL '{_dedup_interval}'
                     ORDER BY id DESC LIMIT 1
                 """), {"name": setup_name, "dir": r["direction"]}).first()
                 if dup_check:

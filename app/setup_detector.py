@@ -3161,6 +3161,10 @@ def evaluate_vanna_butterfly(spot, chain_df, vanna_pin_strike, vanna_pin_value, 
     vix_val = vix or 0
     rr = round(max_profit / cost, 2) if cost > 0 else 0
 
+    # Mark fired immediately so restarts/deploys can't double-fire
+    _cooldown_vanna_butterfly["last_date"] = str(now.date())
+    _cooldown_vanna_butterfly["fired"] = True
+
     return {
         "setup_name": "Vanna Butterfly",
         "direction": "long",  # Butterfly is non-directional but logged as "long"

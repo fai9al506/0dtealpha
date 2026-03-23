@@ -423,48 +423,73 @@ def _fetch_batch_quotes(symbols):
 
 
 def _fetch_option_quote(symbol, expiration, strike, right="C"):
-    """Fetch live option quote for a specific strike.
+    """Fetch live option quote for a specific strike via streaming endpoint.
 
-    Fetches a mini chain for just this strike to get bid/ask/delta/iv.
-    Returns {bid, ask, last, delta, iv} or None.
+    Returns {bid, ask, last, delta, iv, volume, oi} or None.
     """
     if not _api_get:
         return None
     try:
-        exp_str = expiration.replace("-", "")
         opt_type = "Call" if right == "C" else "Put"
 
-        # Use chain endpoint with tight strike proximity to get just this strike
-        resp = _api_get(f"/marketdata/options/chains", params={
-            "symbol": symbol,
-            "enableGreeks": "true",
-            "optionType": opt_type,
-            "strikeProximity": 1,
-            "priceCenter": f"{strike:.2f}",
-            "spreadType": "Single",
-            "expiration": exp_str,
-        }, timeout=8)
+        # Try multiple expiration formats
+        exp_variants = [expiration]
+        try:
+            exp_variants.append(datetime.strptime(expiration, "%Y-%m-%d").strftime("%m-%d-%Y"))
+        except Exception:
+            pass
 
-        if resp and hasattr(resp, 'json'):
-            js = resp.json()
-            for it in js.get("Options", []):
-                legs = it.get("Legs") or []
-                leg0 = legs[0] if legs else {}
-                st = _safe_float(leg0.get("StrikePrice"))
-                if st and abs(st - strike) < 1:
-                    return {
-                        "bid": _safe_float(it.get("Bid")),
-                        "ask": _safe_float(it.get("Ask")),
-                        "last": _safe_float(it.get("Last")),
-                        "delta": _safe_float(it.get("Delta") or it.get("TheoDelta")),
-                        "iv": _safe_float(it.get("ImpliedVolatility") or it.get("TheoIV")),
-                        "volume": _safe_float(it.get("TotalVolume") or it.get("Volume")),
-                        "oi": _safe_float(it.get("OpenInterest") or it.get("DailyOpenInterest")),
-                    }
+        for exp_str in exp_variants:
+            try:
+                r = _api_get(f"/marketdata/stream/options/chains/{symbol}", params={
+                    "enableGreeks": "true",
+                    "optionType": opt_type,
+                    "strikeProximity": 3,
+                    "priceCenter": f"{strike:.2f}",
+                    "strikeInterval": 1,
+                    "spreadType": "Single",
+                    "expiration": exp_str,
+                }, stream=True, timeout=8)
+
+                _start = time.time()
+                for line in r.iter_lines(decode_unicode=True):
+                    if time.time() - _start > 3:
+                        break
+                    if not line:
+                        continue
+                    try:
+                        it = json.loads(line)
+                    except Exception:
+                        continue
+                    if isinstance(it, dict) and it.get("StreamStatus"):
+                        break
+
+                    legs = it.get("Legs") or []
+                    leg0 = legs[0] if legs else {}
+                    st = _safe_float(leg0.get("StrikePrice"))
+                    if st and abs(st - strike) < 1:
+                        try:
+                            r.close()
+                        except Exception:
+                            pass
+                        return {
+                            "bid": _safe_float(it.get("Bid")),
+                            "ask": _safe_float(it.get("Ask")),
+                            "last": _safe_float(it.get("Last")),
+                            "delta": _safe_float(it.get("Delta") or it.get("TheoDelta")),
+                            "iv": _safe_float(it.get("ImpliedVolatility") or it.get("TheoIV")),
+                            "volume": _safe_float(it.get("TotalVolume") or it.get("Volume")),
+                            "oi": _safe_float(it.get("OpenInterest") or it.get("DailyOpenInterest")),
+                        }
+                try:
+                    r.close()
+                except Exception:
+                    pass
+            except Exception:
+                continue
         return None
     except Exception as e:
         print(f"[stock-gex-live] option quote error {symbol} {strike}: {e}", flush=True)
-        _alert(f"ERROR: Option quote fetch failed for {symbol} ${strike} {right}: {e}")
         return None
 
 

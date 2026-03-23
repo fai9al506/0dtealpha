@@ -321,9 +321,8 @@ def _fetch_chain(symbol, expiration, spot):
                 "expiration": exp_str,
             }, timeout=12)
 
-            if resp and hasattr(resp, 'json'):
-                js = resp.json()
-                for it in js.get("Options", []):
+            if resp and isinstance(resp, dict):
+                for it in resp.get("Options", []):
                     legs = it.get("Legs") or []
                     leg0 = legs[0] if legs else {}
                     side = (leg0.get("OptionType") or it.get("OptionType") or "").lower()
@@ -407,10 +406,10 @@ def _fetch_stock_quote(symbol):
     if not _api_get:
         return None
     try:
-        data = _api_get(f"marketdata/quotes/{symbol}")
+        data = _api_get(f"/marketdata/quotes/{symbol}")
         if not data:
             return None
-        quotes = data if isinstance(data, list) else [data]
+        quotes = data.get("Quotes", []) if isinstance(data, dict) else data if isinstance(data, list) else []
         for q in quotes:
             return {
                 "last": q.get("Last", q.get("Close", 0)),
@@ -428,10 +427,10 @@ def _fetch_batch_quotes(symbols):
         return {}
     try:
         sym_str = ",".join(symbols)
-        data = _api_get(f"marketdata/quotes/{sym_str}")
+        data = _api_get(f"/marketdata/quotes/{sym_str}")
         if not data:
             return {}
-        quotes = data if isinstance(data, list) else [data]
+        quotes = data.get("Quotes", []) if isinstance(data, dict) else data if isinstance(data, list) else []
         result = {}
         for q in quotes:
             sym = q.get("Symbol", "")
@@ -470,9 +469,8 @@ def _fetch_option_quote(symbol, expiration, strike, right="C"):
             "expiration": exp_str,
         }, timeout=8)
 
-        if resp and hasattr(resp, 'json'):
-            js = resp.json()
-            for it in js.get("Options", []):
+        if resp and isinstance(resp, dict):
+            for it in resp.get("Options", []):
                 legs = it.get("Legs") or []
                 leg0 = legs[0] if legs else {}
                 st = _safe_float(leg0.get("StrikePrice"))

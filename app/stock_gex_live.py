@@ -271,9 +271,10 @@ def _passes_filters(levels):
 # ── Chain Fetching (via TS API) ─────────────────────────────────────
 
 def _fetch_chain(symbol, expiration, spot):
-    """Fetch options chain for a stock via TS API.
+    """Fetch options chain for a stock via TS API streaming endpoint.
 
-    Uses same endpoint/format as main.py get_chain_rows().
+    Uses /marketdata/stream/options/chains/{symbol} (same as main.py).
+    The snapshot endpoint (/marketdata/options/chains) returns 404 for stocks.
     Returns list of {Strike, Type, Gamma, OpenInterest, Delta, IV, Bid, Ask, ...} or None.
     """
     if not _api_get:
@@ -305,8 +306,7 @@ def _fetch_chain(symbol, expiration, spot):
             if rows:
                 break
             try:
-                resp = _api_get(f"/marketdata/options/chains", params={
-                    "symbol": symbol,
+                r = _api_get(f"/marketdata/stream/options/chains/{symbol}", params={
                     "enableGreeks": "true",
                     "optionType": "All",
                     "priceCenter": f"{spot:.2f}",
@@ -314,10 +314,19 @@ def _fetch_chain(symbol, expiration, spot):
                     "strikeInterval": interval,
                     "spreadType": "Single",
                     "expiration": exp_str,
-                }, timeout=12)
+                }, stream=True, timeout=8)
 
-                js = resp.json()
-                for it in js.get("Options", []):
+                # Consume streaming response (same as main.py _consume_chain_stream)
+                for line in r.iter_lines(decode_unicode=True):
+                    if not line:
+                        continue
+                    try:
+                        it = json.loads(line)
+                    except Exception:
+                        continue
+                    if isinstance(it, dict) and it.get("StreamStatus"):
+                        break  # EndSnapshot
+
                     legs = it.get("Legs") or []
                     leg0 = legs[0] if legs else {}
                     side = (leg0.get("OptionType") or it.get("OptionType") or "").lower()
@@ -342,6 +351,10 @@ def _fetch_chain(symbol, expiration, spot):
                         "Ask": _safe_float(it.get("Ask")),
                         "Last": _safe_float(it.get("Last")),
                     })
+                try:
+                    r.close()
+                except Exception:
+                    pass
             except Exception as e:
                 print(f"[stock-gex-live] chain {symbol} exp={exp_str}: {e}", flush=True)
                 continue  # try next expiration format

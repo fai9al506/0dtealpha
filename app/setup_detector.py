@@ -1940,6 +1940,284 @@ def format_sb10_abs_message(result, alignment=None):
     return "\n".join(parts)
 
 
+# ── SB2 Absorption — two-bar absorption (flush + recovery) ────────────────
+
+DEFAULT_SB2_ABS_SETTINGS = {
+    "sb2_enabled": True,
+    "sb2_vol_mult": 1.5,          # flush bar volume >= N x 20-bar avg
+    "sb2_delta_mult": 1.5,        # flush bar |delta| >= N x 20-bar avg |delta|
+    "sb2_recovery_pct": 0.70,     # recovery bar must reverse >= 70% of flush bar range
+    "sb2_cooldown_bars": 10,      # min bars between same-direction signals
+    "sb2_stop_pts": 8,
+    "sb2_target_pts": 10,
+}
+
+_cooldown_sb2_abs = {
+    "last_bullish_bar": -100,
+    "last_bearish_bar": -100,
+    "last_checked_idx": -1,
+    "last_date": None,
+}
+
+
+def reset_sb2_abs_session():
+    """Reset SB2 absorption detector state for a new ES session."""
+    _cooldown_sb2_abs["last_bullish_bar"] = -100
+    _cooldown_sb2_abs["last_bearish_bar"] = -100
+    _cooldown_sb2_abs["last_checked_idx"] = -1
+
+
+def evaluate_sb2_absorption(bars, volland_stats, settings, spx_spot=None, cooldown_state=None):
+    """Detect two-bar absorption: flush bar + recovery bar.
+
+    Bullish: Bar N-1 sells down hard (negative delta, full range drop),
+             Bar N recovers >= 70% of the move -> sellers absorbed -> LONG
+    Bearish: Bar N-1 buys up hard (positive delta, full range rise),
+             Bar N pulls back >= 70% of the move -> buyers absorbed -> SHORT
+
+    Requires flush bar volume >= 1.5x avg and |delta| >= 1.5x avg.
+    Entry at recovery bar close price.
+    """
+    cs = cooldown_state or _cooldown_sb2_abs
+    if not bars or len(bars) < 22:  # need at least 20 lookback + 2 bars
+        return None
+    if not settings.get("sb2_enabled", True):
+        return None
+
+    # Daily reset
+    today = datetime.now(NY).date()
+    if cs.get("last_date") != today:
+        cs["last_bullish_bar"] = -100
+        cs["last_bearish_bar"] = -100
+        cs["last_checked_idx"] = -1
+        cs["last_date"] = today
+
+    recovery_bar = bars[-1]  # bar N (just completed)
+    flush_bar = bars[-2]     # bar N-1
+
+    bar_idx = recovery_bar.get("idx", -1)
+    if bar_idx <= cs.get("last_checked_idx", -1):
+        return None
+    cs["last_checked_idx"] = bar_idx
+
+    # Skip open/incomplete bars
+    if recovery_bar.get("status") == "open" or flush_bar.get("status") == "open":
+        return None
+
+    # ── Volume gate on flush bar ──
+    vol_mult = settings.get("sb2_vol_mult", 1.5)
+    lookback = bars[-22:-2]  # 20 bars before flush bar
+    volumes = [b.get("volume", 0) for b in lookback if b.get("volume", 0) > 0]
+    if not volumes:
+        return None
+    avg_vol = sum(volumes) / len(volumes)
+    flush_vol = flush_bar.get("volume", 0)
+    if avg_vol <= 0 or flush_vol < avg_vol * vol_mult:
+        return None
+    vol_ratio = round(flush_vol / avg_vol, 1)
+
+    # ── Delta gate on flush bar ──
+    delta_mult = settings.get("sb2_delta_mult", 1.5)
+    deltas = [abs(b.get("delta", 0)) for b in lookback if b.get("delta", 0) != 0]
+    avg_delta = sum(deltas) / len(deltas) if deltas else 1
+    flush_delta = flush_bar.get("delta", 0)
+    if avg_delta <= 0 or abs(flush_delta) < avg_delta * delta_mult:
+        return None
+    delta_ratio = round(abs(flush_delta) / avg_delta, 1)
+
+    # ── Flush direction + recovery check ──
+    flush_open = flush_bar.get("open", 0)
+    flush_close = flush_bar.get("close", 0)
+    flush_move = flush_close - flush_open  # negative = sold down, positive = bought up
+    flush_range = abs(flush_move)
+    if flush_range < 0.5:  # trivial move
+        return None
+
+    recovery_close = recovery_bar.get("close", 0)
+    recovery_pct_threshold = settings.get("sb2_recovery_pct", 0.70)
+
+    if flush_delta < 0 and flush_move < 0:
+        # Flush: sellers pushed price DOWN
+        # Recovery: price must come back UP
+        recovery_amount = recovery_close - flush_close
+        if recovery_amount <= 0:
+            return None
+        recovery_pct = recovery_amount / flush_range
+        if recovery_pct < recovery_pct_threshold:
+            return None
+        direction = "bullish"
+    elif flush_delta > 0 and flush_move > 0:
+        # Flush: buyers pushed price UP
+        # Recovery: price must come back DOWN
+        recovery_amount = flush_close - recovery_close
+        if recovery_amount <= 0:
+            return None
+        recovery_pct = recovery_amount / flush_range
+        if recovery_pct < recovery_pct_threshold:
+            return None
+        direction = "bearish"
+    else:
+        # Delta and price direction don't agree (not a clean flush)
+        return None
+
+    # ── SVB filter: block if negative (dislocation) ──
+    svb_val = None
+    if volland_stats and isinstance(volland_stats, dict):
+        try:
+            svb_raw = volland_stats.get("spotVolBeta") or volland_stats.get("spot_vol_beta")
+            if svb_raw is not None:
+                svb_val = float(svb_raw)
+                if svb_val < 0:
+                    return None
+        except (ValueError, TypeError):
+            pass
+
+    # ── Scoring (0-100) ──
+    # Volume strength (0-25)
+    vol_score = min(25, (vol_ratio - vol_mult) / vol_mult * 25) if vol_ratio > vol_mult else 0
+
+    # Delta strength (0-25)
+    delta_score = min(25, (delta_ratio - delta_mult) / delta_mult * 25) if delta_ratio > delta_mult else 0
+
+    # Recovery completeness (0-20): 70% = 0, 100%+ = 20
+    recovery_score = min(20, max(0, (recovery_pct - recovery_pct_threshold) / (1.0 - recovery_pct_threshold) * 20))
+
+    # Volland confluence (0-30)
+    volland_score = 0
+    paradigm = None
+    lis_val = None
+    dd_hedging = None
+    dd_numeric = None
+    charm_val = None
+
+    if volland_stats and isinstance(volland_stats, dict):
+        paradigm = volland_stats.get("paradigm")
+        try:
+            lis_val = float(volland_stats.get("lis") or 0) or None
+        except (ValueError, TypeError):
+            pass
+        dd_hedging = volland_stats.get("ddHedging") or volland_stats.get("dd_hedging")
+        charm_val = volland_stats.get("aggregatedCharm")
+
+        # DD alignment (+10)
+        if dd_hedging:
+            try:
+                dd_str = str(dd_hedging).replace("$", "").replace(",", "").strip()
+                neg = dd_str.startswith("-") or dd_str.startswith("(")
+                dd_clean = dd_str.replace("-", "").replace("(", "").replace(")", "")
+                dd_numeric = float(dd_clean) * (-1 if neg else 1)
+            except (ValueError, TypeError):
+                pass
+            if dd_numeric is not None:
+                if (direction == "bullish" and dd_numeric > 0) or \
+                   (direction == "bearish" and dd_numeric < 0):
+                    volland_score += 10
+
+        # Paradigm alignment (+10)
+        if paradigm:
+            if (direction == "bullish" and "GEX" in paradigm) or \
+               (direction == "bearish" and "AG" in paradigm):
+                volland_score += 10
+
+        # LIS proximity (+10 if within 5, +5 if within 15)
+        if lis_val and spx_spot:
+            lis_dist = abs(spx_spot - lis_val)
+            if lis_dist <= 5:
+                volland_score += 10
+            elif lis_dist <= 15:
+                volland_score += 5
+
+    total_score = round(vol_score + delta_score + recovery_score + volland_score)
+
+    # Grade
+    if total_score >= 70:
+        grade = "A+"
+    elif total_score >= 50:
+        grade = "A"
+    elif total_score >= 30:
+        grade = "B"
+    else:
+        grade = "C"
+
+    entry_price = recovery_close
+
+    return {
+        "setup_name": "SB2 Absorption",
+        "direction": direction,
+        "grade": grade,
+        "score": total_score,
+        "paradigm": paradigm,
+        "spot": spx_spot or 0,
+        "lis": lis_val,
+        "bar_idx": bar_idx,
+        "flush_bar_idx": flush_bar.get("idx", bar_idx - 1),
+        "abs_es_price": entry_price,
+        "abs_vol_ratio": vol_ratio,
+        "bar_delta": flush_delta,
+        "delta_ratio": delta_ratio,
+        "recovery_pct": round(recovery_pct, 2),
+        "flush_open": flush_open,
+        "flush_close": flush_close,
+        "recovery_close": recovery_close,
+        "cvd_trend": 0,  # not used for SB2
+        "price_trend": 0,
+        "svb": svb_val,
+        "dd_hedging": dd_hedging,
+        "dd_numeric": dd_numeric,
+        "charm": charm_val,
+        "vix": None,
+        "overvix": None,
+    }
+
+
+def should_notify_sb2_abs(result):
+    """Cooldown gate for SB2 Absorption. Bar-index based (10 bars)."""
+    today = datetime.now(NY).date()
+    if _cooldown_sb2_abs["last_date"] != today:
+        _cooldown_sb2_abs["last_bullish_bar"] = -100
+        _cooldown_sb2_abs["last_bearish_bar"] = -100
+        _cooldown_sb2_abs["last_date"] = today
+
+    bar_idx = result["bar_idx"]
+    direction = result["direction"]
+    cooldown = 10
+
+    if direction == "bullish":
+        if bar_idx - _cooldown_sb2_abs["last_bullish_bar"] < cooldown:
+            return False, None
+        _cooldown_sb2_abs["last_bullish_bar"] = bar_idx
+    else:
+        if bar_idx - _cooldown_sb2_abs["last_bearish_bar"] < cooldown:
+            return False, None
+        _cooldown_sb2_abs["last_bearish_bar"] = bar_idx
+
+    return True, "new"
+
+
+def format_sb2_abs_message(result, alignment=None):
+    """Format Telegram HTML message for SB2 Absorption (two-bar)."""
+    side_emoji = "\U0001f7e2" if result["direction"] == "bullish" else "\U0001f534"
+    side_label = "BUY" if result["direction"] == "bullish" else "SELL"
+    grade = result.get("grade", "?")
+    score = result.get("score", 0)
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
+
+    parts = [
+        f"{side_emoji} <b>SB2 Abs {side_label} [{grade}]{align_str}</b>",
+        f"ES {result['abs_es_price']:.2f} | Score {score} | Vol {result['abs_vol_ratio']:.1f}x | Delta {result['bar_delta']:+d}({result['delta_ratio']:.1f}x) | Rec {result.get('recovery_pct', 0):.0%}",
+    ]
+
+    extras = []
+    if result.get("svb") is not None:
+        extras.append(f"SVB {result['svb']:.2f}")
+    if result.get("paradigm"):
+        extras.append(result["paradigm"])
+    if extras:
+        parts.append(" | ".join(extras))
+
+    return "\n".join(parts)
+
+
 # ── Paradigm Reversal — defaults and state ─────────────────────────────────
 
 DEFAULT_PARADIGM_REV_SETTINGS = {
@@ -4106,6 +4384,7 @@ def export_cooldowns() -> dict:
         "vanna_pivot": _serialize(_cooldown_vanna_pivot),
         "single_bar_abs": _serialize(_cooldown_single_bar_abs),
         "sb10_abs": _serialize(_cooldown_sb10_abs),
+        "sb2_abs": _serialize(_cooldown_sb2_abs),
         "gex_velocity": _serialize(_cooldown_gex_vel),
         "vix_compress": _serialize(_cooldown_vix_compress),
         "vix_history": _vix_history[-60:],  # save last ~30 min for restart recovery
@@ -4168,6 +4447,8 @@ def import_cooldowns(data: dict):
         _cooldown_single_bar_abs.update(_deserialize(data["single_bar_abs"]))
     if "sb10_abs" in data:
         _cooldown_sb10_abs.update(_deserialize(data["sb10_abs"]))
+    if "sb2_abs" in data:
+        _cooldown_sb2_abs.update(_deserialize(data["sb2_abs"]))
     if "gex_velocity" in data:
         _cooldown_gex_vel.update(_deserialize(data["gex_velocity"]))
     if "vix_compress" in data:

@@ -1150,7 +1150,7 @@ def _backfill_outcomes():
             is_long = entry.get("direction", "long").lower() in ("long", "bullish")
             spot = entry.get("spot") or 0
             es_price = entry.get("abs_es_price")
-            _es_based_bf = entry.get("setup_name") in ("ES Absorption", "SB Absorption", "SB10 Absorption")
+            _es_based_bf = entry.get("setup_name") in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption")
             entry_price = es_price if _es_based_bf and es_price else spot
 
             is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long", "GEX Velocity", "AG Short", "Skew Charm")
@@ -1582,7 +1582,7 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "SB Absorption": None, "SB10 Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "Vanna Butterfly": None, "VIX Compression": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "SB Absorption": None, "SB10 Absorption": None, "SB2 Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "Vanna Butterfly": None, "VIX Compression": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
@@ -3381,7 +3381,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 continue
 
         # Use ES price for ES-based setups (absorption), SPX spot for everything else
-        _es_based = setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption")
+        _es_based = setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption")
         if _es_based:
             if not es_price:
                 still_open.append(trade)
@@ -3445,6 +3445,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
             "SB Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
             "SB10 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
+            "SB2 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
         }
         _tp = _trail_params.get(setup_name)
         if _tp is not None:
@@ -4381,10 +4382,11 @@ def _es_quote_reset():
     global _last_absorption_bar_idx, _last_sb10_bar_idx
     _last_absorption_bar_idx = -1
     _last_sb10_bar_idx = -1
-    from app.setup_detector import reset_absorption_session, reset_single_bar_abs_session, reset_sb10_abs_session
+    from app.setup_detector import reset_absorption_session, reset_single_bar_abs_session, reset_sb10_abs_session, reset_sb2_abs_session
     reset_absorption_session()
     reset_single_bar_abs_session()
     reset_sb10_abs_session()
+    reset_sb2_abs_session()
     _absorption_signals.clear()
 
 def _run_absorption_detection(bars: list) -> dict | None:
@@ -4855,6 +4857,11 @@ def _run_absorption_in_thread(bars: list):
             _run_single_bar_absorption(bars)
         except Exception as e:
             print(f"[sb-absorption] eval error: {e}", flush=True)
+        # Two-bar absorption (LOG-ONLY — flush + recovery pattern)
+        try:
+            _run_sb2_absorption(bars)
+        except Exception as e:
+            print(f"[sb2] eval error: {e}", flush=True)
 
 
 # ── 10-pt range bar callback for SB10 Absorption ──────────────────────────
@@ -5001,6 +5008,112 @@ def _run_sb10_absorption(bars: list):
             "setup_log_id": _current_setup_log.get("SB10 Absorption"),
         })
         print(f"[outcome] tracking SB10 Absorption: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
+
+
+# ── SB2 Absorption — two-bar flush + recovery ────────────────────────────
+
+def _run_sb2_absorption(bars: list):
+    """Evaluate SB2 Absorption (two-bar pattern, LOG-ONLY)."""
+    from app.setup_detector import (
+        evaluate_sb2_absorption, should_notify_sb2_abs,
+        format_sb2_abs_message,
+    )
+
+    # Get Volland stats
+    volland_stats = None
+    try:
+        vstat = db_volland_stats()
+        if vstat and vstat.get("stats") and vstat["stats"].get("has_statistics"):
+            volland_stats = vstat["stats"]
+    except Exception as e:
+        print(f"[sb2] volland lookup error: {e}", flush=True)
+
+    # Get SPX spot
+    spx_spot = None
+    try:
+        msg = last_run_status.get("msg") or ""
+        parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+        spx_spot = float(parts.get("spot", ""))
+    except Exception:
+        pass
+
+    result = evaluate_sb2_absorption(bars, volland_stats, _setup_settings, spx_spot=spx_spot)
+    if result is None:
+        return None
+
+    # Block signals in last 5 minutes
+    t_now = now_et().time()
+    if t_now >= dtime(15, 55):
+        print(f"[sb2] BLOCKED: {result['direction'].upper()} at {t_now} — too close to close", flush=True)
+        return None
+
+    print(f"[sb2] SIGNAL: {result['direction'].upper()} "
+          f"ES={result['abs_es_price']:.2f} vol={result['abs_vol_ratio']:.1f}x "
+          f"delta={result['bar_delta']:+d}({result['delta_ratio']:.1f}x) "
+          f"recovery={result.get('recovery_pct', 0):.0%} "
+          f"bar_idx={result['bar_idx']}", flush=True)
+
+    if spx_spot:
+        result["spot"] = round(spx_spot, 2)
+
+    # Greek alignment
+    _sb2_charm = None
+    if volland_stats and isinstance(volland_stats, dict):
+        _c = volland_stats.get("aggregatedCharm")
+        if _c is not None:
+            try:
+                _sb2_charm = float(_c)
+            except (ValueError, TypeError):
+                pass
+    result["vanna_all"] = _vanna_cache.get("all")
+    result["vanna_weekly"] = _vanna_cache.get("weekly")
+    result["vanna_monthly"] = _vanna_cache.get("monthly")
+    result["spot_vol_beta"] = result.get("svb")
+    result["greek_alignment"] = _compute_greek_alignment(
+        result.get("direction"), _sb2_charm, _vanna_cache.get("all"),
+        result.get("spot"), None)
+    result["charm_limit_entry"] = None
+
+    # Notification gate
+    fire, reason = should_notify_sb2_abs(result)
+
+    # Log to setup_log
+    rw = {
+        "result": result,
+        "notify": fire,
+        "notify_reason": reason or "cooldown",
+        "message": format_sb2_abs_message(result, alignment=result.get("greek_alignment")),
+    }
+    log_setup(rw)
+
+    # SB2 Absorption: LOG-ONLY — no Telegram, no auto-trade
+
+    # Outcome tracking
+    if fire:
+        stop_pts = _setup_settings.get("sb2_stop_pts", 8)
+        target_pts = _setup_settings.get("sb2_target_pts", 10)
+        es_entry = result.get("abs_es_price", result["spot"])
+        if result["direction"] == "bullish":
+            target_lvl = es_entry + target_pts
+            stop_lvl = es_entry - stop_pts
+        else:
+            target_lvl = es_entry - target_pts
+            stop_lvl = es_entry + stop_pts
+        _setup_open_trades.append({
+            "setup_name": "SB2 Absorption", "direction": result["direction"],
+            "spot": result["spot"], "grade": result["grade"],
+            "target_level": target_lvl, "stop_level": stop_lvl,
+            "initial_stop_level": stop_lvl,
+            "ts": now_et(), "result_data": result,
+            "_seen_high": es_entry, "_seen_low": es_entry,
+            "_es_last_bar_idx": result.get("bar_idx", 0),
+            "max_hold_minutes": None,
+            "_trade_date": now_et().date(),
+            "setup_log_id": _current_setup_log.get("SB2 Absorption"),
+        })
+        print(f"[outcome] tracking SB2 Absorption: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
+
+    return result
 
 
 def _es_session_date() -> str:
@@ -8913,7 +9026,7 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
         bars_after = 0
 
         # Trail state — SB Absorption: BE@10, act=20, gap=10. ES Absorption: BE@10, gap=8.
-        _is_sb = entry.get("setup_name") in ("SB Absorption", "SB10 Absorption")
+        _is_sb = entry.get("setup_name") in ("SB Absorption", "SB10 Absorption", "SB2 Absorption")
         _trail_gap = 10 if _is_sb else 8
         _trail_activation = 20 if _is_sb else 10
         trail_active = False
@@ -9062,7 +9175,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         return {}
 
     # ES-based setups: outcome tracking using ES range bars
-    if entry.get("setup_name") in ("ES Absorption", "SB Absorption", "SB10 Absorption"):
+    if entry.get("setup_name") in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption"):
         return _calculate_absorption_outcome(entry)
 
     try:
@@ -11358,7 +11471,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="options">Options Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>GEX Velocity</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
@@ -14597,7 +14710,7 @@ DASH_HTML_TEMPLATE = """
 
       let html = '';
       filtered.forEach((l, i) => {
-        const isAbs = l.setup_name === 'ES Absorption' || l.setup_name === 'SB Absorption' || l.setup_name === 'SB10 Absorption';
+        const isAbs = l.setup_name === 'ES Absorption' || l.setup_name === 'SB Absorption' || l.setup_name === 'SB10 Absorption' || l.setup_name === 'SB2 Absorption';
         const isBofa = l.setup_name === 'BofA Scalp';
         const pillColor = _tlPillColors[l.setup_name] || '#888';
         const dir = isAbs ? (l.direction === 'bullish' ? '▲' : '▼') : (l.direction === 'long' ? '▲' : '▼');
@@ -15146,7 +15259,7 @@ DASH_HTML_TEMPLATE = """
           const color = gradeColor[l.grade] || '#888';
           const bell = l.notified ? '&#128276;' : '';
           const isBofa = l.setup_name === 'BofA Scalp';
-          const isAbs = l.setup_name === 'ES Absorption' || l.setup_name === 'SB Absorption' || l.setup_name === 'SB10 Absorption';
+          const isAbs = l.setup_name === 'ES Absorption' || l.setup_name === 'SB Absorption' || l.setup_name === 'SB10 Absorption' || l.setup_name === 'SB2 Absorption';
           const dir = isAbs ? (l.direction === 'bullish' ? '▲' : '▼') : (l.direction === 'long' ? '▲' : '▼');
           const dirColor = (l.direction === 'long' || l.direction === 'bullish') ? '#22c55e' : '#ef4444';
           const o = l.outcome || {};
@@ -15227,7 +15340,7 @@ DASH_HTML_TEMPLATE = """
 
         // Title
         const isBofa = e.setup_name === 'BofA Scalp';
-        const isAbs = e.setup_name === 'ES Absorption' || e.setup_name === 'SB Absorption' || e.setup_name === 'SB10 Absorption';
+        const isAbs = e.setup_name === 'ES Absorption' || e.setup_name === 'SB Absorption' || e.setup_name === 'SB10 Absorption' || e.setup_name === 'SB2 Absorption';
         const dir = isAbs ? (e.direction === 'bullish' ? 'BUY' : 'SELL') : (e.direction === 'long' ? 'LONG' : 'SHORT');
         const dirColor = (e.direction === 'long' || e.direction === 'bullish') ? '#22c55e' : '#ef4444';
         const displayPrice = isAbs ? (e.abs_es_price || e.spot)?.toFixed(2) : e.spot?.toFixed(0);

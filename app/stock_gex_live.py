@@ -274,15 +274,12 @@ def _fetch_chain(symbol, expiration, spot):
     """Fetch options chain for a stock via TS API.
 
     Uses same endpoint/format as main.py get_chain_rows().
-    TS API returns: Legs[0].StrikePrice, OptionType, Gamma, OpenInterest, Delta, IV, etc.
     Returns list of {Strike, Type, Gamma, OpenInterest, Delta, IV, Bid, Ask, ...} or None.
     """
     if not _api_get:
         return None
 
     try:
-        exp_str = expiration.replace("-", "")
-
         # Strike interval based on stock price
         if spot > 500:
             interval = 5
@@ -295,33 +292,30 @@ def _fetch_chain(symbol, expiration, spot):
 
         proximity = int(interval * 15)  # +/- 15 strikes
 
-        # Try streaming endpoint first (same as SPX chain)
-        params = {
-            "spreadType": "Single",
-            "enableGreeks": "true",
-            "priceCenter": f"{spot:.2f}",
-            "strikeProximity": proximity,
-            "optionType": "All",
-            "strikeInterval": interval,
-            "expiration": exp_str,
-        }
+        # Try multiple expiration formats (TS API is inconsistent)
+        exp_variants = [expiration]  # YYYY-MM-DD
+        try:
+            exp_variants.append(datetime.strptime(expiration, "%Y-%m-%d").strftime("%m-%d-%Y"))
+        except Exception:
+            pass
 
         rows = []
 
-        # Try snapshot endpoint (more reliable for stocks)
-        try:
-            resp = _api_get(f"/marketdata/options/chains", params={
-                "symbol": symbol,
-                "enableGreeks": "true",
-                "optionType": "All",
-                "priceCenter": f"{spot:.2f}",
-                "strikeProximity": proximity,
-                "strikeInterval": interval,
-                "spreadType": "Single",
-                "expiration": exp_str,
-            }, timeout=12)
+        for exp_str in exp_variants:
+            if rows:
+                break
+            try:
+                resp = _api_get(f"/marketdata/options/chains", params={
+                    "symbol": symbol,
+                    "enableGreeks": "true",
+                    "optionType": "All",
+                    "priceCenter": f"{spot:.2f}",
+                    "strikeProximity": proximity,
+                    "strikeInterval": interval,
+                    "spreadType": "Single",
+                    "expiration": exp_str,
+                }, timeout=12)
 
-            if resp and hasattr(resp, 'json'):
                 js = resp.json()
                 for it in js.get("Options", []):
                     legs = it.get("Legs") or []
@@ -334,56 +328,22 @@ def _fetch_chain(symbol, expiration, spot):
                     strike = _safe_float(leg0.get("StrikePrice"))
                     gamma = _safe_float(it.get("Gamma") or it.get("TheoGamma"))
                     oi = _safe_float(it.get("OpenInterest") or it.get("DailyOpenInterest"))
-                    delta = _safe_float(it.get("Delta") or it.get("TheoDelta"))
-                    iv = _safe_float(it.get("ImpliedVolatility") or it.get("TheoIV"))
-                    bid = _safe_float(it.get("Bid"))
-                    ask = _safe_float(it.get("Ask"))
-                    last = _safe_float(it.get("Last"))
-
-                    if strike and oi:
-                        rows.append({
-                            "Strike": strike,
-                            "Type": side,
-                            "Gamma": gamma or 0,
-                            "OpenInterest": oi,
-                            "Delta": delta,
-                            "IV": iv,
-                            "Bid": bid,
-                            "Ask": ask,
-                            "Last": last,
-                        })
-            elif isinstance(resp, list):
-                # Direct list response (streaming format)
-                for it in resp:
-                    if not isinstance(it, dict):
-                        continue
-                    legs = it.get("Legs") or []
-                    leg0 = legs[0] if legs else {}
-                    side = (leg0.get("OptionType") or it.get("OptionType") or "").lower()
-                    side = "C" if side.startswith("c") else "P" if side.startswith("p") else "?"
-                    if side == "?":
+                    if not strike or not oi:
                         continue
 
-                    strike = _safe_float(leg0.get("StrikePrice"))
-                    gamma = _safe_float(it.get("Gamma") or it.get("TheoGamma"))
-                    oi = _safe_float(it.get("OpenInterest") or it.get("DailyOpenInterest"))
-                    delta = _safe_float(it.get("Delta") or it.get("TheoDelta"))
-
-                    if strike and oi:
-                        rows.append({
-                            "Strike": strike,
-                            "Type": side,
-                            "Gamma": gamma or 0,
-                            "OpenInterest": oi,
-                            "Delta": delta,
-                            "IV": _safe_float(it.get("ImpliedVolatility")),
-                            "Bid": _safe_float(it.get("Bid")),
-                            "Ask": _safe_float(it.get("Ask")),
-                            "Last": _safe_float(it.get("Last")),
-                        })
-
-        except Exception as e:
-            print(f"[stock-gex-live] chain snapshot error {symbol}: {e}", flush=True)
+                    rows.append({
+                        "Strike": strike,
+                        "Type": side,
+                        "Gamma": gamma or 0,
+                        "OpenInterest": oi,
+                        "Delta": _safe_float(it.get("Delta") or it.get("TheoDelta")),
+                        "IV": _safe_float(it.get("ImpliedVolatility") or it.get("TheoIV")),
+                        "Bid": _safe_float(it.get("Bid")),
+                        "Ask": _safe_float(it.get("Ask")),
+                        "Last": _safe_float(it.get("Last")),
+                    })
+            except Exception:
+                continue  # try next expiration format
 
         return rows if rows else None
 

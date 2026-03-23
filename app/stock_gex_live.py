@@ -314,8 +314,11 @@ def _fetch_chain(symbol, expiration, spot):
                     "expiration": exp_str,
                 }, stream=True, timeout=8)
 
-                # Consume streaming response (same as main.py _consume_chain_stream)
+                # Consume streaming response with timeout (same as main.py)
+                _start = time.time()
                 for line in r.iter_lines(decode_unicode=True):
+                    if time.time() - _start > 5:
+                        break  # timeout
                     if not line:
                         continue
                     try:

@@ -119,6 +119,15 @@ tbody tr:hover{background:var(--bg-2)}
 .info-item .val{font-size:13px;font-weight:600;margin-top:2px;color:var(--text)}
 
 /* ── Empty state ───────────────────────────── */
+/* ── Filter bar + sort ──────────────────────── */
+.filter-bar{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.fbtn{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:6px;font-size:11px;font-weight:500;color:var(--text-3);background:var(--bg-1);border:1px solid var(--border);cursor:pointer;transition:all .12s}
+.fbtn:hover{color:var(--text);border-color:var(--border-l)}
+.fbtn-act{color:var(--blue);border-color:var(--blue);background:var(--blue-bg)}
+.fbtn .count{font-size:10px;font-weight:600;opacity:.7}
+th.sortable{cursor:pointer;user-select:none}
+th.sortable:hover{color:var(--text)}
+
 .empty{text-align:center;padding:50px 20px}
 .empty h3{color:var(--text-2);font-size:13px;font-weight:500;margin-bottom:6px}
 .empty p{color:var(--text-3);font-size:11px}
@@ -153,6 +162,7 @@ tbody tr:hover{background:var(--bg-2)}
 
 <script>
 let currentTab='chart',selectedSym=null,data={};
+let lvlSort='gexdist',lvlSortAsc=true,lvlFilter='all';
 
 function showTab(tab,el){
   currentTab=tab;
@@ -358,25 +368,76 @@ function renderLog(){
   return html;
 }
 
-function renderLevels(){
-  const levels=data.levels||{};const keys=Object.keys(levels).sort();
-  if(!keys.length)return '<div class="empty"><h3>No levels yet</h3><p>Waiting for first GEX scan</p></div>';
-  let html='<div class="tbl-wrap"><table><thead><tr><th>Stock</th><th>Spot</th><th>-GEX 1</th><th>-GEX 2</th><th>-GEX 3</th><th>+GEX 1</th><th>+GEX 2</th><th>+GEX 3</th><th>Ratio</th><th>Spot vs -GEX</th><th>Status</th><th></th></tr></thead><tbody>';
-  for(const sym of keys){
-    const s=levels[sym];const neg=s.neg_strikes||[];const pos=s.pos_strikes||[];
-    const hn=s.highest_neg||0;const sp=s.spot||0;
+function _lvlData(levels){
+  // Build enriched array for sorting/filtering
+  return Object.keys(levels).map(sym=>{
+    const s=levels[sym];const hn=s.highest_neg||0;const sp=s.spot||0;
     const distPct=hn>0?((sp-hn)/hn*100):0;
-    const below=sp<hn;
-    const close=!below&&distPct<2;
-    const distCls=below?'c-red':(close?'c-amber':'c-green');
-    const distTxt=(below?'':'+')+ distPct.toFixed(1)+'%';
-    const statusBadge=below?'<span class="badge badge-fail">BELOW -GEX</span>':(s.ratio>=3?'<span class="badge badge-pass">WATCHING</span>':'<span class="badge" style="background:var(--bg-3);color:var(--text-3)">LOW RATIO</span>');
-    html+='<tr><td><b>'+sym+'</b></td><td>$'+sp.toFixed(2)+'</td>';
-    for(let i=0;i<3;i++)html+='<td class="c-red">'+(neg[i]?'$'+neg[i].toFixed(0):'-')+'</td>';
-    for(let i=0;i<3;i++)html+='<td class="c-green">'+(pos[i]?'$'+pos[i].toFixed(0):'-')+'</td>';
-    html+='<td>'+(s.ratio||0).toFixed(1)+'x</td><td class="'+distCls+'" style="font-weight:500">'+distTxt+'</td>';
+    const below=sp<hn;const ratio=s.ratio||0;
+    const status=below?'below':(ratio>=3?'watching':'low');
+    return{sym,s,hn,sp,distPct,below,ratio,status,neg:s.neg_strikes||[],pos:s.pos_strikes||[]};
+  });
+}
+function setLvlSort(col){
+  if(lvlSort===col)lvlSortAsc=!lvlSortAsc;
+  else{lvlSort=col;lvlSortAsc=col==='gexdist'||col==='sym';}
+  render();
+}
+function setLvlFilter(f){lvlFilter=f;render();}
+
+function renderLevels(){
+  const levels=data.levels||{};
+  let rows=_lvlData(levels);
+  if(!rows.length)return '<div class="empty"><h3>No levels yet</h3><p>Waiting for first GEX scan</p></div>';
+
+  // Filter
+  if(lvlFilter==='watching')rows=rows.filter(r=>r.status==='watching');
+  else if(lvlFilter==='below')rows=rows.filter(r=>r.status==='below');
+  else if(lvlFilter==='low')rows=rows.filter(r=>r.status==='low');
+  else if(lvlFilter==='close')rows=rows.filter(r=>!r.below&&r.distPct<3);
+
+  // Sort
+  const dir=lvlSortAsc?1:-1;
+  if(lvlSort==='gexdist')rows.sort((a,b)=>(a.distPct-b.distPct)*dir);
+  else if(lvlSort==='ratio')rows.sort((a,b)=>(a.ratio-b.ratio)*dir);
+  else if(lvlSort==='sym')rows.sort((a,b)=>a.sym.localeCompare(b.sym)*dir);
+  else if(lvlSort==='spot')rows.sort((a,b)=>(a.sp-b.sp)*dir);
+
+  const total=_lvlData(levels);
+  const cW=total.filter(r=>r.status==='watching').length;
+  const cB=total.filter(r=>r.status==='below').length;
+  const cL=total.filter(r=>r.status==='low').length;
+  const cC=total.filter(r=>!r.below&&r.distPct<3).length;
+
+  // Filter bar
+  const fb=(id,label,cnt)=>{const act=lvlFilter===id;return '<span class="fbtn'+(act?' fbtn-act':'')+'" onclick="setLvlFilter(\\''+id+'\\')">'+label+' <span class="count">'+cnt+'</span></span>'};
+  let html='<div class="filter-bar">';
+  html+=fb('all','All',total.length)+fb('watching','Watching',cW)+fb('below','Below -GEX',cB)+fb('close','Near -GEX',cC)+fb('low','Low Ratio',cL);
+  html+='</div>';
+
+  // Sort arrow helper
+  const sa=(col)=>lvlSort===col?(lvlSortAsc?' \\u25B2':' \\u25BC'):'';
+
+  html+='<div style="font-size:10px;color:var(--text-3);margin-bottom:6px">Showing '+rows.length+' of '+total.length+' stocks</div>';
+  html+='<div class="tbl-wrap"><table><thead><tr>';
+  html+='<th class="sortable" onclick="setLvlSort(\\'sym\\')">Stock'+sa('sym')+'</th>';
+  html+='<th class="sortable" onclick="setLvlSort(\\'spot\\')">Spot'+sa('spot')+'</th>';
+  html+='<th>-GEX 1</th><th>-GEX 2</th><th>-GEX 3</th><th>+GEX 1</th><th>+GEX 2</th><th>+GEX 3</th>';
+  html+='<th class="sortable" onclick="setLvlSort(\\'ratio\\')">Ratio'+sa('ratio')+'</th>';
+  html+='<th class="sortable" onclick="setLvlSort(\\'gexdist\\')">Spot vs -GEX'+sa('gexdist')+'</th>';
+  html+='<th>Status</th><th></th></tr></thead><tbody>';
+
+  for(const r of rows){
+    const close=!r.below&&r.distPct<2;
+    const distCls=r.below?'c-red':(close?'c-amber':'c-green');
+    const distTxt=(r.below?'':'+')+r.distPct.toFixed(1)+'%';
+    const statusBadge=r.below?'<span class="badge badge-fail">BELOW -GEX</span>':(r.ratio>=3?'<span class="badge badge-pass">WATCHING</span>':'<span class="badge" style="background:var(--bg-3);color:var(--text-3)">LOW RATIO</span>');
+    html+='<tr><td><b>'+r.sym+'</b></td><td>$'+r.sp.toFixed(2)+'</td>';
+    for(let i=0;i<3;i++)html+='<td class="c-red">'+(r.neg[i]?'$'+r.neg[i].toFixed(0):'-')+'</td>';
+    for(let i=0;i<3;i++)html+='<td class="c-green">'+(r.pos[i]?'$'+r.pos[i].toFixed(0):'-')+'</td>';
+    html+='<td>'+r.ratio.toFixed(1)+'x</td><td class="'+distCls+'" style="font-weight:500">'+distTxt+'</td>';
     html+='<td>'+statusBadge+'</td>';
-    html+='<td><span class="link" onclick="selectedSym=\\''+sym+'\\';showTab(\\'chart\\',document.querySelector(\\'.tab\\'))">View</span></td></tr>';
+    html+='<td><span class="link" onclick="selectedSym=\\''+r.sym+'\\';showTab(\\'chart\\',document.querySelector(\\'.tab\\'))">View</span></td></tr>';
   }
   html+='</tbody></table></div>';
   return html;

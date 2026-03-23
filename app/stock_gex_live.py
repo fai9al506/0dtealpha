@@ -424,18 +424,16 @@ def _fetch_stock_quote(symbol):
 def _fetch_batch_quotes(symbols):
     """Fetch quotes for multiple stocks in one call."""
     if not _api_get or not symbols:
-        print(f"[stock-gex-live] batch quote: _api_get={bool(_api_get)}, symbols={len(symbols) if symbols else 0}", flush=True)
         return {}
     try:
         sym_str = ",".join(symbols)
-        print(f"[stock-gex-live] batch quote: fetching {len(symbols)} symbols...", flush=True)
         data = _api_get(f"/marketdata/quotes/{sym_str}")
         if not data:
             print(f"[stock-gex-live] batch quote: api returned None/empty", flush=True)
             return {}
-        print(f"[stock-gex-live] batch quote: got type={type(data).__name__}, keys={list(data.keys()) if isinstance(data, dict) else 'N/A'}", flush=True)
         quotes = data.get("Quotes", []) if isinstance(data, dict) else data if isinstance(data, list) else []
-        print(f"[stock-gex-live] batch quote: {len(quotes)} quotes in response", flush=True)
+        if not quotes:
+            print(f"[stock-gex-live] batch quote: no Quotes in response (keys={list(data.keys()) if isinstance(data, dict) else type(data).__name__})", flush=True)
         result = {}
         for q in quotes:
             sym = q.get("Symbol", "")
@@ -445,7 +443,6 @@ def _fetch_batch_quotes(symbols):
                     "bid": q.get("Bid", 0),
                     "ask": q.get("Ask", 0),
                 }
-        print(f"[stock-gex-live] batch quote: parsed {len(result)} stocks", flush=True)
         return result
     except Exception as e:
         print(f"[stock-gex-live] batch quote error: {e}", flush=True)
@@ -1125,6 +1122,51 @@ def get_status():
 
 # ── Init ────────────────────────────────────────────────────────────
 
+def _load_latest_levels():
+    """Load last known GEX levels from DB so page works after hours / before first scan."""
+    global _gex_levels, _watchlist, _last_scan_at
+    if not _engine:
+        return
+    try:
+        with _engine.connect() as conn:
+            # Get the most recent scan date
+            row = conn.execute(text(
+                "SELECT MAX(scan_date) as d FROM stock_gex_live_levels"
+            )).mappings().first()
+            if not row or not row["d"]:
+                return
+            last_date = row["d"]
+            # Get latest levels per symbol from that date
+            rows = conn.execute(text("""
+                SELECT DISTINCT ON (symbol) symbol, levels, passes_filter, scan_ts
+                FROM stock_gex_live_levels
+                WHERE scan_date = :d
+                ORDER BY symbol, scan_ts DESC
+            """), {"d": last_date}).mappings().all()
+            new_levels = {}
+            new_watchlist = {}
+            for r in rows:
+                sym = r["symbol"]
+                lvls = json.loads(r["levels"]) if isinstance(r["levels"], str) else r["levels"]
+                if not lvls:
+                    continue
+                new_levels[sym] = lvls
+                if r["passes_filter"] and lvls.get("highest_neg"):
+                    trigger = lvls["highest_neg"] * (1 - ENTRY_OFFSET_PCT / 100)
+                    lvls["trigger_price"] = round(trigger, 2)
+                    lvls["tier"] = "A" if sym in TIER_A else "B"
+                    new_watchlist[sym] = lvls
+            with _lock:
+                _gex_levels = new_levels
+                _watchlist = new_watchlist
+                if rows:
+                    _last_scan_at = rows[0].get("scan_ts")
+            print(f"[stock-gex-live] loaded {len(new_levels)} levels from DB (date={last_date}, "
+                  f"watchlist={len(new_watchlist)})", flush=True)
+    except Exception as e:
+        print(f"[stock-gex-live] load latest levels error: {e}", flush=True)
+
+
 def init(engine, api_get_fn, send_telegram_fn=None):
     """Initialize module. Called from main.py at startup."""
     global _engine, _api_get, _send_telegram, _initialized
@@ -1135,6 +1177,7 @@ def init(engine, api_get_fn, send_telegram_fn=None):
     _initialized = True
 
     _db_init()
+    _load_latest_levels()
 
     print(f"[stock-gex-live] initialized. {len(STOCKS)} stocks, "
           f"ratio>{MIN_GEX_RATIO}, entry=-GEX-{ENTRY_OFFSET_PCT}%", flush=True)

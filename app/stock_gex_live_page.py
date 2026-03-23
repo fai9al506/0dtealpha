@@ -472,7 +472,7 @@ async function triggerScan(){
 }
 
 doRefresh();
-setInterval(doRefresh,30000);
+setInterval(doRefresh,120000); // 2 min — matches spot monitor refresh
 </script>
 </body>
 </html>"""

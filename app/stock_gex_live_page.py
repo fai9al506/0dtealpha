@@ -244,7 +244,8 @@ function renderChart(){
   html+='<div class="info-item"><div class="lbl">GEX Ratio</div><div class="val" style="color:'+((s.ratio||0)>=3?'var(--green)':'var(--red)')+'">'+(s.ratio||0).toFixed(1)+'x</div></div>';
   html+='<div class="info-item"><div class="lbl">-GEX (Support)</div><div class="val c-red">$'+(s.highest_neg||0).toFixed(0)+'</div></div>';
   html+='<div class="info-item"><div class="lbl">+GEX (Magnet)</div><div class="val c-green">$'+(s.lowest_pos||0).toFixed(0)+'</div></div>';
-  html+='<div class="info-item"><div class="lbl">Zone Width</div><div class="val">'+(s.zone_width||0).toFixed(1)+'%</div></div>';
+  const _hn=s.highest_neg||0;const _gDist=_hn>0?((s.spot-_hn)/_hn*100):0;const _below=s.spot<_hn;
+  html+='<div class="info-item"><div class="lbl">Spot vs -GEX</div><div class="val" style="color:'+(_below?'var(--red)':(_gDist<2?'var(--amber)':'var(--green)'))+'">'+ (_below?'':'+')+ _gDist.toFixed(1)+'%</div></div>';
   html+='<div class="info-item"><div class="lbl">Trigger (-1%)</div><div class="val c-amber">$'+(wl?wl.trigger_price.toFixed(2):'n/a')+'</div></div>';
   html+='<div class="info-item"><div class="lbl">Support Below</div><div class="val">'+(s.n_support_below||0)+'</div></div>';
   html+='<div class="info-item"><div class="lbl">Magnets Above</div><div class="val">'+(s.n_magnets_above||0)+'</div></div>';
@@ -288,16 +289,21 @@ function renderWatchlist(){
   html+='<div class="kpi"><div class="label">Watchlist</div><div class="value">'+keys.length+'</div></div>';
   html+='<div class="kpi"><div class="label">Active Trades</div><div class="value">'+(data.active||[]).length+'</div></div>';
   html+='</div>';
-  html+='<div class="tbl-wrap"><table><thead><tr><th>Stock</th><th>Tier</th><th>Spot</th><th>-GEX</th><th>+GEX</th><th>Trigger</th><th>Dist</th><th>Ratio</th><th>Zone</th><th></th></tr></thead><tbody>';
+  html+='<div class="tbl-wrap"><table><thead><tr><th>Stock</th><th>Tier</th><th>Spot</th><th>-GEX</th><th>+GEX</th><th>Trigger</th><th>To Trigger</th><th>Spot vs -GEX</th><th>Ratio</th><th></th></tr></thead><tbody>';
   for(const sym of keys){
     const s=wl[sym];
-    const dist=((s.spot-s.trigger_price)/s.spot*100).toFixed(1);
+    const trigDist=((s.spot-s.trigger_price)/s.spot*100).toFixed(1);
+    const hn=s.highest_neg||0;
+    const gexDist=hn>0?((s.spot-hn)/hn*100):0;
+    const below=s.spot<hn;const close=!below&&gexDist<2;
+    const gexCls=below?'c-red':(close?'c-amber':'c-green');
+    const gexTxt=(below?'':'+')+ gexDist.toFixed(1)+'%';
     const tier=s.tier==='A'?'<span class="tier-a">A</span>':'<span class="tier-b">B</span>';
     html+='<tr><td><b>'+sym+'</b></td><td>'+tier+'</td>';
-    html+='<td>$'+s.spot.toFixed(2)+'</td><td class="c-red">$'+s.highest_neg.toFixed(0)+'</td>';
-    html+='<td class="c-green">$'+s.lowest_pos.toFixed(0)+'</td>';
+    html+='<td>$'+s.spot.toFixed(2)+'</td><td class="c-red">$'+hn.toFixed(0)+'</td>';
+    html+='<td class="c-green">$'+(s.lowest_pos||0).toFixed(0)+'</td>';
     html+='<td class="c-amber">$'+s.trigger_price.toFixed(2)+'</td>';
-    html+='<td>'+dist+'%</td><td>'+(s.ratio||0).toFixed(1)+'x</td><td>'+(s.zone_width||0).toFixed(1)+'%</td>';
+    html+='<td>'+trigDist+'%</td><td class="'+gexCls+'" style="font-weight:500">'+gexTxt+'</td><td>'+(s.ratio||0).toFixed(1)+'x</td>';
     html+='<td><span class="link" onclick="selectedSym=\\''+sym+'\\';showTab(\\'chart\\',document.querySelector(\\'.tab\\'))">View</span></td></tr>';
   }
   html+='</tbody></table></div>';
@@ -355,15 +361,21 @@ function renderLog(){
 function renderLevels(){
   const levels=data.levels||{};const keys=Object.keys(levels).sort();
   if(!keys.length)return '<div class="empty"><h3>No levels yet</h3><p>Waiting for first GEX scan</p></div>';
-  let html='<div class="tbl-wrap"><table><thead><tr><th>Stock</th><th>Spot</th><th>-GEX 1</th><th>-GEX 2</th><th>-GEX 3</th><th>+GEX 1</th><th>+GEX 2</th><th>+GEX 3</th><th>Ratio</th><th>Zone</th><th>Filter</th><th></th></tr></thead><tbody>';
+  let html='<div class="tbl-wrap"><table><thead><tr><th>Stock</th><th>Spot</th><th>-GEX 1</th><th>-GEX 2</th><th>-GEX 3</th><th>+GEX 1</th><th>+GEX 2</th><th>+GEX 3</th><th>Ratio</th><th>Spot vs -GEX</th><th>Status</th><th></th></tr></thead><tbody>';
   for(const sym of keys){
     const s=levels[sym];const neg=s.neg_strikes||[];const pos=s.pos_strikes||[];
-    const pass=s.ratio>=3&&s.spot>=s.highest_neg;
-    html+='<tr><td><b>'+sym+'</b></td><td>$'+(s.spot||0).toFixed(2)+'</td>';
+    const hn=s.highest_neg||0;const sp=s.spot||0;
+    const distPct=hn>0?((sp-hn)/hn*100):0;
+    const below=sp<hn;
+    const close=!below&&distPct<2;
+    const distCls=below?'c-red':(close?'c-amber':'c-green');
+    const distTxt=(below?'':'+')+ distPct.toFixed(1)+'%';
+    const statusBadge=below?'<span class="badge badge-fail">BELOW -GEX</span>':(s.ratio>=3?'<span class="badge badge-pass">WATCHING</span>':'<span class="badge" style="background:var(--bg-3);color:var(--text-3)">LOW RATIO</span>');
+    html+='<tr><td><b>'+sym+'</b></td><td>$'+sp.toFixed(2)+'</td>';
     for(let i=0;i<3;i++)html+='<td class="c-red">'+(neg[i]?'$'+neg[i].toFixed(0):'-')+'</td>';
     for(let i=0;i<3;i++)html+='<td class="c-green">'+(pos[i]?'$'+pos[i].toFixed(0):'-')+'</td>';
-    html+='<td>'+(s.ratio||0).toFixed(1)+'x</td><td>'+(s.zone_width||0).toFixed(1)+'%</td>';
-    html+='<td><span class="badge '+(pass?'badge-pass':'badge-fail')+'">'+(pass?'PASS':'FAIL')+'</span></td>';
+    html+='<td>'+(s.ratio||0).toFixed(1)+'x</td><td class="'+distCls+'" style="font-weight:500">'+distTxt+'</td>';
+    html+='<td>'+statusBadge+'</td>';
     html+='<td><span class="link" onclick="selectedSym=\\''+sym+'\\';showTab(\\'chart\\',document.querySelector(\\'.tab\\'))">View</span></td></tr>';
   }
   html+='</tbody></table></div>';

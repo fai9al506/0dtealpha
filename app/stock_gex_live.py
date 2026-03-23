@@ -424,13 +424,18 @@ def _fetch_stock_quote(symbol):
 def _fetch_batch_quotes(symbols):
     """Fetch quotes for multiple stocks in one call."""
     if not _api_get or not symbols:
+        print(f"[stock-gex-live] batch quote: _api_get={bool(_api_get)}, symbols={len(symbols) if symbols else 0}", flush=True)
         return {}
     try:
         sym_str = ",".join(symbols)
+        print(f"[stock-gex-live] batch quote: fetching {len(symbols)} symbols...", flush=True)
         data = _api_get(f"/marketdata/quotes/{sym_str}")
         if not data:
+            print(f"[stock-gex-live] batch quote: api returned None/empty", flush=True)
             return {}
+        print(f"[stock-gex-live] batch quote: got type={type(data).__name__}, keys={list(data.keys()) if isinstance(data, dict) else 'N/A'}", flush=True)
         quotes = data.get("Quotes", []) if isinstance(data, dict) else data if isinstance(data, list) else []
+        print(f"[stock-gex-live] batch quote: {len(quotes)} quotes in response", flush=True)
         result = {}
         for q in quotes:
             sym = q.get("Symbol", "")
@@ -440,6 +445,7 @@ def _fetch_batch_quotes(symbols):
                     "bid": q.get("Bid", 0),
                     "ask": q.get("Ask", 0),
                 }
+        print(f"[stock-gex-live] batch quote: parsed {len(result)} stocks", flush=True)
         return result
     except Exception as e:
         print(f"[stock-gex-live] batch quote error: {e}", flush=True)

@@ -370,12 +370,14 @@ function renderLog(){
 
 function _lvlData(levels){
   // Build enriched array for sorting/filtering
+  // Watching = ratio >= 3 (strong setup). Below -GEX with good ratio = TRADE ZONE (most interesting)
   return Object.keys(levels).map(sym=>{
     const s=levels[sym];const hn=s.highest_neg||0;const sp=s.spot||0;
     const distPct=hn>0?((sp-hn)/hn*100):0;
     const below=sp<hn;const ratio=s.ratio||0;
-    const status=below?'below':(ratio>=3?'watching':'low');
-    return{sym,s,hn,sp,distPct,below,ratio,status,neg:s.neg_strikes||[],pos:s.pos_strikes||[]};
+    const goodRatio=ratio>=3;
+    const status=goodRatio?'watching':'low';
+    return{sym,s,hn,sp,distPct,below,ratio,status,goodRatio,neg:s.neg_strikes||[],pos:s.pos_strikes||[]};
   });
 }
 function setLvlSort(col){
@@ -391,10 +393,11 @@ function renderLevels(){
   if(!rows.length)return '<div class="empty"><h3>No levels yet</h3><p>Waiting for first GEX scan</p></div>';
 
   // Filter
-  if(lvlFilter==='watching')rows=rows.filter(r=>r.status==='watching');
-  else if(lvlFilter==='below')rows=rows.filter(r=>r.status==='below');
-  else if(lvlFilter==='low')rows=rows.filter(r=>r.status==='low');
-  else if(lvlFilter==='close')rows=rows.filter(r=>!r.below&&r.distPct<3);
+  if(lvlFilter==='watching')rows=rows.filter(r=>r.goodRatio);
+  else if(lvlFilter==='tradezone')rows=rows.filter(r=>r.below&&r.goodRatio);
+  else if(lvlFilter==='below')rows=rows.filter(r=>r.below);
+  else if(lvlFilter==='low')rows=rows.filter(r=>!r.goodRatio);
+  else if(lvlFilter==='close')rows=rows.filter(r=>!r.below&&r.distPct<3&&r.goodRatio);
 
   // Sort
   const dir=lvlSortAsc?1:-1;
@@ -404,15 +407,16 @@ function renderLevels(){
   else if(lvlSort==='spot')rows.sort((a,b)=>(a.sp-b.sp)*dir);
 
   const total=_lvlData(levels);
-  const cW=total.filter(r=>r.status==='watching').length;
-  const cB=total.filter(r=>r.status==='below').length;
-  const cL=total.filter(r=>r.status==='low').length;
-  const cC=total.filter(r=>!r.below&&r.distPct<3).length;
+  const cW=total.filter(r=>r.goodRatio).length;
+  const cTZ=total.filter(r=>r.below&&r.goodRatio).length;
+  const cB=total.filter(r=>r.below).length;
+  const cL=total.filter(r=>!r.goodRatio).length;
+  const cC=total.filter(r=>!r.below&&r.distPct<3&&r.goodRatio).length;
 
   // Filter bar
   const fb=(id,label,cnt)=>{const act=lvlFilter===id;return '<span class="fbtn'+(act?' fbtn-act':'')+'" onclick="setLvlFilter(\\''+id+'\\')">'+label+' <span class="count">'+cnt+'</span></span>'};
   let html='<div class="filter-bar">';
-  html+=fb('all','All',total.length)+fb('watching','Watching',cW)+fb('below','Below -GEX',cB)+fb('close','Near -GEX',cC)+fb('low','Low Ratio',cL);
+  html+=fb('all','All',total.length)+fb('watching','Watching',cW)+fb('tradezone','Trade Zone',cTZ)+fb('close','Near -GEX',cC)+fb('below','Below -GEX',cB)+fb('low','Low Ratio',cL);
   html+='</div>';
 
   // Sort arrow helper
@@ -431,7 +435,7 @@ function renderLevels(){
     const close=!r.below&&r.distPct<2;
     const distCls=r.below?'c-red':(close?'c-amber':'c-green');
     const distTxt=(r.below?'':'+')+r.distPct.toFixed(1)+'%';
-    const statusBadge=r.below?'<span class="badge badge-fail">BELOW -GEX</span>':(r.ratio>=3?'<span class="badge badge-pass">WATCHING</span>':'<span class="badge" style="background:var(--bg-3);color:var(--text-3)">LOW RATIO</span>');
+    const statusBadge=(r.below&&r.goodRatio)?'<span class="badge badge-active">TRADE ZONE</span>':(r.below?'<span class="badge badge-fail">BELOW -GEX</span>':(r.goodRatio?'<span class="badge badge-pass">WATCHING</span>':'<span class="badge" style="background:var(--bg-3);color:var(--text-3)">LOW RATIO</span>'));
     html+='<tr><td><b>'+r.sym+'</b></td><td>$'+r.sp.toFixed(2)+'</td>';
     for(let i=0;i<3;i++)html+='<td class="c-red">'+(r.neg[i]?'$'+r.neg[i].toFixed(0):'-')+'</td>';
     for(let i=0;i<3;i++)html+='<td class="c-green">'+(r.pos[i]?'$'+r.pos[i].toFixed(0):'-')+'</td>';

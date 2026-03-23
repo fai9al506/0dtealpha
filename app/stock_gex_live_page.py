@@ -234,6 +234,8 @@ function renderSidebar(){
   }
 }
 
+function fmtK(v){return v%1===0?'$'+v.toFixed(0):'$'+v.toFixed(1)}
+
 function render(){
   const el=document.getElementById('main');
   if(currentTab==='chart')el.innerHTML=renderChart();
@@ -252,8 +254,8 @@ function renderChart(){
   let html='<div class="info-grid">';
   html+='<div class="info-item"><div class="lbl">Spot Price</div><div class="val">$'+(s.spot||0).toFixed(2)+'</div></div>';
   html+='<div class="info-item"><div class="lbl">GEX Ratio</div><div class="val" style="color:'+((s.ratio||0)>=3?'var(--green)':'var(--red)')+'">'+(s.ratio||0).toFixed(1)+'x</div></div>';
-  html+='<div class="info-item"><div class="lbl">-GEX (Support)</div><div class="val c-red">$'+(s.highest_neg||0).toFixed(0)+'</div></div>';
-  html+='<div class="info-item"><div class="lbl">+GEX (Magnet)</div><div class="val c-green">$'+(s.lowest_pos||0).toFixed(0)+'</div></div>';
+  html+='<div class="info-item"><div class="lbl">-GEX (Support)</div><div class="val c-red">'+fmtK(s.highest_neg||0)+'</div></div>';
+  html+='<div class="info-item"><div class="lbl">+GEX (Magnet)</div><div class="val c-green">'+fmtK(s.lowest_pos||0)+'</div></div>';
   const _hn=s.highest_neg||0;const _gDist=_hn>0?((s.spot-_hn)/_hn*100):0;const _below=s.spot<_hn;
   html+='<div class="info-item"><div class="lbl">Spot vs -GEX</div><div class="val" style="color:'+(_below?'var(--red)':(_gDist<2?'var(--amber)':'var(--green)'))+'">'+ (_below?'':'+')+ _gDist.toFixed(1)+'%</div></div>';
   html+='<div class="info-item"><div class="lbl">Trigger (-1%)</div><div class="val c-amber">$'+(wl?wl.trigger_price.toFixed(2):'n/a')+'</div></div>';
@@ -278,7 +280,7 @@ function drawGexChart(sym,s){
     all=Object.entries(byStrike).map(([k,v])=>({strike:parseFloat(k),gex:v})).sort((a,b)=>a.strike-b.strike);
   }
   if(!all.length)return;
-  const strikes=all.map(l=>'$'+l.strike.toFixed(0));
+  const strikes=all.map(l=>fmtK(l.strike));
   const vals=all.map(l=>l.gex);
   const colors=all.map(l=>l.gex>=0?'rgba(34,197,94,0.8)':'rgba(239,68,68,0.7)');
   const trace={x:strikes,y:vals,type:'bar',marker:{color:colors,line:{color:colors.map(c=>c.replace('0.8','1').replace('0.7','1')),width:1}},name:'GEX',hovertemplate:'%{x}<br>GEX: %{y:,.0f}<extra></extra>'};
@@ -319,8 +321,8 @@ function renderWatchlist(){
     const gexTxt=(below?'':'+')+ gexDist.toFixed(1)+'%';
     const tier=s.tier==='A'?'<span class="tier-a">A</span>':'<span class="tier-b">B</span>';
     html+='<tr><td><b>'+sym+'</b></td><td>'+tier+'</td>';
-    html+='<td>$'+s.spot.toFixed(2)+'</td><td class="c-red">$'+hn.toFixed(0)+'</td>';
-    html+='<td class="c-green">$'+(s.lowest_pos||0).toFixed(0)+'</td>';
+    html+='<td>$'+s.spot.toFixed(2)+'</td><td class="c-red">'+fmtK(hn)+'</td>';
+    html+='<td class="c-green">'+fmtK(s.lowest_pos||0)+'</td>';
     html+='<td class="c-amber">$'+s.trigger_price.toFixed(2)+'</td>';
     html+='<td>'+trigDist+'%</td><td class="'+gexCls+'" style="font-weight:500">'+gexTxt+'</td><td>'+(s.ratio||0).toFixed(1)+'x</td>';
     html+='<td><span class="link" onclick="selectedSym=\\''+sym+'\\';showTab(\\'chart\\',document.querySelector(\\'.tab\\'))">View</span></td></tr>';
@@ -338,8 +340,8 @@ function renderActive(){
     const ts=t.entry_ts?new Date(t.entry_ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'?';
     html+='<tr><td><b>'+t.symbol+'</b> <span class="badge badge-active">OPEN</span></td>';
     html+='<td>'+tier+'</td><td>'+ts+'</td>';
-    html+='<td>$'+(t.entry_spot||0).toFixed(2)+'</td><td>$'+(t.strike||0).toFixed(0)+'</td>';
-    html+='<td class="c-green">$'+(t.t1_price||0).toFixed(0)+'</td><td class="c-purple">$'+(t.t2_price||0).toFixed(0)+'</td>';
+    html+='<td>$'+(t.entry_spot||0).toFixed(2)+'</td><td>'+fmtK(t.strike||0)+'</td>';
+    html+='<td class="c-green">'+fmtK(t.t1_price||0)+'</td><td class="c-purple">'+fmtK(t.t2_price||0)+'</td>';
     html+='<td>'+(t.call_delta?t.call_delta.toFixed(2):'?')+'</td>';
     html+='<td>$'+(t.call_bid||0).toFixed(2)+' / $'+(t.call_ask||0).toFixed(2)+'</td>';
     html+='<td>'+(t.ratio||'?')+'x</td></tr>';
@@ -366,8 +368,8 @@ function renderLog(){
     const bg=t.exit_reason==='T2'?'badge-t2':(t.exit_reason==='T1'?'badge-t1':'badge-eod');
     html+='<tr><td>'+(t.trade_date||'?')+'</td><td><b>'+(t.symbol||'?')+'</b></td><td>'+tier+'</td>';
     html+='<td>$'+(t.entry_spot||0).toFixed(2)+'</td><td>$'+(t.exit_spot||0).toFixed(2)+'</td>';
-    html+='<td>$'+(t.strike||0).toFixed(0)+'</td><td class="c-red">$'+(t.highest_neg||0).toFixed(0)+'</td>';
-    html+='<td class="c-green">$'+(t.lowest_pos||0).toFixed(0)+'</td><td>'+(t.gex_ratio||'?')+'</td>';
+    html+='<td>'+fmtK(t.strike||0)+'</td><td class="c-red">'+fmtK(t.highest_neg||0)+'</td>';
+    html+='<td class="c-green">'+fmtK(t.lowest_pos||0)+'</td><td>'+(t.gex_ratio||'?')+'</td>';
     html+='<td><span class="badge '+bg+'">'+(t.exit_reason||'?')+'</span></td>';
     html+='<td class="'+c+'">'+(t.stock_pnl_pct||0).toFixed(2)+'%</td>';
     html+='<td class="'+c+'" style="font-weight:700">'+p.toFixed(0)+'%</td>';
@@ -446,8 +448,8 @@ function renderLevels(){
     const distTxt=(r.below?'':'+')+r.distPct.toFixed(1)+'%';
     const statusBadge=(r.below&&r.goodRatio)?'<span class="badge badge-active">TRADE ZONE</span>':(r.below?'<span class="badge badge-fail">BELOW -GEX</span>':(r.goodRatio?'<span class="badge badge-pass">WATCHING</span>':'<span class="badge" style="background:var(--bg-3);color:var(--text-3)">LOW RATIO</span>'));
     html+='<tr><td><b>'+r.sym+'</b></td><td>$'+r.sp.toFixed(2)+'</td>';
-    for(let i=0;i<3;i++)html+='<td class="c-red">'+(r.neg[i]?'$'+r.neg[i].toFixed(0):'-')+'</td>';
-    for(let i=0;i<3;i++)html+='<td class="c-green">'+(r.pos[i]?'$'+r.pos[i].toFixed(0):'-')+'</td>';
+    for(let i=0;i<3;i++)html+='<td class="c-red">'+(r.neg[i]?fmtK(r.neg[i]):'-')+'</td>';
+    for(let i=0;i<3;i++)html+='<td class="c-green">'+(r.pos[i]?fmtK(r.pos[i]):'-')+'</td>';
     html+='<td>'+r.ratio.toFixed(1)+'x</td><td class="'+distCls+'" style="font-weight:500">'+distTxt+'</td>';
     html+='<td>'+statusBadge+'</td>';
     html+='<td><span class="link" onclick="selectedSym=\\''+r.sym+'\\';showTab(\\'chart\\',document.querySelector(\\'.tab\\'))">View</span></td></tr>';

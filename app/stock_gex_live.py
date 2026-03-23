@@ -257,15 +257,15 @@ def _grade_setup(levels, day_name):
 
 
 def _passes_filters(levels):
-    """Check if a stock's GEX levels pass all filters."""
+    """Check if a stock's GEX levels pass all filters.
+    Stocks below -GEX are kept on watchlist — that's the trade zone.
+    """
     if levels["ratio"] < MIN_GEX_RATIO:
         return False, f"ratio {levels['ratio']} < {MIN_GEX_RATIO}"
     if levels["n_support_below"] < MIN_SUPPORT_BELOW:
         return False, f"no support below"
     if levels["n_magnets_above"] < MIN_MAGNETS_ABOVE:
         return False, f"no magnets above"
-    if levels["spot"] < levels["highest_neg"]:
-        return False, f"spot {levels['spot']} below -GEX {levels['highest_neg']}"
     return True, "pass"
 
 

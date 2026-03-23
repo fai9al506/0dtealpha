@@ -27,7 +27,7 @@ from sqlalchemy import text
 
 ET = ZoneInfo("US/Eastern")
 
-STOCKS = [
+_ALL_STOCKS = [
     # Tier 1 - Mega options volume
     "AAPL", "MSFT", "GOOGL", "GOOG", "META", "NVDA", "AMZN", "NFLX", "TSLA",
     "AMD", "PLTR",
@@ -45,6 +45,8 @@ STOCKS = [
     # Tier 4 - Semi/Tech volume
     "TSM", "AMAT", "LRCX", "PDD", "WBD",
 ]
+# TEST: Start with just AAPL to verify pipeline works, then restore _ALL_STOCKS
+STOCKS = ["AAPL"]
 
 TIER_A = {
     "AFRM", "AI", "AMD", "AVGO", "BAC", "CCL", "CVNA", "GOOGL", "INTC",

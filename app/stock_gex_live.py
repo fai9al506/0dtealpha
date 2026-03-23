@@ -45,8 +45,7 @@ _ALL_STOCKS = [
     # Tier 4 - Semi/Tech volume
     "TSM", "AMAT", "LRCX", "PDD", "WBD",
 ]
-# TEST: Start with just AAPL to verify pipeline works, then restore _ALL_STOCKS
-STOCKS = ["AAPL"]
+STOCKS = _ALL_STOCKS
 
 TIER_A = {
     "AFRM", "AI", "AMD", "AVGO", "BAC", "CCL", "CVNA", "GOOGL", "INTC",
@@ -319,8 +318,8 @@ def _fetch_chain(symbol, expiration, spot):
                 # Consume streaming response with timeout (same as main.py)
                 _start = time.time()
                 for line in r.iter_lines(decode_unicode=True):
-                    if time.time() - _start > 5:
-                        break  # timeout
+                    if time.time() - _start > 3:
+                        break  # timeout — data arrives fast, rest is just waiting
                     if not line:
                         continue
                     try:
@@ -725,8 +724,8 @@ def _run_gex_scan_inner(now):
                 new_watchlist[symbol] = levels
                 passed += 1
 
-            # Rate limit: don't hammer TS API
-            time.sleep(0.3)
+            # Rate limit: stagger requests to avoid TS API throttling
+            time.sleep(1.0)
 
         except Exception as e:
             print(f"[stock-gex-live] scan error {symbol}: {e}", flush=True)

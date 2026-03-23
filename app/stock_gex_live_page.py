@@ -136,7 +136,7 @@ th.sortable:hover{color:var(--text)}
 <body>
 <div class="header">
   <div class="header-left">
-    <img src="/stock-gex-logo.jpg" alt="Stock GEX" style="width:28px;height:28px;border-radius:6px;object-fit:cover">
+    <img src="/stock-gex-logo.png" alt="Stock GEX" style="width:28px;height:28px;border-radius:50%;object-fit:cover">
     <h1>Stock GEX Scanner</h1>
   </div>
   <div class="header-right">

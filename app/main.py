@@ -16172,13 +16172,13 @@ def favicon():
         return FileResponse(favicon_path, media_type="image/png")
     return Response(status_code=404)
 
-@app.get("/stock-gex-logo.jpg")
+@app.get("/stock-gex-logo.png")
 def stock_gex_logo():
-    """Serve Stock GEX logo."""
+    """Serve Stock GEX logo (transparent PNG)."""
     import pathlib
-    logo_path = pathlib.Path(__file__).parent.parent / "Stock GEX Logo.jpg"
+    logo_path = pathlib.Path(__file__).parent.parent / "Stock_GEX_Logo-removebg-preview.png"
     if logo_path.exists():
-        return FileResponse(logo_path, media_type="image/jpeg")
+        return FileResponse(logo_path, media_type="image/png")
     return Response(status_code=404)
 
 @app.get("/request-access", response_class=HTMLResponse)

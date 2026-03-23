@@ -20,6 +20,7 @@ from threading import Lock
 SIM_BASE = "https://sim-api.tradestation.com/v3"
 SIM_ACCOUNT_ID = os.getenv("OPTIONS_SIM_ACCOUNT", "SIM2609238M")
 OPTIONS_TRADE_ENABLED = os.getenv("OPTIONS_TRADE_ENABLED", "false").lower() == "true"
+OPTIONS_LOG_ONLY = os.getenv("OPTIONS_LOG_ONLY", "true").lower() == "true"  # portal log only — no SIM orders, no Telegram
 OPTIONS_QTY = int(os.getenv("OPTIONS_QTY", "1"))
 TARGET_DELTA = float(os.getenv("OPTIONS_TARGET_DELTA", "0.50"))
 MAX_HOLD_MINUTES = int(os.getenv("OPTIONS_MAX_HOLD_MIN", "90"))     # single-leg only
@@ -56,7 +57,8 @@ def init(engine, get_token_fn, send_telegram_fn):
     strat_info = f"strategy={OPTIONS_STRATEGY}"
     if OPTIONS_STRATEGY == "credit_spread":
         strat_info += f" width=${SPREAD_WIDTH}"
-    print(f"[options] init: enabled={OPTIONS_TRADE_ENABLED} account={SIM_ACCOUNT_ID} "
+    mode = "LOG-ONLY" if OPTIONS_LOG_ONLY else ("LIVE" if OPTIONS_TRADE_ENABLED else "OFF")
+    print(f"[options] init: mode={mode} account={SIM_ACCOUNT_ID} "
           f"underlying={OPTIONS_UNDERLYING} qty={OPTIONS_QTY} delta={TARGET_DELTA} "
           f"{strat_info} active={n}", flush=True)
 
@@ -65,7 +67,7 @@ def init(engine, get_token_fn, send_telegram_fn):
 
 def place_trade(setup_log_id: int, setup_name: str, direction: str, spot: float):
     """Place 0DTE option trade when a setup fires."""
-    if not OPTIONS_TRADE_ENABLED:
+    if not OPTIONS_TRADE_ENABLED and not OPTIONS_LOG_ONLY:
         print(f"[options] skip {setup_name}: master switch OFF", flush=True)
         return
     if not setup_log_id:
@@ -147,38 +149,44 @@ def _place_credit_spread(setup_log_id: int, setup_name: str, direction: str, spo
 
     max_loss = round(SPREAD_WIDTH - net_credit, 2)
 
-    # Place as single atomic multi-leg order using TS API Legs array.
-    # LimitPrice = net credit price. Both legs fill together or not at all.
-    # Symbol = short leg (primary), Legs = both legs with per-leg TradeAction.
-    payload = {
-        "AccountID": SIM_ACCOUNT_ID,
-        "Symbol": short_sym,
-        "Quantity": str(OPTIONS_QTY),
-        "OrderType": "Limit",
-        "LimitPrice": str(round(net_credit, 2)),
-        "TradeAction": "SELLTOOPEN",
-        "TimeInForce": {"Duration": "DAY"},
-        "Route": "Intelligent",
-        "Legs": [
-            {
-                "Symbol": short_sym,
-                "Quantity": str(OPTIONS_QTY),
-                "TradeAction": "SELLTOOPEN",
-            },
-            {
-                "Symbol": long_sym,
-                "Quantity": str(OPTIONS_QTY),
-                "TradeAction": "BUYTOOPEN",
-            },
-        ],
-    }
-    resp = _sim_api("POST", "/orderexecution/orders", payload)
-    ok, entry_oid = _order_ok(resp)
+    # ── Log-only mode: skip SIM API, record theoretical trade ──
+    if OPTIONS_LOG_ONLY:
+        entry_oid = None
+        entry_status = "filled"  # treat as instant fill at theo prices
+        entry_price = net_credit
+    else:
+        # Place as single atomic multi-leg order using TS API Legs array.
+        payload = {
+            "AccountID": SIM_ACCOUNT_ID,
+            "Symbol": short_sym,
+            "Quantity": str(OPTIONS_QTY),
+            "OrderType": "Limit",
+            "LimitPrice": str(round(net_credit, 2)),
+            "TradeAction": "SELLTOOPEN",
+            "TimeInForce": {"Duration": "DAY"},
+            "Route": "Intelligent",
+            "Legs": [
+                {
+                    "Symbol": short_sym,
+                    "Quantity": str(OPTIONS_QTY),
+                    "TradeAction": "SELLTOOPEN",
+                },
+                {
+                    "Symbol": long_sym,
+                    "Quantity": str(OPTIONS_QTY),
+                    "TradeAction": "BUYTOOPEN",
+                },
+            ],
+        }
+        resp = _sim_api("POST", "/orderexecution/orders", payload)
+        ok, entry_oid = _order_ok(resp)
 
-    if not ok:
-        _alert(f"[OPTIONS] FAILED credit spread for {setup_name}\n"
-               f"{short_sym} / {long_sym}")
-        return
+        if not ok:
+            _alert(f"[OPTIONS] FAILED credit spread for {setup_name}\n"
+                   f"{short_sym} / {long_sym}")
+            return
+        entry_status = "pending_entry"
+        entry_price = None  # SIM fill comes later
 
     order = {
         "strategy": "credit_spread",
@@ -196,14 +204,14 @@ def _place_credit_spread(setup_log_id: int, setup_name: str, direction: str, spo
         "entry_order_id": entry_oid,        # single atomic multi-leg order
         "close_order_id": None,             # single atomic close order
         "qty": OPTIONS_QTY,
-        "entry_price": None,                # SIM fill: net credit
+        "entry_price": entry_price,         # SIM fill or theo credit (log-only)
         "close_price": None,                # SIM fill: net debit
         "theo_credit": net_credit,          # live bid/ask net credit
         "theo_debit": None,                 # live bid/ask net debit at close
         "theo_entry_price": net_credit,     # compat: stored for log endpoint
         "theo_close_price": None,           # compat: set at close
         "theo_pnl": None,                   # pre-computed at close
-        "status": "pending_entry",
+        "status": entry_status,
         "spot_at_entry": spot,
         "max_loss": max_loss,
         "ts_placed": datetime.utcnow().isoformat(),
@@ -213,7 +221,8 @@ def _place_credit_spread(setup_log_id: int, setup_name: str, direction: str, spo
         _active_orders[setup_log_id] = order
     _persist_order(setup_log_id)
 
-    print(f"[options] CREDIT SPREAD placed: {setup_name} "
+    _log_only_tag = " [LOG-ONLY]" if OPTIONS_LOG_ONLY else ""
+    print(f"[options] CREDIT SPREAD placed{_log_only_tag}: {setup_name} "
           f"SELL {short_sym} @ ${short_bid:.2f} / BUY {long_sym} @ ${long_ask:.2f} "
           f"credit=${net_credit:.2f} maxloss=${max_loss:.2f}", flush=True)
     _alert(f"[OPTIONS] CREDIT SPREAD {setup_name}\n"
@@ -259,22 +268,30 @@ def _place_single_leg(setup_log_id: int, setup_name: str, direction: str, spot: 
         print(f"[options] skip {setup_name}: ask price is 0", flush=True)
         return
 
-    payload = {
-        "AccountID": SIM_ACCOUNT_ID,
-        "Symbol": symbol,
-        "Quantity": str(OPTIONS_QTY),
-        "OrderType": "Limit",
-        "LimitPrice": str(limit_price),
-        "TradeAction": "BUYTOOPEN",
-        "TimeInForce": {"Duration": "DAY"},
-        "Route": "Intelligent",
-    }
-    resp = _sim_api("POST", "/orderexecution/orders", payload)
-    ok, entry_oid = _order_ok(resp)
-    if not ok:
-        _alert(f"[OPTIONS] FAILED entry for {setup_name}\n"
-               f"Symbol: {symbol} | Delta: {delta:.3f} | Ask: ${ask:.2f}")
-        return
+    # ── Log-only mode: skip SIM API, record theoretical trade ──
+    if OPTIONS_LOG_ONLY:
+        entry_oid = None
+        entry_status = "filled"
+        entry_price = ask
+    else:
+        payload = {
+            "AccountID": SIM_ACCOUNT_ID,
+            "Symbol": symbol,
+            "Quantity": str(OPTIONS_QTY),
+            "OrderType": "Limit",
+            "LimitPrice": str(limit_price),
+            "TradeAction": "BUYTOOPEN",
+            "TimeInForce": {"Duration": "DAY"},
+            "Route": "Intelligent",
+        }
+        resp = _sim_api("POST", "/orderexecution/orders", payload)
+        ok, entry_oid = _order_ok(resp)
+        if not ok:
+            _alert(f"[OPTIONS] FAILED entry for {setup_name}\n"
+                   f"Symbol: {symbol} | Delta: {delta:.3f} | Ask: ${ask:.2f}")
+            return
+        entry_status = "pending_entry"
+        entry_price = None
 
     order = {
         "strategy": "single_leg",
@@ -287,12 +304,12 @@ def _place_single_leg(setup_log_id: int, setup_name: str, direction: str, spot: 
         "entry_order_id": entry_oid,
         "close_order_id": None,
         "qty": OPTIONS_QTY,
-        "entry_price": None,
+        "entry_price": entry_price,
         "close_price": None,
         "theo_entry_price": ask,
         "theo_close_price": None,
         "theo_pnl": None,
-        "status": "pending_entry",
+        "status": entry_status,
         "spot_at_entry": spot,
         "bid_at_entry": bid,
         "ask_at_entry": ask,
@@ -303,7 +320,8 @@ def _place_single_leg(setup_log_id: int, setup_name: str, direction: str, spot: 
         _active_orders[setup_log_id] = order
     _persist_order(setup_log_id)
 
-    print(f"[options] placed: {setup_name} BUYTOOPEN {OPTIONS_QTY} {symbol} "
+    _log_only_tag = " [LOG-ONLY]" if OPTIONS_LOG_ONLY else ""
+    print(f"[options] placed{_log_only_tag}: {setup_name} BUYTOOPEN {OPTIONS_QTY} {symbol} "
           f"delta={delta:.3f} limit=${limit_price:.2f} spot={spot:.0f}", flush=True)
     _alert(f"[OPTIONS] {setup_name} placed\n"
            f"BUYTOOPEN {OPTIONS_QTY} {symbol}\n"
@@ -354,45 +372,46 @@ def _close_credit_spread(setup_log_id: int, order: dict, result_type: str):
         print(f"[options] credit spread close: {setup_name} credit=${theo_credit:.2f} "
               f"debit=${theo_debit:.2f} pnl=${theo_pnl:+.0f} ({result_type})", flush=True)
 
-        # Close as single atomic multi-leg order: BUYTOCLOSE short + SELLTOCLOSE long
-        # LimitPrice = net debit we're willing to pay to close
-        # If both legs are near 0 (OTM at expiry), let them expire instead
-        if theo_debit > 0.01:
-            payload = {
-                "AccountID": SIM_ACCOUNT_ID,
-                "Symbol": short_sym,
-                "Quantity": str(order["qty"]),
-                "OrderType": "Limit",
-                "LimitPrice": str(round(theo_debit, 2)),
-                "TradeAction": "BUYTOCLOSE",
-                "TimeInForce": {"Duration": "DAY"},
-                "Route": "Intelligent",
-                "Legs": [
-                    {
-                        "Symbol": short_sym,
-                        "Quantity": str(order["qty"]),
-                        "TradeAction": "BUYTOCLOSE",
-                    },
-                    {
-                        "Symbol": long_sym,
-                        "Quantity": str(order["qty"]),
-                        "TradeAction": "SELLTOCLOSE",
-                    },
-                ],
-            }
-            resp = _sim_api("POST", "/orderexecution/orders", payload)
-            close_ok, close_oid = _order_ok(resp)
-            if close_ok:
-                with _lock:
-                    order["close_order_id"] = close_oid
+        # ── Log-only: skip SIM close order ──
+        if not OPTIONS_LOG_ONLY:
+            # Close as single atomic multi-leg order
+            if theo_debit > 0.01:
+                payload = {
+                    "AccountID": SIM_ACCOUNT_ID,
+                    "Symbol": short_sym,
+                    "Quantity": str(order["qty"]),
+                    "OrderType": "Limit",
+                    "LimitPrice": str(round(theo_debit, 2)),
+                    "TradeAction": "BUYTOCLOSE",
+                    "TimeInForce": {"Duration": "DAY"},
+                    "Route": "Intelligent",
+                    "Legs": [
+                        {
+                            "Symbol": short_sym,
+                            "Quantity": str(order["qty"]),
+                            "TradeAction": "BUYTOCLOSE",
+                        },
+                        {
+                            "Symbol": long_sym,
+                            "Quantity": str(order["qty"]),
+                            "TradeAction": "SELLTOCLOSE",
+                        },
+                    ],
+                }
+                resp = _sim_api("POST", "/orderexecution/orders", payload)
+                close_ok, close_oid = _order_ok(resp)
+                if close_ok:
+                    with _lock:
+                        order["close_order_id"] = close_oid
+                else:
+                    print(f"[options] spread close order failed: {setup_name} — "
+                          f"will expire cash-settled", flush=True)
             else:
-                print(f"[options] spread close order failed: {setup_name} — "
-                      f"will expire cash-settled", flush=True)
-        else:
-            print(f"[options] spread near $0, letting expire: {setup_name}", flush=True)
+                print(f"[options] spread near $0, letting expire: {setup_name}", flush=True)
 
         with _lock:
             order["ts_closed"] = datetime.utcnow().isoformat()
+            order["close_price"] = theo_debit  # log-only: use theo as SIM price too
 
         _alert(f"[OPTIONS] SPREAD CLOSED: {setup_name} ({result_type})\n"
                f"Credit: ${theo_credit:.2f} | Debit: ${theo_debit:.2f}\n"
@@ -401,7 +420,7 @@ def _close_credit_spread(setup_log_id: int, order: dict, result_type: str):
     elif order["status"] == "pending_entry":
         # Cancel the single entry order (covers both legs)
         oid = order.get("entry_order_id")
-        if oid:
+        if oid and not OPTIONS_LOG_ONLY:
             _sim_api("DELETE", f"/orderexecution/orders/{oid}", None)
         print(f"[options] cancelled unfilled spread: {setup_name}", flush=True)
 
@@ -425,41 +444,49 @@ def _close_single_leg(setup_log_id: int, order: dict, result_type: str):
             theo_pnl = (bid_price - theo_entry) * 100 * order["qty"]
             with _lock:
                 order["theo_pnl"] = round(theo_pnl, 0)
+                order["close_price"] = bid_price  # log-only: use theo as close price
             print(f"[options] theo close: {setup_name} theo_bid=${bid_price:.2f} "
                   f"theo_pnl=${theo_pnl:+.0f}", flush=True)
 
-        close_order_type = "Limit" if bid_price and bid_price > 0 else "Market"
-        close_payload = {
-            "AccountID": SIM_ACCOUNT_ID,
-            "Symbol": symbol,
-            "Quantity": str(order["qty"]),
-            "OrderType": close_order_type,
-            "TradeAction": "SELLTOCLOSE",
-            "TimeInForce": {"Duration": "DAY"},
-            "Route": "Intelligent",
-        }
-        if close_order_type == "Limit":
-            close_payload["LimitPrice"] = str(round(bid_price, 2))
-        resp = _sim_api("POST", "/orderexecution/orders", close_payload)
-        close_ok, close_oid = _order_ok(resp)
-        if close_ok:
-            with _lock:
-                order["close_order_id"] = close_oid
-                order["ts_closed"] = datetime.utcnow().isoformat()
-            if close_oid:
-                time.sleep(1)
-                fp = _get_order_fill_price(close_oid)
-                if fp:
-                    with _lock:
-                        order["close_price"] = fp
-            print(f"[options] closed: {setup_name} {symbol} "
-                  f"result={result_type} sim_close=${order.get('close_price')} "
-                  f"theo_close=${order.get('theo_close_price')}", flush=True)
+        # ── Log-only: skip SIM close order ──
+        if not OPTIONS_LOG_ONLY:
+            close_order_type = "Limit" if bid_price and bid_price > 0 else "Market"
+            close_payload = {
+                "AccountID": SIM_ACCOUNT_ID,
+                "Symbol": symbol,
+                "Quantity": str(order["qty"]),
+                "OrderType": close_order_type,
+                "TradeAction": "SELLTOCLOSE",
+                "TimeInForce": {"Duration": "DAY"},
+                "Route": "Intelligent",
+            }
+            if close_order_type == "Limit":
+                close_payload["LimitPrice"] = str(round(bid_price, 2))
+            resp = _sim_api("POST", "/orderexecution/orders", close_payload)
+            close_ok, close_oid = _order_ok(resp)
+            if close_ok:
+                with _lock:
+                    order["close_order_id"] = close_oid
+                if close_oid:
+                    time.sleep(1)
+                    fp = _get_order_fill_price(close_oid)
+                    if fp:
+                        with _lock:
+                            order["close_price"] = fp
+                print(f"[options] closed: {setup_name} {symbol} "
+                      f"result={result_type} sim_close=${order.get('close_price')} "
+                      f"theo_close=${order.get('theo_close_price')}", flush=True)
+            else:
+                print(f"[options] close FAILED: {setup_name} {symbol} — "
+                      f"will expire cash-settled", flush=True)
         else:
-            print(f"[options] close FAILED: {setup_name} {symbol} — "
-                  f"will expire cash-settled", flush=True)
+            with _lock:
+                order["ts_closed"] = datetime.utcnow().isoformat()
+            print(f"[options] closed [LOG-ONLY]: {setup_name} {symbol} "
+                  f"result={result_type} theo_close=${order.get('theo_close_price')}", flush=True)
+
     elif order["status"] == "pending_entry":
-        if order.get("entry_order_id"):
+        if order.get("entry_order_id") and not OPTIONS_LOG_ONLY:
             _sim_api("DELETE", f"/orderexecution/orders/{order['entry_order_id']}", None)
         print(f"[options] cancelled unfilled entry: {setup_name} {symbol}", flush=True)
 
@@ -472,8 +499,10 @@ def _close_single_leg(setup_log_id: int, order: dict, result_type: str):
 
 def poll_order_status():
     """Check order fills and time exit. Called each ~30s cycle."""
-    if not OPTIONS_TRADE_ENABLED:
+    if not OPTIONS_TRADE_ENABLED and not OPTIONS_LOG_ONLY:
         return
+    if OPTIONS_LOG_ONLY:
+        return  # no SIM orders to poll in log-only mode
     with _lock:
         if not _active_orders:
             return
@@ -975,7 +1004,9 @@ def reconcile_with_broker():
 # ====== TELEGRAM ======
 
 def _alert(msg: str):
-    """Send Telegram alert for option trades."""
+    """Send Telegram alert for option trades. Suppressed in log-only mode."""
+    if OPTIONS_LOG_ONLY:
+        return  # portal-only: no Telegram
     if _send_telegram:
         try:
             _send_telegram(msg)

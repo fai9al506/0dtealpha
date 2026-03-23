@@ -753,17 +753,7 @@ def _run_gex_scan_inner(now):
     print(f"[stock-gex-live] GEX scan done: {scanned} scanned, "
           f"{passed} on watchlist, exp={exp}", flush=True)
 
-    if new_watchlist:
-        msg = f"<b>Stock GEX Scan</b> ({now.strftime('%H:%M')} ET)\n"
-        msg += f"Watchlist: {passed} stocks\n\n"
-        for sym, lv in sorted(new_watchlist.items()):
-            msg += (f"<b>{sym}</b> [{lv['tier']}] "
-                    f"spot=${lv['spot']:.2f} "
-                    f"-GEX=${lv['highest_neg']:.0f} "
-                    f"+GEX=${lv['lowest_pos']:.0f} "
-                    f"R:{lv['ratio']}x "
-                    f"trigger=${lv['trigger_price']:.2f}\n")
-        _alert(msg)
+    # No Telegram for routine scans — only trades and errors
 
 
 # ── Spot Monitor Job (every 1-2 min) ───────────────────────────────

@@ -266,8 +266,8 @@ function renderChart(){
 }
 
 function drawGexChart(sym,s){
-  const negL=s.neg_levels||[];const posL=s.pos_levels||[];
-  const all=[...negL,...posL].sort((a,b)=>a.strike-b.strike);
+  // Use all_levels if available (full GEX landscape), fallback to top 3
+  const all=(s.all_levels&&s.all_levels.length)?s.all_levels:[...(s.neg_levels||[]),...(s.pos_levels||[])].sort((a,b)=>a.strike-b.strike);
   if(!all.length)return;
   const strikes=all.map(l=>'$'+l.strike.toFixed(0));
   const vals=all.map(l=>l.gex);

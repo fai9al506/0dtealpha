@@ -184,16 +184,9 @@ def _compute_stock_gex(symbol, chain_rows, spot):
     pos.sort(key=lambda x: x[1], reverse=True)
     neg.sort(key=lambda x: x[1])
 
+    # Key levels: top 3 for quick reference
     top_pos = pos[:3]
     top_neg = neg[:3]
-
-    # Significance filter
-    if top_pos:
-        mx = top_pos[0][1]
-        top_pos = [(k, v) for k, v in top_pos if v >= mx * GEX_SIGNIFICANCE_THRESHOLD]
-    if top_neg:
-        mx = abs(top_neg[0][1])
-        top_neg = [(k, v) for k, v in top_neg if abs(v) >= mx * GEX_SIGNIFICANCE_THRESHOLD]
 
     if not top_pos or not top_neg:
         return None
@@ -203,14 +196,20 @@ def _compute_stock_gex(symbol, chain_rows, spot):
     highest_neg = max(neg_strikes)
     lowest_pos = min(pos_strikes)
 
-    # Note: for stocks with $1 strike intervals, zones can overlap — that's OK
-    # We still use highest_neg and lowest_pos as key levels
-
-    total_pos = sum(v for k, v in top_pos)
-    total_neg = sum(abs(v) for k, v in top_neg)
+    total_pos = sum(v for k, v in pos)
+    total_neg = sum(abs(v) for k, v in neg)
     ratio = total_pos / total_neg if total_neg > 0 else 0
 
     zone_width = abs(lowest_pos - highest_neg) / highest_neg * 100 if highest_neg > 0 else 0
+
+    # All levels for chart (significance filter: >= 5% of max)
+    max_abs = max(abs(pos[0][1]) if pos else 0, abs(neg[0][1]) if neg else 0)
+    all_levels = []
+    for k, v in gex_by_strike.items():
+        if abs(v) >= max_abs * 0.05:
+            all_levels.append({"strike": k, "gex": round(v)})
+    all_levels.sort(key=lambda x: x["strike"])
+
     support_below = [s for s in neg_strikes if s < highest_neg]
     magnets_above = [k for k, v in top_pos if k > highest_neg]
 
@@ -221,6 +220,7 @@ def _compute_stock_gex(symbol, chain_rows, spot):
         "pos_strikes": pos_strikes,
         "neg_levels": [{"strike": k, "gex": round(v)} for k, v in top_neg],
         "pos_levels": [{"strike": k, "gex": round(v)} for k, v in top_pos],
+        "all_levels": all_levels,
         "highest_neg": highest_neg,
         "lowest_pos": lowest_pos,
         "ratio": round(ratio, 2),

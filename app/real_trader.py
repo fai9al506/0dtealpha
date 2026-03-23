@@ -10,9 +10,11 @@
 # Cap: 2 concurrent per direction.
 # Trail: SC trail (BE trigger=10, activation=10, gap=8).
 
-import os, json, math, time, calendar, requests
+import os, json, math, time, calendar, requests, zoneinfo
 from datetime import datetime, date, timedelta
 from threading import Lock
+
+NY = zoneinfo.ZoneInfo("US/Eastern")
 
 # ====== MES CONTRACT AUTO-ROLLOVER ======
 _MES_MONTHS = [(3, "H"), (6, "M"), (9, "U"), (12, "Z")]

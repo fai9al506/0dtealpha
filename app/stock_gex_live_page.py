@@ -145,7 +145,7 @@ function renderSidebar() {
     const onWL = sym in wl;
     const cls = sym === selectedSym ? 'stock-item selected' : 'stock-item';
     const rCls = (s.ratio||0) >= 3 ? 'ratio good' : 'ratio bad';
-    html += '<div class="'+cls+'" data-sym="'+sym+'" onclick="selectStock(\''+sym+'\')">';
+    html += '<div class="'+cls+'" data-sym="'+sym+'" onclick="selectStock(\\''+sym+'\\')">';
     html += '<div><span class="sym">'+sym+'</span>';
     if (onWL) html += ' <span class="badge badge-pass" style="font-size:8px">WL</span>';
     html += '<br><span class="meta">$'+(s.spot||0).toFixed(1)+'</span></div>';

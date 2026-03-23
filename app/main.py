@@ -3337,15 +3337,22 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
     # Get current ES price + bar H/L extremes for absorption outcome checks
     # Primary: Rithmic bars (absorption signals fire from Rithmic, same bar_idx space)
     # Fallback: TS quote stream bars (if Rithmic not available)
+    # NOTE: 5-pt bars for ES/SB Absorption, 10-pt bars for SB10 Absorption (separate idx spaces)
     es_price = None
     es_bars_snapshot = []
+    es_bars_10pt_snapshot = []
     try:
-        from rithmic_es_stream import get_rithmic_bars
+        from rithmic_es_stream import get_rithmic_bars, get_rithmic_bars_10pt
         rithmic_bars = get_rithmic_bars()
         if rithmic_bars:
             last_bar = rithmic_bars[-1]
             es_price = last_bar.get("close")
             es_bars_snapshot = rithmic_bars
+        rithmic_bars_10 = get_rithmic_bars_10pt()
+        if rithmic_bars_10:
+            es_bars_10pt_snapshot = rithmic_bars_10
+            if not es_price:
+                es_price = rithmic_bars_10[-1].get("close")
     except (ImportError, Exception):
         pass
     if not es_bars_snapshot:
@@ -3379,6 +3386,10 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             if not es_price:
                 still_open.append(trade)
                 continue  # Skip — no ES data; never fall back to SPX
+            # SB10: require 10-pt bars — never scan 5-pt bars (wrong idx space)
+            if setup_name == "SB10 Absorption" and not es_bars_10pt_snapshot:
+                still_open.append(trade)
+                continue
             check_price = es_price
         else:
             check_price = spot
@@ -3402,9 +3413,11 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         if _es_based:
             # ES-based setups: scan completed ES range bar H/L since entry bar
             # This catches intra-bar target/stop hits that bar-close checks miss
+            # SB10 uses 10-pt bars (separate idx space from 5-pt bars)
+            _bars_for_scan = es_bars_10pt_snapshot if setup_name == "SB10 Absorption" else es_bars_snapshot
             entry_bar_idx = trade.get("result_data", {}).get("bar_idx", 0)
             last_scanned = trade.get("_es_last_bar_idx", entry_bar_idx)
-            for bar in es_bars_snapshot:
+            for bar in _bars_for_scan:
                 bidx = bar.get("idx", 0)
                 if bidx <= last_scanned:
                     continue

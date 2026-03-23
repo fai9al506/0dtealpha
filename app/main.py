@@ -1582,7 +1582,7 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "SB Absorption": None, "SB10 Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "SB Absorption": None, "SB10 Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "Vanna Butterfly": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
@@ -3246,6 +3246,13 @@ def _compute_setup_levels(r: dict):
         stop_lvl = spot - 8 if is_long else spot + 8
         return round(target_lvl, 2), round(stop_lvl, 2)
 
+    if setup_name == "Vanna Butterfly":
+        # Butterfly: non-directional pin play, held to expiry
+        # target = pin strike, stop = None (max loss = cost, defined risk)
+        # Outcome resolved at EOD via _send_setup_eod_summary
+        pin = r.get("pin_strike") or r.get("target")
+        return pin, None
+
     if setup_name == "IV Momentum":
         # Fixed SL=8/TP=20 (short only, backtest: 64% WR, PF 4.02)
         target_lvl = spot - 20  # SHORT: target below
@@ -3345,10 +3352,19 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         setup_name = trade["setup_name"]
         direction = trade["direction"]
         entry_spot = trade["spot"]
-        target_lvl = trade["target_level"]
-        stop_lvl = trade["stop_level"]
+        target_lvl = trade.get("target_level")
+        stop_lvl = trade.get("stop_level")
         ts_entry = trade["ts"]
         is_long = direction.lower() in ("long", "bullish")
+
+        # Vanna Butterfly: no real-time stop/target — held to expiry, resolved at EOD
+        if setup_name == "Vanna Butterfly":
+            if market_closed:
+                # Will be resolved by EOD summary
+                pass
+            else:
+                still_open.append(trade)
+                continue
 
         # Use ES price for ES-based setups (absorption), SPX spot for everything else
         _es_based = setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption")
@@ -3919,8 +3935,9 @@ def _run_setup_check():
                 # Record open trade for live outcome tracking
                 target_lvl, stop_lvl = _compute_setup_levels(r)
                 # Trailing setups use trailing stop (target_lvl=None is OK)
+                # Vanna Butterfly: no stop (defined risk), held to expiry — track for EOD P&L
                 _trailing_setups = ("DD Exhaustion", "GEX Long", "GEX Velocity", "AG Short", "Skew Charm")
-                if stop_lvl is not None and (target_lvl is not None or setup_name in _trailing_setups):
+                if (stop_lvl is not None and (target_lvl is not None or setup_name in _trailing_setups)) or setup_name == "Vanna Butterfly":
                     _setup_open_trades.append({
                         "setup_name": setup_name, "direction": r["direction"],
                         "spot": r["spot"], "grade": grade,
@@ -5480,17 +5497,31 @@ def _send_setup_eod_summary():
         is_long = direction.lower() in ("long", "bullish")
         ts_entry = trade["ts"]
 
-        if setup_name == "ES Absorption":
+        if setup_name == "Vanna Butterfly":
+            # Butterfly P&L = intrinsic at expiry - cost (not directional)
+            rd = trade.get("result_data", {})
+            pin = rd.get("pin_strike") or trade.get("target_level")
+            bf_cost = rd.get("butterfly_cost", 0)
+            bf_width = rd.get("butterfly_width", 40) / 2  # half-width = max payout
+            check_price = spot
+            entry_price = bf_cost  # entry = cost paid
+            if spot and pin:
+                intrinsic = max(0, bf_width - abs(spot - pin))
+                pnl = round(intrinsic - bf_cost, 2)
+            else:
+                pnl = round(-bf_cost, 2)
+        elif setup_name == "ES Absorption":
             check_price = es_price if es_price else spot
             entry_price = trade.get("result_data", {}).get("abs_es_price", trade["spot"])
         else:
             check_price = spot
             entry_price = trade["spot"]
 
-        if check_price and entry_price:
-            pnl = round((check_price - entry_price) if is_long else (entry_price - check_price), 1)
-        else:
-            pnl = 0.0
+        if setup_name != "Vanna Butterfly":
+            if check_price and entry_price:
+                pnl = round((check_price - entry_price) if is_long else (entry_price - check_price), 1)
+            else:
+                pnl = 0.0
 
         elapsed_min = int((now - ts_entry).total_seconds() / 60.0) if ts_entry else 0
         trade["close_price"] = check_price
@@ -5510,18 +5541,28 @@ def _send_setup_eod_summary():
         log_id = trade.get("setup_log_id")
         if log_id and engine:
             try:
-                seen_high = trade.get("_seen_high", entry_price)
-                seen_low = trade.get("_seen_low", entry_price)
-                if is_long:
-                    max_profit = round(seen_high - entry_price, 2)
-                    max_loss = round(seen_low - entry_price, 2)
+                if setup_name == "Vanna Butterfly":
+                    # Butterfly: P&L is intrinsic - cost, WIN if positive
+                    outcome_result = "WIN" if pnl > 0 else "LOSS"
+                    max_profit_db = pnl if pnl > 0 else 0
+                    max_loss_db = pnl if pnl < 0 else 0
                 else:
-                    max_profit = round(entry_price - seen_low, 2)
-                    max_loss = round(entry_price - seen_high, 2)
+                    outcome_result = "EXPIRED"
+                    max_profit_db = None
+                    max_loss_db = None
+                if setup_name != "Vanna Butterfly":
+                    seen_high = trade.get("_seen_high", entry_price)
+                    seen_low = trade.get("_seen_low", entry_price)
+                    if is_long:
+                        max_profit_db = round(seen_high - entry_price, 2)
+                        max_loss_db = round(seen_low - entry_price, 2)
+                    else:
+                        max_profit_db = round(entry_price - seen_low, 2)
+                        max_loss_db = round(entry_price - seen_high, 2)
                 with engine.begin() as conn:
                     conn.execute(text("""
                         UPDATE setup_log SET
-                            outcome_result = 'EXPIRED',
+                            outcome_result = :outcome,
                             outcome_pnl = :pnl,
                             outcome_target_level = :tgt,
                             outcome_stop_level = :sl,
@@ -5531,18 +5572,23 @@ def _send_setup_eod_summary():
                             outcome_max_loss = :ml
                         WHERE id = :id AND outcome_result IS NULL
                     """), {
+                        "outcome": outcome_result,
                         "pnl": pnl,
                         "tgt": trade.get("target_level"),
                         "sl": trade.get("initial_stop_level") or trade.get("stop_level"),
                         "em": elapsed_min,
-                        "mp": max_profit,
-                        "ml": max_loss,
+                        "mp": max_profit_db,
+                        "ml": max_loss_db,
                         "id": log_id,
                     })
             except Exception as db_err:
                 print(f"[eod-summary] DB persist error: {db_err}", flush=True)
 
-        print(f"[eod-summary] expired {setup_name} {direction} {pnl:+.1f}pts", flush=True)
+        if setup_name == "Vanna Butterfly":
+            rd = trade.get("result_data", {})
+            print(f"[eod-summary] expired {setup_name} cost=${rd.get('butterfly_cost',0):.2f} pnl={pnl:+.2f}pts ({outcome_result})", flush=True)
+        else:
+            print(f"[eod-summary] expired {setup_name} {direction} {pnl:+.1f}pts", flush=True)
 
         # Close option position if it was opened (Bug fix: previously missing)
         _eod_log_id = trade.get("setup_log_id")

@@ -2697,12 +2697,18 @@ def format_iv_momentum_message(result, alignment=None):
 
 # ── Vanna Butterfly (Pin Setup) ────────────────────────────────────────
 
-def evaluate_vanna_butterfly(spot, chain_df, vanna_pin_strike, vanna_pin_value, vix):
+def evaluate_vanna_butterfly(spot, chain_df, vanna_pin_strike, vanna_pin_value, vix,
+                             paradigm=None):
     """
     Evaluate Vanna Pin Butterfly setup.
-    30pt call butterfly centered on max absolute 0DTE vanna strike.
-    Fires once per day at ~15:00 ET. Backtest: 59% WR, PF 3.1x.
-    Returns result dict or None.
+    40pt call butterfly centered on max absolute 0DTE vanna strike.
+    Fires once per day at ~15:00 ET.
+
+    Grading v2 (Mar 23): Data-driven scoring from 27 trades.
+    Key finding: GREEN vanna (positive) = 72.7% WR, RED = 18.8%.
+    GREEN is the #1 predictor — RED gets grade "LOG".
+    Width changed 30pt→40pt (higher total P&L, same WR).
+    Gap filter widened 20→30 (GREEN pulls price even from 25+ pts).
     """
     if spot is None or chain_df is None or chain_df.empty:
         return None
@@ -2722,15 +2728,19 @@ def evaluate_vanna_butterfly(spot, chain_df, vanna_pin_strike, vanna_pin_value, 
     pin = round(vanna_pin_strike / 5) * 5  # Round to nearest 5-pt strike
     gap = abs(spot - pin)
 
-    # Gap filter: skip if spot is too far from pin (>20 pts = low probability)
-    if gap > 20:
+    # Gap filter: skip if spot is too far from pin (>30 pts)
+    if gap > 30:
         return None
 
+    # Pin sign: GREEN (positive vanna) = magnet, RED (negative) = repel
+    is_green = vanna_pin_value > 0
+
     # ── Price the butterfly from chain bid/ask ──
-    # 30pt butterfly: buy call at pin-15, sell 2x call at pin, buy call at pin+15
-    lower = pin - 15
+    # 40pt butterfly: buy call at pin-20, sell 2x call at pin, buy call at pin+20
+    width = 20
+    lower = pin - width
     center = pin
-    upper = pin + 15
+    upper = pin + width
 
     def get_call_price(strike, side='ask'):
         """Get call bid or ask at a strike from chain_df."""
@@ -2757,72 +2767,80 @@ def evaluate_vanna_butterfly(spot, chain_df, vanna_pin_strike, vanna_pin_value, 
         return None
 
     cost = lower_ask - 2 * center_bid + upper_ask
-    if cost <= 0 or cost > 10:
+    if cost <= 0 or cost > 15:
         return None  # Invalid or too expensive
 
-    max_payout = 15.0  # Width of one wing
+    max_payout = float(width)  # Width of one wing
     max_profit = max_payout - cost
 
-    # ── Scoring (4 components, max 100) ──
+    # ── Grading v2: Data-driven scoring (27 trades backtest) ──
+    # GREEN vanna is THE gatekeeper: 72.7% WR vs RED 18.8%
+    # RED signals get grade "LOG" — collect data but don't recommend
 
-    # 1. Gap proximity (0-35): closer = better
-    if gap <= 5:
-        gap_score = 35
-    elif gap <= 8:
-        gap_score = 28
-    elif gap <= 10:
-        gap_score = 22
-    elif gap <= 15:
-        gap_score = 15
+    if not is_green:
+        # RED vanna: log-only, score=0
+        grade = "LOG"
+        composite = 0.0
+        gap_score = 0
+        vix_score = 0
+        vanna_dir_score = 0
+        cost_score = 0
     else:
-        gap_score = 5
+        # GREEN vanna: score based on 3 predictive components
+        # 1. Gap proximity (0-30): closer = slightly better, but GREEN works at any gap<=30
+        if gap <= 10:
+            gap_score = 30
+        elif gap <= 15:
+            gap_score = 25
+        elif gap <= 20:
+            gap_score = 20
+        else:
+            gap_score = 10
 
-    # 2. Cost efficiency (0-25): cheaper = better R:R
-    if cost <= 2.0:
-        cost_score = 25
-    elif cost <= 3.0:
-        cost_score = 20
-    elif cost <= 4.0:
-        cost_score = 15
-    elif cost <= 5.0:
-        cost_score = 10
-    else:
-        cost_score = 5
+        # 2. VIX environment (0-25): lower VIX = calmer = pins better (r=+0.387 with dist)
+        vix_val = vix or 0
+        if vix_val <= 18:
+            vix_score = 25
+        elif vix_val <= 22:
+            vix_score = 20
+        elif vix_val <= 25:
+            vix_score = 15
+        else:
+            vix_score = 5
 
-    # 3. Vanna strength (0-20): stronger absolute vanna = stronger pin
-    abs_vanna = abs(vanna_pin_value)
-    if abs_vanna >= 100_000_000:  # 100M+
-        vanna_score = 20
-    elif abs_vanna >= 50_000_000:
-        vanna_score = 15
-    elif abs_vanna >= 20_000_000:
-        vanna_score = 10
-    else:
-        vanna_score = 5
+        # 3. Net vanna direction near pin (0-25): positive sum = stronger magnet (r=+0.438)
+        # Check vanna_pin_value sign — already green, but check magnitude
+        abs_vanna = abs(vanna_pin_value)
+        if abs_vanna >= 50_000_000:  # 50M+ strong magnet
+            vanna_dir_score = 25
+        elif abs_vanna >= 20_000_000:
+            vanna_dir_score = 15
+        else:
+            vanna_dir_score = 10
 
-    # 4. VIX environment (0-20): lower VIX = calmer = pins better
+        # 4. Cost efficiency (0-20): cheaper = better R:R (r=-0.795 cost vs gap)
+        if cost <= 3.0:
+            cost_score = 20
+        elif cost <= 5.0:
+            cost_score = 15
+        elif cost <= 8.0:
+            cost_score = 10
+        else:
+            cost_score = 5
+
+        composite = gap_score + vix_score + vanna_dir_score + cost_score
+
+        if composite >= 80:
+            grade = "A+"
+        elif composite >= 60:
+            grade = "A"
+        elif composite >= 40:
+            grade = "B"
+        else:
+            grade = "C"
+
     vix_val = vix or 0
-    if vix_val <= 18:
-        vix_bfly_score = 20
-    elif vix_val <= 22:
-        vix_bfly_score = 15
-    elif vix_val <= 25:
-        vix_bfly_score = 10
-    else:
-        vix_bfly_score = 5
-
-    composite = gap_score + cost_score + vanna_score + vix_bfly_score
-
-    if composite >= 80:
-        grade = "A+"
-    elif composite >= 65:
-        grade = "A"
-    elif composite >= 50:
-        grade = "B"
-    elif composite >= 35:
-        grade = "C"
-    else:
-        return None
+    rr = round(max_profit / cost, 2) if cost > 0 else 0
 
     return {
         "setup_name": "Vanna Butterfly",
@@ -2832,18 +2850,35 @@ def evaluate_vanna_butterfly(spot, chain_df, vanna_pin_strike, vanna_pin_value, 
         "spot": round(spot, 2),
         "vix": round(vix_val, 2) if vix_val else None,
         "pin_strike": pin,
+        "pin_sign": "GREEN" if is_green else "RED",
         "entry_gap": round(gap, 1),
         "butterfly_lower": lower,
         "butterfly_center": center,
         "butterfly_upper": upper,
+        "butterfly_width": width * 2,
         "butterfly_cost": round(cost, 2),
         "max_profit": round(max_profit, 2),
         "vanna_value": round(vanna_pin_value, 0),
         "gap_score": gap_score,
         "cost_score": cost_score,
-        "vanna_score": vanna_score,
-        "vix_bfly_score": vix_bfly_score,
-        # For outcome tracking: target = pin strike (where we want close)
+        "vanna_dir_score": vanna_dir_score if is_green else 0,
+        "vix_bfly_score": vix_score if is_green else 0,
+        # Columns required by setup_log INSERT
+        "paradigm": paradigm,
+        "lis": None,
+        "target": pin,
+        "max_plus_gex": None,
+        "max_minus_gex": None,
+        "gap_to_lis": round(gap, 1),
+        "upside": round(max_profit, 2),
+        "rr_ratio": rr,
+        "first_hour": False,
+        "support_score": gap_score,
+        "upside_score": vix_score if is_green else 0,
+        "floor_cluster_score": vanna_dir_score if is_green else 0,
+        "target_cluster_score": cost_score,
+        "rr_score": 0,
+        # For outcome tracking
         "target_price": pin,
         "stop_price": None,  # No stop — max loss is the cost
         "target_pts": max_profit,
@@ -2881,9 +2916,11 @@ def format_vanna_butterfly_message(result, alignment=None):
     lower = result.get("butterfly_lower", 0)
     upper = result.get("butterfly_upper", 0)
     score = result.get("score", 0)
+    sign = result.get("pin_sign", "?")
+    width = result.get("butterfly_width", 40)
     msg = f"\U0001f98b <b>Vanna Butterfly [{grade}]{align_str}</b>\n"
-    msg += f"Pin {pin:.0f} | {lower:.0f}/{pin:.0f}/{upper:.0f} | Cost ${cost:.2f}\n"
-    msg += f"Gap {gap:.0f}pt | MaxProfit ${mx:.2f} | sc={score:.0f}"
+    msg += f"Pin {pin:.0f} ({sign}) | {lower:.0f}/{pin:.0f}/{upper:.0f} ({width}pt)\n"
+    msg += f"Gap {gap:.0f}pt | Cost ${cost:.2f} | MaxProfit ${mx:.2f} | sc={score:.0f}"
     return msg
 
 
@@ -3983,7 +4020,8 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
         })
 
     # ── Vanna Butterfly (Pin Setup) — once per day at ~15:00 ET ──
-    vb_result = evaluate_vanna_butterfly(spot, chain_df, vanna_pin_strike, vanna_pin_value, vix)
+    vb_result = evaluate_vanna_butterfly(spot, chain_df, vanna_pin_strike, vanna_pin_value, vix,
+                                         paradigm=paradigm)
     if vb_result is not None:
         notify_vb, reason_vb = should_notify_vanna_butterfly(vb_result)
         results.append({

@@ -364,7 +364,7 @@ function renderLevels() {
 }
 
 async function triggerScan() {
-  await fetch('/api/stock-gex-live/scan',{method:'POST'});
+  await fetch('/api/stock-gex-live/scan',{method:'POST',credentials:'include'});
   setTimeout(doRefresh, 5000);
 }
 

@@ -5803,8 +5803,10 @@ def start_scheduler():
     # Stock GEX live scanner — GEX scan every 30 min + spot monitor every 2 min
     try:
         from app import stock_gex_live
+        from datetime import datetime as _dt
         sch.add_job(stock_gex_live.run_gex_scan, "interval",
-                    minutes=30, id="stock_gex_live_scan", coalesce=True, max_instances=1)
+                    minutes=30, id="stock_gex_live_scan", coalesce=True, max_instances=1,
+                    next_run_time=_dt.now())  # fire immediately on startup
         sch.add_job(stock_gex_live.run_spot_monitor, "interval",
                     minutes=2, id="stock_gex_live_monitor", coalesce=True, max_instances=1)
         sch.add_job(stock_gex_live.run_eod_summary, "cron",

@@ -203,7 +203,7 @@ async function doRefresh(){
     const wlC=Object.keys(data.watchlist).length;
     const actC=(data.active||[]).length;
     const levC=Object.keys(data.levels).length;
-    document.getElementById('lastUpdate').textContent=new Date().toLocaleTimeString()+' | '+levC+' stocks';
+    document.getElementById('lastUpdate').textContent=new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit'})+' ET | '+levC+' stocks';
     document.getElementById('wlCount').textContent=wlC;
     document.getElementById('actCount').textContent=actC;
     document.getElementById('stockCount').textContent='('+levC+')';
@@ -326,7 +326,7 @@ function renderActive(){
   let html='<div class="tbl-wrap"><table><thead><tr><th>Stock</th><th>Tier</th><th>Entry</th><th>Spot</th><th>Strike</th><th>T1</th><th>T2</th><th>Delta</th><th>Bid/Ask</th><th>Ratio</th></tr></thead><tbody>';
   for(const t of trades){
     const tier=t.tier==='A'?'<span class="tier-a">A</span>':'<span class="tier-b">B</span>';
-    const ts=t.entry_ts?new Date(t.entry_ts).toLocaleTimeString():'?';
+    const ts=t.entry_ts?new Date(t.entry_ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'?';
     html+='<tr><td><b>'+t.symbol+'</b> <span class="badge badge-active">OPEN</span></td>';
     html+='<td>'+tier+'</td><td>'+ts+'</td>';
     html+='<td>$'+(t.entry_spot||0).toFixed(2)+'</td><td>$'+(t.strike||0).toFixed(0)+'</td>';

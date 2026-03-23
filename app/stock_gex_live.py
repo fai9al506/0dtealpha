@@ -197,12 +197,8 @@ def _compute_stock_gex(symbol, chain_rows, spot):
 
     zone_width = abs(lowest_pos - highest_neg) / highest_neg * 100 if highest_neg > 0 else 0
 
-    # All levels for chart (significance filter: >= 5% of max)
-    max_abs = max(abs(pos[0][1]) if pos else 0, abs(neg[0][1]) if neg else 0)
-    all_levels = []
-    for k, v in gex_by_strike.items():
-        if abs(v) >= max_abs * 0.05:
-            all_levels.append({"strike": k, "gex": round(v)})
+    # All levels for chart — show every strike with non-zero GEX
+    all_levels = [{"strike": k, "gex": round(v)} for k, v in gex_by_strike.items() if v != 0]
     all_levels.sort(key=lambda x: x["strike"])
 
     support_below = [s for s in neg_strikes if s < highest_neg]
@@ -491,10 +487,16 @@ def _fetch_option_quote(symbol, expiration, strike, right="C"):
 # ── DB ──────────────────────────────────────────────────────────────
 
 def _db_init():
-    """Create tables if needed."""
+    """Create tables if needed + add missing columns."""
     if not _engine:
         return
     with _engine.begin() as conn:
+        # Add missing columns to existing tables (safe if already exists)
+        for col, typ in [("grade", "VARCHAR(2)"), ("neg_levels", "JSONB"), ("pos_levels", "JSONB")]:
+            try:
+                conn.execute(text(f"ALTER TABLE stock_gex_live_trades ADD COLUMN {col} {typ}"))
+            except Exception:
+                pass  # column already exists
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS stock_gex_live_levels (
                 id SERIAL PRIMARY KEY,
@@ -1132,8 +1134,11 @@ def _load_latest_levels():
             """), {"d": last_date}).mappings().all()
             new_levels = {}
             new_watchlist = {}
+            current_stocks = set(STOCKS)
             for r in rows:
                 sym = r["symbol"]
+                if sym not in current_stocks:
+                    continue  # skip removed stocks (e.g. SNAP, GME)
                 lvls = json.loads(r["levels"]) if isinstance(r["levels"], str) else r["levels"]
                 if not lvls:
                     continue

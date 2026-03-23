@@ -32,11 +32,11 @@ _ALL_STOCKS = [
     "NVDA", "TSLA", "PLTR", "AMD", "MU", "SMCI", "MSTR",
     # Tier 2 - High options volume (100K-500K)
     "AMZN", "SOFI", "INTC", "META", "NFLX", "AAPL", "COIN",
-    "AAL", "MARA", "GOOG", "TSM", "BAC", "BABA", "ORCL",
-    "AVGO", "RIVN", "GME", "PYPL", "PFE", "F", "RKLB", "CCL",
+    "AAL", "GOOG", "TSM", "BAC", "BABA", "ORCL",
+    "AVGO", "RIVN", "PYPL", "PFE", "F", "RKLB", "CCL",
     # Tier 3 - Active options volume (10K-100K)
     "UBER", "UPST", "T", "OXY", "MSFT", "CVNA", "BA", "C",
-    "JPM", "SNAP", "GOOGL", "DIS", "GS", "QCOM", "XYZ", "PDD",
+    "JPM", "GOOGL", "DIS", "GS", "QCOM", "XYZ", "PDD",
     "WFC", "AMAT", "SNOW", "RBLX", "ROKU", "LULU", "U", "GE",
     "SHOP", "GM", "PINS", "IBM", "COST", "ENPH",
 ]

@@ -3825,9 +3825,10 @@ def _run_setup_check():
         except Exception as e:
             print(f"[vanna-pivot] range bars query error: {e}", flush=True)
 
-    # Query 0DTE vanna pin strike for Vanna Butterfly
+    # Query 0DTE vanna pin strike for Vanna Butterfly + vanna ratio for VIX Compression
     _vanna_pin_strike = None
     _vanna_pin_value = None
+    _vanna_0dte_ratio = None
     if engine:
         try:
             with engine.begin() as conn:
@@ -3842,6 +3843,19 @@ def _run_setup_check():
                 if pin_row:
                     _vanna_pin_strike = float(pin_row["strike"])
                     _vanna_pin_value = float(pin_row["value"])
+                # Vanna 0DTE pos/neg ratio (for VIX Compression filter)
+                vr_row = conn.execute(text("""
+                    SELECT SUM(CASE WHEN value::float > 0 THEN value::float ELSE 0 END) as pos,
+                           SUM(CASE WHEN value::float < 0 THEN value::float ELSE 0 END) as neg
+                    FROM volland_exposure_points
+                    WHERE greek = 'vanna' AND expiration_option = 'TODAY'
+                      AND ts_utc = (SELECT MAX(ts_utc) FROM volland_exposure_points
+                                    WHERE greek = 'vanna' AND expiration_option = 'TODAY')
+                """)).mappings().first()
+                if vr_row and vr_row["pos"] is not None and vr_row["neg"] is not None:
+                    neg = float(vr_row["neg"])
+                    pos = float(vr_row["pos"])
+                    _vanna_0dte_ratio = pos / abs(neg) if neg != 0 else 999.0
         except Exception:
             pass
 
@@ -3863,6 +3877,8 @@ def _run_setup_check():
         vanna_pin_strike=_vanna_pin_strike, vanna_pin_value=_vanna_pin_value,
         chain_df=_chain_for_butterfly,
         vanna_all=_vanna_cache.get("all"),
+        svb_correlation=svb_correlation,
+        vanna_0dte_ratio=_vanna_0dte_ratio,
     )
     for rw in result_wrappers:
         setup_name = rw["result"]["setup_name"]

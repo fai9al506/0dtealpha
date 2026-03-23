@@ -2284,16 +2284,18 @@ def update_vix_tracker(vix: float, spot: float):
         _vix_history[:] = _vix_history[-240:]
 
 
-def evaluate_vix_compression(spot, vix, settings, paradigm=None):
+def evaluate_vix_compression(spot, vix, settings, paradigm=None,
+                              svb=None, vanna_0dte_ratio=None):
     """
     Evaluate VIX Compression setup (LONG only).
     Detects when VIX drops >1.0 in a rolling 45-min window while SPX stays flat (<20 pts).
     This divergence (fear dropping + price not rallying yet) precedes a bullish move.
 
-    Tuning v2 (Mar 23): Data-driven from 13 signals (Feb 24 - Mar 20).
-    - VIX drop threshold raised 0.8→1.0 (drops 4 weak signals: 25% WR → filtered)
+    Tuning v2 (Mar 23): Data-driven from 13→8 signals (Feb 24 - Mar 20).
+    - VIX drop threshold raised 0.8→1.0 (drops 4 weak signals: 25% WR)
+    - Volland gate: |SVB| > 1 AND vanna_0DTE_ratio < 5 (kills ALL 4 losers, keeps ALL 4 winners)
     - RM: SL=20, no BE, no trail — ride to close (long-tail winners reach +40-120 pts)
-    - SPX flatness score removed (all signals cluster at 15-20 pts, not discriminative)
+    - SPX flatness score removed (not discriminative)
     - Added signal time score (later = better, r=+0.268 with WIN)
     Returns result dict or None.
     """
@@ -2356,6 +2358,17 @@ def evaluate_vix_compression(spot, vix, settings, paradigm=None):
 
     if best_vix_drop <= 1.0:
         return None
+
+    # ── Volland confluence gate (Mar 23): |SVB| > 1 AND vanna_0DTE_ratio < 5 ──
+    # SVB near 0 = choppy noise (losers avg SVB -0.01 to -0.46)
+    # Vanna ratio > 5 = one-sided dealer positioning, no compression release (losers: 12x, 15x)
+    # Backtest: filter kills ALL 4 losers, keeps ALL 4 winners (8→4 trades, 100% WR, +177 pts)
+    _svb_val = svb if svb is not None else 0
+    _v0d_ratio = vanna_0dte_ratio if vanna_0dte_ratio is not None else 999
+    if abs(_svb_val) <= 1.0:
+        return None  # SVB too weak — no real vol regime
+    if _v0d_ratio >= 5.0:
+        return None  # One-sided 0DTE vanna — no opposing flow
 
     # ── Scoring v2 (3 components, max 100) ──
     # 1. VIX drop magnitude (0-40): bigger drop = stronger signal (r=+0.224 with P&L)
@@ -2426,6 +2439,8 @@ def evaluate_vix_compression(spot, vix, settings, paradigm=None):
         "window_start": best_window_start,
         "window_end": best_window_end,
         "window_min": round(best_window_min, 0),
+        "svb": round(_svb_val, 2),
+        "vanna_0dte_ratio": round(_v0d_ratio, 2),
         "vix_drop_score": vix_drop_score,
         "time_score": time_score,
         "vix_level_score": vix_level_score,
@@ -2486,9 +2501,12 @@ def format_vix_compress_message(result, alignment=None):
     except Exception:
         w_start_short, w_end_short = str(w_start), str(w_end)
     score = result.get("score", 0)
+    svb_val = result.get("svb", 0)
+    v0d_r = result.get("vanna_0dte_ratio", 0)
     msg = f"\U0001f535 <b>VIX Compression LONG [{grade}]{align_str}</b>\n"
-    msg += f"{result['spot']:.0f} \u2192 T {result.get('target_price', 0):.0f} | SL {result.get('stop_price', 0):.0f} (20pt)\n"
-    msg += f"VIX {vix_level:.1f} \u2193{vix_drop:.1f} | SPX \u0394{spx_move:.0f}pt | {w_start_short}-{w_end_short} | sc={score:.0f}"
+    msg += f"{result['spot']:.0f} | SL {result.get('stop_price', 0):.0f} (20pt) | ride to close\n"
+    msg += f"VIX {vix_level:.1f} \u2193{vix_drop:.1f} | SPX \u0394{spx_move:.0f}pt | {w_start_short}-{w_end_short}\n"
+    msg += f"SVB={svb_val:+.2f} V0Dr={v0d_r:.1f} | sc={score:.0f}"
     return msg
 
 
@@ -3851,7 +3869,8 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
                  vanna_levels=None, es_range_bars=None,
                  vix=None,
                  vanna_pin_strike=None, vanna_pin_value=None, chain_df=None,
-                 vanna_all=None):
+                 vanna_all=None,
+                 svb_correlation=None, vanna_0dte_ratio=None):
     """
     Main entry point called from main.py.
     Returns a list of result wrappers (each has keys: result, notify, notify_reason, message).
@@ -4021,7 +4040,8 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
         })
 
     # ── VIX Compression ──
-    vc_result = evaluate_vix_compression(spot, vix, settings, paradigm=paradigm)
+    vc_result = evaluate_vix_compression(spot, vix, settings, paradigm=paradigm,
+                                         svb=svb_correlation, vanna_0dte_ratio=vanna_0dte_ratio)
     if vc_result is not None:
         notify_vc, reason_vc = should_notify_vix_compress(vc_result)
         results.append({

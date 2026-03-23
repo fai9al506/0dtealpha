@@ -35,7 +35,7 @@ _ALL_STOCKS = [
     "INTC", "MU", "QCOM", "AVGO", "SMCI", "MSTR", "ORCL", "GS",
     "PYPL", "SOFI", "COIN", "AFRM", "UPST", "XYZ",
     "SNAP", "SHOP", "ROKU", "RBLX", "LULU", "SNOW",
-    "AMC", "GME", "MARA", "LCID", "RIVN", "RKLB",
+    "GME", "MARA", "LCID", "RIVN", "RKLB",
     # Tier 3 - Active options volume
     "BAC", "JPM", "WFC", "C", "GE",
     "BA", "DIS", "GM", "T", "AAL", "CCL", "F",

@@ -141,10 +141,11 @@ def init(engine, get_token_fn, send_telegram_fn):
             _SHORTS_ACCOUNT if SHORTS_ENABLED else None,
         ])):
             try:
-                acct = _ts_api("GET", f"/brokerage/accounts/{acct_id}", None, acct_id)
-                if acct:
+                # Use /balances endpoint (live TS API returns 404 on bare /accounts/{id})
+                bal = _ts_api("GET", f"/brokerage/accounts/{acct_id}/balances", None, acct_id)
+                if bal:
                     print(f"[real-trader] account {acct_id} OK: "
-                          f"{json.dumps(acct, default=str)[:300]}", flush=True)
+                          f"{json.dumps(bal, default=str)[:300]}", flush=True)
                 else:
                     print(f"[real-trader] WARNING: cannot access account {acct_id}", flush=True)
                     _alert(f"[REAL-TRADE] WARNING: Cannot access account {acct_id} on startup")
@@ -957,11 +958,10 @@ def _check_order_fills(lid, order, broker_orders):
                     order["status"] = "closed"
                     order["close_reason"] = "target_filled"
                 changed = True
-                # Cancel stop since target filled
+                # Cancel stop since target filled (verify + retry)
                 if order.get("stop_order_id"):
-                    _ts_api("DELETE",
-                            f"/orderexecution/orders/{order['stop_order_id']}",
-                            None, account_id)
+                    _cancel_order_verified(order["stop_order_id"], account_id,
+                                           f"stop after target fill ({order['setup_name']})")
                 pnl = None
                 if tgt_fp and order.get("fill_price"):
                     is_long = order["direction"].lower() in ("long", "bullish")
@@ -987,11 +987,10 @@ def _check_order_fills(lid, order, broker_orders):
                     order["status"] = "closed"
                     order["close_reason"] = "stop_filled"
                 changed = True
-                # Cancel target since stop filled
+                # Cancel target since stop filled (verify + retry)
                 if order.get("target_order_id"):
-                    _ts_api("DELETE",
-                            f"/orderexecution/orders/{order['target_order_id']}",
-                            None, account_id)
+                    _cancel_order_verified(order["target_order_id"], account_id,
+                                           f"target after stop fill ({order['setup_name']})")
                 pnl = None
                 if stop_fp and order.get("fill_price"):
                     is_long = order["direction"].lower() in ("long", "bullish")
@@ -1009,6 +1008,32 @@ def _check_order_fills(lid, order, broker_orders):
 
     if changed:
         _persist_order(lid)
+
+
+def _cancel_order_verified(order_id: str, account_id: str, label: str, retries: int = 3):
+    """Cancel an order and verify it was actually cancelled. Retry + alert on failure."""
+    for attempt in range(retries):
+        _ts_api("DELETE", f"/orderexecution/orders/{order_id}", None, account_id)
+        time.sleep(1)  # give TS time to process
+        # Verify: query the order status
+        resp = _ts_api("GET", f"/brokerage/accounts/{account_id}/orders", None, account_id)
+        if resp:
+            orders = resp.get("Orders", [])
+            still_active = any(
+                o.get("OrderID") == str(order_id) and o.get("Status") in ("OPN", "ACK", "UCN", "DON")
+                for o in orders
+            )
+            if not still_active:
+                print(f"[real-trader] cancel verified: {label} order_id={order_id} (attempt {attempt+1})", flush=True)
+                return
+            print(f"[real-trader] cancel NOT confirmed: {label} order_id={order_id} "
+                  f"(attempt {attempt+1}/{retries}), retrying...", flush=True)
+        else:
+            print(f"[real-trader] cancel verify failed (no response): {label} order_id={order_id}", flush=True)
+    # All retries exhausted
+    _alert(f"[REAL-TRADE] CRITICAL: Failed to cancel {label}\n"
+           f"Order ID: {order_id}\nAccount: {account_id}\n"
+           f"MANUAL CANCEL REQUIRED!")
 
 
 def _extract_fill_price(entry_order: dict) -> float | None:

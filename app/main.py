@@ -3154,8 +3154,8 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     if setup_name in ("VIX Compression", "IV Momentum", "Vanna Butterfly"):
         return False
 
-    # ── Grade gate: block C and LOG grades ──
-    if grade and grade in ("C", "LOG"):
+    # ── Grade gate: SC only — block C and LOG grades (v2 backtest: 220t, C=52% WR, LOG=24%) ──
+    if setup_name == "Skew Charm" and grade and grade in ("C", "LOG"):
         return False
 
     # ── V11: Time-of-day gates ──

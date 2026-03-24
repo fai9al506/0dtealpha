@@ -49,7 +49,7 @@ TIER_A = {
 
 # Filters
 MIN_GEX_RATIO = 2.0
-MIN_SUPPORT_BELOW = 1
+MIN_SUPPORT_BELOW = 0  # 1 -GEX strike is enough (it IS the support)
 MIN_MAGNETS_ABOVE = 1
 ENTRY_OFFSET_PCT = 1.0  # entry at -GEX minus this %
 SKIP_0930 = True

@@ -3145,12 +3145,17 @@ def send_summary_alert(time_label: str):
 
 def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
-                        paradigm: str | None = None) -> bool:
+                        paradigm: str | None = None, grade: str | None = None) -> bool:
     """Single source of truth for the LIVE auto-trade filter (currently V11).
     V11 = V10 + time-of-day gates (14:30-15:00 charm block, BofA PM block, SC/DD 15:30+ block).
+    Grade gate: only A+/A/B pass (block C and LOG).
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Change this ONE function when the filter evolves."""
     if setup_name in ("VIX Compression", "IV Momentum", "Vanna Butterfly"):
+        return False
+
+    # ── Grade gate: block C and LOG grades ──
+    if grade and grade in ("C", "LOG"):
         return False
 
     # ── V11: Time-of-day gates ──
@@ -3965,7 +3970,7 @@ def _run_setup_check():
                 # Live filter: only send Telegram for signals that pass the active auto-trade filter
                 _passes_live = _passes_live_filter(setup_name, r["direction"],
                                                    r.get("greek_alignment", 0), _vix_last, _overvix,
-                                                   paradigm=r.get("paradigm"))
+                                                   paradigm=r.get("paradigm"), grade=grade)
                 if _passes_live:
                     send_telegram_setups(_msg)
                 else:
@@ -4591,7 +4596,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
     # Send Telegram only when notification gate passes AND live filter
     _abs_passes_live = _passes_live_filter("ES Absorption", result["direction"],
                                            result.get("greek_alignment", 0), _vix_last, _overvix,
-                                           paradigm=result.get("paradigm"))
+                                           paradigm=result.get("paradigm"), grade=result.get("grade"))
     if fire and _abs_passes_live:
         try:
             msg = rw["message"]
@@ -5770,12 +5775,13 @@ def _send_setup_eod_summary():
             for row in rows:
                 _sn = row[0]
                 _dir = row[1]
+                _gr = row[2]
                 _align = int(row[7]) if row[7] is not None else 0
                 _v = float(row[8]) if row[8] is not None else None
                 _ov = float(row[9]) if row[9] is not None else None
                 _par = row[10] if len(row) > 10 else None
                 # Only include trades that pass the live filter
-                if not _passes_live_filter(_sn, _dir, _align, _v, _ov, paradigm=_par):
+                if not _passes_live_filter(_sn, _dir, _align, _v, _ov, paradigm=_par, grade=_gr):
                     continue
                 ts_val = row[3]
                 ts_str = ts_val.strftime("%H:%M") if hasattr(ts_val, "strftime") else ""
@@ -7304,6 +7310,7 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 vix=float(row["vix"]) if row.get("vix") else None,
                 overvix=float(row["overvix"]) if row.get("overvix") else None,
                 paradigm=row.get("paradigm"),
+                grade=row.get("grade"),
             ):
                 continue
             # Compute target/stop levels
@@ -9892,12 +9899,14 @@ def api_setup_filter_analysis(date: str = Query(None, description="Date YYYY-MM-
             pnl_f = float(pnl) if pnl is not None else 0.0
             is_long = d in ("long", "bullish")
 
-            passes = _passes_live_filter(sn, d, align, vix_f, ov_f, paradigm=par)
+            passes = _passes_live_filter(sn, d, align, vix_f, ov_f, paradigm=par, grade=grade)
 
             # Determine block reason
             reason = ""
             if not passes:
-                if is_long:
+                if grade and grade in ("C", "LOG"):
+                    reason = f"grade {grade} blocked"
+                elif is_long:
                     if align < 2:
                         reason = f"align {align:+d} < +2"
                     elif vix_f and vix_f > 22:

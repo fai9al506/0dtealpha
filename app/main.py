@@ -3211,10 +3211,6 @@ def _compute_setup_levels(r: dict):
 
     is_long = direction.lower() in ("long", "bullish")
 
-    # Charm S/R limit entry: use improved fill price as base for stop/target (shorts only)
-    charm_limit = r.get("charm_limit_entry")
-    entry_base = charm_limit if (charm_limit and not is_long) else spot
-
     if setup_name == "BofA Scalp":
         target_lvl = r.get("bofa_target_level")
         stop_lvl = r.get("bofa_stop_level")
@@ -3232,29 +3228,29 @@ def _compute_setup_levels(r: dict):
     if setup_name == "DD Exhaustion":
         # Trailing stop — no fixed target; initial SL = 12 pts
         # target_level=None signals trailing mode in _check_setup_outcomes
-        stop_lvl = entry_base - 12 if is_long else entry_base + 12
+        stop_lvl = spot - 12 if is_long else spot + 12
         return None, round(stop_lvl, 2)
 
     if setup_name in ("GEX Long", "GEX Velocity"):
         # Trailing stop — no fixed target; initial SL = 8 pts
         # Hybrid trail: BE at +8, continuous trail activation=10, gap=5
-        stop_lvl = entry_base - 8 if is_long else entry_base + 8
+        stop_lvl = spot - 8 if is_long else spot + 8
         return None, round(stop_lvl, 2)
 
     if setup_name == "Paradigm Reversal":
-        target_lvl = entry_base + 10 if is_long else entry_base - 10
-        stop_lvl = entry_base - 15 if is_long else entry_base + 15
+        target_lvl = spot + 10 if is_long else spot - 10
+        stop_lvl = spot - 15 if is_long else spot + 15
         return round(target_lvl, 2), round(stop_lvl, 2)
 
     if setup_name == "Skew Charm":
         # Trailing stop — no fixed target; initial SL = 14 pts (was 20, optimized Mar 18)
         # Hybrid trail: BE at +10, continuous trail activation=10, gap=8
-        stop_lvl = entry_base - 14 if is_long else entry_base + 14
+        stop_lvl = spot - 14 if is_long else spot + 14
         return None, round(stop_lvl, 2)
 
     if setup_name == "Vanna Pivot Bounce":
         target_lvl = entry_base + 10 if is_long else entry_base - 10
-        stop_lvl = entry_base - 8 if is_long else entry_base + 8
+        stop_lvl = spot - 8 if is_long else spot + 8
         return round(target_lvl, 2), round(stop_lvl, 2)
 
     if setup_name == "Vanna Butterfly":
@@ -3406,15 +3402,10 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             check_price = spot
 
         # Determine entry price for P&L calc (ES price for ES-based, SPX for others)
-        # Charm S/R limit entry: use improved fill price (shorts only)
         if _es_based:
             entry_price = trade.get("result_data", {}).get("abs_es_price", entry_spot)
         else:
-            _charm_limit = trade.get("result_data", {}).get("charm_limit_entry")
-            if _charm_limit and not is_long:
-                entry_price = _charm_limit
-            else:
-                entry_price = entry_spot
+            entry_price = entry_spot
 
         elapsed = (now - ts_entry).total_seconds() / 60.0
 
@@ -4026,19 +4017,12 @@ def _run_setup_check():
                                 else:
                                     full_tgt = r.get("target") or r.get("bofa_target_level")
                                     full_target_dist = abs(full_tgt - r["spot"]) if full_tgt else target_dist
-                                # Charm S/R: convert SPX limit price to MES space
-                                _mes_charm_limit = None
-                                _charm_limit_spx = r.get("charm_limit_entry")
-                                if _charm_limit_spx and not _is_long_dir:
-                                    _mes_charm_limit = es_px + (_charm_limit_spx - r["spot"])
-                                    print(f"[charm-sr] {setup_name}: MES limit {_mes_charm_limit:.2f} "
-                                          f"(SPX {_charm_limit_spx:.1f})", flush=True)
                                 auto_trader.place_trade(
                                     setup_log_id=_current_setup_log.get(setup_name),
                                     setup_name=setup_name, direction=r["direction"],
                                     es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
                                     full_target_pts=full_target_dist,
-                                    limit_entry_price=_mes_charm_limit,
+                                    limit_entry_price=None,
                                 )
                             elif not es_px:
                                 print(f"[auto-trader] SKIPPED {setup_name}: no ES price available (quote stream and delta both None)", flush=True)
@@ -4067,15 +4051,11 @@ def _run_setup_check():
                             if es_px and stop_lvl is not None:
                                 stop_dist = abs(r["spot"] - stop_lvl)
                                 target_dist = 10.0  # SC always targets 10 pts
-                                _mes_charm_limit = None
-                                _charm_limit_spx = r.get("charm_limit_entry")
-                                if _charm_limit_spx and r["direction"] not in ("long", "bullish"):
-                                    _mes_charm_limit = es_px + (_charm_limit_spx - r["spot"])
                                 real_trader.place_trade(
                                     setup_log_id=_current_setup_log.get(setup_name),
                                     setup_name=setup_name, direction=r["direction"],
                                     es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
-                                    charm_limit_price=_mes_charm_limit,
+                                    charm_limit_price=None,
                                 )
                             elif not es_px:
                                 print(f"[real-trader] SKIPPED {setup_name}: no ES price", flush=True)
@@ -4677,17 +4657,12 @@ def _run_absorption_detection(bars: list) -> dict | None:
                 if es_px and stop_lvl is not None:
                     stop_dist = abs(es_px - stop_lvl)
                     target_dist = abs(target_lvl - es_px) if target_lvl else None
-                    # Charm S/R: convert SPX limit price to MES space
-                    _abs_mes_charm = None
-                    _abs_charm_limit = result.get("charm_limit_entry")
-                    if _abs_charm_limit and not _abs_is_long_dir:
-                        _abs_mes_charm = es_px + (_abs_charm_limit - result["spot"])
                     auto_trader.place_trade(
                         setup_log_id=_current_setup_log.get("ES Absorption"),
                         setup_name="ES Absorption", direction=result["direction"],
                         es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
                         full_target_pts=target_dist,
-                        limit_entry_price=_abs_mes_charm,
+                        limit_entry_price=None,
                     )
                 elif not es_px:
                     print(f"[auto-trader] SKIPPED ES Absorption: no ES price available", flush=True)
@@ -7346,7 +7321,7 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 "vanna_monthly": row.get("vanna_monthly"),
                 "spot_vol_beta": row.get("spot_vol_beta"),
                 "greek_alignment": row.get("greek_alignment"),
-                "charm_limit_entry": row.get("charm_limit_entry"),
+                "charm_limit_entry": None,  # Disabled: market orders only (charm-limit backtest showed -226 pts vs market)
                 "overvix": row.get("overvix"),
                 "vix": row.get("vix"),
             }

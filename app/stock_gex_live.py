@@ -182,35 +182,32 @@ def _compute_stock_gex(symbol, chain_rows, spot):
     # Filter out noise: only keep levels >= 10% of max absolute GEX
     max_abs = max(abs(v) for _, v in pos + neg) if (pos or neg) else 0
     sig = max_abs * GEX_SIGNIFICANCE_THRESHOLD
-    pos = [(k, v) for k, v in pos if v >= sig]
-    neg = [(k, v) for k, v in neg if abs(v) >= sig]
-    if not pos or not neg:
-        return None
+    sig_pos = [(k, v) for k, v in pos if v >= sig]
+    sig_neg = [(k, v) for k, v in neg if abs(v) >= sig]
 
-    # Key levels: top 3 significant for quick reference
-    top_pos = pos[:3]
-    top_neg = neg[:3]
-
-    if not top_pos or not top_neg:
-        return None
+    # Key levels: top 3 significant for quick reference (may be empty)
+    top_pos = sig_pos[:3]
+    top_neg = sig_neg[:3]
 
     neg_strikes = sorted([k for k, v in top_neg])
     pos_strikes = sorted([k for k, v in top_pos])
-    highest_neg = max(neg_strikes)
-    lowest_pos = min(pos_strikes)
+    highest_neg = max(neg_strikes) if neg_strikes else None
+    lowest_pos = min(pos_strikes) if pos_strikes else None
 
+    # Use ALL neg/pos for ratio (not just significant) — ratio reflects overall balance
     total_pos = sum(v for k, v in pos)
     total_neg = sum(abs(v) for k, v in neg)
     ratio = total_pos / total_neg if total_neg > 0 else 0
 
-    zone_width = abs(lowest_pos - highest_neg) / highest_neg * 100 if highest_neg > 0 else 0
+    zone_width = (abs(lowest_pos - highest_neg) / highest_neg * 100
+                  if highest_neg and lowest_pos else 0)
 
     # All levels for chart — show every strike with non-zero GEX
     all_levels = [{"strike": k, "gex": round(v)} for k, v in gex_by_strike.items() if v != 0]
     all_levels.sort(key=lambda x: x["strike"])
 
-    support_below = [s for s in neg_strikes if s < highest_neg]
-    magnets_above = [k for k, v in top_pos if k > highest_neg]
+    support_below = [s for s in neg_strikes if highest_neg and s < highest_neg]
+    magnets_above = [k for k, v in top_pos if highest_neg and k > highest_neg]
 
     # GEX structure quality: how cleanly separated are -GEX (below) and +GEX (above)?
     # Only consider SIGNIFICANT strikes (>= 10% of max) — ignore noise like -17K when max is 242K

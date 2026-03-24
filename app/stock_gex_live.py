@@ -179,7 +179,15 @@ def _compute_stock_gex(symbol, chain_rows, spot):
     pos.sort(key=lambda x: x[1], reverse=True)
     neg.sort(key=lambda x: x[1])
 
-    # Key levels: top 3 for quick reference
+    # Filter out noise: only keep levels >= 10% of max absolute GEX
+    max_abs = max(abs(v) for _, v in pos + neg) if (pos or neg) else 0
+    sig = max_abs * GEX_SIGNIFICANCE_THRESHOLD
+    pos = [(k, v) for k, v in pos if v >= sig]
+    neg = [(k, v) for k, v in neg if abs(v) >= sig]
+    if not pos or not neg:
+        return None
+
+    # Key levels: top 3 significant for quick reference
     top_pos = pos[:3]
     top_neg = neg[:3]
 

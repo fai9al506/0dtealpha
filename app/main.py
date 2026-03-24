@@ -1304,7 +1304,7 @@ def _restore_open_trades():
                 SELECT id, ts, setup_name, direction, grade, score,
                        spot, lis, target, max_plus_gex, max_minus_gex,
                        bofa_stop_level, bofa_target_level, bofa_max_hold_minutes,
-                       abs_vol_ratio, abs_es_price, abs_details
+                       abs_vol_ratio, abs_es_price, abs_details, charm_limit_entry
                 FROM setup_log
                 WHERE outcome_result IS NULL
                   AND ts >= :today_start
@@ -1350,6 +1350,7 @@ def _restore_open_trades():
                 "bofa_max_hold_minutes": entry.get("bofa_max_hold_minutes"),
                 "abs_es_price": entry.get("abs_es_price"),
                 "bar_idx": _abs_bar_idx,
+                "charm_limit_entry": entry.get("charm_limit_entry"),
             }
             target_lvl, stop_lvl = _compute_setup_levels(r)
             if stop_lvl is None:
@@ -3210,6 +3211,10 @@ def _compute_setup_levels(r: dict):
 
     is_long = direction.lower() in ("long", "bullish")
 
+    # Charm S/R limit entry: use improved fill price as base for stop/target (shorts only)
+    charm_limit = r.get("charm_limit_entry")
+    entry_base = charm_limit if (charm_limit and not is_long) else spot
+
     if setup_name == "BofA Scalp":
         target_lvl = r.get("bofa_target_level")
         stop_lvl = r.get("bofa_stop_level")
@@ -3227,29 +3232,29 @@ def _compute_setup_levels(r: dict):
     if setup_name == "DD Exhaustion":
         # Trailing stop — no fixed target; initial SL = 12 pts
         # target_level=None signals trailing mode in _check_setup_outcomes
-        stop_lvl = spot - 12 if is_long else spot + 12
+        stop_lvl = entry_base - 12 if is_long else entry_base + 12
         return None, round(stop_lvl, 2)
 
     if setup_name in ("GEX Long", "GEX Velocity"):
         # Trailing stop — no fixed target; initial SL = 8 pts
         # Hybrid trail: BE at +8, continuous trail activation=10, gap=5
-        stop_lvl = spot - 8 if is_long else spot + 8
+        stop_lvl = entry_base - 8 if is_long else entry_base + 8
         return None, round(stop_lvl, 2)
 
     if setup_name == "Paradigm Reversal":
-        target_lvl = spot + 10 if is_long else spot - 10
-        stop_lvl = spot - 15 if is_long else spot + 15
+        target_lvl = entry_base + 10 if is_long else entry_base - 10
+        stop_lvl = entry_base - 15 if is_long else entry_base + 15
         return round(target_lvl, 2), round(stop_lvl, 2)
 
     if setup_name == "Skew Charm":
         # Trailing stop — no fixed target; initial SL = 14 pts (was 20, optimized Mar 18)
         # Hybrid trail: BE at +10, continuous trail activation=10, gap=8
-        stop_lvl = spot - 14 if is_long else spot + 14
+        stop_lvl = entry_base - 14 if is_long else entry_base + 14
         return None, round(stop_lvl, 2)
 
     if setup_name == "Vanna Pivot Bounce":
-        target_lvl = spot + 10 if is_long else spot - 10
-        stop_lvl = spot - 8 if is_long else spot + 8
+        target_lvl = entry_base + 10 if is_long else entry_base - 10
+        stop_lvl = entry_base - 8 if is_long else entry_base + 8
         return round(target_lvl, 2), round(stop_lvl, 2)
 
     if setup_name == "Vanna Butterfly":
@@ -3401,10 +3406,15 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             check_price = spot
 
         # Determine entry price for P&L calc (ES price for ES-based, SPX for others)
+        # Charm S/R limit entry: use improved fill price (shorts only)
         if _es_based:
             entry_price = trade.get("result_data", {}).get("abs_es_price", entry_spot)
         else:
-            entry_price = entry_spot
+            _charm_limit = trade.get("result_data", {}).get("charm_limit_entry")
+            if _charm_limit and not is_long:
+                entry_price = _charm_limit
+            else:
+                entry_price = entry_spot
 
         elapsed = (now - ts_entry).total_seconds() / 60.0
 

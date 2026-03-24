@@ -833,6 +833,8 @@ def run_spot_monitor():
 def _run_spot_monitor_inner(now):
     global _active_trades, _trade_log, _last_monitor_at, _today_trades, _today_pnl
 
+    t = now.time()
+
     with _lock:
         watchlist = dict(_watchlist)
         active = list(_active_trades)

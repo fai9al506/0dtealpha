@@ -1199,7 +1199,7 @@ def format_bofa_scalp_message(result, alignment=None):
     lis_hi = result.get("lis_upper", 0)
     width = result.get("bofa_lis_width", 0)
     msg = f"{dir_emoji} <b>BofA {dir_label} [{result['grade']}]{align_str}</b>\n"
-    msg += f"{result['spot']:.0f} → {result.get('bofa_target_level', 0):.0f} (+10) | SL {result.get('bofa_stop_level', 0):.0f} | {result.get('bofa_max_hold_minutes', 30)}m hold\n"
+    msg += f"{result['spot']:.0f} → {(result.get('bofa_target_level') or 0):.0f} (+10) | SL {(result.get('bofa_stop_level') or 0):.0f} | {result.get('bofa_max_hold_minutes') or 30}m hold\n"
     msg += f"LIS {lis_lo:.0f}–{lis_hi:.0f} ({width:.0f}pt)"
     return msg
 
@@ -2210,7 +2210,7 @@ def format_sb2_abs_message(result, alignment=None):
 
     parts = [
         f"{side_emoji} <b>SB2 Abs {side_label} [{grade}]{align_str}</b>",
-        f"ES {result['abs_es_price']:.2f} | Score {score} | Vol {result['abs_vol_ratio']:.1f}x | Delta {result['bar_delta']:+d}({result['delta_ratio']:.1f}x) | Rec {result.get('recovery_pct', 0):.0%}",
+        f"ES {result['abs_es_price']:.2f} | Score {score} | Vol {result['abs_vol_ratio']:.1f}x | Delta {result['bar_delta']:+d}({result['delta_ratio']:.1f}x) | Rec {(result.get('recovery_pct') or 0):.0%}",
     ]
 
     extras = []
@@ -2532,11 +2532,11 @@ def format_skew_charm_message(result, alignment=None):
     grade = result.get("grade", "C")
     grade_emoji = {"A+": "\U0001f7e2", "A": "\U0001f535", "A-Entry": "\U0001f7e1"}.get(grade, "\u26aa")
     align_str = f" align {alignment:+d}" if alignment is not None else ""
-    skew_chg = result.get("skew_change_pct", 0)
+    skew_chg = result.get("skew_change_pct") or 0
     charm_m = (result.get("charm") or 0) / 1_000_000
-    charm_dir = "bullish" if result.get("charm", 0) > 0 else "bearish"
+    charm_dir = "bullish" if (result.get("charm") or 0) > 0 else "bearish"
     msg = f"{grade_emoji} <b>Skew Charm {dir_label} [{grade}]{align_str}</b>\n"
-    msg += f"{result['spot']:.0f} \u2192 Trail | SL {result.get('stop_price', 0):.0f} (20pt)\n"
+    msg += f"{result['spot']:.0f} \u2192 Trail | SL {(result.get('stop_price') or 0):.0f} (20pt)\n"
     msg += f"Skew {skew_chg:+.1f}% | Charm {charm_m:+,.0f}M {charm_dir}"
     return msg
 
@@ -2788,7 +2788,7 @@ def format_vix_compress_message(result, alignment=None):
     svb_val = result.get("svb", 0)
     v0d_r = result.get("vanna_0dte_ratio", 0)
     msg = f"\U0001f535 <b>VIX Compression LONG [{grade}]{align_str}</b>\n"
-    msg += f"{result['spot']:.0f} | SL {result.get('stop_price', 0):.0f} (20pt) | ride to close\n"
+    msg += f"{result['spot']:.0f} | SL {(result.get('stop_price') or 0):.0f} (20pt) | ride to close\n"
     msg += f"VIX {vix_level:.1f} \u2193{vix_drop:.1f} | SPX \u0394{spx_move:.0f}pt | {w_start_short}-{w_end_short}\n"
     msg += f"SVB={svb_val:+.2f} V0Dr={v0d_r:.1f} | sc={score:.0f}"
     return msg
@@ -3015,8 +3015,8 @@ def format_iv_momentum_message(result, alignment=None):
     iv_chg = result.get("avg_iv_change", 0)
     score = result.get("score", 0)
     msg = f"\U0001f534 <b>IV Momentum SHORT [{grade}]{align_str}</b>\n"
-    msg += f"{result['spot']:.0f} \u2192 T {result.get('target_price', 0):.0f} | SL {result.get('stop_price', 0):.0f}\n"
-    msg += f"Drop {spot_drop:.0f}pt | IV \u2191{iv_chg:.3f} ({result.get('iv_strikes_used', 0)}stk) | sc={score:.0f}"
+    msg += f"{result['spot']:.0f} \u2192 T {(result.get('target_price') or 0):.0f} | SL {(result.get('stop_price') or 0):.0f}\n"
+    msg += f"Drop {spot_drop:.0f}pt | IV \u2191{iv_chg:.3f} ({result.get('iv_strikes_used') or 0}stk) | sc={score:.0f}"
     return msg
 
 
@@ -3485,7 +3485,7 @@ def format_setup_outcome(trade: dict, result_type: str, pnl: float, elapsed_min:
     setup_name = trade["setup_name"]
     # Shorten names
     name_short = {"Paradigm Reversal": "Paradigm", "DD Exhaustion": "DD Exhaust",
-                  "ES Absorption": "CVD Div", "BofA Scalp": "BofA"}.get(setup_name, setup_name)
+                  "ES Absorption": "ES Abs", "BofA Scalp": "BofA"}.get(setup_name, setup_name)
     direction = trade["direction"].upper()[:1]  # L or S/B
     grade = trade.get("grade", "?")
     spot = trade["spot"]
@@ -3528,7 +3528,7 @@ def format_setup_daily_summary(trades_list: list) -> str:
         ts_str = t.get("ts_str", "")
         name = t["setup_name"]
         name_short = {"Paradigm Reversal": "Paradigm", "DD Exhaustion": "DD Exhaust",
-                      "ES Absorption": "CVD Div", "BofA Scalp": "BofA",
+                      "ES Absorption": "ES Abs", "BofA Scalp": "BofA",
                       "Skew Charm": "Skew Charm", "GEX Long": "GEX Long"}.get(name, name)
         direction = t["direction"].upper()[:1]  # L/S/B
         grade = t.get("grade", "?")
@@ -4140,9 +4140,9 @@ def format_vanna_pivot_message(result, alignment=None):
     grade = result.get("grade", "C")
     grade_emoji = {"A+": "\U0001f7e2", "A": "\U0001f535"}.get(grade, "\u26aa")
     align_str = f" align {alignment:+d}" if alignment is not None else ""
-    vanna_strike = result.get("vanna_strike", 0)
+    vanna_strike = result.get("vanna_strike") or 0
     msg = f"{grade_emoji} <b>Vanna Pivot {dir_label} [{grade}]{align_str}</b>\n"
-    msg += f"{result['spot']:.0f} \u2192 {result.get('target_price', 0):.0f} | SL {result.get('stop_price', 0):.0f}\n"
+    msg += f"{result['spot']:.0f} \u2192 {(result.get('target_price') or 0):.0f} | SL {(result.get('stop_price') or 0):.0f}\n"
     msg += f"Vanna {vanna_strike:.0f}"
     return msg
 

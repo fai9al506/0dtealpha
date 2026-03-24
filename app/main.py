@@ -1455,7 +1455,7 @@ def _save_cooldowns():
                 INSERT INTO setup_cooldowns (trade_date, state)
                 VALUES (:d, :s)
                 ON CONFLICT (trade_date) DO UPDATE SET state = :s
-            """), {"d": today, "s": json.dumps(state)})
+            """), {"d": today, "s": json.dumps(state, default=str)})
     except Exception as e:
         print(f"[setups] cooldown save error (non-fatal): {e}", flush=True)
 
@@ -1624,6 +1624,12 @@ def log_setup(result_wrapper):
                 insert_params.setdefault("greek_alignment", None)
                 # Charm S/R limit entry
                 insert_params.setdefault("charm_limit_entry", None)
+                # Ensure all required bind params exist (some setups don't produce all fields)
+                for _req_key in ("target", "lis", "paradigm", "max_plus_gex", "max_minus_gex",
+                                 "gap_to_lis", "upside", "rr_ratio", "first_hour",
+                                 "support_score", "upside_score", "floor_cluster_score",
+                                 "target_cluster_score", "rr_score"):
+                    insert_params.setdefault(_req_key, None)
                 # Overvix (VIX - VIX3M) — V8 Smart VIX Gate
                 insert_params["overvix"] = _overvix
                 # Auto-populate comments and abs_details for ES Absorption
@@ -2677,7 +2683,8 @@ def run_market_job():
         try:
             _run_setup_check()
         except Exception as setup_err:
-            print(f"[setups] error in check: {setup_err}", flush=True)
+            import traceback
+            print(f"[setups] error in check: {setup_err}\n{traceback.format_exc()}", flush=True)
     except Exception as e:
         last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}
         print("[pull] ERROR", e, flush=True)
@@ -3576,15 +3583,9 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             elapsed_min = int(elapsed)
             trade["close_price"] = check_price
 
-            # Send individual outcome Telegram (only for live-filter trades)
-            if trade.get("_passes_live", True):
-                try:
-                    outcome_msg = format_setup_outcome(trade, result_type, pnl, elapsed_min)
-                    send_telegram_setups(outcome_msg)
-                except Exception as e:
-                    print(f"[outcome] telegram error: {e}", flush=True)
-            else:
-                print(f"[outcome] {setup_name} {result_type} {pnl:+.1f} — Telegram SKIPPED (live filter)", flush=True)
+            # Outcome Telegram disabled — only real_trader sends to Telegram
+            outcome_msg = format_setup_outcome(trade, result_type, pnl, elapsed_min)
+            print(f"[outcome] {setup_name} {result_type} {pnl:+.1f}pts ({elapsed_min}m) [{grade}]", flush=True)
 
             # Persist outcome to setup_log DB
             log_id = trade.get("setup_log_id")
@@ -3917,13 +3918,9 @@ def _run_setup_check():
             r.get("direction"), aggregated_charm, _vanna_cache.get("all"),
             r.get("spot"), max_plus_gex)
 
-        # Charm S/R limit entry for shorts
+        # Charm S/R limit entry — DISABLED (market orders beat all limit thresholds)
         _charm_sr = None
-        if r["direction"] not in ("long", "bullish"):
-            _charm_sr = _compute_charm_limit_entry(r["spot"], r["direction"])
-            r["charm_limit_entry"] = _charm_sr["limit_price"] if _charm_sr else None
-        else:
-            r["charm_limit_entry"] = None
+        r["charm_limit_entry"] = None
 
         # Only log and notify on meaningful events
         if rw["notify"]:
@@ -3971,8 +3968,9 @@ def _run_setup_check():
                 _passes_live = _passes_live_filter(setup_name, r["direction"],
                                                    r.get("greek_alignment", 0), _vix_last, _overvix,
                                                    paradigm=r.get("paradigm"), grade=grade)
+                # Setup fire notifications disabled — only real_trader sends to Telegram
                 if _passes_live:
-                    send_telegram_setups(_msg)
+                    print(f"[setups] {setup_name} NEW: {grade} — passes live filter (Telegram via real_trader only)", flush=True)
                 else:
                     print(f"[setups] {setup_name} NEW: {grade} — Telegram SKIPPED (live filter)", flush=True)
                 print(f"[setups] {setup_name} NEW: {grade} ({score})", flush=True)
@@ -5666,12 +5664,8 @@ def _send_setup_eod_summary():
         elapsed_min = int((now - ts_entry).total_seconds() / 60.0) if ts_entry else 0
         trade["close_price"] = check_price
 
-        if trade.get("_passes_live", True):
-            try:
-                outcome_msg = format_setup_outcome(trade, "EXPIRED", pnl, elapsed_min)
-                send_telegram_setups(outcome_msg)
-            except Exception as e:
-                print(f"[eod-summary] expire telegram error: {e}", flush=True)
+        # EOD expire Telegram disabled — only real_trader sends to Telegram
+        print(f"[eod-summary] {setup_name} EXPIRED {pnl:+.1f}pts ({elapsed_min}m)", flush=True)
 
         resolved = {**trade, "result_type": "EXPIRED", "pnl": pnl, "elapsed_min": elapsed_min,
                     "ts_str": ts_entry.strftime("%H:%M") if hasattr(ts_entry, "strftime") else ""}
@@ -5790,8 +5784,8 @@ def _send_setup_eod_summary():
     if trades_for_summary:
         summary_msg = format_setup_daily_summary(trades_for_summary)
         if summary_msg:
-            send_telegram_setups(summary_msg)
-            print(f"[eod-summary] sent daily summary ({len(trades_for_summary)} trades)", flush=True)
+            # Daily summary disabled from Telegram — only real_trader sends
+            print(f"[eod-summary] daily summary ({len(trades_for_summary)} trades) — Telegram disabled", flush=True)
     else:
         print("[eod-summary] no trades today, skipping summary", flush=True)
 

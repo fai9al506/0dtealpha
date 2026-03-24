@@ -1189,9 +1189,17 @@ def _load_latest_levels():
 
 
 def _startup_scan():
-    """Run one GEX scan at startup regardless of market hours (uses last-close prices)."""
+    """Run one GEX scan at startup — only during market hours.
+
+    After hours, DB-loaded levels are sufficient. Running a full scan
+    wastes 56 API calls for stale data and overwrites good DB data.
+    """
+    now = datetime.now(ET)
+    t = now.time()
+    if now.weekday() >= 5 or not (dtime(9, 30) <= t <= dtime(16, 0)):
+        print(f"[stock-gex-live] startup scan skipped (market closed)", flush=True)
+        return
     try:
-        now = datetime.now(ET)
         _run_gex_scan_inner(now)
     except Exception as e:
         print(f"[stock-gex-live] startup scan error: {e}", flush=True)
@@ -1855,9 +1863,13 @@ def _load_latest_0dte_levels():
 
 
 def _startup_0dte_scan():
-    """Run one 0DTE scan at startup."""
+    """Run one 0DTE scan at startup — only during market hours."""
+    now = datetime.now(ET)
+    t = now.time()
+    if now.weekday() >= 5 or not (dtime(9, 30) <= t <= dtime(16, 0)):
+        print(f"[0dte-gex] startup scan skipped (market closed)", flush=True)
+        return
     try:
-        now = datetime.now(ET)
         _run_0dte_scan_inner(now)
     except Exception as e:
         print(f"[0dte-gex] startup scan error: {e}", flush=True)

@@ -1353,9 +1353,11 @@ def _restore_open_trades():
                 "charm_limit_entry": entry.get("charm_limit_entry"),
             }
             target_lvl, stop_lvl = _compute_setup_levels(r)
-            if stop_lvl is None:
+            if setup_name == "Vanna Butterfly":
+                pass  # Butterfly has no stop — skip stop/target checks
+            elif stop_lvl is None:
                 continue
-            if target_lvl is None and setup_name not in _trailing_setups:
+            elif target_lvl is None and setup_name not in _trailing_setups:
                 continue
 
             # Reconstruct the trade entry
@@ -3585,7 +3587,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
 
             # Outcome Telegram disabled — only real_trader sends to Telegram
             outcome_msg = format_setup_outcome(trade, result_type, pnl, elapsed_min)
-            print(f"[outcome] {setup_name} {result_type} {pnl:+.1f}pts ({elapsed_min}m) [{grade}]", flush=True)
+            print(f"[outcome] {setup_name} {result_type} {pnl:+.1f}pts ({elapsed_min}m) [{trade.get('grade', '?')}]", flush=True)
 
             # Persist outcome to setup_log DB
             log_id = trade.get("setup_log_id")
@@ -3993,7 +3995,8 @@ def _run_setup_check():
                         "_passes_live": _passes_live,  # for Telegram filtering on outcomes
                     })
                     tgt_str = "trail" if target_lvl is None else f"{target_lvl:.1f}"
-                    print(f"[outcome] tracking {setup_name}: target={tgt_str} stop={stop_lvl:.1f}", flush=True)
+                    sl_str = "none" if stop_lvl is None else f"{stop_lvl:.1f}"
+                    print(f"[outcome] tracking {setup_name}: target={tgt_str} stop={sl_str}", flush=True)
                     # Auto-trade: use same live filter as Telegram (single source of truth)
                     _skip_auto_trade = not _passes_live
                     if _skip_auto_trade:

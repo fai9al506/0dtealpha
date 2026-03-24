@@ -53,7 +53,7 @@ MIN_SUPPORT_BELOW = 0  # 1 -GEX strike is enough (it IS the support)
 MIN_MAGNETS_ABOVE = 1
 ENTRY_OFFSET_PCT = 1.0  # entry at -GEX minus this %
 SKIP_0930 = True
-GEX_SIGNIFICANCE_THRESHOLD = 0.10  # level must be >= 10% of max
+GEX_SIGNIFICANCE_THRESHOLD = 0.20  # level must be >= 20% of max
 
 # ── Module State ────────────────────────────────────────────────────
 

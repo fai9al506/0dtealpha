@@ -3147,8 +3147,7 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None, grade: str | None = None) -> bool:
     """Single source of truth for the LIVE auto-trade filter (currently V11).
-    V11 = V10 + time-of-day gates (14:30-15:00 charm block, BofA PM block, SC/DD 15:30+ block).
-    Grade gate: only A+/A/B pass (block C and LOG).
+    V11 = V10 + time-of-day gates + SC grade gate (A+/A/B only, block C/LOG).
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Change this ONE function when the filter evolves."""
     if setup_name in ("VIX Compression", "IV Momentum", "Vanna Butterfly"):

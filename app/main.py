@@ -11670,7 +11670,7 @@ DASH_HTML_TEMPLATE = """
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v12le">V12-LE (real)</option><option value="v12">V12 (live)</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v12le">V12-LE (real)</option><option value="v12nt">V12-NT (ninja)</option><option value="v12">V12 (live)</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
         </div>
         <div class="tl-stats" id="tlStats"></div>
@@ -14753,6 +14753,52 @@ DASH_HTML_TEMPLATE = """
         // V10 base: longs need align >= 2, shorts need no GEX-LIS
         if (isLong) { if (align < 2) return false; }
         else { if (l.paradigm === 'GEX-LIS') return false; }
+        return true;
+      }
+      if (strat === 'v12nt') {
+        // V12-NT (NinjaTrader): V12 + eval trader enabled setups (SC, DD, ES Abs, AG, PR, GEX Vel)
+        const ntSetups = ['Skew Charm','DD Exhaustion','ES Absorption','AG Short','Paradigm Reversal','GEX Velocity'];
+        if (!ntSetups.includes(sn)) return false;
+        // Apply V12 gap filters
+        if (l.ts) {
+          const dateStr = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
+          const gap = _tlDailyGaps[dateStr];
+          if (isLong && gap != null && gap > 30) return false;
+          if (gap != null && Math.abs(gap) > 30) {
+            const d = new Date(l.ts);
+            const etStr = d.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
+            const tp = (etStr.split(', ')[1] || etStr).split(':');
+            const mins = parseInt(tp[0]) * 60 + parseInt(tp[1]);
+            if (mins < 600) return false;
+          }
+        }
+        // SC grade gate
+        if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
+        // Portal-only setups
+        if (sn === 'VIX Compression' || sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
+        // V11 time gates
+        if (l.ts) {
+          const d = new Date(l.ts);
+          const etStr = d.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
+          const tp = (etStr.split(', ')[1] || etStr).split(':');
+          const h = parseInt(tp[0]), m = parseInt(tp[1]);
+          const mins = h * 60 + m;
+          if ((sn === 'Skew Charm' || sn === 'DD Exhaustion') && (mins >= 870 && mins < 900)) return false;
+          if ((sn === 'Skew Charm' || sn === 'DD Exhaustion') && mins >= 930) return false;
+          if (sn === 'BofA Scalp' && mins >= 870) return false;
+        }
+        // V10 base
+        if (isLong) {
+          if (align < 2) return false;
+          if (sn !== 'Skew Charm') {
+            const vix = l.vix != null ? l.vix : 0;
+            const ov = l.overvix != null ? l.overvix : -99;
+            if (vix > 22 && ov < 2) return false;
+          }
+        } else {
+          if ((sn === 'Skew Charm' || sn === 'DD Exhaustion') && l.paradigm === 'GEX-LIS') return false;
+          if (sn !== 'Skew Charm' && sn !== 'AG Short' && !(sn === 'DD Exhaustion' && align !== 0)) return false;
+        }
         return true;
       }
       if (strat === 'v12') {

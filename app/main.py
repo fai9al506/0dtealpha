@@ -3801,6 +3801,7 @@ def _run_setup_check():
     # Parse aggregated charm for BofA Scalp
     aggregated_charm = None
     statistics_raw = None
+    spy_statistics_raw = None
     # Get raw statistics from volland snapshot payload
     if engine:
         try:
@@ -3815,6 +3816,7 @@ def _run_setup_check():
                 payload = _json_load_maybe(snap_row["payload"])
                 if payload and isinstance(payload, dict):
                     statistics_raw = payload.get("statistics", {})
+                    spy_statistics_raw = payload.get("spy_statistics", {})
                     if statistics_raw and isinstance(statistics_raw, dict):
                         charm_val = statistics_raw.get("aggregatedCharm")
                         if charm_val is not None:
@@ -3830,7 +3832,8 @@ def _run_setup_check():
     spy_dd_hedging = None
     if statistics_raw and isinstance(statistics_raw, dict):
         dd_hedging = statistics_raw.get("deltadecayHedging") or statistics_raw.get("delta_decay_hedging")
-        spy_dd_hedging = statistics_raw.get("spy_delta_decay_hedging")
+    if spy_statistics_raw and isinstance(spy_statistics_raw, dict):
+        spy_dd_hedging = spy_statistics_raw.get("delta_decay_hedging")
 
     # Parse DD hedging to numeric value for DD Exhaustion
     # Combine SPX + SPY DD for stronger signal

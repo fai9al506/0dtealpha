@@ -11,7 +11,6 @@
   "qty": 10,
   "max_trade_risk": 300,
   "dynamic_sizing": true,
-  "commission_per_contract": 2.16,
   "be_trigger_pts": 5.0,
   "max_stop_loss_pts": 12,
   "max_losses_per_day": 999,
@@ -26,21 +25,6 @@
   "flatten_time_ct": "15:50",
   "e2t_daily_pnl_cap": 999999,
   "setup_rules": {
-    "AG Short": {
-      "enabled": true,
-      "stop": 12,
-      "target": null
-    },
-    "Paradigm Reversal": {
-      "enabled": true,
-      "stop": 12,
-      "target": 10
-    },
-    "ES Absorption": {
-      "enabled": true,
-      "stop": 8,
-      "target": 10
-    },
     "Skew Charm": {
       "enabled": true,
       "stop": 12,
@@ -51,10 +35,30 @@
       "stop": 12,
       "target": null
     },
-    "GEX Long": {
-      "enabled": false,
+    "ES Absorption": {
+      "enabled": true,
+      "stop": 8,
+      "target": 10
+    },
+    "AG Short": {
+      "enabled": true,
+      "stop": 12,
+      "target": null
+    },
+    "Paradigm Reversal": {
+      "enabled": true,
+      "stop": 12,
+      "target": 10
+    },
+    "GEX Velocity": {
+      "enabled": true,
       "stop": 8,
       "target": null
+    },
+    "Vanna Pivot Bounce": {
+      "enabled": false,
+      "stop": 8,
+      "target": 10
     },
     "BofA Scalp": {
       "enabled": false,
@@ -62,12 +66,13 @@
       "target": "msg",
       "max_hold_min": 30
     },
-    "Vanna Pivot Bounce": {
+    "GEX Long": {
       "enabled": false,
       "stop": 8,
-      "target": 10
+      "target": null
     }
   },
   "enabled": true,
+  "commission_per_contract": 2.16,
   "greek_filter_enabled": true
 }

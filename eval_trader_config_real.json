@@ -19,14 +19,24 @@
   "e2t_eod_trailing_drawdown": 2000,
   "e2t_max_contracts_es_equiv": 6,
   "e2t_starting_balance": 50000,
-  "e2t_peak_balance": 54415.03,
+  "e2t_peak_balance": 55158.95,
   "market_open_ct": "08:30",
   "no_new_trades_after_ct": "15:20",
   "flatten_time_ct": "15:44",
-  "e2t_daily_pnl_cap": 0,
+  "e2t_daily_pnl_cap": 1800,
   "setup_rules": {
-    "GEX Long": {
-      "enabled": false,
+    "Skew Charm": {
+      "enabled": true,
+      "stop": 12,
+      "target": null
+    },
+    "AG Short": {
+      "enabled": true,
+      "stop": 12,
+      "target": null
+    },
+    "GEX Velocity": {
+      "enabled": true,
       "stop": 8,
       "target": null
     },
@@ -34,16 +44,6 @@
       "enabled": true,
       "stop": 8,
       "target": 10
-    },
-    "Paradigm Reversal": {
-      "enabled": true,
-      "stop": 12,
-      "target": 10
-    },
-    "Skew Charm": {
-      "enabled": true,
-      "stop": 12,
-      "target": null
     },
     "BofA Scalp": {
       "enabled": false,
@@ -56,20 +56,20 @@
       "stop": 8,
       "target": 10
     },
-    "AG Short": {
-      "enabled": true,
-      "stop": 12,
-      "target": null
-    },
     "DD Exhaustion": {
       "enabled": true,
       "stop": 12,
       "target": null
     },
-    "GEX Velocity": {
-      "enabled": true,
+    "GEX Long": {
+      "enabled": false,
       "stop": 8,
       "target": null
+    },
+    "Paradigm Reversal": {
+      "enabled": true,
+      "stop": 12,
+      "target": 10
     }
   },
   "enabled": true,

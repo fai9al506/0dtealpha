@@ -1,0 +1,337 @@
+====================================================================================================
+  RECOMMENDED STRATEGY + JANUARY 2026 DETAILED TRADE LOG
+====================================================================================================
+
+  ============================================================
+  THE STRATEGY
+  ============================================================
+
+  NAME:        Stock GEX Support Bounce (Bullish)
+
+  GEX SCAN:    Each trading day at market open (~10:00 AM ET)
+               Compute GEX from that day's fresh OI + option prices
+
+  FILTERS (all must pass):
+    1. GEX Ratio > 3     (positive gamma = mean reversion regime)
+    2. Support -GEX below (at least 1 more -GEX level as cushion)
+    3. Magnet +GEX above  (pull force exists)
+    4. Spot opened ABOVE -GEX (price is in mid zone, not broken)
+    5. Skip 09:30 bar     (morning open = noise)
+
+  ENTRY:
+    - Place limit BUY for weekly CALL at -GEX strike
+    - Trigger: when stock price drops to -GEX minus 1%
+    - The call is OTM at purchase (stock below strike = cheap)
+    - Delta at entry: ~0.35-0.45 (OTM)
+
+  TARGETS:
+    T1 = -GEX level (stock recovers to strike = call goes ATM)
+         Stock move: +1.0%  |  Option: +200-800%
+    T2 = +GEX magnet (stock reaches magnet = call ITM)
+         Stock move: +1-3%  |  Option: +800-2500%
+
+  EXIT:
+    - T2 hit: SELL immediately (take full profit)
+    - T1 hit but not T2: SELL (take profit, don't hold for T2)
+    - Friday close: SELL whatever value remains (usually loss)
+    - No stock stop needed. Max loss = premium paid.
+
+  POSITION SIZE:
+    - $200 per trade (1 OTM weekly call)
+    - Max concurrent: 4-5 (same day signals)
+    - Capital needed: $200-$1000
+    - Trades resolve in 1-2 hours avg
+
+  EXPECTED PERFORMANCE (Jan 2026, 4 weeks):
+    - WR: 93%+ (A config)
+    - Avg hold: 2 hours
+    - EV: +$1,800/trade at $200
+    - Weekly: $2,700+
+  ============================================================
+
+  JANUARY 2026 TRADES: 8
+  Wins: 7/8 (88%)
+
+  ==========================================================================================
+  TRADE #1: CVNA (A) | 2026-01-08 Thu | [WIN]
+  ==========================================================================================
+  GEX Computed:    2026-01-08 open (fresh OI)
+  Spot at Open:    $447.00
+  -GEX levels:     ['$400', '$420', '$440']
+  +GEX levels:     ['$450', '$460', '$480']
+  Highest -GEX:    $440  |  Lowest +GEX: $450
+  Zone width:      2.3%  |  GEX Ratio: 3.1x
+  Support below:   2  |  Magnets above: 3
+
+  ENTRY:
+    Time:          13:30 ET
+    Stock price:   $435.60 (-GEX minus 1%)
+    Call strike:   $440 (at -GEX level)
+    Call premium:  ~$0.53
+    Delta:         0.29
+    DTE:           1 days
+
+  TARGETS:
+    T1 (-GEX):     $440 = +1.0% stock move
+    T2 (+GEX):     $450 = +3.3% stock move
+
+  RESULT:
+    T1 hit:        YES at 09:30 (2h after entry)  delta@T1: 0.51
+    T2 hit:        YES at 09:30 (2h after entry)
+    Exit:          T2 at 09:30 @ $450.00
+    Max drawdown:  -0.56% from entry
+    Max profit:    +6.69% from entry
+    Fri close:     $462.45
+
+  OPTION P&L:
+    Return:        +1794% of premium
+    At $200:       $+3588
+
+  ==========================================================================================
+  TRADE #2: NVDA (B) | 2026-01-14 Wed | [WIN]
+  ==========================================================================================
+  GEX Computed:    2026-01-14 open (fresh OI)
+  Spot at Open:    $184.33
+  -GEX levels:     ['$177', '$182', '$184']
+  +GEX levels:     ['$188', '$189', '$190']
+  Highest -GEX:    $184  |  Lowest +GEX: $188
+  Zone width:      2.2%  |  GEX Ratio: 4.4x
+  Support below:   2  |  Magnets above: 3
+
+  ENTRY:
+    Time:          10:30 ET
+    Stock price:   $182.16 (-GEX minus 1%)
+    Call strike:   $184 (at -GEX level)
+    Call premium:  ~$0.44
+    Delta:         0.34
+    DTE:           2 days
+
+  TARGETS:
+    T1 (-GEX):     $184 = +1.0% stock move
+    T2 (+GEX):     $188 = +3.2% stock move
+
+  RESULT:
+    T1 hit:        YES at 09:30 (5h after entry)  delta@T1: 0.51
+    T2 hit:        YES at 09:30 (5h after entry)
+    Exit:          T2 at 09:30 @ $188.00
+    Max drawdown:  -0.75% from entry
+    Max profit:    +3.85% from entry
+    Fri close:     $187.74
+
+  OPTION P&L:
+    Return:        +806% of premium
+    At $200:       $+1612
+
+  ==========================================================================================
+  TRADE #3: PLTR (A) | 2026-01-14 Wed | [WIN]
+  ==========================================================================================
+  GEX Computed:    2026-01-14 open (fresh OI)
+  Spot at Open:    $178.23
+  -GEX levels:     ['$172', '$175', '$178']
+  +GEX levels:     ['$180', '$182', '$190']
+  Highest -GEX:    $178  |  Lowest +GEX: $180
+  Zone width:      1.4%  |  GEX Ratio: 3.7x
+  Support below:   2  |  Magnets above: 3
+
+  ENTRY:
+    Time:          10:30 ET
+    Stock price:   $175.72 (-GEX minus 1%)
+    Call strike:   $178 (at -GEX level)
+    Call premium:  ~$0.43
+    Delta:         0.34
+    DTE:           2 days
+
+  TARGETS:
+    T1 (-GEX):     $178 = +1.0% stock move
+    T2 (+GEX):     $180 = +2.4% stock move
+
+  RESULT:
+    T1 hit:        YES at 14:30 (4h after entry)  delta@T1: 0.51
+    T2 hit:        YES at 09:30 (5h after entry)
+    Exit:          T2 at 09:30 @ $180.00
+    Max drawdown:  -1.01% from entry
+    Max profit:    +2.77% from entry
+    Fri close:     $171.13
+
+  OPTION P&L:
+    Return:        +487% of premium
+    At $200:       $+974
+
+  ==========================================================================================
+  TRADE #4: UBER (B) | 2026-01-16 Fri | [WIN]
+  ==========================================================================================
+  GEX Computed:    2026-01-16 open (fresh OI)
+  Spot at Open:    $84.15
+  -GEX levels:     ['$81', '$83', '$84']
+  +GEX levels:     ['$86', '$87', '$88']
+  Highest -GEX:    $84  |  Lowest +GEX: $86
+  Zone width:      2.4%  |  GEX Ratio: 15.1x
+  Support below:   2  |  Magnets above: 3
+
+  ENTRY:
+    Time:          10:30 ET
+    Stock price:   $83.16 (-GEX minus 1%)
+    Call strike:   $84 (at -GEX level)
+    Call premium:  ~$0.10
+    Delta:         0.29
+    DTE:           1 days
+
+  TARGETS:
+    T1 (-GEX):     $84 = +1.0% stock move
+    T2 (+GEX):     $86 = +3.4% stock move
+
+  RESULT:
+    T1 hit:        YES at 10:30 (0h after entry)  delta@T1: 0.51
+    T2 hit:        NO
+    Exit:          T1 at 10:30 @ $84.00
+    Max drawdown:  -0.04% from entry
+    Max profit:    +2.21% from entry
+    Fri close:     $84.60
+
+  OPTION P&L:
+    Return:        +459% of premium
+    At $200:       $+918
+
+  ==========================================================================================
+  TRADE #5: AMD (A) | 2026-01-29 Thu | [WIN]
+  ==========================================================================================
+  GEX Computed:    2026-01-29 open (fresh OI)
+  Spot at Open:    $254.52
+  -GEX levels:     ['$230', '$235', '$245']
+  +GEX levels:     ['$250', '$260', '$300']
+  Highest -GEX:    $245  |  Lowest +GEX: $250
+  Zone width:      2.0%  |  GEX Ratio: 8.2x
+  Support below:   2  |  Magnets above: 3
+
+  ENTRY:
+    Time:          10:30 ET
+    Stock price:   $242.55 (-GEX minus 1%)
+    Call strike:   $245 (at -GEX level)
+    Call premium:  ~$0.29
+    Delta:         0.29
+    DTE:           1 days
+
+  TARGETS:
+    T1 (-GEX):     $245 = +1.0% stock move
+    T2 (+GEX):     $250 = +3.1% stock move
+
+  RESULT:
+    T1 hit:        YES at 11:30 (1h after entry)  delta@T1: 0.51
+    T2 hit:        NO
+    Exit:          T1 at 11:30 @ $245.00
+    Max drawdown:  -3.05% from entry
+    Max profit:    +2.93% from entry
+    Fri close:     $235.57
+
+  OPTION P&L:
+    Return:        +410% of premium
+    At $200:       $+820
+
+  ==========================================================================================
+  TRADE #6: ENPH (B) | 2026-01-29 Thu | [LOSS]
+  ==========================================================================================
+  GEX Computed:    2026-01-29 open (fresh OI)
+  Spot at Open:    $40.15
+  -GEX levels:     ['$35', '$36', '$39']
+  +GEX levels:     ['$40', '$43']
+  Highest -GEX:    $39  |  Lowest +GEX: $40
+  Zone width:      2.6%  |  GEX Ratio: 3.7x
+  Support below:   2  |  Magnets above: 2
+
+  ENTRY:
+    Time:          10:30 ET
+    Stock price:   $38.61 (-GEX minus 1%)
+    Call strike:   $39 (at -GEX level)
+    Call premium:  ~$0.05
+    Delta:         0.29
+    DTE:           1 days
+
+  TARGETS:
+    T1 (-GEX):     $39 = +1.0% stock move
+    T2 (+GEX):     $40 = +3.6% stock move
+
+  RESULT:
+    T1 hit:        NO
+    T2 hit:        NO
+    Exit:          FRI at 16:00 @ $36.88
+    Max drawdown:  -5.32% from entry
+    Max profit:    +0.75% from entry
+    Fri close:     $36.88
+
+  OPTION P&L:
+    Return:        -100% of premium
+    At $200:       $-200
+
+  ==========================================================================================
+  TRADE #7: GOOGL (A) | 2026-01-29 Thu | [WIN]
+  ==========================================================================================
+  GEX Computed:    2026-01-29 open (fresh OI)
+  Spot at Open:    $340.50
+  -GEX levels:     ['$290', '$310', '$330']
+  +GEX levels:     ['$340', '$350', '$360']
+  Highest -GEX:    $330  |  Lowest +GEX: $340
+  Zone width:      3.0%  |  GEX Ratio: 4.5x
+  Support below:   2  |  Magnets above: 3
+
+  ENTRY:
+    Time:          10:30 ET
+    Stock price:   $326.70 (-GEX minus 1%)
+    Call strike:   $330 (at -GEX level)
+    Call premium:  ~$0.40
+    Delta:         0.29
+    DTE:           1 days
+
+  TARGETS:
+    T1 (-GEX):     $330 = +1.0% stock move
+    T2 (+GEX):     $340 = +4.1% stock move
+
+  RESULT:
+    T1 hit:        YES at 10:30 (0h after entry)  delta@T1: 0.51
+    T2 hit:        YES at 09:30 (5h after entry)
+    Exit:          T2 at 09:30 @ $340.00
+    Max drawdown:  -0.05% from entry
+    Max profit:    +4.07% from entry
+    Fri close:     $337.37
+
+  OPTION P&L:
+    Return:        +2425% of premium
+    At $200:       $+4850
+
+  ==========================================================================================
+  TRADE #8: SMCI (B) | 2026-01-29 Thu | [WIN]
+  ==========================================================================================
+  GEX Computed:    2026-01-29 open (fresh OI)
+  Spot at Open:    $30.71
+  -GEX levels:     ['$27', '$28', '$30']
+  +GEX levels:     ['$30', '$31', '$35']
+  Highest -GEX:    $30  |  Lowest +GEX: $30
+  Zone width:      1.7%  |  GEX Ratio: 3.6x
+  Support below:   2  |  Magnets above: 3
+
+  ENTRY:
+    Time:          10:30 ET
+    Stock price:   $29.20 (-GEX minus 1%)
+    Call strike:   $30 (at -GEX level)
+    Call premium:  ~$0.04
+    Delta:         0.29
+    DTE:           1 days
+
+  TARGETS:
+    T1 (-GEX):     $30 = +1.0% stock move
+    T2 (+GEX):     $30 = +2.7% stock move
+
+  RESULT:
+    T1 hit:        YES at 11:30 (1h after entry)  delta@T1: 0.51
+    T2 hit:        YES at 11:30 (1h after entry)
+    Exit:          T2 at 11:30 @ $30.00
+    Max drawdown:  -0.22% from entry
+    Max profit:    +2.82% from entry
+    Fri close:     $28.94
+
+  OPTION P&L:
+    Return:        +1312% of premium
+    At $200:       $+2624
+
+  ==========================================================================================
+  TOTAL: 8 trades | 7 wins | $+15,186 cumulative on $200/trade
+  ==========================================================================================

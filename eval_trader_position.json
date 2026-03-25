@@ -1,0 +1,20 @@
+{
+  "setup_name": "AG Short",
+  "direction": "short",
+  "grade": "A",
+  "entry_price": 6585.25,
+  "spx_spot": 6535.34,
+  "stop_price": 6597.25,
+  "target_price": null,
+  "stop_pts": 12,
+  "target_pts": null,
+  "trail_only": true,
+  "qty": 5,
+  "ts": "2026-03-24T08:43:33.667990-05:00",
+  "max_hold_min": null,
+  "es_entry_price": 6585.25,
+  "be_triggered": false,
+  "entry_oid": "e59162",
+  "stop_oid": "s59163",
+  "target_oid": null
+}

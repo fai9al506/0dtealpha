@@ -9685,7 +9685,7 @@ def api_setup_log_outcome(log_id: int):
         # Get price history
         ts = row["ts"]
         is_bofa = row["setup_name"] == "BofA Scalp"
-        is_abs = row["setup_name"] in ("ES Absorption", "SB Absorption")
+        is_abs = row["setup_name"] in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption")
         alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
         market_open = NY.localize(datetime.combine(alert_date, dtime(9, 30)))
         market_close = NY.localize(datetime.combine(alert_date, dtime(16, 0)))

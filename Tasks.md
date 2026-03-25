@@ -13,8 +13,8 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 
 | # | Task | Trigger | Action | Status |
 |---|------|---------|--------|--------|
-| S1 | **Mar 25 deployment verification** | First market day after Mar 25 | 1. Volland logs: `paradigm(SPY)` with non-zero DD. 2. Dashboard: DD SPX, DD SPY, DD Combined all show real values. 3. Gap filter log: `[gap] today=... gap=...` prints on first cycle. 4. Combined DD log: `[dd] SPX=... SPY=... Combined=...` shows non-zero SPY. 5. If gap-up day: confirm no long setups in Telegram/auto-trade (but still in portal). | PENDING |
-| S2 | **SB2 Absorption data check** | Every 5 trading days | Query setup_log for SB2 signals. When 15+ signals collected, run WR analysis and decide: enable on SIM or tune. Currently 3 signals, all WINs. | PENDING (3/15 signals) |
+| S1 | **Mar 25 deployment verification** | First market day after Mar 25 | All 5 checks PASS. SPY DD flowing, gap=+64.2 (longs blocked), combined DD working. Two bugs found+fixed: (1) gap SQL used wrong column, (2) SPY DD not reaching setup detector. | DONE 2026-03-25 |
+| S2 | **SB2 Absorption data check** | Every 5 trading days | 7 signals (6W/1L, 86% WR, +77 pts). Backtest done: OR gate + SVB + cd=20 = 47% WR, PF 1.50. Deploy scheduled S11. | PENDING (7/15 signals) |
 | S3 | **IV Momentum data check** | Every 5 trading days | Query setup_log for IV Momentum signals. When 50+ signals collected with live data, compare WR vs backtest 64%. If validated, enable on SIM. | PENDING (LOG-ONLY) |
 | S4 | **Vanna Butterfly data check** | Every 5 trading days | Query setup_log for Vanna Butterfly signals. Track GREEN vanna WR. When 20+ GREEN signals, decide: enable on SIM or keep logging. Expected: 80% WR, $3,970/mo/contract. | PENDING (LOG-ONLY) |
 | S5 | **VIX Compression data check** | Every 5 trading days | Query setup_log for VIX Compression signals. Currently 4 trades, 100% WR. When 10+ signals, consider enabling. Volland gate (SVB>1, vanna ratio<5) keeps it clean. | PENDING (LOG-ONLY) |
@@ -23,6 +23,9 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 | S8 | **Options circuit breaker analysis** | When 30+ days of V11 option data | Re-run circuit breaker study: stop trading after 4 consecutive option losses. Backtest showed +48% improvement. Needs 30+ days V8+ data. | WAITING (need data) |
 | S9 | **Stock GEX Support Bounce — live alerts** | Each trading day 10:00-14:00 ET | Monitor `/stock-gex-live` for stocks dipping 1% below -GEX with CLEAN structure. Telegram channel connected. | ACTIVE |
 | S10 | **Real money daily P&L check** | Each trading day after 16:05 ET | Check Telegram for real_trader EOD summary. Verify no bugs, no missed trades, no ghost positions. Accounts: 210VYX65 (longs), 210VYX91 (shorts). | ACTIVE |
+| S11 | **SB2 Absorption v2 tuning deploy** | 2026-03-25 after 16:10 ET | Backtest validated (+260 pts, 47.7% WR, PF 1.52). Apply to `setup_detector.py`: (1) Gate AND→OR (vol>=1.2x OR delta>=1.3x), (2) Cooldown 10→20 bars, (3) Time start 9:45 ET (add gate), (4) Verify SVB<0 filter works in live code. Keep LOG-ONLY. Commit+push after market close. | PENDING |
+| S12 | **Push 0DTE GEX improvements** | 2026-03-25 after 16:10 ET | Commit+push 3 changes: (1) "Last scan: HH:MM ET" timestamp on 0DTE tab, (2) spot updates every 2 min between 30-min GEX scans, (3) GEX history viewer (date/time picker to see past scans). Files: `stock_gex_live.py`, `stock_gex_live_page.py`, `main.py`. | PENDING |
+| S13 | **Push AG Short 15-min cooldown** | 2026-03-25 after 16:10 ET | Commit+push AG Short cooldown fix: 15-min time floor prevents flicker re-fires. Data: <15min signals = 63% WR (weak), 15-30min = 85% WR (best). Changes in `setup_detector.py`. | PENDING |
 
 ---
 

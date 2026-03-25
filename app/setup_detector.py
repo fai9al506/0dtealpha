@@ -59,7 +59,9 @@ _cooldown_ag = {
     "setup_expired": False,
     "last_date": None,
     "_gone_count": 0,
+    "last_fire_time": None,       # 15-min time floor (prevents flicker re-fires)
 }
+AG_MIN_COOLDOWN_MINUTES = 15
 
 # How many consecutive non-paradigm cycles before marking expired
 # 3 cycles = ~90 seconds — survives deploys and brief paradigm flickers
@@ -645,12 +647,15 @@ def mark_setup_expired():
 
 
 def should_notify_ag(result):
-    """Cooldown gate for AG Short — same logic, separate state. Returns (fire, reason)."""
+    """Cooldown gate for AG Short — grade/gap/expiry logic + 15-min time floor.
+    Returns (fire, reason)."""
     global _cooldown_ag
 
-    today = datetime.now(NY).date()
+    now = datetime.now(NY)
+    today = now.date()
     if _cooldown_ag["last_date"] != today:
-        _cooldown_ag = {"last_grade": None, "last_gap_to_lis": None, "setup_expired": False, "last_date": today, "_gone_count": 0}
+        _cooldown_ag = {"last_grade": None, "last_gap_to_lis": None, "setup_expired": False,
+                        "last_date": today, "_gone_count": 0, "last_fire_time": None}
 
     grade = result["grade"]
     gap = result["gap_to_lis"]
@@ -673,10 +678,17 @@ def should_notify_ag(result):
         fire = True
         reason = "reformed"
 
+    # ── 15-min time floor: block flicker re-fires regardless of reason ──
+    if fire and _cooldown_ag.get("last_fire_time") is not None:
+        elapsed = (now - _cooldown_ag["last_fire_time"]).total_seconds() / 60
+        if elapsed < AG_MIN_COOLDOWN_MINUTES:
+            return False, None
+
     if fire:
         _cooldown_ag["last_grade"] = grade
         _cooldown_ag["last_gap_to_lis"] = gap
         _cooldown_ag["setup_expired"] = False
+        _cooldown_ag["last_fire_time"] = now
 
     return fire, reason
 
@@ -4450,7 +4462,8 @@ def import_cooldowns(data: dict):
     if "gex" in data:
         _cooldown.update(_deserialize(data["gex"]))
     if "ag" in data:
-        _cooldown_ag.update(_deserialize(data["ag"]))
+        _cooldown_ag.update(_deserialize(data["ag"], has_datetimes=True,
+                                         dt_keys=("last_fire_time",)))
     if "bofa" in data:
         _cooldown_bofa.update(_deserialize(data["bofa"], has_datetimes=True))
     if "absorption" in data:

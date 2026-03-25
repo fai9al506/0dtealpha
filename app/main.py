@@ -3591,9 +3591,10 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 pnl = entry_price - check_price
 
         if result_type:
-            # Split-target P&L: all trailing setups use Flow B (T1=+10, T2=trail)
-            # If T1 was hit, overall P&L = average of T1 (+10) and T2 (trail exit)
-            if trade.get("_t1_hit"):
+            # Split-target P&L: only for trail-resolved trades (stop actually hit)
+            # EXPIRED (market close) trades use mark-to-market, no T1 averaging —
+            # T1/T2 split is a broker concept, not applicable to theoretical tracking
+            if trade.get("_t1_hit") and result_type != "EXPIRED":
                 pnl = round((10.0 + pnl) / 2, 1)  # T2 pnl already computed above
                 result_type = "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "EXPIRED")
             else:
@@ -3769,12 +3770,25 @@ def _run_setup_check():
 
     # Extract DD hedging from Volland stats (for Paradigm Reversal)
     dd_hedging = None
+    spy_dd_hedging = None
     if statistics_raw and isinstance(statistics_raw, dict):
         dd_hedging = statistics_raw.get("deltadecayHedging") or statistics_raw.get("delta_decay_hedging")
+        spy_dd_hedging = statistics_raw.get("spy_delta_decay_hedging")
 
     # Parse DD hedging to numeric value for DD Exhaustion
+    # Combine SPX + SPY DD for stronger signal
     from app.setup_detector import update_dd_tracker
-    dd_numeric = _parse_dd_numeric(dd_hedging)
+    spx_dd_numeric = _parse_dd_numeric(dd_hedging)
+    spy_dd_numeric = _parse_dd_numeric(spy_dd_hedging) if spy_dd_hedging else None
+
+    if spx_dd_numeric is not None and spy_dd_numeric is not None:
+        dd_numeric = spx_dd_numeric + spy_dd_numeric
+    elif spx_dd_numeric is not None:
+        dd_numeric = spx_dd_numeric
+    else:
+        dd_numeric = None
+
+    print(f"[dd] SPX={spx_dd_numeric} SPY={spy_dd_numeric} Combined={dd_numeric}")
     dd_shift = update_dd_tracker(dd_numeric) if dd_numeric is not None else None
 
     # Query recent ES range bars (Rithmic) for Paradigm Reversal volume check

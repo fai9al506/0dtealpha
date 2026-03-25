@@ -1962,13 +1962,15 @@ def format_sb10_abs_message(result, alignment=None):
 
 DEFAULT_SB2_ABS_SETTINGS = {
     "sb2_enabled": True,
-    "sb2_vol_mult": 1.2,          # flush bar volume >= N x 20-bar avg (was 1.5)
-    "sb2_delta_mult": 1.0,        # flush bar |delta| >= N x 20-bar avg |delta| (was 1.5)
-    "sb2_recovery_pct": 0.60,     # recovery bar must reverse >= 60% of flush bar range (was 0.70)
-    "sb2_cooldown_bars": 10,      # min bars between same-direction signals
+    "sb2_vol_mult": 1.2,          # flush bar volume >= N x 20-bar avg
+    "sb2_delta_mult": 1.3,        # flush bar |delta| >= N x 20-bar avg |delta|
+    "sb2_gate_mode": "OR",        # "OR" = vol OR delta passes, "AND" = both must pass
+    "sb2_recovery_pct": 0.60,     # recovery bar must reverse >= 60% of flush bar range
+    "sb2_cooldown_bars": 20,      # min bars between same-direction signals (was 10)
     "sb2_stop_pts": 8,
-    "sb2_target_pts": 12,         # wider target (was 10) — backtest: +336 pts vs +68 at T=10
-    "sb2_block_after_et": "15:00", # block signals after 15:00 ET (weak edge, +2 neg days)
+    "sb2_target_pts": 12,         # wider target — backtest: +336 pts vs +68 at T=10
+    "sb2_block_before_et": "09:45", # block signals before 9:45 ET (open noise)
+    "sb2_block_after_et": "15:00",  # block signals after 15:00 ET (weak edge)
 }
 
 _cooldown_sb2_abs = {
@@ -1990,12 +1992,14 @@ def evaluate_sb2_absorption(bars, volland_stats, settings, spx_spot=None, cooldo
     """Detect two-bar absorption: flush bar + recovery bar.
 
     Bullish: Bar N-1 sells down hard (negative delta, full range drop),
-             Bar N recovers >= 70% of the move -> sellers absorbed -> LONG
+             Bar N recovers >= 60% of the move -> sellers absorbed -> LONG
     Bearish: Bar N-1 buys up hard (positive delta, full range rise),
-             Bar N pulls back >= 70% of the move -> buyers absorbed -> SHORT
+             Bar N pulls back >= 60% of the move -> buyers absorbed -> SHORT
 
-    Requires flush bar volume >= 1.5x avg and |delta| >= 1.5x avg.
-    Entry at recovery bar close price.
+    Gate: OR mode — flush bar volume >= 1.2x avg OR |delta| >= 1.3x avg.
+    Catches fast bars with strong delta but low absolute volume.
+    SVB < 0 blocks (market dislocation). Cooldown 20 bars. Time 9:45-15:00 ET.
+    Backtest: 132 sig/22d, 47.7% WR, +260 pts, PF 1.52, MaxDD -80.
     """
     cs = cooldown_state or _cooldown_sb2_abs
     if not bars or len(bars) < 22:  # need at least 20 lookback + 2 bars
@@ -2023,34 +2027,45 @@ def evaluate_sb2_absorption(bars, volland_stats, settings, spx_spot=None, cooldo
     if recovery_bar.get("status") == "open" or flush_bar.get("status") == "open":
         return None
 
-    # Time gate: block signals after configured cutoff (default 15:00 ET)
+    # Time gate: block signals before/after configured cutoffs
+    now_et = datetime.now(NY)
+    block_before = settings.get("sb2_block_before_et", "09:45")
+    if block_before:
+        _h, _m = (int(x) for x in block_before.split(":"))
+        if now_et.time() < dtime(_h, _m):
+            return None
     block_after = settings.get("sb2_block_after_et", "15:00")
     if block_after:
-        now_et = datetime.now(NY)
         _h, _m = (int(x) for x in block_after.split(":"))
         if now_et.time() >= dtime(_h, _m):
             return None
 
-    # ── Volume gate on flush bar ──
-    vol_mult = settings.get("sb2_vol_mult", 1.5)
+    # ── Volume + Delta gate on flush bar (OR mode) ──
+    vol_mult = settings.get("sb2_vol_mult", 1.2)
+    delta_mult = settings.get("sb2_delta_mult", 1.3)
+    gate_mode = settings.get("sb2_gate_mode", "OR")
+
     lookback = bars[-22:-2]  # 20 bars before flush bar
     volumes = [b.get("volume", 0) for b in lookback if b.get("volume", 0) > 0]
     if not volumes:
         return None
     avg_vol = sum(volumes) / len(volumes)
     flush_vol = flush_bar.get("volume", 0)
-    if avg_vol <= 0 or flush_vol < avg_vol * vol_mult:
-        return None
-    vol_ratio = round(flush_vol / avg_vol, 1)
+    vol_pass = avg_vol > 0 and flush_vol >= avg_vol * vol_mult
+    vol_ratio = round(flush_vol / avg_vol, 1) if avg_vol > 0 else 0.0
 
-    # ── Delta gate on flush bar ──
-    delta_mult = settings.get("sb2_delta_mult", 1.5)
     deltas = [abs(b.get("delta", 0)) for b in lookback if b.get("delta", 0) != 0]
     avg_delta = sum(deltas) / len(deltas) if deltas else 1
     flush_delta = flush_bar.get("delta", 0)
-    if avg_delta <= 0 or abs(flush_delta) < avg_delta * delta_mult:
-        return None
-    delta_ratio = round(abs(flush_delta) / avg_delta, 1)
+    delta_pass = avg_delta > 0 and abs(flush_delta) >= avg_delta * delta_mult
+    delta_ratio = round(abs(flush_delta) / avg_delta, 1) if avg_delta > 0 else 0.0
+
+    if gate_mode == "OR":
+        if not (vol_pass or delta_pass):
+            return None
+    else:  # AND
+        if not (vol_pass and delta_pass):
+            return None
 
     # ── Flush direction + recovery check ──
     flush_open = flush_bar.get("open", 0)
@@ -2091,7 +2106,9 @@ def evaluate_sb2_absorption(bars, volland_stats, settings, spx_spot=None, cooldo
     svb_val = None
     if volland_stats and isinstance(volland_stats, dict):
         try:
-            svb_raw = volland_stats.get("spotVolBeta") or volland_stats.get("spot_vol_beta")
+            svb_raw = volland_stats.get("svb_correlation") or volland_stats.get("spotVolBeta") or volland_stats.get("spot_vol_beta")
+            if isinstance(svb_raw, dict):
+                svb_raw = svb_raw.get("correlation")
             if svb_raw is not None:
                 svb_val = float(svb_raw)
                 if svb_val < 0:

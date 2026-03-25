@@ -6465,6 +6465,26 @@ def api_0dte_gex_status():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/stock-gex-live/0dte/history/dates")
+def api_0dte_gex_history_dates(days: int = 30):
+    """List dates with 0DTE GEX scans."""
+    try:
+        from app import stock_gex_live
+        return {"dates": stock_gex_live.get_0dte_history_dates(days)}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/stock-gex-live/0dte/history/scans")
+def api_0dte_gex_history_scans(date: str = ""):
+    """Get all scan times and levels for a specific date."""
+    if not date:
+        return {"error": "date parameter required (YYYY-MM-DD)"}
+    try:
+        from app import stock_gex_live
+        return stock_gex_live.get_0dte_history_scans(date)
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.post("/api/stock-gex-live/0dte/scan")
 def api_0dte_gex_trigger():
     """Manually trigger a 0DTE GEX scan."""

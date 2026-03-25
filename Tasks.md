@@ -13,7 +13,7 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 
 | # | Task | Trigger | Action | Status |
 |---|------|---------|--------|--------|
-| S1 | **SPY DD verification** | First market day after Mar 25 | Check Volland logs for `paradigm(SPY)` with non-zero DD. Verify dashboard shows DD SPX, DD SPY, DD Combined with real values. | PENDING |
+| S1 | **Mar 25 deployment verification** | First market day after Mar 25 | 1. Volland logs: `paradigm(SPY)` with non-zero DD. 2. Dashboard: DD SPX, DD SPY, DD Combined all show real values. 3. Gap filter log: `[gap] today=... gap=...` prints on first cycle. 4. Combined DD log: `[dd] SPX=... SPY=... Combined=...` shows non-zero SPY. 5. If gap-up day: confirm no long setups in Telegram/auto-trade (but still in portal). | PENDING |
 | S2 | **SB2 Absorption data check** | Every 5 trading days | Query setup_log for SB2 signals. When 15+ signals collected, run WR analysis and decide: enable on SIM or tune. Currently 3 signals, all WINs. | PENDING (3/15 signals) |
 | S3 | **IV Momentum data check** | Every 5 trading days | Query setup_log for IV Momentum signals. When 50+ signals collected with live data, compare WR vs backtest 64%. If validated, enable on SIM. | PENDING (LOG-ONLY) |
 | S4 | **Vanna Butterfly data check** | Every 5 trading days | Query setup_log for Vanna Butterfly signals. Track GREEN vanna WR. When 20+ GREEN signals, decide: enable on SIM or keep logging. Expected: 80% WR, $3,970/mo/contract. | PENDING (LOG-ONLY) |

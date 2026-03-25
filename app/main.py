@@ -3197,9 +3197,10 @@ def send_summary_alert(time_label: str):
 def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None, grade: str | None = None) -> bool:
-    """Single source of truth for the LIVE auto-trade filter (currently V11).
-    V11 = V10 + time-of-day gates + SC grade gate (A+/A/B only, block C/LOG).
+    """Single source of truth for the LIVE auto-trade filter (currently V12).
+    V12 = V11 + gap-up longs filter (block longs all day when gap > +30 pts).
     Used for: Telegram sends, auto-trade gating, outcome notifications.
+    Setups still fire and log to portal/setup_log — this only gates live execution.
     Change this ONE function when the filter evolves."""
     if setup_name in ("VIX Compression", "IV Momentum", "Vanna Butterfly"):
         return False
@@ -3208,7 +3209,7 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     if setup_name == "Skew Charm" and grade and grade in ("C", "LOG"):
         return False
 
-    # ── V11: Time-of-day gates ──
+    # ── V12/V11: Time-of-day gates ──
     # 14:30-15:00 ET is a dead zone for charm setups (35% WR, -114 pts, time starvation)
     # 15:30-16:00 ET: SC/DD signals expire too quickly (15% WR)
     # BofA Scalp after 14:30: 0% WR in 10 trades
@@ -3225,7 +3226,7 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     is_long = direction in ("long", "bullish")
     align = greek_alignment or 0
 
-    # ── V11: Gap-up filter — block longs all day when gap > +30 pts ──
+    # ── V12: Gap-up filter — block longs all day when gap > +30 pts ──
     # Backtest: 112 longs blocked on gap-up days, -290.9 pts saved (38% WR → blocked)
     # Logic: gap-up means move already happened, longs are chasing
     if is_long and _daily_gap_pts is not None and _daily_gap_pts > 30:

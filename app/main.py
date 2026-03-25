@@ -3232,12 +3232,21 @@ def _compute_setup_levels(r: dict):
         stop_lvl = r.get("bofa_stop_level")
         return target_lvl, stop_lvl
 
-    if setup_name == "ES Absorption":
+    if setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption"):
         es_price = r.get("abs_es_price")
         if not es_price:
             return None, None
-        # Fixed target: SL=8/T=10 (backtest: 83% WR, +536 pts)
+        # Fixed target: SL=8/T=10
         target_lvl = es_price + 10 if is_long else es_price - 10
+        stop_lvl = es_price - 8 if is_long else es_price + 8
+        return round(target_lvl, 2), round(stop_lvl, 2)
+
+    if setup_name == "SB2 Absorption":
+        es_price = r.get("abs_es_price")
+        if not es_price:
+            return None, None
+        # SL=8/T=12 (backtest: 217 signals, 47.5% WR, +336 pts over 22d)
+        target_lvl = es_price + 12 if is_long else es_price - 12
         stop_lvl = es_price - 8 if is_long else es_price + 8
         return round(target_lvl, 2), round(stop_lvl, 2)
 

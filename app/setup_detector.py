@@ -1950,12 +1950,13 @@ def format_sb10_abs_message(result, alignment=None):
 
 DEFAULT_SB2_ABS_SETTINGS = {
     "sb2_enabled": True,
-    "sb2_vol_mult": 1.5,          # flush bar volume >= N x 20-bar avg
-    "sb2_delta_mult": 1.5,        # flush bar |delta| >= N x 20-bar avg |delta|
-    "sb2_recovery_pct": 0.70,     # recovery bar must reverse >= 70% of flush bar range
+    "sb2_vol_mult": 1.2,          # flush bar volume >= N x 20-bar avg (was 1.5)
+    "sb2_delta_mult": 1.0,        # flush bar |delta| >= N x 20-bar avg |delta| (was 1.5)
+    "sb2_recovery_pct": 0.60,     # recovery bar must reverse >= 60% of flush bar range (was 0.70)
     "sb2_cooldown_bars": 10,      # min bars between same-direction signals
     "sb2_stop_pts": 8,
-    "sb2_target_pts": 10,
+    "sb2_target_pts": 12,         # wider target (was 10) — backtest: +336 pts vs +68 at T=10
+    "sb2_block_after_et": "15:00", # block signals after 15:00 ET (weak edge, +2 neg days)
 }
 
 _cooldown_sb2_abs = {
@@ -2009,6 +2010,14 @@ def evaluate_sb2_absorption(bars, volland_stats, settings, spx_spot=None, cooldo
     # Skip open/incomplete bars
     if recovery_bar.get("status") == "open" or flush_bar.get("status") == "open":
         return None
+
+    # Time gate: block signals after configured cutoff (default 15:00 ET)
+    block_after = settings.get("sb2_block_after_et", "15:00")
+    if block_after:
+        now_et = datetime.now(NY)
+        _h, _m = (int(x) for x in block_after.split(":"))
+        if now_et.time() >= dtime(_h, _m):
+            return None
 
     # ── Volume gate on flush bar ──
     vol_mult = settings.get("sb2_vol_mult", 1.5)

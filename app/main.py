@@ -6184,6 +6184,15 @@ def api_auto_trade_status():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/real-trade/status")
+def api_real_trade_status():
+    """Full real-trade monitoring: balances, positions, orders, margin."""
+    try:
+        from app import real_trader
+        return real_trader.get_full_status()
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.post("/api/auto-trade/toggle")
 def api_auto_trade_toggle(setup_name: str = Query(...), enabled: bool = Query(...)):
     """Toggle auto-trading for a specific setup."""

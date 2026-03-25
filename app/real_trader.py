@@ -1517,6 +1517,74 @@ def get_status() -> dict:
     }
 
 
+def get_full_status() -> dict:
+    """Full monitoring: balances, positions, orders, daily P&L for both accounts."""
+    result = get_status()
+    if not _get_token:
+        result["error"] = "no token"
+        return result
+
+    for acct_id, label in [(_LONGS_ACCOUNT, "longs"), (_SHORTS_ACCOUNT, "shorts")]:
+        acct = {"account_id": acct_id}
+        # Balances
+        try:
+            bal_data = _ts_api("GET", f"/brokerage/accounts/{acct_id}/balances", None, acct_id)
+            if bal_data:
+                b = bal_data.get("Balances", [{}])
+                b = b[0] if isinstance(b, list) and b else b
+                detail = b.get("BalanceDetail", {})
+                acct["cash"] = float(b.get("CashBalance", 0))
+                acct["equity"] = float(b.get("Equity", 0))
+                acct["buying_power"] = float(b.get("BuyingPower", 0))
+                acct["today_pnl"] = float(b.get("TodaysProfitLoss", 0))
+                acct["realized_pnl"] = float(detail.get("RealizedProfitLoss", 0))
+                acct["unrealized_pnl"] = float(detail.get("UnrealizedProfitLoss", 0))
+                acct["day_trade_excess"] = float(detail.get("DayTradeExcess", 0))
+        except Exception as e:
+            acct["balance_error"] = str(e)
+        # Positions
+        try:
+            pos = _get_broker_position(acct_id)
+            acct["position"] = pos if pos else "flat"
+        except Exception as e:
+            acct["position_error"] = str(e)
+        # Open orders
+        try:
+            ord_data = _ts_api("GET", f"/brokerage/accounts/{acct_id}/orders", None, acct_id)
+            open_orders = []
+            for o in (ord_data or {}).get("Orders", []):
+                if o.get("Status") in ("OPN", "ACK", "DON"):
+                    open_orders.append({
+                        "id": o.get("OrderID"),
+                        "type": o.get("Type"),
+                        "side": o.get("Legs", [{}])[0].get("BuyOrSell"),
+                        "qty": o.get("Quantity"),
+                        "price": o.get("LimitPrice") or o.get("StopPrice"),
+                        "status": o.get("Status"),
+                    })
+            acct["open_orders"] = open_orders
+        except Exception as e:
+            acct["orders_error"] = str(e)
+        # Margin warning
+        if acct.get("buying_power") is not None:
+            margin_needed = MARGIN_PER_MES * QTY
+            acct["can_trade"] = acct["buying_power"] >= margin_needed
+            acct["margin_buffer"] = round(acct["buying_power"] - margin_needed, 2)
+            losses_until_margin = int(acct.get("margin_buffer", 0) / (14 * MES_POINT_VALUE * QTY)) if acct.get("margin_buffer", 0) > 0 else 0
+            acct["losses_until_margin_block"] = losses_until_margin
+        result[f"account_{label}"] = acct
+
+    # Daily loss check
+    try:
+        result["daily_loss"] = _get_daily_loss()
+        result["daily_loss_limit"] = DAILY_LOSS_LIMIT
+        result["circuit_breaker_triggered"] = result["daily_loss"] >= DAILY_LOSS_LIMIT
+    except Exception:
+        pass
+
+    return result
+
+
 # ====== BROKER QUERIES ======
 
 def _get_broker_position(account_id: str) -> dict | None:

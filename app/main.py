@@ -1484,6 +1484,8 @@ _spx_session = {"high": None, "low": None, "date": None}  # previous poll's sess
 _spx_cycle_high = None  # derived cycle high (max of spot & any new session high)
 _spx_cycle_low = None   # derived cycle low  (min of spot & any new session low)
 _last_known_spot = None  # cached spot for EOD summary fallback
+_daily_gap_pts = None    # today's gap = open - prev close (set once per day)
+_daily_gap_date = None   # date when gap was calculated (reset daily)
 _vanna_cache = {"all": None, "weekly": None, "monthly": None, "ts": None}  # refreshed each 30s cycle
 
 def _compute_charm_limit_entry(spot: float, direction: str) -> dict | None:
@@ -1772,6 +1774,38 @@ def _parse_dd_numeric(dd_str):
         return float(str(dd_str).replace("$", "").replace(",", ""))
     except (ValueError, TypeError):
         return None
+
+def _compute_daily_gap(current_spot: float) -> float | None:
+    """Compute today's gap = current spot - yesterday's last known close.
+    Called once per day on first cycle. Returns gap in pts or None."""
+    global _daily_gap_pts, _daily_gap_date
+    today = now_et().date()
+    if _daily_gap_date == today:
+        return _daily_gap_pts  # already computed today
+    if not engine or not current_spot:
+        return None
+    try:
+        q = text("""
+            SELECT (payload->>'current_price')::float as close_price
+            FROM chain_snapshots
+            WHERE payload->>'current_price' IS NOT NULL
+              AND date(ts AT TIME ZONE 'US/Eastern') < :today
+            ORDER BY ts DESC LIMIT 1
+        """)
+        with engine.begin() as conn:
+            row = conn.execute(q, {"today": today}).mappings().first()
+        if not row or not row["close_price"]:
+            return None
+        prev_close = row["close_price"]
+        gap = round(current_spot - prev_close, 1)
+        _daily_gap_pts = gap
+        _daily_gap_date = today
+        print(f"[gap] today={today} open={current_spot:.1f} prev_close={prev_close:.1f} gap={gap:+.1f}pts", flush=True)
+        return gap
+    except Exception as e:
+        print(f"[gap] error computing gap: {e}", flush=True)
+        return None
+
 
 def db_latest_volland() -> Optional[dict]:
     if not engine:
@@ -3190,6 +3224,13 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
 
     is_long = direction in ("long", "bullish")
     align = greek_alignment or 0
+
+    # ── V11: Gap-up filter — block longs all day when gap > +30 pts ──
+    # Backtest: 112 longs blocked on gap-up days, -290.9 pts saved (38% WR → blocked)
+    # Logic: gap-up means move already happened, longs are chasing
+    if is_long and _daily_gap_pts is not None and _daily_gap_pts > 30:
+        return False
+
     if is_long:
         if align < 2:
             return False
@@ -3509,9 +3550,9 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 while rung <= max_fav:
                     trail_lock = rung - _tp["lock_offset"]
                     rung += _tp["step"]
-            # Track T1 hit (+10pt) for split-target P&L (all Flow B setups)
+            # Track T1 milestone — logged for analysis (not used in P&L calc)
             if max_fav >= 10 and not trade.get("_t1_hit"):
-                trade["_t1_hit"] = True
+                trade["_t1_hit"] = True  # informational only
             if trail_lock is not None:
                 # Move stop to lock-in level
                 if is_long:
@@ -3591,14 +3632,17 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 pnl = entry_price - check_price
 
         if result_type:
-            # Split-target P&L: only for trail-resolved trades (stop actually hit)
-            # EXPIRED (market close) trades use mark-to-market, no T1 averaging —
-            # T1/T2 split is a broker concept, not applicable to theoretical tracking
-            if trade.get("_t1_hit") and result_type != "EXPIRED":
-                pnl = round((10.0 + pnl) / 2, 1)  # T2 pnl already computed above
-                result_type = "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "EXPIRED")
-            else:
-                pnl = round(pnl, 1)
+            # No T1/T2 averaging — that's a broker execution concept (auto_trader).
+            # Theoretical tracking uses raw P&L: trail exit, target, stop, or mark-to-market.
+            pnl = round(pnl, 1)
+
+            # Sanity: P&L should never exceed max favorable excursion for trailing setups
+            # Catches data glitches in spot/cycle_low that produce impossible outcomes
+            if _tp is not None:
+                max_fav = trade.get("_dd_max_fav", 0.0)
+                if pnl > 0 and pnl > max_fav + 2:
+                    print(f"[outcome] WARNING: {setup_name} pnl {pnl:+.1f} exceeds max_fav {max_fav:.1f} — capping at max_fav", flush=True)
+                    pnl = round(max_fav, 1)
             elapsed_min = int(elapsed)
             trade["close_price"] = check_price
 
@@ -3711,6 +3755,9 @@ def _run_setup_check():
 
     global _last_known_spot
     _last_known_spot = spot  # cache for EOD summary fallback
+
+    # Compute daily gap once per day (first cycle with spot)
+    _compute_daily_gap(spot)
 
     # Check open trades for outcome resolution each cycle
     _check_setup_outcomes(spot, _spx_cycle_high, _spx_cycle_low)

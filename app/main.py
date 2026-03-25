@@ -3226,11 +3226,16 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     is_long = direction in ("long", "bullish")
     align = greek_alignment or 0
 
-    # ── V12: Gap-up filter — block longs all day when gap > +30 pts ──
-    # Backtest: 112 longs blocked on gap-up days, -290.9 pts saved (38% WR → blocked)
-    # Logic: gap-up means move already happened, longs are chasing
+    # ── V12: Gap filters ──
+    # Rule A: block longs ALL DAY on gap-up (>+30). Backtest: 112 blocked, +290.9 pts saved
     if is_long and _daily_gap_pts is not None and _daily_gap_pts > 30:
         return False
+    # Rule B: block ALL trades first 30 min on any gap day (|gap|>30). Backtest: +77.3 pts saved
+    if _daily_gap_pts is not None and abs(_daily_gap_pts) > 30:
+        from datetime import time as _dtime
+        _t = now_et().time()
+        if _t < _dtime(10, 0):
+            return False
 
     if is_long:
         if align < 2:
@@ -14720,12 +14725,20 @@ DASH_HTML_TEMPLATE = """
         return false;
       }
       if (strat === 'v12') {
-        // V12 (live): V11 + gap-up longs filter
-        // Gap-up filter: block longs all day when gap > +30 pts
-        if (isLong && l.ts) {
+        // V12 (live): V11 + gap filters
+        if (l.ts) {
           const dateStr = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
           const gap = _tlDailyGaps[dateStr];
-          if (gap != null && gap > 30) return false;
+          // Rule A: block longs all day on gap-up > +30
+          if (isLong && gap != null && gap > 30) return false;
+          // Rule B: block ALL first 30min on any gap |gap| > 30
+          if (gap != null && Math.abs(gap) > 30) {
+            const d = new Date(l.ts);
+            const etStr = d.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
+            const tp = (etStr.split(', ')[1] || etStr).split(':');
+            const mins = parseInt(tp[0]) * 60 + parseInt(tp[1]);
+            if (mins < 600) return false; // before 10:00 ET
+          }
         }
         // SC grade gate
         if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;

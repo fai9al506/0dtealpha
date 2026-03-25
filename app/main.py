@@ -4138,11 +4138,11 @@ def _run_setup_check():
                                 es_px = _es_quote.get("last_price")
                             if es_px and stop_lvl is not None:
                                 stop_dist = abs(r["spot"] - stop_lvl)
-                                target_dist = 10.0  # SC always targets 10 pts
+                                # Opt2: trail only, no partial TP at +10 (backtest: +316 pts more, less DD)
                                 real_trader.place_trade(
                                     setup_log_id=_current_setup_log.get(setup_name),
                                     setup_name=setup_name, direction=r["direction"],
-                                    es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
+                                    es_price=es_px, target_pts=None, stop_pts=stop_dist,
                                     charm_limit_price=None,
                                 )
                             elif not es_px:

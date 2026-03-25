@@ -58,15 +58,16 @@ SHORTS_ENABLED = os.getenv("REAL_TRADE_SHORTS_ENABLED", "false").lower() == "tru
 _es_env = os.getenv("REAL_TRADE_MES_SYMBOL", "auto")
 MES_SYMBOL = _auto_mes_symbol() if _es_env.lower() == "auto" else _es_env
 
-# Position sizing -- 1 MES per trade, max 2 concurrent per direction
+# Position sizing -- 1 MES per trade, max 1 concurrent per direction
+# (accounts ~$880 each, intraday margin $687/MES — not enough for 2 concurrent)
 QTY = 1
-MAX_CONCURRENT_PER_DIR = 2
+MAX_CONCURRENT_PER_DIR = 1
 
 # Risk management
 FIRST_TARGET_PTS = 10.0
 MES_TICK_SIZE = 0.25
 MES_POINT_VALUE = 5.0
-MARGIN_PER_MES = float(os.getenv("REAL_TRADE_MARGIN_PER_MES", "500"))  # day trade margin (~$500 MES)
+MARGIN_PER_MES = float(os.getenv("REAL_TRADE_MARGIN_PER_MES", "700"))  # TS intraday margin $686.75/MES (Jan 2026)
 DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_DAILY_LOSS_LIMIT", "300"))  # max daily loss in $
 
 # SC Trail parameters
@@ -347,20 +348,23 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
 
 def _place_market_entry(setup_log_id, setup_name, direction, is_long,
                         account_id, es_price, stop_pts, target_pts):
-    """Place market entry + stop + target for 1 MES."""
+    """Place market entry + stop (+ optional target) for 1 MES.
+    When target_pts is None: trail-only mode (Opt2) — no target limit order placed.
+    """
     # Final safety check before placing order
     if not _validate_account_direction(account_id, is_long):
         return
 
     side = "Buy" if is_long else "Sell"
     exit_side = "Sell" if is_long else "Buy"
+    trail_only = target_pts is None  # Opt2: no target, trail stop only
 
     if is_long:
         es_stop = _round_mes(es_price - stop_pts)
-        es_target = _round_mes(es_price + (target_pts if target_pts else FIRST_TARGET_PTS))
+        es_target = None if trail_only else _round_mes(es_price + target_pts)
     else:
         es_stop = _round_mes(es_price + stop_pts)
-        es_target = _round_mes(es_price - (target_pts if target_pts else FIRST_TARGET_PTS))
+        es_target = None if trail_only else _round_mes(es_price - target_pts)
 
     # 1. Market entry
     entry_payload = {
@@ -402,23 +406,25 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
                f"Account: {account_id}\n"
                f"Side: {side} {QTY} {MES_SYMBOL} @ ~{es_price:.2f} Stop: {es_stop:.2f}")
 
-    # 3. Target limit
-    t1_payload = {
-        "AccountID": account_id,
-        "Symbol": MES_SYMBOL,
-        "Quantity": str(QTY),
-        "OrderType": "Limit",
-        "LimitPrice": str(es_target),
-        "TradeAction": exit_side,
-        "TimeInForce": {"Duration": "DAY"},
-        "Route": "Intelligent",
-    }
-    t1_resp = _ts_api("POST", "/orderexecution/orders", t1_payload, account_id)
-    t1_ok, t1_oid = _order_ok(t1_resp)
-    if not t1_ok:
-        t1_oid = None
-        print(f"[real-trader] target limit skipped (margin?): {setup_name} "
-              f"target={es_target:.2f}", flush=True)
+    # 3. Target limit (skip for trail-only / Opt2 — saves margin, lets runners run)
+    t1_oid = None
+    if not trail_only:
+        t1_payload = {
+            "AccountID": account_id,
+            "Symbol": MES_SYMBOL,
+            "Quantity": str(QTY),
+            "OrderType": "Limit",
+            "LimitPrice": str(es_target),
+            "TradeAction": exit_side,
+            "TimeInForce": {"Duration": "DAY"},
+            "Route": "Intelligent",
+        }
+        t1_resp = _ts_api("POST", "/orderexecution/orders", t1_payload, account_id)
+        t1_ok, t1_oid = _order_ok(t1_resp)
+        if not t1_ok:
+            t1_oid = None
+            print(f"[real-trader] target limit skipped (margin?): {setup_name} "
+                  f"target={es_target:.2f}", flush=True)
 
     order = {
         "setup_log_id": setup_log_id,
@@ -430,6 +436,7 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
         "stop_order_id": stop_oid,
         "current_stop": es_stop,
         "target_price": es_target,
+        "trail_only": trail_only,
         "status": "pending_entry",
         "fill_price": None,
         "max_favorable": 0.0,
@@ -443,14 +450,15 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
     _persist_order(setup_log_id)
 
     dir_str = "LONG" if is_long else "SHORT"
+    tgt_str = "TRAIL-ONLY" if trail_only else f"{es_target:.2f}"
     print(f"[real-trader] PLACED: {setup_name} {dir_str} {QTY} {MES_SYMBOL} "
-          f"@ ~{es_price:.2f} target={es_target:.2f} stop={es_stop:.2f} "
+          f"@ ~{es_price:.2f} target={tgt_str} stop={es_stop:.2f} "
           f"acct={account_id} ids=entry:{entry_oid}/stop:{stop_oid}/tgt:{t1_oid}",
           flush=True)
     _alert(f"[REAL-TRADE] {setup_name} PLACED\n"
            f"Side: {dir_str} | {QTY} {MES_SYMBOL} @ ~{es_price:.2f}\n"
            f"Account: {account_id}\n"
-           f"Target: {es_target:.2f} | Stop: {es_stop:.2f}")
+           f"Target: {tgt_str} | Stop: {es_stop:.2f}")
 
 
 def _place_limit_entry(setup_log_id, setup_name, direction, is_long,

@@ -11709,31 +11709,39 @@ DASH_HTML_TEMPLATE = """
         h += '<div class="stats-row"><span class="stats-label">Lines in Sand</span><span class="stats-value">' + s.lines_in_sand + '</span></div>';
       }
       
-      // Delta Decay Hedging — SPX, SPY, Combined (never mixed)
-      if (s.delta_decay_hedging) {
+      // Delta Decay Hedging — SPX, SPY, Combined (always show, never hide on null)
+      {
         const ddh = s.delta_decay_hedging;
-        const isNeg = ddh.includes('-') || ddh.startsWith('-');
-        h += '<div class="stats-row"><span class="stats-label">DD SPX</span><span class="stats-value ' + (isNeg ? 'red' : 'green') + '">' + ddh + '</span></div>';
-      }
-      if (s.spy_delta_decay_hedging) {
+        if (ddh) {
+          const isNeg = ddh.includes('-') || ddh.startsWith('-');
+          h += '<div class="stats-row"><span class="stats-label">DD SPX</span><span class="stats-value ' + (isNeg ? 'red' : 'green') + '">' + ddh + '</span></div>';
+        } else {
+          h += '<div class="stats-row"><span class="stats-label">DD SPX</span><span class="stats-value" style="color:var(--muted)">n/a</span></div>';
+        }
         const spyDd = s.spy_delta_decay_hedging;
-        const isNeg = spyDd.includes('-') || spyDd.startsWith('-');
-        h += '<div class="stats-row"><span class="stats-label">DD SPY</span><span class="stats-value ' + (isNeg ? 'red' : 'green') + '">' + spyDd + '</span></div>';
-      }
-      // Combined DD — sum of SPX + SPY (Apollo's method)
-      if (s.delta_decay_hedging || s.spy_delta_decay_hedging) {
-        const parseDd = (v) => { if (!v) return 0; return parseFloat(v.replace(/[$,]/g, '')) || 0; };
-        const spxVal = parseDd(s.delta_decay_hedging);
-        const spyVal = parseDd(s.spy_delta_decay_hedging);
-        const combined = spxVal + spyVal;
-        const cSign = combined >= 0 ? '' : '-';
-        const cAbs = Math.abs(combined);
-        let cStr;
-        if (cAbs >= 1e9) cStr = cSign + '$' + (cAbs / 1e9).toFixed(1) + 'B';
-        else if (cAbs >= 1e6) cStr = cSign + '$' + (cAbs / 1e6).toFixed(0) + 'M';
-        else cStr = cSign + '$' + cAbs.toLocaleString();
-        const cClr = combined < 0 ? 'red' : combined > 0 ? 'green' : '';
-        h += '<div class="stats-row"><span class="stats-label"><b>DD Combined</b></span><span class="stats-value ' + cClr + '"><b>' + cStr + '</b></span></div>';
+        if (spyDd) {
+          const isNeg = spyDd.includes('-') || spyDd.startsWith('-');
+          h += '<div class="stats-row"><span class="stats-label">DD SPY</span><span class="stats-value ' + (isNeg ? 'red' : 'green') + '">' + spyDd + '</span></div>';
+        } else {
+          h += '<div class="stats-row"><span class="stats-label">DD SPY</span><span class="stats-value" style="color:var(--muted)">n/a</span></div>';
+        }
+        // Combined DD — sum of SPX + SPY (Apollo's method)
+        const parseDd = (v) => { if (!v) return null; return parseFloat(v.replace(/[$,]/g, '')) || 0; };
+        const spxVal = parseDd(ddh);
+        const spyVal = parseDd(spyDd);
+        if (spxVal !== null || spyVal !== null) {
+          const combined = (spxVal || 0) + (spyVal || 0);
+          const cSign = combined >= 0 ? '' : '-';
+          const cAbs = Math.abs(combined);
+          let cStr;
+          if (cAbs >= 1e9) cStr = cSign + '$' + (cAbs / 1e9).toFixed(1) + 'B';
+          else if (cAbs >= 1e6) cStr = cSign + '$' + (cAbs / 1e6).toFixed(0) + 'M';
+          else cStr = cSign + '$' + cAbs.toLocaleString();
+          const cClr = combined < 0 ? 'red' : combined > 0 ? 'green' : '';
+          h += '<div class="stats-row"><span class="stats-label"><b>DD Combined</b></span><span class="stats-value ' + cClr + '"><b>' + cStr + '</b></span></div>';
+        } else {
+          h += '<div class="stats-row"><span class="stats-label"><b>DD Combined</b></span><span class="stats-value" style="color:var(--muted)">n/a</span></div>';
+        }
       }
       
       // Options Volume

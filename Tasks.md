@@ -47,7 +47,7 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 
 | # | Task | Priority | Details | Source |
 |---|------|----------|---------|--------|
-| R1 | **Gap-day charm delay** | HIGH | On gap days (opening >30 pts from prior close), delay charm-limit entries 30-60 min. Mar 23: all 4 morning losses = -51.9 pts. Low effort. | `research_discord_ideas_mar23.md` |
+| R1 | ~~Gap-day filter~~ | ~~HIGH~~ | DONE — Implemented as gap-up longs block (gap > +30 pts). See completion log. | DONE |
 | R2 | **Per-strike charm near spot as filter** | HIGH | Strongest SC differentiator: winners -8.3M, losers +10.2M. Needs work to convert to a filter. | MEMORY (SC grading v2) |
 | R3 | **ES Absorption redesign** | MEDIUM | Current design flaw: fires up to 40 bars after swing. User's correct model: high-volume bar IS the comparison point, fire immediately. Neither approach clearly superior in backtest. Deferred. | PROJECT_BRAIN |
 | R4 | **Fixed strike vol for vanna interpretation** | MEDIUM | Discord idea: vanna support only holds when fixed-strike vol is declining. Needs investigation. | `research_discord_ideas_mar23.md` |
@@ -74,6 +74,8 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 
 | Date | Task | Result |
 |------|------|--------|
+| 2026-03-25 | Gap-up longs filter (gap > +30 pts) | DONE — blocks longs all day on gap-up. Backtest: +290.9 pts saved, 112 trades. FOMC filter rejected (FOMC day = best day). |
+| 2026-03-25 | Combined DD into setup detector | DONE — SPX+SPY DD feeds DD Exhaustion. Boundary: Mar 25 (SPX-only before). |
 | 2026-03-25 | SPY DD capture (v2 worker + dashboard) | DONE — deployed, verify at market open (S1) |
 | 2026-03-24 | Charm S/R limit entry disabled | DONE — market orders beat all limit thresholds |
 | 2026-03-24 | V11 SC grade gate deployed | DONE — A+/A/B pass, C/LOG blocked |

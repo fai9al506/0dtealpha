@@ -2179,6 +2179,7 @@ def db_volland_stats() -> Optional[dict]:
         "target": None,
         "lines_in_sand": None,
         "delta_decay_hedging": None,
+        "spy_delta_decay_hedging": None,
         "opt_volume": None,
         "page_url": None,
         "has_statistics": False,
@@ -2208,6 +2209,12 @@ def db_volland_stats() -> Optional[dict]:
                 svb = statistics.get("spot_vol_beta")
                 if svb and isinstance(svb, dict):
                     stats["svb_correlation"] = svb.get("correlation")
+                # SPY statistics — separate key in payload, never mixed with SPX
+                spy_statistics = payload.get("spy_statistics", {})
+                if spy_statistics and isinstance(spy_statistics, dict):
+                    stats["spy_delta_decay_hedging"] = spy_statistics.get("delta_decay_hedging")
+                    stats["spy_paradigm"] = spy_statistics.get("paradigm")
+                    stats["spy_aggregatedCharm"] = spy_statistics.get("aggregatedCharm")
                 ts = row["ts"]
                 break
     
@@ -11702,11 +11709,31 @@ DASH_HTML_TEMPLATE = """
         h += '<div class="stats-row"><span class="stats-label">Lines in Sand</span><span class="stats-value">' + s.lines_in_sand + '</span></div>';
       }
       
-      // Delta Decay Hedging
+      // Delta Decay Hedging — SPX, SPY, Combined (never mixed)
       if (s.delta_decay_hedging) {
         const ddh = s.delta_decay_hedging;
         const isNeg = ddh.includes('-') || ddh.startsWith('-');
-        h += '<div class="stats-row"><span class="stats-label">DD Hedging</span><span class="stats-value ' + (isNeg ? 'red' : 'green') + '">' + ddh + '</span></div>';
+        h += '<div class="stats-row"><span class="stats-label">DD SPX</span><span class="stats-value ' + (isNeg ? 'red' : 'green') + '">' + ddh + '</span></div>';
+      }
+      if (s.spy_delta_decay_hedging) {
+        const spyDd = s.spy_delta_decay_hedging;
+        const isNeg = spyDd.includes('-') || spyDd.startsWith('-');
+        h += '<div class="stats-row"><span class="stats-label">DD SPY</span><span class="stats-value ' + (isNeg ? 'red' : 'green') + '">' + spyDd + '</span></div>';
+      }
+      // Combined DD — sum of SPX + SPY (Apollo's method)
+      if (s.delta_decay_hedging || s.spy_delta_decay_hedging) {
+        const parseDd = (v) => { if (!v) return 0; return parseFloat(v.replace(/[$,]/g, '')) || 0; };
+        const spxVal = parseDd(s.delta_decay_hedging);
+        const spyVal = parseDd(s.spy_delta_decay_hedging);
+        const combined = spxVal + spyVal;
+        const cSign = combined >= 0 ? '' : '-';
+        const cAbs = Math.abs(combined);
+        let cStr;
+        if (cAbs >= 1e9) cStr = cSign + '$' + (cAbs / 1e9).toFixed(1) + 'B';
+        else if (cAbs >= 1e6) cStr = cSign + '$' + (cAbs / 1e6).toFixed(0) + 'M';
+        else cStr = cSign + '$' + cAbs.toLocaleString();
+        const cClr = combined < 0 ? 'red' : combined > 0 ? 'green' : '';
+        h += '<div class="stats-row"><span class="stats-label"><b>DD Combined</b></span><span class="stats-value ' + cClr + '"><b>' + cStr + '</b></span></div>';
       }
       
       // Options Volume

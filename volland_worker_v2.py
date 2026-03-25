@@ -300,7 +300,8 @@ def run():
         page.set_default_timeout(90000)
 
         # Mutable capture state — reset each cycle, shared via closure
-        cycle = {"exposures": [], "paradigm": None, "spot_vol": None, "zero_captures": 0}
+        # paradigm_spx / paradigm_spy: separate dicts to avoid SPX/SPY confusion
+        cycle = {"exposures": [], "paradigm_spx": None, "paradigm_spy": None, "spot_vol": None, "zero_captures": 0}
 
         def handle_exposure(route, request):
             """Route handler: intercept exposure POST, fetch response, store both."""
@@ -342,18 +343,39 @@ def run():
                     pass
 
         def handle_response(response):
-            """Response handler: capture paradigm and spot-vol-beta GET endpoints."""
+            """Response handler: capture paradigm and spot-vol-beta GET endpoints.
+            SPX and SPY paradigm are stored SEPARATELY — never overwrite each other."""
             url = response.url
             if "/data/exposure" in url:
                 return  # Already handled by route handler
             try:
-                if "/data/paradigms/0dte" in url and response.status == 200:
-                    cycle["paradigm"] = json.loads(response.text())
-                    tgt = cycle['paradigm'].get('target')
+                if "/data/paradigms" in url and response.status == 200:
+                    data = json.loads(response.text())
+                    # Detect ticker from URL query param (e.g. ?ticker=SPY)
+                    ticker = "SPX"  # default
+                    url_upper = url.upper()
+                    if "TICKER=SPY" in url_upper:
+                        ticker = "SPY"
+                    elif "TICKER=SPX" in url_upper:
+                        ticker = "SPX"
+                    else:
+                        # Fallback: LIS price range (SPX ~5000-7000, SPY ~500-700)
+                        lis = data.get("lis")
+                        if isinstance(lis, list) and lis and isinstance(lis[0], (int, float)):
+                            ticker = "SPX" if lis[0] > 1500 else "SPY"
+
+                    if ticker == "SPY":
+                        cycle["paradigm_spy"] = data
+                    else:
+                        cycle["paradigm_spx"] = data
+
+                    tgt = data.get('target')
+                    dd = data.get('aggregatedDeltaDecay')
                     print(
-                        f"[capture] paradigm: {cycle['paradigm'].get('paradigm')} "
-                        f"lis={cycle['paradigm'].get('lis')}"
-                        f"{f' target={tgt}' if tgt is not None else ''}",
+                        f"[capture] paradigm({ticker}): {data.get('paradigm')} "
+                        f"lis={data.get('lis')}"
+                        f"{f' target={tgt}' if tgt is not None else ''}"
+                        f" dd={dd}",
                         flush=True,
                     )
                 elif "/data/volhacks/spot-vol-beta" in url and response.status == 200:
@@ -384,9 +406,10 @@ def run():
             pg.on("request", handle_request_diag)
 
         def do_full_capture():
-            """Navigate to workspace, wait, return deduped (exposures, paradigm, spot_vol)."""
+            """Navigate to workspace, wait, return deduped (exposures, paradigm_spx, paradigm_spy, spot_vol)."""
             cycle["exposures"] = []
-            cycle["paradigm"] = None
+            cycle["paradigm_spx"] = None
+            cycle["paradigm_spy"] = None
             cycle["spot_vol"] = None
             cycle["zero_captures"] = 0
             _diag_cycle_count["n"] += 1
@@ -427,11 +450,12 @@ def run():
             if zc > 0:
                 print(f"[capture] {zc} exposure API calls returned 0 pts", flush=True)
 
-            return list(seen.values()), cycle["paradigm"], cycle["spot_vol"]
+            return list(seen.values()), cycle["paradigm_spx"], cycle["paradigm_spy"], cycle["spot_vol"]
 
-        def save_cycle(exposures, paradigm, spot_vol):
+        def save_cycle(exposures, paradigm_spx, paradigm_spy, spot_vol):
             """Format, save to DB, log. Returns (stats, total_points, zero_exposures)."""
-            stats = format_statistics(paradigm, spot_vol)
+            stats = format_statistics(paradigm_spx, spot_vol)
+            spy_stats = format_statistics(paradigm_spy, None) if paradigm_spy else {}
 
             total_points = 0
             zero_exposures = []
@@ -458,6 +482,7 @@ def run():
                 "ts_utc": datetime.now(timezone.utc).isoformat(),
                 "page_url": WORKSPACE_URL,
                 "statistics": stats,
+                "spy_statistics": spy_stats,  # SPY paradigm data (DD, charm, LIS, etc.)
                 "exposure_points_saved": total_points,
                 "current_price": (
                     exposures[0]["current_price"] if exposures else None
@@ -477,12 +502,14 @@ def run():
 
             save_snapshot(payload)
 
+            spy_dd = spy_stats.get('delta_decay_hedging', 'N/A') if spy_stats else 'N/A'
             print(
                 f"[volland-v2] saved {payload['ts_utc']} "
                 f"exposures={len(exposures)} points={total_points} "
                 f"paradigm={stats.get('paradigm', 'N/A')} "
                 f"lis={stats.get('lines_in_sand', 'N/A')} "
-                f"charm={stats.get('aggregatedCharm', 'N/A')}",
+                f"charm={stats.get('aggregatedCharm', 'N/A')} "
+                f"spy_dd={spy_dd}",
                 flush=True,
             )
             return stats, total_points, zero_exposures
@@ -686,7 +713,8 @@ def run():
                     # Reload workspace so widgets are fresh (page goes stale overnight)
                     print("[sync] Refreshing workspace page...", flush=True)
                     cycle["exposures"] = []
-                    cycle["paradigm"] = None
+                    cycle["paradigm_spx"] = None
+                    cycle["paradigm_spy"] = None
                     cycle["spot_vol"] = None
                     cycle["zero_captures"] = 0
                     _diag_cycle_count["n"] += 1
@@ -756,7 +784,7 @@ def run():
                 # CAPTURE PHASE: full workspace load + save
                 # ══════════════════════════════════════════════════════
                 print("[volland-v2] Fetching workspace...", flush=True)
-                exposures, paradigm, spot_vol = do_full_capture()
+                exposures, paradigm_spx, paradigm_spy, spot_vol = do_full_capture()
 
                 # Update lastModified from captured data
                 for exp in reversed(exposures):
@@ -765,7 +793,7 @@ def run():
                         last_known_modified = lm
                         break
 
-                _stats, _total_pts, _zero_exps = save_cycle(exposures, paradigm, spot_vol)
+                _stats, _total_pts, _zero_exps = save_cycle(exposures, paradigm_spx, paradigm_spy, spot_vol)
 
                 # Track 0-point cycles during operating window (9:20+, not just 9:30+)
                 if _total_pts == 0 and market_open_now():

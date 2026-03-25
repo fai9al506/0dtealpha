@@ -166,6 +166,7 @@ th.sortable:hover{color:var(--text)}
 <script>
 let currentTab='chart',selectedSym=null,selected0DTE=null,data={};
 let lvlSort='gexdist',lvlSortAsc=true,lvlFilter='all';
+let showing0DTEHistory=false,dteHistDate='',dteHistTime='',dteHistData=null,dteHistTimes=[];
 
 function showTab(tab,el){
   currentTab=tab;
@@ -498,6 +499,118 @@ function select0DTE(sym){
   render();
 }
 
+async function toggle0DTEHistory(){
+  showing0DTEHistory=!showing0DTEHistory;
+  if(showing0DTEHistory&&!dteHistDate){
+    // Load available dates
+    try{
+      const r=await fetch('/api/stock-gex-live/0dte/history/dates').then(r=>r.json());
+      const dates=r.dates||[];
+      if(dates.length){
+        dteHistDate=dates[0]; // default to most recent
+        await load0DTEHistoryScans(dteHistDate);
+      }
+    }catch(e){console.error('History dates fetch error:',e)}
+  }
+  render();
+}
+
+async function load0DTEHistoryScans(d){
+  dteHistDate=d;
+  dteHistData=null;dteHistTimes=[];dteHistTime='';
+  try{
+    const r=await fetch('/api/stock-gex-live/0dte/history/scans?date='+d).then(r=>r.json());
+    dteHistTimes=r.times||[];
+    dteHistData=r.scans||{};
+    if(dteHistTimes.length)dteHistTime=dteHistTimes[dteHistTimes.length-1]; // default to last scan of day
+  }catch(e){console.error('History scans fetch error:',e)}
+  render();
+}
+
+function select0DTEHistTime(t){
+  dteHistTime=t;
+  render();
+}
+
+function render0DTEHistory(){
+  let h='';
+  // Date picker + time selector
+  h+='<div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap">';
+  h+='<label style="font-size:11px;color:var(--text-3)">Date:</label>';
+  h+='<input type="date" id="dteHistDatePick" value="'+dteHistDate+'" onchange="load0DTEHistoryScans(this.value)" style="background:var(--bg-3);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:12px;font-family:inherit">';
+  if(dteHistTimes.length){
+    h+='<label style="font-size:11px;color:var(--text-3)">Scan time (ET):</label>';
+    h+='<div style="display:flex;gap:4px;flex-wrap:wrap">';
+    for(const t of dteHistTimes){
+      const sel=t===dteHistTime;
+      h+='<button onclick="select0DTEHistTime(\\''+t+'\\')" style="background:'+(sel?'var(--blue)':'var(--bg-3)')+';border:1px solid '+(sel?'var(--blue)':'var(--border)')+';color:'+(sel?'#fff':'var(--text)')+';padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-family:var(--mono,monospace)">'+t+'</button>';
+    }
+    h+='</div>';
+  }
+  h+='</div>';
+
+  if(!dteHistData||!dteHistTime||!dteHistData[dteHistTime]){
+    h+='<div class="empty"><p class="c-muted">No scan data for this date/time</p></div>';
+    return h;
+  }
+
+  const levels=dteHistData[dteHistTime];
+  const syms=["SPX","SPY","QQQ","IWM"];
+
+  // Symbol cards
+  h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">';
+  for(const sym of syms){
+    const s=levels[sym];
+    if(!s){h+='<div class="card" style="opacity:0.4"><h3>'+sym+'</h3><p class="c-muted">No data</p></div>';continue;}
+    const sel=sym===selected0DTE;
+    const hn=s.highest_neg||0;
+    const dist=hn>0?((s.spot-hn)/hn*100):0;
+    const below=s.spot<hn;
+    const distCls=below?'c-red':(dist<1?'c-amber':'c-green');
+    const borderColor=sel?'var(--blue)':'var(--border)';
+    const bg=sel?'var(--blue-bg)':'var(--bg-1)';
+    const pf=s._passes_filter;
+
+    h+='<div class="card" onclick="select0DTE(\\''+sym+'\\')" style="cursor:pointer;border-color:'+borderColor+';background:'+bg+';padding:12px">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+    h+='<span style="font-size:14px;font-weight:700;color:var(--text)">'+sym+'</span>';
+    if(pf)h+='<span class="badge badge-wl">PASS</span>';
+    else if(below)h+='<span class="badge badge-fail">BELOW -GEX</span>';
+    h+='</div>';
+    h+='<div style="font-size:18px;font-weight:600;color:var(--text)">$'+s.spot.toFixed(2)+'</div>';
+    h+='<div style="display:flex;gap:12px;margin-top:6px;font-size:10px">';
+    h+='<span><span class="c-muted">-GEX</span> <span class="c-red">'+fmtK(hn)+'</span></span>';
+    h+='<span><span class="c-muted">+GEX</span> <span class="c-green">'+fmtK(s.lowest_pos||0)+'</span></span>';
+    h+='<span><span class="c-muted">Dist</span> <span class="'+distCls+'">'+(below?'':'+')+ dist.toFixed(1)+'%</span></span>';
+    h+='<span><span class="c-muted">R</span> <span style="color:'+((s.ratio||0)>=3?'var(--green)':'var(--text-3)')+'">'+(s.ratio||0).toFixed(1)+'x</span></span>';
+    h+='</div>';
+    h+='</div>';
+  }
+  h+='</div>';
+
+  // Selected symbol detail + chart
+  const s=levels[selected0DTE];
+  if(s){
+    const hn=s.highest_neg||0;
+    const dist=hn>0?((s.spot-hn)/hn*100):0;
+    const below=s.spot<hn;
+    const str=s.structure||'?';const strCls=str==='CLEAN'?'c-green':(str==='MIXED'?'c-amber':'c-red');
+
+    h+='<div class="info-grid" style="grid-template-columns:repeat(5,1fr)">';
+    h+='<div class="info-item"><div class="lbl">Spot</div><div class="val">$'+s.spot.toFixed(2)+'</div></div>';
+    h+='<div class="info-item"><div class="lbl">GEX Ratio</div><div class="val" style="color:'+((s.ratio||0)>=3?'var(--green)':'var(--red)')+'">'+(s.ratio||0).toFixed(1)+'x</div></div>';
+    h+='<div class="info-item"><div class="lbl">-GEX</div><div class="val c-red">'+fmtK(hn)+'</div></div>';
+    h+='<div class="info-item"><div class="lbl">+GEX</div><div class="val c-green">'+fmtK(s.lowest_pos||0)+'</div></div>';
+    h+='<div class="info-item"><div class="lbl">Spot vs -GEX</div><div class="val" style="color:'+(below?'var(--red)':(dist<1?'var(--amber)':'var(--green)'))+'">'+(below?'':'+')+ dist.toFixed(1)+'%</div></div>';
+    h+='</div>';
+
+    h+='<div id="dteChart" class="chart-container"></div>';
+    setTimeout(()=>drawGexChart('dteChart',selected0DTE,s),50);
+  }
+
+  return h;
+}
+
 function render0DTE(){
   const levels=data.dte_levels||{};
   const wl=data.dte_watchlist||{};
@@ -510,8 +623,23 @@ function render0DTE(){
   // Auto-select first symbol
   if(!selected0DTE||!levels[selected0DTE])selected0DTE=syms.find(s=>levels[s])||Object.keys(levels)[0];
 
+  // ── Status bar (last scan + history toggle) ──
+  const sts=data.dte_status||{};
+  const scanAt=sts.last_scan_at?new Date(sts.last_scan_at).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit'}):'--:--';
+  const scanCnt=sts.scan_count||0;
+  let html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:6px 10px;background:var(--bg-2);border-radius:6px;font-size:11px">';
+  html+='<div style="display:flex;gap:16px;align-items:center">';
+  html+='<span class="c-muted">Last scan: <span style="color:var(--text);font-weight:600">'+scanAt+' ET</span></span>';
+  html+='<span class="c-muted">Scans today: <span style="color:var(--text)">'+scanCnt+'</span></span>';
+  html+='</div>';
+  html+='<button onclick="toggle0DTEHistory()" style="background:var(--bg-3);border:1px solid var(--border);color:var(--text);padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer" id="btnDteHist">'+(showing0DTEHistory?'Live View':'History')+'</button>';
+  html+='</div>';
+
+  // ── History mode ──
+  if(showing0DTEHistory)return html+render0DTEHistory();
+
   // ── Symbol cards (top row) ──
-  let html='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">';
+  html+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">';
   for(const sym of syms){
     const s=levels[sym];
     if(!s){html+='<div class="card" style="opacity:0.4;cursor:default"><h3>'+sym+'</h3><p class="c-muted">No data</p></div>';continue;}

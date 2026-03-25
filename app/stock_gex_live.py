@@ -1552,11 +1552,9 @@ def _run_0dte_monitor_inner(now):
         watchlist = dict(_0dte_watchlist)
         active = list(_0dte_active_trades)
 
-    if not watchlist and not active:
-        return
-
-    # Fetch spots for all symbols we're tracking
-    all_syms = set(list(watchlist.keys()) + [t_["symbol"] for t_ in active])
+    # Fetch spots for ALL configured symbols (keeps page fresh between 30-min scans)
+    all_syms = set(list(_0DTE_CONFIG.keys()))
+    all_syms.update(t_["symbol"] for t_ in active)
     spots = {}
     for sym in all_syms:
         cfg = _0DTE_CONFIG.get(sym)
@@ -1565,7 +1563,17 @@ def _run_0dte_monitor_inner(now):
             if s:
                 spots[sym] = s
 
+    # Update spot prices in _0dte_levels so the page shows fresh prices
+    if spots:
+        with _lock:
+            for sym, spot in spots.items():
+                if sym in _0dte_levels:
+                    _0dte_levels[sym]["spot"] = round(spot, 2)
+
     if not spots:
+        return
+
+    if not watchlist and not active:
         return
 
     # ── Check active trades for exits ──
@@ -1818,6 +1826,71 @@ def get_0dte_status():
             "today_trades": _0dte_today_trades,
             "symbols": list(_0DTE_CONFIG.keys()),
         }
+
+
+def get_0dte_history_dates(days=30):
+    """Return list of dates that have 0DTE GEX scans."""
+    if not _engine:
+        return []
+    try:
+        with _engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT DISTINCT scan_date
+                FROM dte0_gex_levels
+                WHERE scan_date >= :d
+                ORDER BY scan_date DESC
+            """), {"d": date.today() - timedelta(days=days)}).mappings().all()
+            return [str(r["scan_date"]) for r in rows]
+    except Exception as e:
+        print(f"[0dte-gex] history dates error: {e}", flush=True)
+        return []
+
+
+def get_0dte_history_scans(scan_date_str):
+    """Return scan times + levels for a specific date.
+
+    Returns {times: ["10:00","10:30",...], scans: {"10:00": {sym: levels}, ...}}
+    """
+    if not _engine:
+        return {"times": [], "scans": {}}
+    try:
+        d = date.fromisoformat(scan_date_str)
+        with _engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT symbol, scan_ts, spot, levels, passes_filter
+                FROM dte0_gex_levels
+                WHERE scan_date = :d
+                ORDER BY scan_ts ASC
+            """), {"d": d}).mappings().all()
+
+        # Group by scan_ts (rounded to minute)
+        from collections import OrderedDict
+        scans = OrderedDict()
+        for r in rows:
+            ts = r["scan_ts"]
+            # Convert to ET string "HH:MM"
+            if hasattr(ts, "astimezone"):
+                ts_et = ts.astimezone(ET)
+            else:
+                from datetime import timezone
+                ts_et = ts.replace(tzinfo=timezone.utc).astimezone(ET)
+            time_key = ts_et.strftime("%H:%M")
+
+            if time_key not in scans:
+                scans[time_key] = {}
+            sym = r["symbol"]
+            lvls = json.loads(r["levels"]) if isinstance(r["levels"], str) else r["levels"]
+            if lvls:
+                lvls["_passes_filter"] = r["passes_filter"]
+                scans[time_key][sym] = lvls
+
+        return {
+            "times": list(scans.keys()),
+            "scans": dict(scans),
+        }
+    except Exception as e:
+        print(f"[0dte-gex] history scans error: {e}", flush=True)
+        return {"times": [], "scans": {}}
 
 
 def _load_latest_0dte_levels():

@@ -1786,10 +1786,10 @@ def _compute_daily_gap(current_spot: float) -> float | None:
         return None
     try:
         q = text("""
-            SELECT (payload->>'current_price')::float as close_price
+            SELECT spot as close_price
             FROM chain_snapshots
-            WHERE payload->>'current_price' IS NOT NULL
-              AND date(ts AT TIME ZONE 'US/Eastern') < :today
+            WHERE spot IS NOT NULL
+              AND date(ts AT TIME ZONE 'America/New_York') < :today
             ORDER BY ts DESC LIMIT 1
         """)
         with engine.begin() as conn:
@@ -3509,8 +3509,14 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 trade["_es_last_bar_idx"] = bidx
         else:
             # SPX setups: use session-derived cycle extremes
-            trade["_seen_low"] = min(trade.get("_seen_low", spx_cycle_low), spx_cycle_low)
-            trade["_seen_high"] = max(trade.get("_seen_high", spx_cycle_high), spx_cycle_high)
+            # Guard: reject cycle extremes that diverge >20 pts from spot (TS API data glitch)
+            # A real 20pt SPX move in 30s would be historic; anything beyond is bad data
+            _cl = spx_cycle_low if abs(spx_cycle_low - spot) <= 20 else spot
+            _ch = spx_cycle_high if abs(spx_cycle_high - spot) <= 20 else spot
+            if _cl != spx_cycle_low or _ch != spx_cycle_high:
+                print(f"[outcome] DATA GLITCH rejected: cycle_low={spx_cycle_low:.1f} cycle_high={spx_cycle_high:.1f} spot={spot:.1f}", flush=True)
+            trade["_seen_low"] = min(trade.get("_seen_low", _cl), _cl)
+            trade["_seen_high"] = max(trade.get("_seen_high", _ch), _ch)
 
         # Trailing stop setups: DD Exhaustion, GEX Long, AG Short
         # DD: continuous trail (activation=20, gap=5) — waits for confirmed move before trailing
@@ -3530,10 +3536,11 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         if _tp is not None:
             # Advance trail using cycle high (long) or cycle low (short)
             # ES-based setups: use ES seen_high/low from range bars (not SPX cycle)
+            # SPX setups: use guarded cycle extremes (_cl/_ch) to prevent data glitch trails
             if _es_based:
                 fav_price = trade.get("_seen_high", entry_price) if is_long else trade.get("_seen_low", entry_price)
             else:
-                fav_price = spx_cycle_high if is_long else spx_cycle_low
+                fav_price = _ch if is_long else _cl
             fav = (fav_price - entry_price) if is_long else (entry_price - fav_price)
             max_fav = trade.get("_dd_max_fav", 0.0)
             if fav > max_fav:
@@ -3556,9 +3563,9 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 while rung <= max_fav:
                     trail_lock = rung - _tp["lock_offset"]
                     rung += _tp["step"]
-            # Track T1 milestone — logged for analysis (not used in P&L calc)
+            # Track T1 hit (+10pt) for split-target P&L (all Flow B setups)
             if max_fav >= 10 and not trade.get("_t1_hit"):
-                trade["_t1_hit"] = True  # informational only
+                trade["_t1_hit"] = True
             if trail_lock is not None:
                 # Move stop to lock-in level
                 if is_long:
@@ -3595,10 +3602,11 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                     pass
             # Check trailing stop hit using cycle extreme (not just current price)
             # ES-based setups: use ES seen_low/high from range bars
+            # SPX setups: use guarded _cl/_ch (same glitch protection as seen_low/high)
             if _es_based:
                 stop_check = trade.get("_seen_low", entry_price) if is_long else trade.get("_seen_high", entry_price)
             else:
-                stop_check = spx_cycle_low if is_long else spx_cycle_high
+                stop_check = _cl if is_long else _ch
             if is_long and stop_check <= stop_lvl:
                 result_type = "WIN" if stop_lvl >= entry_price else "LOSS"
                 pnl = stop_lvl - entry_price
@@ -3638,17 +3646,13 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 pnl = entry_price - check_price
 
         if result_type:
-            # No T1/T2 averaging — that's a broker execution concept (auto_trader).
-            # Theoretical tracking uses raw P&L: trail exit, target, stop, or mark-to-market.
-            pnl = round(pnl, 1)
-
-            # Sanity: P&L should never exceed max favorable excursion for trailing setups
-            # Catches data glitches in spot/cycle_low that produce impossible outcomes
-            if _tp is not None:
-                max_fav = trade.get("_dd_max_fav", 0.0)
-                if pnl > 0 and pnl > max_fav + 2:
-                    print(f"[outcome] WARNING: {setup_name} pnl {pnl:+.1f} exceeds max_fav {max_fav:.1f} — capping at max_fav", flush=True)
-                    pnl = round(max_fav, 1)
+            # Split-target P&L: all trailing setups use Flow B (T1=+10, T2=trail)
+            # If T1 was hit, overall P&L = average of T1 (+10) and T2 (trail exit)
+            if trade.get("_t1_hit"):
+                pnl = round((10.0 + pnl) / 2, 1)  # T2 pnl already computed above
+                result_type = "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "EXPIRED")
+            else:
+                pnl = round(pnl, 1)
             elapsed_min = int(elapsed)
             trade["close_price"] = check_price
 
@@ -9949,21 +9953,21 @@ def api_setup_daily_gaps():
         with engine.begin() as conn:
             rows = conn.execute(text("""
                 WITH closes AS (
-                    SELECT DISTINCT ON (date(ts AT TIME ZONE 'US/Eastern'))
-                        date(ts AT TIME ZONE 'US/Eastern') as trade_date,
-                        (payload->>'current_price')::float as price
+                    SELECT DISTINCT ON (date(ts AT TIME ZONE 'America/New_York'))
+                        date(ts AT TIME ZONE 'America/New_York') as trade_date,
+                        spot as price
                     FROM chain_snapshots
-                    WHERE payload->>'current_price' IS NOT NULL
-                    ORDER BY date(ts AT TIME ZONE 'US/Eastern'), ts DESC
+                    WHERE spot IS NOT NULL
+                    ORDER BY date(ts AT TIME ZONE 'America/New_York'), ts DESC
                 ),
                 opens AS (
-                    SELECT DISTINCT ON (date(ts AT TIME ZONE 'US/Eastern'))
-                        date(ts AT TIME ZONE 'US/Eastern') as trade_date,
-                        (payload->>'current_price')::float as price
+                    SELECT DISTINCT ON (date(ts AT TIME ZONE 'America/New_York'))
+                        date(ts AT TIME ZONE 'America/New_York') as trade_date,
+                        spot as price
                     FROM chain_snapshots
-                    WHERE payload->>'current_price' IS NOT NULL
-                      AND (ts AT TIME ZONE 'US/Eastern')::time >= '09:30'
-                    ORDER BY date(ts AT TIME ZONE 'US/Eastern'), ts ASC
+                    WHERE spot IS NOT NULL
+                      AND (ts AT TIME ZONE 'America/New_York')::time >= '09:30'
+                    ORDER BY date(ts AT TIME ZONE 'America/New_York'), ts ASC
                 )
                 SELECT o.trade_date,
                        o.price - c.price as gap

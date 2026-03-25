@@ -3646,9 +3646,10 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 pnl = entry_price - check_price
 
         if result_type:
-            # Split-target P&L: all trailing setups use Flow B (T1=+10, T2=trail)
-            # If T1 was hit, overall P&L = average of T1 (+10) and T2 (trail exit)
-            if trade.get("_t1_hit"):
+            # Split-target P&L: trailing setups use Flow B (T1=+10, T2=trail)
+            # SC uses Opt2 (trail-only, no T1 split) — raw P&L, no averaging
+            # Other trailing setups still use Opt3 (T1+T2 averaged)
+            if trade.get("_t1_hit") and setup_name != "Skew Charm":
                 pnl = round((10.0 + pnl) / 2, 1)  # T2 pnl already computed above
                 result_type = "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "EXPIRED")
             else:

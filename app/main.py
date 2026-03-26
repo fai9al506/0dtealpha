@@ -3400,23 +3400,9 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
     if not spot:
         return
 
-    # Auto-trade: poll broker for order fills
-    try:
-        from app import auto_trader
-        auto_trader.poll_order_status()
-    except Exception:
-        pass
-    try:
-        from app import options_trader
-        options_trader.poll_order_status()
-        options_trader.reconcile_with_broker()
-    except Exception as _opt_poll_err:
-        print(f"[options] poll/reconcile error: {_opt_poll_err}", flush=True)
-    try:
-        from app import real_trader
-        real_trader.poll_order_status()
-    except Exception:
-        pass
+    # NOTE: broker polling removed from here — runs on dedicated scheduler jobs:
+    # _real_trade_fast_poll (3s), auto_trade_orphan (5m), options_poll (below).
+    # Polling here caused run_market_job to exceed 55s timeout (4 brokers × multiple API calls).
 
     from app.setup_detector import format_setup_outcome
 
@@ -6066,8 +6052,10 @@ def start_scheduler():
         try:
             ts_str = last_run_status.get("ts", "")
             if ts_str:
+                # fmt_et produces "2026-03-26 15:01 EDT" — strip timezone, parse date+time
+                _ts_clean = re.sub(r'\s+[A-Z]{2,4}$', '', ts_str)
                 from datetime import datetime as _dt
-                last_ts = _dt.strptime(ts_str, "%Y-%m-%d %H:%M:%S ET").replace(
+                last_ts = _dt.strptime(_ts_clean, "%Y-%m-%d %H:%M").replace(
                     tzinfo=NY)
                 age_s = (now_et() - last_ts).total_seconds()
                 if age_s > 90:
@@ -6088,6 +6076,24 @@ def start_scheduler():
                 id="pipeline_watchdog", coalesce=True, max_instances=1)
     sch.add_job(_auto_trade_orphan_check, "interval", minutes=5,
                 id="auto_trade_orphan", coalesce=True, max_instances=1)
+    # Dedicated broker polling jobs (moved out of run_market_job to avoid timeout)
+    def _broker_poll():
+        t = now_et().time()
+        if not (dtime(9, 30) <= t <= dtime(16, 5)):
+            return
+        try:
+            from app import auto_trader
+            auto_trader.poll_order_status()
+        except Exception:
+            pass
+        try:
+            from app import options_trader
+            options_trader.poll_order_status()
+            options_trader.reconcile_with_broker()
+        except Exception:
+            pass
+    sch.add_job(_broker_poll, "interval", seconds=30,
+                id="broker_poll", coalesce=True, max_instances=1)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,
                 id="setup_eod", coalesce=True, max_instances=1)
     sch.add_job(fetch_economic_calendar, "cron", day_of_week="mon", hour=8, minute=0,

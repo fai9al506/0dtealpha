@@ -601,12 +601,12 @@ def _save_levels(symbol, levels, exp, passes, reason):
 
 
 def _save_trade(trade):
-    """Save trade to DB."""
+    """Save trade to DB. Stores DB id back into trade dict."""
     if not _engine:
         return
     try:
         with _engine.begin() as conn:
-            conn.execute(text("""
+            result = conn.execute(text("""
                 INSERT INTO stock_gex_live_trades
                 (symbol, tier, grade, trade_date, entry_ts, entry_price, entry_spot,
                  strike, expiration, call_bid, call_ask, call_delta, call_iv,
@@ -616,6 +616,7 @@ def _save_trade(trade):
                         :strike, :exp, :cb, :ca, :cd, :civ,
                         :ratio, :zw, :hn, :lp,
                         :nl, :pl, :t1, :t2, 'open')
+                RETURNING id
             """), {
                 "sym": trade["symbol"], "tier": trade.get("tier", "B"),
                 "grade": trade.get("grade", "B"),
@@ -631,34 +632,60 @@ def _save_trade(trade):
                 "pl": json.dumps(trade.get("pos_levels", [])),
                 "t1": trade["t1_price"], "t2": trade["t2_price"],
             })
+            row = result.fetchone()
+            if row:
+                trade["db_id"] = row[0]
     except Exception as e:
         print(f"[stock-gex-live] trade save error: {e}", flush=True)
 
 
 def _update_trade_exit(trade):
-    """Update trade with exit details."""
+    """Update trade with exit details. Uses db_id for precise targeting."""
     if not _engine:
         return
     try:
+        db_id = trade.get("db_id")
         with _engine.begin() as conn:
-            conn.execute(text("""
-                UPDATE stock_gex_live_trades
-                SET exit_ts = :ets, exit_price = :ep, exit_spot = :es,
-                    exit_call_bid = :ecb, exit_call_ask = :eca,
-                    exit_reason = :er, option_pnl_pct = :opnl,
-                    stock_pnl_pct = :spnl, hold_minutes = :hm,
-                    status = 'closed'
-                WHERE symbol = :sym AND trade_date = :td AND status = 'open'
-            """), {
-                "ets": trade["exit_ts"], "ep": trade["exit_price"],
-                "es": trade["exit_spot"],
-                "ecb": trade.get("exit_call_bid"), "eca": trade.get("exit_call_ask"),
-                "er": trade["exit_reason"],
-                "opnl": trade.get("option_pnl_pct"),
-                "spnl": trade.get("stock_pnl_pct"),
-                "hm": trade.get("hold_minutes"),
-                "sym": trade["symbol"], "td": date.today(),
-            })
+            if db_id:
+                # Precise update by primary key
+                conn.execute(text("""
+                    UPDATE stock_gex_live_trades
+                    SET exit_ts = :ets, exit_price = :ep, exit_spot = :es,
+                        exit_call_bid = :ecb, exit_call_ask = :eca,
+                        exit_reason = :er, option_pnl_pct = :opnl,
+                        stock_pnl_pct = :spnl, hold_minutes = :hm,
+                        status = 'closed'
+                    WHERE id = :id
+                """), {
+                    "ets": trade["exit_ts"], "ep": trade["exit_price"],
+                    "es": trade["exit_spot"],
+                    "ecb": trade.get("exit_call_bid"), "eca": trade.get("exit_call_ask"),
+                    "er": trade["exit_reason"],
+                    "opnl": trade.get("option_pnl_pct"),
+                    "spnl": trade.get("stock_pnl_pct"),
+                    "hm": trade.get("hold_minutes"),
+                    "id": db_id,
+                })
+            else:
+                # Fallback for trades without db_id (legacy)
+                conn.execute(text("""
+                    UPDATE stock_gex_live_trades
+                    SET exit_ts = :ets, exit_price = :ep, exit_spot = :es,
+                        exit_call_bid = :ecb, exit_call_ask = :eca,
+                        exit_reason = :er, option_pnl_pct = :opnl,
+                        stock_pnl_pct = :spnl, hold_minutes = :hm,
+                        status = 'closed'
+                    WHERE symbol = :sym AND trade_date = :td AND status = 'open'
+                """), {
+                    "ets": trade["exit_ts"], "ep": trade["exit_price"],
+                    "es": trade["exit_spot"],
+                    "ecb": trade.get("exit_call_bid"), "eca": trade.get("exit_call_ask"),
+                    "er": trade["exit_reason"],
+                    "opnl": trade.get("option_pnl_pct"),
+                    "spnl": trade.get("stock_pnl_pct"),
+                    "hm": trade.get("hold_minutes"),
+                    "sym": trade["symbol"], "td": trade.get("trade_date", date.today()),
+                })
     except Exception as e:
         print(f"[stock-gex-live] trade update error: {e}", flush=True)
 
@@ -993,8 +1020,14 @@ def _run_spot_monitor_inner(now):
             "neg_levels": levels.get("neg_levels", []),
             "pos_levels": levels.get("pos_levels", []),
             "t1_price": levels["highest_neg"],  # T1 = recover to -GEX
-            "t2_price": levels["lowest_pos"],    # T2 = reach +GEX magnet
+            "t2_price": levels["lowest_pos"] if levels["lowest_pos"] > spot
+                        else levels["highest_neg"],  # T2 = +GEX magnet (must be above spot, fallback to T1)
         }
+
+        # Sanity: skip if T1 is already at or below spot (would exit immediately)
+        if spot >= trade["t1_price"]:
+            print(f"[stock-gex-live] SKIP {sym}: spot ${spot:.2f} already >= T1 ${trade['t1_price']:.0f}", flush=True)
+            continue
 
         _save_trade(trade)
 
@@ -1046,6 +1079,11 @@ def run_eod_summary():
         trade["exit_ts"] = now
         trade["exit_reason"] = "EOD"
         trade["exit_spot"] = trade.get("entry_spot", 0)
+        trade["option_pnl_pct"] = 0.0
+        trade["stock_pnl_pct"] = 0.0
+        trade["hold_minutes"] = int((now - trade["entry_ts"]).total_seconds() / 60) if trade.get("entry_ts") else 0
+        if "trade_date" not in trade and trade.get("entry_ts"):
+            trade["trade_date"] = trade["entry_ts"].date()
         _update_trade_exit(trade)
         with _lock:
             _active_trades.remove(trade)
@@ -1220,10 +1258,49 @@ def init(engine, api_get_fn, send_telegram_fn=None):
     _load_latest_levels()
     _0dte_db_init()
     _load_latest_0dte_levels()
+    _close_stale_trades()
 
     print(f"[stock-gex-live] initialized. {len(STOCKS)} stocks, "
           f"ratio>{MIN_GEX_RATIO}, entry=-GEX-{ENTRY_OFFSET_PCT}%", flush=True)
     print(f"[0dte-gex] initialized. {len(_0DTE_CONFIG)} symbols: {list(_0DTE_CONFIG.keys())}", flush=True)
+
+
+def _close_stale_trades():
+    """Close any trades from previous days that were never closed (crash recovery)."""
+    if not _engine:
+        return
+    today = date.today()
+    try:
+        with _engine.begin() as conn:
+            # Stock GEX trades
+            result = conn.execute(text("""
+                UPDATE stock_gex_live_trades
+                SET exit_reason = 'EXPIRED', option_pnl_pct = -100.0,
+                    stock_pnl_pct = 0, hold_minutes = 0,
+                    status = 'closed', exit_ts = NOW(), exit_spot = entry_spot
+                WHERE status = 'open' AND trade_date < :today
+                RETURNING id, symbol
+            """), {"today": today})
+            closed = result.fetchall()
+            if closed:
+                print(f"[stock-gex-live] closed {len(closed)} stale trades: "
+                      f"{[(r[0], r[1]) for r in closed]}", flush=True)
+
+            # 0DTE trades
+            result2 = conn.execute(text("""
+                UPDATE dte0_gex_trades
+                SET exit_reason = 'EXPIRED', option_pnl_pct = -100.0,
+                    stock_pnl_pct = 0, hold_minutes = 0,
+                    status = 'closed', exit_ts = NOW(), exit_spot = entry_spot
+                WHERE status = 'open' AND trade_date < :today
+                RETURNING id, symbol
+            """), {"today": today})
+            closed2 = result2.fetchall()
+            if closed2:
+                print(f"[0dte-gex] closed {len(closed2)} stale trades: "
+                      f"{[(r[0], r[1]) for r in closed2]}", flush=True)
+    except Exception as e:
+        print(f"[stock-gex-live] stale trade cleanup error: {e}", flush=True)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -1353,12 +1430,12 @@ def _save_0dte_levels(symbol, levels, exp, passes, reason):
 
 
 def _save_0dte_trade(trade):
-    """Save 0DTE trade to DB."""
+    """Save 0DTE trade to DB. Stores DB id back into trade dict."""
     if not _engine:
         return
     try:
         with _engine.begin() as conn:
-            conn.execute(text("""
+            result = conn.execute(text("""
                 INSERT INTO dte0_gex_trades
                 (symbol, grade, trade_date, entry_ts, entry_price, entry_spot,
                  strike, expiration, call_bid, call_ask, call_delta, call_iv,
@@ -1368,6 +1445,7 @@ def _save_0dte_trade(trade):
                         :strike, :exp, :cb, :ca, :cd, :civ,
                         :ratio, :zw, :hn, :lp,
                         :nl, :pl, :t1, :t2, 'open')
+                RETURNING id
             """), {
                 "sym": trade["symbol"], "grade": trade.get("grade", "B"),
                 "td": date.today(),
@@ -1382,34 +1460,58 @@ def _save_0dte_trade(trade):
                 "pl": json.dumps(trade.get("pos_levels", [])),
                 "t1": trade["t1_price"], "t2": trade["t2_price"],
             })
+            row = result.fetchone()
+            if row:
+                trade["db_id"] = row[0]
     except Exception as e:
         print(f"[0dte-gex] trade save error: {e}", flush=True)
 
 
 def _update_0dte_trade_exit(trade):
-    """Update 0DTE trade with exit details."""
+    """Update 0DTE trade with exit details. Uses db_id for precise targeting."""
     if not _engine:
         return
     try:
+        db_id = trade.get("db_id")
         with _engine.begin() as conn:
-            conn.execute(text("""
-                UPDATE dte0_gex_trades
-                SET exit_ts = :ets, exit_price = :ep, exit_spot = :es,
-                    exit_call_bid = :ecb, exit_call_ask = :eca,
-                    exit_reason = :er, option_pnl_pct = :opnl,
-                    stock_pnl_pct = :spnl, hold_minutes = :hm,
-                    status = 'closed'
-                WHERE symbol = :sym AND trade_date = :td AND status = 'open'
-            """), {
-                "ets": trade["exit_ts"], "ep": trade["exit_price"],
-                "es": trade["exit_spot"],
-                "ecb": trade.get("exit_call_bid"), "eca": trade.get("exit_call_ask"),
-                "er": trade["exit_reason"],
-                "opnl": trade.get("option_pnl_pct"),
-                "spnl": trade.get("stock_pnl_pct"),
-                "hm": trade.get("hold_minutes"),
-                "sym": trade["symbol"], "td": date.today(),
-            })
+            if db_id:
+                conn.execute(text("""
+                    UPDATE dte0_gex_trades
+                    SET exit_ts = :ets, exit_price = :ep, exit_spot = :es,
+                        exit_call_bid = :ecb, exit_call_ask = :eca,
+                        exit_reason = :er, option_pnl_pct = :opnl,
+                        stock_pnl_pct = :spnl, hold_minutes = :hm,
+                        status = 'closed'
+                    WHERE id = :id
+                """), {
+                    "ets": trade["exit_ts"], "ep": trade["exit_price"],
+                    "es": trade["exit_spot"],
+                    "ecb": trade.get("exit_call_bid"), "eca": trade.get("exit_call_ask"),
+                    "er": trade["exit_reason"],
+                    "opnl": trade.get("option_pnl_pct"),
+                    "spnl": trade.get("stock_pnl_pct"),
+                    "hm": trade.get("hold_minutes"),
+                    "id": db_id,
+                })
+            else:
+                conn.execute(text("""
+                    UPDATE dte0_gex_trades
+                    SET exit_ts = :ets, exit_price = :ep, exit_spot = :es,
+                        exit_call_bid = :ecb, exit_call_ask = :eca,
+                        exit_reason = :er, option_pnl_pct = :opnl,
+                        stock_pnl_pct = :spnl, hold_minutes = :hm,
+                        status = 'closed'
+                    WHERE symbol = :sym AND trade_date = :td AND status = 'open'
+                """), {
+                    "ets": trade["exit_ts"], "ep": trade["exit_price"],
+                    "es": trade["exit_spot"],
+                    "ecb": trade.get("exit_call_bid"), "eca": trade.get("exit_call_ask"),
+                    "er": trade["exit_reason"],
+                    "opnl": trade.get("option_pnl_pct"),
+                    "spnl": trade.get("stock_pnl_pct"),
+                    "hm": trade.get("hold_minutes"),
+                    "sym": trade["symbol"], "td": trade.get("trade_date", date.today()),
+                })
     except Exception as e:
         print(f"[0dte-gex] trade update error: {e}", flush=True)
 
@@ -1692,8 +1794,14 @@ def _run_0dte_monitor_inner(now):
             "neg_levels": levels.get("neg_levels", []),
             "pos_levels": levels.get("pos_levels", []),
             "t1_price": levels["highest_neg"],
-            "t2_price": levels["lowest_pos"],
+            "t2_price": levels["lowest_pos"] if levels["lowest_pos"] > spot
+                        else levels["highest_neg"],  # T2 must be above spot
         }
+
+        # Sanity: skip if T1 already at or below spot
+        if spot >= trade["t1_price"]:
+            print(f"[0dte-gex] SKIP {sym}: spot ${spot:.2f} already >= T1 ${trade['t1_price']:.0f}", flush=True)
+            continue
 
         _save_0dte_trade(trade)
 
@@ -1739,6 +1847,11 @@ def run_0dte_eod_summary():
         trade["exit_ts"] = now
         trade["exit_reason"] = "EOD"
         trade["exit_spot"] = trade.get("entry_spot", 0)
+        trade["option_pnl_pct"] = 0.0
+        trade["stock_pnl_pct"] = 0.0
+        trade["hold_minutes"] = int((now - trade["entry_ts"]).total_seconds() / 60) if trade.get("entry_ts") else 0
+        if "trade_date" not in trade and trade.get("entry_ts"):
+            trade["trade_date"] = trade["entry_ts"].date()
         _update_0dte_trade_exit(trade)
         with _lock:
             _0dte_active_trades.remove(trade)

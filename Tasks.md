@@ -35,7 +35,7 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 
 | # | Task | Priority | Details | Source |
 |---|------|----------|---------|--------|
-| B1 | **SPY DD into setup detector** | HIGH | Feed combined DD (SPX+SPY) to `evaluate_dd_exhaustion()`. Stronger combined signal = better DD Exhaustion triggers. | `project_spx_spy_dd_combined.md` |
+| ~~B1~~ | ~~SPY DD into setup detector~~ | ~~HIGH~~ | DONE — Combined DD (SPX+SPY) feeds DD Exhaustion. Deployed Mar 25. See completion log. | DONE |
 | B2 | **Charm S/R as FILTER (not entry)** | HIGH | Limit entry disabled (44% fill rate), but charm S/R range could work as a quality filter — block entries when range is unfavorable. Needs research first. | PROJECT_BRAIN |
 | B3 | **0DTE GEX tab on Stock GEX Live page** | HIGH | Add SPX/SPY/QQQ/IWM 0DTE chains to `/stock-gex-live`. Different from stocks: same-day exp, SPXW symbol, wider strikes. Verify with live market. | `project_0dte_gex_tab.md` |
 | B4 | **DD alignment boost (V4) for filter** | MEDIUM | SC + DD_aligned + no toxic paradigm = 85.7% WR, PF 6.44. Three options: (A) SC DD-Aligned Only, (B) Hybrid V10 + DD gate on SC, (C) keep V10. User interested but undecided. Needs 50+ days data. | PROJECT_BRAIN |
@@ -43,6 +43,7 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 | B6 | **AI Copilot — Claude Code skills** | MEDIUM | `/morning-brief` (10 AM market read), `/review-trades` (EOD analysis), `/check-discord` (filter actionable info). Zero extra cost, uses existing Claude Code subscription. | `project_ai_copilot.md` |
 | B7 | **IBKR Cash Account connector** | LOW | Build IB Gateway + ibapi connector for IBKR cash account (U10235312). Starting capital $5,000. No PDT rule. Infrastructure not yet built. | `project_cash_account_plan.md` |
 | B11 | **Autonomous Copilot Worker** | MEDIUM | `copilot_worker.py` Railway service: collects market data (DD, paradigm, charm, gap, signals) + Discord messages, calls Claude API for analysis, sends bias/actionable calls to Telegram every 30 min during market hours. Cost ~$0.40-4/day. Needs: Claude API key, Telegram channel, periodic Discord export or bot. Design in `copilot_market_rules.md`. | Session 36, Mar 25 |
+| B12 | **Discord Live Monitor (self-bot)** | HIGH | Read-only Discord gateway listener using user token. Monitors `#volland-daytrading-central` + `#0dte-alerts`. Parses Apollo/LordHelmet/Wizard messages for vol flow, DD calls, levels, bias. Feeds into Copilot Worker (B11). Raw WebSocket approach (no library), proper Identify with auto-fetched build number, residential IP. Detection risk: very low (read-only = identical to browser tab). Token from browser DevTools. Run locally or Railway. | Session 44, Mar 26 |
 | B8 | **SB10 Absorption recalibration** | LOW | Only 10 signals in 56 days — needs multiplier recalibration (1.3x-1.5x) for 10-pt range bars. | `project_sb_absorption.md` |
 | B9 | **FOMC Event Day Filter** | LOW | Known FOMC dates = no trading or reduced sizing. Low effort (date list check). | `research_discord_ideas_mar23.md` |
 | B10 | **SPX GEX Bounce — full study** | LOW | Complete SPY/QQQ/IWM downloads, run dip study on all 4, test 10:00-13:00 time filter, calculate actual options P&L (not just pts). | `project_spx_gex_bounce.md` |

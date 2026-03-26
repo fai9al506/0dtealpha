@@ -6169,8 +6169,32 @@ def start_scheduler():
                     minutes=5, id="stock_gex_spot", coalesce=True, max_instances=1)
     except Exception as _gex_err:
         print(f"[stock-gex] scheduler error (non-fatal): {_gex_err}", flush=True)
-    # Stock GEX live scanner — DISABLED (redundant, was causing API overload)
-    # TODO: merge alert logic into stock_gex_scanner if needed
+    # Stock GEX live — spot monitor (exit checks) + EOD summaries
+    try:
+        from app import stock_gex_live
+        # Spot monitor: check active trades for exits every 2 min during market hours
+        def _stock_gex_live_monitor():
+            t = now_et().time()
+            if not (dtime(9, 30) <= t <= dtime(16, 0)):
+                return
+            stock_gex_live.run_spot_monitor()
+        sch.add_job(_stock_gex_live_monitor, "interval", minutes=2,
+                    id="stock_gex_live_monitor", coalesce=True, max_instances=1)
+        # 0DTE monitor: same interval
+        def _0dte_gex_monitor():
+            t = now_et().time()
+            if not (dtime(9, 30) <= t <= dtime(16, 0)):
+                return
+            stock_gex_live.run_0dte_monitor()
+        sch.add_job(_0dte_gex_monitor, "interval", minutes=2,
+                    id="0dte_gex_monitor", coalesce=True, max_instances=1)
+        # EOD summaries: close remaining trades + send summary
+        sch.add_job(stock_gex_live.run_eod_summary, "cron", hour=16, minute=5,
+                    timezone=NY, id="stock_gex_live_eod", coalesce=True, max_instances=1)
+        sch.add_job(stock_gex_live.run_0dte_eod_summary, "cron", hour=16, minute=5,
+                    timezone=NY, id="0dte_gex_eod", coalesce=True, max_instances=1)
+    except Exception as _gex_live_err:
+        print(f"[stock-gex-live] scheduler error (non-fatal): {_gex_live_err}", flush=True)
     sch.start()
     print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min; ES delta save every", SAVE_EVERY_MIN, "min", flush=True)
     return sch
@@ -6233,14 +6257,12 @@ def on_startup():
         stock_gex_init(engine, api_get, send_telegram)
     except Exception as e:
         print(f"[stock-gex] init error (non-fatal): {e}", flush=True)
-    # Stock GEX live scanner DISABLED — its GEX scans are redundant with scanner above.
-    # Spot monitoring moved into stock_gex_scanner.run_spot_monitor() (batch quotes).
-    # TODO: merge live alert logic into scanner if needed.
-    # try:
-    #     from app.stock_gex_live import init as stock_gex_live_init
-    #     stock_gex_live_init(engine, api_get, send_telegram_stock_gex)
-    # except Exception as e:
-    #     print(f"[stock-gex-live] init error (non-fatal): {e}", flush=True)
+    # Stock GEX live — trade monitoring + EOD (GEX scans still from scanner above)
+    try:
+        from app.stock_gex_live import init as stock_gex_live_init
+        stock_gex_live_init(engine, api_get, send_telegram_stock_gex)
+    except Exception as e:
+        print(f"[stock-gex-live] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)
     try:
         from app.dashboard_v2 import init as dashboard_v2_init

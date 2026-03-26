@@ -1360,9 +1360,9 @@ def _restore_open_trades():
                 continue
 
             # Rebuild the result_data dict needed by _compute_setup_levels
-            # For ES Absorption, extract bar_idx from abs_details JSONB
+            # For ES/SB2 Absorption, extract bar_idx from abs_details JSONB
             _abs_bar_idx = None
-            if setup_name == "ES Absorption":
+            if setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption"):
                 _ad = entry.get("abs_details")
                 if isinstance(_ad, str):
                     try:
@@ -1670,8 +1670,8 @@ def log_setup(result_wrapper):
                     insert_params.setdefault(_req_key, None)
                 # Overvix (VIX - VIX3M) — V8 Smart VIX Gate
                 insert_params["overvix"] = _overvix
-                # Auto-populate comments and abs_details for ES Absorption
-                if setup_name == "ES Absorption" and not insert_params.get("comments"):
+                # Auto-populate comments and abs_details for ES/SB2 Absorption
+                if setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption") and not insert_params.get("comments"):
                     _parts = [
                         f"Vol {r.get('abs_vol_ratio', 0):.1f}x",
                         f"Div {r.get('div_raw', 0)}/4",

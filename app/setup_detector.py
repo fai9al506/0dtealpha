@@ -2215,7 +2215,7 @@ def evaluate_sb2_absorption(bars, volland_stats, settings, spx_spot=None, cooldo
 
 
 def should_notify_sb2_abs(result):
-    """Cooldown gate for SB2 Absorption. Bar-index based (10 bars)."""
+    """Cooldown gate for SB2 Absorption. Bar-index based."""
     today = datetime.now(NY).date()
     if _cooldown_sb2_abs["last_date"] != today:
         _cooldown_sb2_abs["last_bullish_bar"] = -100
@@ -2224,7 +2224,7 @@ def should_notify_sb2_abs(result):
 
     bar_idx = result["bar_idx"]
     direction = result["direction"]
-    cooldown = 10
+    cooldown = DEFAULT_SB2_ABS_SETTINGS.get("sb2_cooldown_bars", 20)
 
     if direction == "bullish":
         if bar_idx - _cooldown_sb2_abs["last_bullish_bar"] < cooldown:

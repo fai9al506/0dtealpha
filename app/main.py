@@ -6098,34 +6098,34 @@ def start_scheduler():
                 id="setup_eod", coalesce=True, max_instances=1)
     sch.add_job(fetch_economic_calendar, "cron", day_of_week="mon", hour=8, minute=0,
                 id="econ_cal", coalesce=True, max_instances=1)
-    # Stock GEX scanner — every 30 min during market hours (data collection only)
-    try:
-        from app import stock_gex_scanner
-        sch.add_job(stock_gex_scanner.run_scan, "interval",
-                    minutes=30, id="stock_gex_scan", coalesce=True, max_instances=1)
-    except Exception:
-        pass
-    # Stock GEX live scanner — GEX scan every 30 min + spot monitor every 2 min
-    try:
-        from app import stock_gex_live
-        from datetime import datetime as _dt
-        sch.add_job(stock_gex_live.run_gex_scan, "interval",
-                    minutes=30, id="stock_gex_live_scan", coalesce=True, max_instances=1,
-                    next_run_time=_dt.now())  # fire immediately on startup
-        sch.add_job(stock_gex_live.run_spot_monitor, "interval",
-                    minutes=2, id="stock_gex_live_monitor", coalesce=True, max_instances=1)
-        sch.add_job(stock_gex_live.run_eod_summary, "cron",
-                    hour=16, minute=5, timezone=ET, id="stock_gex_live_eod")
-        # 0DTE GEX — SPX/SPY/QQQ/IWM scan + monitor (same intervals)
-        sch.add_job(stock_gex_live.run_0dte_scan, "interval",
-                    minutes=30, id="0dte_gex_scan", coalesce=True, max_instances=1,
-                    next_run_time=_dt.now())
-        sch.add_job(stock_gex_live.run_0dte_monitor, "interval",
-                    minutes=2, id="0dte_gex_monitor", coalesce=True, max_instances=1)
-        sch.add_job(stock_gex_live.run_0dte_eod_summary, "cron",
-                    hour=16, minute=5, timezone=ET, id="0dte_gex_eod")
-    except Exception:
-        pass
+    # Stock GEX scanner + live scanner scheduler jobs DISABLED (2026-03-26)
+    # Was 200+ API calls/30min — caused rate limiting that starved core pipeline
+    # TODO: re-enable with reduced call volume
+    # try:
+    #     from app import stock_gex_scanner
+    #     sch.add_job(stock_gex_scanner.run_scan, "interval",
+    #                 minutes=30, id="stock_gex_scan", coalesce=True, max_instances=1)
+    # except Exception:
+    #     pass
+    # try:
+    #     from app import stock_gex_live
+    #     from datetime import datetime as _dt
+    #     sch.add_job(stock_gex_live.run_gex_scan, "interval",
+    #                 minutes=30, id="stock_gex_live_scan", coalesce=True, max_instances=1,
+    #                 next_run_time=_dt.now())
+    #     sch.add_job(stock_gex_live.run_spot_monitor, "interval",
+    #                 minutes=2, id="stock_gex_live_monitor", coalesce=True, max_instances=1)
+    #     sch.add_job(stock_gex_live.run_eod_summary, "cron",
+    #                 hour=16, minute=5, timezone=ET, id="stock_gex_live_eod")
+    #     sch.add_job(stock_gex_live.run_0dte_scan, "interval",
+    #                 minutes=30, id="0dte_gex_scan", coalesce=True, max_instances=1,
+    #                 next_run_time=_dt.now())
+    #     sch.add_job(stock_gex_live.run_0dte_monitor, "interval",
+    #                 minutes=2, id="0dte_gex_monitor", coalesce=True, max_instances=1)
+    #     sch.add_job(stock_gex_live.run_0dte_eod_summary, "cron",
+    #                 hour=16, minute=5, timezone=ET, id="0dte_gex_eod")
+    # except Exception:
+    #     pass
     sch.start()
     print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min; ES delta save every", SAVE_EVERY_MIN, "min", flush=True)
     return sch

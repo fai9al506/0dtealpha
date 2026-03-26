@@ -511,3 +511,10 @@ See `Backup_tags.md` for the full list of backup tags.
 - Logs are prefixed with `[pipeline]` — check with `railway logs -s 0dtealpha --filter "pipeline"`
 - If freshness query fails, status defaults to `"closed"` which is now treated as error during market hours
 - Verify Telegram works: check for `[telegram] sent:` in logs
+
+
+# Communication Style
+
+- Summarize code changes in plain English, no diffs
+- For errors: one sentence explanation + whether you fixed it or need my input
+- Keep responses short and conversational

@@ -37,6 +37,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
 ZERO_POINTS_THRESHOLD = 3  # consecutive zero-point cycles before alerting
 AUTO_RESTART_THRESHOLD = 5  # consecutive zero-point cycles before browser restart
+_last_saved_modified = ""  # tracks lastModified of most recently saved Volland snapshot
 
 NY = pytz.timezone("US/Eastern")
 
@@ -101,6 +102,12 @@ def ensure_tables():
         );
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_snapshots_ts ON volland_snapshots(ts DESC);")
+        cur.execute("""
+        DO $$ BEGIN
+            ALTER TABLE volland_snapshots ADD COLUMN data_ts TIMESTAMPTZ;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """)
 
         cur.execute("""
         CREATE TABLE IF NOT EXISTS volland_exposure_points (
@@ -121,11 +128,11 @@ def ensure_tables():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_volland_ep_greek_ts ON volland_exposure_points(greek, ts_utc DESC);")
 
 
-def save_snapshot(payload: dict):
+def save_snapshot(payload: dict, data_ts=None):
     with db() as conn, conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO volland_snapshots(payload) VALUES (%s::jsonb)",
-            (json.dumps(payload),),
+            "INSERT INTO volland_snapshots(payload, data_ts) VALUES (%s::jsonb, %s)",
+            (json.dumps(payload), data_ts),
         )
 
 
@@ -454,8 +461,24 @@ def run():
 
         def save_cycle(exposures, paradigm_spx, paradigm_spy, spot_vol):
             """Format, save to DB, log. Returns (stats, total_points, zero_exposures)."""
+            global _last_saved_modified
             stats = format_statistics(paradigm_spx, spot_vol)
             spy_stats = format_statistics(paradigm_spy, None) if paradigm_spy else {}
+
+            # Get lastModified from this cycle's exposures
+            cycle_modified = ""
+            for exp in reversed(exposures):
+                lm = exp.get("last_modified")
+                if lm:
+                    cycle_modified = lm
+                    break
+
+            # Freshness gate: skip ALL saves if Volland data hasn't refreshed
+            if cycle_modified and cycle_modified == _last_saved_modified:
+                # Count points without saving (for 0-point tracking accuracy)
+                _skip_pts = sum(len(e.get("items", [])) for e in exposures)
+                print(f"[volland-v2] skipped save – lastModified unchanged: {cycle_modified[:25]} (pts={_skip_pts})", flush=True)
+                return stats, _skip_pts, []
 
             total_points = 0
             zero_exposures = []
@@ -477,6 +500,14 @@ def run():
                 total_points += count
                 if count == 0:
                     zero_exposures.append(f"{greek}/{exp_option}")
+
+            # Parse lastModified as data_ts for the snapshot
+            data_ts_val = None
+            if cycle_modified:
+                try:
+                    data_ts_val = datetime.fromisoformat(cycle_modified.replace("Z", "+00:00"))
+                except Exception:
+                    data_ts_val = datetime.now(timezone.utc)
 
             payload = {
                 "ts_utc": datetime.now(timezone.utc).isoformat(),
@@ -500,7 +531,10 @@ def run():
                 },
             }
 
-            save_snapshot(payload)
+            save_snapshot(payload, data_ts=data_ts_val)
+
+            if cycle_modified:
+                _last_saved_modified = cycle_modified
 
             spy_dd = spy_stats.get('delta_decay_hedging', 'N/A') if spy_stats else 'N/A'
             print(

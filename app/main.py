@@ -236,6 +236,7 @@ async def auth_middleware(request: Request, call_next):
 latest_df: pd.DataFrame | None = None
 last_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_saved_at = 0.0
+_spx_data_ts = 0.0  # time.time() when latest_df was last refreshed with fresh API data
 _df_lock = Lock()
 _vix_last: float | None = None  # latest VIX value from TS quotes
 _vix3m_last: float | None = None  # latest VIX3M value from TS quotes
@@ -249,6 +250,7 @@ _dd_combined_str: str | None = None        # formatted string e.g. "Long $7.3B" 
 latest_spy_df: pd.DataFrame | None = None
 _last_spy_run_status = {"ts": None, "ok": False, "msg": "boot"}
 _last_spy_saved_at = 0.0
+_spy_data_ts = 0.0  # time.time() when latest_spy_df was last refreshed with fresh API data
 _spy_df_lock = Lock()
 
 # ====== SETUP DETECTOR DEFAULTS ======
@@ -347,6 +349,12 @@ def db_init():
         EXCEPTION WHEN duplicate_column THEN NULL;
         END $$;
         """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE chain_snapshots ADD COLUMN data_ts TIMESTAMPTZ;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
 
         # SPY chain snapshots — separate table, same schema as chain_snapshots
         conn.execute(text("""
@@ -373,6 +381,12 @@ def db_init():
         EXCEPTION WHEN duplicate_column THEN NULL;
         END $$;
         """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE spy_chain_snapshots ADD COLUMN data_ts TIMESTAMPTZ;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        """))
 
         conn.execute(text(f"""
         CREATE TABLE IF NOT EXISTS {VOLLAND_TABLE} (
@@ -384,6 +398,12 @@ def db_init():
         conn.execute(text(f"""
         CREATE INDEX IF NOT EXISTS ix_{VOLLAND_TABLE}_{VOLLAND_TS_COL}
         ON {VOLLAND_TABLE} ({VOLLAND_TS_COL} DESC);
+        """))
+        conn.execute(text(f"""
+        DO $$ BEGIN
+            ALTER TABLE {VOLLAND_TABLE} ADD COLUMN data_ts TIMESTAMPTZ;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
         """))
 
         # Playback snapshots table for historical visualization
@@ -733,6 +753,12 @@ def db_init():
         );
         CREATE INDEX IF NOT EXISTS idx_es_delta_snap_ts ON es_delta_snapshots(ts DESC);
         CREATE INDEX IF NOT EXISTS idx_es_delta_snap_date ON es_delta_snapshots(trade_date DESC);
+        """))
+        conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE es_delta_snapshots ADD COLUMN data_ts TIMESTAMPTZ;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
         """))
 
         # ES 1-minute delta bars from TradeStation barcharts (UpVolume/DownVolume)
@@ -2641,7 +2667,7 @@ _MARKET_JOB_TIMEOUT = 55  # seconds — must finish before next 30s cycle + marg
 
 def _run_market_job_inner():
     """Actual market job logic. Called from run_market_job with timeout wrapper."""
-    global latest_df, last_run_status, _spx_session, _spx_cycle_high, _spx_cycle_low, _vix_last, _vix3m_last, _overvix
+    global latest_df, last_run_status, _spx_session, _spx_cycle_high, _spx_cycle_low, _vix_last, _vix3m_last, _overvix, _spx_data_ts
     try:
         if not market_open_now():
             last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
@@ -2723,6 +2749,7 @@ def _run_market_job_inner():
 
         with _df_lock:
             latest_df = df.copy()
+        _spx_data_ts = time.time()
         last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={final_count}"}
         print("[pull] OK", last_run_status["msg"], flush=True)
 
@@ -2762,7 +2789,7 @@ def run_market_job():
 
 def run_spy_market_job():
     """Fetch SPY options chain on same interval as SPX."""
-    global latest_spy_df, _last_spy_run_status
+    global latest_spy_df, _last_spy_run_status, _spy_data_ts
     try:
         if not market_open_now():
             _last_spy_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
@@ -2792,6 +2819,7 @@ def run_spy_market_job():
 
         with _spy_df_lock:
             latest_spy_df = df.copy()
+        _spy_data_ts = time.time()
         _last_spy_run_status = {"ts": fmt_et(now_et()), "ok": True,
                                 "msg": f"exp={exp} spot={round(spy_spot,2)} rows={final_count}"}
         print("[spy-pull] OK", _last_spy_run_status["msg"], flush=True)
@@ -2809,6 +2837,10 @@ def save_history_job():
         df_copy = latest_df.copy()
     if time.time() - _last_saved_at < 60:
         return
+    # Freshness gate: skip if no new data since last save
+    if _spx_data_ts <= 0 or _spx_data_ts <= _last_saved_at:
+        print("[save] skipped – no fresh SPX data since last save", flush=True)
+        return
     try:
         df = df_copy
         df.columns = DISPLAY_COLS
@@ -2821,11 +2853,12 @@ def save_history_job():
             exp  = parts.get("exp")
         except:
             pass
+        data_ts_val = datetime.fromtimestamp(_spx_data_ts, tz=NY) if _spx_data_ts > 0 else None
         with engine.begin() as conn:
             conn.execute(
-                text("INSERT INTO chain_snapshots (ts, exp, spot, vix, vix3m, overvix, columns, rows) VALUES (:ts, :exp, :spot, :vix, :vix3m, :overvix, :columns, :rows)"),
+                text("INSERT INTO chain_snapshots (ts, exp, spot, vix, vix3m, overvix, data_ts, columns, rows) VALUES (:ts, :exp, :spot, :vix, :vix3m, :overvix, :data_ts, :columns, :rows)"),
                 {"ts": now_et(), "exp": exp, "spot": spot, "vix": _vix_last,
-                 "vix3m": _vix3m_last, "overvix": _overvix,
+                 "vix3m": _vix3m_last, "overvix": _overvix, "data_ts": data_ts_val,
                  "columns": json.dumps(payload["columns"]),
                  "rows": json.dumps(payload["rows"])}
             )
@@ -2847,6 +2880,10 @@ def _save_spy_history():
         df_copy = latest_spy_df.copy()
     if time.time() - _last_spy_saved_at < 60:
         return
+    # Freshness gate: skip if no new data since last save
+    if _spy_data_ts <= 0 or _spy_data_ts <= _last_spy_saved_at:
+        print("[save] skipped – no fresh SPY data since last save", flush=True)
+        return
     try:
         df = df_copy
         df.columns = DISPLAY_COLS
@@ -2859,11 +2896,12 @@ def _save_spy_history():
             exp  = parts.get("exp")
         except:
             pass
+        data_ts_val = datetime.fromtimestamp(_spy_data_ts, tz=NY) if _spy_data_ts > 0 else None
         with engine.begin() as conn:
             conn.execute(
-                text("INSERT INTO spy_chain_snapshots (ts, exp, spot, vix3m, overvix, columns, rows) VALUES (:ts, :exp, :spot, :vix3m, :overvix, :columns, :rows)"),
+                text("INSERT INTO spy_chain_snapshots (ts, exp, spot, vix3m, overvix, data_ts, columns, rows) VALUES (:ts, :exp, :spot, :vix3m, :overvix, :data_ts, :columns, :rows)"),
                 {"ts": now_et(), "exp": exp, "spot": spot,
-                 "vix3m": _vix3m_last, "overvix": _overvix,
+                 "vix3m": _vix3m_last, "overvix": _overvix, "data_ts": data_ts_val,
                  "columns": json.dumps(payload["columns"]),
                  "rows": json.dumps(payload["rows"])}
             )
@@ -4218,6 +4256,7 @@ _es_delta = {
     "_open_sell_vol": 0,
     "_open_ticks": 0,
     "_bars_buffer": [],    # completed bars queued for DB flush
+    "_last_bar_ts": 0.0,   # time.time() when last bar was received from stream
 }
 
 def _es_delta_reset(today: str):
@@ -4231,7 +4270,7 @@ def _es_delta_reset(today: str):
             "_completed_sell_vol": 0, "_completed_ticks": 0,
             "_open_epoch": 0, "_open_delta": 0, "_open_volume": 0,
             "_open_buy_vol": 0, "_open_sell_vol": 0, "_open_ticks": 0,
-            "_bars_buffer": [],
+            "_bars_buffer": [], "_last_bar_ts": 0.0,
         })
     print(f"[es-delta] daily reset for {today}", flush=True)
 
@@ -4303,6 +4342,7 @@ def _es_delta_process_bar(bar: dict):
         _es_delta["buy_volume"] = _es_delta["_completed_buy_vol"] + _es_delta["_open_buy_vol"]
         _es_delta["sell_volume"] = _es_delta["_completed_sell_vol"] + _es_delta["_open_sell_vol"]
         _es_delta["tick_count"] = _es_delta["_completed_ticks"] + _es_delta["_open_ticks"]
+        _es_delta["_last_bar_ts"] = time.time()
 
 # ====== ES QUOTE STREAM (bid/ask delta classification — ATAS-style range bars) ======
 _es_quote_lock = Lock()
@@ -5527,8 +5567,11 @@ def _es_quote_stream_loop():
         time.sleep(reconnect_wait)
         backoff *= 2
 
+_last_es_delta_saved_at = 0.0  # tracks last successful es_delta_snapshots INSERT
+
 def save_es_delta():
     """Scheduler job: flush buffered bars + write snapshot to DB (every 2 min)."""
+    global _last_es_delta_saved_at
     try:
         if not _es_futures_open():
             return
@@ -5537,6 +5580,7 @@ def save_es_delta():
         with _es_delta_lock:
             if _es_delta["total_volume"] == 0:
                 return
+            last_bar_time = _es_delta["_last_bar_ts"]
             today = _es_delta["trade_date"] or now_et().strftime("%Y-%m-%d")
             # Snapshot buffered bars and current state under lock
             bars = _es_delta["_bars_buffer"]
@@ -5551,6 +5595,8 @@ def save_es_delta():
                 "bh": _es_delta["session_high"],
                 "bl": _es_delta["session_low"],
             }
+        # Freshness gate for snapshot (bars still flush regardless)
+        snap_fresh = last_bar_time > 0 and last_bar_time > _last_es_delta_saved_at
         if bars:
             with engine.begin() as conn:
                 for b in bars:
@@ -5583,18 +5629,24 @@ def save_es_delta():
                     })
             print(f"[es-delta] flushed {len(bars)} bars to DB", flush=True)
 
-        # Write snapshot from snapshotted state (lock already released)
-        with engine.begin() as conn:
-            conn.execute(text("""
-                INSERT INTO es_delta_snapshots
-                    (trade_date, symbol, cumulative_delta, total_volume,
-                     buy_volume, sell_volume, last_price, tick_count,
-                     bar_high, bar_low)
-                VALUES (:td, :sym, :cd, :tv, :bv, :sv, :lp, :tc, :bh, :bl)
-            """), {
-                "td": today, "sym": ES_DELTA_SYMBOL,
-                **snap,
-            })
+        # Write snapshot from snapshotted state (lock already released) — only if fresh
+        if snap_fresh:
+            data_ts_val = datetime.fromtimestamp(last_bar_time, tz=NY) if last_bar_time > 0 else None
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO es_delta_snapshots
+                        (trade_date, symbol, cumulative_delta, total_volume,
+                         buy_volume, sell_volume, last_price, tick_count,
+                         bar_high, bar_low, data_ts)
+                    VALUES (:td, :sym, :cd, :tv, :bv, :sv, :lp, :tc, :bh, :bl, :data_ts)
+                """), {
+                    "td": today, "sym": ES_DELTA_SYMBOL,
+                    "data_ts": data_ts_val,
+                    **snap,
+                })
+            _last_es_delta_saved_at = time.time()
+        else:
+            print("[es-delta] skipped snapshot – no fresh bar data since last save", flush=True)
     except Exception as e:
         print(f"[es-delta] save error: {e}", flush=True)
 

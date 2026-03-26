@@ -6104,14 +6104,14 @@ def start_scheduler():
         from app import stock_gex_scanner
         # Weekly GEX: 10:00, 12:00, 15:00 ET
         sch.add_job(stock_gex_scanner.run_weekly_scan, "cron",
-                    hour=10, minute=0, timezone=ET, id="stock_gex_weekly_10", coalesce=True, max_instances=1)
+                    hour=10, minute=0, timezone=NY, id="stock_gex_weekly_10", coalesce=True, max_instances=1)
         sch.add_job(stock_gex_scanner.run_weekly_scan, "cron",
-                    hour=12, minute=0, timezone=ET, id="stock_gex_weekly_12", coalesce=True, max_instances=1)
+                    hour=12, minute=0, timezone=NY, id="stock_gex_weekly_12", coalesce=True, max_instances=1)
         sch.add_job(stock_gex_scanner.run_weekly_scan, "cron",
-                    hour=15, minute=0, timezone=ET, id="stock_gex_weekly_15", coalesce=True, max_instances=1)
+                    hour=15, minute=0, timezone=NY, id="stock_gex_weekly_15", coalesce=True, max_instances=1)
         # Opex GEX: 10:00 ET only
         sch.add_job(stock_gex_scanner.run_opex_scan, "cron",
-                    hour=10, minute=0, timezone=ET, id="stock_gex_opex", coalesce=True, max_instances=1)
+                    hour=10, minute=0, timezone=NY, id="stock_gex_opex", coalesce=True, max_instances=1)
         # Spot monitor: every 5 min (1 batch API call for all stocks)
         sch.add_job(stock_gex_scanner.run_spot_monitor, "interval",
                     minutes=5, id="stock_gex_spot", coalesce=True, max_instances=1)

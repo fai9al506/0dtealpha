@@ -6180,22 +6180,24 @@ def on_startup():
         real_trader_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[real-trader] init error (non-fatal): {e}", flush=True)
-    # Initialize stock GEX scanner (independent data collection — separate from 0DTE)
-    try:
-        from app.stock_gex_scanner import init as stock_gex_init
-        stock_gex_init(engine, api_get)
-    except Exception as e:
-        print(f"[stock-gex] init error (non-fatal): {e}", flush=True)
-    # Initialize stock GEX live scanner (support bounce strategy)
-    try:
-        from app.stock_gex_live import init as stock_gex_live_init
-        stock_gex_live_init(engine, api_get, send_telegram_stock_gex)
-        # Run initial scan in background (bypasses market hours, uses last-close prices)
-        from app.stock_gex_live import _startup_scan, _startup_0dte_scan
-        Thread(target=_startup_scan, daemon=True).start()
-        Thread(target=_startup_0dte_scan, daemon=True).start()
-    except Exception as e:
-        print(f"[stock-gex-live] init error (non-fatal): {e}", flush=True)
+    # Stock GEX scanner + live scanner DISABLED (2026-03-26)
+    # Root cause of 4hr outage: 200+ TS API calls/30min exhausted rate limit,
+    # starving core SPX chain + broker polls → hung threads → lost position tracking.
+    # TODO: re-enable after reducing API call volume (batch quotes, longer intervals, fewer stocks)
+    print("[stock-gex] DISABLED — scanner and live scanner turned off to protect core pipeline", flush=True)
+    # try:
+    #     from app.stock_gex_scanner import init as stock_gex_init
+    #     stock_gex_init(engine, api_get)
+    # except Exception as e:
+    #     print(f"[stock-gex] init error (non-fatal): {e}", flush=True)
+    # try:
+    #     from app.stock_gex_live import init as stock_gex_live_init
+    #     stock_gex_live_init(engine, api_get, send_telegram_stock_gex)
+    #     from app.stock_gex_live import _startup_scan, _startup_0dte_scan
+    #     Thread(target=_startup_scan, daemon=True).start()
+    #     Thread(target=_startup_0dte_scan, daemon=True).start()
+    # except Exception as e:
+    #     print(f"[stock-gex-live] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)
     try:
         from app.dashboard_v2 import init as dashboard_v2_init

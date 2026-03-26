@@ -2,10 +2,11 @@
 Stock GEX Scanner — Independent data collection for stock GEX levels.
 
 Completely isolated from 0DTE SPX pipeline.
-Scans ~23 stocks every 30 min during market hours (Mon-Fri 9:30-16:00 ET).
-Saves GEX per strike + current price to DB for future backtesting.
+Schedule: Weekly GEX 3x/day (10:00, 12:00, 15:00 ET), Opex 1x/day (10:00 ET).
+Spot monitor: batch quotes every 5 min (1 API call for all stocks).
+5-second delay between stocks to avoid TS API rate limiting.
 
-NO alerts, NO signals, NO Telegram — pure data collection.
+Sends Telegram alert on scan failures (>50% stocks failed).
 """
 
 import json, time
@@ -44,13 +45,14 @@ DEFAULT_STOCKS = [
 
 # ±10% of spot price for strike range
 PROXIMITY_PCT = 0.10
-# Delay between API calls per stock
-INTER_STOCK_DELAY = 0.5
+# Delay between API calls per stock (5s to avoid TS rate limiting)
+INTER_STOCK_DELAY = 5.0
 
 # ── State ───────────────────────────────────────────────────────────
 
 _engine = None
 _api_get = None
+_send_telegram = None
 _initialized = False
 
 # Latest scan data in memory: {symbol: {spot, levels, gex_data, ...}}
@@ -65,15 +67,25 @@ _last_scan_status = {"ts": None, "ok": False, "msg": "not started"}
 
 # ── Init ────────────────────────────────────────────────────────────
 
-def init(engine, api_get_fn):
+def init(engine, api_get_fn, send_telegram_fn=None):
     """Initialize the stock GEX scanner. Called from main.py on_startup()."""
-    global _engine, _api_get, _initialized
+    global _engine, _api_get, _send_telegram, _initialized
     _engine = engine
     _api_get = api_get_fn
+    _send_telegram = send_telegram_fn
     _initialized = True
     _db_init()
     _load_latest()
     print("[stock-gex] initialized", flush=True)
+
+
+def _alert(msg: str):
+    """Send Telegram alert for stock GEX scan issues."""
+    if _send_telegram:
+        try:
+            _send_telegram(msg)
+        except Exception:
+            pass
 
 
 # ── Database ────────────────────────────────────────────────────────
@@ -408,27 +420,34 @@ def _identify_key_levels(gex_data: list[dict], spot: float) -> dict:
 
 # ── Scheduler Job ───────────────────────────────────────────────────
 
-def run_scan():
-    """Scan all stocks: fetch chain, compute GEX, save to DB. Every 30 min."""
+def run_scan(scan_labels=None):
+    """Scan all stocks: fetch chain, compute GEX, save to DB.
+
+    Args:
+        scan_labels: list of labels to scan, e.g. ["weekly"], ["opex"], ["weekly", "opex"].
+                     Default: ["weekly", "opex"] (both).
+    """
     global _last_scan_status
     if not _initialized:
         return
+    if scan_labels is None:
+        scan_labels = ["weekly", "opex"]
 
     now = _now_et()
-    if now.weekday() >= 5:  # Skip weekends (5=Sat, 6=Sun)
+    if now.weekday() >= 5:
         return
     t = now.time()
-    # Only during market hours (9:30-16:00 ET)
     if not (dtime(9, 30) <= t <= dtime(16, 0)):
         return
 
     today = now.date()
-    print(f"[stock-gex] scan: {len(DEFAULT_STOCKS)} stocks...", flush=True)
+    label_str = "+".join(scan_labels)
+    print(f"[stock-gex] {label_str} scan: {len(DEFAULT_STOCKS)} stocks (delay={INTER_STOCK_DELAY}s)...", flush=True)
 
-    # Get all quotes in one batch call
     quotes = _get_batch_quotes(DEFAULT_STOCKS)
     if not quotes:
         _last_scan_status = {"ts": str(now), "ok": False, "msg": "batch quote failed"}
+        _alert(f"⚠️ <b>Stock GEX scan failed</b>\nBatch quote returned empty — TS API may be down")
         return
 
     from sqlalchemy import text
@@ -442,7 +461,6 @@ def run_scan():
             continue
 
         try:
-            # Get target expirations: weekly + opex (cached per day)
             targets = _get_target_expirations(symbol)
             if not targets:
                 failed += 1
@@ -452,25 +470,23 @@ def run_scan():
                 exp = tgt["exp"]
                 label = tgt["label"]
 
-                # Fetch chain for this expiration
+                # Skip labels not requested
+                if label not in scan_labels:
+                    continue
+
                 rows = _fetch_chain(symbol, exp, spot)
                 if len(rows) < 10:
                     continue
 
-                # Compute GEX
                 gex_data = _compute_gex(rows)
                 if not gex_data:
                     continue
 
-                # Identify key levels
                 levels = _identify_key_levels(gex_data, spot)
-
-                # Totals
                 total_call = sum(d["call_gex"] for d in gex_data)
                 total_put = sum(d["put_gex"] for d in gex_data)
                 total_net = sum(d["net_gex"] for d in gex_data)
 
-                # Save to DB
                 with _engine.begin() as conn:
                     conn.execute(text("""
                         INSERT INTO stock_gex_scans
@@ -486,7 +502,6 @@ def run_scan():
                         "cg": total_call, "pg": total_put, "ng": total_net,
                     })
 
-                # Update in-memory
                 key = f"{symbol}_{label}"
                 with _lock:
                     _latest[key] = {
@@ -506,9 +521,48 @@ def run_scan():
             print(f"[stock-gex] {symbol}: {e}", flush=True)
             failed += 1
 
-    msg = f"scanned {scanned}/{len(DEFAULT_STOCKS)}, failed {failed}"
-    _last_scan_status = {"ts": str(now), "ok": failed < len(DEFAULT_STOCKS) // 2, "msg": msg}
+    msg = f"{label_str} scanned {scanned}/{len(DEFAULT_STOCKS)}, failed {failed}"
+    ok = failed < len(DEFAULT_STOCKS) // 2
+    _last_scan_status = {"ts": str(now), "ok": ok, "msg": msg}
     print(f"[stock-gex] done: {msg}", flush=True)
+
+    if not ok:
+        _alert(f"🚨 <b>Stock GEX scan degraded</b>\n{msg}\nTS API may be rate-limited")
+
+
+def run_weekly_scan():
+    """Scheduled: weekly GEX scan only (3x/day)."""
+    run_scan(scan_labels=["weekly"])
+
+
+def run_opex_scan():
+    """Scheduled: opex GEX scan only (1x/day at 10 ET)."""
+    run_scan(scan_labels=["opex"])
+
+
+def run_spot_monitor():
+    """Fetch batch quotes for all stocks (1 API call). Every 5 min.
+    Updates in-memory spot prices for support bounce alerts."""
+    if not _initialized:
+        return
+    now = _now_et()
+    if now.weekday() >= 5:
+        return
+    if not (dtime(9, 30) <= now.time() <= dtime(16, 0)):
+        return
+
+    quotes = _get_batch_quotes(DEFAULT_STOCKS)
+    if not quotes:
+        return
+
+    with _lock:
+        for symbol, price in quotes.items():
+            # Update spot in all cached entries for this symbol
+            for suffix in ("_weekly", "_opex"):
+                key = f"{symbol}{suffix}"
+                if key in _latest:
+                    _latest[key]["spot"] = price
+                    _latest[key]["spot_ts"] = str(now)
 
 
 # ── API Helpers (called from main.py endpoints) ────────────────────

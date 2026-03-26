@@ -6098,34 +6098,27 @@ def start_scheduler():
                 id="setup_eod", coalesce=True, max_instances=1)
     sch.add_job(fetch_economic_calendar, "cron", day_of_week="mon", hour=8, minute=0,
                 id="econ_cal", coalesce=True, max_instances=1)
-    # Stock GEX scanner + live scanner scheduler jobs DISABLED (2026-03-26)
-    # Was 200+ API calls/30min — caused rate limiting that starved core pipeline
-    # TODO: re-enable with reduced call volume
-    # try:
-    #     from app import stock_gex_scanner
-    #     sch.add_job(stock_gex_scanner.run_scan, "interval",
-    #                 minutes=30, id="stock_gex_scan", coalesce=True, max_instances=1)
-    # except Exception:
-    #     pass
-    # try:
-    #     from app import stock_gex_live
-    #     from datetime import datetime as _dt
-    #     sch.add_job(stock_gex_live.run_gex_scan, "interval",
-    #                 minutes=30, id="stock_gex_live_scan", coalesce=True, max_instances=1,
-    #                 next_run_time=_dt.now())
-    #     sch.add_job(stock_gex_live.run_spot_monitor, "interval",
-    #                 minutes=2, id="stock_gex_live_monitor", coalesce=True, max_instances=1)
-    #     sch.add_job(stock_gex_live.run_eod_summary, "cron",
-    #                 hour=16, minute=5, timezone=ET, id="stock_gex_live_eod")
-    #     sch.add_job(stock_gex_live.run_0dte_scan, "interval",
-    #                 minutes=30, id="0dte_gex_scan", coalesce=True, max_instances=1,
-    #                 next_run_time=_dt.now())
-    #     sch.add_job(stock_gex_live.run_0dte_monitor, "interval",
-    #                 minutes=2, id="0dte_gex_monitor", coalesce=True, max_instances=1)
-    #     sch.add_job(stock_gex_live.run_0dte_eod_summary, "cron",
-    #                 hour=16, minute=5, timezone=ET, id="0dte_gex_eod")
-    # except Exception:
-    #     pass
+    # Stock GEX scanner — reduced schedule (protects core 0DTE pipeline)
+    # Weekly: 3x/day, Opex: 1x/day, Spot: every 5 min (1 API call)
+    try:
+        from app import stock_gex_scanner
+        # Weekly GEX: 10:00, 12:00, 15:00 ET
+        sch.add_job(stock_gex_scanner.run_weekly_scan, "cron",
+                    hour=10, minute=0, timezone=ET, id="stock_gex_weekly_10", coalesce=True, max_instances=1)
+        sch.add_job(stock_gex_scanner.run_weekly_scan, "cron",
+                    hour=12, minute=0, timezone=ET, id="stock_gex_weekly_12", coalesce=True, max_instances=1)
+        sch.add_job(stock_gex_scanner.run_weekly_scan, "cron",
+                    hour=15, minute=0, timezone=ET, id="stock_gex_weekly_15", coalesce=True, max_instances=1)
+        # Opex GEX: 10:00 ET only
+        sch.add_job(stock_gex_scanner.run_opex_scan, "cron",
+                    hour=10, minute=0, timezone=ET, id="stock_gex_opex", coalesce=True, max_instances=1)
+        # Spot monitor: every 5 min (1 batch API call for all stocks)
+        sch.add_job(stock_gex_scanner.run_spot_monitor, "interval",
+                    minutes=5, id="stock_gex_spot", coalesce=True, max_instances=1)
+    except Exception as _gex_err:
+        print(f"[stock-gex] scheduler error (non-fatal): {_gex_err}", flush=True)
+    # Stock GEX live scanner — DISABLED (redundant, was causing API overload)
+    # TODO: merge alert logic into stock_gex_scanner if needed
     sch.start()
     print("[sched] started; pull every", PULL_EVERY, "s; save every", SAVE_EVERY_MIN, "min; ES delta save every", SAVE_EVERY_MIN, "min", flush=True)
     return sch
@@ -6180,22 +6173,20 @@ def on_startup():
         real_trader_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[real-trader] init error (non-fatal): {e}", flush=True)
-    # Stock GEX scanner + live scanner DISABLED (2026-03-26)
-    # Root cause of 4hr outage: 200+ TS API calls/30min exhausted rate limit,
-    # starving core SPX chain + broker polls → hung threads → lost position tracking.
-    # TODO: re-enable after reducing API call volume (batch quotes, longer intervals, fewer stocks)
-    print("[stock-gex] DISABLED — scanner and live scanner turned off to protect core pipeline", flush=True)
-    # try:
-    #     from app.stock_gex_scanner import init as stock_gex_init
-    #     stock_gex_init(engine, api_get)
-    # except Exception as e:
-    #     print(f"[stock-gex] init error (non-fatal): {e}", flush=True)
+    # Stock GEX scanner — reduced schedule (was 200+ calls/30min, now ~236/day)
+    # Weekly: 3x/day (10, 12, 15 ET), Opex: 1x/day (10 ET), Spot: every 5 min (1 batch call)
+    # No startup scans. 5s delay between stocks. Independent from 0DTE pipeline.
+    try:
+        from app.stock_gex_scanner import init as stock_gex_init
+        stock_gex_init(engine, api_get, send_telegram)
+    except Exception as e:
+        print(f"[stock-gex] init error (non-fatal): {e}", flush=True)
+    # Stock GEX live scanner DISABLED — its GEX scans are redundant with scanner above.
+    # Spot monitoring moved into stock_gex_scanner.run_spot_monitor() (batch quotes).
+    # TODO: merge live alert logic into scanner if needed.
     # try:
     #     from app.stock_gex_live import init as stock_gex_live_init
     #     stock_gex_live_init(engine, api_get, send_telegram_stock_gex)
-    #     from app.stock_gex_live import _startup_scan, _startup_0dte_scan
-    #     Thread(target=_startup_scan, daemon=True).start()
-    #     Thread(target=_startup_0dte_scan, daemon=True).start()
     # except Exception as e:
     #     print(f"[stock-gex-live] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)

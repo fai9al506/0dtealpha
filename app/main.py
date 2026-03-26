@@ -3504,9 +3504,9 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             # SB10 uses 10-pt bars (separate idx space from 5-pt bars)
             _bars_for_scan = es_bars_10pt_snapshot if setup_name == "SB10 Absorption" else es_bars_snapshot
             entry_bar_idx = trade.get("result_data", {}).get("bar_idx", 0)
-            last_scanned = trade.get("_es_last_bar_idx", entry_bar_idx)
+            last_scanned = trade.get("_es_last_bar_idx") or entry_bar_idx or 0
             for bar in _bars_for_scan:
-                bidx = bar.get("idx", 0)
+                bidx = bar.get("idx") or 0
                 if bidx <= last_scanned:
                     continue
                 bh = bar.get("high")

@@ -272,6 +272,7 @@ def _get_target_expirations(symbol: str) -> list[dict]:
 def _fetch_chain(symbol: str, exp: str, spot: float) -> list[dict]:
     """Fetch options chain for a stock from TS snapshot endpoint."""
     proximity = max(10, int(spot * PROXIMITY_PCT))
+    _last_err = None
 
     for exp_fmt in _expiration_variants(exp):
         params = {
@@ -305,10 +306,11 @@ def _fetch_chain(symbol: str, exp: str, spot: float) -> list[dict]:
                 })
             if rows:
                 return rows
-        except Exception:
+        except Exception as e:
+            _last_err = e
             continue
 
-    print(f"[stock-gex] chain fetch failed for {symbol} exp={exp}", flush=True)
+    print(f"[stock-gex] chain fetch failed for {symbol} exp={exp} err={_last_err}", flush=True)
     return []
 
 

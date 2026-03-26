@@ -241,6 +241,10 @@ _vix_last: float | None = None  # latest VIX value from TS quotes
 _vix3m_last: float | None = None  # latest VIX3M value from TS quotes
 _overvix: float | None = None  # VIX - VIX3M (overvix indicator)
 
+# Combined DD hedging (SPX + SPY) — updated each cycle in run_market_job()
+_dd_combined_numeric: float | None = None  # combined DD numeric value
+_dd_combined_str: str | None = None        # formatted string e.g. "Long $7.3B" for display/directional checks
+
 # SPY chain state
 latest_spy_df: pd.DataFrame | None = None
 _last_spy_run_status = {"ts": None, "ok": False, "msg": "boot"}
@@ -308,7 +312,11 @@ _DEFAULT_SETUP_SETTINGS = {
 }
 
 # ====== DB ======
-engine = create_engine(DB_URL, pool_pre_ping=True) if DB_URL else None
+engine = create_engine(
+    DB_URL, pool_pre_ping=True,
+    pool_size=5, max_overflow=10,
+    connect_args={"options": "-c statement_timeout=30000"},  # 30s max per query — prevents hung threads
+) if DB_URL else None
 
 def db_init():
     if not engine:
@@ -3186,7 +3194,8 @@ def send_summary_alert(time_label: str):
         summary += f"Paradigm: {stats.get('paradigm', 'N/A')}\n"
         summary += f"Target: {stats.get('target', 'N/A')}\n"
         summary += f"LIS: {stats.get('lines_in_sand', 'N/A')}\n"
-        summary += f"DD Hedging: {stats.get('delta_decay_hedging', 'N/A')}\n"
+        _dd_display = _dd_combined_str or stats.get('delta_decay_hedging', 'N/A')
+        summary += f"DD Hedging: {_dd_display}\n"
         summary += f"Max +Gamma: {max_pos_gamma:.0f}\n" if max_pos_gamma else "Max +Gamma: N/A\n"
         summary += f"Max -Gamma: {max_neg_gamma:.0f}\n" if max_neg_gamma else "Max -Gamma: N/A\n"
 
@@ -3852,6 +3861,23 @@ def _run_setup_check():
     print(f"[dd] SPX={spx_dd_numeric} SPY={spy_dd_numeric} Combined={dd_numeric}")
     dd_shift = update_dd_tracker(dd_numeric) if dd_numeric is not None else None
 
+    # Update combined DD globals (used by absorption detectors, summaries, Paradigm Reversal)
+    global _dd_combined_numeric, _dd_combined_str
+    _dd_combined_numeric = dd_numeric
+    if dd_numeric is not None:
+        _abs_val = abs(dd_numeric)
+        if _abs_val >= 1_000_000_000:
+            _dd_combined_str = f"{'Long' if dd_numeric > 0 else 'Short'} ${_abs_val / 1e9:.1f}B"
+        elif _abs_val >= 1_000_000:
+            _dd_combined_str = f"{'Long' if dd_numeric > 0 else 'Short'} ${_abs_val / 1e6:.0f}M"
+        else:
+            _dd_combined_str = f"{'Long' if dd_numeric > 0 else 'Short'} ${_abs_val:,.0f}"
+    else:
+        _dd_combined_str = None
+
+    # Pass combined DD string to Paradigm Reversal (instead of SPX-only)
+    dd_hedging = _dd_combined_str or dd_hedging
+
     # Query recent ES range bars (Rithmic) for Paradigm Reversal volume check
     es_bars = []
     if engine:
@@ -4495,6 +4521,11 @@ def _run_absorption_detection(bars: list) -> dict | None:
     except Exception as e:
         print(f"[absorption] volland lookup error: {e}", flush=True)
 
+    # Override DD hedging with combined SPX+SPY value (if available)
+    if volland_stats and _dd_combined_str:
+        volland_stats = dict(volland_stats)  # shallow copy to avoid mutating cached dict
+        volland_stats["delta_decay_hedging"] = _dd_combined_str
+
     # SPX spot from latest chain pull (needed for LIS distance calc)
     spx_spot = None
     try:
@@ -4790,6 +4821,11 @@ def _run_single_bar_absorption(bars: list):
     except Exception as e:
         print(f"[sb-absorption] volland lookup error: {e}", flush=True)
 
+    # Override DD hedging with combined SPX+SPY value (if available)
+    if volland_stats and _dd_combined_str:
+        volland_stats = dict(volland_stats)  # shallow copy
+        volland_stats["delta_decay_hedging"] = _dd_combined_str
+
     result = evaluate_single_bar_absorption(bars, volland_stats, _setup_settings)
     if result is None:
         return None
@@ -5001,6 +5037,11 @@ def _run_sb10_absorption(bars: list):
     except Exception as e:
         print(f"[sb10] volland lookup error: {e}", flush=True)
 
+    # Override DD hedging with combined SPX+SPY value (if available)
+    if volland_stats and _dd_combined_str:
+        volland_stats = dict(volland_stats)  # shallow copy
+        volland_stats["delta_decay_hedging"] = _dd_combined_str
+
     from app.setup_detector import _cooldown_sb10_abs
     result = evaluate_single_bar_absorption(bars, volland_stats, _setup_settings, spx_spot=None,
                                             cooldown_state=_cooldown_sb10_abs)
@@ -5110,6 +5151,11 @@ def _run_sb2_absorption(bars: list):
             volland_stats = vstat["stats"]
     except Exception as e:
         print(f"[sb2] volland lookup error: {e}", flush=True)
+
+    # Override DD hedging with combined SPX+SPY value (if available)
+    if volland_stats and _dd_combined_str:
+        volland_stats = dict(volland_stats)  # shallow copy
+        volland_stats["delta_decay_hedging"] = _dd_combined_str
 
     # Get SPX spot
     spx_spot = None

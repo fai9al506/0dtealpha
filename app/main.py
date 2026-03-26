@@ -2637,7 +2637,10 @@ def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
     return result
 
 # ====== jobs ======
-def run_market_job():
+_MARKET_JOB_TIMEOUT = 55  # seconds — must finish before next 30s cycle + margin
+
+def _run_market_job_inner():
+    """Actual market job logic. Called from run_market_job with timeout wrapper."""
     global latest_df, last_run_status, _spx_session, _spx_cycle_high, _spx_cycle_low, _vix_last, _vix3m_last, _overvix
     try:
         if not market_open_now():
@@ -2739,13 +2742,23 @@ def run_market_job():
     except Exception as e:
         last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}
         print("[pull] ERROR", e, flush=True)
-    finally:
-        # Check pipeline health every cycle during market hours
-        if market_open_now():
-            try:
-                check_pipeline_health()
-            except Exception as health_err:
-                print(f"[pipeline] health check error: {health_err}", flush=True)
+
+def run_market_job():
+    """Timeout wrapper for _run_market_job_inner. Prevents hung threads from blocking
+    all future cycles. If the inner job takes >55s, it's abandoned and an alert is sent."""
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_run_market_job_inner)
+        try:
+            future.result(timeout=_MARKET_JOB_TIMEOUT)
+        except FuturesTimeout:
+            msg = f"run_market_job exceeded {_MARKET_JOB_TIMEOUT}s timeout — thread abandoned"
+            print(f"[watchdog] {msg}", flush=True)
+            last_run_status["ok"] = False
+            last_run_status["msg"] = f"TIMEOUT after {_MARKET_JOB_TIMEOUT}s"
+            send_telegram(f"🚨 <b>MARKET JOB TIMEOUT</b>\n{msg}")
+        except Exception as e:
+            print(f"[watchdog] market job wrapper error: {e}", flush=True)
 
 def run_spy_market_job():
     """Fetch SPY options chain on same interval as SPX."""
@@ -6039,6 +6052,40 @@ def start_scheduler():
             pass
     sch.add_job(_real_trade_fast_poll, "interval", seconds=3,
                 id="real_trade_poll", coalesce=True, max_instances=1)
+    # Pipeline health + market job watchdog — INDEPENDENT from run_market_job
+    # This catches hung threads that the old finally-block approach missed
+    _watchdog_alert_sent = {"ts": 0.0}
+    def _pipeline_watchdog():
+        if not market_open_now():
+            return
+        try:
+            check_pipeline_health()
+        except Exception as e:
+            print(f"[pipeline] health check error: {e}", flush=True)
+        # Watchdog: detect hung run_market_job (last_run_status not updated for >90s)
+        try:
+            ts_str = last_run_status.get("ts", "")
+            if ts_str:
+                from datetime import datetime as _dt
+                last_ts = _dt.strptime(ts_str, "%Y-%m-%d %H:%M:%S ET").replace(
+                    tzinfo=NY)
+                age_s = (now_et() - last_ts).total_seconds()
+                if age_s > 90:
+                    now_ts = time.time()
+                    if now_ts - _watchdog_alert_sent["ts"] > 300:  # max once per 5 min
+                        _watchdog_alert_sent["ts"] = now_ts
+                        msg = (
+                            "🚨 <b>WATCHDOG: run_market_job HUNG</b>\n\n"
+                            f"Last update: {ts_str} ({int(age_s)}s ago)\n"
+                            "SPX chain + setup detection + real_trader polling FROZEN.\n"
+                            "Auto-restart required."
+                        )
+                        print(f"[watchdog] ALERT: market job hung for {int(age_s)}s", flush=True)
+                        send_telegram(msg)
+        except Exception as wd_err:
+            print(f"[watchdog] error: {wd_err}", flush=True)
+    sch.add_job(_pipeline_watchdog, "interval", seconds=30,
+                id="pipeline_watchdog", coalesce=True, max_instances=1)
     sch.add_job(_auto_trade_orphan_check, "interval", minutes=5,
                 id="auto_trade_orphan", coalesce=True, max_instances=1)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,

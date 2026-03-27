@@ -1738,7 +1738,7 @@ class PositionTracker:
         "GEX Long":       {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
         "GEX Velocity":   {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
         "AG Short":       {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
-        "Skew Charm":     {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
+        "Skew Charm":     {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
     }
 
     def check_trail(self, es_price: float | None):

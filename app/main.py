@@ -3379,7 +3379,7 @@ def _compute_setup_levels(r: dict):
 
     if setup_name == "Skew Charm":
         # Trailing stop — no fixed target; initial SL = 14 pts (was 20, optimized Mar 18)
-        # Hybrid trail: BE at +10, continuous trail activation=10, gap=8
+        # Hybrid trail: BE at +10, continuous trail activation=10, gap=5
         stop_lvl = spot - 14 if is_long else spot + 14
         return None, round(stop_lvl, 2)
 
@@ -3576,7 +3576,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},  # act 15→12: +54pts on 6 trades, 0 worsened (Mar 27 backtest, 54t)
-            "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
+            "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},  # gap 8→5: was copy-paste from ES Abs (range-bar bug), never SC-studied. 0/13 losers touch activation, gap only affects capture.
             "SB Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
             "SB10 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
             "SB2 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
@@ -9593,7 +9593,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
-            "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8, "initial_sl": 14},
+            "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5, "initial_sl": 14},
         }
 
         if is_trailing:

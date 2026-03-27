@@ -8,7 +8,7 @@
 #
 # 1 MES per trade. No split target -- entry + stop + target.
 # Cap: 2 concurrent per direction.
-# Trail: SC trail (BE trigger=10, activation=10, gap=8).
+# Trail: SC trail (BE trigger=10, activation=10, gap=5).
 
 import os, json, math, time, calendar, requests, zoneinfo
 from datetime import datetime, date, timedelta
@@ -73,7 +73,7 @@ DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_DAILY_LOSS_LIMIT", "300"))  # max
 # SC Trail parameters
 BE_TRIGGER_PTS = 10.0    # move stop to breakeven after 10pts profit
 TRAIL_ACTIVATION_PTS = 10.0  # trail activates at 10pts
-TRAIL_GAP_PTS = 8.0      # trail gap = max_fav - 8
+TRAIL_GAP_PTS = 5.0      # trail gap = max_fav - 5
 BE_BUFFER_PTS = 0.25     # breakeven + 1 tick buffer
 
 # Charm S/R limit entry timeout
@@ -1082,7 +1082,7 @@ def _get_order_fill_price(order_id: str, account_id: str) -> float | None:
 
 def update_trail(setup_log_id: int, current_es_price: float):
     """Update trailing stop based on current ES price.
-    SC Trail: BE trigger=10, activation=10, gap=8.
+    SC Trail: BE trigger=10, activation=10, gap=5.
 
     Called externally (from main.py's outcome tracking loop) with the current ES price.
     This function tracks max favorable excursion and advances the stop accordingly.

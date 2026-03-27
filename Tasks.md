@@ -3,7 +3,7 @@
 Pending tasks, research, and implementation ideas for 0DTE Alpha.
 Two types: **Scheduled** (time-based, checked every session) and **Backlog** (do when free).
 
-Last updated: 2026-03-25
+Last updated: 2026-03-27
 
 ---
 
@@ -14,12 +14,12 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 | # | Task | Trigger | Action | Status |
 |---|------|---------|--------|--------|
 | S1 | **Mar 25 deployment verification** | First market day after Mar 25 | All 5 checks PASS. SPY DD flowing, gap=+64.2 (longs blocked), combined DD working. Two bugs found+fixed: (1) gap SQL used wrong column, (2) SPY DD not reaching setup detector. | DONE 2026-03-25 |
-| S2 | **SB2 Absorption data check** | Every 5 trading days | 7 signals (6W/1L, 86% WR, +77 pts). Backtest done: OR gate + SVB + cd=20 = 47% WR, PF 1.50. Deploy scheduled S11. | PENDING (7/15 signals) |
-| S3 | **IV Momentum data check** | Every 5 trading days | Query setup_log for IV Momentum signals. When 50+ signals collected with live data, compare WR vs backtest 64%. If validated, enable on SIM. | PENDING (LOG-ONLY) |
-| S4 | **Vanna Butterfly data check** | Every 5 trading days | Query setup_log for Vanna Butterfly signals. Track GREEN vanna WR. When 20+ GREEN signals, decide: enable on SIM or keep logging. Expected: 80% WR, $3,970/mo/contract. | PENDING (LOG-ONLY) |
-| S5 | **VIX Compression data check** | Every 5 trading days | Query setup_log for VIX Compression signals. Currently 4 trades, 100% WR. When 10+ signals, consider enabling. Volland gate (SVB>1, vanna ratio<5) keeps it clean. | PENDING (LOG-ONLY) |
-| S6 | **GEX Long live signal check** | Every 5 trading days | Query setup_log for GEX Long signals on SIM. Need 15+ signals to validate force alignment rewrite. Currently disabled on Eval Real. | PENDING |
-| S7 | **GEX Velocity live signal check** | Every 5 trading days | Query setup_log for GEX Velocity signals. Separate from GEX Long. Monitoring on SIM. | PENDING |
+| S2 | **SB2 Absorption data check** | Every 5 trading days | 23 signals but ALL outcomes were wrong (abs_details NULL bug + Mar 26 outage). Fixed Mar 27: abs_details now saved, cooldown 10→20. Clean data: 5 trades, 1W/4L, -27 pts. Need fresh data post-fix. | PENDING (reset, collecting) |
+| S3 | **IV Momentum data check** | Every 5 trading days | 0 signals. Gate conditions nearly impossible with noisy 0DTE IV. May need redesign or removal. | PENDING (0 signals) |
+| S4 | **Vanna Butterfly data check** | Every 5 trading days | 1 signal. 15-min daily window (14:55-15:10) too narrow + vanna pin data dependency. | PENDING (1 signal) |
+| S5 | **VIX Compression data check** | Every 5 trading days | 1 signal. VIX>=15 floor blocks calm days, v2 SVB gate overfit to 8 trades. | PENDING (1 signal) |
+| S6 | **GEX Long live signal check** | Every 5 trading days | 62 signals, 34% WR, -83 pts. Last fired Mar 20. Blocked by VIX>22 + alignment<2. Needs bull regime. | PENDING (blocked by VIX) |
+| S7 | **GEX Velocity live signal check** | Every 5 trading days | 0 signals. No LIS surges detected. Needs bull trend. | PENDING (0 signals) |
 | S8 | **Options circuit breaker analysis** | When 30+ days of V11 option data | Re-run circuit breaker study: stop trading after 4 consecutive option losses. Backtest showed +48% improvement. Needs 30+ days V8+ data. | WAITING (need data) |
 | S9 | **Stock GEX Support Bounce — live alerts** | Each trading day 10:00-14:00 ET | Monitor `/stock-gex-live` for stocks dipping 1% below -GEX with CLEAN structure. Telegram channel connected. | ACTIVE |
 | S10 | **Real money daily P&L check** | Each trading day after 16:05 ET | Check Telegram for real_trader EOD summary. Verify no bugs, no missed trades, no ghost positions. Accounts: 210VYX65 (longs), 210VYX91 (shorts). | ACTIVE |
@@ -58,12 +58,13 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 | R4 | **Fixed strike vol for vanna interpretation** | MEDIUM | Discord idea: vanna support only holds when fixed-strike vol is declining. Needs investigation. | `research_discord_ideas_mar23.md` |
 | R5 | **Panic vs structural put buying** | MEDIUM | Distinguish geopolitical panic from institutional structural put buying. Different trading responses. | `research_discord_ideas_mar23.md` |
 | R6 | **Volatility spike pause** | MEDIUM | If ES range bar volatility exceeds 3x normal, pause entries 15-30 min. | `research_discord_ideas_mar23.md` |
-| R7 | **DD per-strike for ES Absorption stacking** | LOW | Revisit when ES Absorption trade count grows. Not enough data yet. | `research_gamma_dd_perstrike.md` |
-| R8 | **Gamma per-strike on dashboard** | LOW | Visual awareness only. No filter impact expected. | `research_gamma_dd_perstrike.md` |
-| R9 | **EOD DD trajectory for manual butterflies** | LOW | Display DD direction into close for discretionary butterfly entries. 50% direction accuracy — needs timing skill. | `research_gamma_dd_perstrike.md` |
-| R10 | **ThetaData — OpEx pinning study** | LOW | Data already downloaded. GEX pins monthly expiry strikes. | `project_thetadata_ideas.md` |
-| R11 | **ThetaData — IV crush around events** | LOW | Needs more data collection. Pre-event IV spike → post-event collapse. | `project_thetadata_ideas.md` |
-| R12 | **Options strategy expansion** | LOW | Non-directional setups: butterfly, IC, iron fly. Pin criteria: charm concentration, DD neutrality, low paradigm conviction, VIX term structure. | PROJECT_BRAIN |
+| R7 | **SC Trail Optimization** | **HIGH** | Backtest (240 trades, Feb-Mar 2026): Current RM (BE@10, act=10, gap=8, SL=14) = +424 pts. Alt (act=12, gap=6) = **+1,037 pts** (2.4x). Winners avg MFE=20.6, capture only 51% (10.5 pts). Gap=8 gives back too much. Run full sweep (act 8-16, gap 4-10), validate on fresh data, then deploy. Potentially biggest single PnL improvement across all setups. | Backtest Mar 27 |
+| R8 | **DD per-strike for ES Absorption stacking** | LOW | Revisit when ES Absorption trade count grows. Not enough data yet. | `research_gamma_dd_perstrike.md` |
+| R9 | **Gamma per-strike on dashboard** | LOW | Visual awareness only. No filter impact expected. | `research_gamma_dd_perstrike.md` |
+| R10 | **EOD DD trajectory for manual butterflies** | LOW | Display DD direction into close for discretionary butterfly entries. 50% direction accuracy — needs timing skill. | `research_gamma_dd_perstrike.md` |
+| R11 | **ThetaData — OpEx pinning study** | LOW | Data already downloaded. GEX pins monthly expiry strikes. | `project_thetadata_ideas.md` |
+| R12 | **ThetaData — IV crush around events** | LOW | Needs more data collection. Pre-event IV spike → post-event collapse. | `project_thetadata_ideas.md` |
+| R13 | **Options strategy expansion** | LOW | Non-directional setups: butterfly, IC, iron fly. Pin criteria: charm concentration, DD neutrality, low paradigm conviction, VIX term structure. | PROJECT_BRAIN |
 
 ### Parked (Revisit Later)
 
@@ -79,6 +80,9 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 
 | Date | Task | Result |
 |------|------|--------|
+| 2026-03-27 | Data staleness protection | DONE — data_ts column + freshness gates on all 4 snapshot tables. Prevents saving stale data during API outages. |
+| 2026-03-27 | SB2 abs_details + cooldown fix | DONE — abs_details now saved for all absorption variants (was ES-only). Cooldown reads settings (20 bars, was hardcoded 10). |
+| 2026-03-27 | Mar 26 outcome cleanup | DONE — Cleared 42 contaminated outcomes (37 Mar 26 outage + 5 Mar 24 SB2 bug). Grand total corrected: +776.6 unfiltered, +1,278.5 V12. |
 | 2026-03-25 | Gap-up longs filter (gap > +30 pts) | DONE — blocks longs all day on gap-up. Backtest: +290.9 pts saved, 112 trades. FOMC filter rejected (FOMC day = best day). |
 | 2026-03-25 | Combined DD into setup detector | DONE — SPX+SPY DD feeds DD Exhaustion. Boundary: Mar 25 (SPX-only before). |
 | 2026-03-25 | SPY DD capture (v2 worker + dashboard) | DONE — deployed, verify at market open (S1) |

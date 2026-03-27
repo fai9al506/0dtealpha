@@ -3312,6 +3312,9 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
             # Block GEX-LIS paradigm shorts: 24t, 43% WR, -57.6 pts (LIS = support floor)
             if paradigm == "GEX-LIS":
                 return False
+        # AG-TARGET = trend already hit target, dealers neutral. 19t, 52.6% WR, -1.8 pts.
+        if setup_name == "AG Short" and paradigm == "AG-TARGET":
+            return False
         if setup_name in ("Skew Charm", "AG Short"):
             return True
         if setup_name == "DD Exhaustion" and align != 0:
@@ -3572,7 +3575,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
             "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
-            "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
+            "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},  # act 15→12: +54pts on 6 trades, 0 worsened (Mar 27 backtest, 54t)
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8},
             "SB Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
             "SB10 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
@@ -9584,12 +9587,12 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         # Trailing stop parameters
         # DD Exhaustion: continuous trail (activation=20, gap=5, initial_sl=12)
         # GEX Long: hybrid trail (BE at +8, continuous trail activation=10 gap=5, initial_sl=8)
-        # AG Short: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
+        # AG Short: hybrid trail (BE at +10, continuous trail activation=12 gap=5)
         _trail_params = {
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5, "initial_sl": 12},
             "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
-            "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
+            "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 8, "initial_sl": 14},
         }
 

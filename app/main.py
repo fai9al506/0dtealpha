@@ -665,6 +665,20 @@ def db_init():
         END $$;
         """))
 
+        # Trail params + exit price per trade — eliminates era guessing in analysis
+        for col, dtype in [
+            ("trail_sl", "DOUBLE PRECISION"),
+            ("trail_activation", "DOUBLE PRECISION"),
+            ("trail_gap", "DOUBLE PRECISION"),
+            ("exit_price", "DOUBLE PRECISION"),
+        ]:
+            conn.execute(text(f"""
+            DO $$ BEGIN
+                ALTER TABLE setup_log ADD COLUMN {col} {dtype};
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
+            """))
+
         # Economic calendar events table
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS economic_events (
@@ -1269,7 +1283,8 @@ def _backfill_outcomes():
                         outcome_max_profit = :mp,
                         outcome_max_loss = :ml,
                         outcome_first_event = :fe,
-                        outcome_elapsed_min = :em
+                        outcome_elapsed_min = :em,
+                        exit_price = :ep
                     WHERE id = :id
                 """), {
                     "res": result_type,
@@ -1280,6 +1295,7 @@ def _backfill_outcomes():
                     "ml": outcome.get("max_loss"),
                     "fe": fe,
                     "em": elapsed,
+                    "ep": round(spot, 2) if spot else None,
                     "id": entry["id"],
                 })
             filled += 1
@@ -1687,6 +1703,23 @@ def log_setup(result_wrapper):
                     insert_params.setdefault(_req_key, None)
                 # Overvix (VIX - VIX3M) — V8 Smart VIX Gate
                 insert_params["overvix"] = _overvix
+                # Trail params snapshot — for clean backtesting (no era guessing)
+                _tp_lookup = {
+                    "DD Exhaustion": (12, 20, 5),
+                    "GEX Long": (8, 10, 5),
+                    "GEX Velocity": (8, 10, 5),
+                    "AG Short": (14, 12, 5),
+                    "Skew Charm": (14, 10, 5),
+                    "ES Absorption": (8, 10, 8),
+                    "SB Absorption": (12, 20, 10),
+                    "SB10 Absorption": (12, 20, 10),
+                    "SB2 Absorption": (12, 20, 10),
+                    "BofA Scalp": (r.get("bofa_stop_level") or 10, None, None),
+                }
+                _tp = _tp_lookup.get(setup_name, (None, None, None))
+                insert_params["trail_sl"] = _tp[0]
+                insert_params["trail_activation"] = _tp[1]
+                insert_params["trail_gap"] = _tp[2]
                 # Auto-populate comments and abs_details for ES/SB2 Absorption
                 if setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption") and not insert_params.get("comments"):
                     _parts = [
@@ -1719,7 +1752,8 @@ def log_setup(result_wrapper):
                          bofa_stop_level, bofa_target_level, bofa_lis_width, bofa_max_hold_minutes, lis_upper,
                          abs_vol_ratio, abs_es_price, vix, comments, abs_details,
                          vanna_all, vanna_weekly, vanna_monthly, spot_vol_beta, greek_alignment,
-                         charm_limit_entry, overvix)
+                         charm_limit_entry, overvix,
+                         trail_sl, trail_activation, trail_gap)
                     VALUES
                         (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
                          :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
@@ -1728,7 +1762,8 @@ def log_setup(result_wrapper):
                          :bofa_stop_level, :bofa_target_level, :bofa_lis_width, :bofa_max_hold_minutes, :lis_upper_val,
                          :abs_vol_ratio, :abs_es_price, :vix, :comments, :abs_details,
                          :vanna_all, :vanna_weekly, :vanna_monthly, :spot_vol_beta, :greek_alignment,
-                         :charm_limit_entry, :overvix)
+                         :charm_limit_entry, :overvix,
+                         :trail_sl, :trail_activation, :trail_gap)
                     RETURNING id
                 """), insert_params)
                 log_id = result.fetchone()[0]
@@ -3768,7 +3803,8 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                                 outcome_elapsed_min = :em,
                                 outcome_first_event = :fe,
                                 outcome_max_profit = :mp,
-                                outcome_max_loss = :ml
+                                outcome_max_loss = :ml,
+                                exit_price = :ep
                             WHERE id = :id
                         """), {
                             "res": result_type,
@@ -3779,6 +3815,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                             "fe": first_event,
                             "mp": max_profit,
                             "ml": max_loss,
+                            "ep": round(spot, 2),
                             "id": log_id,
                         })
                 except Exception as db_err:
@@ -5973,7 +6010,8 @@ def _send_setup_eod_summary():
                             outcome_elapsed_min = :em,
                             outcome_first_event = 'timeout',
                             outcome_max_profit = :mp,
-                            outcome_max_loss = :ml
+                            outcome_max_loss = :ml,
+                            exit_price = :ep
                         WHERE id = :id AND outcome_result IS NULL
                     """), {
                         "outcome": outcome_result,
@@ -5983,6 +6021,7 @@ def _send_setup_eod_summary():
                         "em": elapsed_min,
                         "mp": max_profit_db,
                         "ml": max_loss_db,
+                        "ep": round(spot, 2) if spot else None,
                         "id": log_id,
                     })
             except Exception as db_err:
@@ -8428,6 +8467,57 @@ def api_spx_ohlc_history(date: str = Query(None, description="YYYY-MM-DD"),
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
+@app.post("/api/spx/ohlc/backfill")
+def api_spx_ohlc_backfill(barsback: int = Query(5000, ge=100, le=10000)):
+    """One-time backfill: pull historical 1-min SPX bars from TS barcharts API.
+    Must run on Railway (TS API accessible). Call once, then disable."""
+    if not engine:
+        return JSONResponse({"error": "no db"}, status_code=500)
+    try:
+        token = ts_access_token()
+        if not token:
+            return JSONResponse({"error": "no token"}, status_code=500)
+        r = api_get("/marketdata/barcharts/$SPX.X",
+                     params={"interval": "1", "unit": "Minute", "barsback": str(barsback)},
+                     timeout=30)
+        if not r or r.status_code != 200:
+            return JSONResponse({"error": f"TS API {r.status_code if r else 'None'}"}, status_code=502)
+        bars_list = r.json().get("Bars", [])
+        if not bars_list:
+            return {"saved": 0, "message": "No bars returned"}
+
+        saved = 0
+        with engine.connect() as conn:
+            for bar in bars_list:
+                ts_raw = bar.get("TimeStamp", "")
+                if not ts_raw:
+                    continue
+                bar_ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                bar_et = bar_ts.astimezone(NY)
+                # Only market hours
+                t = bar_et.time()
+                if not (dtime(9, 30) <= t <= dtime(16, 0)):
+                    continue
+                try:
+                    conn.execute(text("""
+                        INSERT INTO spx_ohlc_1m (ts, trade_date, bar_open, bar_high, bar_low, bar_close, volume)
+                        VALUES (:ts, :td, :o, :h, :l, :c, :v)
+                        ON CONFLICT (ts) DO NOTHING
+                    """), {"ts": bar_ts, "td": bar_et.date(),
+                           "o": bar.get("Open"), "h": bar.get("High"),
+                           "l": bar.get("Low"), "c": bar.get("Close"),
+                           "v": bar.get("TotalVolume", 0)})
+                    saved += 1
+                except Exception:
+                    pass
+            conn.commit()
+            total = conn.execute(text("SELECT COUNT(*) FROM spx_ohlc_1m")).fetchone()[0]
+            dates = conn.execute(text("SELECT MIN(trade_date), MAX(trade_date), COUNT(DISTINCT trade_date) FROM spx_ohlc_1m")).fetchone()
+        return {"saved": saved, "total": total, "bars_received": len(bars_list),
+                "date_range": f"{dates[0]} to {dates[1]}", "trading_days": dates[2]}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 @app.get("/api/statistics_levels")
 def api_statistics_levels():
     """
@@ -10099,6 +10189,171 @@ def api_setup_log_outcome(log_id: int):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.get("/api/setup/eod-review")
+def api_setup_eod_review(date: str = Query(None, description="Date YYYY-MM-DD, defaults to today ET")):
+    """Batch endpoint: all trades for a date with full outcome details, prices, levels."""
+    if not engine:
+        return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
+    try:
+        if date:
+            review_date = date
+        else:
+            review_date = datetime.now(NY).strftime("%Y-%m-%d")
+
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT id, ts, setup_name, direction, grade, score,
+                       paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
+                       gap_to_lis, upside, rr_ratio, first_hour, notified,
+                       bofa_stop_level, bofa_target_level, bofa_lis_width,
+                       bofa_max_hold_minutes, lis_upper, comments,
+                       abs_vol_ratio, abs_es_price, abs_details,
+                       support_score, upside_score, floor_cluster_score,
+                       target_cluster_score, rr_score,
+                       outcome_result, outcome_pnl, outcome_max_profit,
+                       outcome_max_loss, outcome_first_event, outcome_elapsed_min,
+                       greek_alignment, vix, overvix, spot_vol_beta,
+                       charm_limit_entry
+                FROM setup_log
+                WHERE date(ts AT TIME ZONE 'America/New_York') = :d
+                ORDER BY ts ASC
+            """), {"d": review_date}).mappings().all()
+
+        if not rows:
+            return {"date": review_date, "trades": [], "summary": {}}
+
+        trades = []
+        for row in rows:
+            entry = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(row).items()}
+            is_abs = row["setup_name"] in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption")
+            is_bofa = row["setup_name"] == "BofA Scalp"
+
+            # Calculate outcome
+            outcome = _calculate_setup_outcome(dict(row))
+
+            # Fetch price data
+            ts = row["ts"]
+            alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
+            market_open = NY.localize(datetime.combine(alert_date, dtime(9, 30)))
+            market_close = NY.localize(datetime.combine(alert_date, dtime(16, 0)))
+
+            prices = []
+            es_bars = []
+
+            if is_abs:
+                with engine.begin() as conn:
+                    es_rows = conn.execute(text("""
+                        SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
+                               bar_volume, bar_delta, cumulative_delta,
+                               ts_start, ts_end, status
+                        FROM es_range_bars
+                        WHERE trade_date = :td AND source = 'rithmic'
+                        ORDER BY bar_idx ASC
+                    """), {"td": alert_date.isoformat()}).mappings().all()
+                es_bars = [
+                    {
+                        "idx": r["bar_idx"],
+                        "open": r["bar_open"], "high": r["bar_high"],
+                        "low": r["bar_low"], "close": r["bar_close"],
+                        "volume": r["bar_volume"], "delta": r["bar_delta"],
+                        "cvd": r["cumulative_delta"],
+                        "ts_start": r["ts_start"].isoformat() if hasattr(r["ts_start"], "isoformat") else r["ts_start"],
+                        "ts_end": r["ts_end"].isoformat() if hasattr(r["ts_end"], "isoformat") else r["ts_end"],
+                        "status": r["status"],
+                    }
+                    for r in es_rows
+                ]
+                es_entry = row.get("abs_es_price") or row["spot"]
+                spx_spot = row["spot"]
+                offset = (es_entry - spx_spot) if (es_entry and spx_spot and es_entry != spx_spot) else 0
+                lis_es = round(row["lis"] + offset, 2) if row["lis"] and offset else None
+                gex_p_es = round(row["max_plus_gex"] + offset, 2) if row["max_plus_gex"] and offset else None
+                gex_m_es = round(row["max_minus_gex"] + offset, 2) if row["max_minus_gex"] and offset else None
+                levels = {
+                    "entry": es_entry, "spot_spx": spx_spot, "offset": round(offset, 2),
+                    "lis": lis_es, "lis_spx": row["lis"], "target": row["target"],
+                    "max_plus_gex": gex_p_es, "max_minus_gex": gex_m_es,
+                    "abs_es_price": row.get("abs_es_price"), "abs_vol_ratio": row.get("abs_vol_ratio"),
+                    "ten_pt": outcome.get("ten_pt_level"), "target_es": None, "stop": outcome.get("initial_stop"),
+                }
+            else:
+                if is_bofa:
+                    chart_start = ts - timedelta(hours=1)
+                    if chart_start < market_open:
+                        chart_start = market_open
+                    chart_end = ts + timedelta(hours=1)
+                    if chart_end > market_close:
+                        chart_end = market_close
+                else:
+                    chart_start = market_open
+                    chart_end = market_close
+                with engine.begin() as conn:
+                    price_rows = conn.execute(text("""
+                        SELECT ts, spot FROM playback_snapshots
+                        WHERE ts >= :start_ts AND ts <= :end_ts
+                        ORDER BY ts ASC
+                    """), {"start_ts": chart_start, "end_ts": chart_end}).mappings().all()
+                prices = [
+                    {"ts": r["ts"].isoformat() if hasattr(r["ts"], "isoformat") else r["ts"], "spot": r["spot"]}
+                    for r in price_rows if r["spot"] is not None
+                ]
+                levels = {
+                    "entry": row["spot"], "lis": row["lis"], "target": row["target"],
+                    "ten_pt": outcome.get("ten_pt_level"), "stop": outcome.get("stop_level"),
+                    "max_plus_gex": row["max_plus_gex"], "max_minus_gex": row["max_minus_gex"],
+                }
+                if is_bofa:
+                    levels["lis_upper"] = row.get("lis_upper")
+                    levels["bofa_target_level"] = outcome.get("bofa_target_level")
+                    levels["bofa_max_hold_minutes"] = row.get("bofa_max_hold_minutes") or 30
+
+            trades.append({
+                "entry": entry,
+                "outcome": outcome,
+                "prices": prices,
+                "es_bars": es_bars,
+                "levels": levels,
+                "abs_details": row.get("abs_details") if is_abs else None,
+            })
+
+        # Summary stats
+        wins = sum(1 for t in trades if t["entry"].get("outcome_result") == "WIN")
+        losses = sum(1 for t in trades if t["entry"].get("outcome_result") == "LOSS")
+        expired = sum(1 for t in trades if t["entry"].get("outcome_result") == "EXPIRED")
+        net_pnl = sum(t["entry"].get("outcome_pnl") or 0 for t in trades if t["entry"].get("outcome_result"))
+        resolved = wins + losses
+        # Per-setup breakdown
+        setup_stats = {}
+        for t in trades:
+            sn = t["entry"].get("setup_name", "Unknown")
+            if sn not in setup_stats:
+                setup_stats[sn] = {"count": 0, "wins": 0, "losses": 0, "pnl": 0}
+            setup_stats[sn]["count"] += 1
+            res = t["entry"].get("outcome_result")
+            if res == "WIN":
+                setup_stats[sn]["wins"] += 1
+            elif res == "LOSS":
+                setup_stats[sn]["losses"] += 1
+            if t["entry"].get("outcome_pnl") is not None and res:
+                setup_stats[sn]["pnl"] += t["entry"]["outcome_pnl"]
+
+        summary = {
+            "total": len(trades),
+            "wins": wins,
+            "losses": losses,
+            "expired": expired,
+            "resolved": resolved,
+            "win_rate": round(wins / resolved * 100, 1) if resolved > 0 else 0,
+            "net_pnl": round(net_pnl, 1),
+            "per_setup": {k: {**v, "pnl": round(v["pnl"], 1)} for k, v in setup_stats.items()},
+        }
+
+        return {"date": review_date, "trades": trades, "summary": summary}
+    except Exception as e:
+        print(f"[eod-review] error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.post("/api/setup/log/{log_id}/comment")
 async def api_setup_log_comment(log_id: int, request: Request):
     """Save a comment/remark on a setup log entry."""
@@ -11024,6 +11279,696 @@ REQUEST_ACCESS_HTML = """
 </html>
 """
 
+EOD_REVIEW_TEMPLATE = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>EOD Review — 0DTE Alpha</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      --bg:#0b0c10; --panel:#121417; --surface:#1a1d21; --muted:#8a8f98; --text:#e6e7e9;
+      --border:#23262b; --green:#22c55e; --red:#ef4444; --blue:#60a5fa; --amber:#f59e0b;
+      --accent:#3b82f6;
+    }
+    * { box-sizing: border-box; margin:0; padding:0; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      font-size: 13px; line-height: 1.5;
+    }
+
+    /* Top bar */
+    .topbar {
+      position:sticky; top:0; z-index:100;
+      background: var(--panel); border-bottom:1px solid var(--border);
+      padding:10px 24px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    }
+    .topbar h1 { font-size:16px; font-weight:700; white-space:nowrap; }
+    .topbar .sep { width:1px; height:24px; background:var(--border); }
+    .topbar input[type=date] {
+      background:var(--surface); color:var(--text); border:1px solid var(--border);
+      border-radius:6px; padding:5px 10px; font-size:13px; cursor:pointer;
+    }
+    .topbar .nav-links { margin-left:auto; display:flex; gap:12px; }
+    .topbar .nav-links a { color:var(--accent); text-decoration:none; font-size:12px; }
+    .topbar .nav-links a:hover { text-decoration:underline; }
+
+    /* Summary banner */
+    .summary-banner {
+      background: var(--panel); border:1px solid var(--border); border-radius:10px;
+      margin:16px 24px; padding:16px 20px;
+    }
+    .summary-row {
+      display:flex; flex-wrap:wrap; gap:8px 24px; align-items:center; margin-bottom:8px;
+    }
+    .summary-row:last-child { margin-bottom:0; }
+    .stat-box {
+      display:flex; align-items:baseline; gap:6px;
+    }
+    .stat-label { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; }
+    .stat-value { font-weight:700; font-size:18px; }
+    .stat-value.green { color:var(--green); }
+    .stat-value.red { color:var(--red); }
+
+    .setup-breakdown {
+      display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;
+      padding-top:8px; border-top:1px solid var(--border);
+    }
+    .setup-chip {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600;
+    }
+    .setup-chip .chip-stats { color:var(--muted); font-weight:400; }
+
+    /* Trade cards */
+    .trades-container { padding:0 24px 40px; }
+    .trade-card {
+      background: var(--panel); border:1px solid var(--border); border-radius:10px;
+      margin-bottom:16px; overflow:hidden;
+    }
+    .trade-card.win { border-left:3px solid var(--green); }
+    .trade-card.loss { border-left:3px solid var(--red); }
+    .trade-card.expired { border-left:3px solid var(--amber); }
+    .trade-card.open { border-left:3px solid var(--blue); }
+
+    /* Card header */
+    .card-header {
+      display:flex; align-items:center; gap:10px; padding:10px 16px;
+      border-bottom:1px solid var(--border); flex-wrap:wrap; cursor:pointer;
+    }
+    .card-header:hover { background: #151820; }
+    .card-id { color:var(--muted); font-size:11px; min-width:36px; }
+    .card-setup {
+      padding:2px 10px; border-radius:12px; font-size:11px; font-weight:600;
+    }
+    .card-dir { font-weight:700; font-size:14px; }
+    .card-price { font-weight:600; color:var(--text); }
+    .card-grade { font-weight:600; font-size:12px; }
+    .card-time { color:var(--muted); font-size:11px; }
+    .card-result { font-weight:700; font-size:13px; }
+    .card-pnl { font-weight:700; font-size:14px; font-family:'JetBrains Mono',monospace; }
+    .card-dur { color:var(--muted); font-size:11px; }
+    .card-align { font-size:11px; }
+    .card-toggle { margin-left:auto; color:var(--muted); font-size:18px; transition:transform 0.2s; }
+    .card-toggle.open { transform:rotate(180deg); }
+
+    /* Card body (collapsible) */
+    .card-body { padding:12px 16px; }
+    .card-body.collapsed { display:none; }
+
+    /* Info grid */
+    .info-grid {
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+      gap:3px; margin-bottom:10px; font-size:11px;
+    }
+    .info-cell {
+      background:var(--surface); padding:3px 6px; border-radius:3px;
+    }
+    .info-cell .lbl { color:var(--muted); font-size:8px; }
+    .info-cell .val { font-weight:600; }
+    .info-section {
+      grid-column:1/-1; color:var(--accent); font-size:8px; font-weight:700;
+      letter-spacing:1px; padding:3px 0 1px; border-top:1px solid var(--border); margin-top:1px;
+    }
+
+    /* Outcome row */
+    .outcome-row {
+      display:flex; gap:12px; margin-bottom:12px; padding:10px;
+      background:#0f1115; border-radius:8px; font-size:12px;
+    }
+    .outcome-box { flex:1; text-align:center; }
+    .outcome-box .olbl { color:var(--muted); font-size:10px; }
+    .outcome-box .oval { font-size:18px; font-weight:700; }
+    .outcome-box .osub { color:var(--muted); font-size:9px; }
+
+    /* Chart */
+    .trade-chart { height:300px; background:#0f1115; border-radius:8px; margin-bottom:10px; }
+
+    /* Stats + notes row */
+    .stats-notes-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:11px; }
+    .score-box, .summary-box {
+      background:var(--surface); padding:10px; border-radius:6px;
+    }
+    .score-box h4, .summary-box h4 {
+      font-weight:600; margin-bottom:6px; color:var(--muted); font-size:11px;
+    }
+    .score-grid { display:grid; grid-template-columns:1fr 1fr; gap:4px; font-size:10px; }
+
+    /* Comments */
+    .card-notes { margin-top:10px; }
+    .card-notes textarea {
+      width:100%; min-height:50px; background:var(--surface); color:var(--text);
+      border:1px solid var(--border); border-radius:6px; padding:8px; font-size:12px;
+      font-family:inherit; resize:vertical;
+    }
+    .card-notes .notes-actions { display:flex; align-items:center; gap:8px; margin-top:4px; }
+    .card-notes .save-btn {
+      font-size:10px; padding:2px 10px; background:var(--accent); color:#fff;
+      border:none; border-radius:4px; cursor:pointer;
+    }
+    .card-notes .save-status { font-size:10px; }
+
+    /* Loading */
+    .loading { text-align:center; padding:60px; color:var(--muted); font-size:14px; }
+    .no-trades { text-align:center; padding:60px; color:var(--muted); font-size:14px; }
+
+    /* Filter bar */
+    .filter-bar {
+      display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+      margin:0 24px 12px; padding:10px 16px;
+      background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    }
+    .filter-bar select, .filter-bar input {
+      background:var(--surface); color:var(--text); border:1px solid var(--border);
+      border-radius:5px; padding:4px 8px; font-size:12px;
+    }
+    .filter-bar label { color:var(--muted); font-size:10px; text-transform:uppercase; }
+    .filter-bar .expand-all-btn {
+      margin-left:auto; padding:4px 12px; background:var(--surface); color:var(--text);
+      border:1px solid var(--border); border-radius:5px; font-size:11px; cursor:pointer;
+    }
+
+    @media print {
+      .topbar, .filter-bar { position:static; }
+      .trade-card { break-inside:avoid; }
+      .card-body.collapsed { display:block !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>EOD Trade Review</h1>
+    <div class="sep"></div>
+    <input type="date" id="reviewDate" value="__DATE__" />
+    <button id="loadBtn" style="padding:5px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">Load</button>
+    <div class="nav-links">
+      <a href="/dashboard">Dashboard</a>
+    </div>
+  </div>
+
+  <div id="summaryBanner" class="summary-banner" style="display:none"></div>
+  <div class="filter-bar" id="filterBar" style="display:none">
+    <label>Setup</label><select id="fSetup"><option value="">All</option></select>
+    <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
+    <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
+    <button class="expand-all-btn" id="expandAllBtn">Expand All</button>
+    <button class="expand-all-btn" id="collapseAllBtn">Collapse All</button>
+  </div>
+  <div class="trades-container" id="tradesContainer">
+    <div class="loading" id="loadingMsg">Loading trades...</div>
+  </div>
+
+<script>
+const PILL_COLORS = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','SB Absorption':'#f59e0b','SB10 Absorption':'#f59e0b','SB2 Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899','GEX Velocity':'#22c55e','Vanna Pivot Bounce':'#818cf8'};
+const GRADE_COLORS = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308','B':'#f59e0b','C':'#888','LOG':'#555'};
+let _allTrades = [];
+let _allExpanded = true;
+
+function fmtET(isoStr) {
+  if (!isoStr) return '--';
+  const d = new Date(isoStr);
+  return d.toLocaleTimeString('en-US', {timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false});
+}
+
+function durStr(mins) {
+  if (mins == null) return '--';
+  return mins >= 60 ? Math.floor(mins/60)+'h'+String(mins%60).padStart(2,'0') : mins+'m';
+}
+
+async function loadReview(date) {
+  const container = document.getElementById('tradesContainer');
+  const banner = document.getElementById('summaryBanner');
+  const filterBar = document.getElementById('filterBar');
+  container.innerHTML = '<div class="loading">Loading trades for ' + date + '...</div>';
+  banner.style.display = 'none';
+  filterBar.style.display = 'none';
+  try {
+    const r = await fetch('/api/setup/eod-review?date=' + date, {cache:'no-store'});
+    const data = await r.json();
+    if (data.error) { container.innerHTML = '<div class="no-trades">Error: ' + data.error + '</div>'; return; }
+    if (!data.trades || data.trades.length === 0) {
+      container.innerHTML = '<div class="no-trades">No trades found for ' + date + '</div>';
+      return;
+    }
+    _allTrades = data.trades;
+    renderSummary(data.summary, date);
+    populateFilterOptions(data.trades);
+    filterBar.style.display = 'flex';
+    renderTrades(data.trades);
+  } catch(err) {
+    container.innerHTML = '<div class="no-trades">Error loading: ' + err.message + '</div>';
+  }
+}
+
+function renderSummary(s, date) {
+  const banner = document.getElementById('summaryBanner');
+  const pnlC = s.net_pnl >= 0 ? 'green' : 'red';
+  const pnlStr = (s.net_pnl >= 0 ? '+' : '') + s.net_pnl.toFixed(1);
+  let perSetupHtml = '';
+  for (const [name, st] of Object.entries(s.per_setup || {})) {
+    const c = PILL_COLORS[name] || '#888';
+    const sp = (st.pnl >= 0 ? '+' : '') + st.pnl.toFixed(1);
+    const sc = st.pnl >= 0 ? '#22c55e' : '#ef4444';
+    perSetupHtml += '<div class="setup-chip" style="background:'+c+'22;color:'+c+'">'+name+' <span class="chip-stats">'+st.count+'t '+st.wins+'W/'+st.losses+'L <span style="color:'+sc+'">'+sp+'</span></span></div>';
+  }
+  banner.innerHTML = `
+    <div class="summary-row">
+      <div class="stat-box"><span class="stat-label">Date</span><span class="stat-value">${date}</span></div>
+      <div class="stat-box"><span class="stat-label">Trades</span><span class="stat-value">${s.total}</span></div>
+      <div class="stat-box"><span class="stat-label">Wins</span><span class="stat-value green">${s.wins}</span></div>
+      <div class="stat-box"><span class="stat-label">Losses</span><span class="stat-value red">${s.losses}</span></div>
+      ${s.expired ? '<div class="stat-box"><span class="stat-label">Expired</span><span class="stat-value" style="color:var(--amber)">' + s.expired + '</span></div>' : ''}
+      <div class="stat-box"><span class="stat-label">Win Rate</span><span class="stat-value">${s.win_rate}%</span></div>
+      <div class="stat-box"><span class="stat-label">Net P&L</span><span class="stat-value ${pnlC}">${pnlStr} pts</span></div>
+    </div>
+    <div class="setup-breakdown">${perSetupHtml}</div>
+  `;
+  banner.style.display = 'block';
+}
+
+function populateFilterOptions(trades) {
+  const sel = document.getElementById('fSetup');
+  const setups = [...new Set(trades.map(t => t.entry.setup_name))].sort();
+  sel.innerHTML = '<option value="">All</option>' + setups.map(s => '<option>'+s+'</option>').join('');
+}
+
+function getFilteredTrades() {
+  const fSetup = document.getElementById('fSetup').value;
+  const fResult = document.getElementById('fResult').value;
+  const fGrade = document.getElementById('fGrade').value;
+  return _allTrades.filter(t => {
+    if (fSetup && t.entry.setup_name !== fSetup) return false;
+    if (fResult && (t.entry.outcome_result || '') !== fResult) return false;
+    if (fGrade && t.entry.grade !== fGrade) return false;
+    return true;
+  });
+}
+
+function renderTrades(trades) {
+  const container = document.getElementById('tradesContainer');
+  if (trades.length === 0) {
+    container.innerHTML = '<div class="no-trades">No matching trades</div>';
+    return;
+  }
+  let html = '';
+  trades.forEach((t, idx) => {
+    const e = t.entry;
+    const o = t.outcome || {};
+    const lv = t.levels || {};
+    const isAbs = (e.setup_name||'').includes('Absorption');
+    const isBofa = e.setup_name === 'BofA Scalp';
+    const pillC = PILL_COLORS[e.setup_name] || '#888';
+    const gradeC = GRADE_COLORS[e.grade] || '#888';
+    const isLong = e.direction === 'long' || e.direction === 'bullish';
+    const dir = isAbs ? (e.direction === 'bullish' ? '▲ BUY' : '▼ SELL') : (isLong ? '▲ LONG' : '▼ SHORT');
+    const dirC = isLong ? '#22c55e' : '#ef4444';
+    const price = isAbs ? (e.abs_es_price || e.spot)?.toFixed(2) : e.spot?.toFixed(0);
+    const priceLabel = isAbs ? 'ES ' : 'SPX ';
+    const time = fmtET(e.ts);
+    const result = e.outcome_result || 'OPEN';
+    const resC = result === 'WIN' ? '#22c55e' : result === 'LOSS' ? '#ef4444' : result === 'EXPIRED' ? '#f59e0b' : '#3b82f6';
+    const pnl = e.outcome_pnl != null ? ((e.outcome_pnl >= 0 ? '+' : '') + e.outcome_pnl.toFixed(1)) : '--';
+    const pnlC = e.outcome_pnl != null ? (e.outcome_pnl >= 0 ? '#22c55e' : '#ef4444') : '#888';
+    const dur = durStr(e.outcome_elapsed_min);
+    const align = e.greek_alignment != null ? ((e.greek_alignment > 0 ? '+' : '') + e.greek_alignment) : '--';
+    const alignC = e.greek_alignment > 0 ? '#22c55e' : e.greek_alignment < 0 ? '#ef4444' : 'var(--muted)';
+    const cardClass = result === 'WIN' ? 'win' : result === 'LOSS' ? 'loss' : result === 'EXPIRED' ? 'expired' : 'open';
+    const collapsed = _allExpanded ? '' : 'collapsed';
+    const toggleClass = _allExpanded ? 'card-toggle open' : 'card-toggle';
+
+    html += '<div class="trade-card '+cardClass+'" data-idx="'+idx+'">';
+
+    // Header
+    html += '<div class="card-header" onclick="toggleCard('+idx+')">';
+    html += '<span class="card-id">#'+e.id+'</span>';
+    html += '<span class="card-setup" style="background:'+pillC+'22;color:'+pillC+'">'+e.setup_name+'</span>';
+    html += '<span class="card-dir" style="color:'+dirC+'">'+dir+'</span>';
+    html += '<span class="card-price">'+priceLabel+price+'</span>';
+    html += '<span class="card-grade" style="color:'+gradeC+'">'+e.grade+'</span>';
+    html += '<span class="card-align" style="color:'+alignC+'">Align: '+align+'</span>';
+    html += '<span class="card-time">'+time+' ET</span>';
+    html += '<span class="card-result" style="color:'+resC+'">'+result+'</span>';
+    html += '<span class="card-pnl" style="color:'+pnlC+'">'+pnl+'</span>';
+    html += '<span class="card-dur">'+dur+'</span>';
+    html += '<span class="'+toggleClass+'" id="toggle'+idx+'">▼</span>';
+    html += '</div>';
+
+    // Body
+    html += '<div class="card-body '+collapsed+'" id="body'+idx+'">';
+
+    // Info grid
+    html += buildInfoGrid(e, lv, o, isAbs, isBofa, t.abs_details);
+
+    // Outcome row
+    html += buildOutcomeRow(e, o, lv, isAbs, isBofa);
+
+    // Chart placeholder
+    html += '<div class="trade-chart" id="chart'+idx+'"></div>';
+
+    // Stats + Summary
+    html += buildStatsRow(e, o, isAbs, isBofa);
+
+    // Notes
+    html += '<div class="card-notes">';
+    html += '<textarea id="notes'+idx+'" placeholder="Notes...">'+(e.comments||'').replace(/</g,'&lt;')+'</textarea>';
+    html += '<div class="notes-actions"><button class="save-btn" onclick="saveComment('+e.id+','+idx+')">Save</button><span class="save-status" id="noteStatus'+idx+'"></span></div>';
+    html += '</div>';
+
+    html += '</div>'; // card-body
+    html += '</div>'; // trade-card
+  });
+  container.innerHTML = html;
+
+  // Render charts
+  trades.forEach((t, idx) => {
+    if (_allExpanded) renderChart(t, idx);
+  });
+}
+
+function buildInfoGrid(e, lv, o, isAbs, isBofa, absDetails) {
+  const ad = absDetails || {};
+  const adBest = ad.best_swing || {};
+  const adSw = adBest.swing || {};
+  const adRef = adBest.ref_swing || {};
+  const isZone = adRef.type === 'Z';
+  const fmtCvd = (v) => v != null ? (v >= 0 ? '+' : '') + Number(v).toLocaleString() : '--';
+  const fmtVol = (v) => v != null ? Number(v).toLocaleString() : '--';
+
+  let items = [];
+  if (isAbs) {
+    const patternLabels = {sell_exhaustion:'Sell Exhaustion (T2)',sell_absorption:'Sell Absorption (T1)',buy_exhaustion:'Buy Exhaustion (T2)',buy_absorption:'Buy Absorption (T1)',zone_sell_absorption:'Zone Sell Absorption',zone_buy_absorption:'Zone Buy Absorption'};
+    const swType = adRef.type === 'L' ? 'Low' : adRef.type === 'H' ? 'High' : 'Zone';
+    const swLabel = isZone ? 'Visit' : 'Swing';
+    items = [
+      ['__section__','CONTEXT'],
+      ['Paradigm', e.paradigm||'--'],
+      ['Alignment', fmtAlign(e.greek_alignment), alignColor(e.greek_alignment)],
+      ['VIX', e.vix != null ? Number(e.vix).toFixed(1) : '--'],
+      ['Vol Ratio', (e.abs_vol_ratio||0).toFixed(1)+'x'],
+      ['Score', e.score+'/100'],
+      ['__section__','TRADE'],
+      ['Pattern', patternLabels[ad.pattern]||ad.pattern||'--'],
+      ['ES Entry', (lv.abs_es_price||e.abs_es_price||e.spot)?.toFixed(2)],
+      ['T1 (+10pt)', lv.ten_pt?.toFixed(2)||'--'],
+      ['Stop', lv.stop?.toFixed(2)||'--'],
+      ['LIS (ES)', lv.lis?.toFixed(0)||'--'],
+      ['__section__','DIVERGENCE'],
+      [swLabel+' 1', swType+' @ '+(adRef.price?.toFixed(2)||'--')+' | CVD: '+fmtCvd(adRef.cvd)+' | Bar #'+(adRef.bar_idx??'--')],
+      [swLabel+' 2', swType+' @ '+(adSw.price?.toFixed(2)||'--')+' | CVD: '+fmtCvd(adSw.cvd)+' | Bar #'+(adSw.bar_idx??'--')],
+      ['Strength', (adBest.cvd_z != null ? adBest.cvd_z.toFixed(2)+'σ' : '--') + (!isZone && adBest.price_atr != null ? ' ('+adBest.price_atr.toFixed(1)+'x price)' : '')],
+    ];
+  } else {
+    const ovStr = e.overvix != null ? (e.overvix >= 0 ? '+' : '')+Number(e.overvix).toFixed(1) : '--';
+    const svbStr = e.spot_vol_beta != null ? Number(e.spot_vol_beta).toFixed(2) : '--';
+    items = [
+      ['__section__','CONTEXT'],
+      ['Paradigm', e.paradigm||'--'],
+      ['Alignment', fmtAlign(e.greek_alignment), alignColor(e.greek_alignment)],
+      ['VIX', e.vix != null ? Number(e.vix).toFixed(1) : '--'],
+      ['Overvix', ovStr],
+      ['SVB', svbStr],
+      ['Score', e.score+'/100'],
+      ['__section__','TRADE'],
+      ['Entry', e.spot?.toFixed(2)],
+      ['Stop', lv.stop?.toFixed(0)||'--'],
+      ['Target', (lv.ten_pt||e.target)?.toFixed(0)||'--'],
+      ['R:R', e.rr_ratio ? e.rr_ratio.toFixed(1)+'x' : '--'],
+      ['Grade', e.grade],
+      ['__section__','LEVELS'],
+      ['LIS', e.lis?.toFixed(0)||'--'],
+      ['+GEX', lv.max_plus_gex?.toFixed(0)||'--'],
+      ['-GEX', lv.max_minus_gex?.toFixed(0)||'--'],
+    ];
+    if (isBofa) {
+      const lisLo = e.lis?.toFixed(0)||'--';
+      const lisHi = lv.lis_upper?.toFixed(0);
+      // Replace LIS with range
+      const lisIdx = items.findIndex(x => x[0]==='LIS');
+      if (lisIdx >= 0) items[lisIdx][1] = lisHi ? lisLo+' – '+lisHi : lisLo;
+    }
+  }
+  let h = '<div class="info-grid">';
+  items.forEach(([k,v,c]) => {
+    if (k === '__section__') h += '<div class="info-section">'+v+'</div>';
+    else h += '<div class="info-cell"><div class="lbl">'+k+'</div><div class="val" style="color:'+(c||'var(--text)')+'">'+( v||'--')+'</div></div>';
+  });
+  h += '</div>';
+  return h;
+}
+
+function fmtAlign(v) { return v != null ? (v >= 0 ? '+' : '')+v : '--'; }
+function alignColor(v) { return v > 0 ? '#22c55e' : v < 0 ? '#ef4444' : 'var(--muted)'; }
+
+function buildOutcomeRow(e, o, lv, isAbs, isBofa) {
+  let h = '<div class="outcome-row">';
+  if (isAbs) {
+    const isPending = o.first_event === 'pending';
+    const t1c = o.t1_result==='WIN'?'#22c55e':(o.t1_result==='LOSS'?'#ef4444':'#888');
+    const t1L = o.t1_result==='WIN'?'+10.0':(o.t1_result==='LOSS'?(o.t1_pnl?.toFixed(1)||'0'):'⏳');
+    const t2c = o.t2_result==='WIN'?'#22c55e':(o.t2_result==='LOSS'?'#ef4444':(o.t2_result==='TRAILING'?'#f59e0b':'#888'));
+    const t2L = o.t2_result==='TRAILING'?('↗ '+(o.trail_peak?.toFixed(1)||'0')):(o.t2_pnl!=null?(o.t2_pnl>=0?'+':'')+o.t2_pnl.toFixed(1):'⏳');
+    h += oBox('T1: +10pt', isPending?'⏳':t1L, isPending?'#888':t1c, o.time_to_10pt?fmtET(o.time_to_10pt)+' ET':'');
+    h += oBox('T2: Trail', isPending?'⏳':t2L, isPending?'#888':t2c, o.trail_exit_ts?fmtET(o.trail_exit_ts)+' ET':'');
+    h += oBox('Trail Peak', '+'+(o.trail_peak?.toFixed(1)||'0'), '#22c55e', o.trail_active?'trail active':'');
+    h += oBox('Max Profit', '+'+(o.max_profit?.toFixed(1)||'0'), '#22c55e', o.max_profit_ts?fmtET(o.max_profit_ts)+' ET':'');
+    h += oBox('Max Loss', (o.max_loss?.toFixed(1)||'0'), '#ef4444', o.max_loss_ts?fmtET(o.max_loss_ts)+' ET':'');
+  } else {
+    const c10 = o.hit_10pt?'#22c55e':'#888';
+    const cTgt = o.hit_target?'#22c55e':'#888';
+    const stopIsLoss = o.hit_stop && o.first_event==='stop';
+    const cStop = stopIsLoss?'#ef4444':(o.hit_stop===false?'#22c55e':'#888');
+    const stopL = o.hit_stop?(stopIsLoss?'✗ STOPPED':'STOPPED (BE)'):'✓ SAFE';
+    const hasTO = o.first_event==='timeout';
+    const toPnl = o.timeout_pnl||0;
+    h += oBox('10pt Target', o.hit_10pt?'✓ HIT':'✗ MISS', c10, o.time_to_10pt?fmtET(o.time_to_10pt)+' ET':'');
+    if (isBofa) {
+      h += oBox('Timeout', hasTO?((toPnl>=0?'+':'')+toPnl.toFixed(1)):'--', hasTO?(toPnl>=0?'#22c55e':'#ef4444'):'#888', '');
+    } else {
+      h += oBox('Full Target', o.hit_target?'✓ HIT':'✗ MISS', cTgt, o.time_to_target?fmtET(o.time_to_target)+' ET':'');
+    }
+    h += oBox('Stop', stopL, cStop, o.time_to_stop?fmtET(o.time_to_stop)+' ET':'');
+    h += oBox('Max Profit', '+'+(o.max_profit?.toFixed(1)||'0'), '#22c55e', o.max_profit_ts?fmtET(o.max_profit_ts)+' ET':'');
+    h += oBox('Max Loss', (o.max_loss?.toFixed(1)||'0'), '#ef4444', o.max_loss_ts?fmtET(o.max_loss_ts)+' ET':'');
+  }
+  h += '</div>';
+  return h;
+}
+function oBox(label, value, color, sub) {
+  return '<div class="outcome-box"><div class="olbl">'+label+'</div><div class="oval" style="color:'+color+'">'+value+'</div>'+(sub?'<div class="osub">'+sub+'</div>':'')+'</div>';
+}
+
+function buildStatsRow(e, o, isAbs, isBofa) {
+  const scoreLabels = isAbs
+    ? [['Divergence',e.support_score],['Volume',e.upside_score],['DD Hedging',e.floor_cluster_score],['Paradigm',e.target_cluster_score],['LIS Prox',e.rr_score]]
+    : isBofa
+    ? [['Stability',e.support_score],['Width',e.upside_score],['Charm',e.floor_cluster_score],['Time of Day',e.target_cluster_score],['Midpoint',e.rr_score]]
+    : [['Support',e.support_score],['Upside',e.upside_score],['Floor Cluster',e.floor_cluster_score],['Target Cluster',e.target_cluster_score],['R:R Score',e.rr_score]];
+  let scoreHtml = scoreLabels.map(([k,v])=>'<div>'+k+': <span style="color:var(--text)">'+(v||'--')+'</span></div>').join('');
+  if (!isBofa && !isAbs) scoreHtml += '<div>First Hour: <span style="color:var(--text)">'+(e.first_hour?'Yes (+10)':'No')+'</span></div>';
+
+  let summaryLabel = '';
+  if (e.outcome_result==='WIN') summaryLabel='<span style="color:#22c55e;font-weight:700;font-size:14px">✓ WINNER</span>';
+  else if (e.outcome_result==='LOSS') summaryLabel='<span style="color:#ef4444;font-weight:700;font-size:14px">✗ LOSER</span>';
+  else if (e.outcome_result==='EXPIRED') {
+    const tp = e.outcome_pnl||0;
+    summaryLabel = tp>=0 ? '<span style="color:#22c55e;font-weight:700;font-size:14px">⏱ EXPIRED +'+tp.toFixed(1)+'</span>' : '<span style="color:#ef4444;font-weight:700;font-size:14px">⏱ EXPIRED '+tp.toFixed(1)+'</span>';
+  } else summaryLabel='<span style="color:#3b82f6;font-weight:700;font-size:14px">OPEN</span>';
+
+  const fe = o.first_event||'none';
+  const feC = fe==='stop'?'#ef4444':(fe==='10pt'||fe==='target')?'#22c55e':'#888';
+
+  return '<div class="stats-notes-row"><div class="score-box"><h4>Score Breakdown</h4><div class="score-grid">'+scoreHtml+'</div></div><div class="summary-box"><h4>Trade Summary</h4><div style="font-size:10px"><div>First Event: <span style="color:'+feC+';font-weight:600">'+fe.toUpperCase()+'</span></div><div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">'+summaryLabel+'</div></div></div></div>';
+}
+
+function renderChart(t, idx) {
+  const chartEl = document.getElementById('chart'+idx);
+  if (!chartEl) return;
+  const e = t.entry;
+  const o = t.outcome || {};
+  const lv = t.levels || {};
+  const isAbs = (e.setup_name||'').includes('Absorption');
+
+  if (isAbs && t.es_bars && t.es_bars.length > 0) {
+    renderAbsChart(chartEl, t, e, o, lv);
+  } else if (t.prices && t.prices.length > 0) {
+    renderPriceChart(chartEl, t, e, o, lv);
+  } else {
+    chartEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:100px 20px">No price data</div>';
+  }
+}
+
+function renderAbsChart(el, t, e, o, lv) {
+  const esBars = t.es_bars;
+  let sigPos = -1;
+  const outcomeBarIdx = o.signal_bar_idx;
+  if (outcomeBarIdx != null) {
+    for (let i = 0; i < esBars.length; i++) { if (esBars[i].idx === outcomeBarIdx) { sigPos = i; break; } }
+  }
+  if (sigPos < 0 && e.ts) {
+    const sigTs = new Date(e.ts).getTime();
+    let minD = Infinity;
+    for (let i = 0; i < esBars.length; i++) {
+      const d = Math.abs(new Date(esBars[i].ts_end).getTime() - sigTs);
+      if (d < minD) { minD = d; sigPos = i; }
+    }
+  }
+  if (sigPos < 0) sigPos = Math.floor(esBars.length/2);
+  const winStart = Math.max(0, sigPos-30), winEnd = Math.min(esBars.length, sigPos+31);
+  const vis = esBars.slice(winStart, winEnd);
+  const sigWinPos = sigPos - winStart;
+  const xLabels = vis.map((_,i)=>i);
+  const tickVals=[], tickText=[];
+  for (let i=0;i<vis.length;i+=5){tickVals.push(i);tickText.push('#'+vis[i].idx);}
+
+  const priceTrace = {type:'candlestick',x:xLabels,open:vis.map(b=>b.open),high:vis.map(b=>b.high),low:vis.map(b=>b.low),close:vis.map(b=>b.close),increasing:{line:{color:'#22c55e'},fillcolor:'#22c55e'},decreasing:{line:{color:'#ef4444'},fillcolor:'#ef4444'},name:'ES Price',yaxis:'y'};
+  const cvdTrace = {type:'scatter',mode:'lines',x:xLabels,y:vis.map(b=>b.cvd),line:{color:'#60a5fa',width:1.5},name:'CVD',yaxis:'y2'};
+
+  const pMin=Math.min(...vis.map(b=>b.low)), pMax=Math.max(...vis.map(b=>b.high));
+  const pRange=pMax-pMin, yPad=Math.max(pRange*0.15,5), yLo=pMin-yPad, yHi=pMax+yPad;
+  const shapes=[], annots=[];
+  function addLvl(price,label,color,width,dash,side){
+    if(price==null||price<yLo||price>yHi)return;
+    shapes.push({type:'line',x0:0,x1:xLabels.length-1,y0:price,y1:price,line:{color,width,dash}});
+    annots.push({x:side==='right'?xLabels.length-1:0,y:price,text:label,showarrow:false,font:{color,size:9},xanchor:side==='right'?'right':'left'});
+  }
+  shapes.push({type:'line',x0:sigWinPos,x1:sigWinPos,y0:0,y1:1,yref:'paper',line:{color:'#f59e0b',width:3,dash:'solid'}});
+  const isBull = e.direction==='bullish';
+  annots.push({x:sigWinPos,y:1,yref:'paper',text:(isBull?'▲ BUY':'▼ SELL')+' '+e.grade,showarrow:false,font:{color:'#f59e0b',size:11,weight:'bold'},yanchor:'bottom'});
+
+  if (t.abs_details && t.abs_details.best_swing) {
+    const bs=t.abs_details.best_swing;
+    [[bs.ref_swing,'S1'],[bs.swing,'S2']].forEach(([sw,lbl])=>{
+      if(!sw||sw.bar_idx==null)return;
+      const xi=vis.findIndex(b=>b.idx===sw.bar_idx);
+      if(xi<0)return;
+      const isLow=sw.type==='L'||sw.type==='Z';
+      annots.push({x:xi,y:sw.price,text:lbl,showarrow:true,arrowhead:2,arrowsize:1,arrowwidth:1.5,arrowcolor:'#38bdf8',ax:0,ay:isLow?25:-25,font:{color:'#38bdf8',size:10,weight:'bold'},bgcolor:'#0f1115',bordercolor:'#38bdf8',borderwidth:1,borderpad:2});
+    });
+  }
+  addLvl(lv.entry,'Entry '+(lv.entry?.toFixed(2)||''),'#f59e0b',2,'solid','left');
+  addLvl(lv.ten_pt,'10pt','#22c55e',1,'dash','right');
+  addLvl(lv.stop,'Stop','#ef4444',2,'dash','right');
+  addLvl(lv.lis,'LIS '+(lv.lis?.toFixed(0)||''),'#f97316',1,'dot','left');
+
+  Plotly.react(el,[priceTrace,cvdTrace],{
+    margin:{l:50,r:50,t:20,b:40},paper_bgcolor:'#0f1115',plot_bgcolor:'#0a0c0f',
+    xaxis:{gridcolor:'#1a1d21',tickfont:{size:9,color:'#888'},tickangle:0,tickvals:tickVals,ticktext:tickText},
+    yaxis:{range:[yLo,yHi],gridcolor:'#1a1d21',tickfont:{size:10,color:'#888'},side:'left'},
+    yaxis2:{overlaying:'y',side:'right',gridcolor:'transparent',tickfont:{size:9,color:'#60a5fa'},showgrid:false},
+    font:{color:'#e6e7e9'},shapes,annotations:annots,showlegend:true,legend:{x:0,y:1.1,orientation:'h',font:{size:10,color:'#888'}}
+  },{displayModeBar:false,responsive:true});
+}
+
+function renderPriceChart(el, t, e, o, lv) {
+  const times = t.prices.map(p => fmtET(p.ts));
+  const spots = t.prices.map(p => p.spot);
+  const isBofa = e.setup_name === 'BofA Scalp';
+  const opens=[],highs=[],lows=[],closes=[];
+  for(let i=0;i<spots.length;i++){
+    const curr=spots[i],prev=i>0?spots[i-1]:curr;
+    opens.push(prev);closes.push(curr);
+    highs.push(Math.max(prev,curr)+Math.abs(curr-prev)*0.1);
+    lows.push(Math.min(prev,curr)-Math.abs(curr-prev)*0.1);
+  }
+  const trace={type:'candlestick',x:times,open:opens,high:highs,low:lows,close:closes,increasing:{line:{color:'#22c55e'},fillcolor:'#22c55e'},decreasing:{line:{color:'#ef4444'},fillcolor:'#ef4444'},name:'Price'};
+
+  const entryMs = new Date(e.ts).getTime();
+  let entryLabel = times[times.length-1];
+  for(let i=0;i<t.prices.length;i++){if(new Date(t.prices[i].ts).getTime()>=entryMs){entryLabel=times[i];break;}}
+
+  const shapes=[], annotations=[];
+  shapes.push({type:'line',x0:entryLabel,x1:entryLabel,y0:0,y1:1,yref:'paper',line:{color:'#f59e0b',width:3,dash:'solid'}});
+  annotations.push({x:entryLabel,y:1,yref:'paper',text:'▼ ENTRY '+fmtET(e.ts)+' ET',showarrow:false,font:{color:'#f59e0b',size:11,weight:'bold'},yanchor:'bottom'});
+  shapes.push({type:'line',x0:times[0],x1:times[times.length-1],y0:lv.entry,y1:lv.entry,line:{color:'#f59e0b',width:2,dash:'solid'}});
+  annotations.push({x:times[0],y:lv.entry,text:'Entry '+(lv.entry?.toFixed(0)||''),showarrow:false,font:{color:'#f59e0b',size:10},xanchor:'left'});
+  if(lv.ten_pt){shapes.push({type:'line',x0:times[0],x1:times[times.length-1],y0:lv.ten_pt,y1:lv.ten_pt,line:{color:'#22c55e',width:1,dash:'dash'}});annotations.push({x:times[times.length-1],y:lv.ten_pt,text:'10pt',showarrow:false,font:{color:'#22c55e',size:9},xanchor:'right'});}
+  if(lv.target){shapes.push({type:'line',x0:times[0],x1:times[times.length-1],y0:lv.target,y1:lv.target,line:{color:'#10b981',width:1,dash:'dot'}});annotations.push({x:times[times.length-1],y:lv.target,text:'Target',showarrow:false,font:{color:'#10b981',size:9},xanchor:'right'});}
+  if(lv.stop){shapes.push({type:'line',x0:times[0],x1:times[times.length-1],y0:lv.stop,y1:lv.stop,line:{color:'#ef4444',width:2,dash:'dash'}});annotations.push({x:times[times.length-1],y:lv.stop,text:'Stop',showarrow:false,font:{color:'#ef4444',size:9},xanchor:'right'});}
+  if(lv.lis){shapes.push({type:'line',x0:times[0],x1:times[times.length-1],y0:lv.lis,y1:lv.lis,line:{color:'#f97316',width:1,dash:'dot'}});annotations.push({x:times[0],y:lv.lis,text:isBofa?'LIS Low':'LIS',showarrow:false,font:{color:'#f97316',size:9},xanchor:'left'});}
+  if(isBofa&&lv.lis_upper){shapes.push({type:'line',x0:times[0],x1:times[times.length-1],y0:lv.lis_upper,y1:lv.lis_upper,line:{color:'#f97316',width:1,dash:'dot'}});annotations.push({x:times[0],y:lv.lis_upper,text:'LIS High',showarrow:false,font:{color:'#f97316',size:9},xanchor:'left'});}
+
+  Plotly.react(el,[trace],{
+    margin:{l:50,r:10,t:20,b:40},paper_bgcolor:'#0f1115',plot_bgcolor:'#0a0c0f',
+    xaxis:{type:'category',gridcolor:'#1a1d21',tickfont:{size:9,color:'#888'},tickangle:-45,nticks:15},
+    yaxis:{gridcolor:'#1a1d21',tickfont:{size:10,color:'#888'},side:'left'},
+    font:{color:'#e6e7e9'},shapes,annotations,showlegend:false
+  },{displayModeBar:false,responsive:true});
+
+  // Max profit/loss markers
+  if(o.max_profit_ts){
+    const mpL=fmtET(o.max_profit_ts),mpI=times.indexOf(mpL);
+    const mpP=mpI>=0?spots[mpI]:(e.direction==='long'?lv.entry+o.max_profit:lv.entry-o.max_profit);
+    Plotly.addTraces(el,{type:'scatter',mode:'markers',x:[mpL],y:[mpP],marker:{color:'#22c55e',size:12,symbol:'triangle-up'},name:'Max Profit',showlegend:false});
+  }
+  if(o.max_loss_ts){
+    const mlL=fmtET(o.max_loss_ts),mlI=times.indexOf(mlL);
+    const mlP=mlI>=0?spots[mlI]:(e.direction==='long'?lv.entry+o.max_loss:lv.entry-o.max_loss);
+    Plotly.addTraces(el,{type:'scatter',mode:'markers',x:[mlL],y:[mlP],marker:{color:'#ef4444',size:12,symbol:'triangle-down'},name:'Max Loss',showlegend:false});
+  }
+}
+
+function toggleCard(idx) {
+  const body = document.getElementById('body'+idx);
+  const toggle = document.getElementById('toggle'+idx);
+  const wasCollapsed = body.classList.contains('collapsed');
+  body.classList.toggle('collapsed');
+  toggle.classList.toggle('open');
+  // Render chart on first expand
+  if (wasCollapsed) {
+    const chartEl = document.getElementById('chart'+idx);
+    if (chartEl && !chartEl.hasAttribute('data-rendered')) {
+      chartEl.setAttribute('data-rendered','1');
+      const filtered = getFilteredTrades();
+      if (filtered[idx]) renderChart(filtered[idx], idx);
+    }
+  }
+}
+
+async function saveComment(logId, idx) {
+  const textarea = document.getElementById('notes'+idx);
+  const status = document.getElementById('noteStatus'+idx);
+  try {
+    await fetch('/api/setup/log/' + logId + '/comment', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({comments: textarea.value})
+    });
+    status.textContent = 'Saved'; status.style.color = '#22c55e';
+    setTimeout(()=>{status.textContent='';}, 2000);
+  } catch(err) {
+    status.textContent = 'Error'; status.style.color = '#ef4444';
+  }
+}
+
+// Event listeners
+document.getElementById('loadBtn').addEventListener('click', () => {
+  loadReview(document.getElementById('reviewDate').value);
+});
+document.getElementById('reviewDate').addEventListener('change', () => {
+  loadReview(document.getElementById('reviewDate').value);
+});
+document.getElementById('fSetup').addEventListener('change', () => renderTrades(getFilteredTrades()));
+document.getElementById('fResult').addEventListener('change', () => renderTrades(getFilteredTrades()));
+document.getElementById('fGrade').addEventListener('change', () => renderTrades(getFilteredTrades()));
+document.getElementById('expandAllBtn').addEventListener('click', () => {
+  _allExpanded = true;
+  renderTrades(getFilteredTrades());
+});
+document.getElementById('collapseAllBtn').addEventListener('click', () => {
+  _allExpanded = false;
+  renderTrades(getFilteredTrades());
+});
+
+// Initial load
+loadReview(document.getElementById('reviewDate').value);
+</script>
+</body>
+</html>
+"""
+
 DASH_HTML_TEMPLATE = """
 <!doctype html>
 <html>
@@ -11392,6 +12337,7 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabHistorical">Historical</button>
         <button class="btn" id="tabTradeLog">Trade Log</button>
         <a href="/stock-gex-live" class="btn" style="display:block;text-decoration:none;text-align:center;background:#2d1b4e;color:#b39ddb">Stock GEX</a>
+        <a href="/eod-review" class="btn" style="display:block;text-decoration:none;text-align:center;background:#1b2e3e;color:#60a5fa">EOD Review</a>
       </div>
       <div style="margin-top:14px">
         <button id="alertSettingsBtn" class="strike-btn" style="padding:5px 12px;font-size:11px;width:100%">Settings</button>
@@ -16946,4 +17892,15 @@ def spxw_dashboard(session: str = Cookie(default=None)):
             .replace("__PULL_MS__", str(PULL_EVERY * 1000))
             .replace("__USER_EMAIL__", user["email"])
             .replace("__IS_ADMIN__", "true" if user.get("is_admin") else "false"))
+    return HTMLResponse(html)
+
+
+# ====== EOD REVIEW ENDPOINT ======
+@app.get("/eod-review", response_class=HTMLResponse)
+def eod_review_page(session: str = Cookie(default=None), date: str = Query(None)):
+    user = get_current_user(session)
+    if not user:
+        return RedirectResponse(url="/", status_code=302)
+    review_date = date or datetime.now(NY).strftime("%Y-%m-%d")
+    html = EOD_REVIEW_TEMPLATE.replace("__DATE__", review_date)
     return HTMLResponse(html)

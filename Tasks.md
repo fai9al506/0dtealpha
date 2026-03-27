@@ -3,7 +3,7 @@
 Pending tasks, research, and implementation ideas for 0DTE Alpha.
 Two types: **Scheduled** (time-based, checked every session) and **Backlog** (do when free).
 
-Last updated: 2026-03-27
+Last updated: 2026-03-28
 
 ---
 
@@ -26,6 +26,7 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 | S11 | **SB2 Absorption v2 tuning deploy** | 2026-03-25 after 16:10 ET | Deployed: OR gate (vol>=1.2x OR dlt>=1.3x), cd=20, time 9:45-15:00, SVB key fixed. +260 pts, 47.7% WR, PF 1.52. | DONE 2026-03-25 |
 | S12 | **Push 0DTE GEX improvements** | 2026-03-25 after 16:10 ET | Deployed: last-scan timestamp, 2-min spot refresh, history viewer (date/time picker). Commit `cc213a3`. | DONE 2026-03-25 |
 | S13 | **Push AG Short 15-min cooldown** | 2026-03-25 after 16:10 ET | Commit+push AG Short cooldown fix: 15-min time floor prevents flicker re-fires. Data: <15min signals = 63% WR (weak), 15-30min = 85% WR (best). Changes in `setup_detector.py`. | DONE 2026-03-25 |
+| S14 | **Verify deploy + OHLC backfill** | 2026-03-28 at 09:35 ET | 4 checks: (1) SC trail gap=5 in logs. (2) `spx_ohlc_1m` has rows after 09:32. (3) trail_sl/trail_gap columns populated on new trades. (4) **OHLC backfill**: call `POST /api/spx/ohlc/backfill?barsback=10000` at 09:35 ET to pull historical 1-min bars (~25 days). Verify with `SELECT COUNT(*), MIN(trade_date), MAX(trade_date) FROM spx_ohlc_1m`. | PENDING |
 
 ---
 
@@ -58,7 +59,7 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 | R4 | **Fixed strike vol for vanna interpretation** | MEDIUM | Discord idea: vanna support only holds when fixed-strike vol is declining. Needs investigation. | `research_discord_ideas_mar23.md` |
 | R5 | **Panic vs structural put buying** | MEDIUM | Distinguish geopolitical panic from institutional structural put buying. Different trading responses. | `research_discord_ideas_mar23.md` |
 | R6 | **Volatility spike pause** | MEDIUM | If ES range bar volatility exceeds 3x normal, pause entries 15-30 min. | `research_discord_ideas_mar23.md` |
-| R7 | **SC Trail Optimization** | **HIGH** | Backtest (240 trades, Feb-Mar 2026): Current RM (BE@10, act=10, gap=8, SL=14) = +424 pts. Alt (act=12, gap=6) = **+1,037 pts** (2.4x). Winners avg MFE=20.6, capture only 51% (10.5 pts). Gap=8 gives back too much. Run full sweep (act 8-16, gap 4-10), validate on fresh data, then deploy. Potentially biggest single PnL improvement across all setups. | Backtest Mar 27 |
+| ~~R7~~ | ~~SC Trail Optimization~~ | ~~HIGH~~ | DONE — Gap 8->5 deployed Mar 28. Gap=8 was copy-paste from ES Absorption bug fix (range bars), never SC-studied. 0/13 losers ever touched activation, so gap only affects winner capture. SL=14 and ACT=10 confirmed optimal. 4 contaminated Mar 26 SC outcomes also cleared. | DONE 2026-03-28 |
 | R8 | **DD per-strike for ES Absorption stacking** | LOW | Revisit when ES Absorption trade count grows. Not enough data yet. | `research_gamma_dd_perstrike.md` |
 | R9 | **Gamma per-strike on dashboard** | LOW | Visual awareness only. No filter impact expected. | `research_gamma_dd_perstrike.md` |
 | R10 | **EOD DD trajectory for manual butterflies** | LOW | Display DD direction into close for discretionary butterfly entries. 50% direction accuracy — needs timing skill. | `research_gamma_dd_perstrike.md` |

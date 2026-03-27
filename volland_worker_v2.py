@@ -37,6 +37,8 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
 ZERO_POINTS_THRESHOLD = 3  # consecutive zero-point cycles before alerting
 AUTO_RESTART_THRESHOLD = 5  # consecutive zero-point cycles before browser restart
+STALE_MODIFIED_RELOAD = 5   # consecutive unchanged-lastModified cycles before page reload
+STALE_MODIFIED_RESTART = 8  # consecutive unchanged-lastModified cycles before browser restart
 _last_saved_modified = ""  # tracks lastModified of most recently saved Volland snapshot
 
 NY = pytz.timezone("US/Eastern")
@@ -460,7 +462,7 @@ def run():
             return list(seen.values()), cycle["paradigm_spx"], cycle["paradigm_spy"], cycle["spot_vol"]
 
         def save_cycle(exposures, paradigm_spx, paradigm_spy, spot_vol):
-            """Format, save to DB, log. Returns (stats, total_points, zero_exposures)."""
+            """Format, save to DB, log. Returns (stats, total_points, zero_exposures, skipped)."""
             global _last_saved_modified
             stats = format_statistics(paradigm_spx, spot_vol)
             spy_stats = format_statistics(paradigm_spy, None) if paradigm_spy else {}
@@ -478,7 +480,7 @@ def run():
                 # Count points without saving (for 0-point tracking accuracy)
                 _skip_pts = sum(len(e.get("items", [])) for e in exposures)
                 print(f"[volland-v2] skipped save – lastModified unchanged: {cycle_modified[:25]} (pts={_skip_pts})", flush=True)
-                return stats, _skip_pts, []
+                return stats, _skip_pts, [], True
 
             total_points = 0
             zero_exposures = []
@@ -546,7 +548,7 @@ def run():
                 f"spy_dd={spy_dd}",
                 flush=True,
             )
-            return stats, total_points, zero_exposures
+            return stats, total_points, zero_exposures, False
 
         def _get_page_diagnostic() -> str:
             """Gather page state for Telegram alerts when things go wrong."""
@@ -576,6 +578,8 @@ def run():
         last_known_modified = ""
         consecutive_zero_pts = 0
         zero_pts_alerted = False
+        consecutive_stale_modified = 0  # Track unchanged lastModified cycles
+        stale_modified_alerted = False
         _was_in_market = False  # Track if we've been active this session
 
         def get_exposure_lastmodified():
@@ -603,6 +607,8 @@ def run():
                     _premarket_ready = False
                     consecutive_zero_pts = 0
                     zero_pts_alerted = False
+                    consecutive_stale_modified = 0
+                    stale_modified_alerted = False
                 # Pre-market: just wait
                 last_known_modified = ""
                 time.sleep(30)
@@ -827,7 +833,58 @@ def run():
                         last_known_modified = lm
                         break
 
-                _stats, _total_pts, _zero_exps = save_cycle(exposures, paradigm_spx, paradigm_spy, spot_vol)
+                _stats, _total_pts, _zero_exps, _save_skipped = save_cycle(exposures, paradigm_spx, paradigm_spy, spot_vol)
+
+                # Track stale lastModified (vol.land stopped refreshing)
+                if _save_skipped and is_market_hours():
+                    consecutive_stale_modified += 1
+                    print(f"[volland-v2] stale lastModified ({consecutive_stale_modified}/{STALE_MODIFIED_RELOAD})", flush=True)
+                    if consecutive_stale_modified == STALE_MODIFIED_RELOAD:
+                        print("[volland-v2] PAGE RELOAD: lastModified stale, forcing reload", flush=True)
+                        send_telegram(
+                            "⚠️ <b>Volland Stale Data</b>\n\n"
+                            f"lastModified unchanged for {consecutive_stale_modified} cycles (~{consecutive_stale_modified * 2} min).\n"
+                            "Reloading page to recover..."
+                        )
+                        try:
+                            page.goto(WORKSPACE_URL, timeout=60000)
+                            page.wait_for_timeout(10000)
+                        except Exception as e:
+                            print(f"[volland-v2] page reload error: {e}", flush=True)
+                    elif consecutive_stale_modified >= STALE_MODIFIED_RESTART:
+                        diag = _get_page_diagnostic()
+                        print(
+                            f"[volland-v2] BROWSER RECREATE: lastModified stale for "
+                            f"{consecutive_stale_modified} cycles.",
+                            flush=True,
+                        )
+                        send_telegram(
+                            "🔄 <b>Volland Browser Restart (Stale Data)</b>\n\n"
+                            f"lastModified unchanged for {consecutive_stale_modified} cycles (~{consecutive_stale_modified * 2} min).\n"
+                            "Page reload did not help. Recreating browser.\n\n"
+                            f"<b>Diagnostic:</b>\n<code>{diag}</code>"
+                        )
+                        try:
+                            browser.close()
+                        except Exception:
+                            pass
+                        browser = None
+                        page = None
+                        last_known_modified = ""
+                        consecutive_stale_modified = 0
+                        stale_modified_alerted = False
+                        time.sleep(5)
+                        continue
+                elif not _save_skipped:
+                    if consecutive_stale_modified > 0:
+                        print(f"[volland-v2] stale recovered after {consecutive_stale_modified} cycles", flush=True)
+                        if consecutive_stale_modified >= STALE_MODIFIED_RELOAD:
+                            send_telegram(
+                                "✅ <b>Volland Stale Recovered</b>\n\n"
+                                f"Fresh data after {consecutive_stale_modified} stale cycles."
+                            )
+                    consecutive_stale_modified = 0
+                    stale_modified_alerted = False
 
                 # Track 0-point cycles during operating window (9:20+, not just 9:30+)
                 if _total_pts == 0 and market_open_now():
@@ -874,6 +931,8 @@ def run():
                         last_known_modified = ""
                         consecutive_zero_pts = 0
                         zero_pts_alerted = False
+                        consecutive_stale_modified = 0
+                        stale_modified_alerted = False
                         time.sleep(5)
                         continue
                 elif _total_pts > 0:
@@ -921,6 +980,8 @@ def run():
                     last_known_modified = ""
                     consecutive_zero_pts = 0
                     zero_pts_alerted = False
+                    consecutive_stale_modified = 0
+                    stale_modified_alerted = False
                     time.sleep(5)
                     continue
 
@@ -937,6 +998,8 @@ def run():
                         last_known_modified = ""
                         consecutive_zero_pts = 0
                         zero_pts_alerted = False
+                        consecutive_stale_modified = 0
+                        stale_modified_alerted = False
                         if market_open_now() or is_premarket_warmup():
                             send_telegram(
                                 "🔑 <b>Volland Session Expired</b>\n\n"

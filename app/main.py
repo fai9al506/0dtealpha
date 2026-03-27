@@ -814,6 +814,23 @@ def db_init():
         );
         """))
 
+        # SPX 1-min OHLC bars for backtesting (real tick-based H/L from TS barcharts API)
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS spx_ohlc_1m (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL,
+            trade_date DATE NOT NULL,
+            bar_open DOUBLE PRECISION NOT NULL,
+            bar_high DOUBLE PRECISION NOT NULL,
+            bar_low DOUBLE PRECISION NOT NULL,
+            bar_close DOUBLE PRECISION NOT NULL,
+            volume BIGINT NOT NULL DEFAULT 0,
+            UNIQUE(ts)
+        );
+        CREATE INDEX IF NOT EXISTS idx_spx_ohlc_1m_ts ON spx_ohlc_1m(ts DESC);
+        CREATE INDEX IF NOT EXISTS idx_spx_ohlc_1m_date ON spx_ohlc_1m(trade_date);
+        """))
+
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS setup_cooldowns (
             trade_date DATE PRIMARY KEY,
@@ -4232,6 +4249,65 @@ def _run_setup_check():
     if result_wrappers:
         _save_cooldowns()
 
+# ====== SPX 1-MIN OHLC (for backtesting — real tick-based H/L) ======
+_spx_ohlc_last_ts = None  # track last saved bar timestamp to avoid duplicates
+
+def pull_spx_ohlc():
+    """Pull last 5 SPX 1-min bars from TS barcharts API. Save new ones to spx_ohlc_1m.
+    Called every 2 minutes by scheduler. ~195 rows/day, ~49K/year."""
+    global _spx_ohlc_last_ts
+    now = datetime.now(NY)
+    t = now.time()
+    if not (dtime(9, 30) <= t <= dtime(16, 5)):
+        return  # only during market hours
+
+    try:
+        token = ts_access_token()
+        if not token:
+            return
+        params = {"interval": "1", "unit": "Minute", "barsback": "5"}
+        r = api_get("/marketdata/barcharts/$SPX.X", params=params, timeout=10)
+        if not r or r.status_code != 200:
+            return
+        data = r.json()
+        bars_list = data.get("Bars", [])
+        if not bars_list:
+            return
+
+        saved = 0
+        with engine.connect() as conn:
+            for bar in bars_list:
+                ts_raw = bar.get("TimeStamp", "")
+                if not ts_raw:
+                    continue
+                # Parse TS timestamp (ISO format with timezone)
+                bar_ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                bar_et = bar_ts.astimezone(NY)
+                trade_date = bar_et.date()
+
+                # Skip if already saved (dedup by UNIQUE(ts))
+                try:
+                    conn.execute(text("""
+                        INSERT INTO spx_ohlc_1m (ts, trade_date, bar_open, bar_high, bar_low, bar_close, volume)
+                        VALUES (:ts, :td, :o, :h, :l, :c, :v)
+                        ON CONFLICT (ts) DO NOTHING
+                    """), {
+                        "ts": bar_ts, "td": trade_date,
+                        "o": bar.get("Open"), "h": bar.get("High"),
+                        "l": bar.get("Low"), "c": bar.get("Close"),
+                        "v": bar.get("TotalVolume", 0),
+                    })
+                    saved += 1
+                except Exception:
+                    pass  # duplicate, skip
+            conn.commit()
+
+        if saved > 0:
+            _spx_ohlc_last_ts = bars_list[-1].get("TimeStamp")
+    except Exception as e:
+        print(f"[spx-ohlc] error: {e}", flush=True)
+
+
 # ====== ES CUMULATIVE DELTA (TradeStation streaming barcharts — real-time) ======
 ES_DELTA_SYMBOL = "@ES"
 _es_delta_lock = Lock()
@@ -6072,6 +6148,7 @@ def start_scheduler():
     # TS quote-stream range bars no longer saved — Rithmic is sole DB source
     # sch.add_job(save_es_range_bars, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="es_range_save", coalesce=True, max_instances=1)
     sch.add_job(_save_rithmic_bars, "cron", minute=f"*/{SAVE_EVERY_MIN}", id="rithmic_range_save", coalesce=True, max_instances=1)
+    sch.add_job(pull_spx_ohlc, "interval", minutes=2, id="spx_ohlc_pull", coalesce=True, max_instances=1)
     sch.add_job(_auto_trade_premarket_reconcile, "cron", hour=9, minute=25,
                 id="auto_trade_premarket", coalesce=True, max_instances=1)
     sch.add_job(_auto_trade_eod_flatten, "cron", hour=15, minute=55,
@@ -8322,6 +8399,33 @@ def api_spx_candles_date(date: str = Query(..., description="YYYY-MM-DD"), inter
         return {"candles": candles, "count": len(candles)}
     except Exception as e:
         print(f"[spx_candles_date] error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/spx/ohlc")
+def api_spx_ohlc_history(date: str = Query(None, description="YYYY-MM-DD"),
+                          days: int = Query(1, ge=1, le=30)):
+    """Get SPX 1-min OHLC bars from DB (spx_ohlc_1m table). For backtesting."""
+    if not engine:
+        return JSONResponse({"error": "no db"}, status_code=500)
+    try:
+        with engine.connect() as conn:
+            if date:
+                rows = conn.execute(text("""
+                    SELECT ts AT TIME ZONE 'America/New_York' as ts_et,
+                           bar_open, bar_high, bar_low, bar_close, volume
+                    FROM spx_ohlc_1m WHERE trade_date = :d ORDER BY ts
+                """), {"d": date}).fetchall()
+            else:
+                rows = conn.execute(text("""
+                    SELECT ts AT TIME ZONE 'America/New_York' as ts_et,
+                           bar_open, bar_high, bar_low, bar_close, volume
+                    FROM spx_ohlc_1m
+                    WHERE trade_date >= CURRENT_DATE - :days
+                    ORDER BY ts
+                """), {"days": days}).fetchall()
+            bars = [{"ts": r[0].isoformat(), "o": r[1], "h": r[2], "l": r[3], "c": r[4], "v": r[5]} for r in rows]
+            return {"bars": bars, "count": len(bars)}
+    except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/statistics_levels")

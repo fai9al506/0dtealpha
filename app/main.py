@@ -11472,6 +11472,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v12le">V12-LE (real)</option><option value="v12nt">V12-NT (ninja)</option><option value="v12">V12 (live)</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -11487,6 +11488,146 @@ const PILL_COLORS = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a7
 const GRADE_COLORS = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308','B':'#f59e0b','C':'#888','LOG':'#555'};
 let _allTrades = [];
 let _allExpanded = true;
+let _dailyGaps = {};
+fetch('/api/setup/daily_gaps',{cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_dailyGaps=d;}).catch(()=>{});
+
+function passesStrategy(l, strat) {
+  if (!strat) return true;
+  const sn = l.setup_name || '';
+  const align = l.greek_alignment != null ? l.greek_alignment : 0;
+  const isLong = l.direction === 'long' || l.direction === 'bullish';
+  if (strat === 'r1') return Math.abs(align) >= 3;
+  if (strat === 'optB') {
+    if (isLong) return align >= 3;
+    if (sn === 'ES Absorption' || sn === 'BofA Scalp') return false;
+    if (sn === 'DD Exhaustion' && align === 0) return false;
+    return true;
+  }
+  if (strat === 'v7') {
+    if (isLong) return align >= 2;
+    if (sn === 'Skew Charm') return true;
+    if (sn === 'DD Exhaustion' && align !== 0) return true;
+    return false;
+  }
+  // Helper: parse ET minutes from timestamp
+  function etMins(ts) {
+    if (!ts) return null;
+    const d = new Date(ts);
+    const etStr = d.toLocaleString('en-US',{timeZone:'America/New_York',hour12:false});
+    const tp = (etStr.split(', ')[1]||etStr).split(':');
+    return parseInt(tp[0])*60+parseInt(tp[1]);
+  }
+  function gapFilter(ts) {
+    if (!ts) return true;
+    const dateStr = new Date(ts).toLocaleDateString('en-CA',{timeZone:'America/New_York'});
+    const gap = _dailyGaps[dateStr];
+    if (isLong && gap != null && gap > 30) return false;
+    if (gap != null && Math.abs(gap) > 30) { const m = etMins(ts); if (m != null && m < 600) return false; }
+    return true;
+  }
+  function v11TimeGates(ts) {
+    const m = etMins(ts);
+    if (m == null) return true;
+    if ((sn==='Skew Charm'||sn==='DD Exhaustion') && (m>=870&&m<900)) return false;
+    if ((sn==='Skew Charm'||sn==='DD Exhaustion') && m>=930) return false;
+    if (sn==='BofA Scalp' && m>=870) return false;
+    return true;
+  }
+  function v10Base() {
+    if (isLong) {
+      if (align < 2) return false;
+      if (sn !== 'Skew Charm') {
+        const vix = l.vix != null ? l.vix : 0;
+        const ov = l.overvix != null ? l.overvix : -99;
+        if (vix > 22 && ov < 2) return false;
+      }
+      return true;
+    }
+    if ((sn==='Skew Charm'||sn==='DD Exhaustion') && l.paradigm==='GEX-LIS') return false;
+    if (sn==='Skew Charm') return true;
+    if (sn==='AG Short') return true;
+    if (sn==='DD Exhaustion' && align!==0) return true;
+    return false;
+  }
+  if (strat === 'v12le') {
+    if (sn !== 'Skew Charm') return false;
+    if (!l.grade || (l.grade!=='A+'&&l.grade!=='A'&&l.grade!=='B')) return false;
+    if (!gapFilter(l.ts)) return false;
+    if (!v11TimeGates(l.ts)) return false;
+    if (isLong) { if (align<2) return false; }
+    else { if (l.paradigm==='GEX-LIS') return false; }
+    return true;
+  }
+  if (strat === 'v12nt') {
+    const ntSetups = ['Skew Charm','DD Exhaustion','ES Absorption','AG Short','Paradigm Reversal','GEX Velocity'];
+    if (!ntSetups.includes(sn)) return false;
+    if (!gapFilter(l.ts)) return false;
+    if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
+    if (sn==='VIX Compression'||sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
+    if (!v11TimeGates(l.ts)) return false;
+    return v10Base();
+  }
+  if (strat === 'v12') {
+    if (!gapFilter(l.ts)) return false;
+    if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
+    if (sn==='VIX Compression'||sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
+    if (!v11TimeGates(l.ts)) return false;
+    return v10Base();
+  }
+  if (strat === 'v11') {
+    if (!v10Base()) return false;
+    return v11TimeGates(l.ts);
+  }
+  if (strat === 'v10') {
+    if (isLong) {
+      if (align<2) return false;
+      if (sn==='Skew Charm') return true;
+      const vix = l.vix!=null?l.vix:0, ov = l.overvix!=null?l.overvix:-99;
+      if (vix>22&&ov<2) return false;
+      return true;
+    }
+    if ((sn==='Skew Charm'||sn==='DD Exhaustion')&&l.paradigm==='GEX-LIS') return false;
+    if (sn==='Skew Charm') return true;
+    if (sn==='AG Short') return true;
+    if (sn==='DD Exhaustion'&&align!==0) return true;
+    return false;
+  }
+  if (strat === 'v9') {
+    if (isLong) {
+      if (align<2) return false;
+      if (sn==='Skew Charm') return true;
+      const vix=l.vix!=null?l.vix:0,ov=l.overvix!=null?l.overvix:-99;
+      if (vix>22&&ov<2) return false;
+      return true;
+    }
+    if (sn==='Skew Charm') return true;
+    if (sn==='AG Short') return true;
+    if (sn==='DD Exhaustion'&&align!==0) return true;
+    return false;
+  }
+  if (strat === 'v8') {
+    if (isLong) {
+      if (align<2) return false;
+      const vix=l.vix!=null?l.vix:0,ov=l.overvix!=null?l.overvix:-99;
+      if (vix>26&&ov<2) return false;
+      return true;
+    }
+    if (sn==='Skew Charm') return true;
+    if (sn==='AG Short') return true;
+    if (sn==='DD Exhaustion'&&align!==0) return true;
+    return false;
+  }
+  if (strat === 'v7ag') {
+    if (isLong) return align>=2;
+    if (sn==='Skew Charm') return true;
+    if (sn==='AG Short') return true;
+    if (sn==='DD Exhaustion'&&align!==0) return true;
+    return false;
+  }
+  if (strat === 'sc') return sn==='Skew Charm';
+  if (strat === 'scag') return sn==='Skew Charm'||sn==='AG Short';
+  return true;
+}
 
 function fmtET(isoStr) {
   if (!isoStr) return '--';
@@ -11557,10 +11698,12 @@ function populateFilterOptions(trades) {
 }
 
 function getFilteredTrades() {
+  const fStrat = document.getElementById('fStrat').value;
   const fSetup = document.getElementById('fSetup').value;
   const fResult = document.getElementById('fResult').value;
   const fGrade = document.getElementById('fGrade').value;
   return _allTrades.filter(t => {
+    if (fStrat && !passesStrategy(t.entry, fStrat)) return false;
     if (fSetup && t.entry.setup_name !== fSetup) return false;
     if (fResult && (t.entry.outcome_result || '') !== fResult) return false;
     if (fGrade && t.entry.grade !== fGrade) return false;
@@ -11568,8 +11711,33 @@ function getFilteredTrades() {
   });
 }
 
+function recomputeSummary(trades, date) {
+  let wins=0, losses=0, expired=0, pnl=0;
+  const perSetup = {};
+  trades.forEach(t => {
+    const e = t.entry;
+    const sn = e.setup_name||'Unknown';
+    if (!perSetup[sn]) perSetup[sn]={count:0,wins:0,losses:0,pnl:0};
+    perSetup[sn].count++;
+    const res = e.outcome_result;
+    if (res==='WIN'){wins++;perSetup[sn].wins++;}
+    else if (res==='LOSS'){losses++;perSetup[sn].losses++;}
+    else if (res==='EXPIRED') expired++;
+    if (e.outcome_pnl!=null && res){pnl+=e.outcome_pnl;perSetup[sn].pnl+=e.outcome_pnl;}
+  });
+  const resolved = wins+losses;
+  const summary = {
+    total:trades.length, wins, losses, expired, resolved,
+    win_rate: resolved>0 ? Math.round(wins/resolved*1000)/10 : 0,
+    net_pnl: Math.round(pnl*10)/10,
+    per_setup: Object.fromEntries(Object.entries(perSetup).map(([k,v])=>[k,{...v,pnl:Math.round(v.pnl*10)/10}]))
+  };
+  renderSummary(summary, date || document.getElementById('reviewDate').value);
+}
+
 function renderTrades(trades) {
   const container = document.getElementById('tradesContainer');
+  recomputeSummary(trades);
   if (trades.length === 0) {
     container.innerHTML = '<div class="no-trades">No matching trades</div>';
     return;
@@ -11950,6 +12118,7 @@ document.getElementById('loadBtn').addEventListener('click', () => {
 document.getElementById('reviewDate').addEventListener('change', () => {
   loadReview(document.getElementById('reviewDate').value);
 });
+document.getElementById('fStrat').addEventListener('change', () => renderTrades(getFilteredTrades()));
 document.getElementById('fSetup').addEventListener('change', () => renderTrades(getFilteredTrades()));
 document.getElementById('fResult').addEventListener('change', () => renderTrades(getFilteredTrades()));
 document.getElementById('fGrade').addEventListener('change', () => renderTrades(getFilteredTrades()));

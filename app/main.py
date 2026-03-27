@@ -11380,9 +11380,19 @@ EOD_REVIEW_TEMPLATE = """
     .card-body { padding:12px 16px; }
     .card-body.collapsed { display:none; }
 
+    /* Side-by-side layout: details left, chart right */
+    .card-layout {
+      display:grid; grid-template-columns:minmax(300px,2fr) 3fr; gap:16px;
+    }
+    .card-details { min-width:0; }
+    .card-chart-col { min-width:0; display:flex; flex-direction:column; }
+    @media (max-width:900px) {
+      .card-layout { grid-template-columns:1fr; }
+    }
+
     /* Info grid */
     .info-grid {
-      display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(100px,1fr));
       gap:3px; margin-bottom:10px; font-size:11px;
     }
     .info-cell {
@@ -11397,19 +11407,19 @@ EOD_REVIEW_TEMPLATE = """
 
     /* Outcome row */
     .outcome-row {
-      display:flex; gap:12px; margin-bottom:12px; padding:10px;
-      background:#0f1115; border-radius:8px; font-size:12px;
+      display:flex; gap:8px; margin-bottom:10px; padding:8px;
+      background:#0f1115; border-radius:8px; font-size:12px; flex-wrap:wrap;
     }
-    .outcome-box { flex:1; text-align:center; }
+    .outcome-box { flex:1; text-align:center; min-width:60px; }
     .outcome-box .olbl { color:var(--muted); font-size:10px; }
-    .outcome-box .oval { font-size:18px; font-weight:700; }
+    .outcome-box .oval { font-size:16px; font-weight:700; }
     .outcome-box .osub { color:var(--muted); font-size:9px; }
 
     /* Chart */
-    .trade-chart { height:300px; background:#0f1115; border-radius:8px; margin-bottom:10px; }
+    .trade-chart { flex:1; min-height:350px; background:#0f1115; border-radius:8px; }
 
     /* Stats + notes row */
-    .stats-notes-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:11px; }
+    .stats-notes-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:11px; }
     .score-box, .summary-box {
       background:var(--surface); padding:10px; border-radius:6px;
     }
@@ -11787,25 +11797,25 @@ function renderTrades(trades) {
 
     // Body
     html += '<div class="card-body '+collapsed+'" id="body'+idx+'">';
+    html += '<div class="card-layout">';
 
-    // Info grid
+    // Left column: details
+    html += '<div class="card-details">';
     html += buildInfoGrid(e, lv, o, isAbs, isBofa, t.abs_details);
-
-    // Outcome row
     html += buildOutcomeRow(e, o, lv, isAbs, isBofa);
-
-    // Chart placeholder
-    html += '<div class="trade-chart" id="chart'+idx+'"></div>';
-
-    // Stats + Summary
     html += buildStatsRow(e, o, isAbs, isBofa);
-
-    // Notes
     html += '<div class="card-notes">';
     html += '<textarea id="notes'+idx+'" placeholder="Notes...">'+(e.comments||'').replace(/</g,'&lt;')+'</textarea>';
     html += '<div class="notes-actions"><button class="save-btn" onclick="saveComment('+e.id+','+idx+')">Save</button><span class="save-status" id="noteStatus'+idx+'"></span></div>';
     html += '</div>';
+    html += '</div>'; // card-details
 
+    // Right column: chart
+    html += '<div class="card-chart-col">';
+    html += '<div class="trade-chart" id="chart'+idx+'"></div>';
+    html += '</div>'; // card-chart-col
+
+    html += '</div>'; // card-layout
     html += '</div>'; // card-body
     html += '</div>'; // trade-card
   });

@@ -202,9 +202,14 @@ def _compute_stock_gex(symbol, chain_rows, spot):
     zone_width = (abs(lowest_pos - highest_neg) / highest_neg * 100
                   if highest_neg and lowest_pos else 0)
 
-    # All levels for chart — show every strike with non-zero GEX
+    # All levels for chart — limit to ~40 strikes centered on spot for readability
     all_levels = [{"strike": k, "gex": round(v)} for k, v in gex_by_strike.items() if v != 0]
     all_levels.sort(key=lambda x: x["strike"])
+    if len(all_levels) > 40:
+        # Keep 20 strikes below and above spot (40 total)
+        below = [l for l in all_levels if l["strike"] <= spot]
+        above = [l for l in all_levels if l["strike"] > spot]
+        all_levels = below[-20:] + above[:20]
 
     support_below = [s for s in neg_strikes if highest_neg and s < highest_neg]
     magnets_above = [k for k, v in top_pos if highest_neg and k > highest_neg]

@@ -26,7 +26,8 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 | S11 | **SB2 Absorption v2 tuning deploy** | 2026-03-25 after 16:10 ET | Deployed: OR gate (vol>=1.2x OR dlt>=1.3x), cd=20, time 9:45-15:00, SVB key fixed. +260 pts, 47.7% WR, PF 1.52. | DONE 2026-03-25 |
 | S12 | **Push 0DTE GEX improvements** | 2026-03-25 after 16:10 ET | Deployed: last-scan timestamp, 2-min spot refresh, history viewer (date/time picker). Commit `cc213a3`. | DONE 2026-03-25 |
 | S13 | **Push AG Short 15-min cooldown** | 2026-03-25 after 16:10 ET | Commit+push AG Short cooldown fix: 15-min time floor prevents flicker re-fires. Data: <15min signals = 63% WR (weak), 15-30min = 85% WR (best). Changes in `setup_detector.py`. | DONE 2026-03-25 |
-| S14 | **Verify deploy + OHLC backfill** | 2026-03-28 at 09:35 ET | 4 checks: (1) SC trail gap=5 in logs. (2) `spx_ohlc_1m` has rows after 09:32. (3) trail_sl/trail_gap columns populated on new trades. (4) **OHLC backfill**: call `POST /api/spx/ohlc/backfill?barsback=10000` at 09:35 ET to pull historical 1-min bars (~25 days). Verify with `SELECT COUNT(*), MIN(trade_date), MAX(trade_date) FROM spx_ohlc_1m`. | PENDING |
+| S14 | **Verify deploy + OHLC backfill** | 2026-03-28 at 09:35 ET | All 4 PASS: (1) SC GAP=5.0 on #1290. (2) 10,000 rows, 27 trading days (Feb 19-Mar 27). (3) trail_sl/activation/gap populated on all Mar 27 trades. (4) Backfill 10K bars saved. | DONE 2026-03-27 |
+| S15 | **Deploy UI fixes: EOD Review + 0DTE GEX chart** | 2026-03-27 after 16:10 ET | Commit+push: (1) EOD Review side-by-side layout (details left, chart right). (2) 0DTE SPX GEX chart limited to 40 strikes centered on spot (was unlimited, chart unreadable). Code ready locally. | PENDING |
 
 ---
 

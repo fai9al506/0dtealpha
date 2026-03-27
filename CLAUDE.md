@@ -24,6 +24,44 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Update the relevant sections of CLAUDE.md (architecture, features, technical details)
 - Update MEMORY.md if intervals, tables, or key parameters changed
 
+## Analysis Validation Protocol (MANDATORY)
+
+**This protocol is NON-NEGOTIABLE. Violations cost real money (session 46: 4 errors caught by user, not by Claude).**
+
+Before presenting ANY trading study, backtest, performance report, or parameter recommendation:
+
+### Gate 1: Data Quality (MUST PASS before running analysis)
+1. **Source check**: ALL numbers from DB queries or code output. Never manual math, never from memory files.
+2. **Date range**: State explicitly. Check for known outages (Mar 26 TS outage, any logged in SESSION_LOG).
+3. **Parameter history**: Did SL, filter version, grading, or trail params change during the period? If yes, **split the data at the boundary** and only use the era matching current live config.
+4. **Staleness scan**: Check for frozen spot prices (same spot across consecutive snapshots = outage). Query: `SELECT ts, spot FROM chain_snapshots WHERE ts::date = X ORDER BY ts` — look for repeating values.
+5. **Timezone**: Verify ET conversion handles DST (2nd Sunday Mar = spring forward, 1st Sunday Nov = fall back). Use `zoneinfo.ZoneInfo("America/New_York")`, NEVER hardcode UTC-4 or UTC-5.
+6. **Contamination**: Any trade with MFE > 50 or MAE < -30 gets individually verified against known market conditions.
+
+### Gate 2: Cross-Check (MUST PASS before presenting results)
+1. **Sim vs DB**: If using OHLC simulation, compare baseline outcome match rate against DB actuals. **If < 90% match, the simulation is broken — DO NOT present results.**
+2. **Known totals**: `SUM(outcome_pnl)` from DB for the same filter MUST match within 5% of your computed total. If not, find the discrepancy before proceeding.
+3. **Sanity check**: If a 1-parameter change claims >50% PnL improvement, that's a red flag. Verify the mechanism (why would this work?) before presenting.
+
+### Gate 3: Presentation Requirements
+1. **State clean sample size** prominently (e.g., "42 clean post-Mar 18 V12 trades" — not "151 trades")
+2. **State what was excluded** and why (contaminated dates, wrong SL era, etc.)
+3. **State confidence level**: <50 trades = "directional signal only", 50-100 = "moderate confidence", 100+ = "high confidence"
+4. **If recommending a real-money change**: explicitly state worst-case scenario and what could go wrong
+5. **Never present a number without its source** (DB query, simulation, or calculation shown)
+
+### What Requires This Protocol
+- Backtest results (PnL, WR, MaxDD)
+- Setup performance comparisons
+- Filter/parameter optimization studies
+- Trade outcome reports with numerical conclusions
+- Any recommendation that leads to code changes affecting real money
+
+### What Does NOT Require This Protocol
+- Configuration documentation, code explanations, debugging
+- Strategic discussions without numerical claims
+- Simple queries ("how many trades today?")
+
 Memory directory: see the path in MEMORY.md header.
 
 ---

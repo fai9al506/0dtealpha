@@ -323,8 +323,17 @@ def run():
                     exp_option = pj.get("expirations", {}).get("option")
                 except Exception:
                     pass
-            try:
-                response = route.fetch()
+            response = None
+            for _attempt in range(2):  # 1 try + 1 retry
+                try:
+                    response = route.fetch(timeout=60000)  # 60s (was default 30s)
+                    break
+                except Exception as e:
+                    if _attempt == 0:
+                        print(f"[capture] exposure fetch retry ({greek}/{exp_option}): {e}", flush=True)
+                    else:
+                        print(f"[capture] exposure route error: {e}", flush=True)
+            if response:
                 body = response.text()
                 try:
                     data = json.loads(body)
@@ -344,8 +353,7 @@ def run():
                 except json.JSONDecodeError:
                     pass
                 route.fulfill(response=response)
-            except Exception as e:
-                print(f"[capture] exposure route error: {e}", flush=True)
+            else:
                 try:
                     route.continue_()
                 except Exception:

@@ -13,7 +13,7 @@ Key differences from V1:
   - Synced to Volland's 120s refresh cycle (no duplicate data)
 """
 
-import os, json, sys, time, traceback
+import os, json, sys, time, traceback, threading
 from datetime import datetime, timezone, time as dtime
 import pytz
 import requests as _requests
@@ -40,6 +40,11 @@ AUTO_RESTART_THRESHOLD = 5  # consecutive zero-point cycles before browser resta
 STALE_MODIFIED_RELOAD = 5   # consecutive unchanged-lastModified cycles before page reload
 STALE_MODIFIED_RESTART = 8  # consecutive unchanged-lastModified cycles before browser restart
 _last_saved_modified = ""  # tracks lastModified of most recently saved Volland snapshot
+
+# ── Watchdog: process-level safety net ────────────────────────────────
+WATCHDOG_STALE_SEC = 600    # 10 min with no save during market hours → force exit
+_watchdog_last_save = time.monotonic()  # updated after each successful save_cycle
+_watchdog_lock = threading.Lock()
 
 NY = pytz.timezone("US/Eastern")
 
@@ -87,6 +92,39 @@ def is_market_hours() -> bool:
     if t.weekday() >= 5:
         return False
     return dtime(9, 30) <= t.time() <= dtime(16, 0)
+
+
+def _watchdog_touch():
+    """Update watchdog timestamp after a successful save."""
+    global _watchdog_last_save
+    with _watchdog_lock:
+        _watchdog_last_save = time.monotonic()
+
+
+def _watchdog_thread():
+    """Daemon thread: if no successful save for WATCHDOG_STALE_SEC during market
+    hours, the main loop is hung. Send alert and force-exit so Railway restarts us."""
+    while True:
+        time.sleep(60)  # check every minute
+        if not is_market_hours():
+            # Reset timer outside market hours so we don't false-trigger at open
+            with _watchdog_lock:
+                global _watchdog_last_save
+                _watchdog_last_save = time.monotonic()
+            continue
+        with _watchdog_lock:
+            elapsed = time.monotonic() - _watchdog_last_save
+        if elapsed >= WATCHDOG_STALE_SEC:
+            msg = (
+                f"💀 <b>Volland Watchdog: Process Hung</b>\n\n"
+                f"No successful save for {elapsed/60:.0f} min during market hours.\n"
+                f"Main loop is likely hung (Playwright freeze or OOM).\n\n"
+                f"Force-exiting so Railway restarts the container."
+            )
+            print(f"[watchdog] FATAL: no save for {elapsed:.0f}s — forcing exit", flush=True)
+            send_telegram(msg)
+            time.sleep(3)  # give telegram a moment to send
+            os._exit(1)  # hard exit — bypasses any hung Playwright calls
 
 
 # ── Database ──────────────────────────────────────────────────────────
@@ -295,6 +333,11 @@ def run():
     ensure_tables()
     print(f"[volland-v2] Starting. Workspace: {WORKSPACE_URL}", flush=True)
     print(f"[volland-v2] Capture every {PULL_EVERY}s, wait {WAIT_SEC}s, sync poll {SYNC_POLL_SEC}s", flush=True)
+
+    # Start watchdog daemon thread — kills process if main loop hangs
+    _wd = threading.Thread(target=_watchdog_thread, daemon=True, name="volland-watchdog")
+    _wd.start()
+    print(f"[volland-v2] Watchdog started (stale threshold: {WATCHDOG_STALE_SEC}s)", flush=True)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -542,6 +585,7 @@ def run():
             }
 
             save_snapshot(payload, data_ts=data_ts_val)
+            _watchdog_touch()  # signal watchdog: we're alive
 
             if cycle_modified:
                 _last_saved_modified = cycle_modified

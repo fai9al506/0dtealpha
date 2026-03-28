@@ -134,6 +134,116 @@ def record_alert(alert_type: str):
     """Record that an alert was sent."""
     _alert_state["last_alert_times"][alert_type] = time.time()
 
+
+def _check_vol_event_phase():
+    """Vol Event Detector — tracks compression → vol event → release phases.
+    Called each cycle from run_market_job(). Sends Telegram alerts on phase transitions.
+
+    Thresholds (from Discord expert analysis — Wizard, BigBill, Zack, Apollo):
+    - Compression: overvix > +1.0 (VIX starting to exceed VIX3M)
+    - Vol Event: overvix > +2.5 OR VIX/VIX3M ratio > 1.10 (Wizard: "MASSIVE, not squeaker")
+    - Vol Release: SVB flips from positive peak (>+0.5) to dropping by >0.5
+      (vol sellers taking over → VIX turning red → beach ball popping)
+    """
+    global _vol_phase, _vol_phase_alerted, _vol_overvix_session_peak, _vol_svb_session_peak, _vol_svb_prev
+
+    if _vix_last is None or _vix3m_last is None or _overvix is None:
+        return
+
+    if not is_market_hours():
+        return
+
+    # Get current SVB from latest volland stats
+    svb = None
+    try:
+        if engine:
+            from sqlalchemy import text as _text
+            with engine.connect() as conn:
+                row = conn.execute(_text(
+                    "SELECT (payload->'statistics'->'spot_vol_beta'->>'correlation')::float "
+                    "FROM volland_snapshots WHERE payload->'statistics'->'spot_vol_beta' IS NOT NULL "
+                    "ORDER BY ts DESC LIMIT 1"
+                )).scalar()
+                if row is not None:
+                    svb = float(row)
+    except Exception:
+        pass
+
+    overvix = _overvix
+    ratio = _vix_last / _vix3m_last if _vix3m_last > 0 else 1.0
+
+    # Track session peaks
+    if overvix > _vol_overvix_session_peak:
+        _vol_overvix_session_peak = overvix
+    if svb is not None and svb > _vol_svb_session_peak:
+        _vol_svb_session_peak = svb
+
+    # Determine current phase
+    new_phase = "none"
+
+    # Phase 3: Release — SVB was high (>+0.5 peak) and has dropped by > 0.5
+    # AND overvix was >= +1.5 at some point (compression happened first)
+    if (svb is not None and _vol_svb_session_peak > 0.5
+            and _vol_overvix_session_peak >= 1.5
+            and svb < _vol_svb_session_peak - 0.5
+            and svb < 0):
+        new_phase = "vol_release"
+    # Phase 2: Vol Event — extreme overvixing
+    elif overvix > 2.5 or (ratio > 1.10 and overvix > 1.5):
+        new_phase = "vol_event"
+    # Phase 1: Compression — overvix building
+    elif overvix > 1.0:
+        new_phase = "compression"
+
+    _vol_phase = new_phase
+    _vol_svb_prev = svb
+
+    # Alert on phase transitions (each phase alerted once per session)
+    if new_phase != "none" and new_phase != _vol_phase_alerted:
+        vix_str = f"{_vix_last:.1f}"
+        vix3m_str = f"{_vix3m_last:.1f}"
+        ov_str = f"{overvix:+.2f}"
+        ratio_str = f"{ratio:.3f}"
+        svb_str = f"{svb:.2f}" if svb is not None else "n/a"
+        peak_ov_str = f"{_vol_overvix_session_peak:+.2f}"
+        peak_svb_str = f"{_vol_svb_session_peak:.2f}"
+
+        if new_phase == "compression":
+            msg = (f"📊 <b>VOL COMPRESSION BUILDING</b>\n"
+                   f"Overvix: {ov_str} (peak: {peak_ov_str})\n"
+                   f"VIX: {vix_str} | VIX3M: {vix3m_str} | Ratio: {ratio_str}\n"
+                   f"SVB: {svb_str}\n"
+                   f"<i>VIX exceeding VIX3M — spring compressing. Not a vol event yet.</i>")
+        elif new_phase == "vol_event":
+            msg = (f"🔴 <b>VOL EVENT APPROACHING</b>\n"
+                   f"Overvix: {ov_str} (peak: {peak_ov_str})\n"
+                   f"VIX: {vix_str} | VIX3M: {vix3m_str} | Ratio: {ratio_str}\n"
+                   f"SVB: {svb_str}\n"
+                   f"<i>Extreme overvixing — prepare for potential reversal.\n"
+                   f"Watch for VIX to turn red + SVB to flip negative = release signal.</i>")
+        elif new_phase == "vol_release":
+            msg = (f"🟢 <b>VOL RELEASE — AGGRESSIVE LONGS</b>\n"
+                   f"SVB: {svb_str} (peak was {peak_svb_str}, dropped >0.5)\n"
+                   f"Overvix: {ov_str} (session peak: {peak_ov_str})\n"
+                   f"VIX: {vix_str} | VIX3M: {vix3m_str}\n"
+                   f"<i>Vol sellers taking over after compression.\n"
+                   f"Beach ball releasing — strong long signal.</i>")
+
+        send_telegram_setups(msg)
+        print(f"[vol-event] phase → {new_phase}: ov={ov_str} ratio={ratio_str} svb={svb_str}", flush=True)
+        _vol_phase_alerted = new_phase
+
+
+def _reset_vol_event_daily():
+    """Reset vol event tracker at start of each trading day."""
+    global _vol_phase, _vol_phase_alerted, _vol_overvix_session_peak, _vol_svb_session_peak, _vol_svb_prev
+    _vol_phase = "none"
+    _vol_phase_alerted = "none"
+    _vol_overvix_session_peak = 0.0
+    _vol_svb_session_peak = -99.0
+    _vol_svb_prev = None
+
+
 # ====== AUTHENTICATION ======
 SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_hex(32))
 SESSION_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
@@ -245,6 +355,17 @@ _overvix: float | None = None  # VIX - VIX3M (overvix indicator)
 # Combined DD hedging (SPX + SPY) — updated each cycle in run_market_job()
 _dd_combined_numeric: float | None = None  # combined DD numeric value
 _dd_combined_str: str | None = None        # formatted string e.g. "Long $7.3B" for display/directional checks
+
+# ── Vol Event Detector ──
+# Tracks VIX/VIX3M compression → vol event → release phases.
+# Phase 1 (compression): overvix rising, VIX > VIX3M
+# Phase 2 (vol event): overvix > 2.5 or VIX/VIX3M ratio > 1.10
+# Phase 3 (release): SVB flips from positive → negative (vol sellers take over)
+_vol_phase = "none"            # current phase: none / compression / vol_event / vol_release
+_vol_phase_alerted = "none"    # last phase we sent Telegram for (prevents re-alerting same phase)
+_vol_overvix_session_peak = 0.0  # highest overvix seen this session
+_vol_svb_session_peak = -99.0    # highest SVB seen this session
+_vol_svb_prev: float | None = None  # previous SVB reading for direction tracking
 
 # SPY chain state
 latest_spy_df: pd.DataFrame | None = None
@@ -2736,6 +2857,12 @@ def _run_market_job_inner():
         if _vix_last is not None and _vix3m_last is not None:
             _overvix = round(_vix_last - _vix3m_last, 2)
 
+        # Vol Event Detector — check phase transitions
+        try:
+            _check_vol_event_phase()
+        except Exception as _ve:
+            print(f"[vol-event] error: {_ve}", flush=True)
+
         # Update VIX compression tracker
         if _vix_last is not None and spot:
             try:
@@ -4658,6 +4785,9 @@ def _es_quote_reset():
     reset_sb2_abs_session()
     _absorption_signals.clear()
 
+    # Reset vol event detector for new session
+    _reset_vol_event_daily()
+
 def _run_absorption_detection(bars: list) -> dict | None:
     """Thin wrapper: evaluates absorption via setup_detector, logs, and notifies.
 
@@ -6529,6 +6659,12 @@ def api_health(request: Request):
         "vix": _vix_last,
         "vix3m": _vix3m_last,
         "overvix": _overvix,
+        "vol_event": {
+            "phase": _vol_phase,
+            "overvix_session_peak": _vol_overvix_session_peak,
+            "svb_session_peak": _vol_svb_session_peak,
+            "ratio": round(_vix_last / _vix3m_last, 3) if _vix_last and _vix3m_last and _vix3m_last > 0 else None,
+        },
         "last": last_run_status,
     }
 

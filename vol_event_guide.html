@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vol Event Detector — Phase Guide</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #0a0e17;
+    color: #c8d6e5;
+    line-height: 1.7;
+    padding: 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 { color: #f5f6fa; font-size: 2rem; margin-bottom: 0.5rem; }
+  h2 { color: #00d2ff; font-size: 1.4rem; margin: 2rem 0 0.8rem; border-bottom: 1px solid #1a2a3a; padding-bottom: 0.3rem; }
+  h3 { color: #ffd32a; font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+  p { margin-bottom: 0.8rem; }
+  .subtitle { color: #778ca3; font-size: 0.95rem; margin-bottom: 2rem; }
+  code { background: #1a2a3a; padding: 2px 6px; border-radius: 3px; font-family: 'JetBrains Mono', 'Consolas', monospace; color: #ffd32a; }
+  .phase-card {
+    background: #111927;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    border-left: 4px solid;
+  }
+  .phase-compression { border-color: #f9ca24; }
+  .phase-volevent { border-color: #eb4d4b; }
+  .phase-release { border-color: #6ab04c; }
+  .phase-card h3 { margin-top: 0; }
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+  .metric-box {
+    background: #0d1520;
+    border: 1px solid #1a2a3a;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+  }
+  .metric-box .label { color: #778ca3; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; }
+  .metric-box .value { color: #f5f6fa; font-size: 1.5rem; font-weight: bold; font-family: 'JetBrains Mono', monospace; margin: 0.3rem 0; }
+  .metric-box .note { color: #778ca3; font-size: 0.75rem; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+  th, td { padding: 0.6rem 0.8rem; text-align: left; border-bottom: 1px solid #1a2a3a; }
+  th { color: #00d2ff; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; }
+  .win { color: #6ab04c; }
+  .loss { color: #eb4d4b; }
+  .neutral { color: #f9ca24; }
+  .diagram {
+    background: #0d1520;
+    border: 1px solid #1a2a3a;
+    border-radius: 8px;
+    padding: 1.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    line-height: 1.8;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 1rem 0;
+  }
+  .callout {
+    background: #1a2a3a;
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    margin: 1rem 0;
+    border-left: 3px solid #00d2ff;
+    font-style: italic;
+  }
+  .callout .source { color: #00d2ff; font-style: normal; font-weight: bold; }
+  .expert-quote {
+    background: #111927;
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    margin: 0.5rem 0;
+    border-left: 3px solid #778ca3;
+  }
+  .expert-quote .name { color: #ffd32a; font-weight: bold; }
+  .expert-quote .date { color: #576574; font-size: 0.8rem; }
+  .threshold-why {
+    background: #0d1520;
+    border: 1px solid #2a3a4a;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 0.5rem 0;
+  }
+  .threshold-why .number { color: #ffd32a; font-size: 1.2rem; font-weight: bold; }
+  ul { margin: 0.5rem 0 0.8rem 1.5rem; }
+  li { margin-bottom: 0.3rem; }
+  .section-divider { border: none; border-top: 1px solid #1a2a3a; margin: 2rem 0; }
+</style>
+</head>
+<body>
+
+<h1>Vol Event Detector — Phase Guide</h1>
+<p class="subtitle">Understanding compression, vol events, and release mechanics for 0DTE SPX trading.<br>
+Built from 479 Discord messages (Wizard of Ops, Apollo, BigBill, Zack, Phoenix, LordHelmet) + 53 days of system data.</p>
+
+<h2>The Core Concept: The Vol Spring</h2>
+
+<p>Think of VIX term structure as a spring. Normally, VIX (30-day) trades <b>below</b> VIX3M (90-day) — this is called <b>contango</b> (healthy). When fear spikes, VIX rises above VIX3M — this is <b>backwardation</b> (stressed). The bigger the gap, the more compressed the spring.</p>
+
+<p>The spring ALWAYS wants to return to normal. The question is <b>when</b> and <b>how fast</b> it snaps back. That snap-back IS the vol event rally.</p>
+
+<div class="diagram">
+  NORMAL (contango):     VIX 20 < VIX3M 22    overvix = -2.0    spring relaxed
+  COMPRESSION:           VIX 25 > VIX3M 24    overvix = +1.0    spring tightening
+  VOL EVENT:             VIX 32 > VIX3M 27    overvix = +5.0    spring fully compressed
+  RELEASE:               VIX 28 < VIX3M 27    overvix = +1.0↓   spring SNAPPING BACK
+                                                                  → this is the rally
+</div>
+
+<h2>The Three Phases</h2>
+
+<div class="phase-card phase-compression">
+  <h3>Phase 1: Compression Building</h3>
+  <p><b>What's happening:</b> VIX is rising faster than VIX3M. The market is pricing in MORE short-term risk than long-term risk. Dealers are buying protection. Retail may be panic-buying puts.</p>
+  <p><b>Mechanically:</b> As VIX rises, dealer hedging gets heavier. Negative gamma positions force dealers to sell into drops (amplifying the move). Vol buyers are winning — each point down creates more selling.</p>
+  <p><b>What you see on Volland:</b></p>
+  <ul>
+    <li>SVB (Spot-Vol Beta) positive and rising — vol moving WITH price (abnormal)</li>
+    <li>DD flipping rapidly as spot crosses ATM strikes</li>
+    <li>Paradigm may be unstable (flickering between types)</li>
+    <li>Charm growing but being overwhelmed by selling pressure</li>
+  </ul>
+  <p><b>Trading:</b> Longs are dangerous. Our V12 filter correctly blocks non-SC longs (VIX > 22 gate). SC longs fire and mostly lose — this is the cost of being ready for Phase 3. Shorts work well.</p>
+
+  <div class="metric-grid">
+    <div class="metric-box">
+      <div class="label">Overvix</div>
+      <div class="value neutral">+1.0 to +2.5</div>
+      <div class="note">VIX exceeding VIX3M</div>
+    </div>
+    <div class="metric-box">
+      <div class="label">VIX/VIX3M Ratio</div>
+      <div class="value neutral">1.03 – 1.10</div>
+      <div class="note">Mild backwardation</div>
+    </div>
+    <div class="metric-box">
+      <div class="label">SVB</div>
+      <div class="value loss">Positive, rising</div>
+      <div class="note">Vol buyers winning</div>
+    </div>
+  </div>
+
+  <p><b>Mar 27 example:</b> Overvix went from +1.24 at open to +2.08 peak. VIX/VIX3M ratio = 1.048. SVB rose from 1.57 to 2.18. SPX dropped 98 pts. SC longs: 1W/3L (-33.6 pts). <b>Classic compression day.</b></p>
+</div>
+
+<div class="phase-card phase-volevent">
+  <h3>Phase 2: Vol Event (Peak Compression)</h3>
+  <p><b>What's happening:</b> The spring is fully compressed. VIX is at extreme levels above VIX3M. This is where the experts start positioning for the reversal — NOT trading the reversal yet, but PREPARING.</p>
+  <p><b>Mechanically:</b> At extreme overvixing, short-term options are massively overpriced vs longer-term. Market makers selling short-term vol (collecting premium) while buying long-term vol (hedging). The VIX futures curve inverts deeply. Any positive catalyst (headline, DD flip, vol seller pressure) can trigger a rapid unwind.</p>
+  <p><b>What you see:</b></p>
+  <ul>
+    <li>VIX/VIX3M ratio > 1.10 (BigBill: "1.27 = extreme, SPX higher 7/8 times in 4 days")</li>
+    <li>Overvix > +2.5 (Wizard: "we need a SUPER overvixing")</li>
+    <li>Wizard's vol signal may fire (proprietary threshold, ~28/30 track record)</li>
+    <li>Community enters butterflies, calendars, VIX put spreads</li>
+  </ul>
+  <p><b>Trading:</b> This is NOT yet time to go long aggressively. The spring can stay compressed for hours or days. Expert positioning is via multi-day structures (butterflies, calendars) not 0DTE. SC still fires and may catch intraday bounces.</p>
+
+  <div class="metric-grid">
+    <div class="metric-box">
+      <div class="label">Overvix</div>
+      <div class="value loss">&gt; +2.5</div>
+      <div class="note">Extreme short-term fear</div>
+    </div>
+    <div class="metric-box">
+      <div class="label">VIX/VIX3M Ratio</div>
+      <div class="value loss">&gt; 1.10</div>
+      <div class="note">Deep backwardation</div>
+    </div>
+    <div class="metric-box">
+      <div class="label">SVB</div>
+      <div class="value loss">High positive (peak)</div>
+      <div class="note">Max vol buyer pressure</div>
+    </div>
+  </div>
+
+  <div class="expert-quote">
+    <span class="name">Wizard of Ops</span> <span class="date">Mar 20</span><br>
+    "Wait for a <b>MASSIVE</b> vol event, not a squeaker."
+  </div>
+  <div class="expert-quote">
+    <span class="name">Wizard of Ops</span> <span class="date">Mar 27, 14:08</span><br>
+    "But we never hit a vol signal." (at overvix 2.18 — not extreme enough for Wizard)
+  </div>
+  <div class="expert-quote">
+    <span class="name">Zack</span> <span class="date">Mar 27, 14:32</span><br>
+    "I don't think we are even overvixxed yet. Not at vol event point. This just seems like slow controlled selling."
+  </div>
+  <div class="expert-quote">
+    <span class="name">BigBill</span> <span class="date">Mar 9</span><br>
+    "VIX term structure hit 1.27 — extreme backwardation. SPX was higher 7 out of 8 times, 4 days later."
+  </div>
+
+  <p><b>Mar 6 example:</b> Vol event CONFIRMED at close. Community entered butterflies. VIX ~29. Set up the Mar 9 rally.</p>
+</div>
+
+<div class="phase-card phase-release">
+  <h3>Phase 3: Vol Release (The Rally)</h3>
+  <p><b>What's happening:</b> The spring is releasing. Vol sellers take over. VIX starts DROPPING while SPX is flat or rising. The beach ball pops out of the water. Shorts get destroyed. Longs are incredible.</p>
+  <p><b>Mechanically:</b> Vol sellers (institutional) step in to sell overpriced short-term vol. This pushes VIX down. As VIX drops, dealer hedges unwind — they STOP selling and start buying back, creating a positive feedback loop. Negative gamma flips to supportive flow. The drop in realized vol becomes self-reinforcing.</p>
+  <p><b>What you see on Volland:</b></p>
+  <ul>
+    <li><b>SVB flips from positive → negative</b> — THE key signal. Vol dropping while price rising = normal regime restored.</li>
+    <li>VIX "goes from green to red" (Phoenix's bottom signal)</li>
+    <li>DD may flip strongly positive (but this is consequence, not cause)</li>
+    <li>Shorts start losing — buyers absorbing all selling pressure</li>
+  </ul>
+  <p><b>Trading:</b> <b>Go long aggressively.</b> SC fires and wins at 90%+. All longs should be enabled. Wizard: "Undervixed rallies tend to run like a cartoon. It runs in place for a while and then takes off."</p>
+
+  <div class="metric-grid">
+    <div class="metric-box">
+      <div class="label">SVB</div>
+      <div class="value win">Flipped NEGATIVE</div>
+      <div class="note">Vol sellers took over</div>
+    </div>
+    <div class="metric-box">
+      <div class="label">VIX Direction</div>
+      <div class="value win">Dropping (red)</div>
+      <div class="note">From session high</div>
+    </div>
+    <div class="metric-box">
+      <div class="label">Overvix</div>
+      <div class="value win">Dropping from peak</div>
+      <div class="note">Compression unwinding</div>
+    </div>
+  </div>
+
+  <div class="expert-quote">
+    <span class="name">Wizard of Ops</span> <span class="date">Mar 17</span><br>
+    "<b>Undervixing following overvixing</b> is very bullish, but without that prior overvixing, it is opening a trap door for underpriced skew."
+  </div>
+  <div class="expert-quote">
+    <span class="name">Phoenix</span> <span class="date">Mar 3</span><br>
+    "Two things at a bottom: SPX opens very low and then recovers; <b>VIX goes from green to red</b>."
+  </div>
+  <div class="expert-quote">
+    <span class="name">Wizard of Ops</span> <span class="date">Mar 10, via nofnogjustprofit</span><br>
+    "Undervixed rallies tend to run like a cartoon. It runs in place for a while and then takes off."
+  </div>
+
+  <p><b>Mar 9 example:</b> Day after Mar 6 vol event. VIX 31.3 at open → 24.9 by close. SVB went from +0.75 to -3.23. Longs: 11W/1L, +152 pts. Shorts: 5W/16L, -168 pts. The beach ball POPPED.</p>
+</div>
+
+<hr class="section-divider">
+
+<h2>Why These Specific Thresholds?</h2>
+
+<h3>Compression: Overvix > +1.0</h3>
+<div class="threshold-why">
+  <div class="number">+1.0</div>
+  <p>In normal markets, overvix oscillates between -2.0 and +0.5. When it crosses +1.0, VIX is meaningfully exceeding VIX3M — short-term fear is elevated beyond what the 90-day outlook suggests.</p>
+  <p><b>From our data (Mar 17-27):</b> Average daily overvix ranged from -2.01 to +1.37. The +1.0 threshold was only crossed on Mar 27 (avg 1.37, peak 2.08) — confirming it catches genuine compression, not noise.</p>
+  <p><b>Why not lower?</b> Overvix +0.5 happens on normal volatile days without compression mechanics. +1.0 filters out the noise.</p>
+</div>
+
+<h3>Vol Event: Overvix > +2.5 OR VIX/VIX3M > 1.10</h3>
+<div class="threshold-why">
+  <div class="number">+2.5 / 1.10</div>
+  <p>This is based on Discord expert calibration:</p>
+  <ul>
+    <li><b>Mar 27:</b> Overvix peaked at 2.08, ratio 1.048. Both Wizard and Zack said "NOT a vol event." So 2.08 is below threshold.</li>
+    <li><b>Mar 6:</b> Confirmed vol event. VIX 26.8-29.5. If VIX3M ~24 (estimated), ratio ~1.12-1.23. Overvix ~3-5.</li>
+    <li><b>BigBill:</b> Ratio 1.27 = "extreme backwardation, SPX higher 7/8 times." We use 1.10 as "approaching" (lower than BigBill's extreme).</li>
+    <li><b>Wizard:</b> "MASSIVE, not squeaker" — at ~2.0 overvix it's a squeaker. Needs +2.5 minimum for real vol event.</li>
+  </ul>
+  <p><b>We use OR logic:</b> Either overvix > 2.5 (spread-based) OR ratio > 1.10 with overvix > 1.5 (ratio-based). Different VIX levels create different overvix for same ratio, so both checks are needed.</p>
+  <p><b>Caveat:</b> We only have 1 confirmed vol event in our data (Mar 6, no overvix tracking). These thresholds will be refined as we collect more data.</p>
+</div>
+
+<h3>Release: SVB Flips from Peak > +0.5 to Below Zero</h3>
+<div class="threshold-why">
+  <div class="number">SVB flip</div>
+  <p>SVB (Spot-Vol Beta) measures the correlation between spot price and volatility. Normally it's <b>negative</b> (price down → vol up). During compression, it's <b>positive</b> (both moving together = stressed).</p>
+  <p>The flip from positive → negative is the moment <b>vol sellers take over</b>. They start pushing VIX down, breaking the correlation. This is the mechanical trigger for the rally.</p>
+  <p><b>Mar 9 proof:</b> SVB went from +0.75 (09:45) to 0.03 (10:08) to -1.47 (10:57). The flip at ~10:30 marked the exact start of the rally. Longs before the flip: 3W/1L. Longs after: 8W/0L.</p>
+  <p><b>Mar 27 counter-proof:</b> SVB went from +1.57 to +2.18. <b>Never flipped negative.</b> Vol sellers never won. No rally.</p>
+  <p><b>Requirements:</b> SVB must have peaked > +0.5 first (confirming compression happened) AND dropped by > 0.5 AND gone below zero. This triple condition prevents false signals on normal negative-SVB days.</p>
+</div>
+
+<hr class="section-divider">
+
+<h2>Phase Timeline: How They Form</h2>
+
+<div class="diagram">
+     VIX
+  32 ┤         ╭──── P2: VOL EVENT ────╮
+  30 ┤       ╭─╯  VIX peaks, spring    │
+  28 ┤     ╭─╯    fully compressed     ╰──╮  P3: RELEASE
+  26 ┤   ╭─╯                               ╰──╮  VIX drops, vol sellers win
+  24 ┤ ╭─╯  P1: COMPRESSION                    ╰──╮  "beach ball pops"
+  22 ┤─╯    VIX rising above VIX3M                  ╰──── longs are incredible
+  20 ┤ NORMAL (contango)                                  shorts get destroyed
+     └──────────────────────────────────────────────────────────── time
+      Day -3   Day -2    Day -1       Day 0 (vol event)    Day +1 (rally)
+
+     SVB
+  +3 ┤          ╭─── positive peak ───╮
+  +2 ┤        ╭─╯                      ╰─╮
+  +1 ┤      ╭─╯    vol buyers winning     ╰─╮
+   0 ┤────╭─╯═══════════════════════════════╳═══╮  ← FLIP POINT (P3 trigger)
+  -1 ┤                                           ╰──╮  vol sellers winning
+  -2 ┤                                               ╰──── rally running
+  -3 ┤
+     └──────────────────────────────────────────────────────────── time
+
+     SPX
+6500 ┤                                              ╭───── P3 rally ───── ↑
+6450 ┤ ─╮  P1: selling                           ╭──╯
+6400 ┤   ╰──╮                                 ╭──╯
+6350 ┤       ╰──╮  lower highs             ╭──╯
+6300 ┤           ╰──╮  every bounce    ╭───╯
+6250 ┤               ╰──── fails ──────╯  ← P2: bottom (vol event peak)
+     └──────────────────────────────────────────────────────────── time
+</div>
+
+<h2>How to Spot Each Phase in Real-Time</h2>
+
+<table>
+  <tr>
+    <th>Check</th>
+    <th>P1: Compression</th>
+    <th>P2: Vol Event</th>
+    <th>P3: Release</th>
+  </tr>
+  <tr>
+    <td>Overvix</td>
+    <td class="neutral">+1.0 to +2.5, rising</td>
+    <td class="loss">&gt; +2.5, may be peaking</td>
+    <td class="win">Dropping from peak</td>
+  </tr>
+  <tr>
+    <td>VIX/VIX3M</td>
+    <td class="neutral">1.03 – 1.10</td>
+    <td class="loss">&gt; 1.10 (BigBill: 1.27 = extreme)</td>
+    <td class="win">Dropping back toward 1.0</td>
+  </tr>
+  <tr>
+    <td>SVB</td>
+    <td class="loss">Positive, rising</td>
+    <td class="loss">High positive (peak)</td>
+    <td class="win">Flipped NEGATIVE</td>
+  </tr>
+  <tr>
+    <td>VIX color</td>
+    <td class="loss">Green (rising)</td>
+    <td class="loss">Green/peaking</td>
+    <td class="win">RED (dropping)</td>
+  </tr>
+  <tr>
+    <td>Price action</td>
+    <td>Lower highs, every bounce fails</td>
+    <td>Capitulation / flush</td>
+    <td>Opens low, RECOVERS (Phoenix)</td>
+  </tr>
+  <tr>
+    <td>Shorts performance</td>
+    <td class="win">Shorts winning</td>
+    <td class="win">Shorts still winning</td>
+    <td class="loss">Shorts getting DESTROYED</td>
+  </tr>
+  <tr>
+    <td>SC longs</td>
+    <td class="loss">Mostly losing (cost)</td>
+    <td class="neutral">Mixed</td>
+    <td class="win">90%+ WR (payoff)</td>
+  </tr>
+  <tr>
+    <td>Expert positioning</td>
+    <td>Sitting out or selling pops</td>
+    <td>Entering butterflies/calendars</td>
+    <td>Aggressive long delta</td>
+  </tr>
+</table>
+
+<h2>Real Examples from Our Data</h2>
+
+<h3>Mar 27: Phase 1 Only (Compression, No Vol Event)</h3>
+<table>
+  <tr><th>Time</th><th>SPX</th><th>VIX</th><th>Overvix</th><th>SVB</th><th>Phase</th></tr>
+  <tr><td>09:45</td><td>6438</td><td>29.66</td><td class="neutral">+1.24</td><td class="loss">+1.57</td><td class="neutral">Compression</td></tr>
+  <tr><td>10:45</td><td>6412</td><td>~29.8</td><td class="neutral">+1.13</td><td class="loss">+1.33</td><td class="neutral">Compression</td></tr>
+  <tr><td>14:35</td><td>6377</td><td>31.28</td><td class="loss">+2.08</td><td class="loss">+2.18</td><td class="neutral">Compression (NOT vol event)</td></tr>
+  <tr><td>16:00</td><td>~6375</td><td>~31</td><td class="loss">+2.18</td><td class="loss">+2.18</td><td class="neutral">Still compression. SVB never flipped.</td></tr>
+</table>
+<p>Result: <b>No release. No rally. SC longs: 1W/3L (-33.6 pts).</b> Wizard and Zack both said "not a vol event" even at overvix 2.18.</p>
+
+<h3>Mar 6 → Mar 9: Full Cycle (Compression → Vol Event → Release)</h3>
+<table>
+  <tr><th>Date</th><th>SPX Range</th><th>VIX</th><th>SVB</th><th>Phase</th><th>Longs PnL</th></tr>
+  <tr><td>Mar 6</td><td>sell day</td><td>26.8–29.5</td><td class="loss">+2.04</td><td class="loss">Vol Event CONFIRMED</td><td class="loss">-22.3</td></tr>
+  <tr><td>Mar 9</td><td>6651→6808</td><td>31.3→24.9</td><td class="win">+0.75 → -3.23</td><td class="win">RELEASE</td><td class="win">+152.1</td></tr>
+  <tr><td>Mar 10</td><td>continued rally</td><td>23.7–25.2</td><td class="win">-1.47</td><td class="win">Release continues</td><td class="win">+58.0</td></tr>
+</table>
+<p>Result: <b>The spring snapped. SVB flipped from +2.04 to -3.23. SPX rallied ~157 pts across 2 days. SC: 11W/1L on Mar 9 alone.</b></p>
+
+<hr class="section-divider">
+
+<h2>Key Principles</h2>
+
+<div class="callout">
+  <span class="source">Principle 1:</span> Overvix level is the SETUP, not the TRIGGER. It tells you the spring is compressed. It does NOT tell you when it releases.
+</div>
+
+<div class="callout">
+  <span class="source">Principle 2:</span> The SVB flip from positive → negative IS the trigger. It means vol sellers took over. This is measurable and detectable in real-time.
+</div>
+
+<div class="callout">
+  <span class="source">Principle 3:</span> The compression can last hours or days. Don't try to time the exact bottom during P1/P2. Instead: accept SC losses during compression (cost) and ride the release (payoff). Cost/reward: 1:4.5.
+</div>
+
+<div class="callout">
+  <span class="source">Principle 4:</span> A "squeaker" (overvix +2) is NOT a vol event. You need "MASSIVE" (+3-5) for high conviction. But even squeakers can resolve with small bounces — SC catches these.
+</div>
+
+<div class="callout">
+  <span class="source">Principle 5:</span> After confirmed vol events, the NEXT DAY is the best trading day of the month. Position overnight (via multi-day structures) for maximum capture.
+</div>
+
+<hr class="section-divider">
+
+<h2>Alert System (Now Live)</h2>
+<p>The Vol Event Detector runs every 30 seconds during market hours and sends Telegram alerts on phase transitions:</p>
+
+<div class="metric-grid">
+  <div class="metric-box" style="border: 1px solid #f9ca24;">
+    <div class="label">Compression Building</div>
+    <div class="value neutral">📊</div>
+    <div class="note">Overvix > +1.0<br>VIX exceeding VIX3M</div>
+  </div>
+  <div class="metric-box" style="border: 1px solid #eb4d4b;">
+    <div class="label">Vol Event Approaching</div>
+    <div class="value loss">🔴</div>
+    <div class="note">Overvix > +2.5 OR<br>ratio > 1.10 + ov > 1.5</div>
+  </div>
+  <div class="metric-box" style="border: 1px solid #6ab04c;">
+    <div class="label">Vol Release</div>
+    <div class="value win">🟢</div>
+    <div class="note">SVB flipped negative<br>after positive peak > 0.5</div>
+  </div>
+</div>
+
+<p>Each phase alerts <b>once per session</b> (no spam). Phase status is also visible in the <code>/api/health</code> endpoint.</p>
+
+<p style="margin-top: 2rem; color: #576574; font-size: 0.8rem;">
+  Generated Mar 28, 2026. Thresholds based on Discord expert analysis (Wizard, BigBill, Zack, Apollo, Phoenix) + 53 days of 0DTE Alpha system data. Will be refined as more vol events are observed.
+</p>
+
+</body>
+</html>

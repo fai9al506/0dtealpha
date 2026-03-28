@@ -1336,7 +1336,7 @@ def _backfill_outcomes():
             is_long = entry.get("direction", "long").lower() in ("long", "bullish")
             spot = entry.get("spot") or 0
             es_price = entry.get("abs_es_price")
-            _es_based_bf = entry.get("setup_name") in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption")
+            _es_based_bf = entry.get("setup_name") in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption", "Delta Absorption")
             entry_price = es_price if _es_based_bf and es_price else spot
 
             is_trailing_setup = entry.get("setup_name") in ("DD Exhaustion", "GEX Long", "GEX Velocity", "AG Short", "Skew Charm")
@@ -1516,7 +1516,7 @@ def _restore_open_trades():
             # Rebuild the result_data dict needed by _compute_setup_levels
             # For ES/SB2 Absorption, extract bar_idx from abs_details JSONB
             _abs_bar_idx = None
-            if setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption"):
+            if setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption", "Delta Absorption"):
                 _ad = entry.get("abs_details")
                 if isinstance(_ad, str):
                     try:
@@ -1775,7 +1775,7 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "SB Absorption": None, "SB10 Absorption": None, "SB2 Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "Vanna Butterfly": None, "VIX Compression": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "SB Absorption": None, "SB10 Absorption": None, "SB2 Absorption": None, "Delta Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "Vanna Butterfly": None, "VIX Compression": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
@@ -1835,6 +1835,7 @@ def log_setup(result_wrapper):
                     "SB Absorption": (12, 20, 10),
                     "SB10 Absorption": (12, 20, 10),
                     "SB2 Absorption": (12, 20, 10),
+                    "Delta Absorption": (8, None, 8),
                     "BofA Scalp": (r.get("bofa_stop_level") or 10, None, None),
                 }
                 _tp = _tp_lookup.get(setup_name, (None, None, None))
@@ -1842,7 +1843,7 @@ def log_setup(result_wrapper):
                 insert_params["trail_activation"] = _tp[1]
                 insert_params["trail_gap"] = _tp[2]
                 # Auto-populate comments and abs_details for ES/SB2 Absorption
-                if setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption") and not insert_params.get("comments"):
+                if setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption", "Delta Absorption") and not insert_params.get("comments"):
                     _parts = [
                         f"Vol {r.get('abs_vol_ratio', 0):.1f}x",
                         f"Div {r.get('div_raw', 0)}/4",
@@ -3539,6 +3540,14 @@ def _compute_setup_levels(r: dict):
         stop_lvl = es_price - 8 if is_long else es_price + 8
         return round(target_lvl, 2), round(stop_lvl, 2)
 
+    if setup_name == "Delta Absorption":
+        es_price = r.get("abs_es_price")
+        if not es_price:
+            return None, None
+        # IMM trail: SL=8, gap=8, no fixed target
+        stop_lvl = es_price - 8 if is_long else es_price + 8
+        return None, round(stop_lvl, 2)
+
     if setup_name == "DD Exhaustion":
         # Trailing stop — no fixed target; initial SL = 12 pts
         # target_level=None signals trailing mode in _check_setup_outcomes
@@ -3688,7 +3697,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 continue
 
         # Use ES price for ES-based setups (absorption), SPX spot for everything else
-        _es_based = setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption")
+        _es_based = setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption", "Delta Absorption")
         if _es_based:
             if not es_price:
                 still_open.append(trade)
@@ -3759,6 +3768,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "SB Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
             "SB10 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
             "SB2 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
+            "Delta Absorption": {"mode": "continuous", "activation": 0, "gap": 8},  # IMM trail: stop = max(maxProfit-8, -8)
         }
         _tp = _trail_params.get(setup_name)
         if _tp is not None:
@@ -5266,6 +5276,11 @@ def _run_absorption_in_thread(bars: list):
             _run_sb2_absorption(bars)
         except Exception as e:
             print(f"[sb2] eval error: {e}", flush=True)
+        # Delta Absorption (LOG-ONLY — delta-vs-price divergence)
+        try:
+            _run_delta_absorption(bars)
+        except Exception as e:
+            print(f"[delta-abs] eval error: {e}", flush=True)
 
 
 # ── 10-pt range bar callback for SB10 Absorption ──────────────────────────
@@ -5526,6 +5541,119 @@ def _run_sb2_absorption(bars: list):
             "setup_log_id": _current_setup_log.get("SB2 Absorption"),
         })
         print(f"[outcome] tracking SB2 Absorption: target={target_lvl:.1f} stop={stop_lvl:.1f}", flush=True)
+
+    return result
+
+
+# ── Delta Absorption — delta-vs-price divergence ────────────────────────────
+
+def _run_delta_absorption(bars: list):
+    """Evaluate Delta Absorption (LOG-ONLY). Logs to setup_log."""
+    from app.setup_detector import (
+        evaluate_delta_absorption, should_notify_delta_abs,
+        format_delta_abs_message,
+    )
+
+    # Get Volland stats
+    volland_stats = None
+    try:
+        vstat = db_volland_stats()
+        if vstat and vstat.get("stats") and vstat["stats"].get("has_statistics"):
+            volland_stats = vstat["stats"]
+    except Exception as e:
+        print(f"[delta-abs] volland lookup error: {e}", flush=True)
+
+    if volland_stats and _dd_combined_str:
+        volland_stats = dict(volland_stats)
+        volland_stats["delta_decay_hedging"] = _dd_combined_str
+
+    result = evaluate_delta_absorption(bars, volland_stats, _setup_settings)
+    if result is None:
+        return None
+
+    # Block signals in last 5 minutes
+    t_now = now_et().time()
+    if t_now >= dtime(15, 55):
+        return None
+
+    print(f"[delta-abs] SIGNAL: {result['direction'].upper()} "
+          f"ES={result['abs_es_price']:.2f} delta={result['bar_delta']:+d} "
+          f"body={result['body']} tier={result['tier_label']} "
+          f"grade={result['grade']} score={result['score']} "
+          f"sig#{result['sig_num']} bar_idx={result['bar_idx']}", flush=True)
+
+    # SPX spot for setup_log
+    spx_spot = None
+    try:
+        msg = last_run_status.get("msg") or ""
+        parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+        spx_spot = float(parts.get("spot", ""))
+    except Exception:
+        pass
+    if spx_spot:
+        result["spot"] = round(spx_spot, 2)
+
+    # Greek alignment
+    _da_charm = None
+    if volland_stats and isinstance(volland_stats, dict):
+        _c = volland_stats.get("aggregatedCharm")
+        if _c is not None:
+            try:
+                _da_charm = float(_c)
+            except (ValueError, TypeError):
+                pass
+    result["vanna_all"] = _vanna_cache.get("all")
+    result["vanna_weekly"] = _vanna_cache.get("weekly")
+    result["vanna_monthly"] = _vanna_cache.get("monthly")
+    result["spot_vol_beta"] = None
+    if volland_stats:
+        try:
+            result["spot_vol_beta"] = float(volland_stats.get("spot_vol_beta", 0))
+        except (ValueError, TypeError):
+            pass
+    result["greek_alignment"] = _compute_greek_alignment(
+        result.get("direction"), _da_charm, _vanna_cache.get("all"),
+        result.get("spot"), None)
+    result["charm_limit_entry"] = None
+
+    # Notification gate
+    fire, reason = should_notify_delta_abs(result)
+
+    # Log to setup_log (always)
+    rw = {
+        "result": result,
+        "notify": fire,
+        "notify_reason": reason or "cooldown",
+        "message": format_delta_abs_message(result, alignment=result.get("greek_alignment")),
+    }
+    log_setup(rw)
+
+    # Delta Absorption: LOG-ONLY — no Telegram, no auto-trade, no live filter
+
+    # Outcome tracking (for data collection)
+    if fire:
+        stop_pts = 8
+        es_entry = result.get("abs_es_price", result["spot"])
+        if result["direction"] == "bullish":
+            stop_lvl = es_entry - stop_pts
+            target_lvl = es_entry + 20  # wide target for trail tracking
+        else:
+            stop_lvl = es_entry + stop_pts
+            target_lvl = es_entry - 20
+        _setup_open_trades.append({
+            "setup_name": "Delta Absorption", "direction": result["direction"],
+            "spot": result["spot"], "grade": result["grade"],
+            "target_level": target_lvl, "stop_level": stop_lvl,
+            "initial_stop_level": stop_lvl,
+            "ts": now_et(), "result_data": result,
+            "_seen_high": es_entry, "_seen_low": es_entry,
+            "_es_last_bar_idx": result.get("bar_idx", 0),
+            "max_hold_minutes": None,
+            "_trade_date": now_et().date(),
+            "setup_log_id": _current_setup_log.get("Delta Absorption"),
+            "_es_based": True,
+        })
+        print(f"[outcome] tracking Delta Absorption: stop={stop_lvl:.1f}", flush=True)
 
     return result
 
@@ -9852,7 +9980,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         return {}
 
     # ES-based setups: outcome tracking using ES range bars
-    if entry.get("setup_name") in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption"):
+    if entry.get("setup_name") in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption", "Delta Absorption"):
         return _calculate_absorption_outcome(entry)
 
     try:
@@ -10205,7 +10333,7 @@ def api_setup_log_outcome(log_id: int):
         # Get price history
         ts = row["ts"]
         is_bofa = row["setup_name"] == "BofA Scalp"
-        is_abs = row["setup_name"] in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption")
+        is_abs = row["setup_name"] in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption", "Delta Absorption")
         alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
         market_open = NY.localize(datetime.combine(alert_date, dtime(9, 30)))
         market_close = NY.localize(datetime.combine(alert_date, dtime(16, 0)))
@@ -10361,7 +10489,7 @@ def api_setup_eod_review(date: str = Query(None, description="Date YYYY-MM-DD, d
         trades = []
         for row in rows:
             entry = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(row).items()}
-            is_abs = row["setup_name"] in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption")
+            is_abs = row["setup_name"] in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption", "Delta Absorption")
             is_bofa = row["setup_name"] == "BofA Scalp"
 
             # Calculate outcome
@@ -13227,7 +13355,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="options">Options Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Delta Absorption</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>

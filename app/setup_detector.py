@@ -2262,6 +2262,361 @@ def format_sb2_abs_message(result, alignment=None):
     return "\n".join(parts)
 
 
+# ── Delta Absorption — delta-vs-price divergence on range bars ──────────────
+
+DEFAULT_DELTA_ABS_SETTINGS = {
+    "delta_absorption_enabled": True,
+    "da_min_delta": 100,            # minimum |delta| to fire
+    "da_doji_body": 1.0,            # T1: body < this = doji
+    "da_afternoon_start": 12.5,     # T3: start hour (12:30)
+    "da_afternoon_end": 15.0,       # T3: end hour (15:00)
+    "da_afternoon_min_delta": 200,  # T3: minimum |delta|
+    "da_dead_zone_start": 14.0,     # T3: skip 14:00-14:30
+    "da_dead_zone_end": 14.5,
+    "da_peak_ratio_cap": 2.5,       # max peak ratio (>= this = toxic)
+    "da_trend_bars": 5,             # trend precondition window
+    "da_trend_min": 3,              # min bars in opposite direction
+    "da_cooldown_bars": 5,          # bars between same-direction signals
+    "da_stop_pts": 8,
+    "da_trail_gap": 8,
+}
+
+_cooldown_delta_abs = {
+    "last_bullish_bar": -100,
+    "last_bearish_bar": -100,
+    "last_checked_idx": -1,
+    "last_date": None,
+    "sig_count_bull": 0,
+    "sig_count_bear": 0,
+}
+
+
+def reset_delta_abs_session():
+    """Reset Delta Absorption detector state for a new ES session."""
+    _cooldown_delta_abs["last_bullish_bar"] = -100
+    _cooldown_delta_abs["last_bearish_bar"] = -100
+    _cooldown_delta_abs["last_checked_idx"] = -1
+    _cooldown_delta_abs["sig_count_bull"] = 0
+    _cooldown_delta_abs["sig_count_bear"] = 0
+
+
+def evaluate_delta_absorption(bars, volland_stats, settings, spx_spot=None, vix=None):
+    """
+    Delta Absorption: detects delta-vs-price divergence on 5-pt range bars.
+
+    Signal: bar delta opposes bar color (positive delta + red bar = bearish,
+    negative delta + green bar = bullish). Doji bars use prior bar's color.
+
+    Tiers:
+      T1 (Doji): body < 1.0 pt, any time 9:30-15:00
+      T3 (Afternoon): 12:30-15:00, |delta| >= 200, skip 14:00-14:30
+
+    Filters: trend precondition (3/5 bars opposite), peak ratio < 2.5
+    Trail: immediate stop = max(maxProfit - 8, -8)
+    """
+    if not settings.get("delta_absorption_enabled", True):
+        return None
+
+    closed = [b for b in bars if b.get("status") == "closed"]
+    if len(closed) < 25:
+        return None
+
+    trigger = closed[-1]
+    trigger_idx = trigger["idx"]
+
+    # Dedup: skip if already checked this bar
+    if trigger_idx <= _cooldown_delta_abs["last_checked_idx"]:
+        return None
+    _cooldown_delta_abs["last_checked_idx"] = trigger_idx
+
+    # Daily reset
+    today = datetime.now(NY).date()
+    if _cooldown_delta_abs["last_date"] != today:
+        _cooldown_delta_abs["last_bullish_bar"] = -100
+        _cooldown_delta_abs["last_bearish_bar"] = -100
+        _cooldown_delta_abs["sig_count_bull"] = 0
+        _cooldown_delta_abs["sig_count_bear"] = 0
+        _cooldown_delta_abs["last_date"] = today
+
+    # Extract bar data
+    o, h, l, c = trigger["open"], trigger["high"], trigger["low"], trigger["close"]
+    delta = trigger.get("delta", 0)
+    volume = trigger.get("volume", 0)
+    cvd_open = trigger.get("cvd_open", 0)
+    cvd_high = trigger.get("cvd_high", 0)
+    cvd_low = trigger.get("cvd_low", 0)
+    abs_delta = abs(delta)
+
+    # Min delta gate
+    min_delta = settings.get("da_min_delta", 100)
+    if abs_delta < min_delta:
+        return None
+
+    # Bar properties
+    color = "GREEN" if c >= o else "RED"
+    body = abs(c - o)
+    doji_thresh = settings.get("da_doji_body", 1.0)
+
+    # Direction: delta opposes bar color
+    direction = None
+    if delta > 0 and color == "RED":
+        direction = "bearish"
+    elif delta < 0 and color == "GREEN":
+        direction = "bullish"
+    elif body <= doji_thresh and len(closed) >= 2:
+        # Doji: delta opposes prior bar's trend direction
+        prev = closed[-2]
+        prev_color = "GREEN" if prev["close"] >= prev["open"] else "RED"
+        if delta > 0 and prev_color == "GREEN":
+            direction = "bearish"
+        elif delta < 0 and prev_color == "RED":
+            direction = "bullish"
+
+    if direction is None:
+        return None
+
+    # Cooldown: bar-index based
+    cooldown_bars = settings.get("da_cooldown_bars", 5)
+    if direction == "bullish":
+        if trigger_idx - _cooldown_delta_abs["last_bullish_bar"] < cooldown_bars:
+            return None
+    else:
+        if trigger_idx - _cooldown_delta_abs["last_bearish_bar"] < cooldown_bars:
+            return None
+
+    # Trend precondition: >=3 of last 5 bars in opposite direction
+    trend_window = settings.get("da_trend_bars", 5)
+    trend_min = settings.get("da_trend_min", 3)
+    if len(closed) >= trend_window + 1:
+        lookback = closed[-(trend_window + 1):-1]  # last N bars before trigger
+        greens = sum(1 for b in lookback if b["close"] >= b["open"])
+        reds = len(lookback) - greens
+        if direction == "bearish" and greens < trend_min:
+            return None
+        if direction == "bullish" and reds < trend_min:
+            return None
+
+    # Tier classification
+    ts_str = trigger.get("ts_end", "") or trigger.get("ts_start", "")
+    try:
+        ts_time = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
+        if ts_time.tzinfo is None:
+            ts_time = ts_time.replace(tzinfo=NY)
+        else:
+            ts_time = ts_time.astimezone(NY)
+        tod = ts_time.hour + ts_time.minute / 60.0
+    except Exception:
+        tod = 12.0  # fallback
+
+    is_doji = body < doji_thresh
+    af_start = settings.get("da_afternoon_start", 12.5)
+    af_end = settings.get("da_afternoon_end", 15.0)
+    af_min_d = settings.get("da_afternoon_min_delta", 200)
+    dz_start = settings.get("da_dead_zone_start", 14.0)
+    dz_end = settings.get("da_dead_zone_end", 14.5)
+    is_afternoon = af_start <= tod < af_end
+
+    tier = 0
+    if is_doji:
+        tier = 1
+    elif is_afternoon and abs_delta >= af_min_d:
+        # Skip 14:00-14:30 dead zone
+        if dz_start <= tod < dz_end:
+            return None
+        tier = 3
+
+    if tier == 0:
+        return None
+
+    # Peak ratio filter
+    peak_cap = settings.get("da_peak_ratio_cap", 2.5)
+    if direction == "bearish":
+        peak_abs = max(cvd_high - cvd_open, 0)
+    else:
+        peak_abs = abs(min(cvd_low - cvd_open, 0))
+    peak_ratio = peak_abs / max(abs_delta, 1)
+    if peak_ratio >= peak_cap:
+        return None
+
+    # Update signal count and cooldown
+    if direction == "bullish":
+        _cooldown_delta_abs["sig_count_bull"] += 1
+        _cooldown_delta_abs["last_bullish_bar"] = trigger_idx
+        sig_num = _cooldown_delta_abs["sig_count_bull"]
+    else:
+        _cooldown_delta_abs["sig_count_bear"] += 1
+        _cooldown_delta_abs["last_bearish_bar"] = trigger_idx
+        sig_num = _cooldown_delta_abs["sig_count_bear"]
+
+    # ── V7 Grading (data-driven, 4 components, max 100) ──
+
+    # Component 1: Delta magnitude (0-30)
+    if 200 <= abs_delta < 500:
+        g_delta = 30
+    elif 500 <= abs_delta < 700:
+        g_delta = 20
+    elif 100 <= abs_delta < 200:
+        g_delta = 15
+    elif abs_delta >= 1000:
+        g_delta = 10
+    else:  # 700-1000
+        g_delta = 3
+
+    # Component 2: Body size (0-25)
+    if 0.5 <= body < 1.0:
+        g_body = 25
+    elif 3.0 <= body < 4.0:
+        g_body = 22
+    elif 2.0 <= body < 3.0:
+        g_body = 18
+    elif 1.0 <= body < 2.0:
+        g_body = 14
+    elif body >= 4.0:
+        g_body = 10
+    else:  # body < 0.5
+        g_body = 2
+
+    # Component 3: Signal freshness (0-20)
+    if sig_num <= 2:
+        g_fresh = 20
+    elif sig_num == 3:
+        g_fresh = 8
+    else:
+        g_fresh = 2
+
+    # Component 4: Time of day (0-25)
+    if 12.5 <= tod < 13.0:
+        g_time = 25
+    elif 14.5 <= tod < 15.0:
+        g_time = 20
+    elif 10.0 <= tod < 11.0:
+        g_time = 15
+    elif 9.5 <= tod < 10.0:
+        g_time = 15
+    elif 11.0 <= tod < 12.0:
+        g_time = 12
+    elif 13.5 <= tod < 14.0:
+        g_time = 12
+    elif 13.0 <= tod < 13.5:
+        g_time = 5
+    else:  # 12:00-12:30 dead zone and other
+        g_time = 0
+
+    composite = g_delta + g_body + g_fresh + g_time
+
+    # Grade thresholds (V3 optimized)
+    if composite >= 85:
+        grade = "A+"
+    elif composite >= 70:
+        grade = "A"
+    elif composite >= 55:
+        grade = "B"
+    elif composite >= 40:
+        grade = "C"
+    else:
+        grade = "LOG"
+
+    # Extract Volland data
+    paradigm = ""
+    lis_val = None
+    lis_dist = None
+    dd_hedging = ""
+    if volland_stats and volland_stats.get("has_statistics"):
+        paradigm = volland_stats.get("paradigm", "")
+        dd_hedging = volland_stats.get("delta_decay_hedging", "")
+        lis_str = volland_stats.get("lines_in_sand", "")
+        if lis_str:
+            import re
+            m = re.search(r"[\d,.]+", str(lis_str).replace(",", ""))
+            if m:
+                try:
+                    lis_val = float(m.group())
+                    lis_dist = abs(c - lis_val)
+                except ValueError:
+                    pass
+
+    tier_label = "Doji" if tier == 1 else "Afternoon"
+
+    return {
+        "setup_name": "Delta Absorption",
+        "direction": direction,
+        "grade": grade,
+        "score": composite,
+        "paradigm": paradigm,
+        "spot": c,
+        "lis": lis_val,
+        "target": None,
+        "max_plus_gex": None,
+        "max_minus_gex": None,
+        "gap_to_lis": round(lis_dist, 1) if lis_dist is not None else None,
+        "upside": None,
+        "rr_ratio": None,
+        "first_hour": tod < 10.5,
+        # Portal display scores
+        "support_score": g_delta,
+        "upside_score": g_body,
+        "floor_cluster_score": g_fresh,
+        "target_cluster_score": g_time,
+        "rr_score": 0,
+        # Delta Absorption specific
+        "bar_idx": trigger_idx,
+        "abs_es_price": c,
+        "tier": tier,
+        "tier_label": tier_label,
+        "bar_delta": delta,
+        "abs_delta": abs_delta,
+        "body": round(body, 2),
+        "peak_delta": int(peak_abs),
+        "peak_ratio": round(peak_ratio, 2),
+        "bar_volume": volume,
+        "sig_num": sig_num,
+        "dd_hedging": dd_hedging,
+        "lis_val": lis_val,
+        "lis_dist": round(lis_dist, 1) if lis_dist is not None else None,
+        "ts": ts_str,
+        "cvd": trigger.get("cvd", 0),
+        "high": h,
+        "low": l,
+        "g_delta": g_delta,
+        "g_body": g_body,
+        "g_fresh": g_fresh,
+        "g_time": g_time,
+    }
+
+
+def should_notify_delta_abs(result):
+    """Cooldown gate for Delta Absorption. Already handled in evaluate function."""
+    # Cooldown is managed inside evaluate_delta_absorption via bar-index spacing.
+    # This function is called by main.py for the notification flow.
+    return True, "new"
+
+
+def format_delta_abs_message(result, alignment=None):
+    """Format Telegram HTML message for Delta Absorption."""
+    side_emoji = "\U0001f7e2" if result["direction"] == "bullish" else "\U0001f534"
+    side_label = "BUY" if result["direction"] == "bullish" else "SELL"
+    grade = result.get("grade", "?")
+    score = result.get("score", 0)
+    align_str = f" align {alignment:+d}" if alignment is not None else ""
+    tier_label = result.get("tier_label", "")
+
+    parts = [
+        f"{side_emoji} <b>Delta Abs {side_label} [{grade}]{align_str}</b>",
+        f"ES {result['abs_es_price']:.2f} | Score {score} | {tier_label}",
+        f"Delta {result['bar_delta']:+d} | Body {result['body']} | Peak {result['peak_ratio']:.1f}x | Sig #{result['sig_num']}",
+    ]
+
+    extras = []
+    if result.get("paradigm"):
+        extras.append(result["paradigm"])
+    if result.get("lis_dist") is not None:
+        extras.append(f"LIS {result['lis_dist']:.0f}pts")
+    if extras:
+        parts.append(" | ".join(extras))
+
+    return "\n".join(parts)
+
+
 # ── Paradigm Reversal — defaults and state ─────────────────────────────────
 
 DEFAULT_PARADIGM_REV_SETTINGS = {
@@ -4446,6 +4801,7 @@ def export_cooldowns() -> dict:
         "sb10_abs": _serialize(_cooldown_sb10_abs),
         "sb2_abs": _serialize(_cooldown_sb2_abs),
         "gex_velocity": _serialize(_cooldown_gex_vel),
+        "delta_abs": _serialize(_cooldown_delta_abs),
         "vix_compress": _serialize(_cooldown_vix_compress),
         "vix_history": _vix_history[-60:],  # save last ~30 min for restart recovery
         "iv_momentum": _serialize(_cooldown_iv_momentum),
@@ -4535,3 +4891,5 @@ def import_cooldowns(data: dict):
         _iv_momentum_history.extend(data["iv_momentum_history"])
     if "vanna_butterfly" in data:
         _cooldown_vanna_butterfly.update(_deserialize(data["vanna_butterfly"]))
+    if "delta_abs" in data:
+        _cooldown_delta_abs.update(_deserialize(data["delta_abs"]))

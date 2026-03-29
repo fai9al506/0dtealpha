@@ -14,10 +14,10 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 | # | Task | Trigger | Action | Status |
 |---|------|---------|--------|--------|
 | S1 | **Mar 25 deployment verification** | First market day after Mar 25 | All 5 checks PASS. SPY DD flowing, gap=+64.2 (longs blocked), combined DD working. Two bugs found+fixed: (1) gap SQL used wrong column, (2) SPY DD not reaching setup detector. | DONE 2026-03-25 |
-| S2 | **SB2 Absorption data check** | Every 5 trading days | 23 signals but ALL outcomes were wrong (abs_details NULL bug + Mar 26 outage). Fixed Mar 27: abs_details now saved, cooldown 10→20. Clean data: 5 trades, 1W/4L, -27 pts. Need fresh data post-fix. | PENDING (reset, collecting) |
+| S2 | **SB2 Absorption data check** | Every 5 trading days | 35 trades audited Mar 29: 14W/21L, 40% WR, -46.2 pts = LOSER. Shorts decent (76% WR, +78.5) but longs toxic (39% WR, -69). Two outcome bugs found+fixed (forming-bar + batch-scan). Only 4 days of data — keep collecting, consider shorts-only. | DONE 2026-03-29 |
 | S3 | **IV Momentum data check** | Every 5 trading days | 0 signals. Gate conditions nearly impossible with noisy 0DTE IV. May need redesign or removal. | PENDING (0 signals) |
 | S4 | **Vanna Butterfly data check** | Every 5 trading days | 1 signal. 15-min daily window (14:55-15:10) too narrow + vanna pin data dependency. | PENDING (1 signal) |
-| S5 | **VIX Compression data check** | Every 5 trading days | 1 signal. VIX>=15 floor blocks calm days, v2 SVB gate overfit to 8 trades. | PENDING (1 signal) |
+| S5 | **VIX Divergence data check** | Every 5 trading days | REPLACED VIX Compression (session 58). Two-phase detector, LONG+SHORT, stop-entry confirmation. Backtest: +262 pts, 68% WR, MaxDD 11. Collecting live signals from Mar 31. | PENDING (0 live signals) |
 | S6 | **GEX Long live signal check** | Every 5 trading days | 62 signals, 34% WR, -83 pts. Last fired Mar 20. Blocked by VIX>22 + alignment<2. Needs bull regime. | PENDING (blocked by VIX) |
 | S7 | **GEX Velocity live signal check** | Every 5 trading days | 0 signals. No LIS surges detected. Needs bull trend. | PENDING (0 signals) |
 | S8 | **Options circuit breaker analysis** | When 30+ days of V11 option data | Re-run circuit breaker study: stop trading after 4 consecutive option losses. Backtest showed +48% improvement. Needs 30+ days V8+ data. | WAITING (need data) |
@@ -27,7 +27,10 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 | S12 | **Push 0DTE GEX improvements** | 2026-03-25 after 16:10 ET | Deployed: last-scan timestamp, 2-min spot refresh, history viewer (date/time picker). Commit `cc213a3`. | DONE 2026-03-25 |
 | S13 | **Push AG Short 15-min cooldown** | 2026-03-25 after 16:10 ET | Commit+push AG Short cooldown fix: 15-min time floor prevents flicker re-fires. Data: <15min signals = 63% WR (weak), 15-30min = 85% WR (best). Changes in `setup_detector.py`. | DONE 2026-03-25 |
 | S14 | **Verify deploy + OHLC backfill** | 2026-03-28 at 09:35 ET | All 4 PASS: (1) SC GAP=5.0 on #1290. (2) 10,000 rows, 27 trading days (Feb 19-Mar 27). (3) trail_sl/activation/gap populated on all Mar 27 trades. (4) Backfill 10K bars saved. | DONE 2026-03-27 |
-| S15 | **Deploy UI fixes: EOD Review + 0DTE GEX chart** | 2026-03-27 after 16:10 ET | Commit+push: (1) EOD Review side-by-side layout (details left, chart right). (2) 0DTE SPX GEX chart limited to 40 strikes centered on spot (was unlimited, chart unreadable). Code ready locally. | PENDING |
+| S15 | **Deploy UI fixes: EOD Review + 0DTE GEX chart** | 2026-03-27 after 16:10 ET | Commit `a48b3a8`: EOD Review side-by-side layout + 0DTE GEX 40-strike limit. Deployed. | DONE 2026-03-28 |
+| S16 | **Vol Event Detector verification** | First day overvix > +1.0 | Verify Telegram fires "compression building". Check `/api/health` vol_event phase. Monitor daily reset + no spam. Deployed commit `0435192`. | PENDING |
+| S17 | **VPS setup completion** | 2026-03-29 (next session) | Kamatera VPS (103.54.56.210) provisioned. Complete: Sierra DTC config, ES+VX symbols, NT8+Rithmic install, IBKR TWS, eval_trader config, auto-start, test trade. Validate data flow when market opens Sun 6 PM ET. | PENDING |
+| S18 | **Build vps_data_bridge.py** | After S17 complete | Sierra DTC → ES range bars + VIX ticks → Railway POST endpoints. New Railway endpoints needed: /api/vps/es/bar, /api/vps/vix/ticks, /api/vps/heartbeat. DB table: vix_futures_ticks. | PENDING |
 
 ---
 

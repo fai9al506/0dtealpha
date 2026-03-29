@@ -852,9 +852,12 @@ class ComplianceGate:
             return False, (f"potential loss ${potential_loss:.0f} would breach daily limit "
                            f"(P&L: ${self.daily_pnl:+.0f})")
 
-        # Trailing drawdown
+        # Trailing drawdown (floor caps at starting balance — E2T rule)
         current_bal = cfg["e2t_starting_balance"] + self.total_pnl
-        drawdown_floor = cfg["e2t_peak_balance"] - cfg["e2t_eod_trailing_drawdown"]
+        drawdown_floor = min(
+            cfg["e2t_peak_balance"] - cfg["e2t_eod_trailing_drawdown"],
+            cfg["e2t_starting_balance"],
+        )
         if current_bal - potential_loss <= drawdown_floor:
             return False, (f"potential loss would breach drawdown floor "
                            f"(bal: ${current_bal:,.0f}, floor: ${drawdown_floor:,.0f})")
@@ -1731,13 +1734,13 @@ class PositionTracker:
     # Trail params — mirrors Railway's _trail_params in main.py
     # DD Exhaustion: continuous trail (activation=20, gap=5)
     # GEX Long: hybrid trail (BE at +8, continuous trail activation=10 gap=5)
-    # AG Short: hybrid trail (BE at +10, continuous trail activation=15 gap=5)
+    # AG Short: hybrid trail (BE at +10, continuous trail activation=12 gap=5)
     # ES Absorption: fixed target (SL=8/T=10), no trailing
     _TRAIL_PARAMS = {
         "DD Exhaustion":  {"mode": "continuous", "activation": 20, "gap": 5},
         "GEX Long":       {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
         "GEX Velocity":   {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
-        "AG Short":       {"mode": "hybrid", "be_trigger": 10, "activation": 15, "gap": 5},
+        "AG Short":       {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
         "Skew Charm":     {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
     }
 
@@ -2082,7 +2085,9 @@ def _banner(cfg: dict):
     """Print startup banner with current config summary."""
     dynamic = cfg.get("dynamic_sizing", False)
     max_risk = cfg.get("max_trade_risk", 300)
-    dd_floor = cfg["e2t_peak_balance"] - cfg["e2t_eod_trailing_drawdown"]
+    dd_floor_raw = cfg["e2t_peak_balance"] - cfg["e2t_eod_trailing_drawdown"]
+    dd_floor = min(dd_floor_raw, cfg["e2t_starting_balance"])
+    capped = dd_floor < dd_floor_raw
 
     log.info("=" * 60)
     log.info("  E2T EVALUATION AUTO-TRADER")
@@ -2097,7 +2102,7 @@ def _banner(cfg: dict):
     log.info(f"  Sizing:    {'DYNAMIC' if dynamic else 'FIXED'} "
              f"(max risk: ${max_risk}/trade)")
     log.info(f"  Balance:   ${cfg['e2t_starting_balance']:,.0f} (peak: ${cfg['e2t_peak_balance']:,.0f})")
-    log.info(f"  DD floor:  ${dd_floor:,.0f}")
+    log.info(f"  DD floor:  ${dd_floor:,.0f}{' (capped)' if capped else ''}")
     log.info(f"  Daily lim: ${cfg['e2t_daily_loss_limit']:,.0f} (buffer: ${cfg['e2t_daily_loss_buffer']:.0f})")
     loss_floor = cfg.get("daily_loss_floor", -800)
     log.info(f"  Loss floor: ${loss_floor}/day (stop trading below this)")

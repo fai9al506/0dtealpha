@@ -29,7 +29,7 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 | S14 | **Verify deploy + OHLC backfill** | 2026-03-28 at 09:35 ET | All 4 PASS: (1) SC GAP=5.0 on #1290. (2) 10,000 rows, 27 trading days (Feb 19-Mar 27). (3) trail_sl/activation/gap populated on all Mar 27 trades. (4) Backfill 10K bars saved. | DONE 2026-03-27 |
 | S15 | **Deploy UI fixes: EOD Review + 0DTE GEX chart** | 2026-03-27 after 16:10 ET | Commit `a48b3a8`: EOD Review side-by-side layout + 0DTE GEX 40-strike limit. Deployed. | DONE 2026-03-28 |
 | S16 | **Vol Event Detector verification** | First day overvix > +1.0 | Verify Telegram fires "compression building". Check `/api/health` vol_event phase. Monitor daily reset + no spam. Deployed commit `0435192`. | PENDING |
-| S17 | **VPS setup completion** | 2026-03-29 (next session) | Kamatera VPS (103.54.56.210) provisioned. Complete: Sierra DTC config, ES+VX symbols, NT8+Rithmic install, IBKR TWS, eval_trader config, auto-start, test trade. Validate data flow when market opens Sun 6 PM ET. | PENDING |
+| S17 | **VPS setup completion** | 2026-03-29 (next session) | Kamatera VPS (103.54.56.210). **Installed:** Python 3.12.9, Git 2.53.0, pip 24.3.1, VS Code 1.113.0, GitHub CLI (logged in), Railway CLI (logged in), Sierra Chart, Google Drive, Git Bash. **Remaining:** DTC server config, ES+VX symbols, NT8+Rithmic, IBKR TWS, eval_trader config, auto-start, test trade. | IN PROGRESS |
 | S18 | **Build vps_data_bridge.py** | After S17 complete | Sierra DTC → ES range bars + VIX ticks → Railway POST endpoints. New Railway endpoints needed: /api/vps/es/bar, /api/vps/vix/ticks, /api/vps/heartbeat. DB table: vix_futures_ticks. | PENDING |
 
 ---
@@ -58,7 +58,7 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 | # | Task | Priority | Details | Source |
 |---|------|----------|---------|--------|
 | R1 | ~~Gap-day filter~~ | ~~HIGH~~ | DONE — Implemented as gap-up longs block (gap > +30 pts). See completion log. | DONE |
-| R2 | **Per-strike charm near spot as filter** | HIGH | Strongest SC differentiator: winners -8.3M, losers +10.2M. Needs work to convert to a filter. | MEMORY (SC grading v2) |
+| ~~R2~~ | ~~Per-strike charm near spot as filter~~ | ~~HIGH~~ | DONE — Studied 228 SC + 276 ES Abs trades. SC: charm redundant with V12 (blocked trades = 69% WR winners). ES Abs: bearish charm<-20M = 27% WR toxic but V12 already blocks all bearish. Short whitelist (align<=-2, charm>=0) = 58.3% WR, too thin (48t). No filter change. | DONE 2026-03-29 |
 | R3 | **ES Absorption redesign** | MEDIUM | Current design flaw: fires up to 40 bars after swing. User's correct model: high-volume bar IS the comparison point, fire immediately. Neither approach clearly superior in backtest. Deferred. | PROJECT_BRAIN |
 | R4 | **Fixed strike vol for vanna interpretation** | MEDIUM | Discord idea: vanna support only holds when fixed-strike vol is declining. Needs investigation. | `research_discord_ideas_mar23.md` |
 | R5 | **Panic vs structural put buying** | MEDIUM | Distinguish geopolitical panic from institutional structural put buying. Different trading responses. | `research_discord_ideas_mar23.md` |
@@ -85,6 +85,7 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 
 | Date | Task | Result |
 |------|------|--------|
+| 2026-03-29 | R2: Per-strike charm near spot filter | DONE — Redundant with V12 for both SC and ES Abs. No filter change. ES Abs short whitelist parked (58.3% WR, 48t too thin). |
 | 2026-03-27 | Data staleness protection | DONE — data_ts column + freshness gates on all 4 snapshot tables. Prevents saving stale data during API outages. |
 | 2026-03-27 | SB2 abs_details + cooldown fix | DONE — abs_details now saved for all absorption variants (was ES-only). Cooldown reads settings (20 bars, was hardcoded 10). |
 | 2026-03-27 | Mar 26 outcome cleanup | DONE — Cleared 42 contaminated outcomes (37 Mar 26 outage + 5 Mar 24 SB2 bug). Grand total corrected: +776.6 unfiltered, +1,278.5 V12. |

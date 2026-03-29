@@ -3774,19 +3774,18 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
 
         # Update per-trade price tracking with cycle extremes
         if _es_based:
-            # ES-based setups: scan completed ES range bar H/L since entry bar
-            # This catches intra-bar target/stop hits that bar-close checks miss
-            # SB10 uses 10-pt bars (separate idx space from 5-pt bars)
+            # ES-based setups: scan ES range bars ONE AT A TIME with per-bar
+            # trail advancement and stop checks.  This respects temporal order:
+            # a stop hit on bar N takes priority over a favorable move on bar N+K.
+            # (Batch scanning caused 11 misscored SB2 trades — Mar 29 fix.)
             _bars_for_scan = es_bars_10pt_snapshot if setup_name == "SB10 Absorption" else es_bars_snapshot
             entry_bar_idx = trade.get("result_data", {}).get("bar_idx", 0)
             last_scanned = trade.get("_es_last_bar_idx") or entry_bar_idx or 0
+            _tp_es = _trail_params.get(setup_name)  # may be None for non-trailing
             for bar in _bars_for_scan:
                 bidx = bar.get("idx") or 0
                 if bidx < last_scanned:
                     continue
-                # Re-scan the bar at last_scanned: forming bars share idx with
-                # their completed version, so a partial high/low from the forming
-                # snapshot must be updated when the bar completes with its final values.
                 if bidx == last_scanned and bidx == entry_bar_idx:
                     continue  # never re-scan entry bar itself
                 bh = bar.get("high")
@@ -3796,6 +3795,63 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 if bl is not None:
                     trade["_seen_low"] = min(trade.get("_seen_low", bl), bl)
                 trade["_es_last_bar_idx"] = bidx
+                # ── Per-bar trail advancement (ES-based only) ──
+                if _tp_es is not None:
+                    _fav_px = trade.get("_seen_high", entry_price) if is_long else trade.get("_seen_low", entry_price)
+                    _fav = (_fav_px - entry_price) if is_long else (entry_price - _fav_px)
+                    _mf = trade.get("_dd_max_fav", 0.0)
+                    if _fav > _mf:
+                        _mf = _fav
+                        trade["_dd_max_fav"] = _mf
+                    if _mf >= 10 and not trade.get("_t1_hit"):
+                        trade["_t1_hit"] = True
+                    _tl = None
+                    if _tp_es["mode"] == "continuous":
+                        if _mf >= _tp_es["activation"]:
+                            _tl = _mf - _tp_es["gap"]
+                    elif _tp_es["mode"] == "hybrid":
+                        if _mf >= _tp_es["activation"]:
+                            _tl = _mf - _tp_es["gap"]
+                        elif _mf >= _tp_es["be_trigger"]:
+                            _tl = 0
+                    if _tl is not None:
+                        if is_long:
+                            _ns = entry_price + _tl
+                            if _ns > stop_lvl:
+                                stop_lvl = _ns
+                                trade["stop_level"] = stop_lvl
+                        else:
+                            _ns = entry_price - _tl
+                            if _ns < stop_lvl:
+                                stop_lvl = _ns
+                                trade["stop_level"] = stop_lvl
+                # ── Per-bar stop/target check ──
+                if is_long and bl is not None and bl <= stop_lvl:
+                    if _tp_es is not None:
+                        result_type = "WIN" if stop_lvl >= entry_price else "LOSS"
+                        pnl = stop_lvl - entry_price
+                    else:
+                        result_type = "LOSS"
+                        pnl = stop_lvl - entry_price
+                    break
+                if not is_long and bh is not None and bh >= stop_lvl:
+                    if _tp_es is not None:
+                        result_type = "WIN" if stop_lvl <= entry_price else "LOSS"
+                        pnl = entry_price - stop_lvl
+                    else:
+                        result_type = "LOSS"
+                        pnl = entry_price - stop_lvl
+                    break
+                # Fixed target check (non-trailing ES setups)
+                if _tp_es is None and target_lvl is not None:
+                    if is_long and bh is not None and bh >= target_lvl:
+                        result_type = "WIN"
+                        pnl = target_lvl - entry_price
+                        break
+                    if not is_long and bl is not None and bl <= target_lvl:
+                        result_type = "WIN"
+                        pnl = entry_price - target_lvl
+                        break
         else:
             # SPX setups: use session-derived cycle extremes
             # Guard: reject cycle extremes that diverge >20 pts from spot (TS API data glitch)
@@ -3829,51 +3885,48 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             else:
                 _trail_params["VIX Divergence"] = {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5}  # BE@8, trail@10/g5
         _tp = _trail_params.get(setup_name)
-        if _tp is not None:
-            # Advance trail using cycle high (long) or cycle low (short)
-            # ES-based setups: use ES seen_high/low from range bars (not SPX cycle)
-            # SPX setups: use guarded cycle extremes (_cl/_ch) to prevent data glitch trails
+        # ES-based trailing setups: trail already advanced per-bar above.
+        # Only run trail logic here for SPX setups. Still need broker stop updates for ES.
+        if _tp is not None and not (_es_based and result_type):
             if _es_based:
-                fav_price = trade.get("_seen_high", entry_price) if is_long else trade.get("_seen_low", entry_price)
+                # ES-based: trail already computed per-bar, just sync broker stops
+                pass
             else:
+                # SPX setups: advance trail from cycle extremes
                 fav_price = _ch if is_long else _cl
-            fav = (fav_price - entry_price) if is_long else (entry_price - fav_price)
-            max_fav = trade.get("_dd_max_fav", 0.0)
-            if fav > max_fav:
-                max_fav = fav
-                trade["_dd_max_fav"] = max_fav
-            trail_lock = None
-            if _tp["mode"] == "continuous":
-                # Continuous trail: after activation, lock at max_fav - gap
-                if max_fav >= _tp["activation"]:
-                    trail_lock = max_fav - _tp["gap"]
-            elif _tp["mode"] == "hybrid":
-                # Hybrid trail: breakeven at be_trigger, then continuous trail
-                if max_fav >= _tp["activation"]:
-                    trail_lock = max_fav - _tp["gap"]
-                elif max_fav >= _tp["be_trigger"]:
-                    trail_lock = 0  # breakeven
-            else:
-                # Rung-based trail: step every N pts with lock offset
-                rung = _tp["rung_start"]
-                while rung <= max_fav:
-                    trail_lock = rung - _tp["lock_offset"]
-                    rung += _tp["step"]
-            # Track T1 hit (+10pt) for split-target P&L (all Flow B setups)
-            if max_fav >= 10 and not trade.get("_t1_hit"):
-                trade["_t1_hit"] = True
-            if trail_lock is not None:
-                # Move stop to lock-in level
-                if is_long:
-                    new_stop = entry_price + trail_lock
-                    if new_stop > stop_lvl:
-                        stop_lvl = new_stop
-                        trade["stop_level"] = stop_lvl
+                fav = (fav_price - entry_price) if is_long else (entry_price - fav_price)
+                max_fav = trade.get("_dd_max_fav", 0.0)
+                if fav > max_fav:
+                    max_fav = fav
+                    trade["_dd_max_fav"] = max_fav
+                trail_lock = None
+                if _tp["mode"] == "continuous":
+                    if max_fav >= _tp["activation"]:
+                        trail_lock = max_fav - _tp["gap"]
+                elif _tp["mode"] == "hybrid":
+                    if max_fav >= _tp["activation"]:
+                        trail_lock = max_fav - _tp["gap"]
+                    elif max_fav >= _tp["be_trigger"]:
+                        trail_lock = 0  # breakeven
                 else:
-                    new_stop = entry_price - trail_lock
-                    if new_stop < stop_lvl:
-                        stop_lvl = new_stop
-                        trade["stop_level"] = stop_lvl
+                    rung = _tp["rung_start"]
+                    while rung <= max_fav:
+                        trail_lock = rung - _tp["lock_offset"]
+                        rung += _tp["step"]
+                # Track T1 hit (+10pt) for split-target P&L (all Flow B setups)
+                if max_fav >= 10 and not trade.get("_t1_hit"):
+                    trade["_t1_hit"] = True
+                if trail_lock is not None:
+                    if is_long:
+                        new_stop = entry_price + trail_lock
+                        if new_stop > stop_lvl:
+                            stop_lvl = new_stop
+                            trade["stop_level"] = stop_lvl
+                    else:
+                        new_stop = entry_price - trail_lock
+                        if new_stop < stop_lvl:
+                            stop_lvl = new_stop
+                            trade["stop_level"] = stop_lvl
                 # Auto-trade: update ES stop to match trail
                 try:
                     from app import auto_trader
@@ -3896,20 +3949,20 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                             real_trader.update_stop(log_id, round(es_stop, 2))
                 except Exception:
                     pass
-            # Check trailing stop hit using cycle extreme (not just current price)
-            # ES-based setups: use ES seen_low/high from range bars
-            # SPX setups: use guarded _cl/_ch (same glitch protection as seen_low/high)
-            if _es_based:
-                stop_check = trade.get("_seen_low", entry_price) if is_long else trade.get("_seen_high", entry_price)
-            else:
+            # Check trailing stop hit
+            # ES-based: already resolved per-bar above (result_type set).
+            # SPX: check cycle extremes here.
+            if _es_based and result_type:
+                pass  # already resolved in per-bar loop
+            elif not _es_based:
                 stop_check = _cl if is_long else _ch
-            if is_long and stop_check <= stop_lvl:
-                result_type = "WIN" if stop_lvl >= entry_price else "LOSS"
-                pnl = stop_lvl - entry_price
-            elif not is_long and stop_check >= stop_lvl:
-                result_type = "WIN" if stop_lvl <= entry_price else "LOSS"
-                pnl = entry_price - stop_lvl
-            elif market_closed:
+                if is_long and stop_check <= stop_lvl:
+                    result_type = "WIN" if stop_lvl >= entry_price else "LOSS"
+                    pnl = stop_lvl - entry_price
+                elif not is_long and stop_check >= stop_lvl:
+                    result_type = "WIN" if stop_lvl <= entry_price else "LOSS"
+                    pnl = entry_price - stop_lvl
+            if not result_type and market_closed:
                 result_type = "EXPIRED"
                 pnl = (check_price - entry_price) if is_long else (entry_price - check_price)
         elif is_long:

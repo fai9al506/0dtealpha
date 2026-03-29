@@ -3699,6 +3699,50 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 still_open.append(trade)
                 continue
 
+        # ── VIX Divergence: stop-entry confirmation ──
+        # Signal fires but entry waits for 1.5pt move in direction (backtest: WR 50→68%, MaxDD 29→11)
+        # While pending: skip normal outcome tracking. On confirm: update entry price + levels.
+        if trade.get("_pending_stop_entry"):
+            _confirm_px = trade["_stop_entry_confirm_price"]
+            _confirm_deadline = trade["_stop_entry_deadline"]
+            _is_long_confirm = is_long
+            _filled = False
+            if _is_long_confirm and spot >= _confirm_px:
+                _filled = True
+            elif not _is_long_confirm and spot <= _confirm_px:
+                _filled = True
+
+            if _filled:
+                # Confirmed! Update entry to confirmed price and recompute levels
+                trade["_pending_stop_entry"] = False
+                trade["spot"] = _confirm_px
+                _sl_pts = trade.get("result_data", {}).get("stop_pts", 8)
+                if _is_long_confirm:
+                    trade["stop_level"] = round(_confirm_px - _sl_pts, 2)
+                    trade["initial_stop_level"] = trade["stop_level"]
+                else:
+                    trade["stop_level"] = round(_confirm_px + _sl_pts, 2)
+                    trade["initial_stop_level"] = trade["stop_level"]
+                trade["ts"] = now  # reset entry time to confirmation time
+                trade["_dd_max_fav"] = 0.0
+                print(f"[outcome] VIX Divergence CONFIRMED: {direction} entry @ {_confirm_px:.1f}", flush=True)
+                still_open.append(trade)
+                continue
+            elif now > _confirm_deadline:
+                # Timeout — no fill
+                _log_id = trade.get("setup_log_id")
+                print(f"[outcome] VIX Divergence TIMEOUT: {direction} — no fill within 30 min (id={_log_id})", flush=True)
+                if _log_id and engine:
+                    try:
+                        with engine.begin() as c:
+                            c.execute(text("UPDATE setup_log SET outcome_result = 'TIMEOUT', outcome_pnl = 0 WHERE id = :id"), {"id": _log_id})
+                    except Exception as e:
+                        print(f"[outcome] timeout update error: {e}", flush=True)
+                continue  # drop from tracking
+            else:
+                still_open.append(trade)
+                continue  # still waiting
+
         # Use ES price for ES-based setups (absorption), SPX spot for everything else
         _es_based = setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption", "Delta Absorption")
         if _es_based:
@@ -4337,9 +4381,9 @@ def _run_setup_check():
                 target_lvl, stop_lvl = _compute_setup_levels(r)
                 # Trailing setups use trailing stop (target_lvl=None is OK)
                 # Vanna Butterfly: no stop (defined risk), held to expiry — track for EOD P&L
-                _trailing_setups = ("DD Exhaustion", "GEX Long", "GEX Velocity", "AG Short", "Skew Charm")
+                _trailing_setups = ("DD Exhaustion", "GEX Long", "GEX Velocity", "AG Short", "Skew Charm", "VIX Divergence")
                 if (stop_lvl is not None and (target_lvl is not None or setup_name in _trailing_setups)) or setup_name == "Vanna Butterfly":
-                    _setup_open_trades.append({
+                    _trade_dict = {
                         "setup_name": setup_name, "direction": r["direction"],
                         "spot": r["spot"], "grade": grade,
                         "target_level": target_lvl, "stop_level": stop_lvl,
@@ -4350,7 +4394,17 @@ def _run_setup_check():
                         "setup_log_id": _current_setup_log.get(setup_name),
                         "_dd_max_fav": 0.0,  # track max favorable excursion for trailing
                         "_passes_live": _passes_live,  # for Telegram filtering on outcomes
-                    })
+                    }
+                    # VIX Divergence: stop-entry confirmation (wait for 1.5pt directional move)
+                    _confirm_px = r.get("stop_entry_confirm_price")
+                    if setup_name == "VIX Divergence" and _confirm_px is not None:
+                        from datetime import timedelta
+                        _timeout_min = r.get("stop_entry_timeout_min", 30)
+                        _trade_dict["_pending_stop_entry"] = True
+                        _trade_dict["_stop_entry_confirm_price"] = _confirm_px
+                        _trade_dict["_stop_entry_deadline"] = now_et() + timedelta(minutes=_timeout_min)
+                        print(f"[outcome] VIX Divergence PENDING: {r['direction']} confirm @ {_confirm_px:.1f} (30min timeout)", flush=True)
+                    _setup_open_trades.append(_trade_dict)
                     tgt_str = "trail" if target_lvl is None else f"{target_lvl:.1f}"
                     sl_str = "none" if stop_lvl is None else f"{stop_lvl:.1f}"
                     print(f"[outcome] tracking {setup_name}: target={tgt_str} stop={sl_str}", flush=True)

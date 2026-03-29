@@ -3160,14 +3160,20 @@ def evaluate_vix_divergence(spot, vix, settings, paradigm=None, **kwargs):
 
         # ── RM per direction ──
         stop_pts = 8
+        # Stop-entry confirmation: wait for first 1.5pt move in signal direction
+        # Backtest: WR 50→68%, PnL +149→+262, MaxDD 29→11, avg MAE 5.3→2.3
+        CONFIRM_OFFSET = 1.5
+        confirm_timeout_min = 30
         if direction == "short":
             # BE@8, trail activation=10, gap=5
+            confirm_price = round(spot - CONFIRM_OFFSET, 2)
             target_price = round(spot - 100, 2)  # no fixed TP, trail-only
-            stop_price = round(spot + stop_pts, 2)
+            stop_price = round(confirm_price + stop_pts, 2)
         else:
             # IMM trail gap=8 (continuous from entry)
+            confirm_price = round(spot + CONFIRM_OFFSET, 2)
             target_price = round(spot + 100, 2)  # no fixed TP, trail-only
-            stop_price = round(spot - stop_pts, 2)
+            stop_price = round(confirm_price - stop_pts, 2)
 
         signal_hour = now.hour + now.minute / 60.0
 
@@ -3186,6 +3192,9 @@ def evaluate_vix_divergence(spot, vix, settings, paradigm=None, **kwargs):
             "stop_pts": stop_pts,
             "stop_price": stop_price,
             "target_price": target_price,
+            # Stop-entry confirmation fields
+            "stop_entry_confirm_price": confirm_price,
+            "stop_entry_timeout_min": confirm_timeout_min,
             # setup_log columns
             "paradigm": paradigm,
             "lis": None,
@@ -3243,9 +3252,10 @@ def format_vix_divergence_message(result, alignment=None):
     vix_level = result.get("vix", 0)
     score = result.get("score", 0)
 
+    confirm = result.get("stop_entry_confirm_price", 0)
     emoji = "\U0001f535" if direction == "long" else "\U0001f534"
     msg = f"{emoji} <b>VIX Divergence {dir_label} [{grade}]{align_str}</b>\n"
-    msg += f"{result['spot']:.0f} | SL {result.get('stop_pts', 8)}pt | trail-only\n"
+    msg += f"{result['spot']:.0f} | STOP ENTRY @ {confirm:.0f} | SL {result.get('stop_pts', 8)}pt | trail\n"
     msg += f"P1: SPX {p1_spx:+.0f}pt VIX {p1_vix:+.2f} | P2: VIX {p2_vix:+.2f}\n"
     msg += f"VIX {vix_level:.1f} | sc={score:.0f}"
     return msg

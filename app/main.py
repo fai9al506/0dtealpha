@@ -3782,8 +3782,13 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             last_scanned = trade.get("_es_last_bar_idx") or entry_bar_idx or 0
             for bar in _bars_for_scan:
                 bidx = bar.get("idx") or 0
-                if bidx <= last_scanned:
+                if bidx < last_scanned:
                     continue
+                # Re-scan the bar at last_scanned: forming bars share idx with
+                # their completed version, so a partial high/low from the forming
+                # snapshot must be updated when the bar completes with its final values.
+                if bidx == last_scanned and bidx == entry_bar_idx:
+                    continue  # never re-scan entry bar itself
                 bh = bar.get("high")
                 bl = bar.get("low")
                 if bh is not None:

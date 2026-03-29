@@ -3437,8 +3437,10 @@ def send_summary_alert(time_label: str):
 def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None, grade: str | None = None) -> bool:
-    """Single source of truth for the LIVE auto-trade filter (currently V12).
-    V12 = V11 + gap-up longs filter (block longs all day when gap > +30 pts).
+    """Single source of truth for the LIVE auto-trade filter (currently V12-fix).
+    V12-fix = V11 + gap-down/up longs-only block before 10:00 (|gap|>30).
+    Removed: Rule A (all-day gap-up block) — V12 base filter already removes bad longs (72% WR when filtered).
+    Changed: Rule B longs-only — shorts before 10:00 are 71% WR, should not be blocked.
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Setups still fire and log to portal/setup_log — this only gates live execution.
     Change this ONE function when the filter evolves."""
@@ -3466,15 +3468,12 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     is_long = direction in ("long", "bullish")
     align = greek_alignment or 0
 
-    # ── V12: Gap filters ──
-    # Rule A: block longs ALL DAY on gap-up (>+30). Backtest: 112 blocked, +290.9 pts saved
-    if is_long and _daily_gap_pts is not None and _daily_gap_pts > 30:
-        return False
-    # Rule B: block ALL trades first 30 min on any gap day (|gap|>30). Backtest: +77.3 pts saved
-    if _daily_gap_pts is not None and abs(_daily_gap_pts) > 30:
-        from datetime import time as _dtime
-        _t = now_et().time()
-        if _t < _dtime(10, 0):
+    # ── V12-fix: Gap filter (longs-only before 10:00) ──
+    # Rule A REMOVED: blocked 32 gap-up longs with 72% WR on V12-filtered data — was hurting, not helping.
+    # Rule B (fixed): block LONGS only before 10:00 on big gap days (|gap|>30).
+    # Study: 7 blocked longs = 29% WR, -68.8 pts. Shorts before 10:00 = 71% WR, +47 pts (not blocked).
+    if is_long and _daily_gap_pts is not None and abs(_daily_gap_pts) > 30:
+        if t < dtime(10, 0):
             return False
 
     if is_long:
@@ -11792,10 +11791,10 @@ function passesStrategy(l, strat) {
     return parseInt(tp[0])*60+parseInt(tp[1]);
   }
   function gapFilter(ts) {
-    if (!ts) return true;
+    // V12-fix: longs-only before 10:00 on |gap|>30. Rule A removed.
+    if (!ts || !isLong) return true;
     const dateStr = new Date(ts).toLocaleDateString('en-CA',{timeZone:'America/New_York'});
     const gap = _dailyGaps[dateStr];
-    if (isLong && gap != null && gap > 30) return false;
     if (gap != null && Math.abs(gap) > 30) { const m = etMins(ts); if (m != null && m < 600) return false; }
     return true;
   }
@@ -16415,14 +16414,13 @@ DASH_HTML_TEMPLATE = """
         return false;
       }
       if (strat === 'v12le') {
-        // V12-LE (real money): V12 + SC only + A+/A/B grade only
+        // V12-LE (real money): V12-fix + SC only + A+/A/B grade only
         if (sn !== 'Skew Charm') return false;
         if (!l.grade || (l.grade !== 'A+' && l.grade !== 'A' && l.grade !== 'B')) return false;
-        // Apply V12 gap filters
-        if (l.ts) {
+        // V12-fix gap filter: longs-only before 10:00 on |gap|>30
+        if (l.ts && isLong) {
           const dateStr = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
           const gap = _tlDailyGaps[dateStr];
-          if (isLong && gap != null && gap > 30) return false;
           if (gap != null && Math.abs(gap) > 30) {
             const d = new Date(l.ts);
             const etStr = d.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
@@ -16446,14 +16444,13 @@ DASH_HTML_TEMPLATE = """
         return true;
       }
       if (strat === 'v12nt') {
-        // V12-NT (NinjaTrader): V12 + eval trader enabled setups (SC, DD, ES Abs, AG, PR, GEX Vel)
+        // V12-NT (NinjaTrader): V12-fix + eval trader enabled setups (SC, DD, ES Abs, AG, PR, GEX Vel)
         const ntSetups = ['Skew Charm','DD Exhaustion','ES Absorption','AG Short','Paradigm Reversal','GEX Velocity'];
         if (!ntSetups.includes(sn)) return false;
-        // Apply V12 gap filters
-        if (l.ts) {
+        // V12-fix gap filter: longs-only before 10:00 on |gap|>30
+        if (l.ts && isLong) {
           const dateStr = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
           const gap = _tlDailyGaps[dateStr];
-          if (isLong && gap != null && gap > 30) return false;
           if (gap != null && Math.abs(gap) > 30) {
             const d = new Date(l.ts);
             const etStr = d.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
@@ -16492,19 +16489,18 @@ DASH_HTML_TEMPLATE = """
         return true;
       }
       if (strat === 'v12') {
-        // V12 (live): V11 + gap filters
-        if (l.ts) {
+        // V12-fix (live): V11 + longs-only gap block before 10:00
+        // Rule A REMOVED: V12 base filter already cleans gap-up longs (72% WR)
+        // Rule B (fixed): block LONGS only before 10:00 on |gap|>30
+        if (l.ts && isLong) {
           const dateStr = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
           const gap = _tlDailyGaps[dateStr];
-          // Rule A: block longs all day on gap-up > +30
-          if (isLong && gap != null && gap > 30) return false;
-          // Rule B: block ALL first 30min on any gap |gap| > 30
           if (gap != null && Math.abs(gap) > 30) {
             const d = new Date(l.ts);
             const etStr = d.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
             const tp = (etStr.split(', ')[1] || etStr).split(':');
             const mins = parseInt(tp[0]) * 60 + parseInt(tp[1]);
-            if (mins < 600) return false; // before 10:00 ET
+            if (mins < 600) return false; // longs before 10:00 ET on big gap
           }
         }
         // SC grade gate

@@ -1585,11 +1585,12 @@ _cooldown_single_bar_abs = {
     "last_date": None,
 }
 
-# ── VIX Compression state ──────────────────────────────────────────────
+# ── VIX Divergence state ──────────────────────────────────────────────
 _vix_history: list = []  # list of (timestamp_str, vix, spot) tuples
-_cooldown_vix_compress = {
+_cooldown_vix_divergence = {
     "last_date": "",
     "last_long_time": None,
+    "last_short_time": None,
 }
 
 # ── IV Momentum state ─────────────────────────────────────────────────
@@ -2961,229 +2962,292 @@ def update_vix_tracker(vix: float, spot: float):
         _vix_history[:] = _vix_history[-240:]
 
 
-def evaluate_vix_compression(spot, vix, settings, paradigm=None,
-                              svb=None, vanna_0dte_ratio=None):
+def evaluate_vix_divergence(spot, vix, settings, paradigm=None, **kwargs):
     """
-    Evaluate VIX Compression setup (LONG only).
-    Detects when VIX drops >1.0 in a rolling 45-min window while SPX stays flat (<20 pts).
-    This divergence (fear dropping + price not rallying yet) precedes a bullish move.
+    VIX Divergence v2 — Two-phase VIX-SPX divergence detector.
+    Replaces VIX Compression (v1). Both LONG and SHORT directions.
 
-    Tuning v2 (Mar 23): Data-driven from 13→8 signals (Feb 24 - Mar 20).
-    - VIX drop threshold raised 0.8→1.0 (drops 4 weak signals: 25% WR)
-    - Volland gate: |SVB| > 1 AND vanna_0DTE_ratio < 5 (kills ALL 4 losers, keeps ALL 4 winners)
-    - RM: SL=20, no BE, no trail — ride to close (long-tail winners reach +40-120 pts)
-    - SPX flatness score removed (not discriminative)
-    - Added signal time score (later = better, r=+0.268 with WIN)
-    Returns result dict or None.
+    The pattern (user-discovered Mar 27, Discord-validated by Apollo):
+      Phase 1 — "VIX suppression": SPX moves >6 pts but VIX doesn't react (<0.20).
+                Vol sellers/buyers absorbing the move.
+      Phase 2 — "VIX compression": VIX moves >0.25 AGAINST the Phase 1 direction
+                while SPX stays flat (<10 pts). Spring loading.
+      Signal fires when Phase 2 completes. The explosion follows.
+
+    LONG: Phase 1 = SPX drops, VIX flat. Phase 2 = VIX drops, SPX flat. -> SPX rallies.
+    SHORT: Phase 1 = SPX rallies, VIX flat. Phase 2 = VIX rises, SPX flat. -> SPX drops.
+
+    Backtest (24 days, Feb 24 - Mar 27):
+      SHORT (BE@8, trail@10/g5): 20 signals, 56% WR, +82 pts, PF 2.28
+        B-grade (P1>=8): 100% WR (5/5), +77 pts
+        VIX < 26 sweet spot: 67% WR, +50 pts
+      LONG (IMM trail gap=8): 23 signals, 39% WR, +50 pts, PF 1.65
+        VIX >= 26: 50% WR, +46 pts
+      Combined March: +131 pts, PF 2.11, 58% green days
+
+    Grading by Phase 1 SPX move strength:
+      A+ (>=12), A (>=10), B (>=8), C (<8)
     """
     if spot is None or vix is None:
         return None
     if len(_vix_history) < 10:
-        return None  # need minimum data
+        return None
 
-    # Time gate: 9:30 - 14:30 ET
     now = datetime.now(NY)
-    if not (dtime(9, 30) <= now.time() <= dtime(14, 30)):
+    if not (dtime(10, 0) <= now.time() <= dtime(14, 30)):
         return None
 
-    # VIX floor: only meaningful when VIX >= 15
-    if vix < 15:
-        return None
-
-    # One signal per day
     today = now.date()
-    if str(_cooldown_vix_compress.get("last_date", "")) == str(today) and _cooldown_vix_compress.get("last_long_time") is not None:
-        return None
 
-    # Scan rolling 45-min windows in _vix_history
-    best_vix_drop = 0.0
-    best_spx_move = None
-    best_window_start = None
-    best_window_end = None
-    best_vix_start = None
-    best_window_min = 0
+    # Phase 1/2 thresholds
+    P1_SPX_MOVE = 6
+    P1_VIX_REACT_MAX = 0.20
+    P1_WIN_MIN, P1_WIN_MAX = 10, 30  # minutes
+    P2_VIX_COMPRESS = 0.25
+    P2_SPX_FLAT = 10
+    P2_WIN_MIN, P2_WIN_MAX = 15, 60  # minutes
 
-    for i in range(len(_vix_history)):
-        ts_start_str, vix_start, spot_start = _vix_history[i]
-        try:
-            ts_start = datetime.strptime(ts_start_str, "%Y-%m-%d %H:%M:%S")
-        except Exception:
+    results = []
+
+    for direction in ("long", "short"):
+        # One signal per day per direction
+        cd_key = f"last_{direction}_time"
+        if str(_cooldown_vix_divergence.get("last_date", "")) == str(today):
+            if _cooldown_vix_divergence.get(cd_key) is not None:
+                continue
+        else:
+            _cooldown_vix_divergence["last_date"] = str(today)
+            _cooldown_vix_divergence["last_long_time"] = None
+            _cooldown_vix_divergence["last_short_time"] = None
+
+        # VIX gate: shorts only when VIX < 26, longs any VIX
+        if direction == "short" and vix >= 26:
             continue
 
-        for j in range(len(_vix_history) - 1, i, -1):
-            ts_end_str, vix_end, spot_end = _vix_history[j]
+        # ── Phase 1: SPX moves but VIX doesn't react ──
+        best_p1 = None
+        n = len(_vix_history)
+        for i in range(n):
+            ts_i_str, vix_i, spot_i = _vix_history[i]
             try:
-                ts_end = datetime.strptime(ts_end_str, "%Y-%m-%d %H:%M:%S")
+                ts_i = datetime.strptime(ts_i_str, "%Y-%m-%d %H:%M:%S")
             except Exception:
                 continue
+            for j in range(i + 1, n):
+                ts_j_str, vix_j, spot_j = _vix_history[j]
+                try:
+                    ts_j = datetime.strptime(ts_j_str, "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    continue
+                mins = (ts_j - ts_i).total_seconds() / 60.0
+                if mins < P1_WIN_MIN:
+                    continue
+                if mins > P1_WIN_MAX:
+                    break
 
-            window_min = (ts_end - ts_start).total_seconds() / 60.0
-            if window_min < 10 or window_min > 45:
+                if direction == "long":
+                    spx_change = spot_i - spot_j   # SPX drop (positive)
+                    vix_react = vix_j - vix_i       # VIX rise (should be small)
+                else:
+                    spx_change = spot_j - spot_i   # SPX rally (positive)
+                    vix_react = vix_i - vix_j       # VIX drop (should be small)
+
+                if spx_change >= P1_SPX_MOVE and vix_react <= P1_VIX_REACT_MAX:
+                    if best_p1 is None or spx_change > best_p1["spx_move"]:
+                        best_p1 = {
+                            "end_idx": j,
+                            "spx_move": spx_change,
+                            "vix_react": vix_react,
+                        }
+
+        if best_p1 is None:
+            continue
+
+        # ── Phase 2: VIX compresses while SPX flat ──
+        p2_start = best_p1["end_idx"]
+        found_p2 = False
+        p2_vix_compress = 0
+        p2_spx_range = 0
+
+        for j in range(p2_start + 1, n):
+            ts_s_str = _vix_history[p2_start][0]
+            ts_j_str, vix_j, spot_j = _vix_history[j]
+            try:
+                ts_s = datetime.strptime(ts_s_str, "%Y-%m-%d %H:%M:%S")
+                ts_j = datetime.strptime(ts_j_str, "%Y-%m-%d %H:%M:%S")
+            except Exception:
                 continue
+            mins = (ts_j - ts_s).total_seconds() / 60.0
+            if mins < P2_WIN_MIN:
+                continue
+            if mins > P2_WIN_MAX:
+                break
 
-            vix_drop = vix_start - vix_end
-            spx_move = abs(spot_end - spot_start)
+            vix_s = _vix_history[p2_start][1]
+            spot_s = _vix_history[p2_start][2]
+            if direction == "long":
+                vc = vix_s - vix_j       # VIX dropping (positive = compressing)
+            else:
+                vc = vix_j - vix_s       # VIX rising (positive = building fear)
+            sr = abs(spot_j - spot_s)
 
-            if vix_drop > 1.0 and spx_move < 20 and vix_drop > best_vix_drop:
-                best_vix_drop = vix_drop
-                best_spx_move = spx_move
-                best_window_start = ts_start_str
-                best_window_end = ts_end_str
-                best_vix_start = vix_start
-                best_window_min = window_min
-            break  # only check furthest valid endpoint per start
+            if vc >= P2_VIX_COMPRESS and sr <= P2_SPX_FLAT:
+                found_p2 = True
+                p2_vix_compress = vc
+                p2_spx_range = sr
+                break
 
-    if best_vix_drop <= 1.0:
+        if not found_p2:
+            continue
+
+        # ── Grading: Phase 1 SPX move strength ──
+        p1_strength = best_p1["spx_move"]
+        if p1_strength >= 12:
+            grade = "A+"
+        elif p1_strength >= 10:
+            grade = "A"
+        elif p1_strength >= 8:
+            grade = "B"
+        else:
+            grade = "C"
+
+        # ── Scoring (3 components, max 100) ──
+        # 1. Phase 1 strength (0-40): bigger SPX move with flat VIX = stronger
+        if p1_strength >= 15:
+            p1_score = 40
+        elif p1_strength >= 12:
+            p1_score = 35
+        elif p1_strength >= 10:
+            p1_score = 28
+        elif p1_strength >= 8:
+            p1_score = 20
+        else:
+            p1_score = 10
+
+        # 2. Phase 2 VIX compression magnitude (0-30)
+        if p2_vix_compress >= 0.8:
+            p2_score = 30
+        elif p2_vix_compress >= 0.5:
+            p2_score = 22
+        elif p2_vix_compress >= 0.35:
+            p2_score = 15
+        else:
+            p2_score = 8
+
+        # 3. VIX level (0-30): direction-dependent
+        if direction == "long":
+            # Higher VIX = more compression energy for longs
+            if vix >= 30:
+                vix_score = 30
+            elif vix >= 26:
+                vix_score = 25
+            elif vix >= 22:
+                vix_score = 15
+            else:
+                vix_score = 5
+        else:
+            # Lower VIX = better for shorts (vol buying is meaningful signal)
+            if vix < 22:
+                vix_score = 25
+            elif vix < 24:
+                vix_score = 20
+            elif vix < 26:
+                vix_score = 15
+            else:
+                vix_score = 0  # blocked by gate above, but safety
+
+        composite = p1_score + p2_score + vix_score
+
+        # ── RM per direction ──
+        stop_pts = 8
+        if direction == "short":
+            # BE@8, trail activation=10, gap=5
+            target_price = round(spot - 100, 2)  # no fixed TP, trail-only
+            stop_price = round(spot + stop_pts, 2)
+        else:
+            # IMM trail gap=8 (continuous from entry)
+            target_price = round(spot + 100, 2)  # no fixed TP, trail-only
+            stop_price = round(spot - stop_pts, 2)
+
+        signal_hour = now.hour + now.minute / 60.0
+
+        results.append({
+            "setup_name": "VIX Divergence",
+            "direction": direction,
+            "grade": grade,
+            "score": round(composite, 1),
+            "spot": round(spot, 2),
+            "vix": round(vix, 2),
+            "p1_spx_move": round(best_p1["spx_move"], 1),
+            "p1_vix_react": round(best_p1["vix_react"], 2),
+            "p2_vix_compress": round(p2_vix_compress, 2),
+            "p2_spx_range": round(p2_spx_range, 1),
+            "target_pts": 100,  # trail-only, no fixed TP
+            "stop_pts": stop_pts,
+            "stop_price": stop_price,
+            "target_price": target_price,
+            # setup_log columns
+            "paradigm": paradigm,
+            "lis": None,
+            "target": target_price,
+            "max_plus_gex": None,
+            "max_minus_gex": None,
+            "gap_to_lis": None,
+            "upside": round(p2_vix_compress, 2),
+            "rr_ratio": round(p1_strength, 1),
+            "first_hour": signal_hour < 10.5,
+            "support_score": p1_score,
+            "upside_score": p2_score,
+            "floor_cluster_score": vix_score,
+            "target_cluster_score": 0,
+            "rr_score": 0,
+        })
+
+    # Return best signal (highest composite) or None
+    if not results:
         return None
-
-    # ── Volland confluence gate (Mar 23): |SVB| > 1 AND vanna_0DTE_ratio < 5 ──
-    # SVB near 0 = choppy noise (losers avg SVB -0.01 to -0.46)
-    # Vanna ratio > 5 = one-sided dealer positioning, no compression release (losers: 12x, 15x)
-    # Backtest: filter kills ALL 4 losers, keeps ALL 4 winners (8→4 trades, 100% WR, +177 pts)
-    _svb_val = svb if svb is not None else 0
-    _v0d_ratio = vanna_0dte_ratio if vanna_0dte_ratio is not None else 999
-    if abs(_svb_val) <= 1.0:
-        return None  # SVB too weak — no real vol regime
-    if _v0d_ratio >= 5.0:
-        return None  # One-sided 0DTE vanna — no opposing flow
-
-    # ── Scoring v2 (3 components, max 100) ──
-    # 1. VIX drop magnitude (0-40): bigger drop = stronger signal (r=+0.224 with P&L)
-    if best_vix_drop >= 2.5:
-        vix_drop_score = 40
-    elif best_vix_drop >= 2.0:
-        vix_drop_score = 35
-    elif best_vix_drop >= 1.5:
-        vix_drop_score = 30
-    elif best_vix_drop >= 1.2:
-        vix_drop_score = 22
-    else:
-        vix_drop_score = 15
-
-    # 2. Signal time of day (0-30): later = better (r=+0.268 with WIN)
-    # More market data confirms the compression pattern
-    signal_hour = now.hour + now.minute / 60.0
-    if signal_hour >= 13.0:
-        time_score = 30
-    elif signal_hour >= 12.0:
-        time_score = 25
-    elif signal_hour >= 11.0:
-        time_score = 18
-    elif signal_hour >= 10.0:
-        time_score = 10
-    else:
-        time_score = 5
-
-    # 3. VIX level (0-30): higher VIX = more room to compress
-    if vix >= 30:
-        vix_level_score = 30
-    elif vix >= 25:
-        vix_level_score = 25
-    elif vix >= 22:
-        vix_level_score = 20
-    elif vix >= 18:
-        vix_level_score = 14
-    elif vix >= 15:
-        vix_level_score = 8
-    else:
-        vix_level_score = 0
-
-    composite = vix_drop_score + time_score + vix_level_score
-
-    if composite >= 80:
-        grade = "A+"
-    elif composite >= 60:
-        grade = "A"
-    elif composite >= 40:
-        grade = "B"
-    else:
-        return None  # below B = no signal
-
-    # RM v2: SL=20, ride to close (no BE, no trail)
-    # Long-tail winners (+40 to +120 pts) get killed by BE/trail
-    stop_pts = 20
-
-    return {
-        "setup_name": "VIX Compression",
-        "direction": "long",
-        "grade": grade,
-        "score": round(composite, 1),
-        "spot": round(spot, 2),
-        "vix": round(vix, 2),
-        "vix_start": round(best_vix_start, 2) if best_vix_start else None,
-        "vix_drop": round(best_vix_drop, 2),
-        "spx_move": round(best_spx_move, 2) if best_spx_move is not None else None,
-        "window_start": best_window_start,
-        "window_end": best_window_end,
-        "window_min": round(best_window_min, 0),
-        "svb": round(_svb_val, 2),
-        "vanna_0dte_ratio": round(_v0d_ratio, 2),
-        "vix_drop_score": vix_drop_score,
-        "time_score": time_score,
-        "vix_level_score": vix_level_score,
-        "target_pts": stop_pts,  # placeholder for outcome tracking
-        "stop_pts": stop_pts,
-        "stop_price": round(spot - stop_pts, 2),
-        "target_price": round(spot + 100, 2),  # ride to close (no fixed target)
-        # Columns required by setup_log INSERT
-        "paradigm": paradigm,
-        "lis": None,
-        "target": round(spot + 100, 2),
-        "max_plus_gex": None,
-        "max_minus_gex": None,
-        "gap_to_lis": None,
-        "upside": round(best_vix_drop, 2),
-        "rr_ratio": round(best_vix_drop / 0.8, 2),
-        "first_hour": signal_hour < 10.5,
-        "support_score": vix_drop_score,
-        "upside_score": time_score,
-        "floor_cluster_score": vix_level_score,
-        "target_cluster_score": 0,
-        "rr_score": 0,
-    }
+    return max(results, key=lambda r: r["score"])
 
 
-def should_notify_vix_compress(result):
-    """One signal per day for VIX Compression (long-only)."""
+def should_notify_vix_divergence(result):
+    """One signal per day per direction for VIX Divergence."""
     if result is None:
         return False, None
 
     now = datetime.now(NY)
     today = str(now.date())
+    direction = result.get("direction", "long")
+    cd_key = f"last_{direction}_time"
 
-    if str(_cooldown_vix_compress.get("last_date", "")) != today:
-        _cooldown_vix_compress["last_long_time"] = None
-        _cooldown_vix_compress["last_date"] = today
+    if str(_cooldown_vix_divergence.get("last_date", "")) != today:
+        _cooldown_vix_divergence["last_long_time"] = None
+        _cooldown_vix_divergence["last_short_time"] = None
+        _cooldown_vix_divergence["last_date"] = today
 
-    if _cooldown_vix_compress.get("last_long_time") is not None:
+    if _cooldown_vix_divergence.get(cd_key) is not None:
         return False, None
 
-    _cooldown_vix_compress["last_long_time"] = now
+    _cooldown_vix_divergence[cd_key] = now
     return True, "new"
 
 
-def format_vix_compress_message(result, alignment=None):
-    """Format a concise Telegram HTML message for VIX Compression."""
+def format_vix_divergence_message(result, alignment=None):
+    """Format Telegram message for VIX Divergence setup."""
     grade = result.get("grade", "?")
+    direction = result.get("direction", "long")
+    dir_label = "LONG" if direction == "long" else "SHORT"
     align_str = f" align {alignment:+d}" if alignment is not None else ""
-    vix_drop = result.get("vix_drop", 0)
-    spx_move = result.get("spx_move", 0)
+    p1_spx = result.get("p1_spx_move", 0)
+    p1_vix = result.get("p1_vix_react", 0)
+    p2_vix = result.get("p2_vix_compress", 0)
     vix_level = result.get("vix", 0)
-    w_start = result.get("window_start", "?")
-    w_end = result.get("window_end", "?")
-    # Extract just HH:MM from timestamps
-    try:
-        w_start_short = w_start.split(" ")[1][:5] if " " in str(w_start) else str(w_start)
-        w_end_short = w_end.split(" ")[1][:5] if " " in str(w_end) else str(w_end)
-    except Exception:
-        w_start_short, w_end_short = str(w_start), str(w_end)
     score = result.get("score", 0)
-    svb_val = result.get("svb", 0)
-    v0d_r = result.get("vanna_0dte_ratio", 0)
-    msg = f"\U0001f535 <b>VIX Compression LONG [{grade}]{align_str}</b>\n"
-    msg += f"{result['spot']:.0f} | SL {(result.get('stop_price') or 0):.0f} (20pt) | ride to close\n"
-    msg += f"VIX {vix_level:.1f} \u2193{vix_drop:.1f} | SPX \u0394{spx_move:.0f}pt | {w_start_short}-{w_end_short}\n"
-    msg += f"SVB={svb_val:+.2f} V0Dr={v0d_r:.1f} | sc={score:.0f}"
+
+    emoji = "\U0001f535" if direction == "long" else "\U0001f534"
+    msg = f"{emoji} <b>VIX Divergence {dir_label} [{grade}]{align_str}</b>\n"
+    msg += f"{result['spot']:.0f} | SL {result.get('stop_pts', 8)}pt | trail-only\n"
+    msg += f"P1: SPX {p1_spx:+.0f}pt VIX {p1_vix:+.2f} | P2: VIX {p2_vix:+.2f}\n"
+    msg += f"VIX {vix_level:.1f} | sc={score:.0f}"
     return msg
 
 
@@ -4568,7 +4632,7 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
       skew_change_pct: % change in skew over lookback window (Skew+Charm)
       vanna_levels: list of dominant vanna level dicts (Vanna Pivot Bounce)
       es_range_bars: list of ES range bar dicts from DB (Vanna Pivot Bounce)
-      vix: current VIX value (VIX Compression)
+      vix: current VIX value (VIX Divergence)
       vanna_pin_strike: max absolute 0DTE vanna strike (Vanna Butterfly)
       vanna_pin_value: vanna notional at pin strike (Vanna Butterfly)
       chain_df: current options chain DataFrame (Vanna Butterfly pricing)
@@ -4732,16 +4796,15 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
             "message": format_vanna_pivot_message(vp_result),
         })
 
-    # ── VIX Compression ──
-    vc_result = evaluate_vix_compression(spot, vix, settings, paradigm=paradigm,
-                                         svb=svb_correlation, vanna_0dte_ratio=vanna_0dte_ratio)
-    if vc_result is not None:
-        notify_vc, reason_vc = should_notify_vix_compress(vc_result)
+    # ── VIX Divergence (replaces VIX Compression) ──
+    vd_result = evaluate_vix_divergence(spot, vix, settings, paradigm=paradigm)
+    if vd_result is not None:
+        notify_vd, reason_vd = should_notify_vix_divergence(vd_result)
         results.append({
-            "result": vc_result,
-            "notify": notify_vc,
-            "notify_reason": reason_vc,
-            "message": format_vix_compress_message(vc_result),
+            "result": vd_result,
+            "notify": notify_vd,
+            "notify_reason": reason_vd,
+            "message": format_vix_divergence_message(vd_result),
         })
 
     # ── IV Momentum (Apollo) — SHORT only ──
@@ -4802,7 +4865,7 @@ def export_cooldowns() -> dict:
         "sb2_abs": _serialize(_cooldown_sb2_abs),
         "gex_velocity": _serialize(_cooldown_gex_vel),
         "delta_abs": _serialize(_cooldown_delta_abs),
-        "vix_compress": _serialize(_cooldown_vix_compress),
+        "vix_divergence": _serialize(_cooldown_vix_divergence),
         "vix_history": _vix_history[-60:],  # save last ~30 min for restart recovery
         "iv_momentum": _serialize(_cooldown_iv_momentum),
         "iv_momentum_history": _iv_momentum_history[-30:],  # save last ~15 min
@@ -4875,9 +4938,9 @@ def import_cooldowns(data: dict):
         _cooldown_sb2_abs.update(_deserialize(data["sb2_abs"]))
     if "gex_velocity" in data:
         _cooldown_gex_vel.update(_deserialize(data["gex_velocity"]))
-    if "vix_compress" in data:
-        _cooldown_vix_compress.update(_deserialize(
-            data["vix_compress"], has_datetimes=True,
+    if "vix_divergence" in data:
+        _cooldown_vix_divergence.update(_deserialize(
+            data["vix_divergence"], has_datetimes=True,
             dt_keys=("last_long_time",)))
     if "vix_history" in data:
         _vix_history.clear()

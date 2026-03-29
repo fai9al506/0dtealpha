@@ -1775,7 +1775,7 @@ def log_setup(result_wrapper):
     # Reset tracking on new day
     today = now_et().date()
     if _current_setup_log["last_date"] != today:
-        _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "SB Absorption": None, "SB10 Absorption": None, "SB2 Absorption": None, "Delta Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "Vanna Butterfly": None, "VIX Compression": None, "last_date": today}
+        _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "SB Absorption": None, "SB10 Absorption": None, "SB2 Absorption": None, "Delta Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "Vanna Butterfly": None, "VIX Divergence": None, "last_date": today}
 
     try:
         with engine.begin() as conn:
@@ -3444,7 +3444,7 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Setups still fire and log to portal/setup_log — this only gates live execution.
     Change this ONE function when the filter evolves."""
-    if setup_name in ("VIX Compression", "IV Momentum", "Vanna Butterfly"):
+    if setup_name in ("VIX Divergence", "IV Momentum", "Vanna Butterfly"):
         return False
 
     # ── Grade gate: SC only — block C and LOG grades (v2 backtest: 220t, C=52% WR, LOG=24%) ──
@@ -3582,11 +3582,15 @@ def _compute_setup_levels(r: dict):
         pin = r.get("pin_strike") or r.get("target")
         return pin, None
 
-    if setup_name == "VIX Compression":
-        # SL=20, ride to close (no BE, no trail — long-tail winners)
-        # target set very high so outcome resolves at EOD as EXPIRED
-        target_lvl = spot + 100  # effectively no target
-        stop_lvl = spot - 20
+    if setup_name == "VIX Divergence":
+        # SL=8, trail-only (no fixed TP). Direction-aware.
+        d = r.get("direction", "long")
+        if d == "short":
+            target_lvl = spot - 100  # no fixed TP
+            stop_lvl = spot + 8
+        else:
+            target_lvl = spot + 100  # no fixed TP
+            stop_lvl = spot - 8
         return round(target_lvl, 2), round(stop_lvl, 2)
 
     if setup_name == "IV Momentum":
@@ -3769,6 +3773,12 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "SB2 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
             "Delta Absorption": {"mode": "continuous", "activation": 0, "gap": 8},  # IMM trail: stop = max(maxProfit-8, -8)
         }
+        # VIX Divergence: direction-dependent trail
+        if setup_name == "VIX Divergence":
+            if is_long:
+                _trail_params["VIX Divergence"] = {"mode": "continuous", "activation": 0, "gap": 8}  # IMM trail gap=8
+            else:
+                _trail_params["VIX Divergence"] = {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5}  # BE@8, trail@10/g5
         _tp = _trail_params.get(setup_name)
         if _tp is not None:
             # Advance trail using cycle high (long) or cycle low (short)
@@ -4196,7 +4206,7 @@ def _run_setup_check():
         except Exception as e:
             print(f"[vanna-pivot] range bars query error: {e}", flush=True)
 
-    # Query 0DTE vanna pin strike for Vanna Butterfly + vanna ratio for VIX Compression
+    # Query 0DTE vanna pin strike for Vanna Butterfly
     _vanna_pin_strike = None
     _vanna_pin_value = None
     _vanna_0dte_ratio = None
@@ -4214,7 +4224,7 @@ def _run_setup_check():
                 if pin_row:
                     _vanna_pin_strike = float(pin_row["strike"])
                     _vanna_pin_value = float(pin_row["value"])
-                # Vanna 0DTE pos/neg ratio (for VIX Compression filter)
+                # Vanna 0DTE pos/neg ratio (for Vanna Butterfly)
                 vr_row = conn.execute(text("""
                     SELECT SUM(CASE WHEN value::float > 0 THEN value::float ELSE 0 END) as pos,
                            SUM(CASE WHEN value::float < 0 THEN value::float ELSE 0 END) as neg
@@ -4283,7 +4293,7 @@ def _run_setup_check():
                     format_ag_short_message, format_bofa_scalp_message,
                     format_paradigm_reversal_message, format_dd_exhaustion_message,
                     format_skew_charm_message, format_vanna_pivot_message,
-                    format_vix_compress_message, format_iv_momentum_message,
+                    format_vix_divergence_message, format_iv_momentum_message,
                     format_vanna_butterfly_message,
                 )
                 _fmt_map = {
@@ -4292,7 +4302,7 @@ def _run_setup_check():
                     "BofA Scalp": format_bofa_scalp_message, "Paradigm Reversal": format_paradigm_reversal_message,
                     "DD Exhaustion": format_dd_exhaustion_message, "Skew Charm": format_skew_charm_message,
                     "Vanna Pivot Bounce": format_vanna_pivot_message,
-                    "VIX Compression": format_vix_compress_message,
+                    "VIX Divergence": format_vix_divergence_message,
                     "IV Momentum": format_iv_momentum_message,
                     "Vanna Butterfly": format_vanna_butterfly_message,
                 }
@@ -10052,6 +10062,12 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5, "initial_sl": 14},
         }
+        # VIX Divergence: direction-dependent trail for portal detail view
+        if setup_name == "VIX Divergence":
+            if is_long:
+                _trail_params["VIX Divergence"] = {"mode": "continuous", "activation": 0, "gap": 8, "initial_sl": 8}
+            else:
+                _trail_params["VIX Divergence"] = {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8}
 
         if is_trailing:
             tp = _trail_params[setup_name]
@@ -11836,14 +11852,14 @@ function passesStrategy(l, strat) {
     if (!ntSetups.includes(sn)) return false;
     if (!gapFilter(l.ts)) return false;
     if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
-    if (sn==='VIX Compression'||sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
+    if (sn==='VIX Divergence'||sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
     if (!v11TimeGates(l.ts)) return false;
     return v10Base();
   }
   if (strat === 'v12') {
     if (!gapFilter(l.ts)) return false;
     if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
-    if (sn==='VIX Compression'||sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
+    if (sn==='VIX Divergence'||sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
     if (!v11TimeGates(l.ts)) return false;
     return v10Base();
   }
@@ -13354,7 +13370,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="options">Options Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Delta Absorption</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Delta Absorption</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
@@ -16462,7 +16478,7 @@ DASH_HTML_TEMPLATE = """
         // SC grade gate
         if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
         // Portal-only setups
-        if (sn === 'VIX Compression' || sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
+        if (sn === 'VIX Divergence' || sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
         // V11 time gates
         if (l.ts) {
           const d = new Date(l.ts);
@@ -16506,7 +16522,7 @@ DASH_HTML_TEMPLATE = """
         // SC grade gate
         if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
         // Portal-only setups
-        if (sn === 'VIX Compression' || sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
+        if (sn === 'VIX Divergence' || sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
         // V11 time gates
         if (l.ts) {
           const d = new Date(l.ts);

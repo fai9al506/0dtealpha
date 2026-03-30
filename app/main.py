@@ -4101,7 +4101,9 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         _tp = _trail_params.get(setup_name)
         # ES-based trailing setups: trail already advanced per-bar above.
         # Only run trail logic here for SPX setups. Still need broker stop updates for ES.
-        if _tp is not None and not (_es_based and result_type):
+        if _tp is not None and _es_based and result_type:
+            pass  # ES-based trail setup already resolved in per-bar scan — skip to outcome
+        elif _tp is not None:
             if _es_based:
                 # ES-based: trail already computed per-bar, just sync broker stops
                 pass

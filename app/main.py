@@ -1503,7 +1503,7 @@ def _restore_open_trades():
             print("[restore] no unresolved trades to restore", flush=True)
             return
 
-        _trailing_setups = ("DD Exhaustion", "GEX Long", "GEX Velocity", "AG Short", "Skew Charm")
+        _trailing_setups = ("DD Exhaustion", "GEX Long", "GEX Velocity", "AG Short", "Skew Charm", "Delta Absorption")
         restored = 0
         for row in rows:
             entry = dict(row)
@@ -1556,8 +1556,9 @@ def _restore_open_trades():
             # Query historical price extremes since entry to seed _seen_low/_seen_high
             # Without this, restored trades would miss target/stop hits before restart
             is_long = direction.lower() in ("long", "bullish")
-            if setup_name == "ES Absorption":
-                # ES Absorption uses ES range bar H/L, not SPX playback
+            _es_based_restore = setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption", "Delta Absorption")
+            if _es_based_restore:
+                # ES-based setups use ES range bar H/L, not SPX playback
                 es_px = entry.get("abs_es_price") or spot
                 seen_high = es_px
                 seen_low = es_px
@@ -1615,13 +1616,14 @@ def _restore_open_trades():
                 "_seen_high": seen_high,
                 "_seen_low": seen_low,
             }
-            # ES Absorption: set _es_last_bar_idx so live tracker doesn't re-scan
+            # ES-based setups: set _es_last_bar_idx so live tracker doesn't re-scan
             # bars before the entry (which would cause false stops/targets)
-            if setup_name == "ES Absorption":
+            if _es_based_restore:
                 _trade_entry["_es_last_bar_idx"] = _max_bar_idx_db
+                _trade_entry["_es_based"] = True
             _setup_open_trades.append(_trade_entry)
             restored += 1
-            _extra = f" bar_idx={_max_bar_idx_db}" if setup_name == "ES Absorption" else ""
+            _extra = f" bar_idx={_max_bar_idx_db}" if _es_based_restore else ""
             print(f"[restore] {setup_name} {direction} id={entry['id']} spot={spot:.1f} "
                   f"seen_lo={seen_low:.1f} seen_hi={seen_high:.1f}{_extra}", flush=True)
 
@@ -4217,7 +4219,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                             "fe": first_event,
                             "mp": max_profit,
                             "ml": max_loss,
-                            "ep": round(spot, 2),
+                            "ep": round(check_price, 2),
                             "id": log_id,
                         })
                 except Exception as db_err:

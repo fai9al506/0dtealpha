@@ -1000,6 +1000,59 @@ def db_init():
         );
         """))
 
+        # ── VPS Data Bridge tables (independent from Rithmic) ──
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS vps_es_range_bars (
+            id BIGSERIAL PRIMARY KEY,
+            trade_date DATE NOT NULL,
+            symbol VARCHAR(20) NOT NULL DEFAULT '@ES',
+            bar_idx INTEGER NOT NULL,
+            range_pts DOUBLE PRECISION NOT NULL DEFAULT 5.0,
+            bar_open DOUBLE PRECISION NOT NULL,
+            bar_high DOUBLE PRECISION NOT NULL,
+            bar_low DOUBLE PRECISION NOT NULL,
+            bar_close DOUBLE PRECISION NOT NULL,
+            bar_volume BIGINT NOT NULL DEFAULT 0,
+            bar_buy_volume BIGINT NOT NULL DEFAULT 0,
+            bar_sell_volume BIGINT NOT NULL DEFAULT 0,
+            bar_delta BIGINT NOT NULL DEFAULT 0,
+            cumulative_delta BIGINT NOT NULL DEFAULT 0,
+            cvd_open BIGINT NOT NULL DEFAULT 0,
+            cvd_high BIGINT NOT NULL DEFAULT 0,
+            cvd_low BIGINT NOT NULL DEFAULT 0,
+            cvd_close BIGINT NOT NULL DEFAULT 0,
+            ts_start TIMESTAMPTZ NOT NULL,
+            ts_end TIMESTAMPTZ NOT NULL,
+            status VARCHAR(10) NOT NULL DEFAULT 'closed',
+            UNIQUE(trade_date, symbol, bar_idx, range_pts)
+        );
+        CREATE INDEX IF NOT EXISTS idx_vps_es_rb_date ON vps_es_range_bars(trade_date);
+        """))
+
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS vps_vix_ticks (
+            id BIGSERIAL PRIMARY KEY,
+            price DOUBLE PRECISION NOT NULL,
+            volume INTEGER NOT NULL DEFAULT 0,
+            delta INTEGER NOT NULL DEFAULT 0,
+            bid DOUBLE PRECISION,
+            ask DOUBLE PRECISION,
+            ts TIMESTAMPTZ NOT NULL,
+            received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_vps_vix_ts ON vps_vix_ticks(ts DESC);
+        """))
+
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS vps_heartbeats (
+            id BIGSERIAL PRIMARY KEY,
+            component VARCHAR(50) NOT NULL,
+            status JSONB NOT NULL,
+            ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_vps_hb_ts ON vps_heartbeats(ts DESC);
+        """))
+
         # Create default admin user if no users exist
         existing = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
         if existing == 0:
@@ -3842,6 +3895,11 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         stop_lvl = trade.get("stop_level")
         ts_entry = trade["ts"]
         is_long = direction.lower() in ("long", "bullish")
+
+        # Guard: skip trades with no stop level (shouldn't happen, but prevents None comparisons)
+        if stop_lvl is None and setup_name != "Vanna Butterfly":
+            still_open.append(trade)
+            continue
 
         # Vanna Butterfly: no real-time stop/target — held to expiry, resolved at EOD
         if setup_name == "Vanna Butterfly":
@@ -18579,3 +18637,176 @@ def eod_review_page(session: str = Cookie(default=None), date: str = Query(None)
     review_date = date or datetime.now(NY).strftime("%Y-%m-%d")
     html = EOD_REVIEW_TEMPLATE.replace("__DATE__", review_date)
     return HTMLResponse(html)
+
+
+# ====== VPS DATA BRIDGE ENDPOINTS ======
+# Independent data collection from Sierra Chart via VPS.
+# Tables: vps_es_range_bars, vps_vix_ticks, vps_heartbeats
+# No integration with setup detector — data collection only.
+
+_VPS_API_KEY = os.getenv("VPS_API_KEY", "")
+
+def _check_vps_auth(request):
+    """Validate VPS API key from Authorization header."""
+    if not _VPS_API_KEY:
+        return True  # No key configured = open (dev mode)
+    auth = request.headers.get("Authorization", "")
+    return auth == f"Bearer {_VPS_API_KEY}"
+
+
+@app.post("/api/vps/es/bar")
+def vps_es_bar(request: Request, payload: dict = Body(...)):
+    """Receive a completed ES range bar from VPS data bridge."""
+    if not _check_vps_auth(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if not engine:
+        return JSONResponse({"error": "no database"}, status_code=503)
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO vps_es_range_bars
+                    (trade_date, bar_idx, range_pts,
+                     bar_open, bar_high, bar_low, bar_close,
+                     bar_volume, bar_buy_volume, bar_sell_volume, bar_delta,
+                     cumulative_delta, cvd_open, cvd_high, cvd_low, cvd_close,
+                     ts_start, ts_end, status)
+                VALUES
+                    (:trade_date, :bar_idx, :range_pts,
+                     :bar_open, :bar_high, :bar_low, :bar_close,
+                     :bar_volume, :bar_buy_volume, :bar_sell_volume, :bar_delta,
+                     :cumulative_delta, :cvd_open, :cvd_high, :cvd_low, :cvd_close,
+                     :ts_start, :ts_end, :status)
+                ON CONFLICT (trade_date, symbol, bar_idx, range_pts)
+                DO UPDATE SET
+                    bar_open = EXCLUDED.bar_open, bar_high = EXCLUDED.bar_high,
+                    bar_low = EXCLUDED.bar_low, bar_close = EXCLUDED.bar_close,
+                    bar_volume = EXCLUDED.bar_volume,
+                    bar_buy_volume = EXCLUDED.bar_buy_volume,
+                    bar_sell_volume = EXCLUDED.bar_sell_volume,
+                    bar_delta = EXCLUDED.bar_delta,
+                    cumulative_delta = EXCLUDED.cumulative_delta,
+                    cvd_open = EXCLUDED.cvd_open, cvd_high = EXCLUDED.cvd_high,
+                    cvd_low = EXCLUDED.cvd_low, cvd_close = EXCLUDED.cvd_close,
+                    ts_start = EXCLUDED.ts_start, ts_end = EXCLUDED.ts_end,
+                    status = EXCLUDED.status
+            """), {
+                "trade_date": payload["trade_date"],
+                "bar_idx": payload["idx"],
+                "range_pts": payload.get("range_pts", 5.0),
+                "bar_open": payload["open"],
+                "bar_high": payload["high"],
+                "bar_low": payload["low"],
+                "bar_close": payload["close"],
+                "bar_volume": payload.get("volume", 0),
+                "bar_buy_volume": payload.get("buy_volume", 0),
+                "bar_sell_volume": payload.get("sell_volume", 0),
+                "bar_delta": payload.get("delta", 0),
+                "cumulative_delta": payload.get("cvd", 0),
+                "cvd_open": payload.get("cvd_open", 0),
+                "cvd_high": payload.get("cvd_high", 0),
+                "cvd_low": payload.get("cvd_low", 0),
+                "cvd_close": payload.get("cvd_close", 0),
+                "ts_start": payload["ts_start"],
+                "ts_end": payload["ts_end"],
+                "status": payload.get("status", "closed"),
+            })
+        return {"ok": True}
+    except Exception as e:
+        print(f"[vps] es/bar error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/vps/vix/ticks")
+def vps_vix_ticks(request: Request, payload: dict = Body(...)):
+    """Receive a batch of VX ticks from VPS data bridge."""
+    if not _check_vps_auth(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if not engine:
+        return JSONResponse({"error": "no database"}, status_code=503)
+
+    ticks = payload.get("ticks", [])
+    if not ticks:
+        return {"ok": True, "count": 0}
+
+    try:
+        with engine.begin() as conn:
+            for t in ticks:
+                conn.execute(text("""
+                    INSERT INTO vps_vix_ticks (price, volume, delta, bid, ask, ts)
+                    VALUES (:price, :volume, :delta, :bid, :ask, :ts)
+                """), {
+                    "price": t["price"],
+                    "volume": t.get("volume", 0),
+                    "delta": t.get("delta", 0),
+                    "bid": t.get("bid"),
+                    "ask": t.get("ask"),
+                    "ts": t["ts"],
+                })
+        return {"ok": True, "count": len(ticks)}
+    except Exception as e:
+        print(f"[vps] vix/ticks error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/vps/heartbeat")
+def vps_heartbeat(request: Request, payload: dict = Body(...)):
+    """Receive heartbeat from VPS data bridge."""
+    if not _check_vps_auth(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if not engine:
+        return JSONResponse({"error": "no database"}, status_code=503)
+
+    try:
+        component = payload.get("component", "vps_data_bridge")
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO vps_heartbeats (component, status)
+                VALUES (:component, :status)
+            """), {
+                "component": component,
+                "status": json.dumps(payload),
+            })
+        return {"ok": True}
+    except Exception as e:
+        print(f"[vps] heartbeat error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/vps/status")
+def vps_status(session: str = Cookie(default=None)):
+    """Get latest VPS bridge status (last heartbeat + bar count)."""
+    user = get_current_user(session)
+    if not user:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if not engine:
+        return JSONResponse({"error": "no database"}, status_code=503)
+
+    try:
+        with engine.connect() as conn:
+            # Last heartbeat
+            hb = conn.execute(text("""
+                SELECT status, ts FROM vps_heartbeats
+                ORDER BY ts DESC LIMIT 1
+            """)).mappings().first()
+
+            # Today's bar count
+            today = datetime.now(NY).strftime("%Y-%m-%d")
+            bar_count = conn.execute(text("""
+                SELECT COUNT(*) FROM vps_es_range_bars
+                WHERE trade_date = :d
+            """), {"d": today}).scalar() or 0
+
+            # Today's VX tick count
+            vx_count = conn.execute(text("""
+                SELECT COUNT(*) FROM vps_vix_ticks
+                WHERE ts >= :start
+            """), {"start": today}).scalar() or 0
+
+        return {
+            "last_heartbeat": dict(hb) if hb else None,
+            "today_es_bars": bar_count,
+            "today_vx_ticks": vx_count,
+        }
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)

@@ -6578,22 +6578,37 @@ def start_scheduler():
     sch.add_job(_real_trade_eod_flatten, "cron", hour=15, minute=50,
                 id="real_trade_eod", coalesce=True, max_instances=1)
     # Real trader: fast 3s polling to minimize orphaned order window (cap=2 stacking safety)
+    _poll_hung_count = {"n": 0}
     def _real_trade_fast_poll():
         t = now_et().time()
         if not (dtime(9, 30) <= t <= dtime(16, 0)):
             return
         try:
-            from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FT
             from app import real_trader
-            if real_trader._active_orders:
-                _ex = ThreadPoolExecutor(max_workers=1)
-                _fut = _ex.submit(real_trader.poll_order_status)
-                try:
-                    _fut.result(timeout=10)
-                except _FT:
-                    print("[real-trader] poll_order_status TIMEOUT (10s)", flush=True)
-                finally:
-                    _ex.shutdown(wait=False, cancel_futures=True)
+            # Only poll if there are actually pending/filled orders (not just closed ghosts)
+            has_pending = any(
+                o.get("status") in ("pending_entry", "pending_limit", "filled")
+                for o in real_trader._active_orders.values()
+            ) if real_trader._active_orders else False
+            if not has_pending:
+                return
+            # After 10 consecutive timeouts, stop polling to prevent thread leak
+            if _poll_hung_count["n"] >= 10:
+                return
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FT
+            _ex = ThreadPoolExecutor(max_workers=1)
+            _fut = _ex.submit(real_trader.poll_order_status)
+            try:
+                _fut.result(timeout=10)
+                _poll_hung_count["n"] = 0  # reset on success
+            except _FT:
+                _poll_hung_count["n"] += 1
+                print(f"[real-trader] poll_order_status TIMEOUT (10s) [{_poll_hung_count['n']}/10]", flush=True)
+                if _poll_hung_count["n"] >= 10:
+                    print("[real-trader] poll disabled after 10 timeouts — TS API unreachable", flush=True)
+                    send_telegram("🔴 <b>Real trader poll DISABLED</b>\nTS brokerage API unreachable after 10 consecutive timeouts")
+            finally:
+                _ex.shutdown(wait=False, cancel_futures=True)
         except Exception:
             pass
     sch.add_job(_real_trade_fast_poll, "interval", seconds=3,

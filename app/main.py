@@ -2278,6 +2278,146 @@ def db_volland_exposure_window(greek: str, expiration_option: str = None, limit:
         "points": pts
     }
 
+# ====== Volland Data Cache (90s TTL) ======
+# Replaces 8 individual DB queries per cycle with 2 batched queries every 90s.
+_VOLLAND_CACHE_TTL = 90  # seconds — Volland refreshes every 120s
+_volland_data_cache: dict = {"ts": 0.0}
+
+def _refresh_volland_cache() -> dict:
+    """Fetch all Volland data in 2 queries, cache for 90s. Returns cached dict."""
+    now_ts = time.time()
+    if now_ts - _volland_data_cache.get("ts", 0) < _VOLLAND_CACHE_TTL:
+        return _volland_data_cache  # cache hit
+
+    if not engine:
+        return _volland_data_cache
+
+    # Query A: volland_snapshots — paradigm, LIS, target, DD, charm, SVB
+    stats_result = {"paradigm": None, "target": None, "lines_in_sand": None}
+    statistics_raw = {}
+    spy_statistics_raw = {}
+    try:
+        with engine.begin() as conn:
+            snap_row = conn.execute(text("""
+                SELECT ts, payload FROM volland_snapshots
+                WHERE payload->>'error_event' IS NULL
+                  AND payload->'statistics' IS NOT NULL
+                ORDER BY ts DESC LIMIT 1
+            """)).mappings().first()
+        if snap_row:
+            payload = _json_load_maybe(snap_row["payload"])
+            if payload and isinstance(payload, dict):
+                statistics_raw = payload.get("statistics", {}) or {}
+                spy_statistics_raw = payload.get("spy_statistics", {}) or {}
+                stats_result["paradigm"] = statistics_raw.get("paradigm")
+                stats_result["target"] = statistics_raw.get("target")
+                stats_result["lines_in_sand"] = statistics_raw.get("lines_in_sand")
+    except Exception as e:
+        print(f"[volland-cache] snapshot query error: {e}", flush=True)
+
+    # Query B: volland_exposure_points — all vanna data in one query
+    vanna_sums = {"ALL": None, "THIS_WEEK": None, "THIRTY_NEXT_DAYS": None}
+    vanna_pin_strike = None
+    vanna_pin_value = None
+    vanna_0dte_ratio = None
+    vanna_levels = []
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                WITH latest_ts AS (
+                    SELECT expiration_option, MAX(ts_utc) AS ts_utc
+                    FROM volland_exposure_points
+                    WHERE greek = 'vanna'
+                      AND expiration_option IN ('ALL', 'THIS_WEEK', 'THIRTY_NEXT_DAYS', 'TODAY')
+                    GROUP BY expiration_option
+                )
+                SELECT vep.expiration_option, vep.strike, vep.value::float AS value
+                FROM volland_exposure_points vep
+                JOIN latest_ts l ON vep.expiration_option = l.expiration_option
+                                 AND vep.ts_utc = l.ts_utc
+                WHERE vep.greek = 'vanna'
+            """)).mappings().all()
+
+        # Process into all needed forms
+        by_exp: dict[str, list] = {}
+        for r in rows:
+            exp_opt = r["expiration_option"]
+            by_exp.setdefault(exp_opt, []).append({"strike": float(r["strike"]), "value": float(r["value"])})
+
+        # Vanna sums (ALL, THIS_WEEK, THIRTY_NEXT_DAYS)
+        for exp_key in ("ALL", "THIS_WEEK", "THIRTY_NEXT_DAYS"):
+            pts = by_exp.get(exp_key, [])
+            if pts:
+                vanna_sums[exp_key] = sum(p["value"] for p in pts)
+
+        # Vanna pin strike + 0DTE ratio (TODAY)
+        today_pts = by_exp.get("TODAY", [])
+        if today_pts:
+            best = max(today_pts, key=lambda p: abs(p["value"]))
+            vanna_pin_strike = best["strike"]
+            vanna_pin_value = best["value"]
+            pos_sum = sum(p["value"] for p in today_pts if p["value"] > 0)
+            neg_sum = sum(p["value"] for p in today_pts if p["value"] < 0)
+            vanna_0dte_ratio = pos_sum / abs(neg_sum) if neg_sum != 0 else 999.0
+
+        # Dominant vanna levels (THIS_WEEK + THIRTY_NEXT_DAYS)
+        _min_pct = _setup_settings.get("vp_dominant_pct", 12)
+        strike_tfs: dict[float, list] = {}
+        for tf in ("THIS_WEEK", "THIRTY_NEXT_DAYS"):
+            pts = by_exp.get(tf, [])
+            if not pts:
+                continue
+            total_abs = sum(abs(p["value"]) for p in pts)
+            if total_abs == 0:
+                continue
+            for p in pts:
+                pct = abs(p["value"]) / total_abs * 100
+                if pct >= _min_pct:
+                    vanna_levels.append({
+                        "strike": p["strike"], "value": p["value"],
+                        "timeframe": tf, "pct": round(pct, 1), "confluence": False
+                    })
+                    strike_tfs.setdefault(p["strike"], []).append(tf)
+        # Mark confluence (same strike in both timeframes)
+        for lvl in vanna_levels:
+            if len(strike_tfs.get(lvl["strike"], [])) > 1:
+                lvl["confluence"] = True
+
+    except Exception as e:
+        print(f"[volland-cache] exposure query error: {e}", flush=True)
+
+    _volland_data_cache.update({
+        "ts": now_ts,
+        "stats": stats_result,
+        "statistics_raw": statistics_raw,
+        "spy_statistics_raw": spy_statistics_raw,
+        "vanna_all": vanna_sums["ALL"],
+        "vanna_weekly": vanna_sums["THIS_WEEK"],
+        "vanna_monthly": vanna_sums["THIRTY_NEXT_DAYS"],
+        "vanna_levels": vanna_levels,
+        "vanna_pin_strike": vanna_pin_strike,
+        "vanna_pin_value": vanna_pin_value,
+        "vanna_0dte_ratio": vanna_0dte_ratio,
+    })
+    print(f"[volland-cache] refreshed: paradigm={stats_result.get('paradigm')} "
+          f"vanna_all={vanna_sums['ALL']} levels={len(vanna_levels)}", flush=True)
+    return _volland_data_cache
+
+
+def _rithmic_bars_as_db_format(bars: list[dict]) -> list[dict]:
+    """Adapt in-memory Rithmic bar dicts to match DB query column names."""
+    return [{
+        "bar_idx": b.get("idx"), "bar_open": b.get("open"),
+        "bar_high": b.get("high"), "bar_low": b.get("low"),
+        "bar_close": b.get("close"), "bar_close_price": b.get("close"),
+        "bar_volume": b.get("volume"), "bar_buy_volume": b.get("buy_volume"),
+        "bar_sell_volume": b.get("sell_volume"), "bar_delta": b.get("delta"),
+        "cumulative_delta": b.get("cvd"), "cvd": b.get("cvd"),
+        "ts_start": b.get("ts_start"), "ts_end": b.get("ts_end"),
+        "ts": b.get("ts_end"), "status": b.get("status"),
+    } for b in bars]
+
+
 def _get_vanna_sum(expiration_option: str = "ALL") -> float | None:
     """Get total vanna for given expiration from latest volland snapshot."""
     if not engine:
@@ -2625,14 +2765,23 @@ def get_spy_quote() -> dict:
                 pass
     return result
 
+_0dte_exp_cache: dict = {"date": None, "exp": {}}  # {symbol: exp_str} per day
+
 def get_0dte_exp(symbol: str = "$SPXW.X") -> str:
-    ymd = now_et().date().isoformat()
+    today = now_et().date()
+    if _0dte_exp_cache["date"] == today and symbol in _0dte_exp_cache["exp"]:
+        return _0dte_exp_cache["exp"][symbol]
+    ymd = today.isoformat()
     try:
         encoded = symbol.replace("$", "%24")
         js = api_get(f"/marketdata/options/expirations/{encoded}", timeout=10).json()
         for e in js.get("Expirations", []):
             d = str(e.get("Date") or e.get("Expiration") or "")[:10]
             if d == ymd:
+                if _0dte_exp_cache["date"] != today:
+                    _0dte_exp_cache["date"] = today
+                    _0dte_exp_cache["exp"] = {}
+                _0dte_exp_cache["exp"][symbol] = d
                 return d
     except Exception as e:
         print(f"[exp] {symbol} lookup failed; using today", ymd, "|", e, flush=True)
@@ -2837,7 +2986,7 @@ def pick_centered(df: pd.DataFrame, spot: float, n: int) -> pd.DataFrame:
     return result
 
 # ====== jobs ======
-_MARKET_JOB_TIMEOUT = 55  # seconds — must finish before next 30s cycle + margin
+_MARKET_JOB_TIMEOUT = 90  # seconds — relaxed after Volland cache optimization
 
 def _run_market_job_inner():
     """Actual market job logic. Called from run_market_job with timeout wrapper."""
@@ -4129,9 +4278,9 @@ def _run_setup_check():
     # Check open trades for outcome resolution each cycle
     _check_setup_outcomes(spot, _spx_cycle_high, _spx_cycle_low)
 
-    # Get Volland stats
-    stats_result = db_volland_stats()
-    stats = stats_result.get("stats", {}) if stats_result else {}
+    # ── Volland data from cache (refreshes every 90s, not every 30s cycle) ──
+    vc = _refresh_volland_cache()
+    stats = vc.get("stats", {})
     paradigm = stats.get("paradigm")
 
     # Parse LIS (single value for GEX/AG, both values for BofA)
@@ -4155,36 +4304,19 @@ def _run_setup_check():
         if target_match:
             target = float(target_match.group())
 
-    # Parse aggregated charm for BofA Scalp
+    # Aggregated charm + statistics from cache
+    statistics_raw = vc.get("statistics_raw", {})
+    spy_statistics_raw = vc.get("spy_statistics_raw", {})
     aggregated_charm = None
-    statistics_raw = None
-    spy_statistics_raw = None
-    # Get raw statistics from volland snapshot payload
-    if engine:
-        try:
-            with engine.begin() as conn:
-                snap_row = conn.execute(text("""
-                    SELECT payload FROM volland_snapshots
-                    WHERE payload->>'error_event' IS NULL
-                      AND payload->'statistics' IS NOT NULL
-                    ORDER BY ts DESC LIMIT 1
-                """)).mappings().first()
-            if snap_row:
-                payload = _json_load_maybe(snap_row["payload"])
-                if payload and isinstance(payload, dict):
-                    statistics_raw = payload.get("statistics", {})
-                    spy_statistics_raw = payload.get("spy_statistics", {})
-                    if statistics_raw and isinstance(statistics_raw, dict):
-                        charm_val = statistics_raw.get("aggregatedCharm")
-                        if charm_val is not None:
-                            try:
-                                aggregated_charm = float(charm_val)
-                            except (ValueError, TypeError):
-                                pass
-        except Exception:
-            pass
+    if statistics_raw and isinstance(statistics_raw, dict):
+        charm_val = statistics_raw.get("aggregatedCharm")
+        if charm_val is not None:
+            try:
+                aggregated_charm = float(charm_val)
+            except (ValueError, TypeError):
+                pass
 
-    # Extract DD hedging from Volland stats (for Paradigm Reversal)
+    # Extract DD hedging from cached Volland stats
     dd_hedging = None
     spy_dd_hedging = None
     if statistics_raw and isinstance(statistics_raw, dict):
@@ -4225,21 +4357,11 @@ def _run_setup_check():
     # Pass combined DD string to Paradigm Reversal (instead of SPX-only)
     dd_hedging = _dd_combined_str or dd_hedging
 
-    # Query recent ES range bars (Rithmic) for Paradigm Reversal volume check
-    es_bars = []
-    if engine:
-        try:
-            with engine.begin() as conn:
-                rows = conn.execute(text("""
-                    SELECT bar_volume AS bar_volume, bar_buy_volume, bar_sell_volume, bar_delta,
-                           cumulative_delta, bar_close AS bar_close_price, ts_end AS ts
-                    FROM es_range_bars
-                    WHERE trade_date = :td AND source = 'rithmic'
-                    ORDER BY bar_idx DESC LIMIT 15
-                """), {"td": now_et().strftime("%Y-%m-%d")}).mappings().all()
-                es_bars = list(reversed(rows))  # oldest first
-        except Exception:
-            pass
+    # ES range bars from Rithmic in-memory (no DB query — already in memory, backfilled on restart)
+    from rithmic_es_stream import get_rithmic_bars
+    _rithmic_raw = get_rithmic_bars()
+    _rithmic_db_fmt = _rithmic_bars_as_db_format(_rithmic_raw)
+    es_bars = _rithmic_db_fmt[-15:]  # last 15 bars for Paradigm Reversal
 
     # Calculate max +GEX / -GEX strikes and IV skew from latest_df
     max_plus_gex, max_minus_gex = None, None
@@ -4279,13 +4401,13 @@ def _run_setup_check():
         from app.setup_detector import update_skew_tracker
         skew_change_pct, _ = update_skew_tracker(skew_value, _setup_settings)
 
-    # Refresh vanna cache each cycle (ALL for GEX filter, weekly/monthly for logging)
-    _vanna_cache["all"] = _get_vanna_sum("ALL")
-    _vanna_cache["weekly"] = _get_vanna_sum("THIS_WEEK")
-    _vanna_cache["monthly"] = _get_vanna_sum("THIRTY_NEXT_DAYS")
+    # ── All vanna data from Volland cache (no per-cycle DB queries) ──
+    _vanna_cache["all"] = vc.get("vanna_all")
+    _vanna_cache["weekly"] = vc.get("vanna_weekly")
+    _vanna_cache["monthly"] = vc.get("vanna_monthly")
     _vanna_cache["ts"] = now_et()
 
-    # Extract spot-vol-beta correlation from statistics
+    # Extract spot-vol-beta correlation from cached statistics
     svb_correlation = None
     svb_raw = statistics_raw.get("spot_vol_beta") if statistics_raw and isinstance(statistics_raw, dict) else None
     if svb_raw and isinstance(svb_raw, dict):
@@ -4294,58 +4416,14 @@ def _run_setup_check():
         except (ValueError, TypeError):
             pass
 
-    # Query dominant vanna levels + ES range bars for Vanna Pivot Bounce
-    vanna_levels = _get_dominant_vanna_levels(
-        min_pct=_setup_settings.get("vp_dominant_pct", 12))
-    es_range_bars_vp = []
-    if engine:
-        try:
-            with engine.begin() as conn:
-                rows = conn.execute(text("""
-                    SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
-                           bar_volume, bar_delta, cumulative_delta AS cvd,
-                           ts_start, ts_end, status
-                    FROM es_range_bars
-                    WHERE trade_date = :td AND source = 'rithmic'
-                    ORDER BY bar_idx ASC
-                """), {"td": now_et().strftime("%Y-%m-%d")}).mappings().all()
-                es_range_bars_vp = [dict(r) for r in rows]
-        except Exception as e:
-            print(f"[vanna-pivot] range bars query error: {e}", flush=True)
+    # Dominant vanna levels from cache + ES range bars from Rithmic memory
+    vanna_levels = vc.get("vanna_levels", [])
+    es_range_bars_vp = _rithmic_db_fmt  # full day, already in memory
 
-    # Query 0DTE vanna pin strike for Vanna Butterfly
-    _vanna_pin_strike = None
-    _vanna_pin_value = None
-    _vanna_0dte_ratio = None
-    if engine:
-        try:
-            with engine.begin() as conn:
-                pin_row = conn.execute(text("""
-                    SELECT strike, value::float AS value
-                    FROM volland_exposure_points
-                    WHERE greek = 'vanna' AND expiration_option = 'TODAY'
-                      AND ts_utc = (SELECT MAX(ts_utc) FROM volland_exposure_points
-                                    WHERE greek = 'vanna' AND expiration_option = 'TODAY')
-                    ORDER BY ABS(value::float) DESC LIMIT 1
-                """)).mappings().first()
-                if pin_row:
-                    _vanna_pin_strike = float(pin_row["strike"])
-                    _vanna_pin_value = float(pin_row["value"])
-                # Vanna 0DTE pos/neg ratio (for Vanna Butterfly)
-                vr_row = conn.execute(text("""
-                    SELECT SUM(CASE WHEN value::float > 0 THEN value::float ELSE 0 END) as pos,
-                           SUM(CASE WHEN value::float < 0 THEN value::float ELSE 0 END) as neg
-                    FROM volland_exposure_points
-                    WHERE greek = 'vanna' AND expiration_option = 'TODAY'
-                      AND ts_utc = (SELECT MAX(ts_utc) FROM volland_exposure_points
-                                    WHERE greek = 'vanna' AND expiration_option = 'TODAY')
-                """)).mappings().first()
-                if vr_row and vr_row["pos"] is not None and vr_row["neg"] is not None:
-                    neg = float(vr_row["neg"])
-                    pos = float(vr_row["pos"])
-                    _vanna_0dte_ratio = pos / abs(neg) if neg != 0 else 999.0
-        except Exception:
-            pass
+    # Vanna pin strike + 0DTE ratio from cache
+    _vanna_pin_strike = vc.get("vanna_pin_strike")
+    _vanna_pin_value = vc.get("vanna_pin_value")
+    _vanna_0dte_ratio = vc.get("vanna_0dte_ratio")
 
     # Get chain DataFrame for butterfly pricing
     _chain_for_butterfly = None

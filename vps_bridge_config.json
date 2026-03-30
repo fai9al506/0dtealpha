@@ -1,0 +1,15 @@
+{
+    "sierra_host": "127.0.0.1",
+    "sierra_port": 11099,
+    "railway_api_url": "https://0dtealpha.com",
+    "vps_api_key": "",
+    "es_symbol": "",
+    "vx_symbol": "",
+    "es_scid_file": "C:/SierraChart/Data/ESM26-CME.scid",
+    "vx_scid_file": "C:/SierraChart/Data/VXM26_FUT_CFE.scid",
+    "range_pts": 5.0,
+    "vx_batch_seconds": 10,
+    "heartbeat_seconds": 60,
+    "post_timeout": 10,
+    "stale_timeout_minutes": 5
+}

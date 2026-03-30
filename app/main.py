@@ -18775,6 +18775,48 @@ def vps_heartbeat(request: Request, payload: dict = Body(...)):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.get("/api/vps/es/last")
+def vps_es_last(request: Request):
+    """Return the last stored ES bar timestamp and bar_idx (for gap detection)."""
+    if not _check_vps_auth(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if not engine:
+        return JSONResponse({"error": "no database"}, status_code=503)
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT bar_idx, ts_end, trade_date
+                FROM vps_es_range_bars
+                ORDER BY ts_end DESC LIMIT 1
+            """)).mappings().first()
+        if row:
+            return {"bar_idx": row["bar_idx"], "ts_end": str(row["ts_end"]),
+                    "trade_date": str(row["trade_date"])}
+        return {"bar_idx": None, "ts_end": None, "trade_date": None}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/vps/vix/last")
+def vps_vix_last(request: Request):
+    """Return the last stored VX tick timestamp (for gap detection)."""
+    if not _check_vps_auth(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if not engine:
+        return JSONResponse({"error": "no database"}, status_code=503)
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT ts FROM vps_vix_ticks
+                ORDER BY ts DESC LIMIT 1
+            """)).mappings().first()
+        if row:
+            return {"ts": str(row["ts"])}
+        return {"ts": None}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.get("/api/vps/status")
 def vps_status(session: str = Cookie(default=None)):
     """Get latest VPS bridge status (last heartbeat + bar count)."""

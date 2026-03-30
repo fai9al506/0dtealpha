@@ -922,7 +922,7 @@ def _run_spot_monitor_inner(now):
             exit_call_ask = opt_quote["ask"] if opt_quote else None
 
             # PNL
-            entry_mid = (trade.get("call_bid", 0) + trade.get("call_ask", 0)) / 2
+            entry_mid = ((trade.get("call_bid") or 0) + (trade.get("call_ask") or 0)) / 2
             exit_mid = (exit_call_bid + exit_call_ask) / 2 if exit_call_bid and exit_call_ask else 0
             opt_pnl = ((exit_mid - entry_mid) / entry_mid * 100) if entry_mid > 0 else 0
             stock_pnl = (exit_spot - trade["entry_spot"]) / trade["entry_spot"] * 100
@@ -1709,7 +1709,7 @@ def _run_0dte_monitor_inner(now):
             exit_call_bid = opt_quote["bid"] if opt_quote else None
             exit_call_ask = opt_quote["ask"] if opt_quote else None
 
-            entry_mid = (trade.get("call_bid", 0) + trade.get("call_ask", 0)) / 2
+            entry_mid = ((trade.get("call_bid") or 0) + (trade.get("call_ask") or 0)) / 2
             exit_mid = (exit_call_bid + exit_call_ask) / 2 if exit_call_bid and exit_call_ask else 0
             opt_pnl = ((exit_mid - entry_mid) / entry_mid * 100) if entry_mid > 0 else 0
             stock_pnl = (exit_spot - trade["entry_spot"]) / trade["entry_spot"] * 100

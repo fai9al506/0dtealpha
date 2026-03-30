@@ -332,6 +332,16 @@ async def auth_middleware(request: Request, call_next):
                 return await call_next(request)
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
+    # VPS Data Bridge API — open if no key configured, or check Bearer token
+    if path.startswith("/api/vps/"):
+        vps_key = os.getenv("VPS_API_KEY", "")
+        if not vps_key:
+            return await call_next(request)
+        auth = request.headers.get("Authorization", "")
+        if auth == f"Bearer {vps_key}":
+            return await call_next(request)
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
     # Check session cookie
     session = request.cookies.get("session")
     if not session or not verify_session(session):

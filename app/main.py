@@ -2954,18 +2954,20 @@ def run_market_job():
     """Timeout wrapper for _run_market_job_inner. Prevents hung threads from blocking
     all future cycles. If the inner job takes >55s, it's abandoned and an alert is sent."""
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_run_market_job_inner)
-        try:
-            future.result(timeout=_MARKET_JOB_TIMEOUT)
-        except FuturesTimeout:
-            msg = f"run_market_job exceeded {_MARKET_JOB_TIMEOUT}s timeout — thread abandoned"
-            print(f"[watchdog] {msg}", flush=True)
-            last_run_status["ok"] = False
-            last_run_status["msg"] = f"TIMEOUT after {_MARKET_JOB_TIMEOUT}s"
-            send_telegram(f"🚨 <b>MARKET JOB TIMEOUT</b>\n{msg}")
-        except Exception as e:
-            print(f"[watchdog] market job wrapper error: {e}", flush=True)
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(_run_market_job_inner)
+    try:
+        future.result(timeout=_MARKET_JOB_TIMEOUT)
+    except FuturesTimeout:
+        msg = f"run_market_job exceeded {_MARKET_JOB_TIMEOUT}s timeout — thread abandoned"
+        print(f"[watchdog] {msg}", flush=True)
+        last_run_status["ok"] = False
+        last_run_status["msg"] = f"TIMEOUT after {_MARKET_JOB_TIMEOUT}s"
+        send_telegram(f"🚨 <b>MARKET JOB TIMEOUT</b>\n{msg}")
+    except Exception as e:
+        print(f"[watchdog] market job wrapper error: {e}", flush=True)
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 def run_spy_market_job():
     """Fetch SPY options chain on same interval as SPX."""
@@ -6581,9 +6583,17 @@ def start_scheduler():
         if not (dtime(9, 30) <= t <= dtime(16, 0)):
             return
         try:
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FT
             from app import real_trader
             if real_trader._active_orders:
-                real_trader.poll_order_status()
+                _ex = ThreadPoolExecutor(max_workers=1)
+                _fut = _ex.submit(real_trader.poll_order_status)
+                try:
+                    _fut.result(timeout=10)
+                except _FT:
+                    print("[real-trader] poll_order_status TIMEOUT (10s)", flush=True)
+                finally:
+                    _ex.shutdown(wait=False, cancel_futures=True)
         except Exception:
             pass
     sch.add_job(_real_trade_fast_poll, "interval", seconds=3,

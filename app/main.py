@@ -3774,6 +3774,25 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         result_type = None
         pnl = None
 
+        # Trail params — defined once, used by both ES-based and SPX-based paths
+        _trail_params = {
+            "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
+            "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
+            "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
+            "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
+            "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
+            "SB Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
+            "SB10 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
+            "SB2 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
+            "Delta Absorption": {"mode": "continuous", "activation": 0, "gap": 8},
+        }
+        # VIX Divergence: direction-dependent trail
+        if setup_name == "VIX Divergence":
+            if is_long:
+                _trail_params["VIX Divergence"] = {"mode": "continuous", "activation": 0, "gap": 8}
+            else:
+                _trail_params["VIX Divergence"] = {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5}
+
         # Update per-trade price tracking with cycle extremes
         if _es_based:
             # ES-based setups: scan ES range bars ONE AT A TIME with per-bar
@@ -3865,27 +3884,11 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             trade["_seen_low"] = min(trade.get("_seen_low", _cl), _cl)
             trade["_seen_high"] = max(trade.get("_seen_high", _ch), _ch)
 
+        # Trail params already defined above (before ES/SPX branch).
         # Trailing stop setups: DD Exhaustion, GEX Long, AG Short
         # DD: continuous trail (activation=20, gap=5) — waits for confirmed move before trailing
         # GEX/AG: hybrid trail (BE, continuous trail)
         # Uses cycle low/high (not all-time) since trail level changes each cycle
-        _trail_params = {
-            "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
-            "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
-            "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
-            "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},  # act 15→12: +54pts on 6 trades, 0 worsened (Mar 27 backtest, 54t)
-            "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},  # gap 8→5: was copy-paste from ES Abs (range-bar bug), never SC-studied. 0/13 losers touch activation, gap only affects capture.
-            "SB Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
-            "SB10 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
-            "SB2 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
-            "Delta Absorption": {"mode": "continuous", "activation": 0, "gap": 8},  # IMM trail: stop = max(maxProfit-8, -8)
-        }
-        # VIX Divergence: direction-dependent trail
-        if setup_name == "VIX Divergence":
-            if is_long:
-                _trail_params["VIX Divergence"] = {"mode": "continuous", "activation": 0, "gap": 8}  # IMM trail gap=8
-            else:
-                _trail_params["VIX Divergence"] = {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5}  # BE@8, trail@10/g5
         _tp = _trail_params.get(setup_name)
         # ES-based trailing setups: trail already advanced per-bar above.
         # Only run trail logic here for SPX setups. Still need broker stop updates for ES.

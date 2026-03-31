@@ -290,10 +290,29 @@ def read_scid_ticks(filepath, since_ts=None):
     log.info(f"Reading {filepath.name}: {num_records:,} records")
 
     with open(filepath, 'rb') as f:
-        f.seek(SCID_HEADER_SIZE)
+        # Binary search to skip ahead if since_ts is set (avoids scanning millions of records)
+        start_record = 0
+        if since_ts and num_records > 1000:
+            lo, hi = 0, num_records - 1
+            # Convert since_ts (naive UTC) back to ET microseconds for comparison
+            since_et = pytz.utc.localize(since_ts).astimezone(ET).replace(tzinfo=None)
+            target_us = int((since_et - SC_EPOCH).total_seconds() * 1_000_000)
+            while lo < hi:
+                mid = (lo + hi) // 2
+                f.seek(SCID_HEADER_SIZE + mid * SCID_RECORD_SIZE)
+                data = f.read(SCID_RECORD_SIZE)
+                dt_int = struct.unpack_from('<q', data, 0)[0]
+                if dt_int <= target_us:
+                    lo = mid + 1
+                else:
+                    hi = mid
+            start_record = max(0, lo - 10)  # small buffer
+            log.info(f"  Binary search: skipping to record {start_record:,} / {num_records:,}")
+
+        f.seek(SCID_HEADER_SIZE + start_record * SCID_RECORD_SIZE)
         count = 0
 
-        for i in range(num_records):
+        for i in range(start_record, num_records):
             data = f.read(SCID_RECORD_SIZE)
             if len(data) < SCID_RECORD_SIZE:
                 break
@@ -416,7 +435,7 @@ class GapBackfiller:
             log.info(f"Last ES bar in Railway: idx={last.get('bar_idx')} ts_end={last_ts}")
         else:
             last_ts = datetime(2026, 3, 23)  # ESM26 (June) contract — backfill from Mar 23
-            log.info("No ES bars in Railway — backfilling from 2026-01-01")
+            log.info("No ES bars in Railway — backfilling from 2026-03-23")
 
         # Read .scid ticks after last_ts and build bars
         builder = RangeBarBuilder(self.range_pts)
@@ -485,7 +504,7 @@ class GapBackfiller:
             log.info(f"Last VX tick in Railway: ts={last_ts}")
         else:
             last_ts = datetime(2026, 3, 23)
-            log.info("No VX ticks in Railway — backfilling from 2026-01-01")
+            log.info("No VX ticks in Railway — backfilling from 2026-03-23")
 
         # Read .scid ticks after last_ts
         batch = []

@@ -415,7 +415,7 @@ class GapBackfiller:
                 last_ts = last_ts.replace(tzinfo=None)
             log.info(f"Last ES bar in Railway: idx={last.get('bar_idx')} ts_end={last_ts}")
         else:
-            last_ts = datetime(2026, 1, 1)  # No data — backfill from Jan 1
+            last_ts = datetime(2026, 3, 23)  # ESM26 (June) contract — backfill from Mar 23
             log.info("No ES bars in Railway — backfilling from 2026-01-01")
 
         # Read .scid ticks after last_ts and build bars
@@ -484,7 +484,7 @@ class GapBackfiller:
                 last_ts = last_ts.replace(tzinfo=None)
             log.info(f"Last VX tick in Railway: ts={last_ts}")
         else:
-            last_ts = datetime(2026, 1, 1)
+            last_ts = datetime(2026, 3, 23)
             log.info("No VX ticks in Railway — backfilling from 2026-01-01")
 
         # Read .scid ticks after last_ts

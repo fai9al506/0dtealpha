@@ -134,10 +134,11 @@ def _es_session_date():
     return t.strftime("%Y-%m-%d")
 
 def _session_date_from_ts(ts):
-    """Session date from a naive timestamp (assumed exchange time)."""
-    if ts.hour >= 18:
-        return (ts + timedelta(days=1)).date()
-    return ts.date()
+    """Session date from a naive UTC timestamp. Converts to ET first."""
+    ts_et = pytz.utc.localize(ts).astimezone(ET).replace(tzinfo=None)
+    if ts_et.hour >= 18:
+        return (ts_et + timedelta(days=1)).date()
+    return ts_et.date()
 
 def _market_open():
     t = _now_et()
@@ -301,7 +302,11 @@ def read_scid_ticks(filepath, since_ts=None):
             if dt_int <= 0:
                 continue
 
-            ts = SC_EPOCH + timedelta(microseconds=dt_int)
+            # Sierra .scid timestamps are in exchange local time (ET), NOT UTC.
+            # Convert to UTC for consistency with Rithmic data.
+            ts_naive = SC_EPOCH + timedelta(microseconds=dt_int)
+            ts_et = ET.localize(ts_naive)
+            ts = ts_et.astimezone(pytz.utc).replace(tzinfo=None)  # naive UTC
 
             if since_ts and ts <= since_ts:
                 continue
@@ -729,10 +734,23 @@ class VPSDataBridge:
         price_raw = msg.get("Price", 0)
         volume = msg.get("Volume", 0)
         at_bid_or_ask = msg.get("AtBidOrAsk", 0)
-        ts = msg.get("DateTime", datetime.now(ET).isoformat())
+        raw_ts = msg.get("DateTime", "")
 
         if not volume or not price_raw:
             return
+
+        # Sierra sends DateTime in ET (exchange time). Convert to UTC for DB consistency.
+        if raw_ts:
+            try:
+                naive = datetime.fromisoformat(raw_ts) if isinstance(raw_ts, str) else raw_ts
+                if not hasattr(naive, 'tzinfo') or naive.tzinfo is None:
+                    ts = ET.localize(naive).astimezone(pytz.utc).isoformat()
+                else:
+                    ts = naive.astimezone(pytz.utc).isoformat()
+            except Exception:
+                ts = datetime.now(pytz.utc).isoformat()
+        else:
+            ts = datetime.now(pytz.utc).isoformat()
 
         price = price_raw / self.PRICE_MULT
 

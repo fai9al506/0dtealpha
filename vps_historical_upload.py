@@ -79,7 +79,9 @@ def read_scid_ticks(filepath, since_date=None, progress_every=1_000_000):
                 skipped += 1
                 continue
 
-            ts = SC_EPOCH + timedelta(microseconds=dt_int)
+            # Sierra .scid timestamps are in exchange local time (ET). Convert to UTC.
+            ts_naive = SC_EPOCH + timedelta(microseconds=dt_int)
+            ts = ET.localize(ts_naive).astimezone(pytz.utc).replace(tzinfo=None)
 
             # Filter by date
             if since_date and ts.date() < since_date:
@@ -117,9 +119,8 @@ def read_scid_ticks(filepath, since_date=None, progress_every=1_000_000):
 # ─── ES Session Date ─────────────────────────────────────────────────────────
 
 def _session_date(ts):
-    """ES session date: 6 PM ET boundary."""
-    # Convert naive UTC-like timestamp to ET
-    ts_et = ts  # Sierra stores in exchange time (CT/ET depending on symbol)
+    """ES session date: 6 PM ET boundary. ts is naive UTC after conversion."""
+    ts_et = pytz.utc.localize(ts).astimezone(ET).replace(tzinfo=None)
     if ts_et.hour >= 18:
         return (ts_et + timedelta(days=1)).date()
     return ts_et.date()

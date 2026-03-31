@@ -755,10 +755,19 @@ class VPSDataBridge:
         if not volume or not price_raw:
             return
 
-        # Sierra DTC sends DateTime as Unix timestamp (UTC already).
-        # Pass through as-is — no timezone conversion needed for live stream.
+        # Sierra DTC compact trade messages send DateTime in ET (exchange time).
+        # The snapshot uses Unix UTC, but streaming trades use SCDateTime in ET.
+        # Convert ET → UTC for DB consistency with Rithmic.
         if raw_ts:
-            ts = raw_ts if isinstance(raw_ts, str) else str(raw_ts)
+            try:
+                if isinstance(raw_ts, (int, float)):
+                    # SCDateTime: seconds since 1899-12-30 in ET
+                    ts = datetime.now(pytz.utc).isoformat()  # fallback for numeric
+                else:
+                    naive = datetime.fromisoformat(str(raw_ts))
+                    ts = ET.localize(naive).astimezone(pytz.utc).isoformat()
+            except Exception:
+                ts = datetime.now(pytz.utc).isoformat()
         else:
             ts = datetime.now(pytz.utc).isoformat()
 

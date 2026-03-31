@@ -79,9 +79,8 @@ def read_scid_ticks(filepath, since_date=None, progress_every=1_000_000):
                 skipped += 1
                 continue
 
-            # Sierra .scid timestamps are in exchange local time (ET). Convert to UTC.
-            ts_naive = SC_EPOCH + timedelta(microseconds=dt_int)
-            ts = ET.localize(ts_naive).astimezone(pytz.utc).replace(tzinfo=None)
+            # Sierra .scid timestamps are in UTC (after Sierra timezone fix).
+            ts = SC_EPOCH + timedelta(microseconds=dt_int)
 
             # Filter by date
             if since_date and ts.date() < since_date:

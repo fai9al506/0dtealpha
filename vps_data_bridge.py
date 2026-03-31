@@ -321,11 +321,8 @@ def read_scid_ticks(filepath, since_ts=None):
             if dt_int <= 0:
                 continue
 
-            # Sierra .scid timestamps are in exchange local time (ET), NOT UTC.
-            # Convert to UTC for consistency with Rithmic data.
-            ts_naive = SC_EPOCH + timedelta(microseconds=dt_int)
-            ts_et = ET.localize(ts_naive)
-            ts = ts_et.astimezone(pytz.utc).replace(tzinfo=None)  # naive UTC
+            # Sierra .scid timestamps are in UTC (after Sierra timezone fix).
+            ts = SC_EPOCH + timedelta(microseconds=dt_int)
 
             if since_ts and ts <= since_ts:
                 continue
@@ -758,16 +755,10 @@ class VPSDataBridge:
         if not volume or not price_raw:
             return
 
-        # Sierra sends DateTime in ET (exchange time). Convert to UTC for DB consistency.
+        # Sierra DTC sends DateTime as Unix timestamp (UTC already).
+        # Pass through as-is — no timezone conversion needed for live stream.
         if raw_ts:
-            try:
-                naive = datetime.fromisoformat(raw_ts) if isinstance(raw_ts, str) else raw_ts
-                if not hasattr(naive, 'tzinfo') or naive.tzinfo is None:
-                    ts = ET.localize(naive).astimezone(pytz.utc).isoformat()
-                else:
-                    ts = naive.astimezone(pytz.utc).isoformat()
-            except Exception:
-                ts = datetime.now(pytz.utc).isoformat()
+            ts = raw_ts if isinstance(raw_ts, str) else str(raw_ts)
         else:
             ts = datetime.now(pytz.utc).isoformat()
 

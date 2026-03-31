@@ -1697,83 +1697,6 @@ def _restore_open_trades():
         traceback.print_exc()
 
 
-def _alert_restart_open_positions():
-    """On restart, alert user if real_trader has open positions.
-
-    Trail management dies on restart — TS stop orders stay at initial SL.
-    Instead of auto-updating (risky race conditions), send urgent Telegram
-    so the user can manually verify and adjust stops on TS.
-    """
-    try:
-        from app import real_trader
-    except ImportError:
-        return
-    if not real_trader._active_orders:
-        return
-
-    _trail_params = {
-        "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
-        "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
-        "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
-        "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
-        "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
-        "ES Absorption": {"mode": "fixed", "sl": 8, "tp": 10},
-        "Delta Absorption": {"mode": "continuous", "activation": 0, "gap": 8},
-    }
-
-    lines = []
-    for lid, order in real_trader._active_orders.items():
-        if order.get("status") != "filled":
-            continue
-        setup = order.get("setup_name", "?")
-        direction = order.get("direction", "?")
-        fill = order.get("fill_price", 0)
-        cur_stop = order.get("current_stop", 0)
-        acct = order.get("account_id", "?")
-        max_fav = order.get("max_favorable", 0)
-
-        # Compute what trail stop SHOULD be based on stored max_favorable
-        tp = _trail_params.get(setup)
-        suggested_stop = cur_stop
-        if tp and tp.get("mode") in ("continuous", "hybrid") and fill:
-            is_long = direction.lower() in ("long", "bullish")
-            trail_lock = None
-            if tp["mode"] == "continuous" and max_fav >= tp["activation"]:
-                trail_lock = max_fav - tp["gap"]
-            elif tp["mode"] == "hybrid":
-                if max_fav >= tp["activation"]:
-                    trail_lock = max_fav - tp["gap"]
-                elif max_fav >= tp.get("be_trigger", 999):
-                    trail_lock = 0
-            if trail_lock is not None:
-                if is_long:
-                    suggested_stop = fill + trail_lock
-                else:
-                    suggested_stop = fill - trail_lock
-
-        stop_gap = abs(suggested_stop - cur_stop)
-        status_icon = "!!" if stop_gap > 2 else "OK"
-
-        lines.append(
-            f"{status_icon} #{lid} {setup} {direction}\n"
-            f"   acct={acct} fill={fill:.2f}\n"
-            f"   TS stop={cur_stop:.2f} | should be={suggested_stop:.2f} (gap={stop_gap:.1f})\n"
-            f"   max_fav={max_fav:.1f}"
-        )
-
-    if not lines:
-        return
-
-    msg = (
-        "<b>RESTART: Open real positions detected!</b>\n\n"
-        "Trail management was interrupted. Verify TS stops:\n\n"
-        + "\n\n".join(lines) +
-        "\n\n<b>Action: Check TS and update stops manually if needed.</b>"
-    )
-    print(f"[restart-alert] {len(lines)} open positions found, sending alert", flush=True)
-    send_telegram_setups(msg)
-
-
 def _save_cooldowns():
     """Persist current cooldown state to DB."""
     if not engine:
@@ -2844,6 +2767,22 @@ def market_open_now() -> bool:
     return dtime(9, 30) <= t.time() <= dtime(16, 0)
 
 # ====== TS helpers ======
+def _get_es_price_fallback() -> float | None:
+    """REST fallback for ES price when quote stream is dead.
+    Single API call to TS /marketdata/quotes/@ES. Rate limit: 250/5min."""
+    try:
+        js = api_get("/marketdata/quotes/%40ES", timeout=5).json()
+        for q in js.get("Quotes", []):
+            last = q.get("Last")
+            if last:
+                px = float(last)
+                print(f"[es-price] REST fallback: @ES = {px}", flush=True)
+                return px
+    except Exception as e:
+        print(f"[es-price] REST fallback failed: {e}", flush=True)
+    return None
+
+
 def get_spx_quote() -> dict:
     """Return {last, high, low, vix, vix3m} from TS API quote. Fetches SPX + VIX + VIX3M in one call."""
     # Try $VIX3M.X first; fall back to legacy $VXV.X if not found
@@ -4709,6 +4648,8 @@ def _run_setup_check():
                             es_px = None
                             with _es_quote_lock:
                                 es_px = _es_quote.get("last_price")
+                            if not es_px:
+                                es_px = _get_es_price_fallback()
                             if es_px and stop_lvl is not None:
                                 stop_dist = abs(r["spot"] - stop_lvl)
                                 target_dist = abs(target_lvl - r["spot"]) if target_lvl else None
@@ -4750,6 +4691,8 @@ def _run_setup_check():
                             es_px = None
                             with _es_quote_lock:
                                 es_px = _es_quote.get("last_price")
+                            if not es_px:
+                                es_px = _get_es_price_fallback()
                             if es_px and stop_lvl is not None:
                                 stop_dist = abs(r["spot"] - stop_lvl)
                                 # Opt2: trail only, no partial TP at +10 (backtest: +316 pts more, less DD)
@@ -5423,6 +5366,8 @@ def _run_absorption_detection(bars: list) -> dict | None:
                     if not es_px:
                         with _es_delta_lock:
                             es_px = _es_delta.get("last_price")
+                    if not es_px:
+                        es_px = _get_es_price_fallback()
                     if es_px:
                         print(f"[auto-trader] ES Absorption using fallback price: {es_px}", flush=True)
                 if es_px and stop_lvl is not None:
@@ -7002,12 +6947,6 @@ def on_startup():
         real_trader_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[real-trader] init error (non-fatal): {e}", flush=True)
-    # RESTART ALERT: if real_trader has open positions, send urgent Telegram
-    # so user can manually verify/update TS stops (trail state may be stale)
-    try:
-        _alert_restart_open_positions()
-    except Exception as e:
-        print(f"[restart-alert] error (non-fatal): {e}", flush=True)
     # Stock GEX scanner — reduced schedule (was 200+ calls/30min, now ~236/day)
     # Weekly: 3x/day (10, 12, 15 ET), Opex: 1x/day (10 ET), Spot: every 5 min (1 batch call)
     # No startup scans. 5s delay between stocks. Independent from 0DTE pipeline.

@@ -7,6 +7,8 @@
     "vx_symbol": "",
     "es_scid_file": "C:/SierraChart/Data/ESM26-CME.scid",
     "vx_scid_file": "C:/SierraChart/Data/VXM26_FUT_CFE.scid",
+    "telegram_bot_token": "8544971756:AAGsdiBWXCZtPtKiUfhPddsd3M93Vwv8X",
+    "telegram_chat_id": "-1003835706217",
     "range_pts": 5.0,
     "vx_batch_seconds": 10,
     "heartbeat_seconds": 60,

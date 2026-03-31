@@ -81,6 +81,8 @@ DEFAULT_CONFIG = {
     "vx_symbol": "VXM26.CFE",
     "es_scid_file": "C:/SierraChart/Data/ESM26-CME.scid",
     "vx_scid_file": "C:/SierraChart/Data/VXM26_FUT_CFE.scid",
+    "telegram_bot_token": "",
+    "telegram_chat_id": "",
     "range_pts": 5.0,
     "vx_batch_seconds": 10,
     "heartbeat_seconds": 60,
@@ -139,6 +141,20 @@ def _session_date_from_ts(ts):
     if ts_et.hour >= 18:
         return (ts_et + timedelta(days=1)).date()
     return ts_et.date()
+
+def _send_telegram(cfg, message):
+    """Send a Telegram alert. Silent fail if not configured."""
+    token = cfg.get("telegram_bot_token", "")
+    chat_id = cfg.get("telegram_chat_id", "")
+    if not token or not chat_id:
+        return
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        requests.post(url, json={"chat_id": chat_id, "text": f"🖥 VPS Bridge: {message}"},
+                      timeout=5)
+    except Exception as e:
+        log.warning(f"Telegram alert failed: {e}")
+
 
 def _market_open():
     t = _now_et()
@@ -634,6 +650,8 @@ class VPSDataBridge:
         if logon.get("Type") != LOGON_RESPONSE:
             raise ConnectionError(f"Expected LOGON_RESPONSE, got: {logon}")
         log.info(f"DTC logon OK: {logon.get('ServerName', 'unknown')}")
+        if self._backfill_count > 0:
+            _send_telegram(self.cfg, "🟢 Sierra DTC reconnected. Backfilling gaps...")
 
         self._connected = True
         self._running = True
@@ -708,6 +726,7 @@ class VPSDataBridge:
             except websocket.WebSocketConnectionClosedException:
                 if self._running:
                     log.error("DTC WebSocket closed unexpectedly")
+                    _send_telegram(self.cfg, "🔴 Sierra DTC disconnected! Reconnecting...")
                 break
             except Exception as e:
                 if self._running:
@@ -848,9 +867,9 @@ class VPSDataBridge:
         now = time.time()
         es_stale = (now - self._last_es_tick_time) > self._stale_timeout
         if es_stale:
-            log.warning(
-                f"STALE: No ES ticks for {(now - self._last_es_tick_time)/60:.1f} min"
-            )
+            mins = (now - self._last_es_tick_time) / 60
+            log.warning(f"STALE: No ES ticks for {mins:.1f} min")
+            _send_telegram(self.cfg, f"⚠️ STALE DATA — No ES ticks for {mins:.0f} min. Reconnecting...")
         return es_stale
 
     # ── Main Loop ─────────────────────────────────────────────────────────────

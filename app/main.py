@@ -2718,7 +2718,7 @@ def ts_access_token() -> str:
             "client_secret": SECRET,
             "scope": "openid profile MarketData ReadAccount Trade OptionSpreads offline_access",
         },
-        timeout=15,
+        timeout=(5, 15),  # 5s connect, 15s read
     )
     if r.status_code >= 400:
         raise RuntimeError(f"token refresh [{r.status_code}] {r.text[:300]}")
@@ -2730,9 +2730,33 @@ def ts_access_token() -> str:
     print("[auth] token refreshed; expires_in:", tok.get("expires_in"), flush=True)
     return _access_token
 
+# Shared HTTP session for TS API — connection pooling with periodic refresh
+_ts_http_session: requests.Session | None = None
+_ts_http_session_created: float = 0.0
+_TS_SESSION_MAX_AGE = 1800  # refresh session every 30 min to prevent stale connections
+
+def _get_ts_session() -> requests.Session:
+    """Get or create the shared TS API HTTP session. Recreated every 30 min."""
+    global _ts_http_session, _ts_http_session_created
+    now = time.time()
+    if _ts_http_session is None or (now - _ts_http_session_created) > _TS_SESSION_MAX_AGE:
+        if _ts_http_session is not None:
+            try:
+                _ts_http_session.close()
+            except Exception:
+                pass
+        _ts_http_session = requests.Session()
+        _ts_http_session_created = now
+        print(f"[http] new TS API session (age limit {_TS_SESSION_MAX_AGE}s)", flush=True)
+    return _ts_http_session
+
 def api_get(path, params=None, stream=False, timeout=10):
+    # Use (connect_timeout, read_timeout) tuple — prevents hanging on stale TCP connections
+    if isinstance(timeout, (int, float)):
+        timeout = (5, timeout)  # 5s connect, original value as read timeout
+    sess = _get_ts_session()
     def do_req(h):
-        return requests.get(f"{BASE}{path}", headers=h, params=params or {}, timeout=timeout, stream=stream)
+        return sess.get(f"{BASE}{path}", headers=h, params=params or {}, timeout=timeout, stream=stream)
     token = ts_access_token()
     headers = {"Authorization": f"Bearer {token}"}
     r = do_req(headers)

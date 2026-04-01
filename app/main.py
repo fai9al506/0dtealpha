@@ -4400,12 +4400,15 @@ def _run_setup_check():
 
     # Check open trades for outcome resolution each cycle
     _ts0 = time.time()
+    print(f"[timing-debug] setup_check START: {len(_setup_open_trades)} open trades", flush=True)
     _check_setup_outcomes(spot, _spx_cycle_high, _spx_cycle_low)
     _ts_outcomes = time.time()
+    print(f"[timing-debug] outcomes done in {_ts_outcomes - _ts0:.1f}s", flush=True)
 
     # ── Volland data from cache (refreshes every 90s, not every 30s cycle) ──
     vc = _refresh_volland_cache()
     _ts_volland = time.time()
+    print(f"[timing-debug] volland_cache done in {_ts_volland - _ts_outcomes:.1f}s", flush=True)
     stats = vc.get("stats", {})
     paradigm = stats.get("paradigm")
 
@@ -4557,6 +4560,8 @@ def _run_setup_check():
         if latest_df is not None and not latest_df.empty:
             _chain_for_butterfly = latest_df.copy()
 
+    _ts_pre_detect = time.time()
+    print(f"[timing-debug] pre-detect: dd_parse+volland_parse took {_ts_pre_detect - _ts_volland:.1f}s", flush=True)
     from app.setup_detector import check_setups as _check_setups_fn
     result_wrappers = _check_setups_fn(
         spot, paradigm, lis, target, max_plus_gex, max_minus_gex, _setup_settings,
@@ -4572,6 +4577,8 @@ def _run_setup_check():
         svb_correlation=svb_correlation,
         vanna_0dte_ratio=_vanna_0dte_ratio,
     )
+    _ts_post_detect = time.time()
+    print(f"[timing-debug] check_setups returned {len(result_wrappers)} results in {_ts_post_detect - _ts_pre_detect:.1f}s", flush=True)
     for rw in result_wrappers:
         setup_name = rw["result"]["setup_name"]
         grade = rw["result"]["grade"]

@@ -1737,6 +1737,21 @@ _spx_session = {"high": None, "low": None, "date": None}  # previous poll's sess
 _spx_cycle_high = None  # derived cycle high (max of spot & any new session high)
 _spx_cycle_low = None   # derived cycle low  (min of spot & any new session low)
 _last_known_spot = None  # cached spot for EOD summary fallback
+
+# Broker operations executor — fire-and-forget for TS API calls (close_trade, update_stop, place_trade)
+# These calls were blocking the market job (up to 150s of API calls inside a 90s watchdog).
+# Outcome detection is in-memory; broker cleanup is a side effect that can run async.
+from concurrent.futures import ThreadPoolExecutor as _BrokerTPE
+_broker_executor = _BrokerTPE(max_workers=3, thread_name_prefix="broker-bg")
+
+def _broker_submit(fn, *args, **kwargs):
+    """Submit a broker operation to background thread. Fire-and-forget."""
+    def _wrapper():
+        try:
+            fn(*args, **kwargs)
+        except Exception as e:
+            print(f"[broker-bg] {fn.__name__} error: {e}", flush=True)
+    _broker_executor.submit(_wrapper)
 _daily_gap_pts = None    # today's gap = open - prev close (set once per day)
 _daily_gap_date = None   # date when gap was calculated (reset daily)
 _vanna_cache = {"all": None, "weekly": None, "monthly": None, "ts": None}  # refreshed each 30s cycle
@@ -4212,7 +4227,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                         at_order = auto_trader._active_orders.get(log_id)
                         if at_order and at_order.get("fill_price"):
                             es_stop = at_order["fill_price"] + (stop_lvl - entry_price)
-                            auto_trader.update_stop(log_id, round(es_stop, 2))
+                            _broker_submit(auto_trader.update_stop, log_id, round(es_stop, 2))
                 except Exception:
                     pass
                 # Real trader: update trail
@@ -4223,7 +4238,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                         rt_order = real_trader._active_orders.get(log_id)
                         if rt_order and rt_order.get("fill_price"):
                             es_stop = rt_order["fill_price"] + (stop_lvl - entry_price)
-                            real_trader.update_stop(log_id, round(es_stop, 2))
+                            _broker_submit(real_trader.update_stop, log_id, round(es_stop, 2))
                 except Exception:
                     pass
             # Check trailing stop hit
@@ -4346,27 +4361,24 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 except Exception as db_err:
                     print(f"[outcome] DB persist error: {db_err}", flush=True)
 
-            # Auto-trade: close ES position on outcome
-            try:
-                from app import auto_trader
-                if log_id:
-                    auto_trader.close_trade(log_id, result_type)
-            except Exception:
-                pass
-            # Options trade: close option position on outcome
-            try:
-                from app import options_trader
-                if log_id:
-                    options_trader.close_trade(log_id, result_type)
-            except Exception:
-                pass
-            # Real trader: close position on outcome
-            try:
-                from app import real_trader
-                if log_id:
-                    real_trader.close_trade(log_id, result_type)
-            except Exception:
-                pass
+            # Broker cleanup: fire-and-forget (outcome already decided in-memory)
+            # Orphan check (every 5min) + EOD flatten (15:50) catch any missed closes
+            if log_id:
+                try:
+                    from app import auto_trader
+                    _broker_submit(auto_trader.close_trade, log_id, result_type)
+                except Exception:
+                    pass
+                try:
+                    from app import options_trader
+                    _broker_submit(options_trader.close_trade, log_id, result_type)
+                except Exception:
+                    pass
+                try:
+                    from app import real_trader
+                    _broker_submit(real_trader.close_trade, log_id, result_type)
+                except Exception:
+                    pass
 
             # Move to resolved list
             resolved = {**trade, "result_type": result_type, "pnl": pnl, "elapsed_min": elapsed_min,
@@ -4686,7 +4698,7 @@ def _run_setup_check():
                     _skip_auto_trade = not _passes_live
                     if _skip_auto_trade:
                         print(f"[auto-trader] SKIPPED {setup_name} {r['direction']}: live filter blocked (align={r.get('greek_alignment',0):+d})", flush=True)
-                    # Auto-trade: place MES SIM order (skip if filters blocked)
+                    # Auto-trade: place MES SIM order (fire-and-forget, skip if filters blocked)
                     if not _skip_auto_trade:
                         try:
                             from app import auto_trader
@@ -4705,7 +4717,7 @@ def _run_setup_check():
                                 else:
                                     full_tgt = r.get("target") or r.get("bofa_target_level")
                                     full_target_dist = abs(full_tgt - r["spot"]) if full_tgt else target_dist
-                                auto_trader.place_trade(
+                                _broker_submit(auto_trader.place_trade,
                                     setup_log_id=_current_setup_log.get(setup_name),
                                     setup_name=setup_name, direction=r["direction"],
                                     es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
@@ -4718,18 +4730,18 @@ def _run_setup_check():
                                 print(f"[auto-trader] SKIPPED {setup_name}: stop_lvl is None", flush=True)
                         except Exception as e:
                             print(f"[auto-trader] place error: {e}", flush=True)
-                    # Options trader: buy 0DTE option on all setups (behind Greek filter)
+                    # Options trader: buy 0DTE option on all setups (fire-and-forget)
                     if not _skip_auto_trade:
                         try:
                             from app import options_trader
-                            options_trader.place_trade(
+                            _broker_submit(options_trader.place_trade,
                                 setup_log_id=_current_setup_log.get(setup_name),
                                 setup_name=setup_name, direction=r["direction"],
                                 spot=r["spot"],
                             )
                         except Exception as e:
                             print(f"[options] place error: {e}", flush=True)
-                    # Real trader: MES REAL accounts (SC only, direction-routed)
+                    # Real trader: MES REAL accounts (SC only, fire-and-forget)
                     if not _skip_auto_trade and setup_name == "Skew Charm":
                         try:
                             from app import real_trader
@@ -4741,7 +4753,7 @@ def _run_setup_check():
                             if es_px and stop_lvl is not None:
                                 stop_dist = abs(r["spot"] - stop_lvl)
                                 # Opt2: trail only, no partial TP at +10 (backtest: +316 pts more, less DD)
-                                real_trader.place_trade(
+                                _broker_submit(real_trader.place_trade,
                                     setup_log_id=_current_setup_log.get(setup_name),
                                     setup_name=setup_name, direction=r["direction"],
                                     es_price=es_px, target_pts=None, stop_pts=stop_dist,
@@ -6906,9 +6918,9 @@ def start_scheduler():
                     hour=12, minute=0, timezone=NY, id="stock_gex_weekly_12", coalesce=True, max_instances=1)
         sch.add_job(stock_gex_scanner.run_weekly_scan, "cron",
                     hour=15, minute=0, timezone=NY, id="stock_gex_weekly_15", coalesce=True, max_instances=1)
-        # Opex GEX: 10:00 ET only
+        # Opex GEX: 10:30 ET (staggered from weekly 10:00 to avoid TS API rate limit collision)
         sch.add_job(stock_gex_scanner.run_opex_scan, "cron",
-                    hour=10, minute=0, timezone=NY, id="stock_gex_opex", coalesce=True, max_instances=1)
+                    hour=10, minute=30, timezone=NY, id="stock_gex_opex", coalesce=True, max_instances=1)
         # Spot monitor: every 5 min (1 batch API call for all stocks)
         sch.add_job(stock_gex_scanner.run_spot_monitor, "interval",
                     minutes=5, id="stock_gex_spot", coalesce=True, max_instances=1)

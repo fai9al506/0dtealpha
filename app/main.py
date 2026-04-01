@@ -3077,7 +3077,9 @@ def _run_market_job_inner():
             last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
             print("[pull] skipped (closed)", last_run_status["ts"], flush=True)
             return
+        _t0 = time.time()
         quote = get_spx_quote()
+        _t_quote = time.time()
         spot = quote["last"]
         sess_high = quote["high"]
         sess_low = quote["low"]
@@ -3140,8 +3142,11 @@ def _run_market_job_inner():
         if cycle_hi != spot or cycle_lo != spot:
             print(f"[pull] cycle extremes: spot={spot:.2f} hi={cycle_hi:.2f} lo={cycle_lo:.2f} (sess H={sess_high} L={sess_low})", flush=True)
 
+        _t_pre_chain = time.time()
         exp  = get_0dte_exp()
+        _t_exp = time.time()
         rows = get_chain_rows(exp, spot)
+        _t_chain = time.time()
         raw_count = len(rows)
         df   = pick_centered(to_side_by_side(rows), spot, TARGET_STRIKES)
         final_count = len(df)
@@ -3164,11 +3169,13 @@ def _run_market_job_inner():
         print("[pull] OK", last_run_status["msg"], flush=True)
 
         # Check alerts after successful data pull
+        _t_pre_alerts = time.time()
         try:
             check_alerts()
             send_scheduled_summary()
         except Exception as alert_err:
             print(f"[alerts] error in check: {alert_err}", flush=True)
+        _t_alerts = time.time()
 
         # Check trading setups
         try:
@@ -3176,6 +3183,10 @@ def _run_market_job_inner():
         except Exception as setup_err:
             import traceback
             print(f"[setups] error in check: {setup_err}\n{traceback.format_exc()}", flush=True)
+        _t_end = time.time()
+        _total = _t_end - _t0
+        # Always log timing breakdown so we can diagnose slow cycles
+        print(f"[timing] total={_total:.1f}s | quote={_t_quote - _t0:.1f}s exp={_t_exp - _t_pre_chain:.1f}s chain={_t_chain - _t_exp:.1f}s alerts={_t_alerts - _t_pre_alerts:.1f}s setups={_t_end - _t_alerts:.1f}s", flush=True)
     except Exception as e:
         last_run_status = {"ts": fmt_et(now_et()), "ok": False, "msg": f"error: {e}"}
         print("[pull] ERROR", e, flush=True)
@@ -4364,10 +4375,13 @@ def _run_setup_check():
     _compute_daily_gap(spot)
 
     # Check open trades for outcome resolution each cycle
+    _ts0 = time.time()
     _check_setup_outcomes(spot, _spx_cycle_high, _spx_cycle_low)
+    _ts_outcomes = time.time()
 
     # ── Volland data from cache (refreshes every 90s, not every 30s cycle) ──
     vc = _refresh_volland_cache()
+    _ts_volland = time.time()
     stats = vc.get("stats", {})
     paradigm = stats.get("paradigm")
 
@@ -4718,6 +4732,8 @@ def _run_setup_check():
     # Persist cooldown state after each evaluation cycle
     if result_wrappers:
         _save_cooldowns()
+    _ts_end = time.time()
+    print(f"[timing-setups] outcomes={_ts_outcomes - _ts0:.1f}s volland_cache={_ts_volland - _ts_outcomes:.1f}s detectors={_ts_end - _ts_volland:.1f}s", flush=True)
 
 # ====== SPX 1-MIN OHLC (for backtesting — real tick-based H/L) ======
 _spx_ohlc_last_ts = None  # track last saved bar timestamp to avoid duplicates

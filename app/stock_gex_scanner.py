@@ -19,28 +19,11 @@ ET = ZoneInfo("US/Eastern")
 # ── Config ──────────────────────────────────────────────────────────
 
 DEFAULT_STOCKS = [
-    # Mega-cap tech
-    "AAPL", "MSFT", "GOOGL", "GOOG", "META", "NVDA", "AMZN", "NFLX", "TSLA",
-    # Semis
-    "AMD", "INTC", "MU", "QCOM", "AVGO", "SMCI",
-    # Fintech / payments
-    "PYPL", "SQ", "SOFI", "COIN", "AFRM", "UPST",
-    # Social / consumer
-    "SNAP", "SHOP", "ROKU", "DKNG", "RBLX", "LULU", "SNOW",
-    # Meme / speculative
-    "AMC", "GME", "PLTR", "MARA", "RIOT", "NKLA", "LCID", "PLUG",
-    # EV
-    "RIVN", "NIO",
-    # Financials
-    "BAC", "JPM", "WFC", "C",
-    # Legacy / industrial
-    "BA", "DIS", "F", "GM", "T", "AAL", "CCL",
-    # Energy
-    "XOM", "OXY",
-    # Pharma / healthcare
-    "PFE", "JNJ",
-    # Other high-volume
-    "UBER", "CVNA", "AI", "BABA", "COST", "ENPH",
+    # 0DTE-capable (daily expirations)
+    "SPY", "QQQ", "IWM", "DIA",
+    # Top 10 high-volume stocks (weekly expirations)
+    "AAPL", "MSFT", "NVDA", "TSLA", "META",
+    "AMZN", "GOOGL", "AMD", "AVGO", "NFLX",
 ]
 
 # ±10% of spot price for strike range
@@ -251,17 +234,26 @@ def _get_target_expirations(symbol: str) -> list[dict]:
         _exp_cache[cache_key] = []
         return []
 
-    # 1. This week's Friday (nearest expiration that's a Friday, within 7 days)
+    # 1. This week's nearest expiration (within 7 days)
+    # For 0DTE symbols (SPY/QQQ/IWM/DIA), today's expiration is valid
+    # For stocks, only Friday expirations exist — filter accordingly
+    _0dte_symbols = {"SPY", "QQQ", "IWM", "DIA"}
     weekly = None
-    for p in parsed:
-        if p["date"].weekday() == 4 and p["days"] <= 7 and p["days"] >= 0:
-            weekly = p
-            break
-    # Fallback: nearest expiration within 7 days (even if not Friday)
-    if not weekly:
-        near = [p for p in parsed if p["days"] <= 7 and p["days"] >= 0]
-        if near:
+    near = [p for p in parsed if p["days"] <= 7 and p["days"] >= 0]
+    if symbol in _0dte_symbols:
+        # 0DTE: prefer today, then nearest
+        for p in near:
+            if p["days"] == 0:
+                weekly = p
+                break
+        if not weekly and near:
             weekly = near[0]
+    else:
+        # Stocks: only use Friday expirations (weekday 4)
+        for p in near:
+            if p["date"].weekday() == 4:
+                weekly = p
+                break
 
     if weekly:
         result.append({"exp": weekly["exp"], "label": "weekly"})

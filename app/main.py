@@ -12210,8 +12210,9 @@ function passesStrategy(l, strat) {
     return false;
   }
   if (strat === 'v12le') {
+    // V12-LE = exact mirror of _passes_live_filter() for SC on real trader
     if (sn !== 'Skew Charm') return false;
-    if (!l.grade || (l.grade!=='A+'&&l.grade!=='A'&&l.grade!=='B')) return false;
+    if (l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
     if (!gapFilter(l.ts)) return false;
     if (!v11TimeGates(l.ts)) return false;
     if (isLong) { if (align<2) return false; }
@@ -16801,9 +16802,9 @@ DASH_HTML_TEMPLATE = """
         return false;
       }
       if (strat === 'v12le') {
-        // V12-LE (real money): V12-fix + SC only + A+/A/B grade only
+        // V12-LE (real money): exact mirror of _passes_live_filter() for SC on real trader
         if (sn !== 'Skew Charm') return false;
-        if (!l.grade || (l.grade !== 'A+' && l.grade !== 'A' && l.grade !== 'B')) return false;
+        if (l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
         // V12-fix gap filter: longs-only before 10:00 on |gap|>30
         if (l.ts && isLong) {
           const dateStr = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});

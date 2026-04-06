@@ -177,14 +177,17 @@ def init(engine, get_token_fn, send_telegram_fn):
                                f"Auto-closing...")
                         _flatten_account(acct_id)
                 # Mark all tracked orders as closed
+                _to_persist = []
                 with _lock:
                     for lid, o in _active_orders.items():
                         if o["status"] not in ("closed",):
                             o["status"] = "closed"
                             o["close_reason"] = "pre_market_cleanup"
-                            _persist_order(lid)
-                            print(f"[real-trader] PRE-MARKET: closed order "
-                                  f"{o.get('setup_name', '?')} id={lid}", flush=True)
+                            _to_persist.append((lid, o.get('setup_name', '?')))
+                # Persist OUTSIDE lock (avoid deadlock — _persist_order also acquires _lock)
+                for lid, name in _to_persist:
+                    _persist_order(lid)
+                    print(f"[real-trader] PRE-MARKET: closed order {name} id={lid}", flush=True)
             else:
                 # During market hours -- orphan check
                 for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
@@ -1869,23 +1872,24 @@ def cleanup_stale_orders():
     """
     today_str = date.today().isoformat()
     cleaned = 0
+    # Collect stale IDs first, then update+persist+delete outside iteration
     with _lock:
-        stale_ids = []
-        for lid, order in _active_orders.items():
-            if order.get("status") == "closed":
+        stale_ids = [lid for lid, order in _active_orders.items()
+                     if order.get("status") != "closed"
+                     and (order.get("ts_placed", "")[:10] or "") < today_str
+                     and len(order.get("ts_placed", "")) >= 10]
+    for lid in stale_ids:
+        with _lock:
+            order = _active_orders.get(lid)
+            if not order or order.get("status") == "closed":
                 continue
-            ts_placed = order.get("ts_placed", "")
-            order_date = ts_placed[:10] if len(ts_placed) >= 10 else ""
-            if order_date and order_date < today_str:
-                stale_ids.append(lid)
-        for lid in stale_ids:
-            order = _active_orders[lid]
             order["status"] = "closed"
             order["close_reason"] = "stale_daily_cleanup"
-            _persist_order(lid)
-            del _active_orders[lid]
-            cleaned += 1
-            print(f"[real-trader] DAILY CLEANUP: stale order closed: "
+        _persist_order(lid)
+        with _lock:
+            _active_orders.pop(lid, None)
+        cleaned += 1
+        print(f"[real-trader] DAILY CLEANUP: stale order closed: "
                   f"{order.get('setup_name', '?')} id={lid} from {order.get('ts_placed', '?')[:10]} "
                   f"acct={order.get('account_id')}", flush=True)
     if cleaned:

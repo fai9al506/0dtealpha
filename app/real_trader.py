@@ -671,28 +671,34 @@ def update_stop(setup_log_id: int, new_stop_price: float):
 
 def close_trade(setup_log_id: int, result_type: str):
     """Close a trade on outcome resolution.
-    Cancel remaining orders + market close if position still open."""
+    Cancel remaining orders + market close if position still open.
+    NOTE: force_release() may have already set status='closed' to free the
+    concurrent slot. We still need to do broker cleanup (cancel stop/target),
+    so do NOT early-return on status=='closed'."""
     with _lock:
         order = _active_orders.get(setup_log_id)
         if not order:
             return
-        if order["status"] == "closed":
-            return
+        already_closed = order["status"] == "closed"
 
     setup_name = order["setup_name"]
     account_id = order["account_id"]
 
-    # Flatten: cancel pending orders + market close
+    # Flatten: cancel pending orders + market close (idempotent — safe to re-run)
     _flatten_position(order)
 
-    with _lock:
-        order["status"] = "closed"
-        order["close_reason"] = result_type
-    _persist_order(setup_log_id)
-    print(f"[real-trader] closed: {setup_name} id={setup_log_id} "
-          f"result={result_type} acct={account_id}", flush=True)
-    _alert(f"[REAL-TRADE] {setup_name} CLOSED: {result_type}\n"
-           f"Account: {account_id}")
+    if not already_closed:
+        with _lock:
+            order["status"] = "closed"
+            order["close_reason"] = result_type
+        _persist_order(setup_log_id)
+        print(f"[real-trader] closed: {setup_name} id={setup_log_id} "
+              f"result={result_type} acct={account_id}", flush=True)
+        _alert(f"[REAL-TRADE] {setup_name} CLOSED: {result_type}\n"
+               f"Account: {account_id}")
+    else:
+        print(f"[real-trader] broker cleanup done (slot already released): "
+              f"{setup_name} id={setup_log_id} acct={account_id}", flush=True)
 
 
 def force_release(setup_log_id: int, result_type: str):

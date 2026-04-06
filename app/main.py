@@ -6481,6 +6481,20 @@ def _auto_trade_eod_flatten():
         print(f"[auto-trade-eod] flatten error: {e}", flush=True)
 
 
+def _real_trade_market_open_cleanup():
+    """Clear stale real-trade orders from previous days. Runs at 09:28 ET.
+
+    Defensive layer: if EOD flatten fails to persist closed state, stale orders
+    block new trades via MAX_CONCURRENT_PER_DIR. Bug 2026-04-06: #1540 from Apr 2
+    blocked 2 SC shorts (#1544/#1551) until deploy at 10:30 cleared it.
+    """
+    try:
+        from app import real_trader
+        real_trader.cleanup_stale_orders()
+    except Exception as e:
+        print(f"[real-trade-cleanup] error: {e}", flush=True)
+
+
 def _real_trade_eod_flatten():
     """Flatten all open REAL auto-trade positions before market close. Runs at 15:50 ET."""
     try:
@@ -6821,6 +6835,8 @@ def start_scheduler():
     sch.add_job(pull_spx_ohlc, "interval", minutes=2, id="spx_ohlc_pull", coalesce=True, max_instances=1)
     sch.add_job(_auto_trade_premarket_reconcile, "cron", hour=9, minute=25,
                 id="auto_trade_premarket", coalesce=True, max_instances=1)
+    sch.add_job(_real_trade_market_open_cleanup, "cron", hour=9, minute=28,
+                id="real_trade_daily_cleanup", coalesce=True, max_instances=1)
     sch.add_job(_auto_trade_eod_flatten, "cron", hour=15, minute=55,
                 id="auto_trade_eod", coalesce=True, max_instances=1)
     sch.add_job(_options_trade_eod_flatten, "cron", hour=15, minute=55,

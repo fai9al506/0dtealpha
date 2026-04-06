@@ -304,12 +304,17 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                     except (ValueError, TypeError):
                         pass
 
-    # Cap check: max 2 concurrent per direction
+    # Cap check: max concurrent per direction
     active_count = _count_active_for_direction(is_long)
     if active_count >= MAX_CONCURRENT_PER_DIR:
         dir_str = "long" if is_long else "short"
+        # Log which orders are blocking (for debugging stale-order issues)
+        blocking = [(lid, o.get("setup_name"), o.get("ts_placed", "")[:10], o.get("status"))
+                    for lid, o in _active_orders.items()
+                    if o.get("status") in ("pending_entry", "pending_limit", "filled")
+                    and (o.get("direction", "").lower() in ("long", "bullish")) == is_long]
         print(f"[real-trader] skip {setup_name}: {dir_str} cap reached "
-              f"({active_count}/{MAX_CONCURRENT_PER_DIR})", flush=True)
+              f"({active_count}/{MAX_CONCURRENT_PER_DIR}) blocking={blocking}", flush=True)
         return
 
     # Margin/buying power pre-check
@@ -1819,6 +1824,41 @@ def _load_active_orders():
             print(f"[real-trader] auto-closed {stale} stale overnight order(s)", flush=True)
     except Exception as e:
         print(f"[real-trader] load error (non-fatal): {e}", flush=True)
+
+
+def cleanup_stale_orders():
+    """Clear any active orders from previous days. Called daily at market open.
+
+    Defensive layer: if EOD flatten fails to persist closed state, this catches
+    stale orders before they block new trades via MAX_CONCURRENT_PER_DIR.
+    Bug found 2026-04-06: #1540 from Apr 2 blocked #1544/#1551 shorts all morning.
+    """
+    today_str = date.today().isoformat()
+    cleaned = 0
+    with _lock:
+        stale_ids = []
+        for lid, order in _active_orders.items():
+            if order.get("status") == "closed":
+                continue
+            ts_placed = order.get("ts_placed", "")
+            order_date = ts_placed[:10] if len(ts_placed) >= 10 else ""
+            if order_date and order_date < today_str:
+                stale_ids.append(lid)
+        for lid in stale_ids:
+            order = _active_orders[lid]
+            order["status"] = "closed"
+            order["close_reason"] = "stale_daily_cleanup"
+            _persist_order(lid)
+            del _active_orders[lid]
+            cleaned += 1
+            print(f"[real-trader] DAILY CLEANUP: stale order closed: "
+                  f"{order.get('setup_name', '?')} id={lid} from {order.get('ts_placed', '?')[:10]} "
+                  f"acct={order.get('account_id')}", flush=True)
+    if cleaned:
+        _alert(f"[REAL-TRADE] Daily cleanup: {cleaned} stale order(s) from previous day(s) removed.\n"
+               f"These were blocking new trades via concurrent cap.")
+    else:
+        print(f"[real-trader] daily cleanup: no stale orders", flush=True)
 
 
 # ====== TELEGRAM HELPER ======

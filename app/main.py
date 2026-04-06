@@ -4390,8 +4390,12 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                     _broker_submit(options_trader.close_trade, log_id, result_type)
                 except Exception:
                     pass
+                # Real trader: force-release slot FIRST (direct call, not background)
+                # then broker cleanup in background. Bug 2026-04-06: _broker_submit
+                # silently failed close_trade, #1559 blocked 7 shorts (+45 pts missed).
                 try:
                     from app import real_trader
+                    real_trader.force_release(log_id, result_type)
                     _broker_submit(real_trader.close_trade, log_id, result_type)
                 except Exception:
                     pass

@@ -695,6 +695,34 @@ def close_trade(setup_log_id: int, result_type: str):
            f"Account: {account_id}")
 
 
+def force_release(setup_log_id: int, result_type: str):
+    """Immediately free the concurrent slot for a resolved trade.
+
+    Called DIRECTLY (not via _broker_submit) by outcome tracker to guarantee
+    the slot is freed. close_trade() is still called in background for broker
+    cleanup, but this ensures MAX_CONCURRENT_PER_DIR is not blocked if
+    close_trade fails or is delayed.
+
+    Bug 2026-04-06: #1559 close_trade via _broker_submit silently failed.
+    _active_orders kept #1559 as 'filled', blocking 7 subsequent SC shorts
+    (+45 pts missed).
+    """
+    with _lock:
+        order = _active_orders.get(setup_log_id)
+        if not order:
+            return
+        if order["status"] == "closed":
+            return
+        old_status = order["status"]
+        order["status"] = "closed"
+        order["close_reason"] = result_type
+    try:
+        _persist_order(setup_log_id)
+    except Exception as e:
+        print(f"[real-trader] force_release persist error: {e}", flush=True)
+    print(f"[real-trader] force_release: id={setup_log_id} {old_status}->{result_type}", flush=True)
+
+
 def _flatten_position(order):
     """Market close remaining position + cancel all pending orders."""
     account_id = order["account_id"]

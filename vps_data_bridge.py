@@ -88,6 +88,8 @@ DEFAULT_CONFIG = {
     "heartbeat_seconds": 60,
     "post_timeout": 10,
     "stale_timeout_minutes": 5,     # Reconnect if no ticks for this long during market hours
+    "vol_signal_file": "C:/SierraChart/Data/vol_signal.txt",
+    "vol_signal_poll_seconds": 2,
 }
 
 # ─── ES Symbol Helper ────────────────────────────────────────────────────────
@@ -384,6 +386,9 @@ class RailwayPoster:
     def post_heartbeat(self, status: dict):
         return self._post("/api/vps/heartbeat", status)
 
+    def post_vol_signal(self, signal: dict):
+        return self._post("/api/vps/vol/signal", signal)
+
     def get_last_es_bar(self):
         """Query Railway for the last stored ES bar timestamp and bar_idx."""
         url = f"{self.base_url}/api/vps/es/last"
@@ -595,6 +600,13 @@ class VPSDataBridge:
         )
 
         self.backfiller = GapBackfiller(self.poster, cfg)
+
+        # Vol signal file watcher
+        self._vol_signal_file = cfg.get("vol_signal_file", "C:/SierraChart/Data/vol_signal.txt")
+        self._vol_signal_poll = cfg.get("vol_signal_poll_seconds", 2)
+        self._vol_signal_last_mtime = 0.0
+        self._vol_signal_last_content = ""
+        self._vol_signals_posted = 0
 
         # Stats
         self._es_tick_count = 0
@@ -878,6 +890,8 @@ class VPSDataBridge:
         log.info("Bridge running 24/7. Ctrl+C to stop.")
         vx_interval = self.cfg.get("vx_batch_seconds", 10)
         hb_interval = self.cfg.get("heartbeat_seconds", 60)
+        vol_interval = self._vol_signal_poll
+        last_vol_check = 0.0
 
         while self._running:
             try:
@@ -887,6 +901,11 @@ class VPSDataBridge:
                 if now - self._vx_last_flush >= vx_interval:
                     self._flush_vx_ticks()
                     self._vx_last_flush = now
+
+                # Check vol signal file from Sierra VolDetector study
+                if now - last_vol_check >= vol_interval:
+                    self._check_vol_signal()
+                    last_vol_check = now
 
                 # Heartbeat
                 if now - self._last_heartbeat >= hb_interval:
@@ -917,6 +936,56 @@ class VPSDataBridge:
         if ok:
             self._vx_batches_posted += 1
 
+    def _check_vol_signal(self):
+        """Read Sierra VolDetector signal file. POST to Railway if new signal."""
+        try:
+            fpath = Path(self._vol_signal_file)
+            if not fpath.exists():
+                return
+
+            mtime = fpath.stat().st_mtime
+            if mtime <= self._vol_signal_last_mtime:
+                return  # File hasn't changed
+
+            content = fpath.read_text().strip()
+            if not content or content == self._vol_signal_last_content:
+                self._vol_signal_last_mtime = mtime
+                return  # Same content (Sierra rewrites on chart reload)
+
+            self._vol_signal_last_mtime = mtime
+            self._vol_signal_last_content = content
+
+            # Parse: direction,price,delta,ask_vol,bid_vol,avg_delta,ratio,bar_ts
+            parts = content.split(",")
+            if len(parts) < 8:
+                log.warning(f"Vol signal malformed: {content}")
+                return
+
+            signal = {
+                "direction": int(parts[0]),      # -1=vol sellers (bullish SPX), +1=vol buyers (bearish SPX)
+                "vx_price": float(parts[1]),
+                "delta": float(parts[2]),
+                "ask_vol": float(parts[3]),
+                "bid_vol": float(parts[4]),
+                "avg_delta": float(parts[5]),
+                "ratio": float(parts[6]),
+                "bar_ts": parts[7],              # Sierra bar datetime (ET)
+            }
+
+            label = "VOL_SELLERS" if signal["direction"] < 0 else "VOL_BUYERS"
+            log.info(
+                f"Vol signal: {label} VX={signal['vx_price']:.2f} "
+                f"delta={signal['delta']:+.0f} ratio={signal['ratio']:.1f}x "
+                f"bar={signal['bar_ts']}"
+            )
+
+            ok = self.poster.post_vol_signal(signal)
+            if ok:
+                self._vol_signals_posted += 1
+
+        except Exception as e:
+            log.warning(f"Vol signal check error: {e}")
+
     def _send_heartbeat(self):
         forming = self.bar_builder.forming_bar
         status = {
@@ -932,6 +1001,7 @@ class VPSDataBridge:
             "vx_batches_posted": self._vx_batches_posted,
             "market_open": _market_open(),
             "backfill_count": self._backfill_count,
+            "vol_signals_posted": self._vol_signals_posted,
             "forming_bar": {
                 "open": forming["open"],
                 "high": forming["high"],

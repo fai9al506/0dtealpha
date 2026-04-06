@@ -2534,8 +2534,8 @@ def test_mode(test_dir: str = "buy"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="E2T Evaluation Auto-Trader")
-    parser.add_argument("--config", default="eval_trader_config_real.json",
-                        help="Config file path (default: eval_trader_config_real.json)")
+    parser.add_argument("--config", default="eval_trader_config.json",
+                        help="Config file path (default: eval_trader_config.json)")
     parser.add_argument("--test", nargs="?", const="buy",
                         help="Test mode: place 1 MES, flatten. Optional: buy/sell (default: buy)")
     args = parser.parse_args()

@@ -196,9 +196,6 @@ DEFAULT_CONFIG = {
     "be_trigger_pts": 5.0,       # Move stop to breakeven when ES moves +5 pts
     "max_stop_loss_pts": 12,     # Cap ALL stops at 12 pts max (survival mode)
 
-    # ── Daily loss limit (trade count) ──
-    "max_losses_per_day": 3,     # Stop trading after 3 losses
-
     # ── E2T 50K TCP Rules ──
     "e2t_daily_loss_limit": 1100,       # $1,100 hard limit
     "e2t_daily_loss_buffer": 100,       # stop trading at -$1,000 (safety margin)
@@ -813,11 +810,6 @@ class ComplianceGate:
         # Opposite-direction signals return "reverse" so main loop can close + reopen
         if self.has_open_position:
             return False, "already in position"
-
-        # Max losses per day — stop trading after N consecutive losses
-        max_losses = cfg.get("max_losses_per_day", 999)
-        if self.losses_today >= max_losses:
-            return False, f"max losses reached ({self.losses_today}/{max_losses})"
 
         # Daily loss floor — stop trading when net P&L drops below threshold
         daily_loss_floor = cfg.get("daily_loss_floor", -800)

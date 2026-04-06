@@ -1063,6 +1063,22 @@ def db_init():
         CREATE INDEX IF NOT EXISTS idx_vps_hb_ts ON vps_heartbeats(ts DESC);
         """))
 
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS vps_vol_signals (
+            id BIGSERIAL PRIMARY KEY,
+            direction SMALLINT NOT NULL,
+            vx_price DOUBLE PRECISION NOT NULL,
+            delta DOUBLE PRECISION NOT NULL,
+            ask_vol DOUBLE PRECISION NOT NULL DEFAULT 0,
+            bid_vol DOUBLE PRECISION NOT NULL DEFAULT 0,
+            avg_delta DOUBLE PRECISION NOT NULL DEFAULT 0,
+            ratio DOUBLE PRECISION NOT NULL DEFAULT 0,
+            bar_ts TIMESTAMPTZ NOT NULL,
+            received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_vps_vol_sig_ts ON vps_vol_signals(bar_ts DESC);
+        """))
+
         # Create default admin user if no users exist
         existing = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
         if existing == 0:
@@ -8383,7 +8399,17 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
         # relative to MES (SPX and MES differ by ~15-20 pts spread)
         with _es_quote_lock:
             es_price = _es_quote.get("last_price")
-        return {"signals": signals, "outcomes": outcomes, "es_price": es_price}
+        # Sanitize NaN/Inf floats that crash JSON serialization
+        import math
+        def _sanitize(obj):
+            if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+                return None
+            if isinstance(obj, dict):
+                return {k: _sanitize(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_sanitize(i) for i in obj]
+            return obj
+        return _sanitize({"signals": signals, "outcomes": outcomes, "es_price": es_price})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -18843,6 +18869,45 @@ def vps_vix_ticks(request: Request, payload: dict = Body(...)):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.post("/api/vps/vol/signal")
+def vps_vol_signal(request: Request, payload: dict = Body(...)):
+    """Receive vol buyer/seller signal from Sierra VolDetector study via VPS bridge."""
+    if not _check_vps_auth(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if not engine:
+        return JSONResponse({"error": "no database"}, status_code=503)
+
+    try:
+        direction = payload.get("direction", 0)
+        vx_price = payload.get("vx_price", 0)
+        bar_ts = payload.get("bar_ts", "")
+        ratio = payload.get("ratio", 0)
+
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO vps_vol_signals
+                    (direction, vx_price, delta, ask_vol, bid_vol, avg_delta, ratio, bar_ts)
+                VALUES
+                    (:direction, :vx_price, :delta, :ask_vol, :bid_vol, :avg_delta, :ratio, :bar_ts)
+            """), {
+                "direction": direction,
+                "vx_price": vx_price,
+                "delta": payload.get("delta", 0),
+                "ask_vol": payload.get("ask_vol", 0),
+                "bid_vol": payload.get("bid_vol", 0),
+                "avg_delta": payload.get("avg_delta", 0),
+                "ratio": ratio,
+                "bar_ts": bar_ts,
+            })
+
+        label = "VOL_SELLERS" if direction < 0 else "VOL_BUYERS"
+        print(f"[vps] vol signal: {label} VX={vx_price:.2f} ratio={ratio:.1f}x bar_ts={bar_ts}", flush=True)
+        return {"ok": True, "signal": label}
+    except Exception as e:
+        print(f"[vps] vol/signal error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.post("/api/vps/heartbeat")
 def vps_heartbeat(request: Request, payload: dict = Body(...)):
     """Receive heartbeat from VPS data bridge."""
@@ -18905,6 +18970,41 @@ def vps_vix_last(request: Request):
         if row:
             return {"ts": str(row["ts"])}
         return {"ts": None}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/vps/vol/signals")
+def vps_vol_signals(session: str = Cookie(default=None), hours: int = 8):
+    """Get recent vol buyer/seller signals. Default last 8 hours."""
+    user = get_current_user(session)
+    if not user:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if not engine:
+        return JSONResponse({"error": "no database"}, status_code=503)
+    try:
+        cutoff = datetime.now(NY) - timedelta(hours=hours)
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT direction, vx_price, delta, ask_vol, bid_vol,
+                       avg_delta, ratio, bar_ts, received_at
+                FROM vps_vol_signals
+                WHERE bar_ts >= :cutoff
+                ORDER BY bar_ts DESC
+            """), {"cutoff": cutoff}).mappings().all()
+        signals = []
+        for r in rows:
+            signals.append({
+                "direction": r["direction"],
+                "label": "VOL_SELLERS" if r["direction"] < 0 else "VOL_BUYERS",
+                "vx_price": r["vx_price"],
+                "delta": r["delta"],
+                "ask_vol": r["ask_vol"],
+                "bid_vol": r["bid_vol"],
+                "ratio": round(r["ratio"], 2),
+                "bar_ts": str(r["bar_ts"]),
+            })
+        return {"signals": signals, "count": len(signals)}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

@@ -3869,7 +3869,7 @@ def _compute_setup_levels(r: dict):
         return None, round(stop_lvl, 2)
 
     if setup_name == "Vanna Pivot Bounce":
-        target_lvl = entry_base + 10 if is_long else entry_base - 10
+        target_lvl = spot + 10 if is_long else spot - 10
         stop_lvl = spot - 8 if is_long else spot + 8
         return round(target_lvl, 2), round(stop_lvl, 2)
 
@@ -4246,7 +4246,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                             _broker_submit(auto_trader.update_stop, log_id, round(es_stop, 2))
                 except Exception:
                     pass
-                # Real trader: update trail
+                # Real trader: update trail — SYNCHRONOUS (real money, must not silently fail)
                 try:
                     from app import real_trader
                     log_id = trade.get("setup_log_id")
@@ -4254,7 +4254,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                         rt_order = real_trader._active_orders.get(log_id)
                         if rt_order and rt_order.get("fill_price"):
                             es_stop = rt_order["fill_price"] + (stop_lvl - entry_price)
-                            _broker_submit(real_trader.update_stop, log_id, round(es_stop, 2))
+                            real_trader.update_stop(log_id, round(es_stop, 2))
                 except Exception:
                     pass
             # Check trailing stop hit
@@ -4390,15 +4390,14 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                     _broker_submit(options_trader.close_trade, log_id, result_type)
                 except Exception:
                     pass
-                # Real trader: force-release slot FIRST (direct call, not background)
-                # then broker cleanup in background. Bug 2026-04-06: _broker_submit
-                # silently failed close_trade, #1559 blocked 7 shorts (+45 pts missed).
+                # Real trader: SYNCHRONOUS (real money — must not silently fail)
+                # force_release frees concurrent slot, close_trade does broker cleanup
                 try:
                     from app import real_trader
                     real_trader.force_release(log_id, result_type)
-                    _broker_submit(real_trader.close_trade, log_id, result_type)
-                except Exception:
-                    pass
+                    real_trader.close_trade(log_id, result_type)
+                except Exception as e:
+                    print(f"[real-trader] close error: {e}", flush=True)
 
             # Move to resolved list
             resolved = {**trade, "result_type": result_type, "pnl": pnl, "elapsed_min": elapsed_min,
@@ -4761,7 +4760,7 @@ def _run_setup_check():
                             )
                         except Exception as e:
                             print(f"[options] place error: {e}", flush=True)
-                    # Real trader: MES REAL accounts (SC only, fire-and-forget)
+                    # Real trader: MES REAL accounts (SC only, SYNCHRONOUS — real money)
                     if not _skip_auto_trade and setup_name == "Skew Charm":
                         try:
                             from app import real_trader
@@ -4773,7 +4772,7 @@ def _run_setup_check():
                             if es_px and stop_lvl is not None:
                                 stop_dist = abs(r["spot"] - stop_lvl)
                                 # Opt2: trail only, no partial TP at +10 (backtest: +316 pts more, less DD)
-                                _broker_submit(real_trader.place_trade,
+                                real_trader.place_trade(
                                     setup_log_id=_current_setup_log.get(setup_name),
                                     setup_name=setup_name, direction=r["direction"],
                                     es_price=es_px, target_pts=None, stop_pts=stop_dist,
@@ -6840,13 +6839,15 @@ def start_scheduler():
     sch.add_job(_auto_trade_premarket_reconcile, "cron", hour=9, minute=25,
                 id="auto_trade_premarket", coalesce=True, max_instances=1)
     sch.add_job(_real_trade_market_open_cleanup, "cron", hour=9, minute=28,
-                id="real_trade_daily_cleanup", coalesce=True, max_instances=1)
+                id="real_trade_daily_cleanup", coalesce=True, max_instances=1,
+                misfire_grace_time=300)
     sch.add_job(_auto_trade_eod_flatten, "cron", hour=15, minute=55,
                 id="auto_trade_eod", coalesce=True, max_instances=1)
     sch.add_job(_options_trade_eod_flatten, "cron", hour=15, minute=55,
                 id="options_trade_eod", coalesce=True, max_instances=1)
     sch.add_job(_real_trade_eod_flatten, "cron", hour=15, minute=50,
-                id="real_trade_eod", coalesce=True, max_instances=1)
+                id="real_trade_eod", coalesce=True, max_instances=1,
+                misfire_grace_time=300)
     # Real trader: fast 3s polling to minimize orphaned order window (cap=2 stacking safety)
     _poll_hung_count = {"n": 0}
     def _real_trade_fast_poll():
@@ -6882,7 +6883,8 @@ def start_scheduler():
         except Exception:
             pass
     sch.add_job(_real_trade_fast_poll, "interval", seconds=3,
-                id="real_trade_poll", coalesce=True, max_instances=1)
+                id="real_trade_poll", coalesce=True, max_instances=1,
+                misfire_grace_time=10)  # don't silently drop poll when scheduler is busy
     # Pipeline health + market job watchdog — INDEPENDENT from run_market_job
     # This catches hung threads that the old finally-block approach missed
     _watchdog_alert_sent = {"ts": 0.0}
@@ -6949,17 +6951,17 @@ def start_scheduler():
         from app import stock_gex_scanner
         # Weekly GEX: 10:00, 12:00, 15:00 ET
         sch.add_job(stock_gex_scanner.run_weekly_scan, "cron",
-                    hour=10, minute=0, timezone=NY, id="stock_gex_weekly_10", coalesce=True, max_instances=1)
+                    hour=10, minute=0, timezone=NY, id="stock_gex_weekly_10", coalesce=True, max_instances=1, misfire_grace_time=300)
         sch.add_job(stock_gex_scanner.run_weekly_scan, "cron",
-                    hour=12, minute=0, timezone=NY, id="stock_gex_weekly_12", coalesce=True, max_instances=1)
+                    hour=12, minute=0, timezone=NY, id="stock_gex_weekly_12", coalesce=True, max_instances=1, misfire_grace_time=300)
         sch.add_job(stock_gex_scanner.run_weekly_scan, "cron",
-                    hour=15, minute=0, timezone=NY, id="stock_gex_weekly_15", coalesce=True, max_instances=1)
+                    hour=15, minute=0, timezone=NY, id="stock_gex_weekly_15", coalesce=True, max_instances=1, misfire_grace_time=300)
         # Opex GEX: 10:30 ET (staggered from weekly 10:00 to avoid TS API rate limit collision)
         sch.add_job(stock_gex_scanner.run_opex_scan, "cron",
-                    hour=10, minute=30, timezone=NY, id="stock_gex_opex", coalesce=True, max_instances=1)
+                    hour=10, minute=30, timezone=NY, id="stock_gex_opex", coalesce=True, max_instances=1, misfire_grace_time=300)
         # Spot monitor: every 5 min (1 batch API call for all stocks)
         sch.add_job(stock_gex_scanner.run_spot_monitor, "interval",
-                    minutes=5, id="stock_gex_spot", coalesce=True, max_instances=1)
+                    minutes=5, id="stock_gex_spot", coalesce=True, max_instances=1, misfire_grace_time=60)
     except Exception as _gex_err:
         print(f"[stock-gex] scheduler error (non-fatal): {_gex_err}", flush=True)
     # Stock GEX live — spot monitor (exit checks) + EOD summaries

@@ -900,12 +900,15 @@ def _reconcile_positions():
                        f"Expected: {expected_qty} MES\n"
                        f"Broker: FLAT\n"
                        f"Marking tracked orders as closed")
+                _ghost_ids = []
                 with _lock:
                     for o in _active_orders.values():
                         if o.get("account_id") == acct_id and o["status"] == "filled":
                             o["status"] = "closed"
                             o["close_reason"] = "ghost_reconcile"
-                            _persist_order(o["setup_log_id"])
+                            _ghost_ids.append(o["setup_log_id"])
+                for _gid in _ghost_ids:
+                    _persist_order(_gid)
             elif broker_qty != expected_qty:
                 # Qty mismatch
                 _alert(f"[REAL-TRADE] QTY MISMATCH on {acct_id}\n"
@@ -1503,14 +1506,18 @@ def periodic_orphan_check():
                 order_date = ts_placed[:10] if len(ts_placed) >= 10 else ""
                 if order_date and order_date < today_str:
                     stale_ids.append(lid)
-        for lid in stale_ids:
-            o = _active_orders[lid]
+    # Update + persist OUTSIDE lock (avoid deadlock — _persist_order acquires _lock)
+    for lid in stale_ids:
+        with _lock:
+            o = _active_orders.get(lid)
+            if not o:
+                continue
             print(f"[real-trader] PERIODIC: expiring stale order {o.get('setup_name', '?')} "
                   f"id={lid} from {o.get('ts_placed', '?')[:10]} "
                   f"acct={o.get('account_id')}", flush=True)
             o["status"] = "closed"
             o["close_reason"] = "stale_overnight_periodic"
-            _persist_order(lid)
+        _persist_order(lid)
 
     # Check each account
     for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):

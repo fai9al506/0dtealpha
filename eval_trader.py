@@ -193,7 +193,6 @@ DEFAULT_CONFIG = {
     "dynamic_sizing": True,      # True = calc qty from max_trade_risk / (stop × $5)
 
     # ── Survival mode ──
-    "be_trigger_pts": 5.0,       # Move stop to breakeven when ES moves +5 pts
     "max_stop_loss_pts": 12,     # Cap ALL stops at 12 pts max (survival mode)
 
     # ── E2T 50K TCP Rules ──
@@ -1414,9 +1413,16 @@ class PositionTracker:
 
             pnl_risk = stop_pts * qty * MES_POINT_VALUE
             if trail_only:
+                _tp = PositionTracker._TRAIL_PARAMS.get(name)
+                if _tp and _tp.get("mode") == "continuous":
+                    _trail_desc = f"TRAIL continuous (act @ +{_tp['activation']}, gap {_tp['gap']})"
+                elif _tp and _tp.get("mode") == "hybrid":
+                    _trail_desc = f"TRAIL hybrid (BE @ +{_tp['be_trigger']}, act @ +{_tp['activation']}, gap {_tp['gap']})"
+                else:
+                    _trail_desc = "TRAIL none (fixed stop only)"
                 log.info(f"TRADE OPENED: {name} {direction.upper()} [{signal.get('grade', '?')}]")
                 log.info(f"  MES Entry: {order_ref:.2f} | Stop: {stop_price:.2f} (-{stop_pts}pts / -${pnl_risk:.0f}) | "
-                         f"Target: TRAIL-ONLY (breakeven @ +{self.cfg.get('be_trigger_pts', 5)}pts) | Qty: {qty}")
+                         f"Target: TRAIL-ONLY | {_trail_desc} | Qty: {qty}")
             else:
                 pnl_reward = target_pts * qty * MES_POINT_VALUE
                 log.info(f"TRADE OPENED: {name} {direction.upper()} [{signal.get('grade', '?')}]")
@@ -1737,12 +1743,15 @@ class PositionTracker:
     }
 
     def check_trail(self, es_price: float | None):
-        """Trailing stop + breakeven using live ES price from Railway API.
+        """Trailing stop using live ES price from Railway API.
 
-        Trail logic (same as Railway):
-          - DD Exhaustion: continuous — once profit >= 20, lock at max_profit - 5
-          - GEX Long: rung-based — +12→lock+10, +17→lock+15, +22→lock+20, ...
-          - All others: breakeven only — move stop to entry at +be_trigger_pts
+        Per-setup trail rules (from _TRAIL_PARAMS):
+          - DD Exhaustion: continuous — no BE, trail engages at +20, locks max-5
+          - Skew Charm:    hybrid — BE @ +10, then continuous trail (gap 5)
+          - AG Short:      hybrid — BE @ +10, then continuous trail (gap 5)
+          - GEX Long/Vel:  hybrid — BE @ +8,  then continuous trail (gap 5)
+          - Setups not in _TRAIL_PARAMS (ES Abs, Paradigm, BofA): no trail,
+            ride the original fixed SL/target.
         """
         if not self.position or not es_price:
             return
@@ -2095,7 +2104,7 @@ def _banner(cfg: dict):
     log.info(f"  Daily lim: ${cfg['e2t_daily_loss_limit']:,.0f} (buffer: ${cfg['e2t_daily_loss_buffer']:.0f})")
     loss_floor = cfg.get("daily_loss_floor", -800)
     log.info(f"  Loss floor: ${loss_floor}/day (stop trading below this)")
-    log.info(f"  BE trigger: +{cfg.get('be_trigger_pts', 5.0)} pts")
+    log.info(f"  Trail:     per-setup (see _TRAIL_PARAMS)")
     log.info(f"  Cutoff:    {cfg['no_new_trades_after_ct']} CT | Flatten: {cfg['flatten_time_ct']} CT")
     log.info("-" * 60)
 

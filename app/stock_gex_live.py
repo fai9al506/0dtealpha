@@ -420,30 +420,35 @@ def _fetch_stock_quote(symbol):
 
 
 def _fetch_batch_quotes(symbols):
-    """Fetch quotes for multiple stocks in one call."""
+    """Fetch quotes for multiple stocks in one call. Retries once on transient drops."""
     if not _api_get or not symbols:
         return {}
-    try:
-        sym_str = ",".join(symbols)
-        r = _api_get(f"/marketdata/quotes/{sym_str}")
-        js = r.json()
-        result = {}
-        for q in js.get("Quotes", []):
-            sym = q.get("Symbol", "")
-            if sym:
-                try:
-                    last = float(q.get("Last") or q.get("Close") or 0)
-                except (ValueError, TypeError):
-                    last = 0
-                result[sym] = {
-                    "last": last,
-                    "bid": float(q.get("Bid", 0) or 0),
-                    "ask": float(q.get("Ask", 0) or 0),
-                }
-        return result
-    except Exception as e:
-        print(f"[stock-gex-live] batch quote error: {e}", flush=True)
-        return {}
+    sym_str = ",".join(symbols)
+    for attempt in range(2):  # 1 retry on transient RemoteDisconnected/etc.
+        try:
+            r = _api_get(f"/marketdata/quotes/{sym_str}")
+            js = r.json()
+            result = {}
+            for q in js.get("Quotes", []):
+                sym = q.get("Symbol", "")
+                if sym:
+                    try:
+                        last = float(q.get("Last") or q.get("Close") or 0)
+                    except (ValueError, TypeError):
+                        last = 0
+                    result[sym] = {
+                        "last": last,
+                        "bid": float(q.get("Bid", 0) or 0),
+                        "ask": float(q.get("Ask", 0) or 0),
+                    }
+            return result
+        except Exception as e:
+            if attempt == 0:
+                print(f"[stock-gex-live] batch quote transient error (will retry): {e}", flush=True)
+                time.sleep(0.5)
+                continue
+            print(f"[stock-gex-live] batch quote error: {e}", flush=True)
+    return {}
 
 
 def _fetch_option_quote(symbol, expiration, strike, right="C"):
@@ -698,6 +703,8 @@ def _update_trade_exit(trade):
 # ── Telegram ────────────────────────────────────────────────────────
 
 _error_cooldowns = {}  # {error_key: last_alert_time} to avoid spam
+_quote_failure_counts = {}  # {call_site_key: consecutive_failure_count}
+_QUOTE_FAILURE_THRESHOLD = 3  # alert only after N consecutive batch-quote failures
 
 
 def _alert(message):
@@ -759,8 +766,17 @@ def _run_gex_scan_inner(now):
     quotes = _fetch_batch_quotes(STOCKS)
 
     if not quotes:
-        _alert_error("batch_quotes", "Failed to fetch batch stock quotes. TS API may be down.")
+        _quote_failure_counts["scan"] = _quote_failure_counts.get("scan", 0) + 1
+        if _quote_failure_counts["scan"] >= _QUOTE_FAILURE_THRESHOLD:
+            _alert_error("batch_quotes",
+                         f"Failed to fetch batch stock quotes "
+                         f"({_quote_failure_counts['scan']} consecutive). TS API may be down.")
+        else:
+            print(f"[stock-gex-live] scan quote failure "
+                  f"{_quote_failure_counts['scan']}/{_QUOTE_FAILURE_THRESHOLD} (no alert yet)", flush=True)
         return
+
+    _quote_failure_counts["scan"] = 0
 
     if len(quotes) < len(STOCKS) * 0.5:
         _alert_error("partial_quotes",
@@ -884,8 +900,17 @@ def _run_spot_monitor_inner(now):
     quotes = _fetch_batch_quotes(all_symbols)
 
     if not quotes:
-        _alert_error("monitor_quotes", "Spot monitor: failed to fetch quotes. TS API may be down.")
+        _quote_failure_counts["monitor"] = _quote_failure_counts.get("monitor", 0) + 1
+        if _quote_failure_counts["monitor"] >= _QUOTE_FAILURE_THRESHOLD:
+            _alert_error("monitor_quotes",
+                         f"Spot monitor: failed to fetch quotes "
+                         f"({_quote_failure_counts['monitor']} consecutive). TS API may be down.")
+        else:
+            print(f"[stock-gex-live] monitor quote failure "
+                  f"{_quote_failure_counts['monitor']}/{_QUOTE_FAILURE_THRESHOLD} (no alert yet)", flush=True)
         return
+
+    _quote_failure_counts["monitor"] = 0
 
     if active and not any(quotes.get(t["symbol"]) for t in active):
         _alert_error("monitor_active_quotes",

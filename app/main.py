@@ -4760,8 +4760,9 @@ def _run_setup_check():
                             )
                         except Exception as e:
                             print(f"[options] place error: {e}", flush=True)
-                    # Real trader: MES REAL accounts (SC only, SYNCHRONOUS — real money)
-                    if not _skip_auto_trade and setup_name == "Skew Charm":
+                    # Real trader: MES REAL accounts (SC + AG Short, SYNCHRONOUS — real money)
+                    # AG Short added 2026-04-08 — fires SHORT account only (AG hardcoded direction="short")
+                    if not _skip_auto_trade and setup_name in ("Skew Charm", "AG Short"):
                         try:
                             from app import real_trader
                             es_px = None

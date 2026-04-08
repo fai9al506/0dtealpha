@@ -262,9 +262,10 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     """
     is_long = direction.lower() in ("long", "bullish")
 
-    # Setup filter: only trade Skew Charm (defense-in-depth, main.py also filters)
-    if setup_name != "Skew Charm":
-        print(f"[real-trader] skip {setup_name}: only Skew Charm allowed on real accounts", flush=True)
+    # Setup filter: only trade Skew Charm + AG Short (defense-in-depth, main.py also filters)
+    # AG Short added 2026-04-08 — SHORT account only (AG hardcoded direction="short")
+    if setup_name not in ("Skew Charm", "AG Short"):
+        print(f"[real-trader] skip {setup_name}: only Skew Charm/AG Short allowed on real accounts", flush=True)
         return
 
     # Check master switch for this direction

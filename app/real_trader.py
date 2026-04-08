@@ -1376,9 +1376,10 @@ def _flatten_account(account_id: str):
         pos_data = _ts_api("GET", f"/brokerage/accounts/{account_id}/positions", None, account_id)
         for pos in (pos_data or {}).get("Positions", []):
             symbol = pos.get("Symbol", "")
-            qty = int(pos.get("Quantity", "0"))
+            # TS futures positions return signed Quantity (e.g. "-1" for shorts) — use abs
+            qty = abs(int(pos.get("Quantity", "0")))
             long_short = pos.get("LongShort", "")
-            if qty <= 0:
+            if qty == 0:
                 continue
             close_side = "Sell" if long_short == "Long" else "Buy"
             close_payload = {
@@ -1434,9 +1435,10 @@ def _close_broker_orphans(account_id: str, source: str = "EOD"):
 
     for pos in positions:
         symbol = pos.get("Symbol", "")
-        qty = int(pos.get("Quantity", "0"))
+        # TS futures positions return signed Quantity (e.g. "-1" for shorts) — use abs
+        qty = abs(int(pos.get("Quantity", "0")))
         long_short = pos.get("LongShort", "")
-        if qty <= 0:
+        if qty == 0:
             continue
         if long_short in tracked_acct_directions:
             print(f"[real-trader] {source} orphan check on {account_id}: "
@@ -1646,14 +1648,18 @@ def get_full_status() -> dict:
 
 def _get_broker_position(account_id: str) -> dict | None:
     """Query broker for actual MES position on a specific account.
-    Returns {'qty': int, 'long_short': str, 'symbol': str} or None if flat."""
+    Returns {'qty': int, 'long_short': str, 'symbol': str} or None if flat.
+
+    NOTE: TS API returns Quantity as a SIGNED string for futures positions
+    (e.g. "-1" for shorts). Use abs() so the filter doesn't drop shorts.
+    """
     if account_id not in ACCOUNT_WHITELIST:
         return None
     try:
         pos_data = _ts_api("GET", f"/brokerage/accounts/{account_id}/positions", None, account_id)
         for pos in (pos_data or {}).get("Positions", []):
             symbol = pos.get("Symbol", "")
-            qty = int(pos.get("Quantity", "0"))
+            qty = abs(int(pos.get("Quantity", "0")))
             if qty > 0 and "MES" in symbol.upper():
                 return {
                     "qty": qty,

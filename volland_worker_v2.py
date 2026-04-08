@@ -296,6 +296,7 @@ def format_statistics(paradigm_data: dict, spot_vol_data: dict) -> dict:
         # LIS: [6923, 6943] → "$6,923 - $6,943" | [6859] → "$6,859" | 6859 → "$6,859"
         # Paradigm types: BofA/SIDIAL → 2 LIS no target, GEX → LIS + target, AG/Anti-GEX → 1 LIS + target
         # vol.land sometimes returns 'NaN' (string) or null inside the list — filter those out
+        # Always emit a string ("(none)" if missing) so the dashboard row stays visible (never hide on null)
         lis = paradigm_data.get("lis")
         if isinstance(lis, list):
             lis = [x for x in lis if isinstance(x, (int, float)) and not (isinstance(x, float) and x != x)]
@@ -306,7 +307,7 @@ def format_statistics(paradigm_data: dict, spot_vol_data: dict) -> dict:
         elif isinstance(lis, (int, float)):
             stats["lines_in_sand"] = f"${lis:,}"
         else:
-            stats["lines_in_sand"] = None
+            stats["lines_in_sand"] = "(none)"
 
         # Delta decay hedging: 7298110681 → "$7,298,110,681"
         dd = paradigm_data.get("aggregatedDeltaDecay")

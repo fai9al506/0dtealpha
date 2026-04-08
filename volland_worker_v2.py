@@ -295,7 +295,10 @@ def format_statistics(paradigm_data: dict, spot_vol_data: dict) -> dict:
 
         # LIS: [6923, 6943] → "$6,923 - $6,943" | [6859] → "$6,859" | 6859 → "$6,859"
         # Paradigm types: BofA/SIDIAL → 2 LIS no target, GEX → LIS + target, AG/Anti-GEX → 1 LIS + target
+        # vol.land sometimes returns 'NaN' (string) or null inside the list — filter those out
         lis = paradigm_data.get("lis")
+        if isinstance(lis, list):
+            lis = [x for x in lis if isinstance(x, (int, float)) and not (isinstance(x, float) and x != x)]
         if isinstance(lis, list) and len(lis) >= 2:
             stats["lines_in_sand"] = f"${lis[0]:,} - ${lis[-1]:,}"
         elif isinstance(lis, list) and len(lis) == 1:

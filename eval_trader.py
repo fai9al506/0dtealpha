@@ -1766,11 +1766,8 @@ class PositionTracker:
         tp = self._TRAIL_PARAMS.get(setup_name)
         new_stop = None
 
-        # ── Breakeven first (applies to ALL setups) ──
-        be_pts = self.cfg.get("be_trigger_pts", 5.0)
-        if not self.position.get("be_triggered") and profit >= be_pts:
-            new_stop = es_entry
-            self.position["be_triggered"] = True
+        # Per-setup trail logic owns BE — no global BE override.
+        # (Removed global +5 BE that was snapping winners to scratch on first blip.)
 
         if tp:
             # ── Trailing stop setups (overrides BE once trail activates) ──

@@ -3876,6 +3876,13 @@ def _compute_setup_levels(r: dict):
         stop_lvl = spot - 8 if is_long else spot + 8
         return round(target_lvl, 2), round(stop_lvl, 2)
 
+    if setup_name == "VIX Divergence":
+        # Trailing stop — no fixed target; initial SL = 8 pts
+        # Short: hybrid trail (BE@8, activation=10, gap=5)
+        # Long: continuous trail (activation=0, gap=8)
+        stop_lvl = spot - 8 if is_long else spot + 8
+        return None, round(stop_lvl, 2)
+
     if setup_name == "Vanna Butterfly":
         # Butterfly: non-directional pin play, held to expiry
         # target = pin strike, stop = None (max loss = cost, defined risk)
@@ -10432,7 +10439,8 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         is_ag = setup_name == "AG Short"
         is_skew = setup_name == "Skew Charm"
         is_vanna = setup_name == "Vanna Pivot Bounce"
-        is_trailing = is_dd or is_gex or is_ag or is_skew  # setups with trailing stop, no fixed target
+        is_vixdiv = setup_name == "VIX Divergence"
+        is_trailing = is_dd or is_gex or is_ag or is_skew or is_vixdiv  # setups with trailing stop, no fixed target
         _fixed_pt_setups = is_bofa or is_trailing or is_paradigm or is_vanna
 
         if not all([ts, spot]):

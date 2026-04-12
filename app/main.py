@@ -11098,7 +11098,7 @@ def api_setup_stats():
                     COALESCE(SUM(outcome_pnl) FILTER (WHERE outcome_result IS NOT NULL), 0) as net_pnl,
                     COUNT(*) FILTER (WHERE outcome_result IS NULL) as open_trades
                 FROM setup_log
-                WHERE grade != 'LOG'
+                WHERE 1=1
             """)).mappings().first()
         r = dict(row)
         total_resolved = r["wins"] + r["losses"]

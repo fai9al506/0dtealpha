@@ -8119,7 +8119,7 @@ def api_auto_trade_log(limit: int = Query(200)):
                 JOIN setup_log sl ON ato.setup_log_id = sl.id
                 ORDER BY sl.ts DESC
                 LIMIT :lim
-            """), {"lim": min(int(limit), 500)}).mappings().all()
+            """), {"lim": min(int(limit), 5000)}).mappings().all()
 
         MES_PV = 5.0
         results = []
@@ -8264,7 +8264,7 @@ def api_eval_log(limit: int = Query(200)):
                 "outcome_elapsed_min": r["outcome_elapsed_min"],
                 "greek_alignment": align,
             })
-        return results[:min(int(limit), 500)]
+        return results[:min(int(limit), 5000)]
     except Exception as e:
         print(f"[eval] log query error: {e}", flush=True)
         return []
@@ -8284,7 +8284,7 @@ def api_options_log(limit: int = Query(200)):
                 LEFT JOIN setup_log s ON o.setup_log_id = s.id
                 ORDER BY o.created_at DESC
                 LIMIT :lim
-            """), {"lim": min(int(limit), 500)}).mappings().all()
+            """), {"lim": min(int(limit), 5000)}).mappings().all()
 
         results = []
         for r in rows:
@@ -11132,7 +11132,7 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim OFFSET :off
-            """), {"lim": min(int(limit), 500), "off": offset}).mappings().all()
+            """), {"lim": min(int(limit), 5000), "off": offset}).mappings().all()
 
         results = []
         for r in rows:
@@ -11393,7 +11393,7 @@ def api_setup_export(
                 FROM setup_log
                 WHERE 1=1 {where_clause}
                 ORDER BY ts DESC
-                LIMIT 500
+                LIMIT 5000
             """), params).mappings().all()
 
         if not rows:
@@ -13808,10 +13808,14 @@ DASH_HTML_TEMPLATE = """
           <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Delta Absorption</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
-          <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option></select>
+          <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="pickday">Pick Day...</option><option value="week">This Week</option><option value="lastweek">Last Week</option><option value="month">This Month</option><option value="lastmonth">Last Month</option><option value="custom">Custom Range...</option></select>
+          <input type="date" id="tlDatePick" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="Pick a day">
+          <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
+          <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
           <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v12le">V12-LE (real)</option><option value="v12nt">V12-NT (ninja)</option><option value="v12">V12 (live)</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
+          <button id="tlExportExcel" title="Export filtered data to Excel (.xlsx)" style="padding:3px 10px;background:#1a2634;border:1px solid #3b82f6;border-radius:4px;color:#60a5fa;cursor:pointer;font-size:11px;white-space:nowrap">Export Excel</button>
         </div>
         <div class="tl-stats" id="tlStats"></div>
         <div style="overflow-y:auto;flex:1">
@@ -16820,7 +16824,7 @@ DASH_HTML_TEMPLATE = """
     }
 
     let _tlPage = 0;
-    const _tlPageSize = 500;
+    const _tlPageSize = 5000;
     let _tlGlobalStats = null;
 
     async function loadTradeLogFull() {
@@ -17114,14 +17118,38 @@ DASH_HTML_TEMPLATE = """
         if (fDate && l.ts) {
           const d = new Date(l.ts);
           const dET = new Date(d.toLocaleString('en-US',{timeZone:'America/New_York'}));
+          const dStr = dET.getFullYear()+'-'+String(dET.getMonth()+1).padStart(2,'0')+'-'+String(dET.getDate()).padStart(2,'0');
           if (fDate === 'today') {
-            const dStr = dET.getFullYear()+'-'+String(dET.getMonth()+1).padStart(2,'0')+'-'+String(dET.getDate()).padStart(2,'0');
             if (dStr !== todayStr) return false;
+          } else if (fDate === 'yesterday') {
+            const yd = new Date(todayET); yd.setDate(yd.getDate()-1);
+            const ydStr = yd.getFullYear()+'-'+String(yd.getMonth()+1).padStart(2,'0')+'-'+String(yd.getDate()).padStart(2,'0');
+            if (dStr !== ydStr) return false;
           } else if (fDate === 'week') {
-            const diff = (todayET - dET) / 86400000;
-            if (diff > 7) return false;
+            const day = todayET.getDay(); // 0=Sun
+            const monOffset = day === 0 ? 6 : day - 1;
+            const weekStart = new Date(todayET); weekStart.setDate(weekStart.getDate() - monOffset); weekStart.setHours(0,0,0,0);
+            if (dET < weekStart) return false;
+          } else if (fDate === 'lastweek') {
+            const day = todayET.getDay();
+            const monOffset = day === 0 ? 6 : day - 1;
+            const thisWeekStart = new Date(todayET); thisWeekStart.setDate(thisWeekStart.getDate() - monOffset); thisWeekStart.setHours(0,0,0,0);
+            const lastWeekStart = new Date(thisWeekStart); lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+            if (dET < lastWeekStart || dET >= thisWeekStart) return false;
           } else if (fDate === 'month') {
             if (dET.getMonth() !== todayET.getMonth() || dET.getFullYear() !== todayET.getFullYear()) return false;
+          } else if (fDate === 'lastmonth') {
+            const lm = todayET.getMonth() === 0 ? 11 : todayET.getMonth() - 1;
+            const ly = todayET.getMonth() === 0 ? todayET.getFullYear() - 1 : todayET.getFullYear();
+            if (dET.getMonth() !== lm || dET.getFullYear() !== ly) return false;
+          } else if (fDate === 'pickday') {
+            const pickVal = document.getElementById('tlDatePick').value;
+            if (pickVal && dStr !== pickVal) return false;
+          } else if (fDate === 'custom') {
+            const fromVal = document.getElementById('tlDateFrom').value;
+            const toVal = document.getElementById('tlDateTo').value;
+            if (fromVal && dStr < fromVal) return false;
+            if (toVal && dStr > toVal) return false;
           }
         }
 
@@ -17723,6 +17751,59 @@ DASH_HTML_TEMPLATE = """
       document.getElementById(id).addEventListener('change', _tlRerender);
     });
     document.getElementById('tlSearch').addEventListener('input', _tlRerender);
+
+    // Date picker: show/hide inputs based on selection
+    document.getElementById('tlFilterDate').addEventListener('change', function() {
+      const v = this.value;
+      document.getElementById('tlDatePick').style.display = v === 'pickday' ? 'inline-block' : 'none';
+      document.getElementById('tlDateFrom').style.display = v === 'custom' ? 'inline-block' : 'none';
+      document.getElementById('tlDateTo').style.display = v === 'custom' ? 'inline-block' : 'none';
+    });
+    document.getElementById('tlDatePick').addEventListener('change', _tlRerender);
+    document.getElementById('tlDateFrom').addEventListener('change', _tlRerender);
+    document.getElementById('tlDateTo').addEventListener('change', _tlRerender);
+
+    // Export to Excel
+    document.getElementById('tlExportExcel').addEventListener('click', function() {
+      const filtered = _tlGetFiltered();
+      if (!filtered.length) { alert('No data to export'); return; }
+
+      // Build CSV (Excel-compatible with BOM for UTF-8)
+      const headers = ['ID','Date','Time (ET)','Setup','Direction','Grade','Score','SPX','LIS','Target',
+        '+GEX','-GEX','Gap to LIS','Upside','R:R','First Hour','Alignment','VIX','Overvix',
+        'Result','P&L','Max Profit','Max Loss','Duration (min)','Comments'];
+      const esc = v => { const s = v == null ? '' : String(v); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"'+s.replace(/"/g,'""')+'"' : s; };
+      let csv = '\uFEFF' + headers.map(esc).join(',') + '\n';
+      filtered.forEach(l => {
+        let dateStr='', timeStr='';
+        if (l.ts) {
+          const d = new Date(l.ts);
+          const dET = new Date(d.toLocaleString('en-US',{timeZone:'America/New_York'}));
+          dateStr = dET.getFullYear()+'-'+String(dET.getMonth()+1).padStart(2,'0')+'-'+String(dET.getDate()).padStart(2,'0');
+          timeStr = String(dET.getHours()).padStart(2,'0')+':'+String(dET.getMinutes()).padStart(2,'0')+':'+String(dET.getSeconds()).padStart(2,'0');
+        }
+        const res = l.outcome_result || (l.outcome ? (l.outcome.hit_target?'WIN':l.outcome.hit_stop?'LOSS':'OPEN') : 'OPEN');
+        const pnl = l.outcome_pnl != null ? l.outcome_pnl.toFixed(1) : '';
+        const mp = l.outcome_max_profit != null ? l.outcome_max_profit.toFixed(1) : (l.outcome?.max_profit != null ? l.outcome.max_profit.toFixed(1) : '');
+        const ml = l.outcome_max_loss != null ? l.outcome_max_loss.toFixed(1) : (l.outcome?.max_loss != null ? l.outcome.max_loss.toFixed(1) : '');
+        const dur = l.outcome_elapsed_min != null ? l.outcome_elapsed_min.toFixed(0) : '';
+        const row = [l.id, dateStr, timeStr, l.setup_name, l.direction, l.grade, l.score,
+          l.spot, l.lis, l.target, l.max_plus_gex, l.max_minus_gex,
+          l.gap_to_lis, l.upside, l.rr_ratio, l.first_hour,
+          l.greek_alignment, l.vix, l.overvix,
+          res, pnl, mp, ml, dur, l.comments||''];
+        csv += row.map(esc).join(',') + '\n';
+      });
+
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dateTag = new Date().toISOString().slice(0,10);
+      a.download = 'trade_log_'+dateTag+'.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
 
     async function loadSetupLog() {
       const list = document.getElementById('setupLogList');

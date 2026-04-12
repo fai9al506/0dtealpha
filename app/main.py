@@ -17772,8 +17772,8 @@ DASH_HTML_TEMPLATE = """
       const headers = ['ID','Date','Time (ET)','Setup','Direction','Grade','Score','SPX','LIS','Target',
         '+GEX','-GEX','Gap to LIS','Upside','R:R','First Hour','Alignment','VIX','Overvix',
         'Result','P&L','Max Profit','Max Loss','Duration (min)','Comments'];
-      const esc = v => { const s = v == null ? '' : String(v); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"'+s.replace(/"/g,'""')+'"' : s; };
-      let csv = '\uFEFF' + headers.map(esc).join(',') + '\n';
+      const esc = v => { const s = v == null ? '' : String(v); return s.includes(',') || s.includes('"') || s.includes('\\n') ? '"'+s.replace(/"/g,'""')+'"' : s; };
+      let csv = '\\uFEFF' + headers.map(esc).join(',') + '\\n';
       filtered.forEach(l => {
         let dateStr='', timeStr='';
         if (l.ts) {
@@ -17792,7 +17792,7 @@ DASH_HTML_TEMPLATE = """
           l.gap_to_lis, l.upside, l.rr_ratio, l.first_hour,
           l.greek_alignment, l.vix, l.overvix,
           res, pnl, mp, ml, dur, l.comments||''];
-        csv += row.map(esc).join(',') + '\n';
+        csv += row.map(esc).join(',') + '\\n';
       });
 
       const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});

@@ -13229,8 +13229,8 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabEsDelta">ES Delta</button>
         <button class="btn" id="tabHistorical">Historical</button>
         <button class="btn" id="tabTradeLog">Trade Log</button>
-        <a href="/stock-gex-live" class="btn" style="display:block;text-decoration:none;text-align:center;background:#2d1b4e;color:#b39ddb">Stock GEX</a>
-        <a href="/eod-review" class="btn" style="display:block;text-decoration:none;text-align:center;background:#1b2e3e;color:#60a5fa">EOD Review</a>
+        <a href="/stock-gex-live" class="btn" style="display:block;text-decoration:none;color:var(--muted)">Stock GEX <span style="font-size:9px;opacity:0.5">&#8599;</span></a>
+        <a href="/eod-review" class="btn" style="display:block;text-decoration:none;color:var(--muted)">EOD Review <span style="font-size:9px;opacity:0.5">&#8599;</span></a>
       </div>
       <div style="margin-top:14px">
         <button id="alertSettingsBtn" class="strike-btn" style="padding:5px 12px;font-size:11px;width:100%">Settings</button>

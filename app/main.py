@@ -3736,9 +3736,8 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None, grade: str | None = None) -> bool:
     """Single source of truth for the LIVE auto-trade filter (currently V12-fix).
-    V12-fix = V11 + gap-down/up longs-only block before 10:00 (|gap|>30).
-    Removed: Rule A (all-day gap-up block) — V12 base filter already removes bad longs (72% WR when filtered).
-    Changed: Rule B longs-only — shorts before 10:00 are 71% WR, should not be blocked.
+    V12-fix = V11 + gap longs-only block before 10:00 (|gap|>30) + SIDIAL-EXTREME longs block.
+    SIDIAL-EXTREME longs: 34t, 29% WR, -182.5 pts across 9 dates. Shorts = 69% WR, +280 pts.
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Setups still fire and log to portal/setup_log — this only gates live execution.
     Change this ONE function when the filter evolves."""
@@ -3775,6 +3774,10 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
             return False
 
     if is_long:
+        # Block longs on SIDIAL-EXTREME: 34t, 29% WR, -182.5 pts across 9 dates
+        # Mean-revert paradigm crushes longs; shorts on SIDIAL-EXT = 69% WR, +280 pts
+        if paradigm == "SIDIAL-EXTREME":
+            return False
         if align < 2:
             return False
         if setup_name == "Skew Charm":
@@ -11277,7 +11280,9 @@ def api_setup_filter_analysis(date: str = Query(None, description="Date YYYY-MM-
                 if grade and grade in ("C", "LOG"):
                     reason = f"grade {grade} blocked"
                 elif is_long:
-                    if align < 2:
+                    if par == "SIDIAL-EXTREME":
+                        reason = "SIDIAL-EXTREME longs blocked"
+                    elif align < 2:
                         reason = f"align {align:+d} < +2"
                     elif vix_f and vix_f > 22:
                         reason = f"VIX {vix_f:.1f}>22, overvix={ov_f}"
@@ -12244,6 +12249,7 @@ function passesStrategy(l, strat) {
   }
   function v10Base() {
     if (isLong) {
+      if (l.paradigm === 'SIDIAL-EXTREME') return false;
       if (align < 2) return false;
       if (sn !== 'Skew Charm') {
         const vix = l.vix != null ? l.vix : 0;
@@ -12264,7 +12270,7 @@ function passesStrategy(l, strat) {
     if (l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
     if (!gapFilter(l.ts)) return false;
     if (!v11TimeGates(l.ts)) return false;
-    if (isLong) { if (align<2) return false; }
+    if (isLong) { if (l.paradigm==='SIDIAL-EXTREME') return false; if (align<2) return false; }
     else { if (l.paradigm==='GEX-LIS') return false; }
     return true;
   }
@@ -16875,8 +16881,8 @@ DASH_HTML_TEMPLATE = """
           if (mins >= 870 && mins < 900) return false;
           if (mins >= 930) return false;
         }
-        // V10 base: longs need align >= 2, shorts need no GEX-LIS
-        if (isLong) { if (align < 2) return false; }
+        // V10 base: longs need align >= 2 + no SIDIAL-EXT, shorts need no GEX-LIS
+        if (isLong) { if (l.paradigm === 'SIDIAL-EXTREME') return false; if (align < 2) return false; }
         else { if (l.paradigm === 'GEX-LIS') return false; }
         return true;
       }
@@ -16913,6 +16919,7 @@ DASH_HTML_TEMPLATE = """
         }
         // V10 base
         if (isLong) {
+          if (l.paradigm === 'SIDIAL-EXTREME') return false;
           if (align < 2) return false;
           if (sn !== 'Skew Charm') {
             const vix = l.vix != null ? l.vix : 0;
@@ -16958,6 +16965,7 @@ DASH_HTML_TEMPLATE = """
         }
         // V10 base rules
         if (isLong) {
+          if (l.paradigm === 'SIDIAL-EXTREME') return false;
           if (align < 2) return false;
           if (sn !== 'Skew Charm') {
             const vix = l.vix != null ? l.vix : 0;

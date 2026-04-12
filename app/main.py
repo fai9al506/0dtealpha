@@ -13815,7 +13815,7 @@ DASH_HTML_TEMPLATE = """
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
           <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v12le">V12-LE (real)</option><option value="v12nt">V12-NT (ninja)</option><option value="v12">V12 (live)</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
-          <button id="tlExportExcel" title="Export filtered data to Excel (.xlsx)" style="padding:3px 10px;background:#1a2634;border:1px solid #3b82f6;border-radius:4px;color:#60a5fa;cursor:pointer;font-size:11px;white-space:nowrap">Export Excel</button>
+          <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px">Export Excel</button>
         </div>
         <div class="tl-stats" id="tlStats"></div>
         <div style="overflow-y:auto;flex:1">

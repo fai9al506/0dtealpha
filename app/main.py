@@ -3877,10 +3877,10 @@ def _compute_setup_levels(r: dict):
         return round(target_lvl, 2), round(stop_lvl, 2)
 
     if setup_name == "VIX Divergence":
-        # Trailing stop — no fixed target; initial SL = 8 pts
-        # Short: hybrid trail (BE@8, activation=10, gap=5)
-        # Long: continuous trail (activation=0, gap=8)
-        stop_lvl = spot - 8 if is_long else spot + 8
+        # Trailing stop — no fixed target
+        # Long: SL=8, hybrid trail (BE@6, activation=8, gap=8)
+        # Short: SL=12, continuous trail (activation=15, gap=5)
+        stop_lvl = spot - 8 if is_long else spot + 12
         return None, round(stop_lvl, 2)
 
     if setup_name == "Vanna Butterfly":
@@ -3891,14 +3891,14 @@ def _compute_setup_levels(r: dict):
         return pin, None
 
     if setup_name == "VIX Divergence":
-        # SL=8, trail-only (no fixed TP). Direction-aware.
+        # Trail-only (no fixed TP). Direction-aware SL.
         d = r.get("direction", "long")
         if d == "short":
             target_lvl = spot - 100  # no fixed TP
-            stop_lvl = spot + 8
+            stop_lvl = spot + 12     # SHORT: SL=12 (contrarian, needs room)
         else:
             target_lvl = spot + 100  # no fixed TP
-            stop_lvl = spot - 8
+            stop_lvl = spot - 8      # LONG: SL=8
         return round(target_lvl, 2), round(stop_lvl, 2)
 
     if setup_name == "IV Momentum":
@@ -4097,12 +4097,14 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "SB2 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
             "Delta Absorption": {"mode": "continuous", "activation": 0, "gap": 8},
         }
-        # VIX Divergence: direction-dependent trail
+        # VIX Divergence: direction-dependent trail (optimized Apr 13)
+        # Long: hybrid BE@6, trail@8, gap=8 (was cont a=0 g=8 — ratcheted on noise)
+        # Short: cont a=15 g=5 SL=12 (was hyb be=8 a=10 g=5 SL=8 — too tight)
         if setup_name == "VIX Divergence":
             if is_long:
-                _trail_params["VIX Divergence"] = {"mode": "continuous", "activation": 0, "gap": 8}
+                _trail_params["VIX Divergence"] = {"mode": "hybrid", "be_trigger": 6, "activation": 8, "gap": 8}
             else:
-                _trail_params["VIX Divergence"] = {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5}
+                _trail_params["VIX Divergence"] = {"mode": "continuous", "activation": 15, "gap": 5}
 
         # Update per-trade price tracking with cycle extremes
         if _es_based:
@@ -10496,9 +10498,9 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         # VIX Divergence: direction-dependent trail for portal detail view
         if setup_name == "VIX Divergence":
             if is_long:
-                _trail_params["VIX Divergence"] = {"mode": "continuous", "activation": 0, "gap": 8, "initial_sl": 8}
+                _trail_params["VIX Divergence"] = {"mode": "hybrid", "be_trigger": 6, "activation": 8, "gap": 8, "initial_sl": 8}
             else:
-                _trail_params["VIX Divergence"] = {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8}
+                _trail_params["VIX Divergence"] = {"mode": "continuous", "activation": 15, "gap": 5, "initial_sl": 12}
 
         if is_trailing:
             tp = _trail_params[setup_name]

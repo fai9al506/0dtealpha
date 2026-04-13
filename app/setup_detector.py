@@ -3159,18 +3159,20 @@ def evaluate_vix_divergence(spot, vix, settings, paradigm=None, **kwargs):
         composite = p1_score + p2_score + vix_score
 
         # ── RM per direction ──
-        stop_pts = 8
         # Stop-entry confirmation: wait for first 1.5pt move in signal direction
         # Backtest: WR 50→68%, PnL +149→+262, MaxDD 29→11, avg MAE 5.3→2.3
         CONFIRM_OFFSET = 1.5
         confirm_timeout_min = 30
         if direction == "short":
-            # BE@8, trail activation=10, gap=5
+            # SL=12, continuous trail activation=15 gap=5
+            # (shorts are contrarian, need wider SL to survive initial drawdown)
+            stop_pts = 12
             confirm_price = round(spot - CONFIRM_OFFSET, 2)
             target_price = round(spot - 100, 2)  # no fixed TP, trail-only
             stop_price = round(confirm_price + stop_pts, 2)
         else:
-            # IMM trail gap=8 (continuous from entry)
+            # SL=8, hybrid trail BE@6 activation=8 gap=8
+            stop_pts = 8
             confirm_price = round(spot + CONFIRM_OFFSET, 2)
             target_price = round(spot + 100, 2)  # no fixed TP, trail-only
             stop_price = round(confirm_price - stop_pts, 2)

@@ -1251,7 +1251,90 @@ def reset_absorption_session():
 
 
 
-def evaluate_absorption(bars, volland_stats, settings, spx_spot=None, vix=None):
+def grade_absorption_v3(direction, alignment, vol_ratio, div_raw, vol_raw, dd_raw, lis_raw):
+    """Standalone grading for ES Absorption v3 — direction-aware scoring.
+
+    Returns (grade, score) tuple. Can be called from main.py to re-grade
+    after alignment is computed.
+
+    399-trade analysis (Feb 19 - Apr 13, 2026). r=+0.184, cross-validated r=+0.141.
+    """
+    _is_bull = (direction == "bullish")
+    _align = alignment if alignment is not None else 0
+
+    s = 50  # base
+
+    # 1. Direction base
+    if _is_bull:
+        s += 8
+
+    # 2. Alignment (direction-dependent)
+    if _is_bull and _align >= 1:
+        s += 4
+    if not _is_bull and _align <= -2:
+        s += 7
+    if not _is_bull and _align >= 1:
+        s -= 4
+
+    # 3. Time of day (bearish PM is toxic: 37% WR after 14:30)
+    now_et = datetime.now(NY)
+    et_hour = now_et.hour + now_et.minute / 60.0
+    if not _is_bull and et_hour >= 14.5:
+        s -= 12
+    elif not _is_bull and et_hour < 12:
+        s += 4
+    elif _is_bull and et_hour >= 14.5:
+        s -= 3
+
+    # 4. Volume ratio (bearish high-vol = bonus)
+    if vol_ratio is not None:
+        if not _is_bull and vol_ratio >= 2.5:
+            s += 8
+        elif not _is_bull and vol_ratio < 1.75:
+            s -= 4
+
+    # 5. div_raw: OPPOSITE per direction
+    if div_raw is not None:
+        if _is_bull and div_raw >= 2:
+            s += 4
+        elif not _is_bull and div_raw >= 3:
+            s -= 5
+        elif not _is_bull and div_raw <= 1:
+            s += 3
+
+    # 6. vol_raw: OPPOSITE per direction
+    if vol_raw is not None:
+        if _is_bull and vol_raw >= 3:
+            s -= 5
+        elif not _is_bull and vol_raw >= 2:
+            s += 3
+
+    # 7. DD alignment
+    if dd_raw is not None and dd_raw >= 1:
+        s += 4
+
+    # 8. LIS proximity (hurts bulls)
+    if lis_raw is not None:
+        if _is_bull and lis_raw >= 1:
+            s -= 4
+
+    s = max(0, min(100, s))
+
+    if s >= 70:
+        grade = "A+"
+    elif s >= 62:
+        grade = "A"
+    elif s >= 54:
+        grade = "B"
+    elif s >= 46:
+        grade = "C"
+    else:
+        grade = "LOG"
+
+    return grade, round(s, 1)
+
+
+def evaluate_absorption(bars, volland_stats, settings, spx_spot=None, vix=None, alignment=None):
     """
     Evaluate ES Absorption setup on completed range bars.
 
@@ -1260,12 +1343,14 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None, vix=None):
       volland_stats: dict with keys paradigm, delta_decay_hedging, lines_in_sand (or None)
       settings: setup settings dict with abs_* keys
       spx_spot: (unused, kept for API compat)
-      vix: current VIX value (for grading v2)
+      vix: current VIX value (for grading)
+      alignment: greek alignment score (-3 to +3) from main.py
 
     Returns result dict or None.
 
-    Grading v2 (Mar 22): Data-driven scoring from 217 trades.
-    Old grading was anti-predictive (r=-0.238). New grading r=+0.271.
+    Grading v3 (Apr 13): Direction-aware scoring from 399 trades.
+    Key insight: div_raw and vol_raw have OPPOSITE effects for bulls vs bears.
+    v2 was anti-predictive (r=-0.024). v3: r=+0.184, cross-validated r=+0.141.
     """
     if not settings.get("absorption_enabled", True):
         return None
@@ -1404,71 +1489,9 @@ def evaluate_absorption(bars, volland_stats, settings, spx_spot=None, vix=None):
     para_score_raw = 100 if para_raw else 0
     lis_score = {0: 0, 1: 50, 2: 100}.get(lis_raw, 0)
 
-    # --- Scoring v2: Data-driven (5 components, max 95) ---
-    # Based on 217-trade analysis (Feb 19 - Mar 20, 2026).
-    #   Old score: r=-0.238 (anti-predictive)
-    #   New score: r=+0.271 (correctly predictive)
-
-    # 1. Paradigm subtype (0-25) — strongest predictor
-    #    GOOD (57% WR): BofA-LIS, AG-PURE, SIDIAL-MESSY, GEX-PURE
-    #    BAD (32% WR, -171 pts): AG-LIS, AG-TARGET, SIDIAL-EXTREME, GEX-LIS
-    _GOOD_ES = {"BofA-LIS", "BOFA-LIS", "AG-PURE", "SIDIAL-MESSY", "GEX-PURE"}
-    _BAD_ES = {"AG-LIS", "AG-TARGET", "SIDIAL-EXTREME", "GEX-LIS"}
-    if paradigm_str in _GOOD_ES:
-        para_v2 = 25
-    elif paradigm_str in _BAD_ES:
-        para_v2 = 0
-    else:
-        para_v2 = 12
-
-    # 2. Direction (0-15) — bullish 53% WR, bearish 40% WR
-    dir_v2 = 15 if direction == "bullish" else 5
-
-    # 3. Time of day (0-20) — 11xx=56% best, 10xx/15xx=27-29% worst
-    now_et = datetime.now(NY)
-    et_h = now_et.hour
-    if et_h in (11, 13):
-        time_v2 = 20
-    elif et_h in (12, 14):
-        time_v2 = 12
-    elif et_h == 10:
-        time_v2 = 3
-    else:
-        time_v2 = 0  # 15xx = 29% WR
-
-    # 4. Alignment (0-20) — directional, r=+0.087
-    #    align=+2: 65% WR, align=-1: 39% WR
-    # Note: greek_alignment not directly available here, approximate from Volland stats
-    # DD + paradigm alignment serves as proxy
-    align_proxy = 0
-    if dd_raw:
-        align_proxy += 10
-    if para_raw:
-        align_proxy += 10
-
-    # 5. VIX (0-15) — VIX<20: 67% WR, VIX 20-24: 42%
-    _vix_val = float(vix) if vix is not None else 22.0
-    if _vix_val < 20:
-        vix_v2 = 15
-    elif _vix_val >= 25:
-        vix_v2 = 10  # VIX 25+ slightly better than 20-24
-    else:
-        vix_v2 = 5
-
-    composite = para_v2 + dir_v2 + time_v2 + align_proxy + vix_v2
-    composite = max(0, min(100, composite))
-
-    # --- Grade v2 ---
-    if composite >= 75:
-        grade = "A+"
-    elif composite >= 60:
-        grade = "A"
-    elif composite >= 45:
-        grade = "B"
-    elif composite >= 30:
-        grade = "C"
-    else:
-        grade = "LOG"
+    # --- Scoring v3: Direction-aware (uses standalone grade_absorption_v3) ---
+    grade, composite = grade_absorption_v3(
+        direction, alignment, vol_ratio, div_raw, vol_raw, dd_raw, lis_raw)
 
     return {
         "setup_name": "ES Absorption",

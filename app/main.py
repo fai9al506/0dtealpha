@@ -5308,6 +5308,21 @@ def _run_absorption_detection(bars: list) -> dict | None:
         result.get("direction"), _abs_charm, _vanna_cache.get("all"),
         result.get("spot"), gex_plus)
 
+    # Re-grade with real alignment (grading v3 is direction+alignment-aware)
+    try:
+        from app.setup_detector import grade_absorption_v3
+        _new_grade, _new_score = grade_absorption_v3(
+            result["direction"], result["greek_alignment"],
+            result.get("abs_vol_ratio"), result.get("div_raw"),
+            result.get("vol_raw"), result.get("dd_raw"), result.get("lis_raw"))
+        if _new_grade != result["grade"]:
+            print(f"[absorption] re-graded with alignment={result['greek_alignment']}: "
+                  f"{result['grade']}({result['score']}) -> {_new_grade}({_new_score})", flush=True)
+            result["grade"] = _new_grade
+            result["score"] = _new_score
+    except Exception as e:
+        print(f"[absorption] re-grade error: {e}", flush=True)
+
     # Build signal dict for chart markers
     signal = {
         "bar_idx": result["bar_idx"],

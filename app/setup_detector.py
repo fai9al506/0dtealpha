@@ -1991,8 +1991,8 @@ DEFAULT_SB2_ABS_SETTINGS = {
     "sb2_gate_mode": "OR",        # "OR" = vol OR delta passes, "AND" = both must pass
     "sb2_recovery_pct": 0.60,     # recovery bar must reverse >= 60% of flush bar range
     "sb2_cooldown_bars": 20,      # min bars between same-direction signals (was 10)
-    "sb2_stop_pts": 8,
-    "sb2_target_pts": 12,         # wider target — backtest: +336 pts vs +68 at T=10
+    "sb2_stop_pts": 10,
+    "sb2_target_pts": 20,         # SL=10/T=20 (Apr 13 study: 89t, RunDD 60, PF 1.18)
     "sb2_block_before_et": "09:45", # block signals before 9:45 ET (open noise)
     "sb2_block_after_et": "15:00",  # block signals after 15:00 ET (weak edge)
 }

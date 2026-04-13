@@ -3835,9 +3835,10 @@ def _compute_setup_levels(r: dict):
         es_price = r.get("abs_es_price")
         if not es_price:
             return None, None
-        # SL=8/T=12 (backtest: 217 signals, 47.5% WR, +336 pts over 22d)
-        target_lvl = es_price + 12 if is_long else es_price - 12
-        stop_lvl = es_price - 8 if is_long else es_price + 8
+        # SL=10/T=20 (Apr 13 study: 89t, 36% WR, +98.6 pts, RunDD 60, PF 1.18)
+        # Was SL=8/T=12 but trail bug made T=12 dead code. Fixed: removed trail, pure bracket.
+        target_lvl = es_price + 20 if is_long else es_price - 20
+        stop_lvl = es_price - 10 if is_long else es_price + 10
         return round(target_lvl, 2), round(stop_lvl, 2)
 
     if setup_name == "Delta Absorption":
@@ -4094,7 +4095,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
             "SB Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
             "SB10 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
-            "SB2 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
+            # SB2 Absorption: NO trail — fixed SL=10/T=20 bracket (removed from trail_params Apr 13)
             "Delta Absorption": {"mode": "continuous", "activation": 0, "gap": 8},
         }
         # VIX Divergence: direction-dependent trail (optimized Apr 13)
@@ -5923,8 +5924,8 @@ def _run_sb2_absorption(bars: list):
 
     # Outcome tracking
     if fire:
-        stop_pts = _setup_settings.get("sb2_stop_pts", 8)
-        target_pts = _setup_settings.get("sb2_target_pts", 10)
+        stop_pts = _setup_settings.get("sb2_stop_pts", 10)
+        target_pts = _setup_settings.get("sb2_target_pts", 20)
         es_entry = result.get("abs_es_price", result["spot"])
         if result["direction"] == "bullish":
             target_lvl = es_entry + target_pts

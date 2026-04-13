@@ -226,7 +226,7 @@ Volume-gated price vs CVD divergence on ES 5-pt range bars, with Volland conflue
 
 4. **Weighted Composite** (0-100): Divergence 25% + Volume 25% + DD 15% + Paradigm 15% + LIS 20%
 
-**Grading:** A+ >= 75, A >= 55, B >= 35. Below B = no signal.
+**Grading v3 (Apr 13):** Direction-aware scoring via `grade_absorption_v3()`. Key insight: div_raw and vol_raw have OPPOSITE effects for bulls vs bears. v2 was anti-predictive (r=-0.024). v3: r=+0.184, cross-validated r=+0.141. Takes alignment parameter from main.py (re-graded after alignment computed). Thresholds: A+ >= 70, A >= 62, B >= 54, C >= 46, LOG < 46. Performance: A+=79% WR, A=58%, B=51%, C=39%, LOG=22%.
 
 **Cooldown:** Bar-index based (10 bars between same-direction signals) + checked_idx dedup.
 

@@ -149,7 +149,7 @@ def init(engine, get_token_fn, send_telegram_fn):
                           f"{json.dumps(bal, default=str)[:300]}", flush=True)
                 else:
                     print(f"[real-trader] WARNING: cannot access account {acct_id}", flush=True)
-                    _alert(f"[REAL-TRADE] WARNING: Cannot access account {acct_id} on startup")
+                    _alert(f"⚠️ WARNING: Cannot access account {acct_id} on startup")
             except Exception as e:
                 print(f"[real-trader] account {acct_id} check error: {e}", flush=True)
 
@@ -172,7 +172,7 @@ def init(engine, get_token_fn, send_telegram_fn):
                         print(f"[real-trader] PRE-MARKET CLEANUP: {acct_id} has "
                               f"{broker_pos['long_short']} {broker_pos['qty']} {broker_pos['symbol']}",
                               flush=True)
-                        _alert(f"[REAL-TRADE] PRE-MARKET: Found position on {acct_id}\n"
+                        _alert(f"⚠️ PRE-MARKET: Found position on {acct_id}\n"
                                f"{broker_pos['long_short']} {broker_pos['qty']} {broker_pos['symbol']}\n"
                                f"Auto-closing...")
                         _flatten_account(acct_id)
@@ -215,18 +215,18 @@ def _validate_account_direction(account_id: str, is_long: bool) -> bool:
     """Validate that the account is allowed for this direction. CRITICAL SAFETY CHECK."""
     if account_id not in ACCOUNT_WHITELIST:
         print(f"[real-trader] BLOCKED: account {account_id} not in whitelist!", flush=True)
-        _alert(f"[REAL-TRADE] SECURITY: Blocked order to non-whitelisted account {account_id}")
+        _alert(f"🚨 SECURITY: Blocked order to non-whitelisted account {account_id}")
         return False
     expected_dir = ACCOUNT_DIRECTION_BINDING.get(account_id)
     if expected_dir is None:
         print(f"[real-trader] BLOCKED: account {account_id} has no direction binding!", flush=True)
-        _alert(f"[REAL-TRADE] SECURITY: No direction binding for account {account_id}")
+        _alert(f"🚨 SECURITY: No direction binding for account {account_id}")
         return False
     actual_dir = "long" if is_long else "short"
     if expected_dir != actual_dir:
         print(f"[real-trader] BLOCKED: account {account_id} bound to {expected_dir}, "
               f"got {actual_dir}!", flush=True)
-        _alert(f"[REAL-TRADE] SECURITY: Direction mismatch!\n"
+        _alert(f"🚨 SECURITY: Direction mismatch!\n"
                f"Account {account_id} bound to {expected_dir}, attempted {actual_dir}")
         return False
     return True
@@ -328,7 +328,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         if bp < margin_needed:
             print(f"[real-trader] skip {setup_name}: insufficient buying power on {account_id} "
                   f"(${bp:,.0f} < ${margin_needed:,.0f})", flush=True)
-            _alert(f"[REAL-TRADE] SKIPPED {setup_name}: insufficient margin\n"
+            _alert(f"⚠️ SKIPPED {setup_name}: insufficient margin\n"
                    f"Account: {account_id} | BP: ${bp:,.0f} < ${margin_needed:,.0f}")
             return
 
@@ -336,7 +336,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     daily_loss = _get_daily_realized_loss()
     if daily_loss >= DAILY_LOSS_LIMIT:
         print(f"[real-trader] CIRCUIT BREAKER: daily loss ${daily_loss:,.0f} >= limit ${DAILY_LOSS_LIMIT:,.0f}", flush=True)
-        _alert(f"[REAL-TRADE] CIRCUIT BREAKER HIT\n"
+        _alert(f"🚨 CIRCUIT BREAKER HIT\n"
                f"Daily loss: ${daily_loss:,.0f} >= ${DAILY_LOSS_LIMIT:,.0f}\n"
                f"No more trades today.")
         return
@@ -390,7 +390,7 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
     resp = _ts_api("POST", "/orderexecution/orders", entry_payload, account_id)
     ok, entry_oid = _order_ok(resp)
     if not ok:
-        _alert(f"[REAL-TRADE] FAILED entry for {setup_name}\n"
+        _alert(f"🚨 FAILED entry for {setup_name}\n"
                f"Account: {account_id}\n"
                f"Side: {side} {QTY} {MES_SYMBOL} @ ~{es_price:.2f}")
         return
@@ -410,7 +410,7 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
     stop_ok, stop_oid = _order_ok(stop_resp)
     if not stop_ok:
         stop_oid = None
-        _alert(f"[REAL-TRADE] MANUAL INTERVENTION: {setup_name} entry placed "
+        _alert(f"🚨 MANUAL INTERVENTION: {setup_name} entry placed "
                f"(id={entry_oid}) but STOP FAILED!\n"
                f"Account: {account_id}\n"
                f"Side: {side} {QTY} {MES_SYMBOL} @ ~{es_price:.2f} Stop: {es_stop:.2f}")
@@ -464,7 +464,7 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
           f"@ ~{es_price:.2f} target={tgt_str} stop={es_stop:.2f} "
           f"acct={account_id} ids=entry:{entry_oid}/stop:{stop_oid}/tgt:{t1_oid}",
           flush=True)
-    _alert(f"[REAL-TRADE] {setup_name} PLACED\n"
+    _alert(f"🟢 {setup_name} PLACED\n"
            f"Side: {dir_str} | {QTY} {MES_SYMBOL} @ ~{es_price:.2f}\n"
            f"Account: {account_id}\n"
            f"Target: {tgt_str} | Stop: {es_stop:.2f}")
@@ -496,7 +496,7 @@ def _place_limit_entry(setup_log_id, setup_name, direction, is_long,
     resp = _ts_api("POST", "/orderexecution/orders", entry_payload, account_id)
     ok, entry_oid = _order_ok(resp)
     if not ok:
-        _alert(f"[REAL-TRADE] FAILED limit entry for {setup_name}\n"
+        _alert(f"🚨 FAILED limit entry for {setup_name}\n"
                f"Account: {account_id}\n"
                f"Side: {side} {QTY} {MES_SYMBOL} LIMIT @ {limit_price:.2f}")
         return
@@ -532,7 +532,7 @@ def _place_limit_entry(setup_log_id, setup_name, direction, is_long,
     print(f"[real-trader] LIMIT placed: {setup_name} {dir_str} {QTY} {MES_SYMBOL} "
           f"LIMIT @ {limit_price:.2f} (market was {es_price:.2f}) "
           f"acct={account_id} id={entry_oid}", flush=True)
-    _alert(f"[REAL-TRADE] {setup_name} LIMIT entry\n"
+    _alert(f"🟢 {setup_name} LIMIT entry\n"
            f"Side: {dir_str} | {QTY} {MES_SYMBOL} LIMIT @ {limit_price:.2f}\n"
            f"Account: {account_id}\n"
            f"[CHARM S/R] Waiting for fill (market @ {es_price:.2f})")
@@ -556,7 +556,7 @@ def _place_deferred_protective_orders(lid, order, fill_price):
 
     # Final safety check
     if not _validate_account_direction(account_id, is_long):
-        _alert(f"[REAL-TRADE] MANUAL INTERVENTION: {setup_name} limit FILLED "
+        _alert(f"🚨 MANUAL INTERVENTION: {setup_name} limit FILLED "
                f"@ {fill_price:.2f} but direction validation FAILED!\n"
                f"Account: {account_id}")
         return
@@ -576,7 +576,7 @@ def _place_deferred_protective_orders(lid, order, fill_price):
     stop_ok, stop_oid = _order_ok(stop_resp)
     if not stop_ok:
         stop_oid = None
-        _alert(f"[REAL-TRADE] MANUAL INTERVENTION: {setup_name} limit FILLED "
+        _alert(f"🚨 MANUAL INTERVENTION: {setup_name} limit FILLED "
                f"@ {fill_price:.2f} but STOP FAILED!\n"
                f"Account: {account_id}")
 
@@ -608,7 +608,7 @@ def _place_deferred_protective_orders(lid, order, fill_price):
     print(f"[real-trader] DEFERRED orders placed: {setup_name} "
           f"stop={es_stop:.2f} target={es_target:.2f} "
           f"(entry improved {imp_pts:.1f}pts from market) acct={account_id}", flush=True)
-    _alert(f"[REAL-TRADE] {setup_name} LIMIT FILLED @ {fill_price:.2f}\n"
+    _alert(f"🟢 {setup_name} LIMIT FILLED @ {fill_price:.2f}\n"
            f"Account: {account_id}\n"
            f"[CHARM S/R] Improved {imp_pts:+.1f}pts from market "
            f"({order.get('deferred_es_price', 0):.2f})\n"
@@ -664,11 +664,11 @@ def update_stop(setup_log_id: int, new_stop_price: float):
         _persist_order(setup_log_id)
         print(f"[real-trader] stop updated: id={setup_log_id} "
               f"{old_stop:.2f} -> {new_stop_price:.2f} acct={account_id}", flush=True)
-        _alert(f"[REAL-TRADE] {order['setup_name']} stop updated\n"
+        _alert(f"🔄 {order['setup_name']} stop updated\n"
                f"Account: {account_id}\n"
                f"{old_stop:.2f} -> {new_stop_price:.2f}")
     else:
-        _alert(f"[REAL-TRADE] MANUAL INTERVENTION: stop update FAILED\n"
+        _alert(f"🚨 MANUAL INTERVENTION: stop update FAILED\n"
                f"Account: {account_id}\n"
                f"id={setup_log_id} old={old_stop:.2f} new={new_stop_price:.2f}")
 
@@ -698,7 +698,7 @@ def close_trade(setup_log_id: int, result_type: str):
         _persist_order(setup_log_id)
         print(f"[real-trader] closed: {setup_name} id={setup_log_id} "
               f"result={result_type} acct={account_id}", flush=True)
-        _alert(f"[REAL-TRADE] {setup_name} CLOSED: {result_type}\n"
+        _alert(f"🏁 {setup_name} CLOSED: {result_type}\n"
                f"Account: {account_id}")
     else:
         print(f"[real-trader] broker cleanup done (slot already released): "
@@ -741,7 +741,7 @@ def _flatten_position(order):
 
     # Validate before any order modification
     if not _validate_account_direction(account_id, is_long):
-        _alert(f"[REAL-TRADE] CRITICAL: Cannot flatten -- direction validation failed!\n"
+        _alert(f"🚨 CRITICAL: Cannot flatten -- direction validation failed!\n"
                f"Account: {account_id} | {order.get('setup_name')}")
         return
 
@@ -756,7 +756,7 @@ def _flatten_position(order):
         _ts_api("DELETE", f"/orderexecution/orders/{order['entry_order_id']}", None, account_id)
         print(f"[real-trader] cancelled pending limit entry: {order['setup_name']} "
               f"acct={account_id}", flush=True)
-        _alert(f"[REAL-TRADE] {order['setup_name']} limit entry cancelled\n"
+        _alert(f"🏁 {order['setup_name']} limit entry cancelled\n"
                f"Account: {account_id}")
         return
 
@@ -778,7 +778,7 @@ def _flatten_position(order):
             print(f"[real-trader] flatten SKIPPED: direction mismatch on {account_id}! "
                   f"Expected={'Long' if is_long else 'Short'} "
                   f"Actual={broker_pos['long_short']} qty={broker_pos['qty']}", flush=True)
-            _alert(f"[REAL-TRADE] POSITION MISMATCH on {account_id}\n"
+            _alert(f"⚠️ POSITION MISMATCH on {account_id}\n"
                    f"Expected: {'Long' if is_long else 'Short'}\n"
                    f"Broker: {broker_pos['long_short']} {broker_pos['qty']}\n"
                    f"MANUAL REVIEW NEEDED")
@@ -800,7 +800,7 @@ def _flatten_position(order):
             orders_list = resp.get("Orders", [])
             if orders_list and orders_list[0].get("Error") == "FAILED":
                 msg = orders_list[0].get("Message", "")
-                _alert(f"[REAL-TRADE] FLATTEN REJECTED on {account_id}\n"
+                _alert(f"🚨 FLATTEN REJECTED on {account_id}\n"
                        f"{order['setup_name']} qty={close_qty}\n"
                        f"Error: {msg}\nMANUAL CLOSE REQUIRED")
                 return
@@ -816,7 +816,7 @@ def _flatten_position(order):
             print(f"[real-trader] flattened: {order['setup_name']} qty={close_qty} "
                   f"fill={order.get('close_fill_price')} acct={account_id}", flush=True)
         else:
-            _alert(f"[REAL-TRADE] FLATTEN FAILED on {account_id}\n"
+            _alert(f"🚨 FLATTEN FAILED on {account_id}\n"
                    f"{order['setup_name']} id={order['setup_log_id']} qty={close_qty}\n"
                    f"MANUAL CLOSE REQUIRED")
 
@@ -890,14 +890,14 @@ def _reconcile_positions():
                   f"expected={expected_qty} broker={broker_qty}", flush=True)
             if broker_qty > 0 and expected_qty == 0:
                 # Orphan: broker has position we don't track
-                _alert(f"[REAL-TRADE] POSITION MISMATCH on {acct_id}\n"
+                _alert(f"⚠️ POSITION MISMATCH on {acct_id}\n"
                        f"Expected: {expected_qty} MES\n"
                        f"Broker: {broker_qty} MES\n"
                        f"ORPHAN detected -- auto-closing")
                 _close_broker_orphans(acct_id, source="RECONCILE")
             elif broker_qty == 0 and expected_qty > 0:
                 # Ghost: we think we have position but broker doesn't
-                _alert(f"[REAL-TRADE] GHOST POSITION on {acct_id}\n"
+                _alert(f"⚠️ GHOST POSITION on {acct_id}\n"
                        f"Expected: {expected_qty} MES\n"
                        f"Broker: FLAT\n"
                        f"Marking tracked orders as closed")
@@ -912,7 +912,7 @@ def _reconcile_positions():
                     _persist_order(_gid)
             elif broker_qty != expected_qty:
                 # Qty mismatch
-                _alert(f"[REAL-TRADE] QTY MISMATCH on {acct_id}\n"
+                _alert(f"⚠️ QTY MISMATCH on {acct_id}\n"
                        f"Expected: {expected_qty} MES\n"
                        f"Broker: {broker_qty} MES\n"
                        f"Check manually")
@@ -941,7 +941,7 @@ def _check_order_fills(lid, order, broker_orders):
             changed = True
             print(f"[real-trader] limit entry {entry_status}: {order['setup_name']} "
                   f"acct={account_id}", flush=True)
-            _alert(f"[REAL-TRADE] {order['setup_name']} LIMIT {entry_status}\n"
+            _alert(f"⚠️ {order['setup_name']} LIMIT {entry_status}\n"
                    f"Account: {account_id}\n"
                    f"[CHARM S/R] Entry not filled -- trade skipped")
         else:
@@ -963,7 +963,7 @@ def _check_order_fills(lid, order, broker_orders):
                         changed = True
                         print(f"[real-trader] LIMIT TIMEOUT: {order['setup_name']} cancelled "
                               f"after {elapsed/60:.0f} min acct={account_id}", flush=True)
-                        _alert(f"[REAL-TRADE] {order['setup_name']} LIMIT EXPIRED\n"
+                        _alert(f"🏁 {order['setup_name']} LIMIT EXPIRED\n"
                                f"Account: {account_id}\n"
                                f"[CHARM S/R] {order.get('limit_entry_price', 0):.2f} not reached "
                                f"in {elapsed/60:.0f} min -- trade skipped")
@@ -982,7 +982,7 @@ def _check_order_fills(lid, order, broker_orders):
             changed = True
             print(f"[real-trader] FILLED: {order['setup_name']} "
                   f"{QTY} {MES_SYMBOL} @ {fill_price} acct={account_id}", flush=True)
-            _alert(f"[REAL-TRADE] {order['setup_name']} FILLED\n"
+            _alert(f"🟢 {order['setup_name']} FILLED\n"
                    f"Account: {account_id}\n"
                    f"{QTY} {MES_SYMBOL} @ {fill_price}\n"
                    f"Target: {order.get('target_price', 0):.2f} | "
@@ -996,7 +996,7 @@ def _check_order_fills(lid, order, broker_orders):
                           or entry.get("Message", ""))
             print(f"[real-trader] entry {entry_status}: {order['setup_name']} "
                   f"reason={rej_reason} acct={account_id}", flush=True)
-            _alert(f"[REAL-TRADE] {order['setup_name']} entry {entry_status}\n"
+            _alert(f"⚠️ {order['setup_name']} entry {entry_status}\n"
                    f"Account: {account_id}\n"
                    f"Reason: {rej_reason}")
 
@@ -1026,7 +1026,7 @@ def _check_order_fills(lid, order, broker_orders):
                 pnl_str = f"${pnl:.2f}" if pnl is not None else "n/a"
                 print(f"[real-trader] TARGET filled: {order['setup_name']} "
                       f"@ {tgt_fp} pnl={pnl_str} acct={account_id}", flush=True)
-                _alert(f"[REAL-TRADE] {order['setup_name']} TARGET FILLED\n"
+                _alert(f"🏁 {order['setup_name']} TARGET FILLED\n"
                        f"Account: {account_id}\n"
                        f"{QTY} {MES_SYMBOL} @ {tgt_fp}\n"
                        f"P&L: {pnl_str}")
@@ -1055,7 +1055,7 @@ def _check_order_fills(lid, order, broker_orders):
                 pnl_str = f"${pnl:.2f}" if pnl is not None else "n/a"
                 print(f"[real-trader] STOP filled: {order['setup_name']} "
                       f"@ {stop_fp} pnl={pnl_str} acct={account_id}", flush=True)
-                _alert(f"[REAL-TRADE] {order['setup_name']} STOP FILLED\n"
+                _alert(f"🏁 {order['setup_name']} STOP FILLED\n"
                        f"Account: {account_id}\n"
                        f"{QTY} {MES_SYMBOL} @ {stop_fp}\n"
                        f"P&L: {pnl_str}")
@@ -1085,7 +1085,7 @@ def _cancel_order_verified(order_id: str, account_id: str, label: str, retries: 
         else:
             print(f"[real-trader] cancel verify failed (no response): {label} order_id={order_id}", flush=True)
     # All retries exhausted
-    _alert(f"[REAL-TRADE] CRITICAL: Failed to cancel {label}\n"
+    _alert(f"🚨 CRITICAL: Failed to cancel {label}\n"
            f"Order ID: {order_id}\nAccount: {account_id}\n"
            f"MANUAL CANCEL REQUIRED!")
 
@@ -1208,7 +1208,7 @@ def flatten_all_eod():
     else:
         print(f"[real-trader] EOD flatten: closing {len(open_orders)} tracked position(s)",
               flush=True)
-        _alert(f"[REAL-TRADE] EOD FLATTEN: closing {len(open_orders)} position(s)")
+        _alert(f"⚠️ EOD FLATTEN: closing {len(open_orders)} position(s)")
 
         # Phase 1a: Cancel ALL orders across ALL tracked trades first
         cancelled = 0
@@ -1282,7 +1282,7 @@ def flatten_all_eod():
                           f"(attempt {attempt})", flush=True)
 
             if not closed:
-                _alert(f"[REAL-TRADE] EOD CLOSE FAILED after 4 attempts\n"
+                _alert(f"🚨 EOD CLOSE FAILED after 4 attempts\n"
                        f"Account: {acct_id}\n"
                        f"{broker_pos['long_short']} {broker_pos['qty']} MES\n"
                        f"MANUAL CLOSE REQUIRED IMMEDIATELY")
@@ -1330,7 +1330,7 @@ def flatten_all_eod():
             print(f"[real-trader] EOD CRITICAL: still have position on {acct_id}! "
                   f"{final_pos['long_short']} {final_pos['qty']} {final_pos['symbol']}",
                   flush=True)
-            _alert(f"[REAL-TRADE] EOD FLATTEN FAILED on {acct_id}\n"
+            _alert(f"🚨 EOD FLATTEN FAILED on {acct_id}\n"
                    f"STILL OPEN: {final_pos['long_short']} {final_pos['qty']}\n"
                    f"MANUAL INTERVENTION REQUIRED IMMEDIATELY")
             # Last-resort retry
@@ -1399,7 +1399,7 @@ def _flatten_account(account_id: str):
                     msg = orders_list[0].get("Message", "")
                     print(f"[real-trader] flatten-account REJECTED on {account_id}: {msg}",
                           flush=True)
-                    _alert(f"[REAL-TRADE] FLATTEN REJECTED on {account_id}\n"
+                    _alert(f"🚨 FLATTEN REJECTED on {account_id}\n"
                            f"{long_short} {qty} {symbol}: {msg}")
                 else:
                     print(f"[real-trader] flatten-account: closed {long_short} {qty} {symbol} "
@@ -1448,7 +1448,7 @@ def _close_broker_orphans(account_id: str, source: str = "EOD"):
 
         print(f"[real-trader] WARNING: {source} orphan on {account_id} -- "
               f"{long_short} {qty} {symbol}. Closing...", flush=True)
-        _alert(f"[REAL-TRADE] {source} ORPHAN on {account_id}\n"
+        _alert(f"⚠️ {source} ORPHAN on {account_id}\n"
                f"{long_short} {qty} {symbol}\nAuto-closing...")
         close_side = "Sell" if long_short == "Long" else "Buy"
         close_payload = {
@@ -1540,7 +1540,7 @@ def periodic_orphan_check():
             print(f"[real-trader] PERIODIC: orphan on {acct_id} -- "
                   f"{broker_pos['long_short']} {broker_pos['qty']} {broker_pos['symbol']}. "
                   f"Closing...", flush=True)
-            _alert(f"[REAL-TRADE] PERIODIC ORPHAN on {acct_id}\n"
+            _alert(f"⚠️ PERIODIC ORPHAN on {acct_id}\n"
                    f"{broker_pos['long_short']} {broker_pos['qty']} "
                    f"{broker_pos['symbol']}\nAuto-closing...")
             _close_broker_orphans(acct_id, source="PERIODIC")
@@ -1737,7 +1737,7 @@ def _ts_api(method: str, path: str, json_body: dict | None,
     if account_id not in ACCOUNT_WHITELIST:
         print(f"[real-trader] BLOCKED API call: account {account_id} not in whitelist! "
               f"method={method} path={path}", flush=True)
-        _alert(f"[REAL-TRADE] SECURITY BLOCK: API call to non-whitelisted account {account_id}\n"
+        _alert(f"🚨 SECURITY BLOCK: API call to non-whitelisted account {account_id}\n"
                f"{method} {path}")
         return None
 
@@ -1907,7 +1907,7 @@ def cleanup_stale_orders():
                   f"{order.get('setup_name', '?')} id={lid} from {order.get('ts_placed', '?')[:10]} "
                   f"acct={order.get('account_id')}", flush=True)
     if cleaned:
-        _alert(f"[REAL-TRADE] Daily cleanup: {cleaned} stale order(s) from previous day(s) removed.\n"
+        _alert(f"⚠️ Daily cleanup: {cleaned} stale order(s) from previous day(s) removed.\n"
                f"These were blocking new trades via concurrent cap.")
     else:
         print(f"[real-trader] daily cleanup: no stale orders", flush=True)

@@ -10361,7 +10361,8 @@ def api_setup_log(limit: int = Query(50), date_range: str = Query(None)):
                        outcome_max_loss, outcome_first_event,
                        outcome_target_level, outcome_stop_level,
                        greek_alignment, vix, overvix,
-                       v13_gex_above, v13_dd_near
+                       v13_gex_above, v13_dd_near,
+                       vanna_cliff_side, vanna_peak_side
                 FROM setup_log
                 {date_filter}
                 ORDER BY ts DESC
@@ -11307,7 +11308,8 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
                        outcome_max_profit, outcome_max_loss,
                        outcome_first_event, outcome_elapsed_min,
                        greek_alignment, vix, overvix,
-                       v13_gex_above, v13_dd_near
+                       v13_gex_above, v13_dd_near,
+                       vanna_cliff_side, vanna_peak_side
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim OFFSET :off
@@ -12373,7 +12375,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v13">V13 (live)</option><option value="v13le">V13-LE (real)</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v13">V13 (live)</option><option value="v13le">V13-LE (real)</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -12460,12 +12462,26 @@ function passesStrategy(l, strat) {
     if (dn >= 3000000000) return true;
     return false;
   }
+  function v13VannaBlock() {
+    // Vanna cliff + peak rules (require vanna_cliff_side; pre-V13 trades have null = skip)
+    const c = l.vanna_cliff_side, p = l.vanna_peak_side;
+    if (c == null) return false;
+    if (!isLong) {
+      if (sn === 'DD Exhaustion' && c === 'A') return true;
+      if (sn === 'Skew Charm' && c === 'A' && p === 'B') return true;
+      if (sn === 'AG Short' && c === 'B' && p === 'A') return true;
+    } else {
+      if (sn === 'Skew Charm' && c === 'A' && p === 'B') return true;
+    }
+    return false;
+  }
   if (strat === 'v13') {
     if (!gapFilter(l.ts)) return false;
     if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
     if (sn==='VIX Divergence'||sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
     if (!v11TimeGates(l.ts)) return false;
     if (v13BullishBlock()) return false;
+    if (v13VannaBlock()) return false;
     return v10Base();
   }
   if (strat === 'v13le') {
@@ -12474,12 +12490,24 @@ function passesStrategy(l, strat) {
     if (!gapFilter(l.ts)) return false;
     if (!v11TimeGates(l.ts)) return false;
     if (v13BullishBlock()) return false;
+    if (v13VannaBlock()) return false;
     if (isLong) { if (l.paradigm==='SIDIAL-EXTREME') return false; if (align<2) return false; }
     else {
       if ((sn==='Skew Charm') && l.paradigm==='GEX-LIS') return false;
       if (sn==='AG Short' && l.paradigm==='AG-TARGET') return false;
     }
     return true;
+  }
+  if (strat === 'v13nt') {
+    const ntSetups = ['Skew Charm','DD Exhaustion','ES Absorption','AG Short','Paradigm Reversal','GEX Velocity'];
+    if (!ntSetups.includes(sn)) return false;
+    if (!gapFilter(l.ts)) return false;
+    if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
+    if (sn==='VIX Divergence'||sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
+    if (!v11TimeGates(l.ts)) return false;
+    if (v13BullishBlock()) return false;
+    if (v13VannaBlock()) return false;
+    return v10Base();
   }
   if (strat === 'v12le') {
     // V12-LE = exact mirror of _passes_live_filter() for SC on real trader
@@ -14022,7 +14050,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v13">V13 (live)</option><option value="v13le">V13-LE (real)</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v13">V13 (live)</option><option value="v13le">V13-LE (real)</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -17058,6 +17086,104 @@ DASH_HTML_TEMPLATE = """
       const sn = l.setup_name || '';
       const align = l.greek_alignment != null ? l.greek_alignment : 0;
       const isLong = l.direction === 'long' || l.direction === 'bullish';
+      // V13 helper: bullish structure block (GEX/DD magnet) + vanna cliff/peak block
+      function _tlV13BullishBlock() {
+        if (isLong) return false;
+        if (sn !== 'Skew Charm' && sn !== 'DD Exhaustion') return false;
+        const ga = l.v13_gex_above != null ? l.v13_gex_above : 0;
+        const dn = l.v13_dd_near != null ? l.v13_dd_near : 0;
+        if (ga >= 75) return true;
+        if (dn >= 3000000000) return true;
+        return false;
+      }
+      function _tlV13VannaBlock() {
+        const c = l.vanna_cliff_side, p = l.vanna_peak_side;
+        if (c == null) return false;
+        if (!isLong) {
+          if (sn === 'DD Exhaustion' && c === 'A') return true;
+          if (sn === 'Skew Charm' && c === 'A' && p === 'B') return true;
+          if (sn === 'AG Short' && c === 'B' && p === 'A') return true;
+        } else {
+          if (sn === 'Skew Charm' && c === 'A' && p === 'B') return true;
+        }
+        return false;
+      }
+      function _tlEtMins() {
+        if (!l.ts) return null;
+        const d = new Date(l.ts);
+        const etStr = d.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
+        const tp = (etStr.split(', ')[1] || etStr).split(':');
+        return parseInt(tp[0]) * 60 + parseInt(tp[1]);
+      }
+      function _tlGapFilter() {
+        if (!l.ts || !isLong) return true;
+        const dateStr = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
+        const gap = _tlDailyGaps[dateStr];
+        if (gap != null && Math.abs(gap) > 30) {
+          const mins = _tlEtMins();
+          if (mins != null && mins < 600) return false;
+        }
+        return true;
+      }
+      function _tlV11TimeGates() {
+        const mins = _tlEtMins();
+        if (mins == null) return true;
+        if ((sn === 'Skew Charm' || sn === 'DD Exhaustion') && (mins >= 870 && mins < 900)) return false;
+        if ((sn === 'Skew Charm' || sn === 'DD Exhaustion') && mins >= 930) return false;
+        if (sn === 'BofA Scalp' && mins >= 870) return false;
+        return true;
+      }
+      function _tlV10Base() {
+        if (isLong) {
+          if (l.paradigm === 'SIDIAL-EXTREME') return false;
+          if (align < 2) return false;
+          if (sn !== 'Skew Charm') {
+            const vix = l.vix != null ? l.vix : 0;
+            const ov = l.overvix != null ? l.overvix : -99;
+            if (vix > 22 && ov < 2) return false;
+          }
+          return true;
+        }
+        if ((sn === 'Skew Charm' || sn === 'DD Exhaustion') && l.paradigm === 'GEX-LIS') return false;
+        if (sn === 'Skew Charm') return true;
+        if (sn === 'AG Short') return true;
+        if (sn === 'DD Exhaustion' && align !== 0) return true;
+        return false;
+      }
+      if (strat === 'v13') {
+        if (!_tlGapFilter()) return false;
+        if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
+        if (sn === 'VIX Divergence' || sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
+        if (!_tlV11TimeGates()) return false;
+        if (_tlV13BullishBlock()) return false;
+        if (_tlV13VannaBlock()) return false;
+        return _tlV10Base();
+      }
+      if (strat === 'v13le') {
+        if (sn !== 'Skew Charm' && sn !== 'AG Short') return false;
+        if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
+        if (!_tlGapFilter()) return false;
+        if (!_tlV11TimeGates()) return false;
+        if (_tlV13BullishBlock()) return false;
+        if (_tlV13VannaBlock()) return false;
+        if (isLong) { if (l.paradigm === 'SIDIAL-EXTREME') return false; if (align < 2) return false; }
+        else {
+          if (sn === 'Skew Charm' && l.paradigm === 'GEX-LIS') return false;
+          if (sn === 'AG Short' && l.paradigm === 'AG-TARGET') return false;
+        }
+        return true;
+      }
+      if (strat === 'v13nt') {
+        const ntSetups = ['Skew Charm','DD Exhaustion','ES Absorption','AG Short','Paradigm Reversal','GEX Velocity'];
+        if (!ntSetups.includes(sn)) return false;
+        if (!_tlGapFilter()) return false;
+        if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
+        if (sn === 'VIX Divergence' || sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
+        if (!_tlV11TimeGates()) return false;
+        if (_tlV13BullishBlock()) return false;
+        if (_tlV13VannaBlock()) return false;
+        return _tlV10Base();
+      }
       if (strat === 'r1') {
         // R1: abs(alignment) >= 3
         return Math.abs(align) >= 3;

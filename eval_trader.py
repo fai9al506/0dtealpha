@@ -195,21 +195,21 @@ DEFAULT_CONFIG = {
     # ── Survival mode ──
     "max_stop_loss_pts": 12,     # Cap ALL stops at 12 pts max (survival mode)
 
-    # ── E2T 50K TCP Rules ──
-    "e2t_daily_loss_limit": 1100,       # $1,100 hard limit
-    "e2t_daily_loss_buffer": 100,       # stop trading at -$1,000 (safety margin)
-    "e2t_eod_trailing_drawdown": 2000,  # $2,000 trailing from peak EOD balance
-    "e2t_max_contracts_es_equiv": 6,    # 6 ES = 60 MES
-    "e2t_starting_balance": 50000,
-    "e2t_peak_balance": 50000,          # updated automatically at EOD
+    # ── E2T 25K TCP Rules ──
+    "e2t_daily_loss_limit": 550,        # $550 hard limit
+    "e2t_daily_loss_buffer": 100,       # stop trading at -$450 (safety margin)
+    "e2t_eod_trailing_drawdown": 1500,  # $1,500 trailing from peak EOD balance
+    "e2t_max_contracts_es_equiv": 3,    # 3 ES = 30 MES
+    "e2t_starting_balance": 25000,
+    "e2t_peak_balance": 25000,          # updated automatically at EOD
 
-    # ── Time rules (Central Time) ──
-    "market_open_ct": "08:30",          # CME futures open
-    "no_new_trades_after_ct": "15:30",  # no new entries after this
-    "flatten_time_ct": "15:50",         # flatten all positions
+    # ── Time rules (Eastern Time) ──
+    "market_open_et": "09:30",          # CME futures open (ET)
+    "no_new_trades_after_et": "15:30",  # no new entries after this (ET)
+    "flatten_time_et": "15:50",         # flatten all positions (ET)
 
     # ── Daily P&L cap (E2T consistency rule: no single day > 30% of target) ──
-    "e2t_daily_pnl_cap": 900,      # $900 = 30% of $3,000 target; stop taking new trades
+    "e2t_daily_pnl_cap": 525,      # $525 = 30% of $1,750 target; stop taking new trades
 
     # ── Per-setup stop/target (points) ──
     # target = fixed take-profit distance; null/"msg" = use Volland target from Telegram
@@ -725,7 +725,7 @@ class ComplianceGate:
 
     def daily_reset(self):
         """Reset daily counters when the date changes."""
-        today = datetime.now(CT).strftime("%Y-%m-%d")
+        today = datetime.now(ET).strftime("%Y-%m-%d")
         if self.last_reset_date == today:
             return
         if self.last_reset_date is not None:
@@ -749,7 +749,7 @@ class ComplianceGate:
     def check(self, signal: dict) -> tuple[bool, str]:
         """Check all E2T rules. Returns (allowed, reason)."""
         cfg = self.cfg
-        now = datetime.now(CT)
+        now = datetime.now(ET)
 
         # Master switch
         if not cfg["enabled"]:
@@ -820,15 +820,16 @@ class ComplianceGate:
         if daily_cap > 0 and self.daily_pnl >= daily_cap:
             return False, f"daily P&L cap reached (${self.daily_pnl:+.0f} >= ${daily_cap:.0f})"
 
-        # Market hours
-        market_open = datetime.strptime(cfg["market_open_ct"], "%H:%M").time()
-        if now.time() < market_open:
-            return False, f"before market open ({cfg['market_open_ct']} CT)"
+        # Market hours (ET)
+        now_et = datetime.now(ET)
+        market_open = datetime.strptime(cfg["market_open_et"], "%H:%M").time()
+        if now_et.time() < market_open:
+            return False, f"before market open ({cfg['market_open_et']} ET)"
 
-        # No new trades cutoff
-        cutoff = datetime.strptime(cfg["no_new_trades_after_ct"], "%H:%M").time()
-        if now.time() >= cutoff:
-            return False, f"past entry cutoff ({cfg['no_new_trades_after_ct']} CT)"
+        # No new trades cutoff (ET)
+        cutoff = datetime.strptime(cfg["no_new_trades_after_et"], "%H:%M").time()
+        if now_et.time() >= cutoff:
+            return False, f"past entry cutoff ({cfg['no_new_trades_after_et']} ET)"
 
         # Dynamic position sizing
         stop_pts = rules.get("stop", 15)
@@ -873,7 +874,7 @@ class ComplianceGate:
         self.trades_today += 1
         if pnl_dollars < 0:
             self.losses_today += 1
-        today = datetime.now(CT).strftime("%Y-%m-%d")
+        today = datetime.now(ET).strftime("%Y-%m-%d")
         self.trade_days.add(today)
         self.has_open_position = False
 
@@ -1104,9 +1105,17 @@ class NT8Bridge:
 
         CLOSEPOSITION OIF command is unreliable in NT8 — use explicit
         market order in opposite direction instead.
+        Checks OIF position file first — if FLAT, skips to avoid opening
+        an accidental new position.
         """
         if not qty:
             log.warning("close_position called with qty=0, skipping")
+            return
+        # Safety: verify NT8 actually has a position before sending close order
+        oif_pos = self.read_oif_position()
+        if oif_pos == "FLAT":
+            log.warning(f"close_position SKIPPED: NT8 is already FLAT — "
+                        f"would have opened accidental {direction} position")
             return
         close_side = "SELL" if direction in ("long", "bullish") else "BUY"
         close_oid = self._oid("x")
@@ -1120,6 +1129,27 @@ class NT8Bridge:
         """Cancel ALL working orders for this symbol (safety net)."""
         self._write(f"CANCELALLORDERS;{self.account};{self.symbol}\n")
         log.info(f"NT8 CANCELALLORDERS: {self.symbol}")
+
+    def read_oif_position(self) -> str | None:
+        """Read NT8 OIF position file to get actual broker position state.
+
+        NT8 writes '{symbol}_{account}_position.txt' in outgoing folder with:
+          FLAT;0;0   or   LONG;qty;avg_price   or   SHORT;qty;avg_price
+        Returns 'FLAT', 'LONG', 'SHORT', or None if file not found.
+        """
+        outgoing = self.incoming.parent / "outgoing"
+        if not outgoing.exists():
+            return None
+        # Search for position file matching this account
+        for f in outgoing.iterdir():
+            if f.name.endswith(f"_{self.account}_position.txt"):
+                try:
+                    content = f.read_text().strip()
+                    parts = content.split(";")
+                    return parts[0]  # FLAT, LONG, or SHORT
+                except Exception:
+                    return None
+        return None
 
     def check_order_state(self, order_id: str) -> dict | None:
         """Check NT8 outgoing folder for order fill/reject status.
@@ -1203,8 +1233,8 @@ class PositionTracker:
                     if pos_ts:
                         try:
                             pos_dt = datetime.fromisoformat(pos_ts)
-                            today_ct = datetime.now(CT).date()
-                            if pos_dt.date() < today_ct:
+                            today_et = datetime.now(ET).date()
+                            if pos_dt.date() < today_et:
                                 log.warning(f"STALE POSITION from {pos_dt.date()}: "
                                             f"{pos['setup_name']} {pos['direction']} "
                                             f"@ {pos['entry_price']:.2f}")
@@ -1227,7 +1257,7 @@ class PositionTracker:
                         if placed_at:
                             try:
                                 placed_dt = datetime.fromisoformat(placed_at)
-                                elapsed = (datetime.now(CT) - placed_dt).total_seconds()
+                                elapsed = (datetime.now(ET) - placed_dt).total_seconds()
                                 if elapsed > self._LIMIT_ENTRY_TIMEOUT_S:
                                     log.warning(f"STALE PENDING LIMIT from {placed_at}: "
                                                 f"{pos['setup_name']} {pos['direction']} "
@@ -1365,13 +1395,13 @@ class PositionTracker:
                 "target_pts": target_pts if not trail_only else None,
                 "trail_only": trail_only,
                 "qty": qty,
-                "ts": datetime.now(CT).isoformat(),
+                "ts": datetime.now(ET).isoformat(),
                 "max_hold_min": rules.get("max_hold_min"),
                 "es_entry_price": es_entry,
                 "be_triggered": False,
                 "pending_limit": True,
                 "limit_entry_price": _round_tick(mes_limit),
-                "limit_placed_at": datetime.now(CT).isoformat(),
+                "limit_placed_at": datetime.now(ET).isoformat(),
                 "deferred_stop": stop_price,
                 "deferred_target": target_price if not trail_only else None,
                 **oids,
@@ -1402,7 +1432,7 @@ class PositionTracker:
                 "target_pts": target_pts if not trail_only else None,
                 "trail_only": trail_only,
                 "qty": qty,
-                "ts": datetime.now(CT).isoformat(),
+                "ts": datetime.now(ET).isoformat(),
                 "max_hold_min": rules.get("max_hold_min"),
                 "es_entry_price": es_entry,
                 "be_triggered": False,
@@ -1627,7 +1657,7 @@ class PositionTracker:
             "target_pts": target_pts if not trail_only else None,
             "trail_only": trail_only,
             "qty": new_qty,
-            "ts": datetime.now(CT).isoformat(),
+            "ts": datetime.now(ET).isoformat(),
             "max_hold_min": new_rules.get("max_hold_min"),
             "es_entry_price": float(es_entry) if es_entry else None,
             "be_triggered": False,
@@ -1702,8 +1732,20 @@ class PositionTracker:
             time.sleep(0.3)
             self.nt8.cancel(self.position["target_oid"])
 
-        # Market exit order to flatten
+        # SAFETY: Check NT8 OIF position file before sending flatten order.
+        # If NT8 says FLAT, the stop already filled — sending a market order
+        # would OPEN a new position instead of closing one.
         time.sleep(0.5)
+        oif_pos = self.nt8.read_oif_position()
+        if oif_pos == "FLAT":
+            log.warning(f"FLATTEN ABORTED ({reason}): NT8 position is FLAT — "
+                        f"stop likely already filled. Clearing phantom position.")
+            self.compliance.record_trade(0.0, self.position["setup_name"], trade_qty)
+            self.position = None
+            self.compliance.has_open_position = False
+            self._save()
+            return
+
         flat_oid = self.nt8._oid("f")
         self.nt8._write(
             f"PLACE;{self.nt8.account};{self.nt8.symbol};{exit_side};{trade_qty};"
@@ -1897,7 +1939,7 @@ class PositionTracker:
             if placed_at:
                 try:
                     placed_dt = datetime.fromisoformat(placed_at)
-                    elapsed = (datetime.now(CT) - placed_dt).total_seconds()
+                    elapsed = (datetime.now(ET) - placed_dt).total_seconds()
                     if elapsed > self._LIMIT_ENTRY_TIMEOUT_S:
                         self.nt8.cancel(entry_oid)
                         limit_px = self.position.get('limit_entry_price', '?')
@@ -1979,7 +2021,7 @@ class PositionTracker:
         if pos_ts:
             try:
                 pos_dt = datetime.fromisoformat(pos_ts)
-                age_s = (datetime.now(CT) - pos_dt).total_seconds()
+                age_s = (datetime.now(ET) - pos_dt).total_seconds()
                 if age_s < self._RECONCILE_GRACE_S:
                     return
             except Exception:
@@ -2025,16 +2067,21 @@ class PositionTracker:
             log.debug(f"Reconcile API check failed: {e}")
 
     def reconcile_with_nt8(self):
-        """Check NT8 position_state.json for phantom position detection.
+        """Check NT8 OIF position file for phantom position detection.
 
         If NT8 shows Flat but eval_trader thinks we're in a position,
         the position was closed without our knowledge → clear phantom.
+        Uses OIF position file (reliable) instead of PositionReporter JSON.
         """
-        nt8_data = read_nt8_position(self.cfg["nt8_incoming_folder"])
-        if nt8_data is None:
-            return  # file missing, stale, or offline — can't reconcile
+        oif_pos = self.nt8.read_oif_position()
+        if oif_pos is None:
+            # Fall back to PositionReporter JSON if OIF file not found
+            nt8_data = read_nt8_position(self.cfg["nt8_incoming_folder"])
+            if nt8_data is None:
+                return  # no position data available
+            oif_pos = "FLAT" if nt8_data.get("position", "Flat") == "Flat" else nt8_data.get("position")
 
-        nt8_flat = nt8_data.get("position", "Flat") == "Flat"
+        nt8_flat = oif_pos == "FLAT"
 
         if self.position and nt8_flat:
             # Grace period: don't reconcile too soon after opening
@@ -2043,7 +2090,7 @@ class PositionTracker:
             if pos_ts:
                 try:
                     pos_dt = datetime.fromisoformat(pos_ts)
-                    age_s = (datetime.now(CT) - pos_dt).total_seconds()
+                    age_s = (datetime.now(ET) - pos_dt).total_seconds()
                     if age_s < self._RECONCILE_GRACE_S:
                         return
                 except Exception:
@@ -2105,7 +2152,7 @@ def _banner(cfg: dict):
     loss_floor = cfg.get("daily_loss_floor", -800)
     log.info(f"  Loss floor: ${loss_floor}/day (stop trading below this)")
     log.info(f"  Trail:     per-setup (see _TRAIL_PARAMS)")
-    log.info(f"  Cutoff:    {cfg['no_new_trades_after_ct']} CT | Flatten: {cfg['flatten_time_ct']} CT")
+    log.info(f"  Cutoff:    {cfg['no_new_trades_after_et']} ET | Flatten: {cfg['flatten_time_et']} ET")
     log.info("-" * 60)
 
     daily_cap = cfg.get("e2t_daily_pnl_cap", 0)
@@ -2242,10 +2289,16 @@ def main():
 
     # Also check NT8 for untracked positions (we're flat but NT8 isn't)
     if not tracker.is_open:
-        nt8_state = read_nt8_position(cfg["nt8_incoming_folder"])
-        if nt8_state and nt8_state.get("position", "Flat") != "Flat":
-            log.warning(f"[NT8] NT8 has {nt8_state['position']} {nt8_state.get('quantity', '?')} "
-                        f"but eval_trader is flat — manage in NT8 or create position file")
+        oif_pos = nt8.read_oif_position()
+        if oif_pos and oif_pos != "FLAT":
+            log.warning(f"[NT8] NT8 OIF shows {oif_pos} but eval_trader is flat — "
+                        f"manage in NT8 or create position file")
+        elif oif_pos is None:
+            # Fall back to PositionReporter
+            nt8_state = read_nt8_position(cfg["nt8_incoming_folder"])
+            if nt8_state and nt8_state.get("position", "Flat") != "Flat":
+                log.warning(f"[NT8] NT8 has {nt8_state['position']} {nt8_state.get('quantity', '?')} "
+                            f"but eval_trader is flat — manage in NT8 or create position file")
 
     poll_interval = cfg.get("telegram_poll_interval_s", 2)
     log.info(f"Polling every {poll_interval}s...")
@@ -2257,7 +2310,7 @@ def main():
 
     try:
         while True:
-            now_ct = datetime.now(CT)
+            now_et = datetime.now(ET)
 
             # Daily reset
             compliance.daily_reset()
@@ -2265,8 +2318,10 @@ def main():
             # ── E2T Tick Trade: count trading day even with no signals ──
             # At 15:30 ET, if no trades today and no position open, place 1 MES
             # with 2-tick TP/SL just to register the day for E2T's 10-day minimum.
+            # Weekday-only: weekday() returns 0=Mon..4=Fri, 5=Sat, 6=Sun.
             now_et = datetime.now(ET)
             if (cfg.get("tick_trade_enabled", True)
+                    and now_et.weekday() < 5
                     and now_et.time() >= TICK_TRADE_TIME_ET
                     and not compliance.tick_trade_done
                     and compliance.trades_today == 0
@@ -2291,7 +2346,7 @@ def main():
                     "target_pts": tick_pts,
                     "trail_only": False,
                     "qty": 1,
-                    "ts": datetime.now(CT).isoformat(),
+                    "ts": datetime.now(ET).isoformat(),
                     "max_hold_min": 5,  # auto-close quickly
                     "es_entry_price": latest_es_price,
                     "be_triggered": False,
@@ -2302,9 +2357,9 @@ def main():
                 compliance.tick_trade_done = True
                 compliance.save()
 
-            # EOD flatten check
-            flatten_time = datetime.strptime(cfg["flatten_time_ct"], "%H:%M").time()
-            if now_ct.time() >= flatten_time and tracker.is_open:
+            # EOD flatten check (ET)
+            flatten_time = datetime.strptime(cfg["flatten_time_et"], "%H:%M").time()
+            if now_et.time() >= flatten_time and tracker.is_open:
                 tracker.flatten("EOD_FLATTEN", es_price=latest_es_price)
 
             # Check NT8 fills + trailing stop (every 5s when position open)

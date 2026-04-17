@@ -907,19 +907,42 @@ def _reconcile_positions():
                 _close_broker_orphans(acct_id, source="RECONCILE")
             elif broker_qty == 0 and expected_qty > 0:
                 # Ghost: we think we have position but broker doesn't
-                _alert(f"⚠️ GHOST POSITION on {acct_id}\n"
-                       f"Expected: {expected_qty} MES\n"
-                       f"Broker: FLAT\n"
-                       f"Marking tracked orders as closed")
+                # Before marking closed, try to recover the actual fill price
+                # from broker order history so P&L accounting stays accurate.
                 _ghost_ids = []
+                _backfilled = []
+                _lost_price = []
                 with _lock:
-                    for o in _active_orders.values():
-                        if o.get("account_id") == acct_id and o["status"] == "filled":
-                            o["status"] = "closed"
-                            o["close_reason"] = "ghost_reconcile"
-                            _ghost_ids.append(o["setup_log_id"])
+                    _to_process = [
+                        (lid, o) for lid, o in _active_orders.items()
+                        if o.get("account_id") == acct_id and o["status"] == "filled"
+                    ]
+                # Release lock while querying broker history (network call)
+                for lid, o in _to_process:
+                    backfill = _backfill_ghost_fill(o)
+                    with _lock:
+                        if backfill:
+                            field, price = backfill
+                            o[field] = price
+                            _backfilled.append((lid, field, price))
+                        else:
+                            _lost_price.append(lid)
+                        o["status"] = "closed"
+                        o["close_reason"] = "ghost_reconcile"
+                        _ghost_ids.append(o["setup_log_id"])
                 for _gid in _ghost_ids:
                     _persist_order(_gid)
+                # Alert with backfill detail — tells user if accounting is accurate or not
+                _msg = (f"⚠️ GHOST POSITION on {acct_id}\n"
+                        f"Expected: {expected_qty} MES · Broker: FLAT\n"
+                        f"Marked {len(_ghost_ids)} closed")
+                if _backfilled:
+                    _msg += f"\n✅ Recovered {len(_backfilled)} fill price(s): "
+                    _msg += ", ".join(f"lid={l} {f}={p}" for l, f, p in _backfilled)
+                if _lost_price:
+                    _msg += f"\n🚨 Could not recover fill for {len(_lost_price)} trade(s): {_lost_price}"
+                _alert(_msg)
+                print(f"[real-trader] ghost_reconcile {acct_id}: backfilled={_backfilled} lost={_lost_price}", flush=True)
             elif broker_qty != expected_qty:
                 # Qty mismatch
                 _alert(f"⚠️ QTY MISMATCH on {acct_id}\n"
@@ -1120,9 +1143,12 @@ def _extract_fill_price(entry_order: dict) -> float | None:
 
 
 def _get_order_fill_price(order_id: str, account_id: str) -> float | None:
-    """Get fill price for a specific order by polling broker."""
+    """Get fill price for a specific order by polling broker.
+    Checks BOTH live /orders AND /historicalorders (filled orders may have moved
+    to history between our polls). Returns fill price or None if not found/not filled."""
     if account_id not in ACCOUNT_WHITELIST:
         return None
+    # 1) Try live orders first (faster, always current)
     try:
         data = _ts_api("GET", f"/brokerage/accounts/{account_id}/orders", None, account_id)
         if data:
@@ -1131,6 +1157,43 @@ def _get_order_fill_price(order_id: str, account_id: str) -> float | None:
                     return _extract_fill_price(o)
     except Exception:
         pass
+    # 2) Fall back to historical orders (stop fills often move to history quickly)
+    try:
+        from datetime import datetime as _dt, timezone as _tz
+        # Use today's date in UTC — covers intraday stop fills
+        today = _dt.now(_tz.utc).strftime("%m-%d-%Y")
+        data = _ts_api("GET",
+                       f"/brokerage/accounts/{account_id}/historicalorders?since={today}&pageSize=600",
+                       None, account_id)
+        if data:
+            for o in data.get("Orders", []):
+                if o.get("OrderID") == order_id and o.get("Status") == "FLL":
+                    return _extract_fill_price(o)
+    except Exception as e:
+        print(f"[real-trader] historicalorders lookup failed for {order_id}: {e}", flush=True)
+    return None
+
+
+def _backfill_ghost_fill(order: dict) -> tuple[str, float] | None:
+    """Try to recover the real fill price of a position that the bot missed.
+    Checks stop_order_id → target_order_id → entry_order_id (reverse chronological).
+    Returns (field_name, fill_price) or None if nothing found. Safe to call — all
+    exceptions swallowed to keep reconciliation working under any broker hiccup."""
+    acct = order.get("account_id", "")
+    if acct not in ACCOUNT_WHITELIST:
+        return None
+    try:
+        # Check the closing orders first — if broker says flat, one of these must have filled
+        for field, oid_key in (("stop_fill_price", "stop_order_id"),
+                                ("target_fill_price", "target_order_id")):
+            oid = order.get(oid_key)
+            if not oid:
+                continue
+            fp = _get_order_fill_price(oid, acct)
+            if fp is not None and fp > 0:
+                return (field, float(fp))
+    except Exception as e:
+        print(f"[real-trader] ghost backfill error for lid={order.get('setup_log_id')}: {e}", flush=True)
     return None
 
 

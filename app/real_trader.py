@@ -58,10 +58,18 @@ SHORTS_ENABLED = os.getenv("REAL_TRADE_SHORTS_ENABLED", "false").lower() == "tru
 _es_env = os.getenv("REAL_TRADE_MES_SYMBOL", "auto")
 MES_SYMBOL = _auto_mes_symbol() if _es_env.lower() == "auto" else _es_env
 
-# Position sizing -- 1 MES per trade, max 1 concurrent per direction
-# (accounts ~$880 each, intraday margin $687/MES — not enough for 2 concurrent)
+# Position sizing -- 1 MES per trade, per-direction concurrent caps
+# Apr 18 2026: raised SHORTS cap 1→2 after slot study (TSRT-live 1-cap missed
+# 12 shorts worth +244 pts / 91% WR over 17 days, ~$1,200 at 1 MES).
+# LONGS stay at 1 (slot cap was neutral on longs — 5 skipped = +0.5 pts).
+# Margin required per active MES: ~$687 intraday. Accounts funded +$1k each
+# (pre-Monday) to support 2 concurrent on shorts.
 QTY = 1
-MAX_CONCURRENT_PER_DIR = 1
+MAX_CONCURRENT_LONG = int(os.getenv("REAL_TRADE_MAX_CONCURRENT_LONG", "1"))
+MAX_CONCURRENT_SHORT = int(os.getenv("REAL_TRADE_MAX_CONCURRENT_SHORT", "2"))
+# Backward-compat alias — any legacy code reading MAX_CONCURRENT_PER_DIR gets
+# the conservative LONG value. New code should use the per-direction constants.
+MAX_CONCURRENT_PER_DIR = MAX_CONCURRENT_LONG
 
 # Risk management
 FIRST_TARGET_PTS = 10.0
@@ -124,7 +132,8 @@ def init(engine, get_token_fn, send_telegram_fn):
     n = len(_active_orders)
     print(f"[real-trader] init: longs={LONGS_ENABLED} (acct={_LONGS_ACCOUNT}) "
           f"shorts={SHORTS_ENABLED} (acct={_SHORTS_ACCOUNT}) "
-          f"symbol={MES_SYMBOL} qty={QTY} max_per_dir={MAX_CONCURRENT_PER_DIR} "
+          f"symbol={MES_SYMBOL} qty={QTY} "
+          f"max_long={MAX_CONCURRENT_LONG} max_short={MAX_CONCURRENT_SHORT} "
           f"active_orders={n}", flush=True)
 
     # Validate account configuration
@@ -308,9 +317,10 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                     except (ValueError, TypeError):
                         pass
 
-    # Cap check: max concurrent per direction
+    # Cap check: max concurrent per direction (asymmetric — longs=1, shorts=2)
     active_count = _count_active_for_direction(is_long)
-    if active_count >= MAX_CONCURRENT_PER_DIR:
+    cap = MAX_CONCURRENT_LONG if is_long else MAX_CONCURRENT_SHORT
+    if active_count >= cap:
         dir_str = "long" if is_long else "short"
         # Log which orders are blocking (for debugging stale-order issues)
         blocking = [(lid, o.get("setup_name"), o.get("ts_placed", "")[:10], o.get("status"))
@@ -318,7 +328,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                     if o.get("status") in ("pending_entry", "pending_limit", "filled")
                     and (o.get("direction", "").lower() in ("long", "bullish")) == is_long]
         print(f"[real-trader] skip {setup_name}: {dir_str} cap reached "
-              f"({active_count}/{MAX_CONCURRENT_PER_DIR}) blocking={blocking}", flush=True)
+              f"({active_count}/{cap}) blocking={blocking}", flush=True)
         return
 
     # Margin/buying power pre-check
@@ -1571,7 +1581,9 @@ def get_status() -> dict:
         "shorts_account": _SHORTS_ACCOUNT,
         "symbol": MES_SYMBOL,
         "qty": QTY,
-        "max_concurrent_per_dir": MAX_CONCURRENT_PER_DIR,
+        "max_concurrent_per_dir": MAX_CONCURRENT_PER_DIR,  # legacy alias = MAX_CONCURRENT_LONG
+        "max_concurrent_long": MAX_CONCURRENT_LONG,
+        "max_concurrent_short": MAX_CONCURRENT_SHORT,
         "active_count": len(active),
         "active_orders": active,
     }

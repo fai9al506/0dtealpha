@@ -456,6 +456,9 @@ def db_init():
         print("[db] DATABASE_URL missing; history disabled", flush=True)
         return
     with engine.begin() as conn:
+        # Increase statement timeout for migrations — Railway default is too short
+        # for ALTER TABLE on large tables (even no-op duplicate_column checks)
+        conn.execute(text("SET LOCAL statement_timeout = '30s'"))
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS chain_snapshots (
             id BIGSERIAL PRIMARY KEY,

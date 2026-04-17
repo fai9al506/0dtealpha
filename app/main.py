@@ -803,6 +803,8 @@ def db_init():
         for col, dtype in [
             ("v13_gex_above", "DOUBLE PRECISION"),
             ("v13_dd_near", "DOUBLE PRECISION"),
+            ("vanna_cliff_side", "TEXT"),
+            ("vanna_peak_side", "TEXT"),
         ]:
             conn.execute(text(f"""
             DO $$ BEGIN
@@ -1772,6 +1774,9 @@ _last_known_spot = None  # cached spot for EOD summary fallback
 # V13 cache: DD per-strike magnet (refreshed with volland cache)
 _v13_dd_magnet_cache: dict = {"ts": 0.0, "max_abs_near": 0.0, "spot": 0.0}
 
+# V13 cache: weekly vanna cliff/peak structure
+_v13_vanna_cache: dict = {"ts": 0.0, "cliff_side": None, "peak_side": None, "spot": 0.0}
+
 # Broker operations executor — fire-and-forget for TS API calls (close_trade, update_stop, place_trade)
 # These calls were blocking the market job (up to 150s of API calls inside a 90s watchdog).
 # Outcome detection is in-memory; broker cleanup is a side effect that can run async.
@@ -1958,6 +1963,9 @@ def log_setup(result_wrapper):
                 insert_params["trail_gap"] = _tp[2]
                 insert_params["v13_gex_above"] = _v13_gex_magnet_above()
                 insert_params["v13_dd_near"] = _v13_dd_magnet_near()
+                _vanna_cliff, _vanna_peak = _v13_vanna_features()
+                insert_params["vanna_cliff_side"] = _vanna_cliff
+                insert_params["vanna_peak_side"] = _vanna_peak
                 # Auto-populate comments and abs_details for ES/SB2 Absorption
                 if setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption", "Delta Absorption") and not insert_params.get("comments"):
                     _parts = [
@@ -1992,7 +2000,8 @@ def log_setup(result_wrapper):
                          vanna_all, vanna_weekly, vanna_monthly, spot_vol_beta, greek_alignment,
                          charm_limit_entry, overvix,
                          trail_sl, trail_activation, trail_gap,
-                         v13_gex_above, v13_dd_near)
+                         v13_gex_above, v13_dd_near,
+                         vanna_cliff_side, vanna_peak_side)
                     VALUES
                         (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
                          :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
@@ -2003,7 +2012,8 @@ def log_setup(result_wrapper):
                          :vanna_all, :vanna_weekly, :vanna_monthly, :spot_vol_beta, :greek_alignment,
                          :charm_limit_entry, :overvix,
                          :trail_sl, :trail_activation, :trail_gap,
-                         :v13_gex_above, :v13_dd_near)
+                         :v13_gex_above, :v13_dd_near,
+                         :vanna_cliff_side, :vanna_peak_side)
                     RETURNING id
                 """), insert_params)
                 log_id = result.fetchone()[0]
@@ -3801,14 +3811,67 @@ def _v13_dd_magnet_near() -> float:
         return 0.0
 
 
+def _v13_vanna_features() -> tuple[str | None, str | None]:
+    """Returns (cliff_side, peak_side). Each is 'A' (above spot), 'B' (below), or None.
+    cliff_side: nearest sign flip in per-strike weekly vanna within +/-50pt band from spot.
+    peak_side: strike with largest |vanna| within +/-50pt band.
+    Full-era backtest (Feb-Apr 2026, 343t): cliff-above shorts 54% WR vs cliff-below 74% WR.
+    Filter rules: DD short cliff=A; SC short cliff=A+peak=B; AG short cliff=B+peak=A; SC long cliff=A+peak=B.
+    Cached 90s."""
+    spot = _last_known_spot
+    if not spot or not engine:
+        return None, None
+    now_ts = time.time()
+    if now_ts - _v13_vanna_cache["ts"] < 90 and abs(_v13_vanna_cache["spot"] - spot) < 15:
+        return _v13_vanna_cache["cliff_side"], _v13_vanna_cache["peak_side"]
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT strike::float AS strike, value::float AS value
+                FROM volland_exposure_points
+                WHERE greek = 'vanna' AND expiration_option = 'THIS_WEEK' AND ticker = 'SPX'
+                  AND ts_utc = (SELECT MAX(ts_utc) FROM volland_exposure_points
+                                WHERE greek = 'vanna' AND expiration_option = 'THIS_WEEK')
+                  AND ABS(strike::float - :spot) <= 50
+                ORDER BY strike
+            """), {"spot": spot}).fetchall()
+        if len(rows) < 2:
+            _v13_vanna_cache.update({"ts": now_ts, "cliff_side": None, "peak_side": None, "spot": spot})
+            return None, None
+        near = [(float(r[0]), float(r[1])) for r in rows]
+        crossings = []
+        for i in range(1, len(near)):
+            s0, v0 = near[i-1]
+            s1, v1 = near[i]
+            if (v0 > 0 and v1 < 0) or (v0 < 0 and v1 > 0):
+                if v1 - v0 != 0:
+                    crossings.append(s0 + (-v0 / (v1 - v0)) * (s1 - s0))
+        cliff_side = None
+        if crossings:
+            nearest = min(crossings, key=lambda s: abs(s - float(spot)))
+            cliff_side = 'A' if nearest > float(spot) else 'B'
+        pk = max(near, key=lambda x: abs(x[1]))[0]
+        peak_side = 'A' if pk > float(spot) else 'B'
+        _v13_vanna_cache.update({"ts": now_ts, "cliff_side": cliff_side, "peak_side": peak_side, "spot": spot})
+        return cliff_side, peak_side
+    except Exception as e:
+        print(f"[v13] vanna_features error: {e}", flush=True)
+        return None, None
+
+
 def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None, grade: str | None = None) -> bool:
     """Single source of truth for the LIVE auto-trade filter (currently V13).
-    V13 = V12-fix + block SC/DD shorts on strong bullish structure.
-    GEX-magnet-above >= 75 (gamma*OI raw): 55 blocks, 31% WR, +215 pts over V12-fix.
-    DD-magnet-near >= 3B (|deltaDecay| within 10pts of spot): catches sticky DD magnets.
-    Backtest Mar 1 - Apr 17: V12-fix +1092 -> V13 +1306 (+19.6%). Bootstrap P(<=0) = 0.2%.
+    V13 = V12-fix + (a) GEX/DD magnet block on SC/DD shorts + (b) vanna cliff/peak structure blocks.
+    (a) GEX-magnet-above >= 75 OR DD-magnet-near >= 3B: 55 blocks, 31% WR, +215 pts over V12-fix.
+    (b) Vanna rules (Feb-Apr 2026, 343t, cliff-above shorts 54% WR vs cliff-below 74% WR):
+        - DD short + cliff=ABOVE (69t, 41% WR, -106 pts)
+        - SC short + cliff=ABOVE + peak=BELOW (27t, 48% WR, -48 pts)
+        - AG short + cliff=BELOW + peak=ABOVE (20t, 56% WR, -12 pts)
+        - SC long + cliff=ABOVE + peak=BELOW (27t, 52% WR, -55 pts)
+    Combined backtest Mar 1 - Apr 17: V12-fix +1570 -> V13 combined +1789 (+14.0%).
+    Vanna adds ~+44 pts on top of GEX/DD magnets (39% overlap, mostly March-regime edge).
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Setups still fire and log to portal/setup_log — this only gates live execution.
     Change this ONE function when the filter evolves."""
@@ -3852,6 +3915,10 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         if align < 2:
             return False
         if setup_name == "Skew Charm":
+            # V13 vanna: SC long + cliff ABOVE + peak BELOW = 27t, 52% WR, -55.4 pts
+            _vc, _vp = _v13_vanna_features()
+            if _vc == 'A' and _vp == 'B':
+                return False
             return True  # SC longs exempt from VIX gate
         if vix is not None and vix > 22:
             ov = overvix if overvix is not None else -99
@@ -3876,6 +3943,17 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         # AG-TARGET = trend already hit target, dealers neutral. 19t, 52.6% WR, -1.8 pts.
         if setup_name == "AG Short" and paradigm == "AG-TARGET":
             return False
+        # ── V13: Vanna cliff/peak structure blocks for shorts ──
+        # Full-era backtest (Feb-Apr 2026, 343t): cliff-above shorts 54% WR vs cliff-below 74% WR.
+        # Combined with GEX+DD magnets: +44 pts incremental on top of V13, mostly from calm regimes.
+        _vc, _vp = _v13_vanna_features()
+        if _vc is not None:
+            if setup_name == "DD Exhaustion" and _vc == 'A':
+                return False  # 69t, 41% WR, -106 pts
+            if setup_name == "Skew Charm" and _vc == 'A' and _vp == 'B':
+                return False  # 27t, 48% WR, -48 pts
+            if setup_name == "AG Short" and _vc == 'B' and _vp == 'A':
+                return False  # 20t, 56% WR, -12 pts
         if setup_name in ("Skew Charm", "AG Short"):
             return True
         if setup_name == "DD Exhaustion" and align != 0:

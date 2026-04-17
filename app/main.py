@@ -3863,15 +3863,28 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None, grade: str | None = None) -> bool:
     """Single source of truth for the LIVE auto-trade filter (currently V13).
-    V13 = V12-fix + (a) GEX/DD magnet block on SC/DD shorts + (b) vanna cliff/peak structure blocks.
-    (a) GEX-magnet-above >= 75 OR DD-magnet-near >= 3B: 55 blocks, 31% WR, +215 pts over V12-fix.
-    (b) Vanna rules (Feb-Apr 2026, 343t, cliff-above shorts 54% WR vs cliff-below 74% WR):
+    V13 = V12-fix + (a) GEX/DD magnet + (b) vanna cliff/peak + (c) DD-specific quality gates.
+
+    (a) GEX/DD magnet on SC/DD shorts: GEX-above>=75 OR DD-near>=3B — +215 pts / 55 blocks.
+    (b) Vanna cliff/peak rules (Feb-Apr 2026, 343t):
         - DD short + cliff=ABOVE (69t, 41% WR, -106 pts)
         - SC short + cliff=ABOVE + peak=BELOW (27t, 48% WR, -48 pts)
         - AG short + cliff=BELOW + peak=ABOVE (20t, 56% WR, -12 pts)
         - SC long + cliff=ABOVE + peak=BELOW (27t, 52% WR, -55 pts)
-    Combined backtest Mar 1 - Apr 17: V12-fix +1570 -> V13 combined +1789 (+14.0%).
-    Vanna adds ~+44 pts on top of GEX/DD magnets (39% overlap, mostly March-regime edge).
+    (c) DD Exhaustion quality gates (Apr 18 2026 study, 449 trades, +343 pts saved OOS-stable):
+        Long side:
+          - align >= +3: 118t, 37% WR, -312 pts (contrarian fails when fully aligned)
+          - VIX >= 22: 131t, 42% WR, -280 pts (DD thesis broken in high-VIX)
+          - paradigm in GEX-LIS/AG-LIS/AG-PURE/BofA-LIS/BOFA-MESSY: 124t, -356 pts
+          - grade C: 21t, 22% WR, -112 pts
+        Short side:
+          - paradigm BOFA-PURE: 67t, 40% WR, -104 pts (dealer-support regime)
+          - grade A+: 51t, 38% WR, -68 pts (A+ worse than A — over-conviction)
+          - grade C: 19t, 50% WR, -45 pts
+        Combined DD filter: 449t → 162t, PnL -34 → +309, MaxDD halved, PF 0.99 → 1.40.
+
+    Combined backtest Mar 1 - Apr 17 (SC/AG layer): V12-fix +1570 → V13 +1789 (+14%).
+    DD filter adds independently on top (DD not yet in TSRT scope, affects eval/SIM/logging).
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Setups still fire and log to portal/setup_log — this only gates live execution.
     Change this ONE function when the filter evolves."""
@@ -3914,6 +3927,21 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
             return False
         if align < 2:
             return False
+        # ── V13 DD Exhaustion long-specific rules (Apr 18 2026) ──
+        # Study: 209 DD long trades since Feb, 45% WR, -91 pts, MaxDD -529. Three OOS-stable rules:
+        #   align=+3: 118t, 37% WR, -312 pts (contrarian setup fails when all Greeks aligned — move already happened)
+        #   VIX>=22: 131t, 42% WR, -280 pts (DD thesis doesn't work in high-VIX regimes)
+        #   bad paradigms: 124t, low WR, -356 pts (GEX-LIS/AG-LIS/AG-PURE/BofA-LIS/BOFA-MESSY all losing)
+        # Combined OOS: both halves positive (train +46, test +296).
+        if setup_name == "DD Exhaustion":
+            if align >= 3:
+                return False  # 118t, 37% WR, -312 pts
+            if vix is not None and vix >= 22:
+                return False  # 131t, 42% WR, -280 pts
+            if paradigm in ("GEX-LIS", "AG-LIS", "AG-PURE", "BofA-LIS", "BOFA-MESSY"):
+                return False  # 124t combined, -356 pts
+            if grade == "C":
+                return False  # 21t, 22% WR, -112 pts
         if setup_name == "Skew Charm":
             # V13 vanna: SC long + cliff ABOVE + peak BELOW = 27t, 52% WR, -55.4 pts
             _vc, _vp = _v13_vanna_features()
@@ -3956,8 +3984,20 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                 return False  # 20t, 56% WR, -12 pts
         if setup_name in ("Skew Charm", "AG Short"):
             return True
-        if setup_name == "DD Exhaustion" and align != 0:
-            return True
+        if setup_name == "DD Exhaustion":
+            # ── V13 DD Exhaustion short-specific rules (Apr 18 2026) ──
+            # Study: 240 DD shorts, 46% WR, +58 pts, MaxDD -268. Three OOS-stable blocks:
+            #   BOFA-PURE paradigm: 67t, 40% WR, -104 pts (dealer-support regime fades shorts)
+            #   grade A+: 51t, 38% WR, -68 pts (A+ counterintuitively worse than A — over-conviction?)
+            #   grade C (both dirs): 40t, -157 pts combined (low-quality signals)
+            if paradigm == "BOFA-PURE":
+                return False
+            if grade == "A+":
+                return False
+            if grade == "C":
+                return False
+            if align != 0:
+                return True
         return False
 
 
@@ -12475,6 +12515,22 @@ function passesStrategy(l, strat) {
     }
     return false;
   }
+  function v13DDQualityBlock() {
+    // DD Exhaustion quality gates (Apr 18 study, +343 pts OOS-stable vs raw DD)
+    if (sn !== 'DD Exhaustion') return false;
+    if (isLong) {
+      if (align >= 3) return true;
+      const vix = l.vix != null ? l.vix : 0;
+      if (vix >= 22) return true;
+      if (['GEX-LIS','AG-LIS','AG-PURE','BofA-LIS','BOFA-MESSY'].includes(l.paradigm)) return true;
+      if (l.grade === 'C') return true;
+    } else {
+      if (l.paradigm === 'BOFA-PURE') return true;
+      if (l.grade === 'A+') return true;
+      if (l.grade === 'C') return true;
+    }
+    return false;
+  }
   if (strat === 'v13') {
     if (!gapFilter(l.ts)) return false;
     if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
@@ -12482,6 +12538,7 @@ function passesStrategy(l, strat) {
     if (!v11TimeGates(l.ts)) return false;
     if (v13BullishBlock()) return false;
     if (v13VannaBlock()) return false;
+    if (v13DDQualityBlock()) return false;
     return v10Base();
   }
   if (strat === 'v13le') {
@@ -12507,6 +12564,7 @@ function passesStrategy(l, strat) {
     if (!v11TimeGates(l.ts)) return false;
     if (v13BullishBlock()) return false;
     if (v13VannaBlock()) return false;
+    if (v13DDQualityBlock()) return false;
     return v10Base();
   }
   if (strat === 'v12le') {
@@ -17108,6 +17166,21 @@ DASH_HTML_TEMPLATE = """
         }
         return false;
       }
+      function _tlV13DDQualityBlock() {
+        if (sn !== 'DD Exhaustion') return false;
+        if (isLong) {
+          if (align >= 3) return true;
+          const vix = l.vix != null ? l.vix : 0;
+          if (vix >= 22) return true;
+          if (['GEX-LIS','AG-LIS','AG-PURE','BofA-LIS','BOFA-MESSY'].includes(l.paradigm)) return true;
+          if (l.grade === 'C') return true;
+        } else {
+          if (l.paradigm === 'BOFA-PURE') return true;
+          if (l.grade === 'A+') return true;
+          if (l.grade === 'C') return true;
+        }
+        return false;
+      }
       function _tlEtMins() {
         if (!l.ts) return null;
         const d = new Date(l.ts);
@@ -17157,6 +17230,7 @@ DASH_HTML_TEMPLATE = """
         if (!_tlV11TimeGates()) return false;
         if (_tlV13BullishBlock()) return false;
         if (_tlV13VannaBlock()) return false;
+        if (_tlV13DDQualityBlock()) return false;
         return _tlV10Base();
       }
       if (strat === 'v13le') {
@@ -17182,6 +17256,7 @@ DASH_HTML_TEMPLATE = """
         if (!_tlV11TimeGates()) return false;
         if (_tlV13BullishBlock()) return false;
         if (_tlV13VannaBlock()) return false;
+        if (_tlV13DDQualityBlock()) return false;
         return _tlV10Base();
       }
       if (strat === 'r1') {

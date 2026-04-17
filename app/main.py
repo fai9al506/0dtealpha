@@ -1754,6 +1754,9 @@ _spx_cycle_high = None  # derived cycle high (max of spot & any new session high
 _spx_cycle_low = None   # derived cycle low  (min of spot & any new session low)
 _last_known_spot = None  # cached spot for EOD summary fallback
 
+# V13 cache: DD per-strike magnet (refreshed with volland cache)
+_v13_dd_magnet_cache: dict = {"ts": 0.0, "max_abs_near": 0.0, "spot": 0.0}
+
 # Broker operations executor — fire-and-forget for TS API calls (close_trade, update_stop, place_trade)
 # These calls were blocking the market job (up to 150s of API calls inside a 90s watchdog).
 # Outcome detection is in-memory; broker cleanup is a side effect that can run async.
@@ -3732,12 +3735,61 @@ def send_summary_alert(time_label: str):
     except Exception as e:
         print(f"[alerts] summary error: {e}", flush=True)
 
+
+def _v13_gex_magnet_above() -> float:
+    """Top +GEX strike above spot from latest chain. Returns raw gamma*OI (no x100)."""
+    spot = _last_known_spot
+    if not spot or latest_df is None:
+        return 0.0
+    try:
+        with _df_lock:
+            df = latest_df.copy()
+        strikes = pd.to_numeric(df["Strike"], errors="coerce").fillna(0.0)
+        c_gamma = pd.to_numeric(df["C_Gamma"], errors="coerce").fillna(0.0)
+        c_oi = pd.to_numeric(df["C_OpenInterest"], errors="coerce").fillna(0.0)
+        p_gamma = pd.to_numeric(df["P_Gamma"], errors="coerce").fillna(0.0)
+        p_oi = pd.to_numeric(df["P_OpenInterest"], errors="coerce").fillna(0.0)
+        net_gex = (c_gamma * c_oi) - (p_gamma * p_oi)
+        above = net_gex[strikes > spot]
+        return float(above.max()) if not above.empty else 0.0
+    except Exception as e:
+        print(f"[v13] gex_magnet_above error: {e}", flush=True)
+        return 0.0
+
+
+def _v13_dd_magnet_near() -> float:
+    """Max |deltaDecay| within +/-10 pts of spot from latest Volland data. Cached 90s."""
+    spot = _last_known_spot
+    if not spot or not engine:
+        return 0.0
+    now_ts = time.time()
+    if now_ts - _v13_dd_magnet_cache["ts"] < 90 and abs(_v13_dd_magnet_cache["spot"] - spot) < 15:
+        return _v13_dd_magnet_cache["max_abs_near"]
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(text("""
+                SELECT MAX(ABS(value::float)) FROM volland_exposure_points
+                WHERE greek = 'deltaDecay' AND expiration_option = 'TODAY' AND ticker = 'SPX'
+                  AND ts_utc = (SELECT MAX(ts_utc) FROM volland_exposure_points
+                                WHERE greek = 'deltaDecay' AND expiration_option = 'TODAY')
+                  AND ABS(strike::float - :spot) <= 10
+            """), {"spot": spot}).scalar()
+        val = float(row) if row else 0.0
+        _v13_dd_magnet_cache.update({"ts": now_ts, "max_abs_near": val, "spot": spot})
+        return val
+    except Exception as e:
+        print(f"[v13] dd_magnet_near error: {e}", flush=True)
+        return 0.0
+
+
 def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None, grade: str | None = None) -> bool:
-    """Single source of truth for the LIVE auto-trade filter (currently V12-fix).
-    V12-fix = V11 + gap longs-only block before 10:00 (|gap|>30) + SIDIAL-EXTREME longs block.
-    SIDIAL-EXTREME longs: 34t, 29% WR, -182.5 pts across 9 dates. Shorts = 69% WR, +280 pts.
+    """Single source of truth for the LIVE auto-trade filter (currently V13).
+    V13 = V12-fix + block SC/DD shorts on strong bullish structure.
+    GEX-magnet-above >= 75 (gamma*OI raw): 55 blocks, 31% WR, +215 pts over V12-fix.
+    DD-magnet-near >= 3B (|deltaDecay| within 10pts of spot): catches sticky DD magnets.
+    Backtest Mar 1 - Apr 17: V12-fix +1092 -> V13 +1306 (+19.6%). Bootstrap P(<=0) = 0.2%.
     Used for: Telegram sends, auto-trade gating, outcome notifications.
     Setups still fire and log to portal/setup_log — this only gates live execution.
     Change this ONE function when the filter evolves."""
@@ -3788,6 +3840,16 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                 return False
         return True
     else:
+        # ── V13: Block SC/DD shorts on strong bullish structure ──
+        # GEX magnet above spot >= 75 (raw gamma*OI): dealers must buy SPX as price rises
+        # DD magnet near spot >= 3B: sticky delta-decay concentration pins price
+        # Backtest: 55 blocks, 31% WR, +215 pts. March: 0 blocks (safe in bearish regime).
+        # AG Short excluded (contrarian by design, 72% WR baseline).
+        if setup_name in ("Skew Charm", "DD Exhaustion"):
+            if _v13_gex_magnet_above() >= 75:
+                return False
+            if _v13_dd_magnet_near() >= 3_000_000_000:
+                return False
         if setup_name in ("Skew Charm", "DD Exhaustion"):
             # Block GEX-LIS paradigm shorts: 24t, 43% WR, -57.6 pts (LIS = support floor)
             if paradigm == "GEX-LIS":

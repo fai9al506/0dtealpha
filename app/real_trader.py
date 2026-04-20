@@ -1055,7 +1055,8 @@ def _check_order_fills(lid, order, broker_orders):
                       f"@ {tgt_fp} pnl={pnl_str} acct={account_id}", flush=True)
                 _alert(f"🏁 {order['setup_name']} TARGET FILLED\n"
                        f"{dir_label} {QTY} MES @ {tgt_fp}\n"
-                       f"P&L: {pnl_str}")
+                       f"P&L: {pnl_str}"
+                       f"{_day_line(account_id)}")
 
         # Check stop fill
         if order.get("stop_order_id") and order["status"] == "filled":
@@ -1084,7 +1085,8 @@ def _check_order_fills(lid, order, broker_orders):
                       f"@ {stop_fp} pnl={pnl_str} acct={account_id}", flush=True)
                 _alert(f"🏁 {order['setup_name']} STOP FILLED\n"
                        f"{dir_label} {QTY} MES @ {stop_fp}\n"
-                       f"P&L: {pnl_str}")
+                       f"P&L: {pnl_str}"
+                       f"{_day_line(account_id)}")
 
     if changed:
         _persist_order(lid)
@@ -1398,12 +1400,14 @@ def flatten_all_eod():
             if close_fp is not None:
                 _alert(f"🏁 {order['setup_name']} EOD FLATTEN\n"
                        f"{dir_label} {QTY} MES @ {close_fp}\n"
-                       f"P&L: {pnl_str}")
+                       f"P&L: {pnl_str}"
+                       f"{_day_line(acct_id)}")
             else:
                 # Fallback if we couldn't retrieve fill price
                 _alert(f"🏁 {order['setup_name']} EOD FLATTEN\n"
                        f"{dir_label} {QTY} MES\n"
-                       f"P&L: n/a (fill price unavailable)")
+                       f"P&L: n/a (fill price unavailable)"
+                       f"{_day_line(acct_id)}")
             print(f"[real-trader] EOD marked closed: {order['setup_name']} id={lid} "
                   f"acct={acct_id} close_fp={close_fp} pnl={pnl_str}", flush=True)
 
@@ -1838,6 +1842,42 @@ def _get_buying_power(account_id: str) -> float | None:
     except Exception as e:
         print(f"[real-trader] buying power query error on {account_id}: {e}", flush=True)
         return None
+
+
+def _get_daily_realized_pnl(account_id: str) -> float | None:
+    """Fetch today's realized P&L from broker for Telegram 'Day:' line.
+    Uses BalanceDetail.RealizedProfitLoss (authoritative, includes fees)."""
+    if account_id not in ACCOUNT_WHITELIST:
+        return None
+    try:
+        data = _ts_api("GET", f"/brokerage/accounts/{account_id}/balances", None, account_id)
+        if not data:
+            return None
+        balances = data.get("Balances", [])
+        if isinstance(balances, list) and balances:
+            b = balances[0]
+        elif isinstance(balances, dict):
+            b = balances
+        else:
+            return None
+        detail = b.get("BalanceDetail", {}) or {}
+        val = detail.get("RealizedProfitLoss")
+        if val is None:
+            return None
+        return float(val)
+    except Exception as e:
+        print(f"[real-trader] daily P&L query error on {account_id}: {e}", flush=True)
+        return None
+
+
+def _day_line(account_id: str) -> str:
+    """Format 'Day: +$XX.XX' line from broker's daily realized P&L.
+    Returns empty string on failure so alerts still send."""
+    pnl = _get_daily_realized_pnl(account_id)
+    if pnl is None:
+        return ""
+    sign = "+" if pnl >= 0 else "-"
+    return f"\nDay: {sign}${abs(pnl):.2f}"
 
 
 # ====== TS API HELPER ======

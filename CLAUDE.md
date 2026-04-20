@@ -5,12 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Session Continuity Protocol (MANDATORY)
 
 ### On Session Start
-1. **Read `PROJECT_BRAIN.md`** from memory directory — contains vision, ideas backlog, design decisions, pending items
-2. **Read `SESSION_LOG.md`** from memory directory — contains what was done in recent sessions
-3. **Read `Tasks.md`** from repo root — check SCHEDULED TASKS table. If any task is due (based on trigger condition and current date/time), alert the user: "Task S# is due: [description]". Include all due tasks in your session brief.
-4. **Scan `references/`** — glob all files, compare against `references/INDEX.md`. If new files found, read them and update the index with a short summary. This keeps knowledge current without the user having to notify.
-5. You now have full context. Do NOT ask the user to explain what the system does or what was done before.
-6. **Print a 3-5 line brief** to the user summarizing: what was done recently, what the current state is, and what the current priority is. Include any due scheduled tasks. Do NOT ask "what do you want to work on?" — just show you know where we are. The user will then tell you what to do.
+1. **Check ET time FIRST.** Run `powershell -Command "[System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, 'Eastern Standard Time').ToString('yyyy-MM-dd HH:mm:ss dddd')"`. If the time falls **Mon–Fri between 09:30 and 16:00 ET**, print this warning prominently at the TOP of your session brief (before anything else):
+
+   > ⚠️ **MARKET HOURS ACTIVE — NO `git push` UNTIL 16:10 ET.** Commits OK; defer all pushes. If a deploy is needed, add it to `Tasks.md` as a scheduled post-market task.
+
+   This applies to EVERY session, no exceptions. Do not skip this check even for quick questions.
+2. **Read `PROJECT_BRAIN.md`** from memory directory — contains vision, ideas backlog, design decisions, pending items
+3. **Read `SESSION_LOG.md`** from memory directory — contains what was done in recent sessions
+4. **Read `Tasks.md`** from repo root — check SCHEDULED TASKS table. If any task is due (based on trigger condition and current date/time), alert the user: "Task S# is due: [description]". Include all due tasks in your session brief.
+5. **Scan `references/`** — glob all files, compare against `references/INDEX.md`. If new files found, read them and update the index with a short summary. This keeps knowledge current without the user having to notify.
+6. You now have full context. Do NOT ask the user to explain what the system does or what was done before.
+7. **Print a 3-5 line brief** to the user summarizing: what was done recently, what the current state is, and what the current priority is. Include any due scheduled tasks. Do NOT ask "what do you want to work on?" — just show you know where we are. The user will then tell you what to do.
 
 ### On Session End (when user says "bye", "done", "session end", "that's all", or similar)
 1. **Update `SESSION_LOG.md`** — add entry for this session: what was done, decisions made, ideas discussed

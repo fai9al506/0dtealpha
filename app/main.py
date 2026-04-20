@@ -63,10 +63,16 @@ _alert_state = {
 _pipeline_status = {
     "ts_status": "ok",
     "vol_status": "ok",
+    "sierra_es_status": "ok",
+    "sierra_vx_status": "ok",
     "ts_last_alert": 0,
     "vol_last_alert": 0,
+    "sierra_es_last_alert": 0,
+    "sierra_vx_last_alert": 0,
     "ts_error_since": 0,
     "vol_error_since": 0,
+    "sierra_es_error_since": 0,
+    "sierra_vx_error_since": 0,
     "reminder_minutes": 15,
 }
 
@@ -11761,6 +11767,8 @@ def api_data_freshness():
         "server_time": now_et.isoformat(),
         "ts_api": {"last_update": None, "age_seconds": None, "status": "closed"},
         "volland": {"last_update": None, "age_seconds": None, "status": "closed"},
+        "sierra_es": {"last_update": None, "age_seconds": None, "status": "closed"},
+        "sierra_vx": {"last_update": None, "age_seconds": None, "status": "closed"},
     }
 
     # TS API: use in-memory last_run_status (pulled every 30s, not DB which saves every 5min)
@@ -11826,6 +11834,70 @@ def api_data_freshness():
         except Exception as e:
             print(f"[data_freshness] volland error: {e}", flush=True)
 
+        # Sierra ES: latest ts_end from vps_es_range_bars (range bars finish every few min)
+        try:
+            with engine.begin() as conn:
+                es_row = conn.execute(text("""
+                    SELECT ts_end FROM vps_es_range_bars
+                    ORDER BY ts_end DESC LIMIT 1
+                """)).mappings().first()
+
+                if es_row and es_row["ts_end"]:
+                    e_time = es_row["ts_end"]
+                    if e_time.tzinfo is not None:
+                        age = (datetime.now(e_time.tzinfo) - e_time).total_seconds()
+                    else:
+                        age = (now_et.replace(tzinfo=None) - e_time).total_seconds()
+
+                    if not is_open:
+                        status = "closed"
+                    elif age < 600:       # < 10 min
+                        status = "ok"
+                    elif age < 1200:      # 10–20 min
+                        status = "stale"
+                    else:                 # ≥ 20 min
+                        status = "error"
+
+                    result["sierra_es"] = {
+                        "last_update": e_time.isoformat() if hasattr(e_time, "isoformat") else str(e_time),
+                        "age_seconds": int(age),
+                        "status": status,
+                    }
+        except Exception as e:
+            print(f"[data_freshness] sierra_es error: {e}", flush=True)
+
+        # Sierra VX: latest ts from vps_vix_ticks (ticks flow continuously during hours)
+        try:
+            with engine.begin() as conn:
+                vx_row = conn.execute(text("""
+                    SELECT ts FROM vps_vix_ticks
+                    ORDER BY ts DESC LIMIT 1
+                """)).mappings().first()
+
+                if vx_row and vx_row["ts"]:
+                    x_time = vx_row["ts"]
+                    if x_time.tzinfo is not None:
+                        age = (datetime.now(x_time.tzinfo) - x_time).total_seconds()
+                    else:
+                        age = (now_et.replace(tzinfo=None) - x_time).total_seconds()
+
+                    if not is_open:
+                        status = "closed"
+                    elif age < 180:       # < 3 min
+                        status = "ok"
+                    elif age < 420:       # 3–7 min
+                        status = "stale"
+                    else:                 # ≥ 7 min
+                        status = "error"
+
+                    result["sierra_vx"] = {
+                        "last_update": x_time.isoformat() if hasattr(x_time, "isoformat") else str(x_time),
+                        "age_seconds": int(age),
+                        "status": status,
+                    }
+        except Exception as e:
+            print(f"[data_freshness] sierra_vx error: {e}", flush=True)
+
     return result
 
 def check_pipeline_health():
@@ -11838,6 +11910,8 @@ def check_pipeline_health():
     for source, key_prefix, label in [
         ("ts_api", "ts", "TS API"),
         ("volland", "vol", "Volland"),
+        ("sierra_es", "sierra_es", "Sierra ES"),
+        ("sierra_vx", "sierra_vx", "Sierra VX"),
     ]:
         current = freshness[source]["status"]
         prev = _pipeline_status[f"{key_prefix}_status"]

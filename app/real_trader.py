@@ -474,9 +474,9 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
           f"@ ~{es_price:.2f} target={tgt_str} stop={es_stop:.2f} "
           f"acct={account_id} ids=entry:{entry_oid}/stop:{stop_oid}/tgt:{t1_oid}",
           flush=True)
+    dir_label = "Long" if is_long else "Short"
     _alert(f"🟢 {setup_name} PLACED\n"
-           f"Side: {dir_str} | {QTY} {MES_SYMBOL} @ ~{es_price:.2f}\n"
-           f"Account: {account_id}\n"
+           f"{dir_label} {QTY} MES @ ~{es_price:.2f}\n"
            f"Target: {tgt_str} | Stop: {es_stop:.2f}")
 
 
@@ -542,9 +542,9 @@ def _place_limit_entry(setup_log_id, setup_name, direction, is_long,
     print(f"[real-trader] LIMIT placed: {setup_name} {dir_str} {QTY} {MES_SYMBOL} "
           f"LIMIT @ {limit_price:.2f} (market was {es_price:.2f}) "
           f"acct={account_id} id={entry_oid}", flush=True)
+    dir_label = "Long" if is_long else "Short"
     _alert(f"🟢 {setup_name} LIMIT entry\n"
-           f"Side: {dir_str} | {QTY} {MES_SYMBOL} LIMIT @ {limit_price:.2f}\n"
-           f"Account: {account_id}\n"
+           f"{dir_label} {QTY} MES LIMIT @ {limit_price:.2f}\n"
            f"[CHARM S/R] Waiting for fill (market @ {es_price:.2f})")
 
 
@@ -619,7 +619,6 @@ def _place_deferred_protective_orders(lid, order, fill_price):
           f"stop={es_stop:.2f} target={es_target:.2f} "
           f"(entry improved {imp_pts:.1f}pts from market) acct={account_id}", flush=True)
     _alert(f"🟢 {setup_name} LIMIT FILLED @ {fill_price:.2f}\n"
-           f"Account: {account_id}\n"
            f"[CHARM S/R] Improved {imp_pts:+.1f}pts from market "
            f"({order.get('deferred_es_price', 0):.2f})\n"
            f"Stop: {es_stop:.2f} | Target: {es_target:.2f}")
@@ -675,8 +674,7 @@ def update_stop(setup_log_id: int, new_stop_price: float):
         print(f"[real-trader] stop updated: id={setup_log_id} "
               f"{old_stop:.2f} -> {new_stop_price:.2f} acct={account_id}", flush=True)
         _alert(f"🔄 {order['setup_name']} stop updated\n"
-               f"Account: {account_id}\n"
-               f"{old_stop:.2f} -> {new_stop_price:.2f}")
+               f"{old_stop:.2f} → {new_stop_price:.2f}")
     else:
         _alert(f"🚨 MANUAL INTERVENTION: stop update FAILED\n"
                f"Account: {account_id}\n"
@@ -708,8 +706,7 @@ def close_trade(setup_log_id: int, result_type: str):
         _persist_order(setup_log_id)
         print(f"[real-trader] closed: {setup_name} id={setup_log_id} "
               f"result={result_type} acct={account_id}", flush=True)
-        _alert(f"🏁 {setup_name} CLOSED: {result_type}\n"
-               f"Account: {account_id}")
+        _alert(f"🏁 {setup_name} CLOSED: {result_type}")
     else:
         print(f"[real-trader] broker cleanup done (slot already released): "
               f"{setup_name} id={setup_log_id} acct={account_id}", flush=True)
@@ -766,8 +763,7 @@ def _flatten_position(order):
         _ts_api("DELETE", f"/orderexecution/orders/{order['entry_order_id']}", None, account_id)
         print(f"[real-trader] cancelled pending limit entry: {order['setup_name']} "
               f"acct={account_id}", flush=True)
-        _alert(f"🏁 {order['setup_name']} limit entry cancelled\n"
-               f"Account: {account_id}")
+        _alert(f"🏁 {order['setup_name']} limit entry cancelled")
         return
 
     # Wait for cancellations to settle
@@ -975,7 +971,6 @@ def _check_order_fills(lid, order, broker_orders):
             print(f"[real-trader] limit entry {entry_status}: {order['setup_name']} "
                   f"acct={account_id}", flush=True)
             _alert(f"⚠️ {order['setup_name']} LIMIT {entry_status}\n"
-                   f"Account: {account_id}\n"
                    f"[CHARM S/R] Entry not filled -- trade skipped")
         else:
             # Check timeout (30 min)
@@ -997,7 +992,6 @@ def _check_order_fills(lid, order, broker_orders):
                         print(f"[real-trader] LIMIT TIMEOUT: {order['setup_name']} cancelled "
                               f"after {elapsed/60:.0f} min acct={account_id}", flush=True)
                         _alert(f"🏁 {order['setup_name']} LIMIT EXPIRED\n"
-                               f"Account: {account_id}\n"
                                f"[CHARM S/R] {order.get('limit_entry_price', 0):.2f} not reached "
                                f"in {elapsed/60:.0f} min -- trade skipped")
                 except (ValueError, TypeError):
@@ -1015,9 +1009,9 @@ def _check_order_fills(lid, order, broker_orders):
             changed = True
             print(f"[real-trader] FILLED: {order['setup_name']} "
                   f"{QTY} {MES_SYMBOL} @ {fill_price} acct={account_id}", flush=True)
+            dir_label = "Long" if order["direction"].lower() in ("long", "bullish") else "Short"
             _alert(f"🟢 {order['setup_name']} FILLED\n"
-                   f"Account: {account_id}\n"
-                   f"{QTY} {MES_SYMBOL} @ {fill_price}\n"
+                   f"{dir_label} {QTY} MES @ {fill_price}\n"
                    f"Target: {order.get('target_price', 0):.2f} | "
                    f"Stop: {order['current_stop']:.2f}")
         elif entry_status in ("REJ", "CAN", "EXP"):
@@ -1030,7 +1024,6 @@ def _check_order_fills(lid, order, broker_orders):
             print(f"[real-trader] entry {entry_status}: {order['setup_name']} "
                   f"reason={rej_reason} acct={account_id}", flush=True)
             _alert(f"⚠️ {order['setup_name']} entry {entry_status}\n"
-                   f"Account: {account_id}\n"
                    f"Reason: {rej_reason}")
 
     # Check target/stop fills for active positions
@@ -1057,11 +1050,11 @@ def _check_order_fills(lid, order, broker_orders):
                     else:
                         pnl = (order["fill_price"] - tgt_fp) * MES_POINT_VALUE * QTY
                 pnl_str = f"${pnl:.2f}" if pnl is not None else "n/a"
+                dir_label = "Long" if order["direction"].lower() in ("long", "bullish") else "Short"
                 print(f"[real-trader] TARGET filled: {order['setup_name']} "
                       f"@ {tgt_fp} pnl={pnl_str} acct={account_id}", flush=True)
                 _alert(f"🏁 {order['setup_name']} TARGET FILLED\n"
-                       f"Account: {account_id}\n"
-                       f"{QTY} {MES_SYMBOL} @ {tgt_fp}\n"
+                       f"{dir_label} {QTY} MES @ {tgt_fp}\n"
                        f"P&L: {pnl_str}")
 
         # Check stop fill
@@ -1086,11 +1079,11 @@ def _check_order_fills(lid, order, broker_orders):
                     else:
                         pnl = (order["fill_price"] - stop_fp) * MES_POINT_VALUE * QTY
                 pnl_str = f"${pnl:.2f}" if pnl is not None else "n/a"
+                dir_label = "Long" if order["direction"].lower() in ("long", "bullish") else "Short"
                 print(f"[real-trader] STOP filled: {order['setup_name']} "
                       f"@ {stop_fp} pnl={pnl_str} acct={account_id}", flush=True)
                 _alert(f"🏁 {order['setup_name']} STOP FILLED\n"
-                       f"Account: {account_id}\n"
-                       f"{QTY} {MES_SYMBOL} @ {stop_fp}\n"
+                       f"{dir_label} {QTY} MES @ {stop_fp}\n"
                        f"P&L: {pnl_str}")
 
     if changed:
@@ -1273,6 +1266,9 @@ def update_trail(setup_log_id: int, current_es_price: float):
 def flatten_all_eod():
     """Force-close all open REAL positions at end of day.
     Called by scheduler at 15:55 ET before market close."""
+    # Track the flatten close order ID per account so we can look up actual fill price
+    # for per-trade P&L reporting in Phase 1d
+    _close_oids: dict[str, str] = {}
     with _lock:
         open_orders = [(lid, o) for lid, o in _active_orders.items()
                        if o["status"] in ("pending_entry", "pending_limit", "filled")]
@@ -1316,6 +1312,7 @@ def flatten_all_eod():
 
             close_side = "Sell" if broker_pos["long_short"] == "Long" else "Buy"
             closed = False
+            close_oid_for_acct = None
             for attempt, wait in enumerate([0, 3, 5, 10], start=1):
                 if attempt > 1:
                     print(f"[real-trader] EOD close retry #{attempt} after {wait}s wait "
@@ -1345,14 +1342,20 @@ def flatten_all_eod():
                         print(f"[real-trader] EOD close rejected on {acct_id} "
                               f"(attempt {attempt}): {msg}", flush=True)
                         continue
+                    # Capture close order ID so we can look up the actual fill price for P&L
+                    if orders_list:
+                        close_oid_for_acct = orders_list[0].get("OrderID")
                     print(f"[real-trader] EOD: closed {broker_pos['long_short']} "
-                          f"{broker_pos['qty']} MES on {acct_id} (attempt {attempt})",
-                          flush=True)
+                          f"{broker_pos['qty']} MES on {acct_id} (attempt {attempt}) "
+                          f"close_oid={close_oid_for_acct}", flush=True)
                     closed = True
                     break
                 else:
                     print(f"[real-trader] EOD close API error on {acct_id} "
                           f"(attempt {attempt})", flush=True)
+
+            if closed and close_oid_for_acct:
+                _close_oids[acct_id] = close_oid_for_acct
 
             if not closed:
                 _alert(f"🚨 EOD CLOSE FAILED after 4 attempts\n"
@@ -1360,14 +1363,49 @@ def flatten_all_eod():
                        f"{broker_pos['long_short']} {broker_pos['qty']} MES\n"
                        f"MANUAL CLOSE REQUIRED IMMEDIATELY")
 
-        # Phase 1d: Mark all tracked trades as closed
+        # Let close orders settle on broker so fill price is retrievable
+        time.sleep(3)
+
+        # Phase 1d: Mark all tracked trades as closed and send per-trade P&L Telegram
         for lid, order in open_orders:
+            acct_id = order.get("account_id", "")
+            close_fp = None
+            close_oid = _close_oids.get(acct_id)
+            if close_oid:
+                try:
+                    close_fp = _get_order_fill_price(close_oid, acct_id)
+                except Exception as e:
+                    print(f"[real-trader] EOD fill lookup failed for {close_oid}: {e}",
+                          flush=True)
             with _lock:
                 order["status"] = "closed"
                 order["close_reason"] = "eod_flatten"
+                if close_fp is not None:
+                    order["stop_fill_price"] = close_fp
             _persist_order(lid)
+
+            # Compute P&L and send Telegram per trade
+            entry_fp = order.get("fill_price")
+            pnl = None
+            if close_fp is not None and entry_fp is not None:
+                is_long = order["direction"].lower() in ("long", "bullish")
+                if is_long:
+                    pnl = (close_fp - entry_fp) * MES_POINT_VALUE * QTY
+                else:
+                    pnl = (entry_fp - close_fp) * MES_POINT_VALUE * QTY
+            pnl_str = f"${pnl:.2f}" if pnl is not None else "n/a"
+            dir_label = "Long" if order["direction"].lower() in ("long", "bullish") else "Short"
+            if close_fp is not None:
+                _alert(f"🏁 {order['setup_name']} EOD FLATTEN\n"
+                       f"{dir_label} {QTY} MES @ {close_fp}\n"
+                       f"P&L: {pnl_str}")
+            else:
+                # Fallback if we couldn't retrieve fill price
+                _alert(f"🏁 {order['setup_name']} EOD FLATTEN\n"
+                       f"{dir_label} {QTY} MES\n"
+                       f"P&L: n/a (fill price unavailable)")
             print(f"[real-trader] EOD marked closed: {order['setup_name']} id={lid} "
-                  f"acct={order.get('account_id')}", flush=True)
+                  f"acct={acct_id} close_fp={close_fp} pnl={pnl_str}", flush=True)
 
     # Phase 2: Cancel ALL remaining open orders on both accounts
     for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):

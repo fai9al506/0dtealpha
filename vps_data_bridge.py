@@ -1,20 +1,23 @@
 """
-vps_data_bridge.py — Sierra Chart DTC → Railway Data Bridge (Self-Healing)
+vps_data_bridge.py — Sierra Chart SCID → Railway Data Bridge (Self-Healing)
 
-Connects to Sierra Chart's DTC Protocol Server (localhost:11099) via WebSocket,
-subscribes to @ES and /VX market data, builds 5-pt ES range bars with CVD,
-and POSTs completed bars + VX ticks to Railway API endpoints.
+Tails Sierra Chart's .scid binary data files in real-time, builds 5-pt ES
+range bars with CVD, and POSTs completed bars + VX ticks to Railway API.
+
+Sierra's DTC Protocol Server blocks market data (exchange rules, since v2351).
+Trading via DTC still works (sierra_bridge.py). This bridge reads .scid files
+directly — Sierra writes them every ~5s, shared file access is allowed.
 
 Self-healing features:
-  - On startup: queries Railway for last stored bar, backfills any gap from .scid files
-  - During operation: detects stale data (no ticks for 5 min during market hours)
-  - On reconnect: always checks for gaps before resuming live stream
-  - Reads Sierra .scid binary files directly for backfill (no manual export needed)
+  - On startup: queries Railway for last stored bar, backfills any gap from .scid
+  - During operation: tails .scid files every 2s for new ticks
+  - Detects stale data (file not growing for 5 min during market hours)
+  - Telegram alerts on stale (3 cycles) and reconnect (5 cycles)
 
 Fully independent data pipeline — does NOT touch existing Rithmic tables.
 Data goes to: vps_es_range_bars, vps_vix_ticks, vps_heartbeats.
 
-Requirements: Python 3.10+, websocket-client, requests, pytz
+Requirements: Python 3.10+, requests, pytz
 Usage: python vps_data_bridge.py [--config vps_bridge_config.json]
 """
 
@@ -28,17 +31,16 @@ import sys
 import os
 from datetime import datetime, timedelta, time as dtime, date
 from pathlib import Path
-from collections import defaultdict
 
 import pytz
 import requests
 
-try:
-    import websocket
-except ImportError:
-    sys.exit("pip install websocket-client")
-
 # ─── Logging ─────────────────────────────────────────────────────────────────
+from logging.handlers import RotatingFileHandler
+
+_LOG_DIR = Path(__file__).parent / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -46,25 +48,18 @@ logging.basicConfig(
 )
 log = logging.getLogger("vps_bridge")
 
+# File handler — 5 MB rotating, 3 backups
+_file_handler = RotatingFileHandler(
+    _LOG_DIR / "vps_bridge.log", maxBytes=5 * 1024 * 1024, backupCount=3,
+    encoding="utf-8",
+)
+_file_handler.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+))
+log.addHandler(_file_handler)
+
 ET = pytz.timezone("US/Eastern")
 CT = pytz.timezone("US/Central")
-
-# ─── DTC Message Types (Market Data) ─────────────────────────────────────────
-LOGON_REQUEST = 1
-LOGON_RESPONSE = 2
-HEARTBEAT = 3
-MARKET_DATA_REQUEST = 101
-MARKET_DATA_REJECT = 103
-MARKET_DATA_SNAPSHOT = 104
-MARKET_DATA_UPDATE_TRADE = 107
-MARKET_DATA_UPDATE_BID_ASK = 108
-MARKET_DATA_UPDATE_SESSION_VOLUME = 113
-MARKET_DATA_UPDATE_TRADE_WITH_UNBUNDLED_INDICATOR = 132
-MARKET_DATA_UPDATE_TRADE_NO_TIMESTAMP = 142
-
-# ─── DTC AtBidOrAsk Enum ─────────────────────────────────────────────────────
-AT_BID = 1
-AT_ASK = 2
 
 # ─── Sierra SCID File Constants ──────────────────────────────────────────────
 SCID_HEADER_SIZE = 56
@@ -77,8 +72,8 @@ DEFAULT_CONFIG = {
     "sierra_port": 11099,
     "railway_api_url": "https://0dtealpha.com",
     "vps_api_key": "",
-    "es_symbol": "ESM26.CME",
-    "vx_symbol": "VXM26.CFE",
+    "es_symbol": "ESM26-CME",
+    "vx_symbol": "VXM26_FUT_CFE",
     "es_scid_file": "C:/SierraChart/Data/ESM26-CME.scid",
     "vx_scid_file": "C:/SierraChart/Data/VXM26_FUT_CFE.scid",
     "telegram_bot_token": "",
@@ -102,6 +97,7 @@ def _third_friday(year, month):
     return date(year, month, fridays[2])
 
 def current_es_symbol() -> str:
+    """Sierra DTC symbol format: ESM26-CME (2-digit year, dash separator)."""
     from datetime import timedelta
     today = date.today()
     for month_num, code in _ES_MONTHS:
@@ -109,11 +105,12 @@ def current_es_symbol() -> str:
         expiry = _third_friday(year, month_num)
         rollover = expiry - timedelta(days=8)
         if today <= rollover:
-            return f"ES{code}{year % 10}.CME"
+            return f"ES{code}{year % 100}-CME"
     year = today.year + 1
-    return f"ESH{year % 10}.CME"
+    return f"ESH{year % 100}-CME"
 
 def current_vx_symbol() -> str:
+    """Sierra DTC symbol format: VXM26_FUT_CFE (2-digit year, underscore, FUT suffix)."""
     from datetime import timedelta
     today = date.today()
     for month_num, code in _ES_MONTHS:
@@ -121,9 +118,9 @@ def current_vx_symbol() -> str:
         expiry = _third_friday(year, month_num)
         rollover = expiry - timedelta(days=14)
         if today <= rollover:
-            return f"VX{code}{year % 10}.CFE"
+            return f"VX{code}{year % 100}_FUT_CFE"
     year = today.year + 1
-    return f"VXH{year % 10}.CFE"
+    return f"VXH{year % 100}_FUT_CFE"
 
 
 # ─── Session Helpers ─────────────────────────────────────────────────────────
@@ -172,22 +169,6 @@ def _market_open():
 
 
 # ─── Trade Classification ────────────────────────────────────────────────────
-
-def _classify_trade(at_bid_or_ask, price, bid, ask, volume):
-    if at_bid_or_ask == AT_ASK:
-        return volume, 0, volume
-    if at_bid_or_ask == AT_BID:
-        return 0, volume, -volume
-    if bid and ask and bid < ask:
-        if price >= ask:
-            return volume, 0, volume
-        if price <= bid:
-            return 0, volume, -volume
-        mid = (bid + ask) / 2.0
-        if price >= mid:
-            return volume, 0, volume
-        return 0, volume, -volume
-    return 0, 0, 0
 
 def _classify_scid(bid_vol, ask_vol, volume):
     """Classify from SCID BidVolume/AskVolume fields."""
@@ -559,34 +540,124 @@ class GapBackfiller:
         return total
 
 
-# ─── DTC Bridge ──────────────────────────────────────────────────────────────
+# ─── SCID File Tailer ────────────────────────────────────────────────────────
 
-class VPSDataBridge:
-    """Main bridge: Sierra DTC → Range Bars + VX Ticks → Railway.
-    Self-healing: detects gaps, backfills from .scid, monitors staleness.
+class SCIDTailer:
+    """Tails a Sierra .scid file in real-time by tracking byte offset.
+
+    Sierra flushes new ticks to .scid every ~5 seconds. We poll the file
+    every 2 seconds, read any new 40-byte records, and yield them.
     """
 
-    PRICE_MULT = 100
+    def __init__(self, filepath: str):
+        self.filepath = Path(filepath)
+        self._offset = 0  # byte offset into file (past header)
+
+    def seek_to_end(self):
+        """Set offset to current end of file (skip existing data)."""
+        if self.filepath.exists():
+            self._offset = os.path.getsize(self.filepath)
+            log.info(f"SCID tailer: {self.filepath.name} → offset {self._offset:,} bytes "
+                     f"(skipping existing)")
+
+    def seek_to_time(self, since_ts: datetime):
+        """Set offset via binary search to start reading from a specific time."""
+        if not self.filepath.exists():
+            return
+        file_size = os.path.getsize(self.filepath)
+        num_records = (file_size - SCID_HEADER_SIZE) // SCID_RECORD_SIZE
+        if num_records <= 0:
+            self._offset = SCID_HEADER_SIZE
+            return
+
+        # Binary search for the record closest to since_ts
+        since_et = pytz.utc.localize(since_ts).astimezone(ET).replace(tzinfo=None)
+        target_us = int((since_et - SC_EPOCH).total_seconds() * 1_000_000)
+
+        with open(self.filepath, 'rb') as f:
+            lo, hi = 0, num_records - 1
+            while lo < hi:
+                mid = (lo + hi) // 2
+                f.seek(SCID_HEADER_SIZE + mid * SCID_RECORD_SIZE)
+                data = f.read(SCID_RECORD_SIZE)
+                dt_int = struct.unpack_from('<q', data, 0)[0]
+                if dt_int <= target_us:
+                    lo = mid + 1
+                else:
+                    hi = mid
+            self._offset = SCID_HEADER_SIZE + max(0, lo - 5) * SCID_RECORD_SIZE
+
+        log.info(f"SCID tailer: {self.filepath.name} → seeking to record ~{lo} "
+                 f"(offset {self._offset:,})")
+
+    def read_new_ticks(self):
+        """Read any new records appended since last read. Returns list of tick dicts."""
+        if not self.filepath.exists():
+            return []
+
+        file_size = os.path.getsize(self.filepath)
+        if file_size <= self._offset:
+            return []  # No new data
+
+        ticks = []
+        with open(self.filepath, 'rb') as f:
+            f.seek(self._offset)
+            bytes_available = file_size - self._offset
+            records_available = bytes_available // SCID_RECORD_SIZE
+
+            for _ in range(records_available):
+                data = f.read(SCID_RECORD_SIZE)
+                if len(data) < SCID_RECORD_SIZE:
+                    break
+
+                dt_int = struct.unpack_from('<q', data, 0)[0]
+                if dt_int <= 0:
+                    continue
+
+                ts = SC_EPOCH + timedelta(microseconds=dt_int)
+                _, h, l, c = struct.unpack_from('<ffff', data, 8)
+                _, vol, bid_vol, ask_vol = struct.unpack_from('<IIII', data, 24)
+
+                price = h if h > 0 else c
+                if price <= 0 or vol <= 0:
+                    continue
+
+                ticks.append({
+                    "ts": ts,
+                    "price": price,
+                    "volume": vol,
+                    "bid_vol": bid_vol,
+                    "ask_vol": ask_vol,
+                })
+
+            # Update offset to where we stopped reading
+            self._offset = SCID_HEADER_SIZE + (
+                (self._offset - SCID_HEADER_SIZE) // SCID_RECORD_SIZE + records_available
+            ) * SCID_RECORD_SIZE
+
+        return ticks
+
+    @property
+    def file_size(self):
+        if self.filepath.exists():
+            return os.path.getsize(self.filepath)
+        return 0
+
+
+# ─── SCID-Based Data Bridge ─────────────────────────────────────────────────
+
+class VPSDataBridge:
+    """Main bridge: Sierra .scid files → Range Bars + VX Ticks → Railway.
+    Tails .scid files every 2s for new ticks. Self-healing with gap backfill.
+    """
 
     def __init__(self, cfg: dict):
         self.cfg = cfg
-        self.host = cfg["sierra_host"]
-        self.port = cfg["sierra_port"]
-        self.es_symbol = cfg.get("es_symbol") or current_es_symbol()
-        self.vx_symbol = cfg.get("vx_symbol") or current_vx_symbol()
+        self.es_scid = cfg.get("es_scid_file", "")
+        self.vx_scid = cfg.get("vx_scid_file", "")
 
-        self._ws = None
-        self._connected = False
         self._running = False
         self._lock = threading.Lock()
-
-        self._es_symbol_id = 1
-        self._vx_symbol_id = 2
-
-        self._es_bid = 0.0
-        self._es_ask = 0.0
-        self._vx_bid = 0.0
-        self._vx_ask = 0.0
 
         self.bar_builder = RangeBarBuilder(cfg.get("range_pts", 5.0))
 
@@ -600,6 +671,10 @@ class VPSDataBridge:
         )
 
         self.backfiller = GapBackfiller(self.poster, cfg)
+
+        # SCID file tailers
+        self._es_tailer = SCIDTailer(self.es_scid) if self.es_scid else None
+        self._vx_tailer = SCIDTailer(self.vx_scid) if self.vx_scid else None
 
         # Vol signal file watcher
         self._vol_signal_file = cfg.get("vol_signal_file", "C:/SierraChart/Data/vol_signal.txt")
@@ -616,14 +691,18 @@ class VPSDataBridge:
         self._last_heartbeat = 0
         self._session_date = None
         self._last_es_tick_time = time.time()
-        self._last_vx_tick_time = time.time()
         self._stale_timeout = cfg.get("stale_timeout_minutes", 5) * 60
         self._backfill_count = 0
+
+        # Stale cycle tracking (3 cycles alert, 5 cycles Telegram warning)
+        self._stale_cycles = 0
+        self._STALE_ALERT_CYCLES = 3
+        self._STALE_WARN_CYCLES = 5
 
     # ── Gap Detection & Backfill ──────────────────────────────────────────────
 
     def backfill_gaps(self):
-        """Check for gaps and backfill from .scid files. Called on startup and reconnect."""
+        """Check for gaps and backfill from .scid files. Called on startup."""
         log.info("=" * 40)
         log.info("  CHECKING FOR DATA GAPS")
         log.info("=" * 40)
@@ -640,255 +719,138 @@ class VPSDataBridge:
 
         return es_filled, vx_filled
 
-    # ── Connection ────────────────────────────────────────────────────────────
+    # ── Start Tailing ────────────────────────────────────────────────────────
 
-    def connect(self):
-        url = f"ws://{self.host}:{self.port}"
-        log.info(f"Connecting to Sierra DTC: {url}")
+    def start(self):
+        """Initialize tailers to current end of .scid files and start tailing."""
+        # Seek tailers to end of file (we already backfilled historical data)
+        if self._es_tailer:
+            self._es_tailer.seek_to_end()
+        if self._vx_tailer:
+            self._vx_tailer.seek_to_end()
 
-        self._ws = websocket.create_connection(url, timeout=15)
-
-        self._send({
-            "Type": LOGON_REQUEST,
-            "ProtocolVersion": 8,
-            "Username": "",
-            "Password": "",
-            "HeartbeatIntervalInSeconds": 30,
-            "ClientName": "VPSDataBridge",
-            "TradeMode": 0,
-        })
-
-        logon = self._recv_one()
-        if logon.get("Type") != LOGON_RESPONSE:
-            raise ConnectionError(f"Expected LOGON_RESPONSE, got: {logon}")
-        log.info(f"DTC logon OK: {logon.get('ServerName', 'unknown')}")
-        if self._backfill_count > 0:
-            _send_telegram(self.cfg, "🟢 Sierra DTC reconnected. Backfilling gaps...")
-
-        self._connected = True
         self._running = True
-
-        # Subscribe ES
-        self._send({
-            "Type": MARKET_DATA_REQUEST,
-            "RequestAction": 1,
-            "SymbolID": self._es_symbol_id,
-            "Symbol": self.es_symbol,
-            "Exchange": "",
-        })
-        log.info(f"Subscribed to ES: {self.es_symbol}")
-
-        # Subscribe VX
-        self._send({
-            "Type": MARKET_DATA_REQUEST,
-            "RequestAction": 1,
-            "SymbolID": self._vx_symbol_id,
-            "Symbol": self.vx_symbol,
-            "Exchange": "",
-        })
-        log.info(f"Subscribed to VX: {self.vx_symbol}")
-
-        # Start receiver
-        self._recv_thread = threading.Thread(target=self._receiver_loop, daemon=True)
-        self._recv_thread.start()
-
         self._session_date = _es_session_date()
         self._last_es_tick_time = time.time()
-        self._last_vx_tick_time = time.time()
-        log.info(f"Session date: {self._session_date}")
 
-    def disconnect(self):
+        log.info(f"SCID tailing started — session: {self._session_date}")
+        log.info(f"  ES: {self.es_scid}")
+        log.info(f"  VX: {self.vx_scid}")
+        log.info(f"  Poll interval: 2s")
+
+    def stop(self):
         self._running = False
-        if self._ws:
-            try:
-                self._ws.close()
-            except Exception:
-                pass
-        log.info("Disconnected from Sierra DTC")
+        log.info("SCID tailing stopped")
 
-    # ── DTC Messaging ─────────────────────────────────────────────────────────
+    # ── Tick Processing ──────────────────────────────────────────────────────
 
-    def _send(self, msg: dict):
-        raw = json.dumps(msg) + '\x00'
-        self._ws.send(raw)
-
-    def _recv_one(self) -> dict:
-        data = self._ws.recv()
-        if isinstance(data, bytes):
-            data = data.decode('utf-8')
-        for part in data.split('\x00'):
-            if part.strip():
-                return json.loads(part)
-        return {}
-
-    def _receiver_loop(self):
-        while self._running:
-            try:
-                data = self._ws.recv()
-                if isinstance(data, bytes):
-                    data = data.decode('utf-8')
-                for part in data.split('\x00'):
-                    if not part.strip():
-                        continue
-                    try:
-                        msg = json.loads(part)
-                    except json.JSONDecodeError:
-                        continue
-                    self._handle_message(msg)
-            except websocket.WebSocketConnectionClosedException:
-                if self._running:
-                    log.error("DTC WebSocket closed unexpectedly")
-                    _send_telegram(self.cfg, "🔴 Sierra DTC disconnected! Reconnecting...")
-                break
-            except Exception as e:
-                if self._running:
-                    log.error(f"DTC receiver error: {e}")
-                    time.sleep(1)
-
-    # ── Message Handling ──────────────────────────────────────────────────────
-
-    def _handle_message(self, msg: dict):
-        t = msg.get("Type")
-
-        if t == HEARTBEAT:
-            self._send({"Type": HEARTBEAT})
-        elif t == MARKET_DATA_SNAPSHOT:
-            self._handle_snapshot(msg)
-        elif t in (MARKET_DATA_UPDATE_TRADE,
-                   MARKET_DATA_UPDATE_TRADE_WITH_UNBUNDLED_INDICATOR,
-                   MARKET_DATA_UPDATE_TRADE_NO_TIMESTAMP):
-            self._handle_trade(msg)
-        elif t == MARKET_DATA_UPDATE_BID_ASK:
-            self._handle_bid_ask(msg)
-        elif t == MARKET_DATA_REJECT:
-            log.error(f"Market data rejected: {msg.get('RejectText', 'unknown')}")
-
-    def _handle_snapshot(self, msg: dict):
-        sid = msg.get("SymbolID")
-        if sid == self._es_symbol_id:
-            price = msg.get("LastTradePrice", 0) / self.PRICE_MULT
-            self._es_bid = msg.get("BidPrice", 0) / self.PRICE_MULT
-            self._es_ask = msg.get("AskPrice", 0) / self.PRICE_MULT
-            log.info(f"ES snapshot: last={price:.2f} bid={self._es_bid:.2f} ask={self._es_ask:.2f}")
-        elif sid == self._vx_symbol_id:
-            price = msg.get("LastTradePrice", 0) / self.PRICE_MULT
-            self._vx_bid = msg.get("BidPrice", 0) / self.PRICE_MULT
-            self._vx_ask = msg.get("AskPrice", 0) / self.PRICE_MULT
-            log.info(f"VX snapshot: last={price:.2f} bid={self._vx_bid:.2f} ask={self._vx_ask:.2f}")
-
-    def _handle_trade(self, msg: dict):
-        sid = msg.get("SymbolID")
-        price_raw = msg.get("Price", 0)
-        volume = msg.get("Volume", 0)
-        at_bid_or_ask = msg.get("AtBidOrAsk", 0)
-        raw_ts = msg.get("DateTime", "")
-
-        if not volume or not price_raw:
+    def _poll_es_ticks(self):
+        """Read new ES ticks from .scid and feed into range bar builder."""
+        if not self._es_tailer:
             return
 
-        # Sierra DTC compact trade messages send DateTime in ET (exchange time).
-        # The snapshot uses Unix UTC, but streaming trades use SCDateTime in ET.
-        # Convert ET → UTC for DB consistency with Rithmic.
-        if raw_ts:
-            try:
-                if isinstance(raw_ts, (int, float)):
-                    # SCDateTime: seconds since 1899-12-30 in ET
-                    ts = datetime.now(pytz.utc).isoformat()  # fallback for numeric
-                else:
-                    naive = datetime.fromisoformat(str(raw_ts))
-                    ts = ET.localize(naive).astimezone(pytz.utc).isoformat()
-            except Exception:
-                ts = datetime.now(pytz.utc).isoformat()
-        else:
-            ts = datetime.now(pytz.utc).isoformat()
+        ticks = self._es_tailer.read_new_ticks()
+        if not ticks:
+            return
 
-        price = price_raw / self.PRICE_MULT
-
-        if sid == self._es_symbol_id:
-            self._handle_es_trade(price, volume, at_bid_or_ask, ts)
-        elif sid == self._vx_symbol_id:
-            self._handle_vx_trade(price, volume, at_bid_or_ask, ts)
-
-    def _handle_bid_ask(self, msg: dict):
-        sid = msg.get("SymbolID")
-        bid = msg.get("BidPrice", 0) / self.PRICE_MULT
-        ask = msg.get("AskPrice", 0) / self.PRICE_MULT
-        if sid == self._es_symbol_id:
-            if bid > 0: self._es_bid = bid
-            if ask > 0: self._es_ask = ask
-        elif sid == self._vx_symbol_id:
-            if bid > 0: self._vx_bid = bid
-            if ask > 0: self._vx_ask = ask
-
-    def _handle_es_trade(self, price, volume, at_bid_or_ask, ts):
-        self._es_tick_count += 1
         self._last_es_tick_time = time.time()
 
-        new_date = _es_session_date()
-        if new_date != self._session_date:
-            log.info(f"Session rollover: {self._session_date} -> {new_date}")
-            self.bar_builder.reset_session()
-            self._session_date = new_date
+        for tick in ticks:
+            self._es_tick_count += 1
 
-        buy_vol, sell_vol, delta = _classify_trade(
-            at_bid_or_ask, price, self._es_bid, self._es_ask, volume
-        )
-        completed = self.bar_builder.process_tick(
-            price, volume, buy_vol, sell_vol, delta, ts
-        )
+            # Session rollover check
+            new_date = _es_session_date()
+            if new_date != self._session_date:
+                log.info(f"Session rollover: {self._session_date} -> {new_date}")
+                self.bar_builder.reset_session()
+                self._session_date = new_date
 
-        if completed:
-            log.info(
-                f"ES bar #{completed['idx']}: "
-                f"O={completed['open']:.2f} H={completed['high']:.2f} "
-                f"L={completed['low']:.2f} C={completed['close']:.2f} "
-                f"vol={completed['volume']} delta={completed['delta']:+d} "
-                f"cvd={completed['cvd']:+d}"
+            buy_vol, sell_vol, delta = _classify_scid(
+                tick["bid_vol"], tick["ask_vol"], tick["volume"]
             )
-            threading.Thread(
-                target=self.poster.post_es_bar,
-                args=(completed, self._session_date),
-                daemon=True,
-            ).start()
-            self._bars_posted += 1
+            completed = self.bar_builder.process_tick(
+                tick["price"], tick["volume"],
+                buy_vol, sell_vol, delta,
+                tick["ts"].isoformat(),
+            )
 
-    def _handle_vx_trade(self, price, volume, at_bid_or_ask, ts):
-        self._vx_tick_count += 1
-        self._last_vx_tick_time = time.time()
+            if completed:
+                log.info(
+                    f"ES bar #{completed['idx']}: "
+                    f"O={completed['open']:.2f} H={completed['high']:.2f} "
+                    f"L={completed['low']:.2f} C={completed['close']:.2f} "
+                    f"vol={completed['volume']} delta={completed['delta']:+d} "
+                    f"cvd={completed['cvd']:+d}"
+                )
+                threading.Thread(
+                    target=self.poster.post_es_bar,
+                    args=(completed, self._session_date),
+                    daemon=True,
+                ).start()
+                self._bars_posted += 1
 
-        buy_vol, sell_vol, delta = _classify_trade(
-            at_bid_or_ask, price, self._vx_bid, self._vx_ask, volume
-        )
+    def _poll_vx_ticks(self):
+        """Read new VX ticks from .scid and buffer for batch posting."""
+        if not self._vx_tailer:
+            return
 
-        with self._lock:
-            self._vx_ticks.append({
-                "price": price,
-                "volume": volume,
-                "delta": delta,
-                "bid": self._vx_bid,
-                "ask": self._vx_ask,
-                "ts": ts,
-            })
+        ticks = self._vx_tailer.read_new_ticks()
+        if not ticks:
+            return
 
-    # ── Stale Data Detection ─────────────────────────────────────────────────
+        for tick in ticks:
+            self._vx_tick_count += 1
+            buy_vol, sell_vol, delta = _classify_scid(
+                tick["bid_vol"], tick["ask_vol"], tick["volume"]
+            )
+            with self._lock:
+                self._vx_ticks.append({
+                    "price": round(tick["price"], 2),
+                    "volume": tick["volume"],
+                    "delta": delta,
+                    "bid": None,
+                    "ask": None,
+                    "ts": tick["ts"].isoformat(),
+                })
+
+    # ── Stale Detection ──────────────────────────────────────────────────────
 
     def _check_stale(self):
-        """Returns True if data is stale (no ticks during market hours)."""
+        """Check if .scid file stopped growing during market hours."""
         if not _market_open():
-            return False
+            self._stale_cycles = 0
+            return
+
         now = time.time()
-        es_stale = (now - self._last_es_tick_time) > self._stale_timeout
-        if es_stale:
-            mins = (now - self._last_es_tick_time) / 60
-            log.warning(f"STALE: No ES ticks for {mins:.1f} min")
-            _send_telegram(self.cfg, f"⚠️ STALE DATA — No ES ticks for {mins:.0f} min. Reconnecting...")
-        return es_stale
+        es_age = now - self._last_es_tick_time
+
+        if es_age <= self._stale_timeout:
+            if self._stale_cycles > 0:
+                log.info(f"ES data recovered (was stale for {self._stale_cycles} cycles)")
+                self._stale_cycles = 0
+            return
+
+        self._stale_cycles += 1
+        mins = es_age / 60
+        log.warning(f"STALE cycle {self._stale_cycles}: No ES ticks for {mins:.1f} min "
+                     f"(SCID file not growing)")
+
+        if self._stale_cycles == self._STALE_ALERT_CYCLES:
+            _send_telegram(self.cfg,
+                f"⚠️ SCID stale — no ES ticks for {mins:.0f} min. "
+                f"Sierra Chart data feed may be down.")
+
+        if self._stale_cycles == self._STALE_WARN_CYCLES:
+            _send_telegram(self.cfg,
+                f"🔴 SCID stale for {mins:.0f} min — check Sierra Chart! "
+                f"(file: {self.es_scid})")
 
     # ── Main Loop ─────────────────────────────────────────────────────────────
 
     def run_forever(self):
-        log.info("Bridge running 24/7. Ctrl+C to stop.")
-        vx_interval = self.cfg.get("vx_batch_seconds", 10)
+        log.info("SCID bridge running 24/7. Ctrl+C to stop.")
+        poll_interval = 2  # seconds
+        vx_flush_interval = self.cfg.get("vx_batch_seconds", 10)
         hb_interval = self.cfg.get("heartbeat_seconds", 60)
         vol_interval = self._vol_signal_poll
         last_vol_check = 0.0
@@ -897,33 +859,35 @@ class VPSDataBridge:
             try:
                 now = time.time()
 
-                # Flush VX ticks
-                if now - self._vx_last_flush >= vx_interval:
+                # Poll SCID files for new ticks (every 2s)
+                self._poll_es_ticks()
+                self._poll_vx_ticks()
+
+                # Flush VX ticks to Railway
+                if now - self._vx_last_flush >= vx_flush_interval:
                     self._flush_vx_ticks()
                     self._vx_last_flush = now
 
-                # Check vol signal file from Sierra VolDetector study
+                # Check vol signal file
                 if now - last_vol_check >= vol_interval:
                     self._check_vol_signal()
                     last_vol_check = now
 
-                # Heartbeat
+                # Heartbeat + stale detection
                 if now - self._last_heartbeat >= hb_interval:
                     self._send_heartbeat()
                     self._last_heartbeat = now
+                    self._check_stale()
 
-                # Stale detection — triggers reconnect
-                if self._check_stale():
-                    log.warning("Stale data detected — triggering reconnect + backfill")
-                    self._running = False
-                    raise ConnectionError("Stale data — reconnecting")
-
-                time.sleep(1)
+                time.sleep(poll_interval)
 
             except KeyboardInterrupt:
                 log.info("Shutting down...")
                 self._running = False
                 break
+            except Exception as e:
+                log.error(f"Bridge loop error: {e}", exc_info=True)
+                time.sleep(5)
 
     def _flush_vx_ticks(self):
         with self._lock:
@@ -932,9 +896,26 @@ class VPSDataBridge:
             batch = self._vx_ticks.copy()
             self._vx_ticks.clear()
 
-        ok = self.poster.post_vx_ticks(batch)
-        if ok:
-            self._vx_batches_posted += 1
+        # Chunk to avoid Railway timeouts on large catch-up batches
+        CHUNK_SIZE = 500
+        MAX_BUFFER = 50000  # ~1 hr of VX; drop oldest if exceeded during long outage
+        failed = []
+        for i in range(0, len(batch), CHUNK_SIZE):
+            chunk = batch[i:i + CHUNK_SIZE]
+            if self.poster.post_vx_ticks(chunk):
+                self._vx_batches_posted += 1
+            else:
+                failed.extend(chunk)
+
+        if failed:
+            with self._lock:
+                combined = failed + self._vx_ticks
+                if len(combined) > MAX_BUFFER:
+                    dropped = len(combined) - MAX_BUFFER
+                    combined = combined[-MAX_BUFFER:]
+                    log.warning(f"VX buffer overflow — dropped {dropped} oldest ticks")
+                self._vx_ticks = combined
+            log.warning(f"VX flush: {len(failed)} ticks requeued after POST failure")
 
     def _check_vol_signal(self):
         """Read Sierra VolDetector signal file. POST to Railway if new signal."""
@@ -945,31 +926,30 @@ class VPSDataBridge:
 
             mtime = fpath.stat().st_mtime
             if mtime <= self._vol_signal_last_mtime:
-                return  # File hasn't changed
+                return
 
             content = fpath.read_text().strip()
             if not content or content == self._vol_signal_last_content:
                 self._vol_signal_last_mtime = mtime
-                return  # Same content (Sierra rewrites on chart reload)
+                return
 
             self._vol_signal_last_mtime = mtime
             self._vol_signal_last_content = content
 
-            # Parse: direction,price,delta,ask_vol,bid_vol,avg_delta,ratio,bar_ts
             parts = content.split(",")
             if len(parts) < 8:
                 log.warning(f"Vol signal malformed: {content}")
                 return
 
             signal = {
-                "direction": int(parts[0]),      # -1=vol sellers (bullish SPX), +1=vol buyers (bearish SPX)
+                "direction": int(parts[0]),
                 "vx_price": float(parts[1]),
                 "delta": float(parts[2]),
                 "ask_vol": float(parts[3]),
                 "bid_vol": float(parts[4]),
                 "avg_delta": float(parts[5]),
                 "ratio": float(parts[6]),
-                "bar_ts": parts[7],              # Sierra bar datetime (ET)
+                "bar_ts": parts[7],
             }
 
             label = "VOL_SELLERS" if signal["direction"] < 0 else "VOL_BUYERS"
@@ -988,12 +968,14 @@ class VPSDataBridge:
 
     def _send_heartbeat(self):
         forming = self.bar_builder.forming_bar
+        es_size = self._es_tailer.file_size if self._es_tailer else 0
         status = {
             "component": "vps_data_bridge",
+            "mode": "scid_tail",
             "ts": datetime.now(ET).isoformat(),
             "session_date": self._session_date,
-            "es_symbol": self.es_symbol,
-            "vx_symbol": self.vx_symbol,
+            "es_scid": str(self.es_scid),
+            "vx_scid": str(self.vx_scid),
             "es_ticks": self._es_tick_count,
             "vx_ticks": self._vx_tick_count,
             "bars_completed": self.bar_builder.bar_idx,
@@ -1001,6 +983,8 @@ class VPSDataBridge:
             "vx_batches_posted": self._vx_batches_posted,
             "market_open": _market_open(),
             "backfill_count": self._backfill_count,
+            "stale_cycles": self._stale_cycles,
+            "es_scid_size_mb": round(es_size / 1024 / 1024, 1),
             "vol_signals_posted": self._vol_signals_posted,
             "forming_bar": {
                 "open": forming["open"],
@@ -1012,11 +996,12 @@ class VPSDataBridge:
             } if forming else None,
         }
         self.poster.post_heartbeat(status)
+        stale_tag = f" STALE({self._stale_cycles})" if self._stale_cycles > 0 else ""
         log.info(
             f"Heartbeat: ES ticks={self._es_tick_count} "
             f"bars={self.bar_builder.bar_idx} "
             f"VX ticks={self._vx_tick_count} "
-            f"market={'OPEN' if _market_open() else 'CLOSED'}"
+            f"market={'OPEN' if _market_open() else 'CLOSED'}{stale_tag}"
         )
 
 
@@ -1032,76 +1017,73 @@ def load_config(path: str = None) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="VPS Data Bridge: Sierra DTC -> Railway (Self-Healing)")
+    parser = argparse.ArgumentParser(description="VPS Data Bridge: Sierra SCID -> Railway")
     parser.add_argument("--config", default="vps_bridge_config.json",
                         help="Config file path")
     parser.add_argument("--test", action="store_true",
-                        help="Connect, print first 10 ticks, then exit")
+                        help="Tail SCID for 30s, print tick counts, then exit")
     parser.add_argument("--backfill-only", action="store_true",
-                        help="Only run backfill (no live streaming)")
+                        help="Only run backfill (no live tailing)")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
 
-    if not cfg.get("es_symbol"):
-        cfg["es_symbol"] = current_es_symbol()
-    if not cfg.get("vx_symbol"):
-        cfg["vx_symbol"] = current_vx_symbol()
-
     log.info("=" * 50)
-    log.info("  VPS DATA BRIDGE (Self-Healing)")
+    log.info("  VPS DATA BRIDGE (SCID Tail Mode)")
     log.info("=" * 50)
-    log.info(f"  DTC:       {cfg['sierra_host']}:{cfg['sierra_port']}")
-    log.info(f"  ES:        {cfg['es_symbol']}")
-    log.info(f"  VX:        {cfg['vx_symbol']}")
     log.info(f"  ES SCID:   {cfg.get('es_scid_file', 'N/A')}")
     log.info(f"  VX SCID:   {cfg.get('vx_scid_file', 'N/A')}")
     log.info(f"  Railway:   {cfg['railway_api_url']}")
     log.info(f"  Range:     {cfg['range_pts']}pt bars")
+    log.info(f"  Poll:      2s")
     log.info(f"  Stale:     {cfg.get('stale_timeout_minutes', 5)} min")
     log.info("=" * 50)
 
-    # ── Reconnect loop with backfill ──
-    while True:
-        bridge = VPSDataBridge(cfg)
+    # Verify .scid files exist
+    es_scid = cfg.get("es_scid_file", "")
+    vx_scid = cfg.get("vx_scid_file", "")
+    if es_scid and not Path(es_scid).exists():
+        log.error(f"ES SCID file not found: {es_scid}")
+        _send_telegram(cfg, f"🔴 ES SCID file not found: {es_scid}")
+    if vx_scid and not Path(vx_scid).exists():
+        log.error(f"VX SCID file not found: {vx_scid}")
 
-        try:
-            # Step 1: Always backfill gaps first
-            bridge.backfill_gaps()
+    bridge = VPSDataBridge(cfg)
 
-            if args.backfill_only:
-                log.info("Backfill-only mode — exiting")
-                return
+    try:
+        # Step 1: Backfill any gaps from .scid files
+        bridge.backfill_gaps()
 
-            # Step 2: Connect to DTC for live streaming
-            bridge.connect()
+        if args.backfill_only:
+            log.info("Backfill-only mode — exiting")
+            return
 
-            if args.test:
-                log.info("Test mode: waiting 30s for ticks...")
-                time.sleep(30)
-                log.info(f"ES ticks: {bridge._es_tick_count}, "
-                         f"VX ticks: {bridge._vx_tick_count}, "
-                         f"Bars: {bridge.bar_builder.bar_idx}")
-                bridge.disconnect()
-                return
+        # Step 2: Start tailing .scid files for live data
+        bridge.start()
 
-            # Step 3: Stream live data
-            bridge.run_forever()
+        if args.test:
+            log.info("Test mode: tailing SCID for 30s...")
+            for _ in range(15):
+                bridge._poll_es_ticks()
+                bridge._poll_vx_ticks()
+                time.sleep(2)
+            log.info(f"ES ticks: {bridge._es_tick_count}, "
+                     f"VX ticks: {bridge._vx_tick_count}, "
+                     f"Bars: {bridge.bar_builder.bar_idx}")
+            return
 
-        except KeyboardInterrupt:
-            bridge.disconnect()
-            break
-        except Exception as e:
-            log.error(f"Bridge error: {e}")
-            try:
-                bridge.disconnect()
-            except Exception:
-                pass
+        # Step 3: Run forever — poll SCID every 2s
+        _send_telegram(cfg,
+            f"🟢 VPS Bridge started (SCID tail mode)\n"
+            f"ES: {es_scid}\nVX: {vx_scid}")
+        bridge.run_forever()
 
-            # Step 4: On any disconnect/error — wait, then loop back to Step 1
-            # (which will backfill any gap before resuming live)
-            log.info("Reconnecting in 10s (will backfill gaps first)...")
-            time.sleep(10)
+    except KeyboardInterrupt:
+        bridge.stop()
+    except Exception as e:
+        log.error(f"Bridge fatal error: {e}", exc_info=True)
+        _send_telegram(cfg, f"🔴 VPS Bridge crashed: {e}")
+        bridge.stop()
 
 
 if __name__ == "__main__":

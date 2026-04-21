@@ -11898,6 +11898,15 @@ def api_data_freshness():
         except Exception as e:
             print(f"[data_freshness] sierra_vx error: {e}", flush=True)
 
+        # Cross-check: if Sierra ES is "error" but Sierra VX is "ok", the bridge
+        # is alive — ES range bar just hasn't closed yet (tight price range).
+        # Downgrade ES to "stale" to suppress false-alarm Telegram alerts.
+        # Real bridge outages stop BOTH ES and VX, so VX="ok" proves bridge health.
+        if (result.get("sierra_es", {}).get("status") == "error"
+                and result.get("sierra_vx", {}).get("status") == "ok"):
+            result["sierra_es"]["status"] = "stale"
+            result["sierra_es"]["suppressed_by_vx"] = True
+
     return result
 
 def check_pipeline_health():

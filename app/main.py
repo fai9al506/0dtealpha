@@ -7157,6 +7157,22 @@ def start_scheduler():
                 id="pipeline_watchdog", coalesce=True, max_instances=1)
     sch.add_job(_auto_trade_orphan_check, "interval", minutes=5,
                 id="auto_trade_orphan", coalesce=True, max_instances=1)
+    # Fast reconcile: runs every 30s regardless of bot-tracked order state.
+    # Closes the 5-min exposure window left by periodic_orphan_check alone
+    # when force_release has wiped bot state but broker still holds position
+    # (e.g., async stop rejection on trail modify — see #2018, #2031 2026-04-21).
+    def _real_trade_reconcile():
+        t = now_et().time()
+        if not (dtime(9, 30) <= t <= dtime(16, 5)):
+            return
+        try:
+            from app import real_trader
+            real_trader.reconcile_positions()
+        except Exception as e:
+            print(f"[real-trade-reconcile] error: {e}", flush=True)
+    sch.add_job(_real_trade_reconcile, "interval", seconds=30,
+                id="real_trade_reconcile", coalesce=True, max_instances=1,
+                misfire_grace_time=10)
     # Dedicated broker polling jobs (moved out of run_market_job to avoid timeout)
     def _broker_poll():
         t = now_et().time()

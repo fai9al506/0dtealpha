@@ -147,7 +147,8 @@ _get_token = None       # callable -> str (access token)
 _send_telegram = None   # callable(msg) -> bool
 _lock = Lock()
 _active_orders: dict[int, dict] = {}  # keyed by setup_log_id
-_last_reconcile_ts = 0.0  # throttle position reconciliation to every 30s
+# Position reconciliation is now driven by a 30s scheduler job calling
+# reconcile_positions() — no throttle variable needed here.
 
 
 def init(engine, get_token_fn, send_telegram_fn):
@@ -961,12 +962,26 @@ def poll_order_status():
         for lid, order in order_list:
             _check_order_fills(lid, order, broker_orders)
 
-    # Position reconciliation: every 30s (throttled), verify broker position matches tracked state
-    global _last_reconcile_ts
-    _now_ts = time.time()
-    if _now_ts - _last_reconcile_ts >= 30:
-        _last_reconcile_ts = _now_ts
+    # Note: position reconciliation was previously throttled inside this
+    # function but early-exited above when bot state was empty (leaving a
+    # 5-min exposure window covered only by periodic_orphan_check). It is
+    # now driven by a dedicated 30s scheduler job calling reconcile_positions()
+    # which runs regardless of tracked-order state.
+
+
+def reconcile_positions():
+    """Public entry point for the 30s reconcile scheduler.
+
+    Runs regardless of whether bot state is empty — catches the case where
+    force_release has marked a trade closed but broker still holds position
+    (e.g., when a stop modify was rejected async and the original stop wiped).
+    See #2018, #2031 on 2026-04-21."""
+    if not (LONGS_ENABLED or SHORTS_ENABLED) or not _get_token:
+        return
+    try:
         _reconcile_positions()
+    except Exception as e:
+        print(f"[real-trader] reconcile_positions error: {e}", flush=True)
 
 
 def _reconcile_positions():

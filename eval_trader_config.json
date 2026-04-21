@@ -6,13 +6,13 @@
   "telegram_chat_id": "-1003886332593",
   "telegram_poll_interval_s": 2,
   "nt8_incoming_folder": "C:\\Users\\Administrator\\Documents\\NinjaTrader 8\\incoming",
-  "nt8_account_id": "falde5482tcp25d101090",
+  "nt8_account_id": "falde5482tcp25d170091",
   "nt8_mes_symbol": "auto",
   "qty": 3,
   "max_trade_risk": 150,
   "dynamic_sizing": true,
   "be_trigger_pts": 5.0,
-  "max_stop_loss_pts": 12,
+  "max_stop_loss_pts": 14,
   "e2t_daily_loss_limit": 550,
   "e2t_daily_loss_buffer": 100,
   "e2t_eod_trailing_drawdown": 1500,
@@ -58,7 +58,7 @@
     },
     "Skew Charm": {
       "enabled": true,
-      "stop": 12,
+      "stop": 14,
       "target": null
     },
     "GEX Velocity": {

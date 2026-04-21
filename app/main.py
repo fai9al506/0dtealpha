@@ -8445,7 +8445,7 @@ def api_eval_log(limit: int = Query(200)):
     # ── Eval Real config (mirrors eval_trader_config_real.json) ──
     _EVAL_SETUPS = ("Skew Charm", "DD Exhaustion", "Paradigm Reversal", "AG Short", "ES Absorption")
     _EVAL_QTY = 8
-    _EVAL_STOPS = {"Skew Charm": 12, "DD Exhaustion": 12, "Paradigm Reversal": 12, "AG Short": 12, "ES Absorption": 8}
+    _EVAL_STOPS = {"Skew Charm": 14, "DD Exhaustion": 12, "Paradigm Reversal": 12, "AG Short": 12, "ES Absorption": 8}
     _GREEK_FILTER = True   # asymmetric: +3 longs, per-setup+SVB shorts
     try:
         with engine.begin() as conn:
@@ -11913,6 +11913,15 @@ def api_data_freshness():
                     }
         except Exception as e:
             print(f"[data_freshness] sierra_vx error: {e}", flush=True)
+
+        # Cross-check: if Sierra ES is "error" but Sierra VX is "ok", the bridge
+        # is alive — ES range bar just hasn't closed yet (tight price range).
+        # Downgrade ES to "stale" to suppress false-alarm Telegram alerts.
+        # Real bridge outages stop BOTH ES and VX, so VX="ok" proves bridge health.
+        if (result.get("sierra_es", {}).get("status") == "error"
+                and result.get("sierra_vx", {}).get("status") == "ok"):
+            result["sierra_es"]["status"] = "stale"
+            result["sierra_es"]["suppressed_by_vx"] = True
 
     return result
 

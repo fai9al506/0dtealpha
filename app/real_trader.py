@@ -96,6 +96,34 @@ def _round_mes(price: float) -> float:
     return round(round(price / MES_TICK_SIZE) * MES_TICK_SIZE, 2)
 
 
+def _get_current_mes_price() -> float | None:
+    """Fetch current MES Last price via REST for side-of-market validation.
+    Used by update_stop() to avoid submitting a stop that market has already
+    crossed (TS rejects such modifies and may wipe the original stop).
+    ~100-200ms network call. Returns None on any failure."""
+    if not _get_token:
+        return None
+    try:
+        token = _get_token()
+        sym = MES_SYMBOL.replace("@", "%40")
+        r = requests.get(
+            f"{REAL_BASE}/marketdata/quotes/{sym}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5,
+        )
+        if r.status_code != 200:
+            print(f"[real-trader] mes price fetch [{r.status_code}]", flush=True)
+            return None
+        js = r.json()
+        for q in js.get("Quotes", []):
+            last = q.get("Last")
+            if last:
+                return float(last)
+    except Exception as e:
+        print(f"[real-trader] mes price fetch failed: {e}", flush=True)
+    return None
+
+
 def _order_ok(resp: dict | None) -> tuple[bool, str | None]:
     """Check if an order response succeeded. Returns (ok, order_id).
     TS returns HTTP 200 even for FAILED orders -- must check order-level Error."""
@@ -627,7 +655,17 @@ def _place_deferred_protective_orders(lid, order, fill_price):
 # ====== TRAIL & CLOSE ======
 
 def update_stop(setup_log_id: int, new_stop_price: float):
-    """Update the stop order price (called when trail advances)."""
+    """Update the stop order price (called when trail advances).
+
+    Safety layers:
+      L1 Pre-check side-of-market: if market has already crossed the trail level,
+         the exit signal has fired — execute immediate market close instead of
+         submitting a doomed modify that TS would reject (wiping the stop and
+         leaving the position bare).
+      L2 Post-check PUT response: if TS returns Error=FAILED on the replace,
+         emergency close. TS replace-or-reject semantics mean the original
+         stop is gone once the modify is rejected.
+    """
     with _lock:
         order = _active_orders.get(setup_log_id)
         if not order:
@@ -642,16 +680,45 @@ def update_stop(setup_log_id: int, new_stop_price: float):
             return
         stop_oid = order["stop_order_id"]
         account_id = order["account_id"]
+        setup_name = order["setup_name"]
+        direction = order["direction"]
 
     if not stop_oid:
         return
 
     new_stop_price = _round_mes(new_stop_price)
+    is_long = direction.lower() in ("long", "bullish")
 
     # Validate account before modifying order
-    is_long = order["direction"].lower() in ("long", "bullish")
     if not _validate_account_direction(account_id, is_long):
         return
+
+    # LAYER 1: side-of-market validation.
+    # For short: stop is a BUY STOP — must live ABOVE current market.
+    # For long: stop is a SELL STOP — must live BELOW current market.
+    # If market has bounced past the trail's target, the trail's intended exit
+    # was already crossed. Execute that exit at current market price instead of
+    # trying to modify to a now-invalid price.
+    current_mes = _get_current_mes_price()
+    if current_mes is not None:
+        SIDE_BUFFER = 0.5  # tolerate 2-tick race noise; real violations are >0.5pt
+        wrong_side = False
+        if is_long and new_stop_price >= current_mes - SIDE_BUFFER:
+            wrong_side = True
+            side_reason = (f"long trail {new_stop_price:.2f} >= market "
+                           f"{current_mes:.2f} (exit already crossed)")
+        elif not is_long and new_stop_price <= current_mes + SIDE_BUFFER:
+            wrong_side = True
+            side_reason = (f"short trail {new_stop_price:.2f} <= market "
+                           f"{current_mes:.2f} (exit already crossed)")
+        if wrong_side:
+            print(f"[real-trader] WRONG-SIDE TRAIL id={setup_log_id}: "
+                  f"{side_reason}", flush=True)
+            _alert(f"⚠️ {setup_name} TRAIL-EXIT via market\n"
+                   f"{side_reason}\n"
+                   f"Closing at ~{current_mes:.2f}")
+            close_trade(setup_log_id, "trail_market_exit")
+            return
 
     replace_payload = {
         "AccountID": account_id,
@@ -664,7 +731,21 @@ def update_stop(setup_log_id: int, new_stop_price: float):
     }
 
     resp = _ts_api("PUT", f"/orderexecution/orders/{stop_oid}", replace_payload, account_id)
+
+    # LAYER 2: verify PUT was accepted. TS may return 200 with Error=FAILED at
+    # order-level. A rejected replace wipes the original stop → position bare.
     if resp:
+        resp_orders = resp.get("Orders", [])
+        if resp_orders and resp_orders[0].get("Error") == "FAILED":
+            err_msg = resp_orders[0].get("Message", "unknown")[:120]
+            print(f"[real-trader] stop modify REJECTED id={setup_log_id} "
+                  f"new={new_stop_price:.2f}: {err_msg}", flush=True)
+            _alert(f"🚨 {setup_name} STOP MODIFY REJECTED\n"
+                   f"{err_msg}\n"
+                   f"Closing at market to avoid bare position...")
+            close_trade(setup_log_id, "modify_rejected")
+            return
+
         with _lock:
             order["current_stop"] = new_stop_price
             new_orders = resp.get("Orders", [])
@@ -682,10 +763,12 @@ def update_stop(setup_log_id: int, new_stop_price: float):
         # still alerts. Every subsequent update alerts regardless.
         small_first_realign = first_realign and abs(new_stop_price - old_stop) < 3.0
         if not small_first_realign:
-            _alert(f"🔄 {order['setup_name']} stop updated\n"
+            _alert(f"🔄 {setup_name} stop updated\n"
                    f"{old_stop:.2f} → {new_stop_price:.2f}")
     else:
-        _alert(f"🚨 MANUAL INTERVENTION: stop update FAILED\n"
+        # Network/401/timeout. Existing stop may still be live — do NOT
+        # emergency close. Just alert for manual review.
+        _alert(f"🚨 MANUAL INTERVENTION: stop update FAILED (network)\n"
                f"Account: {account_id}\n"
                f"id={setup_log_id} old={old_stop:.2f} new={new_stop_price:.2f}")
 
@@ -1066,6 +1149,23 @@ def _check_order_fills(lid, order, broker_orders):
                        f"{dir_label} {QTY} MES @ {tgt_fp}\n"
                        f"P&L: {pnl_str}"
                        f"{_day_line(account_id)}")
+
+        # Check stop REJ — TS can reject a stop-modify asynchronously even after
+        # PUT returned 200. Replace-or-reject semantics mean the original stop
+        # is wiped. Detect + emergency close before position stays bare.
+        if order.get("stop_order_id") and order["status"] == "filled":
+            stop_order = broker_orders.get(order["stop_order_id"], {})
+            if stop_order.get("Status") == "REJ":
+                rej_reason = (stop_order.get("StatusDescription")
+                              or stop_order.get("RejectReason")
+                              or "rejected async by exchange")
+                print(f"[real-trader] stop REJECTED async id={lid}: {rej_reason} "
+                      f"acct={account_id}", flush=True)
+                _alert(f"🚨 {order['setup_name']} STOP REJECTED BY EXCHANGE\n"
+                       f"{rej_reason[:120]}\n"
+                       f"Closing at market to avoid bare position...")
+                close_trade(lid, "stop_rejected_async")
+                return  # stop processing this order; state is now closed
 
         # Check stop fill
         if order.get("stop_order_id") and order["status"] == "filled":

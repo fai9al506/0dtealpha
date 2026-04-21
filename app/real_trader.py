@@ -673,8 +673,11 @@ def update_stop(setup_log_id: int, new_stop_price: float):
         _persist_order(setup_log_id)
         print(f"[real-trader] stop updated: id={setup_log_id} "
               f"{old_stop:.2f} -> {new_stop_price:.2f} acct={account_id}", flush=True)
-        _alert(f"🔄 {order['setup_name']} stop updated\n"
-               f"{old_stop:.2f} → {new_stop_price:.2f}")
+        # Suppress Telegram for small sync-drift updates (entry-slippage realign).
+        # Real trail advances are always >= gap size (5-8 pts). TS PUT + state still fire above.
+        if abs(new_stop_price - old_stop) >= 2.0:
+            _alert(f"🔄 {order['setup_name']} stop updated\n"
+                   f"{old_stop:.2f} → {new_stop_price:.2f}")
     else:
         _alert(f"🚨 MANUAL INTERVENTION: stop update FAILED\n"
                f"Account: {account_id}\n"

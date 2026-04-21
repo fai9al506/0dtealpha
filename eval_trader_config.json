@@ -12,7 +12,7 @@
   "max_trade_risk": 150,
   "dynamic_sizing": true,
   "be_trigger_pts": 5.0,
-  "max_stop_loss_pts": 12,
+  "max_stop_loss_pts": 14,
   "e2t_daily_loss_limit": 550,
   "e2t_daily_loss_buffer": 100,
   "e2t_eod_trailing_drawdown": 1500,
@@ -58,7 +58,7 @@
     },
     "Skew Charm": {
       "enabled": true,
-      "stop": 12,
+      "stop": 14,
       "target": null
     },
     "GEX Velocity": {

@@ -8429,7 +8429,7 @@ def api_eval_log(limit: int = Query(200)):
     # ── Eval Real config (mirrors eval_trader_config_real.json) ──
     _EVAL_SETUPS = ("Skew Charm", "DD Exhaustion", "Paradigm Reversal", "AG Short", "ES Absorption")
     _EVAL_QTY = 8
-    _EVAL_STOPS = {"Skew Charm": 12, "DD Exhaustion": 12, "Paradigm Reversal": 12, "AG Short": 12, "ES Absorption": 8}
+    _EVAL_STOPS = {"Skew Charm": 14, "DD Exhaustion": 12, "Paradigm Reversal": 12, "AG Short": 12, "ES Absorption": 8}
     _GREEK_FILTER = True   # asymmetric: +3 longs, per-setup+SVB shorts
     try:
         with engine.begin() as conn:

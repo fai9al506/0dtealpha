@@ -670,12 +670,18 @@ def update_stop(setup_log_id: int, new_stop_price: float):
             new_orders = resp.get("Orders", [])
             if new_orders and new_orders[0].get("OrderID"):
                 order["stop_order_id"] = new_orders[0]["OrderID"]
+            # Mark first post-entry realign consumed; all later updates alert normally
+            first_realign = not order.get("initial_realign_done")
+            order["initial_realign_done"] = True
         _persist_order(setup_log_id)
         print(f"[real-trader] stop updated: id={setup_log_id} "
-              f"{old_stop:.2f} -> {new_stop_price:.2f} acct={account_id}", flush=True)
-        # Suppress Telegram for small sync-drift updates (entry-slippage realign).
-        # Real trail advances are always >= gap size (5-8 pts). TS PUT + state still fire above.
-        if abs(new_stop_price - old_stop) >= 2.0:
+              f"{old_stop:.2f} -> {new_stop_price:.2f} acct={account_id}"
+              f"{' [initial-realign]' if first_realign else ''}", flush=True)
+        # Suppress Telegram only for the first update after entry IF delta is small
+        # (pure entry-slippage realign). A big first-cycle move (fast trail activation)
+        # still alerts. Every subsequent update alerts regardless.
+        small_first_realign = first_realign and abs(new_stop_price - old_stop) < 3.0
+        if not small_first_realign:
             _alert(f"🔄 {order['setup_name']} stop updated\n"
                    f"{old_stop:.2f} → {new_stop_price:.2f}")
     else:

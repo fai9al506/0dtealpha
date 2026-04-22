@@ -806,11 +806,13 @@ def db_init():
         """))
 
         # V13 regime data per trade — enables JS portal filter
+        # vanna_regime (Apr 22 2026, VPB-Bull V3): "bullish"/"bearish"/"mixed" — VPB real-trade gate
         for col, dtype in [
             ("v13_gex_above", "DOUBLE PRECISION"),
             ("v13_dd_near", "DOUBLE PRECISION"),
             ("vanna_cliff_side", "TEXT"),
             ("vanna_peak_side", "TEXT"),
+            ("vanna_regime", "TEXT"),
         ]:
             conn.execute(text(f"""
             DO $$ BEGIN
@@ -1995,6 +1997,9 @@ def log_setup(result_wrapper):
                         "lis_raw": r.get("lis_raw"),
                         "lookback": r.get("lookback"),
                     })
+                # vanna_regime (VPB-Bull V3, Apr 22 2026): "bullish"/"bearish"/"mixed"
+                # Only populated for VPB signals — other setups pass None
+                insert_params["vanna_regime"] = r.get("vanna_regime")
                 result = conn.execute(text("""
                     INSERT INTO setup_log
                         (setup_name, direction, grade, score, paradigm, spot, lis, target,
@@ -2007,7 +2012,7 @@ def log_setup(result_wrapper):
                          charm_limit_entry, overvix,
                          trail_sl, trail_activation, trail_gap,
                          v13_gex_above, v13_dd_near,
-                         vanna_cliff_side, vanna_peak_side)
+                         vanna_cliff_side, vanna_peak_side, vanna_regime)
                     VALUES
                         (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
                          :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
@@ -2019,7 +2024,7 @@ def log_setup(result_wrapper):
                          :charm_limit_entry, :overvix,
                          :trail_sl, :trail_activation, :trail_gap,
                          :v13_gex_above, :v13_dd_near,
-                         :vanna_cliff_side, :vanna_peak_side)
+                         :vanna_cliff_side, :vanna_peak_side, :vanna_regime)
                     RETURNING id
                 """), insert_params)
                 log_id = result.fetchone()[0]
@@ -3867,7 +3872,8 @@ def _v13_vanna_features() -> tuple[str | None, str | None]:
 
 def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
-                        paradigm: str | None = None, grade: str | None = None) -> bool:
+                        paradigm: str | None = None, grade: str | None = None,
+                        vanna_regime: str | None = None) -> bool:
     """Single source of truth for the LIVE auto-trade filter (currently V13).
     V13 = V12-fix + (a) GEX/DD magnet + (b) vanna cliff/peak + (c) DD-specific quality gates.
 
@@ -3896,6 +3902,21 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     Change this ONE function when the filter evolves."""
     if setup_name in ("VIX Divergence", "IV Momentum", "Vanna Butterfly"):
         return False
+
+    # ── VPB-Bull (Vanna Pivot Bounce V3) — Apr 22 2026 ──
+    # Only LONGS fire live, only when vanna regime is BULLISH (pos magnet above +
+    # neg repellent below = both forces pushing up). Backtest Mar 1-Apr 21 2026:
+    # 9 trades, 100% WR (8W/1EXPIRED/0L), +$420 at 1 MES, MaxDD=0. Matches Volland
+    # community research: GREEN vanna 72.7% WR as magnet, RED 18.8% WR (no edge as reversal).
+    # Master switch VPB_REAL_TRADE_ENABLED env var (default false = shadow mode).
+    if setup_name == "Vanna Pivot Bounce":
+        if os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower() != "true":
+            return False  # shadow mode — filter logs fire but real trader skipped
+        if direction not in ("long", "bullish"):
+            return False  # shorts disabled: negative vanna is repellent, not reversal
+        if vanna_regime != "bullish":
+            return False  # only fire in bullish regime (4-zone force classifier)
+        return True  # skip align/vix/paradigm gates — VPB has its own quality via regime
 
     # ── Grade gate: SC only — block C and LOG grades (v2 backtest: 220t, C=52% WR, LOG=24%) ──
     if setup_name == "Skew Charm" and grade and grade in ("C", "LOG"):
@@ -4893,7 +4914,8 @@ def _run_setup_check():
                 # Live filter: only send Telegram for signals that pass the active auto-trade filter
                 _passes_live = _passes_live_filter(setup_name, r["direction"],
                                                    r.get("greek_alignment", 0), _vix_last, _overvix,
-                                                   paradigm=r.get("paradigm"), grade=grade)
+                                                   paradigm=r.get("paradigm"), grade=grade,
+                                                   vanna_regime=r.get("vanna_regime"))
                 # Setup fire notifications disabled — only real_trader sends to Telegram
                 if _passes_live:
                     print(f"[setups] {setup_name} NEW: {grade} — passes live filter (Telegram via real_trader only)", flush=True)
@@ -4980,7 +5002,9 @@ def _run_setup_check():
                             print(f"[options] place error: {e}", flush=True)
                     # Real trader: MES REAL accounts (SC + AG Short, SYNCHRONOUS — real money)
                     # AG Short added 2026-04-08 — fires SHORT account only (AG hardcoded direction="short")
-                    if not _skip_auto_trade and setup_name in ("Skew Charm", "AG Short"):
+                    # VPB-Bull added 2026-04-22 — LONGS only on bullish vanna regime (210VYX65, cap shared with SC)
+                    #   Env switch VPB_REAL_TRADE_ENABLED gates real execution via _passes_live_filter
+                    if not _skip_auto_trade and setup_name in ("Skew Charm", "AG Short", "Vanna Pivot Bounce"):
                         try:
                             from app import real_trader
                             es_px = None
@@ -4990,11 +5014,16 @@ def _run_setup_check():
                                 es_px = _get_es_price_fallback()
                             if es_px and stop_lvl is not None:
                                 stop_dist = abs(r["spot"] - stop_lvl)
-                                # Opt2: trail only, no partial TP at +10 (backtest: +316 pts more, less DD)
+                                # VPB uses FIXED 10pt target (bracket order, no trail)
+                                # SC/AG use trail-only (target_pts=None)
+                                if setup_name == "Vanna Pivot Bounce":
+                                    _target_dist = abs(target_lvl - r["spot"]) if target_lvl else 10.0
+                                else:
+                                    _target_dist = None  # trail-only for SC/AG
                                 real_trader.place_trade(
                                     setup_log_id=_current_setup_log.get(setup_name),
                                     setup_name=setup_name, direction=r["direction"],
-                                    es_price=es_px, target_pts=None, stop_pts=stop_dist,
+                                    es_price=es_px, target_pts=_target_dist, stop_pts=stop_dist,
                                     charm_limit_price=None,
                                 )
                             elif not es_px:

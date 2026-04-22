@@ -300,10 +300,11 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     """
     is_long = direction.lower() in ("long", "bullish")
 
-    # Setup filter: only trade Skew Charm + AG Short (defense-in-depth, main.py also filters)
+    # Setup filter: only trade Skew Charm + AG Short + VPB-Bull (defense-in-depth, main.py also filters)
     # AG Short added 2026-04-08 — SHORT account only (AG hardcoded direction="short")
-    if setup_name not in ("Skew Charm", "AG Short"):
-        print(f"[real-trader] skip {setup_name}: only Skew Charm/AG Short allowed on real accounts", flush=True)
+    # Vanna Pivot Bounce added 2026-04-22 — LONGS only, bullish regime gated by main.py
+    if setup_name not in ("Skew Charm", "AG Short", "Vanna Pivot Bounce"):
+        print(f"[real-trader] skip {setup_name}: only SC/AG/VPB allowed on real accounts", flush=True)
         return
 
     # Check master switch for this direction

@@ -1,0 +1,139 @@
+{
+  "checks": [
+    {
+      "name": "1.1 Chain snapshot coverage",
+      "status": "PASS",
+      "detail": "33 trading days, 0 with <150 snapshots"
+    },
+    {
+      "name": "1.2 Volland vanna coverage",
+      "status": "PASS",
+      "detail": "33 days with vanna data, 0 with <100 cycles"
+    },
+    {
+      "name": "1.3 DeltaDecay coverage",
+      "status": "PASS",
+      "detail": "32 days with DD data"
+    },
+    {
+      "name": "1.4 Spot staleness scan",
+      "status": "FAIL",
+      "detail": "Days with <50% unique spots (possible freeze): 1 [(datetime.date(2026, 3, 26), 60, 192)]"
+    },
+    {
+      "name": "1.5 outcome_pnl range sanity",
+      "status": "PASS",
+      "detail": "n=1524, min=-20.0, max=73.0, avg=0.89"
+    },
+    {
+      "name": "1.6 Trade contamination (MFE>50 or MAE<-30)",
+      "status": "WARN",
+      "detail": "56 flagged trades (need individual verification)"
+    },
+    {
+      "name": "1.7 Unresolved outcomes",
+      "status": "PASS",
+      "detail": "0 trades with NULL outcome (excluded from analysis)"
+    },
+    {
+      "name": "1.8 All trades in market hours (9:30-16:00 ET)",
+      "status": "PASS",
+      "detail": "0 off-hours trades"
+    },
+    {
+      "name": "1.9 Filter-era consistency",
+      "status": "PASS",
+      "detail": "V13 deployed 2026-04-17 06:10 ET (session 67). Entire Mar 1 - Apr 17 sample is V12-fix production = V13 simulated post-hoc."
+    },
+    {
+      "name": "2.1 Raw DB totals (unfiltered)",
+      "status": "PASS",
+      "detail": "n=1524, PnL sum=+1363.9, shorts=787, longs=737"
+    },
+    {
+      "name": "2.2 V12-fix total reproducibility",
+      "status": "PASS",
+      "detail": "Computed: 390t, +1570.4 pts. Report: 390t, +1570.4 pts. Match: True"
+    },
+    {
+      "name": "2.3 V12-fix filter matches deployed code",
+      "status": "PASS",
+      "detail": "10/10 gates present in _passes_live_filter()"
+    },
+    {
+      "name": "2.4 Per-direction PnL",
+      "status": "PASS",
+      "detail": "Shorts: 291t, +1162.0. Longs: 99t, +408.4. Sum=+1570.4"
+    },
+    {
+      "name": "2.5 Apr 2 bad day verification",
+      "status": "PASS",
+      "detail": "Apr 2 shorts (SC/DD/AG): 22t, -181.3 pts, 17 losses. Expected: ~17t, ~-163 pts"
+    },
+    {
+      "name": "2.6 2026-04-13 OPEX rally day shorts",
+      "status": "PASS",
+      "detail": "0 SC/DD/AG shorts on 2026-04-13. User memory: V12-fix blocked all shorts those days."
+    },
+    {
+      "name": "2.6 2026-04-14 OPEX rally day shorts",
+      "status": "PASS",
+      "detail": "4 SC/DD/AG shorts on 2026-04-14. User memory: V12-fix blocked all shorts those days."
+    },
+    {
+      "name": "2.7 SC loss outcome_pnl clustering (expect ~-14 stop)",
+      "status": "PASS",
+      "detail": "Top SC loss PnL values: [(-14.0, 42), (-14.0, 33), (-20.0, 20)]"
+    },
+    {
+      "name": "2.8 V13 GEX/DD magnet blocks vs deployed claim",
+      "status": "PASS",
+      "detail": "My GEX/DD blocks: 41t, pnl_of_blocked=-175.4 (savings=+175.4). User's deployed claim: '55 blocks, +215 pts'. Mine: 41 blocks, +175 saved."
+    },
+    {
+      "name": "2.9 Sanity: +14% PnL / -54% MaxDD combo",
+      "status": "PASS",
+      "detail": "Plausible because V13 specifically targets LOSS clusters. Removing 106 pts of losses while keeping most wins \u2192 PF can jump significantly. Not a 'too good' red flag because losers have fixed SL (~-14) while winners vary."
+    },
+    {
+      "name": "2.10 No duplicate trade IDs",
+      "status": "PASS",
+      "detail": "0 duplicates"
+    },
+    {
+      "name": "3.1 V12-fix = 390 trades (Mar 1 - Apr 17)",
+      "status": "PASS",
+      "detail": "Computed: 390. Claim: 390"
+    },
+    {
+      "name": "3.2 V12-fix PnL = +1570.4",
+      "status": "PASS",
+      "detail": "Computed: +1570.4. Claim: +1570.4"
+    },
+    {
+      "name": "3.3 V12-fix WR = 67.0%",
+      "status": "PASS",
+      "detail": "Computed: 67.0%. Claim: 67.0%"
+    },
+    {
+      "name": "3.4 V12-fix MaxDD = 142.5",
+      "status": "PASS",
+      "detail": "Computed: 142.5. Claim: 142.5"
+    }
+  ],
+  "summary": {
+    "total": 24,
+    "pass": 22,
+    "fail": 1,
+    "warn": 1,
+    "info": 0
+  },
+  "computed": {
+    "v12_trades": 390,
+    "v12_pnl": 1570.36,
+    "v12_wr": 67.02702702702703,
+    "v12_maxdd": 142.5,
+    "gex_dd_blocks": 41,
+    "gex_dd_saved": 175.42999999999998
+  }
+}

@@ -1,0 +1,153 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>V12-fix vs V13</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+body { background:#0b0e13; color:#e3e6eb; font-family:-apple-system,Segoe UI,Arial; max-width:1200px; margin:30px auto; padding:20px; }
+h1 { color:#6bc7ff; border-bottom:2px solid #1e2a36; padding-bottom:10px; }
+h2 { color:#7dd3a6; margin-top:40px; border-left:4px solid #7dd3a6; padding-left:12px; }
+h3 { color:#ffb86b; margin-top:25px; }
+.hero { background:linear-gradient(135deg,#1a2332,#0b0e13); padding:30px; border-radius:10px; margin-bottom:30px; border:1px solid #2a3a50; }
+.side-by-side { display:grid; grid-template-columns:1fr 80px 1fr; gap:10px; align-items:center; margin:20px 0; }
+.card { background:#0f1620; padding:20px; border-radius:8px; border:1px solid #1e2a36; }
+.card.v12 { border-left:4px solid #6bc7ff; }
+.card.v13 { border-left:4px solid #7dd3a6; }
+.card h3 { margin-top:0; color:#8a97a8; font-size:0.9em; text-transform:uppercase; letter-spacing:1px; }
+.card .metric { font-size:2.5em; font-weight:bold; color:#e3e6eb; margin:5px 0; }
+.card .sub { color:#8a97a8; font-size:0.9em; }
+.arrow { text-align:center; font-size:2em; color:#7dd3a6; }
+table { border-collapse:collapse; width:100%; margin:15px 0; background:#0f1620; border-radius:6px; overflow:hidden; }
+th,td { padding:10px 14px; text-align:left; border-bottom:1px solid #1e2a36; font-size:0.95em; }
+th { background:#162030; color:#6bc7ff; font-weight:600; }
+tr:hover { background:#141d2b; }
+.pos { color:#7dd3a6; font-weight:bold; }
+.neg { color:#ff7b7b; font-weight:bold; }
+.neutral { color:#8a97a8; }
+.warn { color:#ffb86b; }
+.chart { background:#0f1620; padding:15px; border-radius:8px; margin:20px 0; }
+.callout { background:#162030; border-left:4px solid #7dd3a6; padding:15px 20px; margin:20px 0; border-radius:4px; }
+.big-num { font-size:3em; font-weight:bold; }
+.summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:15px; margin:20px 0; }
+.summary-card { background:#0f1620; padding:15px; border-radius:8px; text-align:center; border:1px solid #1e2a36; }
+.summary-card .label { color:#8a97a8; font-size:0.85em; margin-top:5px; }
+.headline-stat { text-align:center; padding:20px; background:#0a0e14; border-radius:8px; margin:5px 0; }
+.headline-stat .big { font-size:2.2em; font-weight:bold; }
+</style></head><body><h1>V12-fix vs V13 — Complete Side-by-Side Comparison</h1><div style="color:#8a97a8;margin-bottom:20px;">Period: 2026-03-01 to 2026-04-17 · 32 trading days · Generated 2026-04-17 14:06</div><div class="hero">
+<h2 style="margin-top:0;border:none;padding:0;">The Five Numbers That Matter</h2>
+<div class="summary-grid">
+  <div class="summary-card"><div class="big-num pos">+219</div><div class="label">pts gained (+14.0%)</div></div>
+  <div class="summary-card"><div class="big-num pos">−77</div><div class="label">MaxDD reduced (−54%)</div></div>
+  <div class="summary-card"><div class="big-num pos">+11.6pp</div><div class="label">win rate lift</div></div>
+  <div class="summary-card"><div class="big-num pos">1.74x</div><div class="label">profit factor multiplier</div></div>
+</div>
+<p style="margin-top:20px;">V13 makes 14% more money with HALF the drawdown, fewer but higher-quality trades, and ALL weeks green.</p>
+</div><h2>1. Headline Metrics (Side-by-Side)</h2><div class="side-by-side"><div class="card v12">
+<h3>V12-fix (baseline)</h3>
+<div class="metric">+1570.4</div><div class="sub">total pts</div>
+<div style="margin-top:15px;">
+  <div class="sub">390 trades · 67.0% WR</div>
+  <div class="sub">MaxDD: −142.5 pts</div>
+  <div class="sub">Profit Factor: 1.94</div>
+  <div class="sub">Avg per trade: +4.03 pts</div>
+</div>
+</div><div class="arrow">→</div><div class="card v13">
+<h3>V13 (combined)</h3>
+<div class="metric pos">+1789.7</div><div class="sub">total pts</div>
+<div style="margin-top:15px;">
+  <div class="sub">255 trades · 78.7% WR</div>
+  <div class="sub">MaxDD: −65.1 pts</div>
+  <div class="sub">Profit Factor: 3.38</div>
+  <div class="sub">Avg per trade: +7.02 pts</div>
+</div>
+</div></div><h2>2. Complete Metrics Table</h2><table>
+<tr><th>Metric</th><th>V12-fix</th><th>V13</th><th>Delta</th><th>Comment</th></tr><tr><td>Total PnL (pts)</td><td>1570.4</td><td>1789.7</td><td class='pos'>+219.4</td><td>+14.0% overall gain</td></tr><tr><td>Total trades</td><td>390</td><td>255</td><td class='pos'>-135</td><td>V13 fires 35% fewer live trades</td></tr><tr><td>Wins</td><td>248</td><td>188</td><td class='neg'>-60</td><td>Kept most of the winners</td></tr><tr><td>Losses</td><td>122</td><td>51</td><td class='pos'>-71</td><td>Cut losses dramatically</td></tr><tr><td>Expired</td><td>20</td><td>16</td><td class='pos'>-4</td><td>Fewer time-outs</td></tr><tr><td>Win rate</td><td>67.0</td><td>78.7</td><td class='pos'>+11.6</td><td>WR lifted 11.7pp</td></tr><tr><td>Avg winner (pts)</td><td>12.8</td><td>13.2</td><td class='pos'>+0.5</td><td>Winners slightly bigger</td></tr><tr><td>Avg loser (pts)</td><td>-13.1</td><td>-14.3</td><td class='neg'>-1.2</td><td>Losers nearly same size</td></tr><tr><td>Avg per trade</td><td>4.0</td><td>7.0</td><td class='pos'>+3.0</td><td>Efficiency up ~75%</td></tr><tr><td>Max Drawdown (pts)</td><td>142.5</td><td>65.1</td><td class='pos'>-77.4</td><td>Biggest single improvement</td></tr><tr><td>Profit Factor</td><td>1.9</td><td>3.4</td><td class='pos'>+1.4</td><td>Near-doubled</td></tr><tr><td>Longest losing streak (count)</td><td>7</td><td>4</td><td class='pos'>-3</td><td>7 losses → 4 losses</td></tr><tr><td>Worst streak PnL</td><td>-92.0</td><td>-54.0</td><td class='pos'>+38.0</td><td>Smaller bad-day cluster</td></tr><tr><td>Longest winning streak</td><td>24</td><td>26</td><td class='pos'>+2</td><td>Best-case similar</td></tr></table><h2>3. Weekly PnL Breakdown</h2><p>Total weeks in sample: 7 (ISO weeks).
+V12-fix positive weeks: <b>6/7</b>.
+V13 positive weeks: <b class='pos'>7/7</b> (all weeks green).</p><table><tr><th>Week</th><th>V12 trades</th><th>V12 PnL</th><th>V13 trades</th><th>V13 PnL</th><th>Delta</th><th>Status</th></tr><tr><td>2026-W10</td><td>82</td><td>+485.6</td><td>65</td><td>+485.3</td><td class='neg'>-0.3</td><td>V12: <span class="pos">GREEN</span> → V13: <span class="pos">GREEN</span></td></tr><tr><td>2026-W11</td><td>65</td><td>+127.8</td><td>53</td><td>+259.6</td><td class='pos'>+131.8</td><td>V12: <span class="pos">GREEN</span> → V13: <span class="pos">GREEN</span></td></tr><tr><td>2026-W12</td><td>69</td><td>+477.7</td><td>49</td><td>+368.5</td><td class='neg'>-109.2</td><td>V12: <span class="pos">GREEN</span> → V13: <span class="pos">GREEN</span></td></tr><tr><td>2026-W13</td><td>56</td><td>+293.2</td><td>37</td><td>+352.1</td><td class='pos'>+58.9</td><td>V12: <span class="pos">GREEN</span> → V13: <span class="pos">GREEN</span></td></tr><tr><td>2026-W14</td><td>23</td><td>+29.7</td><td>11</td><td>+26.8</td><td class='neg'>-2.9</td><td>V12: <span class="pos">GREEN</span> → V13: <span class="pos">GREEN</span></td></tr><tr><td>2026-W15</td><td>69</td><td>+168.6</td><td>35</td><td>+264.4</td><td class='pos'>+95.8</td><td>V12: <span class="pos">GREEN</span> → V13: <span class="pos">GREEN</span></td></tr><tr><td>2026-W16</td><td>26</td><td>-12.2</td><td>5</td><td>+33.0</td><td class='pos'>+45.2</td><td>V12: <span class="neg">RED</span> → V13: <span class="pos">GREEN</span></td></tr></table><div id="chart_weekly" class="chart"></div><script>
+Plotly.newPlot('chart_weekly', [
+  {x:["2026-W10", "2026-W11", "2026-W12", "2026-W13", "2026-W14", "2026-W15", "2026-W16"], y:[485.58, 127.79999999999995, 477.7000000000001, 293.18999999999994, 29.680000000000007, 168.6100000000001, -12.200000000000006], name:'V12-fix', type:'bar', marker:{color:'#6bc7ff'}},
+  {x:["2026-W10", "2026-W11", "2026-W12", "2026-W13", "2026-W14", "2026-W15", "2026-W16"], y:[485.2899999999999, 259.6, 368.50000000000006, 352.12, 26.799999999999997, 264.41, 33.0], name:'V13', type:'bar', marker:{color:'#7dd3a6'}}
+], {
+  template:'plotly_dark', paper_bgcolor:'#0f1620', plot_bgcolor:'#0f1620',
+  font:{color:'#e3e6eb'}, title:'Weekly PnL Comparison',
+  xaxis:{title:'Week'}, yaxis:{title:'PnL (pts)'}, barmode:'group', margin:{t:50,l:50,r:30,b:80}
+}, {responsive:true});
+</script><h2>4. Daily PnL & Drawdown Timeline</h2><p>Positive days V12: <b>24/32</b> vs V13: <b>25/32</b>.</p>
+<p>Worst day: V12 was <span class='neg'>2026-04-02 (-101.7 pts)</span>, V13 was <span class='neg'>2026-04-01 (-14.0 pts)</span>.</p>
+<p>Best day: V12 was <span class='pos'>2026-03-26 (+276.8 pts)</span>, V13 was <span class='pos'>2026-03-26 (+280.9 pts)</span>.</p><div id="chart_cum" class="chart"></div><script>
+Plotly.newPlot('chart_cum', [
+  {x:["2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-15", "2026-04-16"], y:[14.0, 125.4, 310.0, 414.0, 485.6, 453.5, 605.3, 648.4, 646.2, 613.4, 660.9, 801.5, 978.1, 1051.5, 1091.1, 1141.3, 1136.9, 1151.1, 1427.9, 1384.3, 1436.8, 1469.0, 1515.7, 1414.0, 1494.5, 1534.2, 1585.9, 1586.7, 1582.6, 1592.6, 1544.0, 1570.4], name:'V12-fix cumulative', type:'scatter', mode:'lines', line:{color:'#6bc7ff', width:2}},
+  {x:["2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-15", "2026-04-16"], y:[14.0, 109.0, 277.4, 381.9, 485.3, 517.2, 655.9, 707.9, 745.7, 744.9, 799.8, 906.9, 1031.8, 1091.8, 1113.4, 1175.3, 1186.3, 1194.6, 1475.5, 1465.5, 1518.0, 1518.0, 1504.0, 1492.3, 1567.2, 1639.6, 1736.3, 1766.1, 1756.7, 1766.7, 1766.7, 1789.7], name:'V13 cumulative', type:'scatter', mode:'lines', line:{color:'#7dd3a6', width:2}}
+], {
+  template:'plotly_dark', paper_bgcolor:'#0f1620', plot_bgcolor:'#0f1620',
+  font:{color:'#e3e6eb'}, title:'Cumulative PnL (pts)',
+  xaxis:{title:'Date'}, yaxis:{title:'Cumulative pts'}, margin:{t:50,l:50,r:30,b:50}
+}, {responsive:true});
+</script><div id="chart_dd" class="chart"></div><script>
+Plotly.newPlot('chart_dd', [
+  {x:["2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-15", "2026-04-16"], y:[0.0, 0.0, 0.0, 0.0, 0.0, -32.10000000000002, 0.0, 0.0, -2.199999999999932, -35.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -4.399999999999864, 0.0, 0.0, -43.600000000000136, 0.0, 0.0, 0.0, -101.70000000000005, -21.200000000000045, 0.0, 0.0, 0.0, -4.100000000000136, 0.0, -48.59999999999991, -22.199999999999818], name:'V12-fix DD', type:'scatter', mode:'lines', fill:'tozeroy', line:{color:'#6bc7ff'}, fillcolor:'rgba(107,199,255,0.2)'},
+  {x:["2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-15", "2026-04-16"], y:[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.8000000000000682, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -10.0, 0.0, 0.0, -14.0, -25.700000000000045, 0.0, 0.0, 0.0, 0.0, -9.399999999999864, 0.0, 0.0, 0.0], name:'V13 DD', type:'scatter', mode:'lines', fill:'tozeroy', line:{color:'#7dd3a6'}, fillcolor:'rgba(125,211,166,0.3)'}
+], {
+  template:'plotly_dark', paper_bgcolor:'#0f1620', plot_bgcolor:'#0f1620',
+  font:{color:'#e3e6eb'}, title:'Underwater Equity Curve (drawdown from peak)',
+  xaxis:{title:'Date'}, yaxis:{title:'Drawdown (pts)'}, margin:{t:50,l:50,r:30,b:50}
+}, {responsive:true});
+</script><h2>5. Monthly Breakdown</h2><table><tr><th>Month</th><th>V12 trades</th><th>V12 PnL</th><th>V13 trades</th><th>V13 PnL</th><th>Blocked</th><th>Blocked PnL</th><th>Delta</th></tr><tr><td>2026-03</td><td>277</td><td class='pos'>+1469.0</td><td>208</td><td class='pos'>+1518.0</td><td>69</td><td class='neg'>-49.1</td><td class='pos'>+49.1</td></tr><tr><td>2026-04</td><td>113</td><td class='pos'>+101.4</td><td>47</td><td class='pos'>+271.7</td><td>66</td><td class='neg'>-170.3</td><td class='pos'>+170.3</td></tr></table><h2>6. By Direction (Longs vs Shorts)</h2><table><tr><th>Direction</th><th>V12 trades</th><th>V12 PnL</th><th>V13 trades</th><th>V13 PnL</th><th>Delta</th></tr><tr><td>LONG (total)</td><td>99</td><td class='pos'>+408.4</td><td>84</td><td class='pos'>+381.1</td><td class='neg'>-27.3</td></tr><tr><td>SHORT (total)</td><td>291</td><td class='pos'>+1162.0</td><td>171</td><td class='pos'>+1408.6</td><td class='pos'>+246.6</td></tr></table><h2>7. By Setup</h2><table><tr><th>Setup</th><th>V12 N</th><th>V12 PnL</th><th>V12 WR</th><th>V13 N</th><th>V13 PnL</th><th>V13 WR</th><th>Blocked</th><th>Δ PnL</th></tr><tr>
+<td>Skew Charm</td>
+<td>202</td><td class='pos'>+885.0</td><td>73%</td>
+<td>144</td><td class='pos'>+943.8</td><td>81%</td>
+<td>58 (-58.8)</td>
+<td class='pos'>+58.8</td></tr><tr>
+<td>DD Exhaustion</td>
+<td>128</td><td class='pos'>+280.1</td><td>53%</td>
+<td>60</td><td class='pos'>+437.8</td><td>71%</td>
+<td>68 (-157.7)</td>
+<td class='pos'>+157.7</td></tr><tr>
+<td>AG Short</td>
+<td>47</td><td class='pos'>+369.3</td><td>83%</td>
+<td>38</td><td class='pos'>+372.2</td><td>88%</td>
+<td>9 (-2.9)</td>
+<td class='pos'>+2.9</td></tr><tr>
+<td>ES Absorption</td>
+<td>8</td><td class='pos'>+31.8</td><td>71%</td>
+<td>8</td><td class='pos'>+31.8</td><td>71%</td>
+<td>0 (+0.0)</td>
+<td class='neutral'>+0.0</td></tr><tr>
+<td>GEX Long</td>
+<td>1</td><td class='pos'>+11.7</td><td>100%</td>
+<td>1</td><td class='pos'>+11.7</td><td>100%</td>
+<td>0 (+0.0)</td>
+<td class='neutral'>+0.0</td></tr><tr>
+<td>Vanna Pivot Bounce</td>
+<td>1</td><td class='pos'>+10.0</td><td>100%</td>
+<td>1</td><td class='pos'>+10.0</td><td>100%</td>
+<td>0 (+0.0)</td>
+<td class='neutral'>+0.0</td></tr><tr>
+<td>BofA Scalp</td>
+<td>1</td><td class='pos'>+2.4</td><td>0%</td>
+<td>1</td><td class='pos'>+2.4</td><td>0%</td>
+<td>0 (+0.0)</td>
+<td class='neutral'>+0.0</td></tr><tr>
+<td>SB2 Absorption</td>
+<td>2</td><td class='neg'>-20.0</td><td>0%</td>
+<td>2</td><td class='neg'>-20.0</td><td>0%</td>
+<td>0 (+0.0)</td>
+<td class='neutral'>+0.0</td></tr></table><h2>8. Drawdown & Streak Analysis (What V13 Actually Fixed)</h2><div class="callout">
+<h3 style="margin-top:0;color:#7dd3a6;">The Drawdown Story</h3>
+<p><b>V12-fix worst drawdown: −142 pts</b>.
+The equity curve peaked at <b>2026-04-02 13:46:59.968068+00:00</b> and bottomed at <b>2026-04-06 13:46:35.061450+00:00</b>.
+This is the &quot;biggest single loss streak&quot; a trader would have experienced.</p>
+<p><b>V13 worst drawdown: −65 pts</b>.
+The equity curve peaked at <b>2026-03-10 14:18:20.924594+00:00</b> and bottomed at <b>2026-03-10 16:36:59.297869+00:00</b>.
+<span class='pos'>DD cut by 77 points (−54%)</span>.</p>
+<p><b>Longest losing streak:</b> V12 had 7 straight losses (−92 pts).
+V13 had 4 straight losses (−54 pts).
+Removing bad clusters is the biggest psychological and capital benefit.</p>
+</div><h2>9. Trade Efficiency — Fewer, Better Trades</h2><p>V13 fires 135 FEWER live trades (35% reduction) but keeps nearly all winners.</p><table><tr><th></th><th>V12-fix</th><th>V13</th><th>Change</th></tr><tr><td>Trades per trading day</td><td>12.2</td><td>8.0</td><td class='pos'>-4.2</td></tr><tr><td>PnL per trade</td><td>+4.03</td><td>+7.02</td><td class='pos'>+2.99</td></tr><tr><td>PnL per trading day</td><td>+49.1</td><td>+55.9</td><td class='pos'>+6.9</td></tr><tr><td>Required concurrency slots</td><td>higher</td><td>lower</td><td class='pos'>easier on TSRT</td></tr></table><h2>10. Bottom Line</h2>
+<div class="callout"><table style="background:transparent;">
+<tr><td><b>Same portal detection</b></td><td>No signal is lost; V13 is a gate at trade execution only.</td></tr>
+<tr><td><b>Fewer live trades</b></td><td>390 → 255 (135 blocked, 35% reduction)</td></tr>
+<tr><td><b>Better WR</b></td><td>67.0% → 78.7% (+11.6pp)</td></tr>
+<tr><td><b>Higher profit factor</b></td><td>1.94x → 3.38x (1.74x multiplier)</td></tr>
+<tr><td><b>Lower MaxDD</b></td><td>−142 → −65 pts (the biggest psychological improvement)</td></tr>
+<tr><td><b>Shorter losing streaks</b></td><td>7 → 4 consecutive losses</td></tr>
+<tr><td><b>All weeks positive</b></td><td>6/7 → 7/7 (no losing weeks)</td></tr>
+<tr><td><b>Monthly stability</b></td><td>Positive in March (+49) AND April (+170)</td></tr>
+</table></div><p style='color:#8a97a8;margin-top:30px;font-size:0.85em;'>All numbers computed from DB post-hoc applying V13 filter logic to setup_log trades. Reproducible via _v13_vs_v12_compare.py.</p></body></html>

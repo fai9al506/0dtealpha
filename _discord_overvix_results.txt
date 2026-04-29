@@ -1,0 +1,2663 @@
+Found 22 JSON files to search
+
+Searching: Volland Discord - 0DTE Alerts - 📨┃0dte-alerts [1362822187647500489] (after 2026-02-01).json
+  -> 42 matches
+Searching: Volland Discord - 0DTE Alerts - 📨┃0dte-alerts [1362822187647500489] (after 2026-02-01)1.json
+  -> 42 matches
+Searching: Volland Discord - 0DTE Alerts - 📨┃0dte-alerts [1362822187647500489] (after 2026-03-16).json
+  -> 3 matches
+Searching: Volland Discord - 0DTE Alerts - 📨┃0dte-alerts [1362822187647500489] (after 2026-03-19).json
+  -> 1 matches
+Searching: Volland Discord - 0DTE Alerts - 📨┃0dte-alerts [1362822187647500489] (after 2026-03-25).json
+  -> 1 matches
+Searching: Volland Discord - 0DTE Alerts - 📨┃0dte-alerts [1362822187647500489] (after 2026-03-26).json
+  -> 2 matches
+Searching: Volland Discord - 0DTE Alerts - 📨┃0dte-alerts [1362822187647500489] (after 2026-03-27).json
+  -> 0 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-03).json
+  -> 70 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-06).json
+  -> 38 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-08).json
+  -> 25 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-10).json
+  -> 18 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-12).json
+  -> 25 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-16).json
+  -> 21 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-17).json
+  -> 19 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-19).json
+  -> 17 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-19)2.json
+  -> 49 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-21).json
+  -> 37 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-24).json
+  -> 4 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-25).json
+  -> 16 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-25)2.json
+  -> 24 matches
+Searching: Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-03-27).json
+  -> 35 matches
+Searching: Volland Discord - Volland Subs Trading Chatter - 🔰│beginners-chatter [1362819762333286441] (after 2025-09-01).json
+  -> 84 matches
+
+========================================================================================================================
+TOTAL UNIQUE MATCHES: 479
+========================================================================================================================
+
+
+########################################################################################################################
+## SECTION 1: EXPERT MESSAGES (121 messages)
+## (Apollo, Wizard, LordHelmet, Phoenix, Zack, TheEdge, VollandDev)
+########################################################################################################################
+
+[    ] 2025-09-30 20:25:39 ET | 🔰│beginners-chatter
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'bounce'
+       Content: The LIS bounce is a fantastic play
+       ---
+[    ] 2025-09-30 20:59:53 ET | 🔰│beginners-chatter
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'bounce'
+       Content: One spot I have seen a couple of bounces already is where the vol sellers end and vol buyers begin.
+       ---
+[    ] 2025-11-03 21:15:06 ET | 🔰│beginners-chatter
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'rally'
+       Content: If the price naturally goes there because of someone else, the dealers just adjust.
+       ---
+[    ] 2025-11-12 19:08:27 ET | 🔰│beginners-chatter
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'turn'
+       Content: It is because aggregate vanna is negative. In that case, you can expect to see a drawdown untold the vanna turns positive
+       ---
+[    ] 2025-11-13 21:10:57 ET | 🔰│beginners-chatter
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'turn'
+       Content: When puts are bought, most of the time they are bought by an institution with the intent to use portfolio margin to lever up bullish positions. If they are bought in a downturn, they are normally bought in a panic, and that contributes to dealer premium. if they are bought to lever up bullish positions, that overshadows the selling dealers do to hedge, then dealers gradually buy back their hedges
+       ---
+[HIGH] 2025-12-08 15:15:15 ET | 🔰│beginners-chatter
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'contango'
+       Content: It rarely goes up. VIX is normally termed as contango, which means this near term IV is collapsing. It isn't until something goes wrong that IV launches and markets die.
+       ---
+[    ] 2025-12-08 17:16:12 ET | 🔰│beginners-chatter
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'turn'
+       Content: So the sign of vanna flips as options turn from ITM to OTM.
+       ---
+[    ] 2025-12-11 15:34:09 ET | 🔰│beginners-chatter
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'rally'
+       Content: First I observe stock over many years , how it moves , i remember where it will go when it pullback and where it will go when it rally , by looking at chart several times a week for long time, so my trading takes time to understand
+       ---
+[    ] 2025-12-12 09:02:11 ET | 🔰│beginners-chatter
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'Turn'
+       Content: Turn it off
+       ---
+[    ] 2025-12-12 09:08:16 ET | 🔰│beginners-chatter
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'turn'
+       Content: To the left you see , cumulative , turn it off
+       ---
+[    ] 2025-12-12 09:29:11 ET | 🔰│beginners-chatter
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'rally'
+       Content: For example if you have calls above price ( bought from customer side ), stock rally pass it with momentum it will make dealer to buy it and spike more up
+       ---
+[    ] 2025-12-12 09:37:33 ET | 🔰│beginners-chatter
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'rally'
+       Content: So that with calls  on top , all depend on if you have real target on top, if not and only calls left , most likely customer is shorting stock and it won’t rally much pass strongest call
+       ---
+[HIGH] 2025-12-16 22:24:45 ET | 🔰│beginners-chatter
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'vol event'
+       Content: Not only down and slow, but volatility has been acting pretty calm. skew has been pricing this drop pretty well. But if markets get to 6700, we'd have to see if puts are being bought. If they are, expect IV to go up, prices to go further, and a vol event to occur. But so far, that huge imbalance level hasn't been tested. It probably should. That is Dec opex.
+       ---
+[    ] 2025-12-16 22:30:02 ET | 🔰│beginners-chatter
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'turn'
+       Content: Those Vegas turn to deltas at the speed of vanna (in a normal market)
+       ---
+[    ] 2025-12-16 22:32:24 ET | 🔰│beginners-chatter
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'turn'
+       Content: So when we look at Volland, we are trying to forecast the dealer delta change based on these other metrics that turn into delta. Thats edge. It is like playing poker against a computer who does the same thing every time
+       ---
+[    ] 2025-12-16 22:58:07 ET | 🔰│beginners-chatter
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'selloff'
+       Content: Unlike the normal short put, long call dealer book, most fundamental forces are bullish. Every 401K deposit, passive buyer is bullish. Trump isnt trying to cause selloffs.
+       ---
+[    ] 2026-02-04 22:28:49 ET | 🔰│beginners-chatter
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'rally'
+       Content: If you have questions, don't hesitate to ask, especially in this channel. People are generally pretty helpful (unless they are stuck in a losing trade).
+       ---
+[    ] 2026-03-03 08:04:30 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'bottom'
+       Content: It is bottom
+       ---
+[    ] 2026-03-03 08:05:35 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'bottom'
+       Content: https://x.com/zeecontrarian1/status/2028799953091588290?s=46 There are two things to look for at a market bottom:
+
+• $SPX opens very low and then recovers
+• $VIX goes from green to red
+
+This won’t necessarily be THE BOTTOM, but it can be a time to buy equities and start shorting $VIX via $VXX & $UVXY
+
+Until then, stay away\. 
+       ---
+[    ] 2026-03-03 08:42:11 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'rally'
+       Content: It literally went 10$ up overnight
+       ---
+[HIGH] 2026-03-03 10:54:22 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'backwardation'
+       Content: A little backwardation is hurting my position.
+       ---
+[    ] 2026-03-03 10:56:19 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'bottom'
+       Content: I always try to pick the bottom... @A p o l l o , help me not be a dumbass...
+       ---
+[HIGH] 2026-03-03 11:29:21 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'Backwardation'
+       Content: Backwardation.
+       ---
+[    ] 2026-03-03 11:37:16 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'selloff'
+       Content: @BigBill Is correct... the result is usually a short-term quick selloff. March VIXperation is the 18th, so the market is pricing in a sustained high VIX environment.
+       ---
+[    ] 2026-03-03 12:30:43 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'rally'
+       Content: 70 point rally
+       ---
+[HIGH] 2026-03-03 17:51:15 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'vol event'
+       Content: Wizard thinks one more vol event possible this week
+       ---
+[HIGH] 2026-03-04 12:52:55 ET | ⛅│volland-daytrading-central
+       Author: ** TheEdge ** (EXPERT)
+       Matched: 'backwardation'
+       Content: the trigger being when we go into backwardation against the 3rd month
+       ---
+[    ] 2026-03-04 12:54:23 ET | ⛅│volland-daytrading-central
+       Author: ** TheEdge ** (EXPERT)
+       Matched: 'mean reversion'
+       Content: Granted that the case with most indicators that play on some sort of mean reversion.
+       ---
+[    ] 2026-03-04 14:37:18 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'turn'
+       Content: If this succeeds, depending on your trade, you should expect 10x.... that little itty bit of your portfolio could turn into a 3-4% gain.
+       ---
+[    ] 2026-03-04 16:09:59 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'squeeze'
+       Content: if it says target, less juice to squeeze, if it's at LIS, you expect to see a reversal -> good entry point
+       ---
+[    ] 2026-03-05 17:10:10 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'rally'
+       Content: Honestly? We will probably modestly rally. I love this 6875 strike, and I think we are looking mostly bullish into March opex, maybe beyond.
+       ---
+[    ] 2026-03-05 17:20:44 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'rally'
+       Content: That blue line is market priced skew, yellow is skew based solely on dealer positioning. When blue is higher than yellow, skew is overpriced and we can expect undervixed rally.
+       ---
+[HIGH] 2026-03-05 17:50:48 ET | ⛅│volland-daytrading-central
+       Author: ** TheEdge ** (EXPERT)
+       Matched: 'overvix'
+       Content: Great job Wiz, did we also overvix today?
+       ---
+[HIGH] 2026-03-05 19:13:00 ET | ⛅│volland-daytrading-central
+       Author: ** Jill aka Mrs. Wizard of Ops ** (EXPERT)
+       Matched: 'overvix'
+       Content: No, he was talking about overvixing/undervixing
+       ---
+[    ] 2026-03-06 11:17:55 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'long here'
+       Content: agree..also vwap overhead...cant long here
+       ---
+[    ] 2026-03-06 15:04:18 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'turn'
+       Content: No, it is the money I pay monthly in the Nigerian Prince fund, waiting for him to 10x that return. He told me no one else out there got this email. I know everyone says it is a scam, but Sofi let me use that promise as collateral for a massive loan, so who looks like the idiot now?
+       ---
+[HIGH] 2026-03-06 15:15:44 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'vol crush'
+       Content: If 6765 breaking can cause a punch towards 6780-6800 area. But vega is underpriced, so I'm kind of skeptical we can get that. We need a vol crush to get it and it might not happen too much. Although vega is overpriced every other tenor, so it is possible.
+       ---
+[    ] 2026-03-08 18:39:29 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'turn'
+       Content: Iran is tracking merchant ships that turn on electronics and send suicide drones if they emit
+       ---
+[HIGH] 2026-03-08 21:17:35 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'vol event'
+       Content: I'll see what is what in the morning. Ultimately, these vol events can easily have follow through, it happens pretty frequently. Gives a better opportunity.
+       ---
+[    ] 2026-03-09 15:59:42 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'turn'
+       Content: If you are looking at the fund returns page trying to do the math, we are up 7.2% this month. Nailing bottoms, tops, 0DTE crushing it...
+       ---
+[HIGH] 2026-03-10 10:11:26 ET | ⛅│volland-daytrading-central
+       Author: ** TheEdge ** (EXPERT)
+       Matched: 'overvix'
+       Content: Looks like the spx close was 6830 last Thursday which was our overvix target? Overnight it seems like ES got as high as 6833, but it seems like there is a 4 point diff between es and spx?
+       ---
+[HIGH] 2026-03-10 15:52:08 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'rally'
+       Content: Yeah, that indicates this rally could be getting a little exhausted. One way or another, vol event signal achieved. 28/30
+       ---
+[HIGH] 2026-03-10 16:08:13 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'VolSignal'
+       Content: Citadel, Millenium, VolSignals all getting slaughtered. I guess someone needs to be making money. lol.
+       ---
+[HIGH] 2026-03-10 21:39:22 ET | ⛅│volland-daytrading-central
+       Author: ** TheEdge ** (EXPERT)
+       Matched: 'overvix'
+       Content: @Wizard of Ops Are you still in the butterfly that was opened when the overvix signal registered?
+       ---
+[    ] 2026-03-11 19:31:51 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'sell off'
+       Content: So strong sell off before 8
+       ---
+[    ] 2026-03-11 19:32:17 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'rally'
+       Content: Oil need to stop rally
+       ---
+[    ] 2026-03-12 16:23:20 ET | ⛅│volland-daytrading-central
+       Author: ** Zack ** (EXPERT)
+       Matched: 'rally'
+       Content: there really wasnt a great structure above to rally, 6670 stood out as large dealer long put that would likely pin given we stay below 6720 id have to go back in historicals and look
+       ---
+[HIGH] 2026-03-13 11:59:23 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'vol crush'
+       Content: would make a nice long if we fail to break ON low and see some vol crush/buying
+       ---
+[HIGH] 2026-03-13 14:02:30 ET | ⛅│volland-daytrading-central
+       Author: ** Zack ** (EXPERT)
+       Matched: 'rally'
+       Content: not much positive vanna to warrant a rally on vol crush
+       ---
+[    ] 2026-03-13 14:14:23 ET | ⛅│volland-daytrading-central
+       Author: ** Zack ** (EXPERT)
+       Matched: 'vix crush'
+       Content: and on vix crush how much impact is gunna come from that 7000 call
+       ---
+[    ] 2026-03-13 14:15:46 ET | ⛅│volland-daytrading-central
+       Author: ** Zack ** (EXPERT)
+       Matched: 'vix crush'
+       Content: a vix crush on the front end of the curve wont do much you need a whole vix crush across the whole term structure
+       ---
+[HIGH] 2026-03-17 10:59:04 ET | ⛅│volland-daytrading-central
+       Author: ** TheEdge ** (EXPERT)
+       Matched: 'overvix'
+       Content: Undervixing after big overvixing is seen as bullish
+       ---
+[HIGH] 2026-03-17 10:59:16 ET | ⛅│volland-daytrading-central
+       Author: ** TheEdge ** (EXPERT)
+       Matched: 'overvix'
+       Content: with no overvixing
+       ---
+[HIGH] 2026-03-17 11:45:28 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'overvix'
+       Content: UNdervixing following overvixing is very bullish, but without that prior overvixing, it is opening a trap door for underpriced skew.
+       ---
+[    ] 2026-03-17 11:45:38 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'rally'
+       Content: It is one of those things where you hope for a strong rally to sell.
+       ---
+[    ] 2026-03-17 11:53:36 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'rally'
+       Content: My ideal move is a rally after FOMC that I can sell.
+       ---
+[    ] 2026-03-17 11:54:33 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'rally'
+       Content: If forced to put a trade on right now, a 2-4 week bearish long gamma put vertical knowing that if we get that rally I can apply another at a higher price.
+       ---
+[HIGH] 2026-03-18 09:58:31 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'overvix'
+       Content: if undervix and overvix got in a fight, who wins?
+       ---
+[HIGH] 2026-03-19 10:49:48 ET | 📨┃0dte-alerts
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'overvix'
+       Content: The key strike is 6600. If markets can figure out a way past there, we can see a small breakout to close this gap. Without much overvixing, however, I don't see how that will happen.
+       ---
+[    ] 2026-03-19 15:26:57 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'turn'
+       Content: I turned off my machines, lol.  Expected chop...
+       ---
+[HIGH] 2026-03-20 10:16:40 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'vol event'
+       Content: I expect a vol event around 6525. That would hit the accelerator
+       ---
+[    ] 2026-03-20 10:23:57 ET | 📨┃0dte-alerts
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'panic'
+       Content: Hello! Today is a geopolitical put buying day, where it seems long equity portfolios are panicking and buying puts. It keeps lowering the line in the sand. On a monthly timeframe, there is modest support down to 6440. Whenever there is rhetoric that causes panic put buying instead of structural put buying, I look for a reversal. BOLD CALL: **We will see green before the end of the day**. For more 
+       ---
+[HIGH] 2026-03-20 10:27:33 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'vol crush'
+       Content: There's a LOT of puts for today. Dealer delta decay is STILL positive, and any positive momentum will get a vol crush type rally. We have seen this story before... a geopolitical threat causes institutions and specs to buy a ton of puts, lowering the line in the sand over and over....
+       ---
+[    ] 2026-03-20 12:32:27 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'long here'
+       Content: small long here
+       ---
+[    ] 2026-03-20 13:24:06 ET | 📨┃0dte-alerts
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'bounce'
+       Content: I am still looking for a bounce even though IV has calmed down a bit. The put buying has slowed down, so I think there can still be a run to the upside. It seems like the market has tried a few times, I think one of these times it can break out to the upside.
+       ---
+[HIGH] 2026-03-20 14:36:52 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'vol event'
+       Content: On the flip side, we are close to a vol event.
+       ---
+[HIGH] 2026-03-20 14:43:42 ET | ⛅│volland-daytrading-central
+       Author: ** Zack ** (EXPERT)
+       Matched: 'vol event'
+       Content: whats considered a vol event again?
+       ---
+[HIGH] 2026-03-20 14:43:52 ET | ⛅│volland-daytrading-central
+       Author: ** Zack ** (EXPERT)
+       Matched: 'overvix'
+       Content: overvix by 2 points or more?
+       ---
+[HIGH] 2026-03-20 15:00:30 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'vol event'
+       Content: I know vol event, but I think there can be follow-up on Monday
+       ---
+[HIGH] 2026-03-20 15:23:14 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'overvix'
+       Content: Like, we need a super overvixing.
+       ---
+[HIGH] 2026-03-20 15:46:53 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'vol event'
+       Content: Wait for a MASSIVE vol event, not a squeaker.
+       ---
+[    ] 2026-03-20 15:50:22 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'fear'
+       Content: https://tenor.com/view/goosebumps-voyagers-its-cold-fear-scared-gif-20619751  
+       ---
+[HIGH] 2026-03-20 15:58:19 ET | ⛅│volland-daytrading-central
+       Author: ** Zack ** (EXPERT)
+       Matched: 'vvix'
+       Content: well if you scroll up wiz was talking about how we most likely will need a much larger oovervvix
+       ---
+[    ] 2026-03-20 16:15:17 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'rally'
+       Content: Yeah, the quad witching stuff... Ok. I look at them as monthly opex with quarterlies being EoM/EoQ, the options literally called "Quarterlies"
+       ---
+[    ] 2026-03-20 16:22:56 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'turn'
+       Content: As a data analyst, my question is do you have data to prove a correlation between these ema crosses and market returns, and if so what is the mechanism that would create that correlation? If both of those are answered, I start to investigate.
+       ---
+[    ] 2026-03-20 17:47:45 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'sell off'
+       Content: for example SMH they have many prints above 400$ for a month now but we still didn’t see significant sell off
+       ---
+[    ] 2026-03-20 17:51:46 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'turn'
+       Content: It is good tool but without direction that volland provides , I was using it for timing but that didn’t turn out the way I hope
+       ---
+[    ] 2026-03-22 18:10:37 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'liquidat'
+       Content: @Simple Jack when Korean liquidation?
+       ---
+[    ] 2026-03-22 18:30:09 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'sell off'
+       Content: I will be very disappointed if semis don’t sell off this week , but oh well
+       ---
+[    ] 2026-03-22 18:40:27 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'Mean reversion'
+       Content: Mean reversion at 6000 spx 🤣
+       ---
+[HIGH] 2026-03-22 18:46:23 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'capitulat'
+       Content: Need capitulation in semis and banks and I will be happy
+       ---
+[    ] 2026-03-22 18:49:42 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'bottom'
+       Content: How is that bottom
+       ---
+[    ] 2026-03-22 18:51:24 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'rally'
+       Content: we could  rally here but this isn’t over
+       ---
+[    ] 2026-03-22 18:59:18 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'rally'
+       Content: Not when they rally from 300-427 since August
+       ---
+[    ] 2026-03-22 19:03:10 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'rally'
+       Content: After we rally above 400
+       ---
+[    ] 2026-03-22 19:09:09 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'bounce'
+       Content: and that is why I don’t trust any bounce
+       ---
+[    ] 2026-03-22 22:10:24 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'rally'
+       Content: If we rally , will be same thing all over again
+       ---
+[    ] 2026-03-23 04:02:57 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'sell off'
+       Content: If that count maybe it could stop sell off closer to 6300
+       ---
+[    ] 2026-03-23 12:02:44 ET | ⛅│volland-daytrading-central
+       Author: ** TheEdge ** (EXPERT)
+       Matched: 'turn'
+       Content: looks like with this drop, spx dd turning bullish
+       ---
+[    ] 2026-03-23 13:19:24 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'bounce'
+       Content: arent you the DOm bouncer?
+       ---
+[    ] 2026-03-23 13:24:48 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'reversal'
+       Content: sweep LOD would be a nice reversal trade for 1400
+       ---
+[    ] 2026-03-23 13:56:56 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'squeeze'
+       Content: squeeze fuel?
+       ---
+[    ] 2026-03-24 10:37:28 ET | ⛅│volland-daytrading-central
+       Author: ** TheEdge ** (EXPERT)
+       Matched: 'turn'
+       Content: dd on spy has turned more bullish
+       ---
+[    ] 2026-03-25 08:03:15 ET | ⛅│volland-daytrading-central
+       Author: ** Zack ** (EXPERT)
+       Matched: 'rally'
+       Content: Were literally sending troops to middle east 😂
+       ---
+[HIGH] 2026-03-25 10:52:51 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'flush'
+       Content: want to see a flush that gets supported or something
+       ---
+[HIGH] 2026-03-25 11:25:41 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'flush'
+       Content: thanks for the flush and pop ken
+       ---
+[HIGH] 2026-03-25 12:15:17 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'beach ball'
+       Content: like pushing a beach ball underwater
+       ---
+[    ] 2026-03-26 07:40:18 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'sell off'
+       Content: Around 579-580 qqq sell off much harder
+       ---
+[HIGH] 2026-03-26 08:02:19 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'vol event'
+       Content: Really need vol event to get this over with
+       ---
+[HIGH] 2026-03-26 13:58:25 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'vol event'
+       Content: Lets get the vol event
+       ---
+[    ] 2026-03-26 17:14:32 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'rally'
+       Content: If you buy one share of VCX at $565, you're getting roughly $19 worth of Anthropic, OpenAI, SpaceX, Databricks, and Anduril. 
+The other $546 is pure demand premium. You are literally paying $546 for the privilege of accessing these companies.
+       ---
+[    ] 2026-03-26 20:14:21 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'fear'
+       Content: You will see why I fear banks earnings
+       ---
+[    ] 2026-03-26 20:16:51 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'rally'
+       Content: could rally into 320 before
+       ---
+[    ] 2026-03-26 20:24:07 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'sell off'
+       Content: String break below can lead to bigger sell off
+       ---
+[    ] 2026-03-26 20:24:41 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'turn'
+       Content: Are you turning into a day trader @Phoenix !?  Lol
+       ---
+[    ] 2026-03-26 20:26:57 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'bottom'
+       Content: Because I need to see if we already hit local bottom or we going to 6340
+       ---
+[HIGH] 2026-03-27 07:56:27 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'vol event'
+       Content: 100 more down would give nice vol event
+       ---
+[    ] 2026-03-27 07:56:47 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'bottom'
+       Content: And we could stop for local bottom but this market likes pain
+       ---
+[HIGH] 2026-03-27 08:50:15 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'vol event'
+       Content: And get vol event
+       ---
+[    ] 2026-03-27 09:09:39 ET | ⛅│volland-daytrading-central
+       Author: ** LordHelmet ** (EXPERT)
+       Matched: 'rally'
+       Content: once these shorts close out, I imagine we have a fake rally and then more pain
+       ---
+[    ] 2026-03-27 12:40:51 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'sell off'
+       Content: Stupid market lol , waiting for sell off is hard
+       ---
+[    ] 2026-03-27 12:42:16 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'bounce'
+       Content: Yes, that area there , we should get bounce
+       ---
+[    ] 2026-03-27 12:43:50 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'rally'
+       Content: What concerns me is that semis only started selling , it could be fixed if others rally , if not , 6076 here we come lol
+       ---
+[HIGH] 2026-03-27 14:08:00 ET | ⛅│volland-daytrading-central
+       Author: ** Wizard of Ops ** (EXPERT)
+       Matched: 'vol signal'
+       Content: But we never hit a vol signal.
+       ---
+[HIGH] 2026-03-27 14:32:56 ET | ⛅│volland-daytrading-central
+       Author: ** Zack ** (EXPERT)
+       Matched: 'overvix'
+       Content: i dont think we are even overvixxed yet right
+       ---
+[HIGH] 2026-03-27 14:33:04 ET | ⛅│volland-daytrading-central
+       Author: ** Zack ** (EXPERT)
+       Matched: 'vol event'
+       Content: not at vol event point
+       ---
+[HIGH] 2026-03-27 15:06:07 ET | ⛅│volland-daytrading-central
+       Author: ** Zack ** (EXPERT)
+       Matched: 'overvix'
+       Content: wiz was saying we need a much strong overvixing
+       ---
+[HIGH] 2026-03-27 15:32:49 ET | ⛅│volland-daytrading-central
+       Author: ** Zack ** (EXPERT)
+       Matched: 'vol event'
+       Content: this still doesnt feel like a vol event
+       ---
+[    ] 2026-03-27 15:33:15 ET | ⛅│volland-daytrading-central
+       Author: ** Zack ** (EXPERT)
+       Matched: 'vix spike'
+       Content: we need that 200 point waterfall and vix spike
+       ---
+[    ] 2026-03-27 15:55:49 ET | ⛅│volland-daytrading-central
+       Author: ** Phoenix ** (EXPERT)
+       Matched: 'bounce'
+       Content: we can bounce now , if not god help us before 6076
+       ---
+[HIGH] 2026-03-27 16:01:40 ET | ⛅│volland-daytrading-central
+       Author: ** TheEdge ** (EXPERT)
+       Matched: 'overvix'
+       Content: 2.18 overvix?
+       ---
+
+########################################################################################################################
+## SECTION 2: HIGH RELEVANCE NON-EXPERT (108 messages)
+## (overvix, vol event, vol crush, beach ball, snapback, mean revert, etc.)
+########################################################################################################################
+
+[HIGH] 2025-11-16 17:54:17 ET | 🔰│beginners-chatter
+       Author: DK5000
+       Matched: 'Mean revert'
+       Content: GEX=Bullish price momentum (most likely paradigm for bullish price action)
+Anti-GEX-Bearish price momentum 
+(Most likely for paradigm for bearish price action)
+BOFA- Mean reverting options environment 
+(Most likely paradigm for price mean reversion)
+Sidial- Price stall/choppy/indecisive 
+(Most likely paradigm for indecisive price action)
+
+Note: please do not take these literally, this is to help y
+       ---
+[HIGH] 2026-01-30 07:08:16 ET | 🔰│beginners-chatter
+       Author: Abcdefg
+       Matched: 'vol event'
+       Content: @[O]Jettins think the vol event. Pretty much this happens when SPX is overvixxed by more than X in a period as compared to its price movement. I believe it is pts over the price change in percentage. 
+
+So price goes down x%, vx goes up x%+2pts. This vol event leads to a mean reversion (bullish) so it could be inferred in certain regimes that overvixxing can be bullish and undervixxing and be beari
+       ---
+[HIGH] 2026-02-03 11:36:58 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'pivot'
+       Content: Good morning everyone, today we have a BofA Pure where Dealers are short OTM calls and short OTM puts. 6940 is a big pivot today. For BofA our edges are ~6990 to ~6915. 
+Quite a bite of negative gamma to trend. We are slightly overvixed with negative vanna for the week so this is sort of a range bound read with bearish tilt with the overvixing and negative vanna.
+       ---
+[HIGH] 2026-02-03 14:49:36 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Checking back in for the afternoon, we broke the downside edge. One notable aspect is we are 2.17 pts overvixed putting us in overvix signal territory. Delta Decay Hedging is currently positive which is leaning bullish here. We have a lot of Short OTM puts that are supportive with several short calls overhead. There is a lot of negative gamma on the books which opens up a volatile move if Vol come
+       ---
+[HIGH] 2026-02-04 02:47:06 ET | 🔰│beginners-chatter
+       Author: RowJay12
+       Matched: 'overvix'
+       Content: I think something else you'd be very interested in is the Spot-Vol Beta widget, today we were very overvixed from the vol move, which also likely contributed to that bounce
+       ---
+[HIGH] 2026-02-04 03:00:17 ET | 🔰│beginners-chatter
+       Author: RowJay12
+       Matched: 'Overvix'
+       Content: @CgTrader 
+
+https://youtu.be/oLQcpJojs5A?si=2cbdwQjRhWng36pg Access REAL spot vol correlation with Volland! Peek inside the spot vol correlation and related workspace widgets, including liquidity, by Wizard of Ops. 
+
+This tour includes: 
+00:00:03 - Spot Vol Correlation Definition
+00:00:34 - Add the Spot Vol Correlation Widget
+00:00:47 - SPX / VIX Spot Vol Correlation, Overvixing, Undervixing
+00:01
+       ---
+[HIGH] 2026-02-04 11:42:32 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good morning everyone, this morning is a bit of a mess due to ITM inventory but we are AG. Dealers have Long OTM puts with Short OTM calls. The wings are quite wide this morning due to elevated volatility. We are slightly overvixing and we have negative vanna for the week. Vanna becomes supporitve at 6875 and 6850. For 0dte, the first start of resistance is at 6930 but is quite stronger towards 69
+       ---
+[HIGH] 2026-02-04 14:43:46 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Checking back in for the afternoon, we basically nailed both lower targets/edges. We are quite overvixed now (2.39). Vanna for this week is now becoming quite supportive all the way down to 6800. I think majority of the downside is out of the way now.  We can see a strong upside if Vol comes down from the overvixing. To the upside, the start of the resistance is 6880/6900.
+       ---
+[HIGH] 2026-02-05 11:50:44 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good morning everyone, we are BofA LIS this morning and we are heavily overvixed (went over 3 earlier). From a vanna side for this week, 6770/6780 is a key support. 
+Dealers hold Short ITM puts, Short ITM puts and Long OTM calls. Put notionals are dominating right now. 
+Charm is slightly bearish here and we have negative Vanna for the week. Overvixing does open up more downside. This so far is a b
+       ---
+[HIGH] 2026-02-05 14:52:45 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Checking back in for the afternoon, we have shifted towards a GEX structure very skewed to the Put side. Dealers hold short OTM puts with long calls above. Our support has shifted up to 6795 and 6785. Vanna has shifted positive to the week now. We are still overvixed so be cautious as we can extend lower. To the upside the target/upper edge starts at 6825. If we see a large Vix crush, then we can 
+       ---
+[HIGH] 2026-02-10 14:39:38 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Checking back in for the afternoon, We are still in the same boat as this morning. We are BofA. Our upper Edge remains firm at the same level as this morning (6985). Our lower edge has firmed up a bit and starts towards 6930 while very much stronger at 6900. Dealers do hold quite a bit of negative gamma for a bit of whipsaw intraday wise. We are slightly overvixing but nothing major.
+       ---
+[HIGH] 2026-02-11 10:42:34 ET | 🔰│beginners-chatter
+       Author: Johannes
+       Matched: 'overvix'
+       Content: overvixxing is usually a bullish singal and undervixxing is a bearish one
+       ---
+[HIGH] 2026-02-11 10:43:35 ET | 🔰│beginners-chatter
+       Author: DK5000
+       Matched: 'Overvix'
+       Content: https://youtu.be/oLQcpJojs5A?si=iXYKVBQhiC30umM5 Access REAL spot vol correlation with Volland! Peek inside the spot vol correlation and related workspace widgets, including liquidity, by Wizard of Ops. 
+
+This tour includes: 
+00:00:03 - Spot Vol Correlation Definition
+00:00:34 - Add the Spot Vol Correlation Widget
+00:00:47 - SPX / VIX Spot Vol Correlation, Overvixing, Undervixing
+00:01:41 - Mo... 
+       ---
+[HIGH] 2026-02-11 11:33:39 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good morning everyone, we are AG target now after a swift move lower from open. Dealers have quite a bit of short OTM puts (some short ITM puts as well) and Long Calls. Should slowly form into a GEX when wings decay. We have positive DeltaDecay Hedging and positive Vanna for the week. We are slightly overvixing but nothing major. We have good support underneath us and we are at it currently. This 
+       ---
+[HIGH] 2026-02-12 14:46:42 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Checking back in for the afternoon, we moved quite past the lower edge and significantly overvixed. A vol crush will create a volatile rally with little resistance. Our pivot right now is 6865. Tons of gamma overhead to have a swift move higher. The key here is vol coming down. delta decay hedging is positive and vanna is supportive for the week down here. The first little resistance overhead is a
+       ---
+[HIGH] 2026-02-13 14:56:21 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Checking back in for the afternoon, we are still in this BofA style paradigm. Our upper edge still remains by 6900. Our lower edge has increased towards 6840 area. WE are undervixing quite a bit. There is negative vanna overhead which can be a quick run if we pass those strike levels. The key is that we continue to overvix more. Hope you all have a nice long weekend.
+       ---
+[HIGH] 2026-02-17 11:36:08 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good morning everyone, today we were AG that has shifted towards BOFA. 
+
+Dealers hold Short OTM puts, Short ITM puts, some Long OTM calls with some long ITM calls. Looks like quite a bit of spreads on the table for today. We are slightly overvixed. From a 0dte side, 6770 and 6760 is where we start seeing support as well as higher order vanna there as well towards 6750. 
+Resistance overhead is 6800
+       ---
+[HIGH] 2026-02-19 14:33:10 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Checking back in for the afternoon, we have slid down to our prior lower edge. 
+
+We are overvixing, if we continue to overvix more then we can visit lower support where the big level is at 6800.A lot of negative gamma on the table from the short Puts dealers hold and the short calls overhead. 
+Our upper edge has shifted down a bit to 6860 from 6880. We have a little support here at 6840, but the b
+       ---
+[HIGH] 2026-02-23 11:35:13 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good morning everyone, 
+
+Today we have a bit of a mess. Dealers hold short OTM puts, with a big long put ITM. Dealers hold some Long ITM calls with a big long OTM and the rest short OTM calls. There is negative gamma underneath us. We are overvixing a bit this morning. We do have a good bit of positive vanna for the week right now. Our key support underneath is 6850 /6840 and resistance doesnt rea
+       ---
+[HIGH] 2026-02-23 14:43:45 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'pivot'
+       Content: Checking back in for the afternoon, we are right at the big level of 6850. Dealers haev a lot of short puts at 6850 and is still a pivot level. Dealers hold short calls overhead. A lot of negative gamma on the books. DeltaDecay Hedging is quite bullish. We have positive vanna still for the week and we are becoming less overvixed now. I think we can see some more upside if we hold those 6850 puts O
+       ---
+[HIGH] 2026-02-26 11:49:57 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'Overvix'
+       Content: Good morning everyone, today we are in a bit of a GEX camp. Dealers have short OTM puts and Long OTM calls. Overvixed out the gate and broke a couple of the short put strikes. We have a chunk of positive vanna for the week and positive DD Hedging. I am in the neutral to bull camp here. 6875 is our key support right now with a target overhead starting at 6920.
+       ---
+[HIGH] 2026-02-26 14:43:07 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Checking back in for the afternoon, we are basically in the same boat. 6875 is the key level to the downside. 6900 is resistance overhead but kicking those short calls ITM can accelerate a move to 6920 area. We have negative Vanna overhead and start resistance at 6920. We are overvixing less now as well. We do have positive DD Hedging so still in the neutral to bullish camp as this morning.
+       ---
+[HIGH] 2026-02-27 11:47:37 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good morning everyone and happy CPF. Today is end of month as well. 
+
+Today we have a bit of a mess. Dealers have short ITM puts. Short ITM calls. Dealers hold quite a bit of negative Gamma on the books as well. We are overvixed today. and we have negative vanna above us all the way to 6920 area. DD Hedging is slightly negative as well here. 6860 is our big pivot right now. with the negative vanna
+       ---
+[HIGH] 2026-02-27 14:51:26 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Checking back in for the afternoon. Dealers still hold short ITM puts with short ATM/OTM calls. They hold quite a bit of negative gamma across the board and we have a chunk of negative vanna overhead. We continue to overvix. If Vol comes down, we can see a large rally to the upside. For now our support below is 6830. The resistance overhead is 6875. A strong break over 6875 can lead to a breakout 
+       ---
+[HIGH] 2026-03-02 11:40:57 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good morning everyone. Today we are sidial messy. Dealers hold a chunk of short ITM puts and long ITM calls. We are heavily overvixed today. WE do have positive DD hedging and positive Vanna for the week. Our upper edge right now is at 6905 with downside starting at 6815 and becoming more supportive towards 6795 area. A vol crush with this negative gamma can create a strong rally into that upper e
+       ---
+[HIGH] 2026-03-02 14:33:24 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Checking back in for the afternoon, we have shifted to a Gex. 6870 is the key support but can get quite slippery under it. Overhead 6905 remains quite firm target.  We are still overvixed but much less than this morning. We have quite a bit of negative gamma underneath us. This is neutral/bullish, but quite cautious with the negative gamma for a bigger dip if 6870 breaks.
+       ---
+[HIGH] 2026-03-02 14:46:46 ET | 🔰│beginners-chatter
+       Author: Michelle
+       Matched: 'overvix'
+       Content: Hi there, I’m new to Volland. A new question, 0dte alerts just posted “we’re still overvixed, but much less than this morning”. Where can I see this from the widget?
+       ---
+[HIGH] 2026-03-02 14:50:15 ET | 🔰│beginners-chatter
+       Author: ingram142
+       Matched: 'vol event'
+       Content: The medium version of the widget also tells u if a vol event has happen too.
+       ---
+[HIGH] 2026-03-02 17:11:49 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'mean revert'
+       Content: It looks like for the time being we're still mean reverting on a longer expiry basis, 6850/6900... more pressure above though so hard to see  bigger rip
+       ---
+[HIGH] 2026-03-03 06:40:18 ET | ⛅│volland-daytrading-central
+       Author: EllipticBit
+       Matched: 'overvix'
+       Content: -2% and only slight overvix?
+
+Oh...
+
+Oh my.
+       ---
+[HIGH] 2026-03-03 10:55:20 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'contango'
+       Content: ill contango it for you
+       ---
+[HIGH] 2026-03-03 11:24:21 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'vol event'
+       Content: y not 6600 and vol event
+       ---
+[HIGH] 2026-03-03 11:35:38 ET | ⛅│volland-daytrading-central
+       Author: BigBill
+       Matched: 'contango'
+       Content: Spot>1st mo future> 2nd month future.  e.g. downward sloping from left to right.  Opposite is contango.
+       ---
+[HIGH] 2026-03-03 11:36:50 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good morning everyone, today we are heavily overvixed and the wings are very wide. Dealers hold Long OTM puts with Long ITM puts. Very mixed on the call side(low notionals as well). Dealers do hold positive gamma on the books though. The big LIS to the downside is 6675 if we get that far. To the upside we can extend back up to 6800 where thats the first little resistance. Keep a sharp eye on VIX d
+       ---
+[HIGH] 2026-03-03 12:29:02 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'capitulat'
+       Content: wen capitulation
+       ---
+[HIGH] 2026-03-03 12:29:47 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'vol crush'
+       Content: longer expiries very supportive here on a vol crush
+       ---
+[HIGH] 2026-03-03 13:05:58 ET | ⛅│volland-daytrading-central
+       Author: ChuckG
+       Matched: 'backwardation'
+       Content: @Wizard of Ops with all exp vanna and backwardation curious to hear your thoughts on next market move.
+       ---
+[HIGH] 2026-03-03 20:56:51 ET | ⛅│volland-daytrading-central
+       Author: 单日转向
+       Matched: 'vol event'
+       Content: Did we have a vol event ?
+       ---
+[HIGH] 2026-03-03 21:01:20 ET | ⛅│volland-daytrading-central
+       Author: 单日转向
+       Matched: 'vol event'
+       Content: Hmm.. no vol event
+       ---
+[HIGH] 2026-03-04 06:45:03 ET | ⛅│volland-daytrading-central
+       Author: Saint_Seiya
+       Matched: 'vol crush'
+       Content: were there news, or just a little vol crush?
+       ---
+[HIGH] 2026-03-04 09:09:43 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'vol crush'
+       Content: today looks range-y so I am not banking on a vol crush rally yet
+       ---
+[HIGH] 2026-03-04 10:57:50 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'overvix'
+       Content: Think it would take another bad headline, maybe then we get our overvix
+       ---
+[HIGH] 2026-03-04 11:09:01 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'Vol crush'
+       Content: Vol crushas woke up
+       ---
+[HIGH] 2026-03-04 11:19:52 ET | ⛅│volland-daytrading-central
+       Author: Saint_Seiya
+       Matched: 'vol crush'
+       Content: You left last night right before that nice vol crush, I noticed.
+       ---
+[HIGH] 2026-03-04 12:50:22 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'VIX3M'
+       Content: VIX/VIX3M ratio
+       ---
+[HIGH] 2026-03-04 12:56:33 ET | ⛅│volland-daytrading-central
+       Author: nofnogjustprofit
+       Matched: 'vol crush'
+       Content: Makes sense. so usually does it mean that the vol crush rally has gone too far? and it might be time to trim longs, go short etc?
+       ---
+[HIGH] 2026-03-04 12:59:49 ET | ⛅│volland-daytrading-central
+       Author: BigBill
+       Matched: 'VIX3M'
+       Content: Ah... I noticed yesterday the VIX/VIX3M ratio - VIX3M/VIX6M ratio was creeping up.  It got to 0.05, I think 0.10 was our full port long level (or something like that).  I tried to short UVXY at midnight last night but I couldn't get a borrow.  The real tough thing here is all it takes is one missle to slip through somewhere and all our backtests won't matter.
+       ---
+[HIGH] 2026-03-04 13:44:09 ET | ⛅│volland-daytrading-central
+       Author: Juanitobet
+       Matched: 'VIX3M'
+       Content: Thank you very much! I had entered VIX3M alone, and the name was the same as CBOE, but it wasn't the same
+       ---
+[HIGH] 2026-03-04 16:06:42 ET | ⛅│volland-daytrading-central
+       Author: Abcdefg
+       Matched: 'vol event'
+       Content: Is there such thing as a reverse vol event lol
+       ---
+[HIGH] 2026-03-05 11:38:06 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good morning everyone, today we are sidial. We are overvixing out the gate. DD Heding remains positive here. Our key support underneath us is 6795/6800. To the upside, there is not much overhead but the start is 6850. If Vol comes down we can press that upper edge and see what new flow holds but the edges for now look like 6795/6800 to 6850. Keep a sharp eye on Vol with this overvixing.
+       ---
+[HIGH] 2026-03-05 14:40:20 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'Overvix'
+       Content: Checking back in for the afternoon, we have broken the lower edge due to accelerated Overvixing and shifted towards a BofA. Dealers hold a lot of negative Gamma down here. We still have a chunk of positive Vanna for this week and next week. Breaking over 6805 can give a strong break to the upside back to 6820 and 6850 especially if VIX comes down a chunk. 
+To the downside, our support is currently
+       ---
+[HIGH] 2026-03-05 17:16:09 ET | ⛅│volland-daytrading-central
+       Author: BigBill
+       Matched: 'BTFD'
+       Content: Granted it would be a screaming opportunity to BTFD.
+       ---
+[HIGH] 2026-03-06 11:56:05 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good morning everyone... today we are Sidial Messy. Dealers have a chunk of Long Puts below and Long Calls above. Our key level to the downside is 6700. To the upside, 6800/6805. We are quite overvixed today. DD Hedging is positive and we have positive vanna on the table. Likely a lot of chop with vol fighting 0dte. IF Vol comes down we can push that upper edge but for now its range bound. Happy C
+       ---
+[HIGH] 2026-03-06 14:32:09 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'Vol crush'
+       Content: Checking back in for the afternoon, we are in the same boat as thie morning. Our lower edge is quite strong at 6700 with the upside edge at 6800/6805. Keep a sharp eye on Vol with this undervixing. Any strong Vol crush can push that upper edge. Vanna for the week is still positive with positive DD Hedging so neutral/bullish with Vol coming down.
+       ---
+[HIGH] 2026-03-06 15:42:28 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'short squeeze'
+       Content: or short squeeze
+       ---
+[HIGH] 2026-03-06 16:27:27 ET | ⛅│volland-daytrading-central
+       Author: Shawn
+       Matched: 'overvix'
+       Content: ~$60k realized gain week. Largely just from the undervix / overvix signals. Monster
+       ---
+[HIGH] 2026-03-06 16:28:30 ET | ⛅│volland-daytrading-central
+       Author: 单日转向
+       Matched: 'vol event'
+       Content: Finally a vol event today maybe..
+       ---
+[HIGH] 2026-03-06 16:28:47 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'vol event'
+       Content: Maybe we get a vol event
+       ---
+[HIGH] 2026-03-06 16:29:30 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'vol event'
+       Content: vol event with VIX/VIX3M spread might be juicy
+       ---
+[HIGH] 2026-03-06 16:32:38 ET | ⛅│volland-daytrading-central
+       Author: FixedRate
+       Matched: 'vol event'
+       Content: So if its close to 4 and we expect a vol event, what's the strategy, long spx a few weeks out today before close or wait till Monday?
+       ---
+[HIGH] 2026-03-06 16:33:38 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'VIX3M'
+       Content: With VIX/VIX3M, I like to do an ATM Put Debit spread 2 weeks out
+       ---
+[HIGH] 2026-03-06 16:33:52 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'Overvix'
+       Content: @Wizard of Ops has a separate strategy regarding Overvixing signal
+       ---
+[HIGH] 2026-03-06 16:35:56 ET | ⛅│volland-daytrading-central
+       Author: FixedRate
+       Matched: 'vol event'
+       Content: Before close  or on Monday once vol event is confirmed?
+       ---
+[HIGH] 2026-03-06 16:37:43 ET | ⛅│volland-daytrading-central
+       Author: Shawn
+       Matched: 'overvix'
+       Content: would love an alert an 4pm or just after on undervix / overvix positioning heading into the next day (would love that everyday to be honest, haha)
+       ---
+[HIGH] 2026-03-06 16:50:50 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'vol event'
+       Content: we got our vol event
+       ---
+[HIGH] 2026-03-06 16:52:19 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'VIX3M'
+       Content: VIX/VIX3M signal firing again
+       ---
+[HIGH] 2026-03-06 16:56:43 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'vol event'
+       Content: for the vol event
+       ---
+[HIGH] 2026-03-06 17:00:33 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'VVIX'
+       Content: VVIX 140
+       ---
+[HIGH] 2026-03-06 17:40:20 ET | ⛅│volland-daytrading-central
+       Author: Abcdefg
+       Matched: 'vol event'
+       Content: FYI anyone trying to play ES bfly for the vol event 
+
+I did this after chatting with wiz 
+
+ES 6750/6900/7050
+
+going to scale in a few today then see how Monday goes. Also I believe on the call side has better RR but DYOR glhf
+       ---
+[HIGH] 2026-03-08 22:31:22 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'washout'
+       Content: 6600 washout is here
+       ---
+[HIGH] 2026-03-09 05:57:45 ET | ⛅│volland-daytrading-central
+       Author: nofnogjustprofit
+       Matched: 'vol event'
+       Content: feels like a vol event happened in the futures land lol
+       ---
+[HIGH] 2026-03-09 11:20:14 ET | ⛅│volland-daytrading-central
+       Author: jk23
+       Matched: 'overvix'
+       Content: To satisfy overvixng from friday takes us to right below the 20sma
+       ---
+[HIGH] 2026-03-09 11:26:17 ET | ⛅│volland-daytrading-central
+       Author: quant.sol
+       Matched: 'overvix'
+       Content: What’s the %chance the overvix signal gets confirmed in one trading day :KEKW:
+       ---
+[HIGH] 2026-03-09 12:41:35 ET | ⛅│volland-daytrading-central
+       Author: quant.sol
+       Matched: 'overvix'
+       Content: That overvix signal ✅
+       ---
+[HIGH] 2026-03-09 12:53:32 ET | ⛅│volland-daytrading-central
+       Author: indyicon
+       Matched: 'overvix'
+       Content: -3 undervixed, what was our cummlative overvix last week?
+       ---
+[HIGH] 2026-03-09 14:43:33 ET | ⛅│volland-daytrading-central
+       Author: BigBill
+       Matched: 'backwardation'
+       Content: https://x.com/themarketstats/status/2031021522119270452?s=46&t=1MwekdGkV5Bqmj8HI_54tQ $VIX Term Structure hit a high of 1\.27 today, reflecting extreme backwardation
+
+Comparable VIX Term Structures tend to be bullish for $SPX
+
+In the past 6 years, $SPX was higher 7 out of 8 times, 4 days later 
+       ---
+[HIGH] 2026-03-09 15:48:38 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'short squeeze'
+       Content: short squeeze tomorrow
+       ---
+[HIGH] 2026-03-09 19:17:16 ET | ⛅│volland-daytrading-central
+       Author: Abcdefg
+       Matched: 'vol event'
+       Content: Is this a reverse vol event lol
+       ---
+[HIGH] 2026-03-09 21:58:08 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'VIX3M'
+       Content: VIX / VIX3M closed at 1.00 again @A p o l l o
+       ---
+[HIGH] 2026-03-10 09:46:03 ET | ⛅│volland-daytrading-central
+       Author: Saint_Seiya
+       Matched: 'Vol event'
+       Content: Was the Vol event satisfied yesterday?
+       ---
+[HIGH] 2026-03-10 10:15:19 ET | ⛅│volland-daytrading-central
+       Author: Abcdefg
+       Matched: 'vol signal'
+       Content: Yeah I thought it was that but posted on the vol signal was 6822
+       ---
+[HIGH] 2026-03-10 10:39:45 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'short squeeze'
+       Content: now let the short squeeze run its course
+       ---
+[HIGH] 2026-03-10 12:51:26 ET | ⛅│volland-daytrading-central
+       Author: Derksie
+       Matched: 'flush'
+       Content: I think SPX is just gonna keep banging against that Gamma wall for the next few hours, and eventually, we'll get a quick flush to the downside.
+       ---
+[HIGH] 2026-03-11 13:57:12 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good afternoon, we are BofA pure now with lower edge of 6735 still and upper edge towards 6800. Slight overvixing IF 6735 is broke, 6700 is the big weekly support underneath.
+       ---
+[HIGH] 2026-03-12 10:41:49 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good morning,we are AG Pure today with slight overvixing. WE have positive DD hedging though. AG target is 6670 with an upper edge of 6730. Not strong resistance so a vol crush can lead a quick rally.
+       ---
+[HIGH] 2026-03-12 13:30:58 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good afternoon, we are BofA now with a bit overvixing. Our lower edge is still 6730 while upside is 6710. IF 6710 breaks 6740 is the next big level above.
+       ---
+[HIGH] 2026-03-13 12:06:06 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'vol crush'
+       Content: they'd need a vol crush but they already did that ovn and this morning
+       ---
+[HIGH] 2026-03-13 13:02:57 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'capitulat'
+       Content: capitulation incoming
+       ---
+[HIGH] 2026-03-13 14:33:40 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'vol crush'
+       Content: if vol crusher got going i could see 6700
+       ---
+[HIGH] 2026-03-16 10:25:56 ET | ⛅│volland-daytrading-central
+       Author: Johannes
+       Matched: 'overvix'
+       Content: or overvix 5.0 lol
+       ---
+[HIGH] 2026-03-16 14:00:23 ET | ⛅│volland-daytrading-central
+       Author: TripleContangoBackspreadQuadFly
+       Matched: 'contango'
+       Content: Then triple contango your rho exposure
+       ---
+[HIGH] 2026-03-17 13:28:10 ET | 🔰│beginners-chatter
+       Author: FixedRate
+       Matched: 'overvix'
+       Content: Sorry I mean "Current ratio", that refers to the current spot-vol correlation?  So like if the current ratio is over above 0 its overvixing, and under 0 its undervixing?
+       ---
+[HIGH] 2026-03-17 13:44:27 ET | 🔰│beginners-chatter
+       Author: DK5000
+       Matched: 'Overvix'
+       Content: We could use this as an example as well. The screen shot posted below was from last nights SPX snapshot:
+
+1. R2 (how reliable is vol relationship to price)
+
+0.81=strong relationship currently 
+
+2. Slope (how does vol react to price
+
+-2.19 (when price moves 1 unit, vol drops 2.19 or so, give or take), so strong negative correlation, which is normal.
+
+
+Current ratio (-1.91) whats happening right now
+       ---
+[HIGH] 2026-03-18 10:39:30 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'mean revert'
+       Content: mean revert into fomc
+       ---
+[HIGH] 2026-03-19 10:23:46 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'vol crush'
+       Content: cant really depend on vol crush when theres still too much of a risk off mentality out there, nothing for vol sellers to really rely on just yet
+       ---
+[HIGH] 2026-03-20 14:31:31 ET | ⛅│volland-daytrading-central
+       Author: tomtom
+       Matched: 'capitulat'
+       Content: we capitulate this afternoon :>?
+       ---
+[HIGH] 2026-03-20 15:57:47 ET | ⛅│volland-daytrading-central
+       Author: Dragonboys
+       Matched: 'Overvix'
+       Content: Overvixed?
+       ---
+[HIGH] 2026-03-23 08:14:45 ET | ⛅│volland-daytrading-central
+       Author: jk23
+       Matched: 'vol event'
+       Content: Vibes telling me we’re still getting a vol event
+       ---
+[HIGH] 2026-03-25 07:03:52 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'VIX3M'
+       Content: @A p o l l o 2 days in a row of VIX/VIX3M > 0.99
+       ---
+[HIGH] 2026-03-26 10:44:14 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good morning. We are overvixing out the gate with AG sort of structure. 6565 is a big pivot for the session. To the downside our lower edge is by 6525 and to the upside our edge is currently 6565, but if that breaks then it is firm at 6620. Beware of headlines and keep a sharp eye on Vol.
+       ---
+[HIGH] 2026-03-26 16:08:27 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'VIX3M'
+       Content: VIX/VIX3M = 1.03
+       ---
+[HIGH] 2026-03-26 19:51:33 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'vol crush'
+       Content: friday vol crush is a common theme too these days lol
+       ---
+[HIGH] 2026-03-27 10:27:58 ET | ⛅│volland-daytrading-central
+       Author: Abcdefg
+       Matched: 'vol event'
+       Content: Haha yeah all my long term pos are DCA in rn. Waiting for that vol event to leverage the house 😂😂😂 jkjk
+       ---
+[HIGH] 2026-03-27 10:46:10 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: Good morning, we have Gex (GEX LIS right now) structure today. We are overvixing out the gate with a good chunk of negative vanna overhead. A lot of negative gamma ATM. 6420 should be a big pivot today. We have support at 6400 and strengthens more at 6360. To the upside, there is not much until 6500. Keep a sharp eye on VIX and potential headlines.
+       ---
+[HIGH] 2026-03-27 12:40:20 ET | ⛅│volland-daytrading-central
+       Author: Abcdefg
+       Matched: 'vol event'
+       Content: Agreed is this near vol event territory
+       ---
+[HIGH] 2026-03-27 14:27:18 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'overvix'
+       Content: DD quite positive with a lot of overvixing
+       ---
+[HIGH] 2026-03-27 15:19:04 ET | ⛅│volland-daytrading-central
+       Author: BigBill
+       Matched: 'Vol event'
+       Content: Buying back some of my short call spreads here on the potential Vol event.
+       ---
+[HIGH] 2026-03-27 15:20:03 ET | ⛅│volland-daytrading-central
+       Author: Abcdefg
+       Matched: 'vol event'
+       Content: I have also enhanced my long positions for the possible vol event
+       ---
+
+########################################################################################################################
+## SECTION 3: OTHER MATCHES (250 messages)
+## (bounce, rally, bottom, reversal, recovery, squeeze, panic, etc.)
+########################################################################################################################
+
+[    ] 2025-09-05 08:57:24 ET | 🔰│beginners-chatter
+       Author: Johannes
+       Matched: 'rally'
+       Content: is your question generally on how much vanna is typically rolled? Or the effect of the expired contracts?
+       ---
+[    ] 2025-09-30 20:22:55 ET | 🔰│beginners-chatter
+       Author: RowJay12
+       Matched: 'bounce'
+       Content: I see. Really the main trades I've been taking are just the LIS bounces so would the main concern there be that without the historical data there could be almost hidden LIS that I can't see with the current data
+       ---
+[    ] 2025-09-30 20:31:53 ET | 🔰│beginners-chatter
+       Author: RowJay12
+       Matched: 'bounce'
+       Content: I'm just starting to understand how the puts come into play so I'm looking for the put support of course but also put buying above to see a stronger bounce
+       ---
+[    ] 2025-10-03 11:22:44 ET | 🔰│beginners-chatter
+       Author: RowJay12
+       Matched: 'reversal'
+       Content: Oh okay, in that case would it act as a reversal point to the downside?
+       ---
+[    ] 2025-10-11 12:55:02 ET | 🔰│beginners-chatter
+       Author: jinli
+       Matched: 'Squeeze'
+       Content: Profile E: “Vol Squeeze Breakdown Region” → represents panic or expansion phases.
+
+Profile F: “Charm/Vanna Rebuild Region” → represents stabilization or mean-reversion phases.
+       ---
+[    ] 2025-10-15 15:23:20 ET | 🔰│beginners-chatter
+       Author: DK5000
+       Matched: 'rally'
+       Content: You can look on the userguide under charm paridigms to study what each charm paridigm generally looks like visually
+       ---
+[    ] 2025-10-16 15:14:01 ET | 🔰│beginners-chatter
+       Author: Dtvstation
+       Matched: 'bottom'
+       Content: Hey guys I'm a bit confused here. In the top paragraph it says positive gamma is support or resistance and negative gamma is an accelerant, but in the bottom paragraph it says gamma itself does not give hints on what direction the strong move can happen? Doesn't that sentence contradict the sentence in the top paragraph, because support and resistance basically mean bottom/top and accelerant means
+       ---
+[    ] 2025-10-16 15:25:40 ET | 🔰│beginners-chatter
+       Author: Dtvstation
+       Matched: 'bounce'
+       Content: Not too sure I understand. So let's say price reaches gamma support, if gamma exposure is big im either expecting a big break down or a big bounce up?
+       ---
+[    ] 2025-10-16 18:06:32 ET | 🔰│beginners-chatter
+       Author: BigBill
+       Matched: 'bounce'
+       Content: Ah, I think you can just look at Gamma for that.  In theory once you have a firm understanding of the Greeks I think you can just look at delta for everything and then extrapolate the other Greeks from there which I believe is what @Wizard of Ops does.  e.g. when dealers are short options they are short gamma and when they are long options they are long gamma.   Ultimately you can just see where d
+       ---
+[    ] 2025-10-23 16:33:21 ET | 🔰│beginners-chatter
+       Author: BigBill
+       Matched: 'Squeeze'
+       Content: I don't really trade futures that much but I appreciate how much it simplifies things.  Squeezemetrics once said something like "the more I analyze option positioning, the more I trade delta one."  Today seems like a great day where you have a target a decent distance away and a good stop.
+       ---
+[    ] 2025-11-05 13:13:50 ET | 🔰│beginners-chatter
+       Author: Johannes
+       Matched: 'rally'
+       Content: charm is the change of delta with respect to time. When cumulative charm is negative dealers generally will need to buy as time passes, if its positive they need too sell.
+       ---
+[    ] 2025-11-05 14:24:30 ET | 🔰│beginners-chatter
+       Author: ingram142
+       Matched: 'bounce'
+       Content: Paradigms - Definition
+Pure - Follows expected behavior.
+Line in the Sand (LIS)     - A range where dealers have to decide whether to gamma hedge (swift continuation) or defend (bounce). Typically acts at upper or lower extreme of the range.
+Target - A range in which dealer hedging based on charm only reaches balance.
+Messy     - When in the money options dominate the charm exposure. Because of ga
+       ---
+[    ] 2025-11-12 15:04:25 ET | 🔰│beginners-chatter
+       Author: DK5000
+       Matched: 'rally'
+       Content: Also just a quick note: the action and influence of vanna negative and vanna positive is IV dependent, so keep that in mind when looking at that Greek so that you don’t read it to literally. I’m not privy on the details of this ticker so I’m sure they will chime in soon but wanted to throw that out there in the mean time….
+       ---
+[    ] 2025-11-12 15:47:56 ET | 🔰│beginners-chatter
+       Author: DK5000
+       Matched: 'rally'
+       Content: @Dtvstation 
+Though swing trading is different structurally from 0DTE, you can still learn a bit about how vanna and iv works from the tidbits in this video as well: 
+
+https://youtu.be/158Cv7KYsFM?si=afn2EiZ3NRplMRmK Options Dealer Positioning Dashboard - VOLLAND  - Your Questions Answered!
+
+In this episode: "...can you help point us in the direction of how to use the [Volland] data for swing idea
+       ---
+[    ] 2025-11-13 03:56:43 ET | 🔰│beginners-chatter
+       Author: Oliver Sparing
+       Matched: 'rally'
+       Content: If a call option whose strike price is above the current spot price is traded, then this call option is out of the money.
+For a put option, it is the other way around. If the strike price of the put option is below the current spot price, then it is out of the money.
+
+If the expected range of market fluctuations — that is, the implied volatility — increases, the probability that the out-of-the-mon
+       ---
+[    ] 2025-11-14 18:31:28 ET | 🔰│beginners-chatter
+       Author: DK5000
+       Matched: 'rally'
+       Content: Generally speaking, yes!
+       ---
+[    ] 2025-11-17 11:48:01 ET | 🔰│beginners-chatter
+       Author: slomotion
+       Matched: 'selloff'
+       Content: "Nice" lol  context matters.  I'm trying to find something optimistic here and struggling. 
+
+The macro is twitchy... and OUST... we can't ignore the fact that it completely sliced through previous massive supports at 30 and 25. and now there's confluent support at 20 with vanna and gamma. Is that enough to stop a selloff? heck no. At least it has positive vanna above spot? (if it ever reaches ther
+       ---
+[    ] 2025-11-18 14:03:54 ET | 🔰│beginners-chatter
+       Author: Simple Jack
+       Matched: 'squeeze'
+       Content: I'm looking to short around that area yes, I was targeting 6660 because that's where the structure changes.  I thought we could squeeze, I just thought it was less likely than continuing down.  Now that we have squeezed, I think the probability we go down again is high because it's all from dealer short calls, which are prone to pullbacks since dealers are underwater and tend to move them back OTM
+       ---
+[    ] 2025-11-18 14:05:43 ET | 🔰│beginners-chatter
+       Author: Simple Jack
+       Matched: 'squeeze'
+       Content: Really, if we squeeze then pull back, we'll both be right but different timing, like @LordHelmet says
+       ---
+[    ] 2025-11-18 14:19:33 ET | 🔰│beginners-chatter
+       Author: Simple Jack
+       Matched: 'squeeze'
+       Content: They are hedging constantly, which is why we get a squeeze like this.  My view of it though is that the positions expire at 16:00, so they need to unwind their hedges at some point... that implies selling, which would also take the market down and kick the calls OTM, so dealers would benefit greatly
+       ---
+[    ] 2025-11-18 14:20:30 ET | 🔰│beginners-chatter
+       Author: Simple Jack
+       Matched: 'rally'
+       Content: Price generally tends to move to where dealers make the most money, most of the time
+       ---
+[    ] 2025-11-18 14:23:51 ET | 🔰│beginners-chatter
+       Author: Simple Jack
+       Matched: 'rally'
+       Content: Generally that's how I think yes... but a lot of it is just getting a feel for how and when things might change, which volland can show pretty well in terms of where positioning changes
+       ---
+[    ] 2025-11-18 14:31:18 ET | 🔰│beginners-chatter
+       Author: Simple Jack
+       Matched: 'rally'
+       Content: this is why I think we are getting these big drops followed by a rally... dealers have a ton of long puts for OPEX, so every time we drop they are making money, and hedge that gain by buying
+       ---
+[    ] 2025-11-18 14:44:45 ET | 🔰│beginners-chatter
+       Author: Dtvstation
+       Matched: 'squeeze'
+       Content: I heard Jacks  POV but what's @A p o l l o 's POV? Jack thinks that ken wants the premiums from the short call so he's gonna drive price down. Why do u give better odds to a squeeze then a downward move?
+       ---
+[    ] 2025-11-19 04:43:20 ET | 🔰│beginners-chatter
+       Author: jk23
+       Matched: 'rally'
+       Content: Is the LIS not determined as where dealers have to change behaviour rather than aiming to protect premiums? Ie a break of the LIS means they have to switch to actively hedging exposure rather than exposure decaying naturally over time. And when it is time for them to reduce their exposure they choose to do so in an economical fashion, ie defending premiums at the LIS if required.
+       ---
+[    ] 2025-11-19 04:52:42 ET | 🔰│beginners-chatter
+       Author: RowJay12
+       Matched: 'turn'
+       Content: Not exactly sure honestly, this is what the white paper says:
+
+"The working theory is that they hedge with their 
+premiums in mind, gatekeeping the areas where that premium gained turns negative, which serves 
+as a “line in the sand”. A line in the sand is the strike where option dealers must change their hedging 
+behavior from buying to selling, or vice versa. While that is the working theory, it
+       ---
+[    ] 2025-11-29 13:10:05 ET | 🔰│beginners-chatter
+       Author: Dark Matter
+       Matched: 'rally'
+       Content: Negative vanna doesn’t change the SPX–VIX inverse correlation. It amplifies it.
+
+SPX up → IV down (spot-vol correlation)
+IV down → dealer deltas increase (negative vanna)
+Dealers buy → SPX up more (hedging feedback loop)
+
+This is why negative vanna = upside fuel in low-volatility regimes.
+
+When I identified negative vanna at 6840–6860 SPX, what I additionally identified was:
+* A region where falli
+       ---
+[    ] 2025-11-30 21:35:02 ET | 🔰│beginners-chatter
+       Author: ingram142
+       Matched: 'rally'
+       Content: The green dots below spot generally mean customers brought puts which are supportive of markets.
+       ---
+[    ] 2025-12-02 12:55:48 ET | 🔰│beginners-chatter
+       Author: DK5000
+       Matched: 'rally'
+       Content: puts underneath spot is generally supportive, but it would be best to combine that analysis with analysis of other Greeks to make sure you have a broad picture of that level. Like puts near that level in combination with increasing positive gamma can give more confirmation as to whether a level may hold, etc. but generally, yes, that would be the correct assumption…
+       ---
+[    ] 2025-12-08 15:06:02 ET | 🔰│beginners-chatter
+       Author: FixedRate
+       Matched: 'rally'
+       Content: Can someone help me understand vanna below spot better?  I've reviewed the documents and watched the videos and I'm getting a little confused.  If customers buy a significant amount of  OTM puts, that will show up as positive dealer vanna on vol.land below spot.  Positive green vanna bars tend to act as a magnet, attracting price.  Therefore, significant positive vanna below spot should attract pr
+       ---
+[    ] 2025-12-08 16:57:38 ET | 🔰│beginners-chatter
+       Author: BigBill
+       Matched: 'squeeze'
+       Content: https://squeezemetrics.com/monitor/download/pdf/The_Implied_Order_Book.pdf
+       ---
+[    ] 2025-12-09 19:41:52 ET | 🔰│beginners-chatter
+       Author: RowJay12
+       Matched: 'turn'
+       Content: Well when I say gamma flip I just mean where gamma would turn from net positive to negative or vise versa. I'm not sure what they mean by it but that's what I meant
+       ---
+[    ] 2025-12-15 18:19:44 ET | 🔰│beginners-chatter
+       Author: FixedRate
+       Matched: 'turn'
+       Content: I saw a video on youtube of an old version of volland whereby there was a calculator you could adjust the price of the asset up or down and the website would tell you the total amount and direction of dealer hedging if the price were to reach that point, but also would turn green/red when the amount of dealer hedging would reach a significant enough level to affect price.  Is that feature still av
+       ---
+[    ] 2025-12-26 14:15:13 ET | 🔰│beginners-chatter
+       Author: DK5000
+       Matched: 'rally'
+       Content: Generally, yes. Also vanna is in overall negative territory (Vanna is overall below zero) so price action is more “grindy” and slower moving unless we get a big volatility spike
+       ---
+[    ] 2025-12-26 14:20:56 ET | 🔰│beginners-chatter
+       Author: DK5000
+       Matched: 'rally'
+       Content: Green is bullish pressure, red is bearish pressure, generally speaking. 
+
+Not guaranteed movement, just “influence”.
+       ---
+[    ] 2026-01-04 19:57:25 ET | 🔰│beginners-chatter
+       Author: DK5000
+       Matched: 'turn'
+       Content: Nobody can guarantee that you’ll get results since that totally depends on you. Some do well, others get overwhelmed and leave, so that would, once again, totally depend on how YOU yourself trade! 
+
+But you can look at the results tab if you want motivation, we’ve got plenty of those! 
+
+But what you get out of it depends on the what decisions you make yourself using the data at hand. Volland just 
+       ---
+[    ] 2026-01-05 10:40:44 ET | 🔰│beginners-chatter
+       Author: BigBill
+       Matched: 'Squeeze'
+       Content: Personally I'd start with Nattenberg and Hull, then read a market making book.  After than read all Euan Sinclairs books, Squeezemetric's white papers, and then Colin Bennett.
+       ---
+[    ] 2026-01-07 14:37:08 ET | 🔰│beginners-chatter
+       Author: boston.london
+       Matched: 'squeeze'
+       Content: sorry squeeze metrics
+       ---
+[    ] 2026-01-07 14:38:20 ET | 🔰│beginners-chatter
+       Author: BigBill
+       Matched: 'squeeze'
+       Content: what is the squeezemetrics paradigm?
+       ---
+[    ] 2026-01-07 14:39:42 ET | 🔰│beginners-chatter
+       Author: boston.london
+       Matched: 'squeeze'
+       Content: chrome-extension://efaidnbmnnnibpcajpcglclefindmkaj/https://squeezemetrics.com/monitor/download/pdf/white_paper.pdf
+       ---
+[    ] 2026-01-12 16:39:05 ET | 🔰│beginners-chatter
+       Author: 3po
+       Matched: 'mean reversion'
+       Content: Hi been watching gamma flows and saw something odd today. Price ripped through stacked positive gamma strikes with minimal mean reversion, even though net daily charm was negative (IV was up too). im reading Trading Volatility watching YouTube, and backtested with Volland.
+
+Does anyone have specific white papers or academic work that explains today’s exact scenario—positive gamma breaking so I can
+       ---
+[    ] 2026-01-14 13:53:35 ET | 🔰│beginners-chatter
+       Author: mrj
+       Matched: 'turn'
+       Content: I think I understand a bit and put it in a beginner way to say it: let's only say OTM call if the dealer book is long delta it has positive value, when end of day expiration the book will lose that amount of positive value because turn delta turn 0 which means same amount reduction on delta which shows exactly same amount but negative on 0DTE delta decay then the dealer need to hedge this negative
+       ---
+[    ] 2026-01-14 19:22:33 ET | 🔰│beginners-chatter
+       Author: 单日转向
+       Matched: 'bounce'
+       Content: The hedging bounces around and at one point went as high as 6Bln if I remember, but the whole time, SPX mostly drifted down..
+       ---
+[    ] 2026-01-15 17:38:24 ET | 🔰│beginners-chatter
+       Author: Saint_Seiya
+       Matched: 'bottom'
+       Content: I am exiting at tops for calls  and bottoms for puts, give a try.
+       ---
+[    ] 2026-01-18 23:31:36 ET | 🔰│beginners-chatter
+       Author: Dark Matter
+       Matched: 'pivot'
+       Content: New #1/19 ES/SPX Weekly & Daily Overview is now available. 
+
+6900spx is a critical pivot and will be an important pivot with 6850spx our big support level to hold to the downside before 6800spx. In between lots of chop with 6875spx holding ground in futures thus far.
+       ---
+[    ] 2026-02-02 11:45:57 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'turn'
+       Content: Good morning everyone, today we have a little bit of a mess. Calls dominate the inventory where Dealers are long OTM calls, short ITM calls, short OTM puts and Long ITM puts. Likely case we find a ceiling in this range from here to 6990. Downside there is a lot of negative gamma and not much support. From here its quite neutral with some volatile down moves. This would become bearish over 6990. Ke
+       ---
+[    ] 2026-02-04 02:23:02 ET | 🔰│beginners-chatter
+       Author: RowJay12
+       Matched: 'bounce'
+       Content: This was today, the time on the chart is EST. The way I viewed this at the time was I had a target of 6865. We ended up perfectly hitting that and then bouncing perfectly from there. That very well could've been luck honestly, I'm still not an expert and trying to figure this stuff out but it seemed to work out lol. In retrospect, I think setting that as a "target" was incorrect and it only worked
+       ---
+[    ] 2026-02-04 02:33:38 ET | 🔰│beginners-chatter
+       Author: CgTrader
+       Matched: 'bounce'
+       Content: Okay, so this would be my question based on my understanding of the DD tool. In your chart above DD seems clearly net negative, which should be supportive of price. But the only bars to flip to get to 0 are south of spot so that's where it needs to travel (which in my opinion is clearly a result of the volatility expansion).  I suppose the bounce is a whole other read though.
+       ---
+[    ] 2026-02-04 02:37:38 ET | 🔰│beginners-chatter
+       Author: RowJay12
+       Matched: 'bounce'
+       Content: I think a better way to look at it would've been an if then statement of, IF we get down to 6865 (because of the vol expansion), THEN we'll bounce from there as dealers cover
+       ---
+[    ] 2026-02-04 02:38:02 ET | 🔰│beginners-chatter
+       Author: RowJay12
+       Matched: 'bounce'
+       Content: I saw the bounce coming from that level, but got lucky on us actually getting down to it
+       ---
+[    ] 2026-02-09 14:53:41 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'pivot'
+       Content: Checking back in for the afternoon, we are still in the same boat as before. We are BofA and at our upper Edge. 6970 is a large pivot area and this extends to 6980. With this test of the upper edge, we now have negative vanna for the week along with quite a bit of negative vanna for next week. Our lower edge has slightly shifted up from 6930 to now 6945 area.
+       ---
+[    ] 2026-02-11 10:40:48 ET | 🔰│beginners-chatter
+       Author: Johannes
+       Matched: 'rally'
+       Content: so generally SPX have a negative correlation. To approximate this a linear regression is used. Basically it predicts VIX given spot movements. The points on this widget are historical datapoints(daily vix and spx change). Now the line is the where the prediction comes from(it is just drawing the line with the minimal squared error).
+       ---
+[    ] 2026-02-11 13:07:14 ET | 🔰│beginners-chatter
+       Author: Johannes
+       Matched: 'rally'
+       Content: first of all I love it, used to draw stuff like that too. but generally you can concider positive vanna as bullish.
+       ---
+[    ] 2026-02-11 13:19:41 ET | 🔰│beginners-chatter
+       Author: DK5000
+       Matched: 'rally'
+       Content: Generally, negative spot vol correlates with vol down, spot up conditions and via versa, and positive spot vol correlates with spot up, vol up conditions, and vis versa…
+       ---
+[    ] 2026-02-11 15:03:22 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'pivot'
+       Content: Checking back in for the afternoon, we are Gexy here. 6950 is a big pivot area. we have Downside support at 6925 and 6900 still. The resistance is here at 6950, if we break this level then our upper edge/target is 6965 area. We have positive Vanna for the week along with positive Delta Decay hedging so still in the bullish/neutral boat as this morning.
+       ---
+[    ] 2026-02-12 07:57:27 ET | 🔰│beginners-chatter
+       Author: SILVERCHARM
+       Matched: 'Bottom'
+       Content: Bottom of the GAMMA chart stocks MU
+       ---
+[    ] 2026-02-12 08:13:59 ET | 🔰│beginners-chatter
+       Author: Johannes
+       Matched: 'rally'
+       Content: Everyone one here has different methods of using the data. A general Bullish thing would be dealers having  short puts below spot and long calls above spot(espeically when thats the case over multible timeframes like weekly, Opex etc.). That leads to Vanna being positive. Generally Termstructure is downwards sloping so as time passes->IV decays->dealer delts go down->dealers buy to hedge
+       ---
+[    ] 2026-02-12 11:33:07 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'pivot'
+       Content: Good morning everyone, we are BofA this morning that should slowly shift towards an AG as the wings decay.
+Dealers hold long ATM puts with short OTM calls at the moment. DeltaDecay Hedging is negative as well. We are slightly undervixed right now. 6945 is a big pivot currently. Vanna for the week is quite neutral with a lot of negative vanna for next week. 
+
+For this BofA our upper edge is at 6980
+       ---
+[    ] 2026-02-17 22:15:01 ET | 🔰│beginners-chatter
+       Author: Abcdefg
+       Matched: 'rally'
+       Content: I literally mean this chart
+       ---
+[    ] 2026-02-18 11:40:19 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'pivot'
+       Content: Good morning everyone, today we are Sidial. Dealers hold Long OTM puts with Long ITM puts. They hold Long OTM calls with short ITM calls. Quite a chunk of positive gamma on the table . Our edges are 6925 and 6850. 6870 is a big pivot to the downside. We do have higher order vanna resistance at 6925 so confluence helps there. We are undervixing a lot with Volex AM expiration.
+       ---
+[    ] 2026-02-18 14:45:45 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'pivot'
+       Content: Checking back in for the afternoon, we have a bit of a mess. Dealers hold short ATM puts with some short OTM calls. There is a ton of negative gamma on the table. Our upper edge still remains at 6925 while the lower edge starts at 6870 which was our big pivot from this morning. We are undervixing less now, but keep a sharp eye on Vol to see if we want to test those deeper lower edges. 0DTE Delta D
+       ---
+[    ] 2026-02-19 11:38:41 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'pivot'
+       Content: Good morning everyone, today we are sidial/gexy with the wings. Dealers hold short OTM puts with a large amount of long ITM puts. Dealers have short ATM calls/OTMs calls. Seems like quite a bit of spreads out there today. 6865 is a large pivot for us today. We have positive Vanna for the week with positive DD hedging. Sidials are choppy. Higher order Vanna shows resistance at 6925 with a ton of su
+       ---
+[    ] 2026-02-20 11:46:43 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'pivot'
+       Content: Good morning everyone. Friendly reminder of CPF. 
+
+Dealers hold Long OTM puts, Long ITM puts, Short ATM calls.  6900 is a key pivot today. We have higher order resistance at 6925. Likely our upper edge will be strong at 6925 area. To the downside we dont have much support. 6840 is the start of the support. Likely case right now is range between 6925 and 6840. Keep a sharp eye on Vol today with the
+       ---
+[    ] 2026-02-24 11:49:31 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: Good morning eveyrone, today we are Sidial Messy with an upper edge starting at 6890 and to the downside 6850. Keep an eye on the undervixing from Wiz's post this morning on Substack.
+Increasing in undervixing can extend this rally past the start of the upper edge. 6900 will be resistance as well. Sidials are typicalls choppy but the read so far is range bound from here.
+       ---
+[    ] 2026-02-25 11:43:08 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'pivot'
+       Content: Good morning everyone, today we are Sidial Messy where Calls dominate notionally. 
+Dealers hold short ITM calls, Long OTM calls, Long ITM puts and mixed OTM. 6925 is a big pivot right now with the long Puts. We are slightly undervixed. We are starting to run into a lot of higher order vanna resistance up here as well. Our support right now is at 6890 and 6875. To the upside 6925 is the big level o
+       ---
+[    ] 2026-02-27 12:56:18 ET | 🔰│beginners-chatter
+       Author: Johannes
+       Matched: 'rally'
+       Content: negative charm means that as times passes deltas go down-> that is generally bullish
+       ---
+[    ] 2026-03-03 04:51:19 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'bounce'
+       Content: no bounce allowed
+       ---
+[    ] 2026-03-03 06:01:26 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'bounce'
+       Content: no bounces allowed
+       ---
+[    ] 2026-03-03 06:27:02 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'bottom'
+       Content: where the bottom is now who knows tho
+       ---
+[    ] 2026-03-03 07:46:20 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: Bender RTH rally round 2
+       ---
+[    ] 2026-03-03 09:35:52 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'rally'
+       Content: Trump will probably announce something for oil prices, they hinted at it yesterday... see if that smacks them down and lets us rally
+       ---
+[    ] 2026-03-03 10:37:45 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'going long'
+       Content: he is going long this AM
+       ---
+[    ] 2026-03-03 11:10:27 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'bounce'
+       Content: no bounce today just pain
+       ---
+[    ] 2026-03-03 11:10:48 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'bounce'
+       Content: what if the bounce is the pain
+       ---
+[    ] 2026-03-03 11:11:04 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'bounce'
+       Content: bounce for ants
+       ---
+[    ] 2026-03-03 11:11:20 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'bounce'
+       Content: then bounce
+       ---
+[    ] 2026-03-03 11:37:54 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: feel like we can see a stronger rally at play
+       ---
+[    ] 2026-03-03 11:46:52 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'squeeze'
+       Content: wen squeeze
+       ---
+[    ] 2026-03-03 11:55:19 ET | ⛅│volland-daytrading-central
+       Author: RipTide487
+       Matched: 'squeeze'
+       Content: https://tenor.com/view/bh187-waynes-world-excuse-me-exsqueeze-me-baking-powder-gif-22047510  
+       ---
+[    ] 2026-03-03 12:15:36 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'bounce'
+       Content: what a bounce
+       ---
+[    ] 2026-03-03 13:03:03 ET | ⛅│volland-daytrading-central
+       Author: BigBill
+       Matched: 'rally'
+       Content: This would be the highest Agg Vanna in new Volland.  If this holds and the war ends we are going to get an epic Vanna rally.
+       ---
+[    ] 2026-03-03 13:10:02 ET | ⛅│volland-daytrading-central
+       Author: ChuckG
+       Matched: 'squeeze'
+       Content: If one of you whales 🐋  here can push us over 6800 think we could squeeze💪🏻
+       ---
+[    ] 2026-03-03 14:39:31 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'inflect'
+       Content: longer tenors close to inflection point
+       ---
+[    ] 2026-03-03 14:50:35 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'pivot'
+       Content: Checking back in for the afternoon, we have pushed the upper edge as VIX came down. Dealers hold short OTM puts and short ITM puts. Short OTM calls with mixed bag ITM. A lot of negative gamma up here and negative vanna. Keep a sharp eye on DD hedging in SPY/SPX and VIX. We are starting to run up into those short calls overhead where that is resistance. This is biggest at 6845/6850. To the downside
+       ---
+[    ] 2026-03-03 15:05:48 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'inflect'
+       Content: this 25/30 area is the 0dte inflection if we can get above that 50
+       ---
+[    ] 2026-03-03 16:07:17 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'Squeeze'
+       Content: Squeeze the close higher
+       ---
+[    ] 2026-03-03 16:10:29 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'squeeze'
+       Content: squeeze it green
+       ---
+[    ] 2026-03-03 16:29:47 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'panic'
+       Content: he's fighting a two front war against Iran and the panicans
+       ---
+[    ] 2026-03-04 10:31:07 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'panic'
+       Content: So couple days of panic out of the way now.. maybe settle into a choppy grind.  Keep vol elevated, test the edges, frustrate everyone
+       ---
+[    ] 2026-03-04 10:41:19 ET | ⛅│volland-daytrading-central
+       Author: jk23
+       Matched: 'Panic'
+       Content: I identify as a Proud Panican
+       ---
+[    ] 2026-03-04 10:44:51 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'vol spike'
+       Content: Even if vol spikes today looks pretty choppy imo
+       ---
+[    ] 2026-03-04 10:57:33 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'vol spike'
+       Content: There's just so much longer positioning that is supporting us... if we managed to test 6700 area with a vol spike it'd be an amazing buy imo
+       ---
+[    ] 2026-03-04 11:22:05 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'panic'
+       Content: panicans in shambles
+       ---
+[    ] 2026-03-04 11:24:28 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'panic'
+       Content: panicans scrambling to close their crash puts
+       ---
+[    ] 2026-03-04 11:45:52 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'panic'
+       Content: found a panican
+       ---
+[    ] 2026-03-04 12:54:18 ET | ⛅│volland-daytrading-central
+       Author: Johannes
+       Matched: 'rally'
+       Content: generally i would say correct down but since we had extremely elevated spot vol betas this is very likely just liquidity coming back into the market
+       ---
+[    ] 2026-03-04 12:58:34 ET | ⛅│volland-daytrading-central
+       Author: Johannes
+       Matched: 'turn'
+       Content: I would say it is the case if the undervix is caused by changes in the vol surface and not liquidity returning to the market
+       ---
+[    ] 2026-03-04 13:47:42 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'squeeze'
+       Content: Feels like pop HOD, quick squeeze
+       ---
+[    ] 2026-03-04 14:26:30 ET | ⛅│volland-daytrading-central
+       Author: nofnogjustprofit
+       Matched: 'bounce'
+       Content: I can't take another bounce at 6860 SPX today lol
+       ---
+[    ] 2026-03-04 16:16:00 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'vol spike'
+       Content: vol spike now and we go
+       ---
+[    ] 2026-03-04 17:03:39 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'rally'
+       Content: he literally based the entire close on my cost basis
+       ---
+[    ] 2026-03-04 17:05:05 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'panic'
+       Content: Ok so two days of panic and recovery, a day of everything back to normal and no news, a wipeout and limit down tomorrow would be nice
+       ---
+[    ] 2026-03-04 17:05:57 ET | ⛅│volland-daytrading-central
+       Author: Simple Jack
+       Matched: 'bounce'
+       Content: go get 6700 and set up another megabounce
+       ---
+[    ] 2026-03-04 17:23:14 ET | ⛅│volland-daytrading-central
+       Author: nofnogjustprofit
+       Matched: 'panic'
+       Content: I have time until march 20th for downside. I'm patient... lets hope we get some panic to 6700 to long again
+       ---
+[    ] 2026-03-05 17:02:10 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: what a rally
+       ---
+[    ] 2026-03-06 06:25:05 ET | ⛅│volland-daytrading-central
+       Author: 单日转向
+       Matched: 'rally'
+       Content: will we have an under-Vix rally today ?
+       ---
+[    ] 2026-03-06 07:20:31 ET | ⛅│volland-daytrading-central
+       Author: 单日转向
+       Matched: 'rally'
+       Content: An undervixed rally today ?
+       ---
+[    ] 2026-03-06 11:26:35 ET | ⛅│volland-daytrading-central
+       Author: Hivey
+       Matched: 'rally'
+       Content: that is how I trade: tons of small scalps, gradually build a position. If I am wrong, the loss from the bigger stop is generally offset by profit from the smaller scalps
+       ---
+[    ] 2026-03-06 11:35:31 ET | ⛅│volland-daytrading-central
+       Author: nofnogjustprofit
+       Matched: 'pivot'
+       Content: 6771 may be pivot
+       ---
+[    ] 2026-03-06 11:40:06 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'rally'
+       Content: bad data, conflict escalation...no way we rally all day...right? right?!
+       ---
+[    ] 2026-03-06 11:57:30 ET | ⛅│volland-daytrading-central
+       Author: nofnogjustprofit
+       Matched: 'panic'
+       Content: no need to panic in sidial.. the whipsaw will take care of you lol
+       ---
+[    ] 2026-03-06 11:57:40 ET | ⛅│volland-daytrading-central
+       Author: 单日转向
+       Matched: 'Vix crush'
+       Content: Vix crush Friday ?
+       ---
+[    ] 2026-03-06 15:04:01 ET | ⛅│volland-daytrading-central
+       Author: nofnogjustprofit
+       Matched: 'rally'
+       Content: @Wizard of Ops  any signs of a rally today? Or is it just next week?
+       ---
+[    ] 2026-03-06 16:18:04 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'liquidat'
+       Content: wen liquidation
+       ---
+[    ] 2026-03-06 16:24:08 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: Being Patient is the hardest thing but on days like today... you just have to literally wait till it all shift into play
+       ---
+[    ] 2026-03-06 16:24:29 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: but the one move literally is the entire day
+       ---
+[    ] 2026-03-06 17:00:37 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: Gab down and bender rally monday
+       ---
+[    ] 2026-03-06 18:21:44 ET | ⛅│volland-daytrading-central
+       Author: BigBill
+       Matched: 'buy the dip'
+       Content: You said "This is a great buy the dip signal, anytime this spread closes above 0.1..... great buy on the index lol"
+       ---
+[    ] 2026-03-06 18:27:29 ET | ⛅│volland-daytrading-central
+       Author: BigBill
+       Matched: 'bounce'
+       Content: Those were COVID (it was a little early), Dec 2024 Fed meeting freakout, and then the liberation day lows (4/8 was the low).  I'd say all had good bounces on a swing timeframe?
+       ---
+[    ] 2026-03-08 14:12:55 ET | ⛅│volland-daytrading-central
+       Author: Johannes
+       Matched: 'vix spike'
+       Content: made some boxplots for a weekly S&P dataset. most of those vix spike returns fall between the first and 3rd quartiles
+       ---
+[    ] 2026-03-08 18:01:37 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'selloff'
+       Content: World’s slowest selloff lol.
+       ---
+[    ] 2026-03-09 05:22:11 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'recovery'
+       Content: Nice recovery
+       ---
+[    ] 2026-03-09 05:58:10 ET | ⛅│volland-daytrading-central
+       Author: nofnogjustprofit
+       Matched: 'recovery'
+       Content: dramatic recovery
+       ---
+[    ] 2026-03-09 09:45:15 ET | ⛅│volland-daytrading-central
+       Author: 单日转向
+       Matched: 'squeeze'
+       Content: is the juice worth the squeeze ?
+       ---
+[    ] 2026-03-09 10:38:25 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: Good morning everyone, inventory is a little spread out today. Dealers hold short OTM puts with short ITM puts. Dealers hold Long ITM calls and mixed OTM. 
+Spot vol is not too out of wack right now. 6650 is our key support below where after that is 6630. We have quite a bit of negative vanna overhead for the week and can lead to a very strong rally if we start undervixing. Dealers hold a lot of ne
+       ---
+[    ] 2026-03-09 10:45:56 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'panic'
+       Content: panicans are crumbling
+       ---
+[    ] 2026-03-09 11:46:38 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'rally'
+       Content: Citrini : 'Took off most of that smaller oil short from last night, but leaving a few contracts on. 
+
+Also, I think the market is sniffing something out. Bonds & HY rallying while oil fades is normal but both of them being green on the day while oil still trades higher is kind of weird. Not doing anything yet but paying attention.'
+       ---
+[    ] 2026-03-09 11:52:29 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'panic'
+       Content: Trump tells The Post no reason to panic over Iran war oil-price surge: ‘I have a plan for everything’ -- NYP
+       ---
+[    ] 2026-03-09 12:27:18 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: I feel like its safe to go ahead and say bender rally has been achieved
+       ---
+[    ] 2026-03-09 12:29:13 ET | ⛅│volland-daytrading-central
+       Author: quant.sol
+       Matched: 'rally'
+       Content: Bender rally achieved
+       ---
+[    ] 2026-03-09 12:54:44 ET | ⛅│volland-daytrading-central
+       Author: nofnogjustprofit
+       Matched: 'rally'
+       Content: Mind your gap… it was indeed a bender rally
+       ---
+[    ] 2026-03-09 13:00:33 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'pivot'
+       Content: vol is starting to pivot
+       ---
+[    ] 2026-03-09 13:34:44 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: Checking back in for the afternoon, significant rally from undervixing. 6700 is a key pivot now. we have shifted to a BofA. Dealers still hold short OTM and ITM puts and they have Long OTM calls. A lot of negative gamma. Keep a sharp eye on Vix as we can still see upside as it undervixes more. There really isnt strong resistance overhead. The next little resistance is at 6735 then past that is 675
+       ---
+[    ] 2026-03-10 08:48:15 ET | ⛅│volland-daytrading-central
+       Author: 单日转向
+       Matched: 'rally'
+       Content: Wiz expecting undervixed rally today ? @Wizard of Ops
+       ---
+[    ] 2026-03-10 10:44:42 ET | 📨┃0dte-alerts
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: Good morning, we have a GEX pure with target overhead near 6850 with downside LIS of 6775. Strong undervixing with positive vanna for this week and next for an extended rally.
+       ---
+[    ] 2026-03-10 11:33:34 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'bottom'
+       Content: absolutely, I'm sure other people have better/cleaner methods with more advanced techniques to get into a trend, but I'm usually looking for the bottom of a volume profile range that price is stalling at or has pulled back to, I hate getting in late/at the top of a range of a move...usually leads to immediate drawdown
+       ---
+[    ] 2026-03-10 12:26:49 ET | ⛅│volland-daytrading-central
+       Author: Derksie
+       Matched: 'turn'
+       Content: Right now, Vanna is fairly neutral (turning more negative as we go higher). There's absolutely nothing coming from Charm (and zero to the upside). The highest Gamma strike is currently positive and sits at 6840. And I never trade against that 🙂
+       ---
+[    ] 2026-03-10 12:33:31 ET | ⛅│volland-daytrading-central
+       Author: Michelle
+       Matched: 'turn'
+       Content: Vanna turning more negative as we go higher meaning resistance?
+       ---
+[    ] 2026-03-10 13:39:43 ET | ⛅│volland-daytrading-central
+       Author: nicowilliamsRW
+       Matched: 'bounce'
+       Content: CL did bounce of daily 8ema
+       ---
+[    ] 2026-03-10 13:43:10 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'rally'
+       Content: I literally just opened some puts thinking I could get a small gain, they went 3x, lucky timing lol
+       ---
+[    ] 2026-03-10 13:47:15 ET | ⛅│volland-daytrading-central
+       Author: Zion’s Gumbo
+       Matched: 'turn'
+       Content: So my oil long got stopped at 77 because of fake news. Time to turn the screens off today
+       ---
+[    ] 2026-03-10 15:49:43 ET | ⛅│volland-daytrading-central
+       Author: nofnogjustprofit
+       Matched: 'rally'
+       Content: @Wizard of Ops  what does he mean by rally culminates when its properly vixed?
+
+"Undervixed rallies tend to run like a cartoon. It runs in place for a while and then takes off. The rally culminates when the market is properly vixed. We aren’t there yet, but the option environment, while still somewhat bullish, is not as bullish as it was yesterday."
+       ---
+[    ] 2026-03-12 05:18:38 ET | ⛅│volland-daytrading-central
+       Author: jk23
+       Matched: 'turn'
+       Content: How can we turn sand into renewable electricity?
+       ---
+[    ] 2026-03-12 09:50:12 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'squeeze'
+       Content: it can squeeze lol
+       ---
+[    ] 2026-03-12 10:21:53 ET | 🔰│beginners-chatter
+       Author: Het
+       Matched: 'reversal'
+       Content: When looking for a reversal, Wiz has said look for put buying.  Do I look at 0DTE Vanna (green bars below spot) and 0DTE Delta (green bars below spot)?
+       ---
+[    ] 2026-03-12 10:55:42 ET | ⛅│volland-daytrading-central
+       Author: jay
+       Matched: 'bottom'
+       Content: oil needs to put in a high so we can bottom lol
+       ---
+[    ] 2026-03-12 12:05:11 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'squeeze'
+       Content: Just waiting for a big squeeze higher now
+       ---
+[    ] 2026-03-12 12:21:12 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'squeeze'
+       Content: squeeze it
+       ---
+[    ] 2026-03-13 09:48:22 ET | ⛅│volland-daytrading-central
+       Author: Johannes
+       Matched: 'reversal'
+       Content: cant complain, looking for a reversal
+       ---
+[    ] 2026-03-13 09:56:46 ET | ⛅│volland-daytrading-central
+       Author: Johannes
+       Matched: 'bottom'
+       Content: what study is the tape on the bottom?
+       ---
+[    ] 2026-03-13 12:15:36 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'rally'
+       Content: unamerican to not rally on Friday
+       ---
+[    ] 2026-03-13 12:35:25 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'squeeze'
+       Content: basically this, get through this spot and squeeze or get cooked to 200
+       ---
+[    ] 2026-03-13 13:03:28 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'bounce'
+       Content: cant even bounce
+       ---
+[    ] 2026-03-13 13:43:22 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'squeeze'
+       Content: be a shame if itm short put got squeezed
+       ---
+[    ] 2026-03-13 14:42:05 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'bounce'
+       Content: 352 nq is last weeks low.  totally random spot for us to bounce here
+       ---
+[    ] 2026-03-13 14:43:42 ET | ⛅│volland-daytrading-central
+       Author: nofnogjustprofit
+       Matched: 'bottom'
+       Content: hope we bottomed today or monday.. then my long deltas would pay nice in the next month or couple.... if not need to do some ninja trading lol
+       ---
+[    ] 2026-03-13 15:01:47 ET | ⛅│volland-daytrading-central
+       Author: suttonb3
+       Matched: 'squeeze'
+       Content: I had a small win right off the bat but then gave it all back and more. Should've just called it a week but I won't be able to trade next week (taking the family to Iceland!!) so I wanted to squeeze in one more day. Oh well...
+       ---
+[    ] 2026-03-13 15:16:35 ET | ⛅│volland-daytrading-central
+       Author: Albert
+       Matched: 'squeeze'
+       Content: is there anything on volland that says an EOD squeeze is on the cards
+       ---
+[    ] 2026-03-15 19:05:41 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'reversal'
+       Content: Nice reversal
+       ---
+[    ] 2026-03-16 09:58:38 ET | ⛅│volland-daytrading-central
+       Author: BigBill
+       Matched: 'rally'
+       Content: If vol stays muted delars are buying.   My 2 cents...don't fight a Vanna rally.
+       ---
+[    ] 2026-03-16 10:07:58 ET | ⛅│volland-daytrading-central
+       Author: 单日转向
+       Matched: 'Vix crush'
+       Content: Vix crush,,
+       ---
+[    ] 2026-03-16 10:11:05 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'bottom'
+       Content: think vix will bottom and reverse here soon
+       ---
+[    ] 2026-03-16 10:21:35 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'bottom'
+       Content: maybe trying to sweep friday high and get bottom on vix
+       ---
+[    ] 2026-03-16 12:44:31 ET | ⛅│volland-daytrading-central
+       Author: Dragonboys
+       Matched: 'vol spike'
+       Content: seems more like 6700 pin unless vol spikes due to news or something
+       ---
+[    ] 2026-03-16 13:55:33 ET | ⛅│volland-daytrading-central
+       Author: Abcdefg
+       Matched: 'VIX spike'
+       Content: Let’s hope on a VIX spike
+       ---
+[    ] 2026-03-16 23:05:00 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'mean reversion'
+       Content: IMO yes - opex week on top of it - mean reversions into key levels IMO - wait for key catalyst movements this week such as FOMC and MU ER and VolEx, OPEX, its hard to hold with swings and still see rips being faded
+       ---
+[    ] 2026-03-17 05:21:41 ET | ⛅│volland-daytrading-central
+       Author: Johannes
+       Matched: 'turn'
+       Content: I think it could take some time until we see proper downside, I did a small study last year and as it turns out spot vol beta residuals seem to cluster heavily. So Undervixing is typically followed by more undervixing, I dont think we can see good downside until this reverses
+       ---
+[    ] 2026-03-17 14:09:02 ET | ⛅│volland-daytrading-central
+       Author: Hivey
+       Matched: 'reversal'
+       Content: expecting reversal soon
+       ---
+[    ] 2026-03-17 14:45:31 ET | ⛅│volland-daytrading-central
+       Author: BigBill
+       Matched: 'rally'
+       Content: DIX wasn't aroused by yesterday's rally
+       ---
+[    ] 2026-03-17 15:51:35 ET | ⛅│volland-daytrading-central
+       Author: mmweld49
+       Matched: 'rally'
+       Content: I’m 39, I’ve literally heard my teens say skibidi toilet and I have no f’ng idea what that means 😂
+       ---
+[    ] 2026-03-17 15:57:01 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'turn'
+       Content: I just turned 30, hearing mixed things about this age bracket
+       ---
+[    ] 2026-03-18 09:34:26 ET | ⛅│volland-daytrading-central
+       Author: BigBill
+       Matched: 'selloff'
+       Content: Where did the selloff go?
+       ---
+[    ] 2026-03-18 15:00:41 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'bounce'
+       Content: 6630 anmd 700nq ill watch for bounce here
+       ---
+[    ] 2026-03-18 16:35:56 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'rally'
+       Content: Jpow didn't even give a rally to load up on more short positions, just immediate sell
+       ---
+[    ] 2026-03-18 16:36:52 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'turn'
+       Content: Everyone wants their returns now lol
+       ---
+[    ] 2026-03-18 16:37:16 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'turn'
+       Content: ai returns will be... less people getting paid and participating in the economy.  not bullish lol
+       ---
+[    ] 2026-03-19 09:36:21 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'bottom'
+       Content: breaking bottom of consolidation box
+       ---
+[    ] 2026-03-19 09:43:01 ET | ⛅│volland-daytrading-central
+       Author: Johannes
+       Matched: 'bottom'
+       Content: I got bottomticked lol 20.25s lol
+       ---
+[    ] 2026-03-19 10:19:07 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'bounce'
+       Content: which helped us with this bounce from the lows but it only put in a 40pt bounce. i am sus to this bounce - the only thing i don't like seeing is the semis are semi holding - if those go this will go straight down then
+       ---
+[    ] 2026-03-19 10:20:01 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'squeeze'
+       Content: this has squeeze potential tbh
+       ---
+[    ] 2026-03-19 10:24:03 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'squeeze'
+       Content: wouldnt bet on a squeeze this early, maybe later in the day
+       ---
+[    ] 2026-03-19 10:31:57 ET | ⛅│volland-daytrading-central
+       Author: Sankara
+       Matched: 'bounce'
+       Content: Almost got baited into the bounce
+       ---
+[    ] 2026-03-19 10:32:02 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'bounce'
+       Content: nice bounce
+       ---
+[    ] 2026-03-19 10:37:50 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'squeeze'
+       Content: flip it and squeeze
+       ---
+[    ] 2026-03-19 10:45:32 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'turn'
+       Content: which could turn into failed ib break short\
+       ---
+[    ] 2026-03-19 11:14:35 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'vix crush'
+       Content: they gonna vix crush blast through 6600 or we go to 0 take your bets
+       ---
+[    ] 2026-03-19 11:51:24 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'squeeze'
+       Content: prob does a SI type of squeeze here
+       ---
+[    ] 2026-03-19 12:05:03 ET | ⛅│volland-daytrading-central
+       Author: Dragonboys
+       Matched: 'bottom'
+       Content: thats what I picked... so it better be right if not my bottom left bracket is going to trash
+       ---
+[    ] 2026-03-19 15:18:45 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'panic'
+       Content: I think shorts panicked and we cascaded up, would not be surprised if this gets sold hard, but maybe that's just me thinking the news is just a blurb
+       ---
+[    ] 2026-03-19 15:19:06 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'squeeze'
+       Content: think they squeeze it again to kill everyone trying to short still
+       ---
+[    ] 2026-03-19 15:52:01 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'rally'
+       Content: Could see a rally to the 20 DMA the next few days, then coin toss what it does when it gets there
+       ---
+[    ] 2026-03-20 07:20:50 ET | ⛅│volland-daytrading-central
+       Author: BigBill
+       Matched: 'vol spike'
+       Content: Damnit, the vol spike fizzled before I could short it.
+       ---
+[    ] 2026-03-20 10:00:51 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'knife catch'
+       Content: i wouldnt knife catch today unless we do get a 100 pt drop lol
+       ---
+[    ] 2026-03-20 10:14:07 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'knife catch'
+       Content: dont knife catch
+       ---
+[    ] 2026-03-20 10:19:01 ET | ⛅│volland-daytrading-central
+       Author: nofnogjustprofit
+       Matched: 'bottom'
+       Content: so 6525 bottom ish?
+       ---
+[    ] 2026-03-20 10:37:59 ET | ⛅│volland-daytrading-central
+       Author: Stascme
+       Matched: 'turn'
+       Content: 6525 then it turns out to be the first level of support if you look only at the green columns?
+       ---
+[    ] 2026-03-20 12:04:27 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'bounce'
+       Content: Helping this bounce in spizzy
+       ---
+[    ] 2026-03-20 13:38:14 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'long here'
+       Content: trying another long here
+       ---
+[    ] 2026-03-20 13:42:25 ET | ⛅│volland-daytrading-central
+       Author: nicowilliamsRW
+       Matched: 'bounce'
+       Content: we looking for 6525 for a bounce?
+       ---
+[    ] 2026-03-20 14:05:50 ET | ⛅│volland-daytrading-central
+       Author: dauma
+       Matched: 'rally'
+       Content: Crude prices easing. Let’s have bonds rally and get equities going.
+       ---
+[    ] 2026-03-20 14:19:18 ET | ⛅│volland-daytrading-central
+       Author: Disciple3
+       Matched: 'bounce'
+       Content: give relief bounce
+       ---
+[    ] 2026-03-20 15:39:16 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'panic'
+       Content: maybe another 25 points of panic selling?
+       ---
+[    ] 2026-03-20 16:10:15 ET | ⛅│volland-daytrading-central
+       Author: FixedRate
+       Matched: 'bounce'
+       Content: What about the fact that this was a quarterly opex and a lot of puts are coming off the table?  Wouldn't that create a bounce for Monday?
+       ---
+[    ] 2026-03-20 16:11:58 ET | ⛅│volland-daytrading-central
+       Author: nicowilliamsRW
+       Matched: 'bounce'
+       Content: nice bounce to close of the day
+       ---
+[    ] 2026-03-20 16:21:33 ET | ⛅│volland-daytrading-central
+       Author: Abcdefg
+       Matched: 'bounce'
+       Content: Also algos are tuned on EMAs so bounces off of them can be decent scalps
+       ---
+[    ] 2026-03-20 17:49:34 ET | ⛅│volland-daytrading-central
+       Author: nicowilliamsRW
+       Matched: 'bounce'
+       Content: dam 70 pt bounce from the low...they couldnt do that in rth?
+       ---
+[    ] 2026-03-21 09:53:19 ET | ⛅│volland-daytrading-central
+       Author: Albert
+       Matched: 'selloff'
+       Content: interesting. i’ve always thought of positive vanna as conditional support during a selloff, where it really triggers buying only after price stabilizes or bounces and IV starts to come down. but i’ve mostly been looking at VIX instead of fixed strike vol. if there are  meaningful divergences between VIX and fixed strike vol, especially with roll down where strike vol can fall even while VIX is ris
+       ---
+[    ] 2026-03-22 18:14:25 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'bounce'
+       Content: we bounced off 6500spx - negative charm intraday
+       ---
+[    ] 2026-03-22 18:24:46 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'bounce'
+       Content: there is a bounce coming here IMO its testing 6500spx now
+       ---
+[    ] 2026-03-22 18:28:39 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'bounce'
+       Content: lol this candle what a bounce haha
+       ---
+[    ] 2026-03-22 18:29:02 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'buy the dip'
+       Content: Time to buy the dip this week lol
+       ---
+[    ] 2026-03-22 18:36:50 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'pivot'
+       Content: Likely a pivot coming soon this week
+       ---
+[    ] 2026-03-22 18:38:12 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'pivot'
+       Content: A pivot would require Iran to comply
+       ---
+[    ] 2026-03-22 18:39:14 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'mean reversion'
+       Content: mean reversion like trades - i am down for that lol
+       ---
+[    ] 2026-03-22 18:40:46 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'pivot'
+       Content: USA gains less than nothing if they pivot right now without Iran being totally on board
+       ---
+[    ] 2026-03-22 19:05:21 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: I see positive Vanna this week with negative Vanna overhead for a good rally towards 6625 SPX
+       ---
+[    ] 2026-03-22 19:06:25 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: a lot of negative gamma so you would see a strong rally
+       ---
+[    ] 2026-03-22 22:08:05 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'rally'
+       Content: Sqzme : ‘ 
+Across more than twenty years of sampling for those situations nearest the current data setup, we find a mix of commodities rallying, inflation fears, Fed emergency cuts, and moments of geopolitical turmoil. And if we had to characterize what we see in those histories, it would be...
+ 
+This is the bottom... for maybe a couple weeks.
+ 
+Perhaps this is a triumph for our pattern-matching b
+       ---
+[    ] 2026-03-23 03:47:32 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'bounce'
+       Content: Some wild moves here overnight we bounced so fast and then slow death from there again
+       ---
+[    ] 2026-03-23 07:15:41 ET | ⛅│volland-daytrading-central
+       Author: Pippen
+       Matched: 'turn'
+       Content: A year of returns in one minute, what the actual fuck
+       ---
+[    ] 2026-03-23 07:24:36 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'selloff'
+       Content: just a casual 100pt selloff here lol
+       ---
+[    ] 2026-03-23 08:46:36 ET | ⛅│volland-daytrading-central
+       Author: Johannes
+       Matched: 'squeeze'
+       Content: I think Iran wont make a deal yet. I think they want to squeeze out max economic damage and get as close to getting bombed as possible and then make a deal
+       ---
+[    ] 2026-03-23 15:06:17 ET | ⛅│volland-daytrading-central
+       Author: tomtom
+       Matched: 'turn'
+       Content: vanna already turned bullish tomorrow
+       ---
+[    ] 2026-03-23 16:10:48 ET | ⛅│volland-daytrading-central
+       Author: Hivey
+       Matched: 'bounce'
+       Content: I feel a bounce incoming 💪
+       ---
+[    ] 2026-03-23 21:24:48 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'bounce'
+       Content: Might lead if we bounce
+       ---
+[    ] 2026-03-24 09:38:31 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'mean reversion'
+       Content: im thinking mean reversion day
+       ---
+[    ] 2026-03-24 13:16:31 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'turn'
+       Content: early on when I started trading futures, I would start with 1 MES, get a little bit of drawdown...add another MES...oh it'll turn around...averaging in is a great strat right
+
+after 30 minutes, I'm 20 MES contracts in and blowing up
+       ---
+[    ] 2026-03-24 18:25:01 ET | ⛅│volland-daytrading-central
+       Author: nicowilliamsRW
+       Matched: 'short covering'
+       Content: That's what I'm thinking as well...short covering into month end then perhaps wiz's skew trade for April opex opens the door for downside move
+       ---
+[    ] 2026-03-25 08:14:19 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'rally'
+       Content: Like Wiz stack says, maybe we rally into Quarterly opex to rinse out off-side shorts
+       ---
+[    ] 2026-03-25 08:31:36 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'rally'
+       Content: what's interesting with this rally you can't find a buyer in MU besides that initial ramp from the news last night. Ran right into greek wall hell and sold back - @Phoenix interesting no...
+       ---
+[    ] 2026-03-25 10:50:36 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'squeeze'
+       Content: can we go squeeze out 7005 ES first?
+       ---
+[    ] 2026-03-25 11:30:02 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'bounce'
+       Content: what a bounce
+       ---
+[    ] 2026-03-25 11:30:57 ET | ⛅│volland-daytrading-central
+       Author: Hivey
+       Matched: 'bounce'
+       Content: good old v-shape bounce
+       ---
+[    ] 2026-03-25 13:35:08 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'squeeze'
+       Content: This is telling me squeeze higher coming
+       ---
+[    ] 2026-03-25 13:39:01 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'squeeze'
+       Content: Need to break 6620 to the upside and you can have a little squeeze
+       ---
+[    ] 2026-03-25 14:05:27 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'squeeze'
+       Content: Would be nice if CL rolled and Vol rolled and we got big squeeze to 6650
+       ---
+[    ] 2026-03-25 15:17:27 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'sell off'
+       Content: it is apparent though, that each little mini sell off is always getting bid back up, so Iran's words hold little weight
+       ---
+[    ] 2026-03-25 15:20:15 ET | ⛅│volland-daytrading-central
+       Author: BigBill
+       Matched: 'rally'
+       Content: https://x.com/jbulltard1/status/2036881709635899653?s=46&t=1MwekdGkV5Bqmj8HI_54tQ I think most of you are still in denial on what is happening\. Iran isn't trying to win this war, it is trying to embarrass us while simultaneously hurting our economy\. The minute our boots land, they know the regime is on the way out, so they have literally nothing to lose here\. 
+       ---
+[    ] 2026-03-26 09:56:44 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'turn'
+       Content: maybe something like this -> verbally agreed to ceasefire, we rocket temporarily -> Iran still demanding more for the real opening of the straight, people realize we didn't actually get what we wanted, we rotate back down -> potential boots on the ground out of desperation causing larger downturn in April
+       ---
+[    ] 2026-03-26 10:56:47 ET | ⛅│volland-daytrading-central
+       Author: Toto
+       Matched: 'bounce'
+       Content: sell and bounce when the market was like oh farmers
+       ---
+[    ] 2026-03-26 11:01:12 ET | ⛅│volland-daytrading-central
+       Author: Yahya Z
+       Matched: 'fear'
+       Content: 'People buy gold when they fear the future, and they sell it when they fear the present...'
+       ---
+[    ] 2026-03-26 12:53:04 ET | ⛅│volland-daytrading-central
+       Author: tomtom
+       Matched: 'reversal'
+       Content: think we have chance of reversal today :D?
+       ---
+[    ] 2026-03-27 09:16:00 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'bounce'
+       Content: `Session Summary (Updated with overnight trading)`
+
+Bias: BEARISH — sell bounces into resistance.
+
+The overnight drop shifted the entire structure lower. What was support yesterday is resistance today. Dealers are massively short and forced to sell into weakness. The VIX at 29.23 amplifies every Greek force on the bearish side. The session comes down to one level: 6,423 SPX / 6,473 ES (the Line in
+       ---
+[    ] 2026-03-27 09:57:41 ET | ⛅│volland-daytrading-central
+       Author: dauma
+       Matched: 'Squeeze'
+       Content: Hot damn. Give us that 6400. Squeeze going to be right on this one
+       ---
+[    ] 2026-03-27 11:27:10 ET | ⛅│volland-daytrading-central
+       Author: 单日转向
+       Matched: 'ViX crush'
+       Content: can ViX crush today ?
+       ---
+[    ] 2026-03-27 12:41:22 ET | ⛅│volland-daytrading-central
+       Author: Dark Matter
+       Matched: 'bounce'
+       Content: i would like to see a bounce, @Phoenix is calling for this area, i personally think there is more but not before some kind of bounce. after this it's a bit back to trade level to level again.
+       ---
+[    ] 2026-03-27 13:22:08 ET | ⛅│volland-daytrading-central
+       Author: dauma
+       Matched: 'Squeeze'
+       Content: Squeeze wins today lol
+       ---
+[    ] 2026-03-27 14:26:21 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'turn'
+       Content: They are trying to turn the boat lol
+       ---
+[    ] 2026-03-27 14:27:33 ET | ⛅│volland-daytrading-central
+       Author: A p o l l o
+       Matched: 'rally'
+       Content: can be a good rally if it pops
+       ---
+[    ] 2026-03-27 14:52:37 ET | ⛅│volland-daytrading-central
+       Author: suttonb3
+       Matched: 'rally'
+       Content: Me too. And my commuter is full electric so I literally power my car from the sun. I'm such a nerd, but I love it
+       ---
+
+========================================================================================================================
+SUMMARY
+========================================================================================================================
+Total unique matches: 479
+Expert messages: 121
+High relevance: 108
+Other matches: 250
+
+Keyword frequency:
+  rally: 90
+  overvix: 60
+  bounce: 52
+  squeeze: 39
+  turn: 39
+  vol event: 36
+  bottom: 20
+  pivot: 17
+  vol crush: 14
+  panic: 14
+  vix3m: 8
+  sell off: 8
+  reversal: 7
+  selloff: 7
+  mean reversion: 6
+  vix crush: 6
+  backwardation: 5
+  vol spike: 5
+  contango: 4
+  capitulat: 4
+  mean revert: 3
+  long here: 3
+  short squeeze: 3
+  vix spike: 3
+  flush: 3
+  fear: 3
+  inflect: 2
+  liquidat: 2
+  vvix: 2
+  buy the dip: 2
+
+Expert author frequency:
+  Wizard of Ops: 38
+  Phoenix: 37
+  LordHelmet: 22
+  Zack: 13
+  TheEdge: 10
+  Jill aka Mrs. Wizard of Ops: 1
+
+Dates with most HIGH RELEVANCE messages:
+  2026-03-06: 18
+  2026-03-27: 14
+  2026-03-03: 13
+  2026-03-04: 11
+  2026-03-20: 11
+  2026-03-09: 9
+  2026-03-10: 8
+  2026-03-02: 5
+  2026-03-05: 5
+  2026-03-13: 5
+  2026-03-17: 5
+  2026-03-26: 5
+  2026-02-04: 4
+  2026-03-25: 4
+  2026-02-11: 3

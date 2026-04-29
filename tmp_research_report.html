@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>V12 Gap-Up Longs Filter Study</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    background: #0a0e17;
+    color: #c8d6e5;
+    line-height: 1.7;
+    padding: 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .report-header {
+    text-align: center;
+    padding: 2rem 0 1.5rem;
+    border-bottom: 1px solid #1a2a3a;
+    margin-bottom: 2rem;
+  }
+  .report-header h1 { color: #f5f6fa; font-size: 2.2rem; font-weight: 700; margin-bottom: 0.3rem; }
+  .report-header .subtitle { color: #778ca3; font-size: 0.95rem; }
+  .report-header .tag {
+    display: inline-block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 4px 14px;
+    border-radius: 20px;
+    margin-top: 0.8rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .tag-green { background: #6ab04c22; color: #6ab04c; }
+  .tag-red { background: #eb4d4b22; color: #eb4d4b; }
+
+  h2 { color: #00d2ff; font-size: 1.35rem; font-weight: 600; margin: 2.5rem 0 1rem; border-bottom: 1px solid #1a2a3a; padding-bottom: 0.4rem; }
+  h3 { color: #ffd32a; font-size: 1.05rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+  p { margin-bottom: 0.8rem; }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .kpi-card {
+    background: #111927;
+    border: 1px solid #1a2a3a;
+    border-radius: 10px;
+    padding: 1.2rem 1rem;
+    text-align: center;
+  }
+  .kpi-card .label { color: #778ca3; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 500; }
+  .kpi-card .value { font-family: 'JetBrains Mono', monospace; font-size: 1.8rem; font-weight: 700; margin: 0.3rem 0; }
+  .kpi-card .note { color: #778ca3; font-size: 0.75rem; }
+  .value-green { color: #6ab04c; }
+  .value-red { color: #eb4d4b; }
+  .value-gold { color: #ffd32a; }
+  .value-cyan { color: #00d2ff; }
+  .value-white { color: #f5f6fa; }
+
+  .finding-card {
+    background: #111927;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    border-left: 4px solid;
+  }
+  .finding-critical { border-color: #eb4d4b; }
+  .finding-positive { border-color: #6ab04c; }
+  .finding-warning { border-color: #f9ca24; }
+  .finding-info { border-color: #00d2ff; }
+  .finding-card h3 { margin-top: 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+  th { color: #00d2ff; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; padding: 0.7rem 0.8rem; text-align: left; border-bottom: 2px solid #1a2a3a; font-weight: 600; }
+  td { font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; padding: 0.6rem 0.8rem; border-bottom: 1px solid #1a2a3a; }
+  tr:hover { background: #111927; }
+  tr.highlight-row { background: #0f3460; }
+  .win { color: #6ab04c; font-weight: 600; }
+  .loss { color: #eb4d4b; font-weight: 600; }
+  .neutral { color: #ffd32a; }
+
+  .callout {
+    background: #1a2a3a;
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    margin: 1rem 0;
+    border-left: 3px solid #00d2ff;
+  }
+  .callout-warn { border-left-color: #f9ca24; background: #1a2a1a; }
+  .callout-danger { border-left-color: #eb4d4b; background: #2a1a1a; }
+  .callout .label { color: #00d2ff; font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.3rem; }
+  .callout-warn .label { color: #f9ca24; }
+  .callout-danger .label { color: #eb4d4b; }
+
+  .bar-container { display: flex; align-items: center; gap: 0.8rem; margin: 0.5rem 0; }
+  .bar-label { width: 90px; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: #778ca3; text-align: right; }
+  .bar-track { flex: 1; height: 26px; background: #0d1520; border-radius: 6px; overflow: hidden; position: relative; }
+  .bar-fill { height: 100%; border-radius: 6px; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 600; color: #fff; min-width: 45px; }
+  .bar-green { background: linear-gradient(90deg, #2d6a4f, #6ab04c); }
+  .bar-red { background: linear-gradient(90deg, #6b2020, #eb4d4b); }
+  .bar-gold { background: linear-gradient(90deg, #5a4a00, #f9ca24); }
+  .bar-cyan { background: linear-gradient(90deg, #0a4a6e, #00d2ff); }
+  .bar-value { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; min-width: 70px; }
+
+  .vs-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0; margin: 1.5rem 0; align-items: stretch; }
+  .vs-card { background: #111927; border: 1px solid #1a2a3a; border-radius: 10px; padding: 1.5rem; text-align: center; }
+  .vs-card.bad { border-color: #eb4d4b33; }
+  .vs-card.good { border-color: #6ab04c33; }
+  .vs-divider { display: flex; align-items: center; justify-content: center; padding: 0 1rem; color: #3a4a5a; font-weight: 700; font-size: 1.2rem; }
+
+  .rec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+  .rec-card { background: #111927; border: 1px solid #1a2a3a; border-radius: 10px; padding: 1.5rem; }
+  .rec-card.preferred { border-color: #6ab04c; box-shadow: 0 0 20px #6ab04c15; }
+  .rec-badge { display: inline-block; font-size: 0.7rem; font-weight: 600; padding: 3px 10px; border-radius: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.8rem; }
+  .badge-green { background: #6ab04c22; color: #6ab04c; }
+  .badge-red { background: #eb4d4b22; color: #eb4d4b; }
+  .badge-gold { background: #ffd32a22; color: #ffd32a; }
+
+  .diagram {
+    background: #0d1520;
+    border: 1px solid #1a2a3a;
+    border-radius: 8px;
+    padding: 1.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.9;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 1rem 0;
+    color: #b0bec5;
+  }
+
+  /* ── Decision Tree / Flowchart ── */
+  .flowchart { display: flex; flex-direction: column; align-items: center; margin: 2rem 0; }
+  .fc-node {
+    background: #111927;
+    border: 2px solid #1a2a3a;
+    border-radius: 12px;
+    padding: 0.8rem 1.5rem;
+    text-align: center;
+    font-size: 0.92rem;
+    font-weight: 600;
+    position: relative;
+    max-width: 320px;
+    width: 100%;
+  }
+  .fc-node.decision {
+    border-color: #00d2ff;
+    background: #0a1a2e;
+    transform: rotate(0deg);
+    border-radius: 4px;
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+    padding: 2rem 2.5rem;
+    min-height: 90px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 260px;
+  }
+  .fc-node.action-block { border-color: #eb4d4b; background: #2a1a1a; }
+  .fc-node.action-allow { border-color: #6ab04c; background: #1a2a1a; }
+  .fc-node.action-neutral { border-color: #ffd32a; background: #2a2a1a; }
+  .fc-node.start { border-color: #778ca3; border-radius: 30px; background: #111927; }
+
+  .fc-arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.3rem 0;
+    color: #3a4a5a;
+  }
+  .fc-arrow .arrow-line { width: 2px; height: 20px; background: #3a4a5a; }
+  .fc-arrow .arrow-head { font-size: 0.9rem; line-height: 1; }
+
+  .fc-branch {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    width: 100%;
+    max-width: 700px;
+    position: relative;
+  }
+  .fc-branch-side {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+  }
+  .fc-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 10px;
+    margin-bottom: 0.3rem;
+  }
+  .fc-label-yes { color: #6ab04c; background: #6ab04c15; }
+  .fc-label-no { color: #eb4d4b; background: #eb4d4b15; }
+
+  .fc-connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 700px;
+    position: relative;
+    height: 30px;
+  }
+  .fc-connector::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 25%;
+    right: 25%;
+    height: 2px;
+    background: #3a4a5a;
+  }
+  .fc-connector::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 25%;
+    width: 2px;
+    height: 30px;
+    background: #3a4a5a;
+  }
+  .fc-connector-right::after {
+    left: auto;
+    right: 25%;
+  }
+
+  .fc-sub-branch {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    width: 100%;
+  }
+  .fc-sub-side {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+  }
+
+  .fc-result {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: #778ca3;
+    margin-top: 0.3rem;
+  }
+
+  .timeline { position: relative; padding-left: 2rem; margin: 1.5rem 0; }
+  .timeline::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: #1a2a3a; }
+  .timeline-item { position: relative; margin-bottom: 1.5rem; }
+  .timeline-item::before { content: ''; position: absolute; left: -1.65rem; top: 6px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid; }
+  .timeline-item.step-done::before { border-color: #6ab04c; background: #6ab04c33; }
+  .timeline-item.step-active::before { border-color: #00d2ff; background: #00d2ff33; }
+  .timeline-item .step-label { color: #778ca3; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; }
+  .timeline-item .step-title { color: #f5f6fa; font-weight: 600; margin: 0.2rem 0; }
+  .timeline-item .step-detail { font-size: 0.88rem; }
+
+  .report-footer { text-align: center; color: #3a4a5a; font-size: 0.78rem; font-style: italic; margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #1a2a3a; }
+
+  @media (max-width: 700px) {
+    body { padding: 1rem; }
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .rec-grid { grid-template-columns: 1fr; }
+    .vs-grid { grid-template-columns: 1fr; }
+    .vs-divider { padding: 0.5rem 0; }
+    .report-header h1 { font-size: 1.6rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ HEADER ============ -->
+<div class="report-header">
+  <h1>V12: Gap-Up Longs Filter</h1>
+  <div class="subtitle">Filter Evolution Study &middot; Deployed Mar 25, 2026 &middot; V11 &rarr; V12</div>
+  <div class="tag tag-green">Deployed &mdash; SIM + E2T + Real</div>
+</div>
+
+<!-- ============ THE PROBLEM ============ -->
+<h2>The Problem</h2>
+
+<div class="finding-card finding-critical">
+  <h3>Longs on Gap-Up Days Are Losers</h3>
+  <p>When SPX gaps up &gt;30 pts at open, the move has <strong>already happened</strong>. Longs are chasing into resistance &mdash; buying the top of an overnight gap that institutional sellers are fading.</p>
+  <p style="margin-bottom:0;">Backtest found <strong>112 long trades</strong> on gap-up days with only <span class="loss">38% win rate</span> and <span class="loss">-290.9 pts</span> of losses.</p>
+</div>
+
+<!-- ============ KPI OVERVIEW ============ -->
+<h2>Impact at a Glance</h2>
+
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="label">Longs Blocked</div>
+    <div class="value value-red">112</div>
+    <div class="note">on gap-up days</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Blocked WR</div>
+    <div class="value value-red">38%</div>
+    <div class="note">losing trades</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">PnL Saved</div>
+    <div class="value value-green">+290.9</div>
+    <div class="note">pts of losses avoided</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Shorts Kept</div>
+    <div class="value value-green">+103</div>
+    <div class="note">pts on gap-up days</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Gap Threshold</div>
+    <div class="value value-gold">&gt;30</div>
+    <div class="note">pts (open - prev close)</div>
+  </div>
+</div>
+
+<!-- ============ DECISION TREE ============ -->
+<h2>V12 Gap Filter &mdash; Decision Tree</h2>
+
+<div class="flowchart">
+
+  <!-- START -->
+  <div class="fc-node start" style="color:#f5f6fa;">New Signal Fires</div>
+  <div class="fc-arrow"><div class="arrow-line"></div><div class="arrow-head">&#9660;</div></div>
+
+  <!-- Q1: Is there a gap? -->
+  <div class="fc-node" style="border-color:#00d2ff; background:#0a1a2e;">
+    <span style="color:#00d2ff;">Is there a gap today?</span><br>
+    <span style="font-size:0.78rem; color:#778ca3; font-weight:400;">open &minus; prev close &ne; 0</span>
+  </div>
+
+  <!-- Branch: No gap / Yes gap -->
+  <div style="display:flex; width:100%; max-width:700px; margin-top:0.3rem;">
+    <!-- NO branch -->
+    <div style="flex:1; display:flex; flex-direction:column; align-items:center;">
+      <div class="fc-label fc-label-no">NO</div>
+      <div style="width:2px; height:15px; background:#3a4a5a;"></div>
+      <div class="fc-node action-allow" style="max-width:200px;">
+        <span style="color:#6ab04c;">Normal Trading</span><br>
+        <span style="font-size:0.78rem; color:#778ca3; font-weight:400;">All V11 rules apply</span>
+      </div>
+    </div>
+
+    <!-- YES branch -->
+    <div style="flex:1; display:flex; flex-direction:column; align-items:center;">
+      <div class="fc-label fc-label-yes">YES</div>
+      <div style="width:2px; height:15px; background:#3a4a5a;"></div>
+      <div class="fc-arrow"><div class="arrow-head">&#9660;</div></div>
+
+      <!-- Q2: Gap > +30 pts UP? -->
+      <div class="fc-node" style="border-color:#00d2ff; background:#0a1a2e;">
+        <span style="color:#00d2ff;">Gap-up &gt; +30 pts?</span><br>
+        <span style="font-size:0.78rem; color:#778ca3; font-weight:400;">open &minus; prev close &gt; +30</span>
+      </div>
+
+      <div style="display:flex; width:100%; margin-top:0.3rem;">
+        <!-- NO branch -->
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center;">
+          <div class="fc-label fc-label-no">NO</div>
+          <div style="width:2px; height:15px; background:#3a4a5a;"></div>
+          <div class="fc-node action-allow" style="max-width:190px;">
+            <span style="color:#6ab04c;">Normal V11 Rules</span><br>
+            <span style="font-size:0.75rem; color:#778ca3; font-weight:400;">No gap filter applied</span>
+          </div>
+        </div>
+
+        <!-- YES: gap-up > 30 -->
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center;">
+          <div class="fc-label fc-label-yes">YES</div>
+          <div style="width:2px; height:15px; background:#3a4a5a;"></div>
+          <div class="fc-arrow"><div class="arrow-head">&#9660;</div></div>
+
+          <!-- Q3: Signal direction? -->
+          <div class="fc-node" style="border-color:#ffd32a; background:#1a1a0a;">
+            <span style="color:#ffd32a;">Signal direction?</span>
+          </div>
+
+          <div style="display:flex; width:100%; margin-top:0.3rem;">
+            <!-- SHORT -->
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center;">
+              <div class="fc-label" style="color:#00d2ff; background:#00d2ff15;">SHORT</div>
+              <div style="width:2px; height:15px; background:#3a4a5a;"></div>
+              <div class="fc-node action-allow" style="max-width:160px;">
+                <span style="color:#6ab04c;">ALLOW</span><br>
+                <span style="font-size:0.72rem; color:#778ca3; font-weight:400;">Fading the gap = correct side</span>
+              </div>
+              <div class="fc-result"><span class="win">+103 pts on gap-up days</span></div>
+            </div>
+
+            <!-- LONG -->
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center;">
+              <div class="fc-label" style="color:#eb4d4b; background:#eb4d4b15;">LONG</div>
+              <div style="width:2px; height:15px; background:#3a4a5a;"></div>
+              <div class="fc-node action-block" style="max-width:160px;">
+                <span style="color:#eb4d4b; font-size:1.05rem;">BLOCK</span><br>
+                <span style="font-size:0.72rem; color:#eb4d4b; font-weight:400;">All day, all setups</span>
+              </div>
+              <div class="fc-result"><span class="loss">112t, 38% WR, -290.9 pts</span></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<div class="callout" style="margin-top:0.5rem;">
+  <div class="label">Implementation</div>
+  <p><code style="background:#1a2a3a; padding:2px 6px; border-radius:3px; color:#ffd32a;">_compute_daily_gap()</code> runs once per day from <code style="background:#1a2a3a; padding:2px 6px; border-radius:3px; color:#ffd32a;">chain_snapshots</code> (yesterday's last price vs today's first snapshot). Gap value checked by <code style="background:#1a2a3a; padding:2px 6px; border-radius:3px; color:#ffd32a;">_passes_live_filter()</code> for every long signal.</p>
+</div>
+
+<!-- ============ LONGS vs SHORTS ON GAP-UP ============ -->
+<h2>Gap-Up Days: Longs vs Shorts</h2>
+
+<div class="vs-grid">
+  <div class="vs-card bad">
+    <div class="rec-badge badge-red">Blocked by V12</div>
+    <h3 style="color:#eb4d4b; margin-top:0.5rem;">Longs on Gap-Up</h3>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:2rem; font-weight:700; color:#eb4d4b; margin:0.5rem 0;">38% WR</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.3rem; color:#eb4d4b;">-290.9 pts</div>
+    <p style="font-size:0.82rem; color:#778ca3; margin-top:0.5rem;">112 trades &middot; chasing resistance</p>
+  </div>
+  <div class="vs-divider">VS</div>
+  <div class="vs-card good">
+    <div class="rec-badge badge-green">Kept Enabled</div>
+    <h3 style="color:#6ab04c; margin-top:0.5rem;">Shorts on Gap-Up</h3>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:2rem; font-weight:700; color:#6ab04c; margin:0.5rem 0;">Profitable</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.3rem; color:#6ab04c;">+103 pts</div>
+    <p style="font-size:0.82rem; color:#778ca3; margin-top:0.5rem;">Trading the correct side of the gap</p>
+  </div>
+</div>
+
+<!-- ============ WHY +30 PTS ============ -->
+<h2>Why +30 Points?</h2>
+
+<p>The threshold was chosen to avoid false positives (small gaps that don't create resistance) while catching material overnight moves:</p>
+
+<div style="margin: 1rem 0;">
+  <div class="bar-container">
+    <div class="bar-label">&lt; 10 pts</div>
+    <div class="bar-track"><div class="bar-fill bar-green" style="width: 55%;">~55% WR</div></div>
+    <div class="bar-value win">Normal</div>
+  </div>
+  <div class="bar-container">
+    <div class="bar-label">10-20 pts</div>
+    <div class="bar-track"><div class="bar-fill bar-gold" style="width: 48%;">~48% WR</div></div>
+    <div class="bar-value neutral">Edge case</div>
+  </div>
+  <div class="bar-container">
+    <div class="bar-label">20-30 pts</div>
+    <div class="bar-track"><div class="bar-fill bar-gold" style="width: 42%;">~42% WR</div></div>
+    <div class="bar-value neutral">Declining</div>
+  </div>
+  <div class="bar-container">
+    <div class="bar-label" style="color:#eb4d4b; font-weight:600;">&gt; 30 pts</div>
+    <div class="bar-track"><div class="bar-fill bar-red" style="width: 38%;">38% WR</div></div>
+    <div class="bar-value loss">Blocked &darr;</div>
+  </div>
+</div>
+
+<div class="callout callout-warn">
+  <div class="label">Design Choice</div>
+  <p>The filter is <strong>all-day</strong>, not just first 30 minutes. Gap-up resistance persists throughout the entire session because institutional sellers use the elevated level to distribute all day. Early morning entry (09:30-10:00) is the worst, but even afternoon longs on gap-up days underperform.</p>
+</div>
+
+<!-- ============ V11 → V12 COMPARISON ============ -->
+<h2>V11 &rarr; V12 Performance</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Metric</th>
+      <th>V11</th>
+      <th>V12</th>
+      <th>Delta</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Total Trades</td>
+      <td>611</td>
+      <td class="value-cyan">499</td>
+      <td class="neutral">-112</td>
+    </tr>
+    <tr>
+      <td>Win Rate</td>
+      <td>~58%</td>
+      <td class="win">64%</td>
+      <td class="win">+6%</td>
+    </tr>
+    <tr class="highlight-row">
+      <td>Net PnL</td>
+      <td>~+988</td>
+      <td class="win">+1,278.5</td>
+      <td class="win">+290.5</td>
+    </tr>
+    <tr>
+      <td>Gap-Up Longs</td>
+      <td>112 (38% WR)</td>
+      <td class="win">Blocked</td>
+      <td class="win">+290.9 saved</td>
+    </tr>
+    <tr>
+      <td>Shorts</td>
+      <td colspan="2" style="text-align:center;">Unchanged</td>
+      <td>&mdash;</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============ FOMC FINDING ============ -->
+<h2>Bonus Finding: FOMC Filter Rejected</h2>
+
+<div class="finding-card finding-positive">
+  <h3>FOMC Was the Best Day</h3>
+  <p>An FOMC event filter was also tested alongside the gap study. Result: <strong>FOMC day was the single best trading day</strong> in the entire backtest period.</p>
+  <div class="kpi-grid" style="margin-top:1rem;">
+    <div class="kpi-card">
+      <div class="label">FOMC Day PnL</div>
+      <div class="value value-green" style="font-size:1.4rem;">+134</div>
+      <div class="note">pts (best day)</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">FOMC Day WR</div>
+      <div class="value value-green" style="font-size:1.4rem;">60.5%</div>
+      <div class="note">well above average</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">If Blocked</div>
+      <div class="value value-red" style="font-size:1.4rem;">-134</div>
+      <div class="note">pts lost</div>
+    </div>
+  </div>
+</div>
+
+<div class="callout">
+  <div class="label">Key Insight</div>
+  <p>Our system is <strong>contrarian by design</strong> &mdash; it thrives on the volatility that FOMC creates. Discord traders avoid FOMC. Backtesting their recommendation would cost <span class="loss">-130.9 pts</span>. We do the opposite and profit.</p>
+</div>
+
+<!-- ============ FILTER EVOLUTION ============ -->
+<h2>Filter Evolution Timeline</h2>
+
+<div class="timeline">
+  <div class="timeline-item step-done">
+    <div class="step-label">Feb 2026</div>
+    <div class="step-title">R1 &rarr; Option B &rarr; V7</div>
+    <div class="step-detail">Initial filter development. Alignment gates, basic direction rules.</div>
+  </div>
+  <div class="timeline-item step-done">
+    <div class="step-label">Early Mar</div>
+    <div class="step-title">V7+AG &rarr; V8</div>
+    <div class="step-detail">Smart VIX gate. Longs: align &ge;2 + VIX&le;26 or overvix&ge;+2. Shorts whitelist.</div>
+  </div>
+  <div class="timeline-item step-done">
+    <div class="step-label">Mid Mar</div>
+    <div class="step-title">V9-SC &rarr; V10</div>
+    <div class="step-detail">SC grade gate (A+/A/B only). VIX threshold 26&rarr;22. Paradigm gate for SC/DD shorts.</div>
+  </div>
+  <div class="timeline-item step-done">
+    <div class="step-label">Late Mar</div>
+    <div class="step-title">V11</div>
+    <div class="step-detail">Time gates: SC/DD blocked 14:30-15:00 + 15:30+. BofA blocked after 14:30. -37% MaxDD.</div>
+  </div>
+  <div class="timeline-item step-active">
+    <div class="step-label">Mar 25 &mdash; Current</div>
+    <div class="step-title">V12 (Gap-Up Longs)</div>
+    <div class="step-detail">Gap &gt;+30 blocks ALL longs. +290.9 pts saved. 499 trades, 64% WR, +1,278.5 PnL.</div>
+  </div>
+</div>
+
+<!-- ============ V12 COMPLETE RULESET ============ -->
+<h2>V12 Complete Ruleset</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Rule</th>
+      <th>Applies To</th>
+      <th>Source</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="background:#6ab04c11;">
+      <td style="color:#6ab04c; font-weight:600;">Gap &gt;+30 &rarr; block ALL longs</td>
+      <td>All long setups</td>
+      <td class="neutral">V12 NEW</td>
+    </tr>
+    <tr>
+      <td>Alignment &ge; +2 for longs</td>
+      <td>All long setups</td>
+      <td>V10</td>
+    </tr>
+    <tr>
+      <td>VIX &le; 22 OR overvix &ge; +2 (SC exempt)</td>
+      <td>Longs (except SC)</td>
+      <td>V10</td>
+    </tr>
+    <tr>
+      <td>Shorts whitelist: SC (all), AG (all), DD (align&ne;0)</td>
+      <td>Short setups</td>
+      <td>V10</td>
+    </tr>
+    <tr>
+      <td>SC/DD shorts blocked when paradigm = GEX-LIS</td>
+      <td>SC, DD shorts</td>
+      <td>V10</td>
+    </tr>
+    <tr>
+      <td>SC grade gate: A+/A/B only</td>
+      <td>Skew Charm</td>
+      <td>V11</td>
+    </tr>
+    <tr>
+      <td>SC/DD blocked 14:30-15:00 ET</td>
+      <td>SC, DD</td>
+      <td>V11</td>
+    </tr>
+    <tr>
+      <td>SC/DD blocked 15:30+ ET</td>
+      <td>SC, DD</td>
+      <td>V11</td>
+    </tr>
+    <tr>
+      <td>BofA blocked after 14:30 ET</td>
+      <td>BofA Scalp</td>
+      <td>V11</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============ LIVE VALIDATION ============ -->
+<h2>Live Validation (Mar 25-27)</h2>
+
+<div class="finding-card finding-positive">
+  <h3>First Live Day: Mar 25</h3>
+  <p>Gap computed as <strong>+64.2 pts</strong> &mdash; well above threshold. All longs correctly blocked for the day. Shorts traded normally and captured the gap fade. Two deployment bugs caught and fixed same session (gap SQL column, SPY DD routing).</p>
+</div>
+
+<div class="callout">
+  <div class="label">Copilot Rule #1 (from Mar 27 analysis)</div>
+  <p><strong>Gap &gt;+30 AND bearish paradigm = SHORT bias immediately.</strong> Don't wait for DD confirmation &mdash; the move is already happening. Validated: Apollo shorted at 09:48 right on gap-up signal.</p>
+</div>
+
+<!-- ============ FOOTER ============ -->
+<div class="report-footer">
+  0DTE Alpha &middot; Confidential Trading Research &middot; Generated Mar 28, 2026
+</div>
+
+</body>
+</html>

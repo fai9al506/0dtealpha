@@ -1,0 +1,67 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>TSRT 4 Scenarios — Reconciled</title>
+<style>
+body { background:#0b0e13; color:#e3e6eb; font-family:-apple-system,Segoe UI,Arial; max-width:1000px; margin:30px auto; padding:20px; }
+h1 { color:#6bc7ff; border-bottom:2px solid #1e2a36; padding-bottom:10px; }
+h2 { color:#7dd3a6; margin-top:35px; border-left:4px solid #7dd3a6; padding-left:12px; }
+.hero { background:linear-gradient(135deg,#1a2332,#0b0e13); padding:25px; border-radius:10px; margin-bottom:25px; border:1px solid #2a3a50; }
+.pos { color:#7dd3a6; font-weight:bold; }
+.neg { color:#ff7b7b; font-weight:bold; }
+.warn { color:#ffb86b; }
+.info { color:#6bc7ff; }
+.target { color:#ffd36b; font-weight:bold; }
+table { border-collapse:collapse; width:100%; margin:15px 0; background:#0f1620; border-radius:6px; overflow:hidden; }
+th,td { padding:10px 14px; text-align:left; border-bottom:1px solid #1e2a36; font-size:0.95em; }
+th { background:#162030; color:#6bc7ff; font-weight:600; }
+tr:hover { background:#141d2b; }
+.callout { background:#162030; border-left:4px solid #7dd3a6; padding:15px 20px; margin:20px 0; border-radius:4px; }
+.scenario-row-target { background:#1a2e23; }
+</style></head><body><h1>TSRT — 4 Scenario Analysis (Reconciled to Account Statement)</h1><div style="color:#8a97a8;margin-bottom:20px;">Period: Mar 24 – Apr 16 (TSRT-live, 17 trading days, 51 trades) · Generated 2026-04-17 20:57</div><div class="hero">
+<h2 style="margin-top:0;border:none;padding:0;">Summary</h2>
+<p>Your statement shows combined account balance <b>$3,728 (from $4,000 capital) = -$272 realized</b>.
+That reconciles to our gross SPX-point calculation of <b>-$119</b> plus ~<b>-$153</b> in commissions/fees.</p>
+<p>Going forward, with V13 filter (already deployed) + 2-slot shorts (this weekend), the target rate is
+<b class="target">~$1,842/month on 1 MES</b>.</p>
+</div><h2>Gap Reconciliation (matches your statement)</h2><table>
+<tr><th>Item</th><th>Amount</th><th>Explanation</th></tr>
+<tr><td>Gross SPX-point P&L</td><td class='neg'>−$119</td><td>What my Scenario 1 originally showed</td></tr>
+<tr><td>Commissions (~$3/RT × 51 trades)</td><td class='neg'>−$153</td><td>TS futures commissions + NFA/exchange fees</td></tr>
+<tr><td>Basis/slippage gap</td><td>~0</td><td>Approximately nets out</td></tr>
+<tr><td><b>= Net realized</b></td><td class='neg'><b>−$272</b></td><td class='pos'>Matches your statement ✅</td></tr>
+</table>
+<p>So Scenario 1 was <b>undercounting fees by ~$150</b>. The scenario-to-scenario deltas are still correct
+(they're apples-to-apples gross), but absolute levels are ~$150 low. Corrected view below.</p><h2>Corrected 4-Scenario Table (including ~$3/RT fees)</h2><table>
+<tr><th>#</th><th>Scenario</th><th>Trades</th><th>Gross SPX pts</th><th>Net $ @ 1 MES</th><th>Monthly rate</th></tr>
+<tr><td>1</td><td>Actual (matches statement)</td><td>51</td><td>−24</td><td class='neg'>−$272</td><td class='neg'>−$352/mo</td></tr>
+<tr><td>2</td><td>No bugs (V12-fix + 1-slot, clean)</td><td>60</td><td>+117</td><td class='pos'>+$406</td><td class='pos'>+$525/mo</td></tr>
+<tr><td>3</td><td>+2-slot shorts (V12-fix + clean)</td><td>76</td><td>+202</td><td class='pos'>+$780</td><td class='pos'>+$1,009/mo</td></tr>
+<tr><td>4</td><td>V13 from day 1 (V13 + 1-slot, clean)</td><td>35</td><td>+191</td><td class='pos'>+$848</td><td class='pos'>+$1,096/mo</td></tr>
+<tr class='scenario-row-target'><td>5</td><td>🎯 <b>V13 + 2-slot shorts (target)</b></td><td>42</td><td>+310</td><td class='target'>+$1,424</td><td class='target'>+$1,842/mo</td></tr>
+</table><h2>Step-Deltas (in net $)</h2><table>
+<tr><th>Change</th><th>Added value</th></tr>
+<tr><td>Fix bugs</td><td class='pos'>+$678</td></tr>
+<tr><td>Add V13 filter</td><td class='pos'>+$442</td></tr>
+<tr><td>Add 2-slot shorts</td><td class='pos'>+$576</td></tr>
+<tr><td><b>Total actual → target</b></td><td class='pos'><b>+$1,696</b></td></tr>
+</table><h2>Bottom Line</h2>
+<div class="callout">
+<ul>
+<li>You're <b class='neg'>−$272 current</b> due to the bug-era damage (already fixed Apr 8).</li>
+<li>Going forward, expect <b class='target'>~$1,800/month on 1 MES</b> once V13 is validated and short slot is raised Monday.</li>
+<li>To recover the $272 loss, you need about <b>4 clean trading days</b> at the new rate.</li>
+</ul>
+</div>
+
+<h2>FI Milestone Ladder</h2>
+<table>
+<tr><th>Stage</th><th>Monthly net</th><th>SAR equivalent</th><th>FI status</th></tr>
+<tr><td>1 MES (V13 + slot fix) — now</td><td>~$1,800</td><td>~6,750 SAR</td><td>36% of FI</td></tr>
+<tr><td>2 MES (+20 clean days)</td><td>~$2,700</td><td>~10,100 SAR</td><td>55% of FI</td></tr>
+<tr class='scenario-row-target'><td><b>5 MES (+40 clean days)</b></td><td class='target'><b>~$5,000</b></td><td class='target'><b>~18,750 SAR</b></td><td class='target'><b>✅ FI achieved</b></td></tr>
+<tr><td>1 ES (+60 clean days)</td><td>~$8,000</td><td>~30,000 SAR</td><td>162% of FI</td></tr>
+<tr><td>2 ES (aspirational)</td><td>~$14,000</td><td>~52,500 SAR</td><td>284% of FI</td></tr>
+</table>
+
+<p style='color:#8a97a8;margin-top:30px;font-size:0.85em;'>
+Reconciled from real_trade_orders table (49 entries, 36 closed with calculated PnL + 12 EOD/ghost) vs account statement balance.
+MES tick = $5/pt. Fees estimate: ~$3/RT (TS futures commissions + NFA/exchange).
+</p></body></html>

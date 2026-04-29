@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TSRT Reality Check — Mar 24 → Apr 22</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #0b0d12;
+    background-image:
+      radial-gradient(1px 1px at 20px 30px, rgba(255,255,255,0.03) 50%, transparent 51%),
+      radial-gradient(1px 1px at 60px 70px, rgba(255,255,255,0.03) 50%, transparent 51%);
+    background-size: 80px 80px;
+    color: #e8ecf1;
+    line-height: 1.55;
+    padding: 40px 28px;
+    max-width: 980px;
+    margin: 0 auto;
+  }
+  .hdr {
+    border-bottom: 1px solid #1f2530;
+    padding-bottom: 20px;
+    margin-bottom: 28px;
+  }
+  .tag {
+    display: inline-block;
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 11px;
+    color: #6fa8ff;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  h1 {
+    font-size: 30px;
+    font-weight: 700;
+    color: #f5f7fa;
+    letter-spacing: -0.3px;
+    margin-bottom: 6px;
+  }
+  .sub {
+    color: #8a94a6;
+    font-size: 14px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #f5f7fa;
+    margin: 32px 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1f2530;
+  }
+  h3 { font-size: 15px; font-weight: 600; color: #d8dee8; margin: 20px 0 10px; }
+  p { margin-bottom: 12px; font-size: 14px; color: #c6ccd8; }
+  .lede {
+    background: linear-gradient(135deg, rgba(72,187,120,0.08), rgba(72,187,120,0.02));
+    border-left: 3px solid #48bb78;
+    padding: 16px 20px;
+    margin: 18px 0 24px;
+    border-radius: 4px;
+  }
+  .lede strong { color: #a0e4b5; }
+
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin: 20px 0 28px;
+  }
+  .kpi {
+    background: #11151c;
+    border: 1px solid #1f2530;
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .kpi-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #6a7386;
+    margin-bottom: 6px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .kpi-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: #f5f7fa;
+  }
+  .kpi-val.green { color: #48bb78; }
+  .kpi-val.red { color: #f56565; }
+  .kpi-val.amber { color: #f6ad55; }
+  .kpi-sub { font-size: 11px; color: #6a7386; margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 16px;
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  th {
+    background: #11151c;
+    color: #8a94a6;
+    text-align: left;
+    padding: 10px 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-size: 10px;
+    border-bottom: 1px solid #1f2530;
+  }
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #181c24;
+    color: #c6ccd8;
+  }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:hover td { background: #0f131a; }
+  .green { color: #48bb78; }
+  .red { color: #f56565; }
+  .amber { color: #f6ad55; }
+  .muted { color: #6a7386; }
+
+  .callout {
+    background: #11151c;
+    border: 1px solid #1f2530;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+  }
+  .callout.warn { border-left: 3px solid #f6ad55; }
+  .callout.danger { border-left: 3px solid #f56565; }
+  .callout.ok { border-left: 3px solid #48bb78; }
+  .callout h4 { font-size: 13px; color: #f5f7fa; margin-bottom: 8px; font-weight: 600; }
+  .callout p { font-size: 13px; margin-bottom: 6px; }
+
+  ul { list-style: none; padding: 0; margin: 10px 0 16px; }
+  li {
+    padding: 6px 0 6px 20px;
+    position: relative;
+    font-size: 13px;
+    color: #c6ccd8;
+  }
+  li::before {
+    content: '▸';
+    position: absolute;
+    left: 0;
+    color: #6fa8ff;
+  }
+
+  .timeline {
+    display: flex;
+    align-items: stretch;
+    margin: 20px 0;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .phase {
+    flex: 1;
+    padding: 14px 12px;
+    text-align: center;
+    font-size: 12px;
+    position: relative;
+  }
+  .phase-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px; }
+  .phase-days { font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 4px 0; opacity: 0.6; }
+  .phase-val { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; margin-top: 4px; }
+  .phase.bug { background: #3b1f26; color: #fca5a5; }
+  .phase.bugfix { background: #3b2f1f; color: #fcd34d; }
+  .phase.flat { background: #1f2d3b; color: #93c5fd; }
+  .phase.v13 { background: #1f3b2a; color: #86efac; }
+
+  .footer {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid #1f2530;
+    font-size: 11px;
+    color: #6a7386;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: #1a1f29;
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: #a0e4b5;
+  }
+
+  .err-box {
+    background: #2a1a1f;
+    border: 1px solid #5c2e3a;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+  }
+  .err-box h4 { color: #fca5a5; font-size: 13px; margin-bottom: 10px; }
+  .err-box ol { margin-left: 16px; font-size: 13px; color: #c6ccd8; }
+  .err-box li { padding-left: 0; }
+  .err-box li::before { content: ''; }
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="tag">TSRT Reality Check · 0DTE Alpha</div>
+  <h1>Real Money Audit: Mar 24 → Apr 22</h1>
+  <div class="sub">19 trading days · 60 closed trades · broker-authoritative from /historicalorders</div>
+</div>
+
+<div class="lede">
+  <strong>Bottom line:</strong> Both accounts combined at <strong>$5,996</strong> vs funded <strong>$5,945</strong> — net <strong>+$51</strong> after 19 trading days. Prior ledger said −$661. The gap was a <strong>methodology error on my side</strong>: commission overstated ($3/RT vs actual $1/RT = +$120), fill-based exit approximation where broker-truth was available, and treating portal SPX P&L as if it equaled broker MES realization (it does not on basis-drift days).
+</div>
+
+<div class="kpis">
+  <div class="kpi">
+    <div class="kpi-label">Current Equity</div>
+    <div class="kpi-val">$5,996</div>
+    <div class="kpi-sub">combined 65 + 91</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Net P&amp;L</div>
+    <div class="kpi-val green">+$51</div>
+    <div class="kpi-sub">+0.9% on funded</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Trades (closed)</div>
+    <div class="kpi-val">60</div>
+    <div class="kpi-sub">50% overall WR</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Portal Gross</div>
+    <div class="kpi-val amber">+$812</div>
+    <div class="kpi-sub">14% capture</div>
+  </div>
+</div>
+
+<h2>Per-Account Reconciliation</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Account</th><th>Role</th><th class="num">Funded</th><th class="num">Current</th><th class="num">Net $</th><th class="num">Trades</th><th class="num">Commissions</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>210VYX65</td><td>longs</td><td class="num">$2,988.78</td><td class="num">$2,558.28</td><td class="num red">−$430.50</td><td class="num">13</td><td class="num">$13.00</td></tr>
+    <tr><td>210VYX91</td><td>shorts</td><td class="num">$2,956.22</td><td class="num">$3,437.97</td><td class="num green">+$481.75</td><td class="num">47</td><td class="num">$47.00</td></tr>
+    <tr style="font-weight:600"><td>Total</td><td>—</td><td class="num">$5,945.00</td><td class="num">$5,996.25</td><td class="num green">+$51.25</td><td class="num">60</td><td class="num">$60.00</td></tr>
+  </tbody>
+</table>
+
+<p class="muted" style="font-size:12px;">Commission confirmed at <code>$1/RT</code> on MES ($0.50 entry + $0.50 exit). Both accounts currently flat, no open positions. User's "near BE ~$6,000" was accurate within $4.</p>
+
+<h2>Era Timeline (visual)</h2>
+
+<div class="timeline">
+  <div class="phase bug">
+    <div class="phase-label">V11 / bugs</div>
+    <div class="phase-days">Mar 24–28 · 5d · 13t</div>
+    <div class="phase-val">−$129</div>
+  </div>
+  <div class="phase bug">
+    <div class="phase-label">V12-fix + bugs</div>
+    <div class="phase-days">Mar 29–Apr 7 · 8d · 12t</div>
+    <div class="phase-val">−$43</div>
+  </div>
+  <div class="phase flat">
+    <div class="phase-label">V12-fix post-fix</div>
+    <div class="phase-days">Apr 8–16 · 7d · 24t</div>
+    <div class="phase-val">−$10</div>
+  </div>
+  <div class="phase v13">
+    <div class="phase-label">V13 upgrade</div>
+    <div class="phase-days">Apr 17+ · 5d · 11t</div>
+    <div class="phase-val">+$234</div>
+  </div>
+</div>
+
+<p>Four distinct phases are visible in the data, not storytelling — the commits separating them are real: <code>1a98ec1</code> (qty-sign fix Apr 8), <code>8604f1a</code> (ghost backfill Apr 18), <code>47e813e</code> + <code>6b8fc2c</code> + <code>ee0daf3</code> (V13 rules Apr 17-18).</p>
+
+<h2>Per-Era Details</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Era</th><th class="num">Days</th><th class="num">N</th><th class="num">Portal $</th><th class="num">Broker Gross</th><th class="num">Broker Net</th><th class="num">$/day</th><th class="num">WR</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>V11 (Mar 24–28)</td><td class="num">5</td><td class="num">13</td><td class="num">+$30</td><td class="num red">−$116</td><td class="num red">−$129</td><td class="num red">−$26</td><td class="num">38.5%</td></tr>
+    <tr><td>V12-fix + bugs (Mar 29–Apr 7)</td><td class="num">8</td><td class="num">12</td><td class="num">+$312</td><td class="num red">−$31</td><td class="num red">−$43</td><td class="num red">−$5</td><td class="num">41.7%</td></tr>
+    <tr><td>V12-fix post-fix (Apr 8–16)</td><td class="num">7</td><td class="num">24</td><td class="num">−$7</td><td class="num green">+$14</td><td class="num red">−$10</td><td class="num muted">−$1.50</td><td class="num">50.0%</td></tr>
+    <tr style="background:#1a2d1f;font-weight:600"><td>V13 (Apr 17+)</td><td class="num">5</td><td class="num">11</td><td class="num">+$479</td><td class="num green">+$245</td><td class="num green">+$234</td><td class="num green">+$47</td><td class="num">72.7%</td></tr>
+    <tr style="border-top:2px solid #1f2530;font-weight:700"><td>Overall 19 days</td><td class="num">19</td><td class="num">60</td><td class="num">+$812</td><td class="num green">+$111</td><td class="num green">+$51</td><td class="num green">+$2.70</td><td class="num">50.0%</td></tr>
+  </tbody>
+</table>
+
+<h2>Current System = V12-fix (Mar 29+)</h2>
+
+<div class="kpis" style="grid-template-columns: repeat(3, 1fr);">
+  <div class="kpi">
+    <div class="kpi-label">V12-fix all-in (Mar 29+)</div>
+    <div class="kpi-val green">+$181</div>
+    <div class="kpi-sub">47t · 29% capture · 53% WR</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">V12-fix post-bug (Apr 8+)</div>
+    <div class="kpi-val green">+$224</div>
+    <div class="kpi-sub">35t · 55% capture · 57% WR</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">V13 only (Apr 17+)</div>
+    <div class="kpi-val green">+$234</div>
+    <div class="kpi-sub">11t · 51% capture · 73% WR</div>
+  </div>
+</div>
+
+<h2>Per-Setup Breakdown (V12-fix era, 47 trades)</h2>
+
+<table>
+  <thead>
+    <tr><th>Setup</th><th>Direction</th><th class="num">N</th><th class="num">Portal $</th><th class="num">Broker Net</th><th class="num">Capture</th><th class="num">WR</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Skew Charm</td><td>short</td><td class="num">42</td><td class="num">+$849</td><td class="num green">+$254</td><td class="num">35%</td><td class="num">54.8%</td></tr>
+    <tr><td>Skew Charm</td><td>long</td><td class="num">4</td><td class="num">−$123</td><td class="num red">−$135</td><td class="num">107%</td><td class="num red">25.0%</td></tr>
+    <tr><td>AG Short</td><td>short</td><td class="num">1</td><td class="num">+$56</td><td class="num green">+$62</td><td class="num">112%</td><td class="num green">100%</td></tr>
+    <tr style="background:#2a1a1f"><td>DD Exhaustion</td><td>—</td><td class="num red">0 placed</td><td class="num muted">—</td><td class="num muted">—</td><td class="num muted">—</td><td class="num muted">—</td></tr>
+  </tbody>
+</table>
+
+<div class="callout warn">
+  <h4>DD Exhaustion leak — 142 signals, 0 placed</h4>
+  <p>DD fired 142 times in the V12-fix era but zero real-trade placements. Memory S57 says <em>"SC+AG+DD shorts live on 210VYX91 per whitelist"</em> — data contradicts this. Either DD is not actually in the real_trader dispatch gate, or every signal is blocked post-dispatch. Needs code-level verification next session.</p>
+</div>
+
+<div class="callout warn">
+  <h4>SC longs are the weak bucket</h4>
+  <p>4 trades, 25% WR, −$135. Small sample but all 4 were losers at some scale. S43 task already tracks this (re-assess at 20+ V13-era trades).</p>
+</div>
+
+<h2>Structural Cost: SPX → MES Basis Drift</h2>
+
+<p>The 14% overall "capture" (broker / portal) is misleading because portal tracks SPX spot while TSRT executes on MES. On basis-drift days, the two diverge materially:</p>
+
+<table>
+  <thead>
+    <tr><th>Trade</th><th>Date</th><th class="num">Portal $</th><th class="num">Broker $</th><th class="num">Gap</th><th>Event</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>#1352</td><td>Mar 30</td><td class="num">+$181</td><td class="num red">−$70</td><td class="num red">−$252</td><td>MES stop hit while SPX continued (S19 incident, not a bug)</td></tr>
+    <tr><td>#2005</td><td>Apr 21</td><td class="num">+$228</td><td class="num">+$28</td><td class="num red">−$200</td><td>Stop hit near entry on MES; SPX tracker let it run</td></tr>
+    <tr><td>#1256</td><td>Mar 26</td><td class="num">+$74</td><td class="num">$0</td><td class="num red">−$74</td><td>TS outage day</td></tr>
+  </tbody>
+</table>
+
+<div class="callout danger">
+  <h4>Basis drift scales linearly with contract size</h4>
+  <p>On 1 MES these gaps cost $200-250 each. <strong>On 1 ES (10×) they cost $2,000-2,500 each.</strong> This is not a bug — it's the genuine execution cost of hedging SPX signals on MES futures. S48 is watching; at 1 ES scale this becomes a material P&L drag.</p>
+</div>
+
+<h2>Recalibrated Projections (1 MES, 30 trading days)</h2>
+
+<table>
+  <thead>
+    <tr><th>Rate Source</th><th class="num">$/day</th><th class="num">Monthly</th><th>Interpretation</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>V13 live (5 days)</td><td class="num green">+$47</td><td class="num green">+$1,000</td><td>Too few days — directional only</td></tr>
+    <tr><td>V12-fix post-fix (7 days)</td><td class="num muted">−$1.50</td><td class="num muted">−$30</td><td>Pre-V13, essentially flat</td></tr>
+    <tr><td>Backtest V13+cap=2</td><td class="num">+$61</td><td class="num">+$1,842</td><td>Paper, pre-execution gap</td></tr>
+    <tr style="background:#1a2d1f;font-weight:600"><td>Realistic blend</td><td class="num green">+$35–50</td><td class="num green">+$900–1,100</td><td>50-60% of backtest</td></tr>
+  </tbody>
+</table>
+
+<h3>Scale-up ladder</h3>
+<table>
+  <thead>
+    <tr><th>Size</th><th class="num">Monthly</th><th>Timeline (clean-day roadmap)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1 MES</td><td class="num green">$900 – $1,100</td><td>Now</td></tr>
+    <tr><td>2 MES</td><td class="num green">$1,800 – $2,200</td><td>+20 clean V13 days · ~mid-May</td></tr>
+    <tr><td>5 MES (FI)</td><td class="num green">$4,500 – $5,500</td><td>+40 clean days · ~mid-June</td></tr>
+    <tr><td>1 ES</td><td class="num green">$9,000 – $11,000</td><td>+60 clean days · ~mid-July</td></tr>
+    <tr><td>2 ES (target)</td><td class="num green">$18,000 – $22,000</td><td>Q4 2026 / Q1 2027</td></tr>
+  </tbody>
+</table>
+
+<h2>Prior-Report Errors</h2>
+
+<div class="err-box">
+  <h4>Why my earlier ledger said −$661 when reality is +$51</h4>
+  <ol>
+    <li><strong>Commission: $120 overstated</strong> — assumed $3/RT, broker charges $1/RT on MES.</li>
+    <li><strong>Fill-based exit computation</strong> — used <code>current_stop</code> as exit price for ghost/EOD/WIN trades where state had no <code>stop_fill_price</code>. Broker's <code>RealizedProfitLoss</code> is the only source of truth and was not being queried.</li>
+    <li><strong>Portal ≠ broker</strong> on basis-drift days. Portal tracks SPX; broker realizes MES. Mar 30 and Apr 21 alone = $450 of gap that isn't visible in the DB's <code>outcome_pnl</code> column.</li>
+  </ol>
+</div>
+
+<h2>Honest Assessment</h2>
+
+<div class="callout ok">
+  <h4>What the data supports</h4>
+  <ul>
+    <li>Your "suffered bugs/refinement losses → recovered to BE → V13 taking it green" narrative is <strong>directly visible in the data</strong>, phase by phase.</li>
+    <li>V11 era was −$26/day. V12-fix with bugs was −$5/day. V12-fix post-fix was −$1.50/day (flat). V13 is +$47/day.</li>
+    <li>Bug damage was code-verified one-time cost. Those commits can't regress.</li>
+  </ul>
+</div>
+
+<div class="callout warn">
+  <h4>What the data does not yet support</h4>
+  <ul>
+    <li>V13 with 5 trading days (11 trades) is directional, not confirmed. S40 Apr 24 re-assess is the next validation gate.</li>
+    <li>V13 rate annualizes to ~$1,000/mo, which is 54% of the backtest $1,842/mo. Capture could be genuinely lower than assumed, or sample could revert.</li>
+    <li>Basis drift is structural and scales linearly — will materially bite at 1 ES.</li>
+    <li>DD Exhaustion not firing live (142 signals, 0 placed) is either missing edge or mis-documented whitelist.</li>
+  </ul>
+</div>
+
+<div class="footer">
+  Generated 2026-04-22 from <code>real_trade_orders</code> + TS <code>/historicalorders</code> + <code>/balances</code> + <code>setup_log</code>. Scripts: <code>_tmp_tsrt/tsrt_pull_history.py</code>, <code>tsrt_ledger_v2.py</code>. Broker-authoritative; no computation-based estimates in headline numbers.
+</div>
+
+</body>
+</html>

@@ -1,0 +1,70 @@
+{
+  "period": {
+    "start": "2026-03-24",
+    "end": "2026-04-16"
+  },
+  "actual": {
+    "n": 36,
+    "spx_pnl": -9.75,
+    "usd_at_1mes": -48.75,
+    "by_setup": {
+      "Skew Charm_short": {
+        "n": 23,
+        "pnl": 53.0
+      },
+      "Skew Charm_long": {
+        "n": 12,
+        "pnl": -75.25
+      },
+      "AG Short_short": {
+        "n": 1,
+        "pnl": 12.5
+      }
+    },
+    "close_reasons": {
+      "stop_filled": 34,
+      "target_filled": 2,
+      "eod_flatten": 4,
+      "stale_overnight": 1,
+      "pre_market_cleanup": 1,
+      "ghost_reconcile": 6,
+      "WIN": 1
+    }
+  },
+  "theo_nocap": {
+    "n": 52,
+    "pnl": 435.41
+  },
+  "theo_1cap": {
+    "n": 34,
+    "pnl": 220.23,
+    "skipped": 18
+  },
+  "gaps": {
+    "actual_vs_1cap": -229.98,
+    "actual_vs_nocap": -445.16
+  },
+  "matched_count": 11,
+  "actual_only_count": 25,
+  "theo_only_count": 23,
+  "matched_actual_pnl": 15.0,
+  "matched_theo_pnl": 72.99999999999999,
+  "big_discrepancies": [
+    {
+      "date": "2026-03-30",
+      "setup": "Skew Charm",
+      "dir": "short",
+      "actual": 7.25,
+      "theo": 11.5,
+      "reason": "stop_filled"
+    },
+    {
+      "date": "2026-03-30",
+      "setup": "Skew Charm",
+      "dir": "short",
+      "actual": -14.0,
+      "theo": 36.3,
+      "reason": "stop_filled"
+    }
+  ]
+}

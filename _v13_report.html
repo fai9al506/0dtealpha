@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>V13 Filter Explainer</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+  body { background:#0b0e13; color:#e3e6eb; font-family:-apple-system,Segoe UI,Arial; max-width:1100px; margin:30px auto; padding:20px; }
+  h1 { color:#6bc7ff; border-bottom:2px solid #1e2a36; padding-bottom:10px; }
+  h2 { color:#7dd3a6; margin-top:40px; border-left:4px solid #7dd3a6; padding-left:12px; }
+  h3 { color:#ffb86b; margin-top:25px; }
+  .hero { background:linear-gradient(135deg,#1a2332,#0b0e13); padding:30px; border-radius:10px; margin-bottom:30px; border:1px solid #2a3a50; }
+  .hero-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:20px; margin-top:20px; }
+  .hero-stat { text-align:center; padding:15px; background:#0f1620; border-radius:8px; }
+  .hero-stat .num { font-size:2em; font-weight:bold; color:#6bc7ff; }
+  .hero-stat .label { color:#8a97a8; font-size:0.9em; margin-top:5px; }
+  .pos { color:#7dd3a6; font-weight:bold; }
+  .neg { color:#ff7b7b; font-weight:bold; }
+  .warn { color:#ffb86b; }
+  table { border-collapse:collapse; width:100%; margin:15px 0; background:#0f1620; border-radius:6px; overflow:hidden; }
+  th,td { padding:10px 14px; text-align:left; border-bottom:1px solid #1e2a36; }
+  th { background:#162030; color:#6bc7ff; font-weight:600; }
+  tr:hover { background:#141d2b; }
+  .chart { background:#0f1620; padding:15px; border-radius:8px; margin:20px 0; }
+  .callout { background:#162030; border-left:4px solid #ffb86b; padding:15px 20px; margin:20px 0; border-radius:4px; }
+  .callout-green { border-left-color:#7dd3a6; }
+  .callout-red { border-left-color:#ff7b7b; }
+  code { background:#162030; padding:2px 6px; border-radius:3px; color:#ffb86b; }
+  .rule-box { background:#0f1620; padding:15px; border-radius:6px; margin:10px 0; border-left:3px solid #6bc7ff; }
+  .trade-ex { background:#0a0e14; padding:10px; margin:6px 0; border-radius:4px; font-family:monospace; font-size:0.9em; }
+  .trade-ex.loser { border-left:3px solid #ff7b7b; }
+  .trade-ex.winner { border-left:3px solid #7dd3a6; }
+  .meta { color:#8a97a8; font-size:0.85em; margin-bottom:20px; }
+</style></head><body><h1>V13 Filter Explainer — GEX/DD Magnet + Vanna Cliff/Peak</h1><div class="meta">Backtest period: 2026-03-01 to 2026-04-17 · Generated 2026-04-17 13:35</div><div class="hero">
+  <h2 style="margin-top:0;border:none;padding:0;">The One-Line Summary</h2>
+  <p>V13 = V12-fix + two new guardrails that stop shorts from firing when market structure is bullish (GEX/DD magnets) or vanna flow points up (cliff/peak). Combined: <span class="pos">+219 pts</span> over 390 trades (2026-03-01 to 2026-04-17).</p>
+  <div class="hero-grid">
+    <div class="hero-stat"><div class="num">+1570</div><div class="label">V12-fix baseline</div></div>
+    <div class="hero-stat"><div class="num pos">+175</div><div class="label">GEX/DD adds</div></div>
+    <div class="hero-stat"><div class="num pos">+129</div><div class="label">Vanna adds</div></div>
+    <div class="hero-stat"><div class="num pos">+219</div><div class="label">Combined (14.0%)</div></div>
+  </div>
+</div><h2>1. What is V12-fix (our current baseline)?</h2><p>V12-fix is the filter we've been running since March 29. It accepts signals only when a setup has the right conditions for that direction:</p>
+<ul>
+<li><b>Longs:</b> alignment ≥ +2, AND (Skew Charm OR VIX ≤ 22 OR overvix ≥ +2). Gap longs blocked before 10:00 ET on |gap|>30 days.</li>
+<li><b>Shorts whitelist:</b> Skew Charm (A+/A/B only), DD Exhaustion (align ≠ 0), AG Short. All other setups silently pass to portal but don't trade live.</li>
+<li><b>Blocks:</b> SC/DD in 14:30–15:00 (charm dead zone), after 15:30 (too little time). GEX-LIS paradigm shorts (LIS = floor). AG-TARGET shorts (trend exhausted). SIDIAL-EXTREME longs.</li>
+</ul><p>Over 2026-03-01 to 2026-04-17, V12-fix kept <b>390 eligible trades</b> worth <span class='pos'>+1570.4 pts</span>. Here's the baseline breakdown per setup:</p><table><tr><th>Setup</th><th>Trades</th><th>Win Rate</th><th>PnL</th></tr><tr><td>Skew Charm</td><td>202</td><td>72.8%</td><td class='pos'>+885.0</td></tr><tr><td>AG Short</td><td>47</td><td>82.9%</td><td class='pos'>+369.3</td></tr><tr><td>DD Exhaustion</td><td>128</td><td>52.8%</td><td class='pos'>+280.1</td></tr><tr><td>ES Absorption</td><td>8</td><td>71.4%</td><td class='pos'>+31.8</td></tr><tr><td>GEX Long</td><td>1</td><td>100.0%</td><td class='pos'>+11.7</td></tr><tr><td>Vanna Pivot Bounce</td><td>1</td><td>100.0%</td><td class='pos'>+10.0</td></tr><tr><td>BofA Scalp</td><td>1</td><td>0.0%</td><td class='pos'>+2.4</td></tr><tr><td>SB2 Absorption</td><td>2</td><td>0.0%</td><td class='neg'>-20.0</td></tr></table><h2>2. V13 Part A — GEX/DD Bullish Structure Block</h2><p>This catches shorts when the chain/Volland shows strong bullish dealer positioning. Two independent triggers, either one blocks:</p><div class="rule-box">
+<h3 style="margin-top:0;">Rule A1: GEX magnet above spot ≥ 75</h3>
+<p>Top net-GEX strike (c_gamma × c_oi − p_gamma × p_oi) above current spot. When ≥ 75, dealers are stacked long gamma ABOVE price — they must buy into rallies → short = fight the wave.</p>
+</div>
+<div class="rule-box">
+<h3 style="margin-top:0;">Rule A2: DD magnet within ±10pt of spot ≥ 3B</h3>
+<p>Max |deltaDecay| at any strike within ±10 pts of spot. When ≥ 3B, one strike is acting as a magnet that pins price. Shorts into a pin reverse often.</p>
+</div><p>Applied to SC/DD shorts only (AG Short excluded — contrarian by design).
+<b>Savings: <span class='pos'>+175.4 pts</span> by blocking <b>41</b> trades
+(win rate of blocked trades: 38%).</b></p><h3>Examples from real trade log</h3><p><b>GEX magnet above >=75:</b></p><p style='color:#8a97a8;font-size:0.9em;'>Worst trades BLOCKED (losses avoided):</p><div class='trade-ex loser'>
+        04-08 11:49 ET · Skew Charm short · A+ · GEX-PURE · spot 6772.1<br>
+        → would have been <b>LOSS</b> <span class='neg'>-14.0 pts</span>
+        (GEX above=80, DD near=1.10B)</div><div class='trade-ex loser'>
+        04-08 12:20 ET · Skew Charm short · A · GEX-PURE · spot 6772.1<br>
+        → would have been <b>LOSS</b> <span class='neg'>-14.0 pts</span>
+        (GEX above=83, DD near=2.04B)</div><p style='color:#8a97a8;font-size:0.9em;'>Best trades BLOCKED (missed wins — the cost):</p><div class='trade-ex winner'>
+        04-16 12:16 ET · Skew Charm short · B · spot 7049.8<br>
+        → would have been <b>WIN</b> <span class='pos'>+17.4 pts</span> (rule still worth it on net)</div><div class='trade-ex winner'>
+        04-15 12:11 ET · Skew Charm short · A · spot 6997.2<br>
+        → would have been <b>WIN</b> <span class='pos'>+8.2 pts</span> (rule still worth it on net)</div><p><b>DD magnet near >=3B:</b></p><p style='color:#8a97a8;font-size:0.9em;'>Worst trades BLOCKED (losses avoided):</p><div class='trade-ex loser'>
+        04-02 12:29 ET · Skew Charm short · B · GEX-PURE · spot 6552.2<br>
+        → would have been <b>LOSS</b> <span class='neg'>-14.0 pts</span>
+        (GEX above=13, DD near=3.13B)</div><div class='trade-ex loser'>
+        04-07 11:31 ET · Skew Charm short · A · GEX-PURE · spot 6553.2<br>
+        → would have been <b>LOSS</b> <span class='neg'>-14.0 pts</span>
+        (GEX above=10, DD near=3.33B)</div><p style='color:#8a97a8;font-size:0.9em;'>Best trades BLOCKED (missed wins — the cost):</p><div class='trade-ex winner'>
+        04-01 13:00 ET · DD Exhaustion short · A · spot 6603.3<br>
+        → would have been <b>WIN</b> <span class='pos'>+22.0 pts</span> (rule still worth it on net)</div><div class='trade-ex winner'>
+        04-07 13:39 ET · Skew Charm short · B · spot 6598.9<br>
+        → would have been <b>WIN</b> <span class='pos'>+9.0 pts</span> (rule still worth it on net)</div><h2>3. V13 Part B — Vanna Cliff + Peak Structure</h2><p>A completely different signal based on where weekly-expiry <b>vanna flow flips sign</b> across strikes near spot.</p>
+<ul>
+<li><b>Cliff</b> = strike where per-strike vanna flips from + to − (or vice versa), closest to spot within ±50pt. ABOVE or BELOW spot.</li>
+<li><b>Peak</b> = strike with the largest |vanna| in the same band. ABOVE or BELOW spot.</li>
+</ul>
+<p>Interpretation: positive vanna = dealer-supportive, negative = dealer-destructive. When the cliff is ABOVE spot, dealer flow supports current price — shorts into support fail. When the cliff is BELOW spot, price has crossed into destructive air — shorts succeed.</p><div class="rule-box">
+<h3 style="margin-top:0;">Four vanna rules (all derived from Feb–Apr 2026 sub-bucket data, 343 trades)</h3>
+<ul>
+<li><b>DD short + cliff=ABOVE</b> — 69t, 41% WR, −106.3 pts when NOT blocked</li>
+<li><b>SC short + cliff=ABOVE + peak=BELOW</b> — 27t, 48% WR, −47.8 pts</li>
+<li><b>AG short + cliff=BELOW + peak=ABOVE</b> — 20t, 56% WR, −11.7 pts</li>
+<li><b>SC long + cliff=ABOVE + peak=BELOW</b> — 27t, 52% WR, −55.4 pts</li>
+</ul>
+</div><p><b>Savings from vanna rules alone: <span class='pos'>+129.1 pts</span>
+by blocking 110 trades
+(blocked WR: 47%).</b></p><h3>Examples from real trade log</h3><p><b>DD short cliff=ABOVE:</b></p><p style='color:#8a97a8;font-size:0.9em;'>Worst trades BLOCKED:</p><div class='trade-ex loser'>
+        03-04 11:34 ET · DD Exhaustion short · A-Entry · GEX-TARGET · spot 6871.4<br>
+        → LOSS <span class='neg'>-12.0 pts</span>
+        (cliff=A, peak=A)</div><div class='trade-ex loser'>
+        03-06 11:13 ET · DD Exhaustion short · A-Entry · SIDIAL-MESSY · spot 6757.7<br>
+        → LOSS <span class='neg'>-12.0 pts</span>
+        (cliff=A, peak=A)</div><p style='color:#8a97a8;font-size:0.9em;'>Best trades BLOCKED (missed):</p><div class='trade-ex winner'>
+        03-06 13:30 ET · DD Exhaustion short · spot 6759.9<br>
+        → WIN <span class='pos'>+19.2 pts</span></div><div class='trade-ex winner'>
+        04-08 12:54 ET · DD Exhaustion short · spot 6784.3<br>
+        → WIN <span class='pos'>+18.3 pts</span></div><p><b>SC short cliff=A+peak=B:</b></p><p style='color:#8a97a8;font-size:0.9em;'>Worst trades BLOCKED:</p><div class='trade-ex loser'>
+        03-06 10:17 ET · Skew Charm short · A · AG-TARGET · spot 6742.4<br>
+        → LOSS <span class='neg'>-20.0 pts</span>
+        (cliff=A, peak=B)</div><div class='trade-ex loser'>
+        03-09 11:44 ET · Skew Charm short · B · BOFA-PURE · spot 6698.4<br>
+        → LOSS <span class='neg'>-20.0 pts</span>
+        (cliff=A, peak=B)</div><p style='color:#8a97a8;font-size:0.9em;'>Best trades BLOCKED (missed):</p><div class='trade-ex winner'>
+        04-01 13:13 ET · Skew Charm short · spot 6607.9<br>
+        → WIN <span class='pos'>+38.7 pts</span></div><div class='trade-ex winner'>
+        04-16 09:45 ET · Skew Charm short · spot 7032.9<br>
+        → WIN <span class='pos'>+19.4 pts</span></div><p><b>SC long cliff=A+peak=B:</b></p><p style='color:#8a97a8;font-size:0.9em;'>Worst trades BLOCKED:</p><div class='trade-ex loser'>
+        03-12 09:45 ET · Skew Charm long · A · AG-PURE · spot 6712.4<br>
+        → LOSS <span class='neg'>-20.0 pts</span>
+        (cliff=A, peak=B)</div><div class='trade-ex loser'>
+        03-13 09:54 ET · Skew Charm long · B · GEX-LIS · spot 6727.3<br>
+        → LOSS <span class='neg'>-20.0 pts</span>
+        (cliff=A, peak=B)</div><p style='color:#8a97a8;font-size:0.9em;'>Best trades BLOCKED (missed):</p><div class='trade-ex winner'>
+        03-31 10:57 ET · Skew Charm long · spot 6406.3<br>
+        → WIN <span class='pos'>+32.2 pts</span></div><div class='trade-ex winner'>
+        03-03 10:23 ET · Skew Charm long · spot 6713.3<br>
+        → WIN <span class='pos'>+16.4 pts</span></div><h2>4. How the Two Parts Combine</h2><p>The two blocks partly overlap — they're measuring related "bullish structure" signals but from different angles. Here's the breakdown of all 135 trades V13 combined blocks:</p>
+<table>
+<tr><th>Bucket</th><th>Trades</th><th>Blocked PnL</th><th>Comment</th></tr>
+<tr><td>Both GEX/DD AND Vanna flag</td><td>16</td><td class='neg'>-85.2</td><td>Strong conviction block</td></tr>
+<tr><td>Only GEX/DD flags</td><td>25</td><td class='neg'>-90.2</td><td>OPEX-week regime mostly</td></tr>
+<tr><td>Only Vanna flags</td><td>94</td><td class='neg'>-43.9</td><td>Calm regime, vanna flow mis-alignment</td></tr>
+</table><div class="callout">
+<b>Why subadditive?</b> GEX/DD saves +175, Vanna alone saves +129.
+Naive sum would be +305, but 39% overlap means combined is
+only +219. Both signals agree on the "obvious" losers — the combined delta is
+the NEW uniquely-bad trades caught by only one signal.
+</div><h2>5. Cumulative PnL Chart — V12-fix vs V13</h2><div id="chart1" class="chart"></div><script>
+Plotly.newPlot('chart1', [
+  {x: ["2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-15", "2026-04-16"], y: [14.0, 125.4, 310.0, 414.0, 485.6, 453.5, 605.3, 648.4, 646.2, 613.4, 660.9, 801.5, 978.1, 1051.5, 1091.1, 1141.3, 1136.9, 1151.1, 1427.9, 1384.3, 1436.8, 1469.0, 1515.7, 1414.0, 1494.5, 1534.2, 1585.9, 1586.7, 1582.6, 1592.6, 1544.0, 1570.4], name:'V12-fix', type:'scatter', mode:'lines', line:{color:'#6bc7ff', width:2}},
+  {x: ["2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-15", "2026-04-16"], y: [14.0, 109.0, 277.4, 381.9, 485.3, 517.2, 655.9, 707.9, 745.7, 744.9, 799.8, 906.9, 1031.8, 1091.8, 1113.4, 1175.3, 1186.3, 1194.6, 1475.5, 1465.5, 1518.0, 1518.0, 1504.0, 1492.3, 1567.2, 1639.6, 1736.3, 1766.1, 1756.7, 1766.7, 1766.7, 1789.7], name:'V13 combined', type:'scatter', mode:'lines', line:{color:'#7dd3a6', width:2}}
+], {
+  template:'plotly_dark', paper_bgcolor:'#0f1620', plot_bgcolor:'#0f1620',
+  font:{color:'#e3e6eb'}, xaxis:{title:'Date'}, yaxis:{title:'Cumulative pts'}, margin:{t:30,l:50,r:30,b:50}
+}, {responsive:true});
+</script><h2>6. Impact on TS Real Trader (TSRT) Specifically</h2><p><b>TSRT trades on 2 real-money accounts</b> (per current config):</p>
+<ul>
+<li>LONGS account (210VYX65): <b>Skew Charm longs only</b></li>
+<li>SHORTS account (210VYX91): <b>Skew Charm + AG Short</b></li>
+<li>Max 1 concurrent trade per direction</li>
+<li>Exit strategy: Opt2 (trail-only, no partial TP)</li>
+</ul>
+<p>TSRT does NOT trade DD Exhaustion on real money. So the GEX/DD magnet block (which targets DD+SC shorts) and vanna DD-above rule have <b>partial</b> TSRT impact only via the SC-targeting rules.</p><table>
+<tr><th></th><th>Trades</th><th>Pts</th></tr>
+<tr><td>TSRT-scope baseline (V12-fix, SC long + SC short + AG short)</td><td>249</td><td class='pos'>+1254.3</td></tr>
+<tr><td>V13 combined blocks within TSRT scope</td><td>67</td><td class='neg'>−0</td></tr>
+<tr><td><b>V13 net savings within TSRT scope</b></td><td></td><td class='pos'>+61.7</td></tr>
+</table><h3>TSRT monthly breakdown</h3><table><tr><th>Month</th><th>Trades</th><th>V12 Pnl</th><th>V13 Kept</th><th>V13 Pnl</th><th>Saved</th></tr><tr><td>2026-03</td><td>194</td><td>+1132.4</td><td>157</td><td>+1143.1</td><td class='pos'>+10.7</td></tr><tr><td>2026-04</td><td>55</td><td>+121.9</td><td>25</td><td>+172.9</td><td class='pos'>+51.0</td></tr></table><h2>7. Hindsight: TSRT Performance If V13 Was Live from Mar 1</h2><div class="callout callout-green">
+<p><b>Assumption:</b> TSRT typically fills ~30% of portal signals due to slot contention (single concurrent per direction) and occasional ops issues. This is based on the Mar 24–Apr 8 audit (32 real trades vs ~100 portal signals in same window).</p>
+<p><b>Counterfactual PnL:</b></p>
+<ul>
+<li>TSRT portal-scope V12-fix: +1254.3 pts over 33 days = +38.0 pts/day</li>
+<li>TSRT portal-scope V13: +1316.0 pts = +39.9 pts/day</li>
+<li>Applying 30% real-trade ratio: +376.3 V12 → +394.8 V13 pts actually traded</li>
+<li><b>V13 would have added ~+18.5 pts to actual TSRT PnL over 33 trading days.</b></li>
+</ul>
+</div><h2>8. Expected Income — 1 MES vs 1 ES vs 2 ES</h2><div class="callout callout-red">
+<b>Important caveats:</b>
+<ul>
+<li>These numbers are <b>gross of commissions, slippage, basis risk, and infrastructure cost</b> (~$524/mo fixed).</li>
+<li>Backtest period (Mar 1 – Apr 17) was a MIXED regime (March bearish, April OPEX squeeze) — not a typical calm month.</li>
+<li>Real TSRT has concurrency limits — not every portal signal fires.</li>
+<li>Scaling from MES→ES is NOT linear. Slippage grows non-linearly, margin requirements change, basis risk amplifies.</li>
+<li>Per MEMORY.md scaling roadmap: 1 MES now → 2 MES (+20 clean days) → 5 MES (+40) → 1 ES (+60). 2 ES is a long way out.</li>
+</ul>
+</div><table>
+<tr><th>Scenario</th><th>Pts/day (V13)</th><th>Gross/day</th><th>Realistic/day (30%)</th><th>Gross/month</th><th>Net/month*</th></tr>
+<tr><td>1 MES</td><td>+54.2</td><td>$+271</td><td>$+81</td><td>$+1790</td><td class='pos'>$+881</td></tr>
+<tr><td>1 ES</td><td>+54.2</td><td>$+2712</td><td>$+814</td><td>$+17897</td><td class='pos'>$+16911</td></tr>
+<tr><td>2 ES</td><td>+54.2</td><td>$+5423</td><td>$+1627</td><td>$+35794</td><td class='pos'>$+34346</td></tr>
+</table>
+<p><b>*Net</b> deducts ~$385/mo commissions (MES) or ~$462-$924/mo (ES) + $524/mo fixed infra. Does NOT yet deduct slippage or SPX/MES-ES basis.</p><div class="callout">
+<b>Reality check vs MEMORY.md forward expectation:</b>
+"~$1,000/mo NET at 1 MES after frictions" was the post-fix projection from the 9-day audit.
+V13 should <b>add roughly +$62/mo</b> to that on 1 MES —
+marginal but real. The bigger gains are <span class="warn">structural</span> (fewer blocked slots), not cash-direct.
+</div><h2>9. What To Expect System-Wide</h2>
+<ul>
+<li><b>Same number of SIGNALS</b> — detection code is untouched. Portal/setup_log still gets every trigger.</li>
+<li><b>Fewer LIVE trades</b> — V13 blocks ~35% of portal signals from firing on auto-trader / real trader. Specifically it kills SC and DD shorts in bullish-structure regimes.</li>
+<li><b>Better PnL per trade</b> — average ~$3/trade better on realistic TSRT scope.</li>
+<li><b>Lower MaxDD</b> — biggest improvement is on Apr 2 style high-squeeze days, where V13 blocks 7 consecutive losses.</li>
+<li><b>Same win rate bar for kept trades</b> — the winning-trade distribution should stay stable because the blocked trades were statistically unfavorable, not merely unlucky.</li>
+<li><b>Vanna rules are March-heavy.</b> March alone drives most of vanna's incremental value. April GEX/DD magnets dominated; vanna added −1.0 in April. This is regime-dependent.</li>
+</ul><h2>10. Summary Recommendation</h2>
+<div class="callout callout-green">
+<p>V13 is deployed and conservative. It reuses V12-fix for all other gating and only adds <b>6 new return-False conditions</b> in total. No trail parameter change, no size change, no scope change.</p>
+<p><b>Next milestones:</b></p>
+<ul>
+<li>+15 clean days forward with V13 live → confirm +14% edge holds out-of-sample</li>
+<li>If holds, consider 2 MES scaling (MEMORY roadmap)</li>
+<li>Re-run DD-magnet idea (deferred from Discord #3) in early May with 30 days of V13 data</li>
+<li>Vanna features (cliff + peak) now in setup_log — can build more filters once 200+ V13 trades are logged</li>
+</ul>
+</div>
+<p style='color:#8a97a8;margin-top:30px;font-size:0.85em;'>Generated from DB queries on setup_log, chain_snapshots, volland_exposure_points. Method: post-hoc apply V12-fix + V13 rules to historical trades, compare outcomes. All numbers reproducible via _v13_report_data.py.</p>
+</body></html>

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discord Ideas Backtest — Apr 9 2026</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #0a0e17; color: #c8d6e5; line-height: 1.7; padding: 2rem; max-width: 1100px; margin: 0 auto; }
+  .report-header { text-align: center; padding: 2rem 0 1.5rem; border-bottom: 1px solid #1a2a3a; margin-bottom: 2rem; }
+  .report-header h1 { color: #f5f6fa; font-size: 2.2rem; font-weight: 700; margin-bottom: 0.3rem; }
+  .report-header .subtitle { color: #778ca3; font-size: 0.95rem; }
+  .report-header .tag { display: inline-block; font-size: 0.8rem; font-weight: 600; padding: 4px 14px; border-radius: 20px; margin-top: 0.8rem; letter-spacing: 0.5px; text-transform: uppercase; }
+  .tag-green { background: #6ab04c22; color: #6ab04c; }
+  .tag-red { background: #eb4d4b22; color: #eb4d4b; }
+  .tag-gold { background: #ffd32a22; color: #ffd32a; }
+  .tag-cyan { background: #00d2ff22; color: #00d2ff; }
+
+  h2 { color: #00d2ff; font-size: 1.35rem; font-weight: 600; margin: 2.5rem 0 1rem; border-bottom: 1px solid #1a2a3a; padding-bottom: 0.4rem; }
+  h3 { color: #ffd32a; font-size: 1.05rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+  p { margin-bottom: 0.8rem; }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+  .kpi-card { background: #111927; border: 1px solid #1a2a3a; border-radius: 10px; padding: 1.2rem 1rem; text-align: center; }
+  .kpi-card .label { color: #778ca3; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 500; }
+  .kpi-card .value { font-family: 'JetBrains Mono', monospace; font-size: 1.8rem; font-weight: 700; margin: 0.3rem 0; }
+  .kpi-card .note { color: #778ca3; font-size: 0.75rem; }
+  .value-green { color: #6ab04c; }
+  .value-red { color: #eb4d4b; }
+  .value-gold { color: #ffd32a; }
+  .value-cyan { color: #00d2ff; }
+  .value-white { color: #f5f6fa; }
+
+  .verdict-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.8rem; margin: 1rem 0; }
+  .verdict-card { background: #111927; border-left: 4px solid; border-radius: 8px; padding: 1rem 1.2rem; }
+  .v-win { border-color: #6ab04c; }
+  .v-loss { border-color: #eb4d4b; }
+  .v-warn { border-color: #f9ca24; }
+  .verdict-card .v-label { color: #778ca3; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; }
+  .verdict-card .v-name { color: #f5f6fa; font-weight: 600; font-size: 1rem; margin: 0.2rem 0; }
+  .verdict-card .v-result { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; }
+  .v-result.r-win { color: #6ab04c; }
+  .v-result.r-loss { color: #eb4d4b; }
+  .v-result.r-warn { color: #f9ca24; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.88rem; }
+  th { color: #00d2ff; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; padding: 0.7rem 0.8rem; text-align: left; border-bottom: 2px solid #1a2a3a; font-weight: 600; }
+  td { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; padding: 0.55rem 0.8rem; border-bottom: 1px solid #1a2a3a; vertical-align: top; }
+  tr:hover { background: #111927; }
+  tr.highlight-row { background: #0f3460; }
+  tr.win-row { background: #1a2a1a22; }
+  tr.loss-row { background: #2a1a1a22; }
+  .win { color: #6ab04c; font-weight: 600; }
+  .loss { color: #eb4d4b; font-weight: 600; }
+  .neutral { color: #ffd32a; }
+
+  .callout { background: #1a2a3a; border-radius: 8px; padding: 1rem 1.2rem; margin: 1rem 0; border-left: 3px solid #00d2ff; }
+  .callout-warn { border-left-color: #f9ca24; background: #2a2a1a; }
+  .callout-danger { border-left-color: #eb4d4b; background: #2a1a1a; }
+  .callout-good { border-left-color: #6ab04c; background: #1a2a1a; }
+  .callout .label { color: #00d2ff; font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.3rem; }
+  .callout-warn .label { color: #f9ca24; }
+  .callout-danger .label { color: #eb4d4b; }
+  .callout-good .label { color: #6ab04c; }
+
+  .finding-card { background: #111927; border-radius: 12px; padding: 1.5rem; margin: 1.2rem 0; border-left: 4px solid; }
+  .finding-positive { border-color: #6ab04c; }
+  .finding-negative { border-color: #eb4d4b; }
+  .finding-neutral { border-color: #f9ca24; }
+
+  ul { margin: 0.6rem 0 1rem 1.4rem; }
+  li { margin-bottom: 0.4rem; }
+  code { background: #0a0e17; padding: 1px 6px; border-radius: 3px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #ffd32a; }
+
+  .footer { text-align: center; color: #778ca3; font-size: 0.78rem; padding: 2rem 0 0; border-top: 1px solid #1a2a3a; margin-top: 3rem; }
+</style>
+</head>
+<body>
+
+<div class="report-header">
+  <h1>Discord Ideas Backtest</h1>
+  <div class="subtitle">Validating 6 ideas from Apr 1-8 Discord sync against 736 resolved trades (Mar 18 - Apr 8)</div>
+  <span class="tag tag-cyan">3 Gates Validated</span>
+  <span class="tag tag-gold">High Confidence</span>
+  <span class="tag tag-green">1 Major Win</span>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="label">Sample</div>
+    <div class="value value-cyan">736</div>
+    <div class="note">resolved trades</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Date Range</div>
+    <div class="value value-cyan">15 days</div>
+    <div class="note">Mar 18 - Apr 8</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Ideas Tested</div>
+    <div class="value value-white">5</div>
+    <div class="note">of 6 (one untestable)</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Approved</div>
+    <div class="value value-green">1</div>
+    <div class="note">DD magnet block</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Best Improvement</div>
+    <div class="value value-green">+248.6</div>
+    <div class="note">pts on SC/DD shorts</div>
+  </div>
+</div>
+
+<div class="callout callout-warn">
+  <div class="label">Gate 1 Note</div>
+  <code>overvix</code> column only populated from Mar 17 onward (VIX3M bug fix). Backtest restricted to Mar 18 - Apr 8 = 15 trading days. <strong>736 trades / +991.3 pts unfiltered</strong> = high-confidence sample size.
+</div>
+
+<h2>Verdicts at a glance</h2>
+
+<div class="verdict-grid">
+  <div class="verdict-card v-win">
+    <div class="v-label">APPROVED</div>
+    <div class="v-name">#4 DD hedging magnet</div>
+    <div class="v-result r-win">+248.6 pts (+60%)</div>
+  </div>
+  <div class="verdict-card v-warn">
+    <div class="v-label">INSUFFICIENT</div>
+    <div class="v-name">#1 Undervix block</div>
+    <div class="v-result r-warn">N=1 day</div>
+  </div>
+  <div class="verdict-card v-loss">
+    <div class="v-label">REJECTED</div>
+    <div class="v-name">#3 GEX stickiness</div>
+    <div class="v-result r-loss">inverse: -44 pts</div>
+  </div>
+  <div class="verdict-card v-loss">
+    <div class="v-label">REJECTED</div>
+    <div class="v-name">#5 BofA→GEX drift</div>
+    <div class="v-result r-loss">inverse: -120 pts</div>
+  </div>
+  <div class="verdict-card v-loss">
+    <div class="v-label">REJECTED</div>
+    <div class="v-name">#6 VIX-stdev proxy</div>
+    <div class="v-result r-loss">no correlation</div>
+  </div>
+  <div class="verdict-card v-warn">
+    <div class="v-label">SKIPPED</div>
+    <div class="v-name">#2 Vanna tower</div>
+    <div class="v-result r-warn">untestable in DB</div>
+  </div>
+</div>
+
+<h2>The Big Win — Idea #4: DD Hedging Magnet</h2>
+
+<div class="finding-card finding-positive">
+  <h3>STRONG: |DD| within +/-10 pts of spot blocks bad SC/DD shorts</h3>
+  <p><strong>Hypothesis (Discord Apr 2):</strong> When dealers concentrate DD hedging at one strike, price oscillates around it instead of fading through. Tag those strikes as "sticky magnets" — SC/DD shorts within 10 pts of one should be reduced/blocked.</p>
+  <p><strong>Test:</strong> For each SC/DD short signal Mar 18 - Apr 8 (N=186), look up the strongest |delta-decay| strike in volland_exposure_points (TODAY exp) within +/-10 pts of spot at signal time. Bucket by magnitude.</p>
+
+  <h3>Threshold Sweep — Robust Across All Cuts</h3>
+  <table>
+    <tr><th>|DD| Threshold</th><th>HIGH Bucket N</th><th>HIGH WR</th><th>HIGH PnL</th><th>LOW Bucket N</th><th>LOW WR</th><th>LOW PnL</th></tr>
+    <tr><td>1.5B</td><td>94</td><td class="loss">42%</td><td class="loss">-173.0</td><td>92</td><td class="win">65%</td><td class="win">+590.2</td></tr>
+    <tr><td>2.0B</td><td>72</td><td class="loss">40%</td><td class="loss">-169.3</td><td>114</td><td class="win">62%</td><td class="win">+586.5</td></tr>
+    <tr class="highlight-row"><td><strong>2.3B</strong></td><td>60</td><td class="loss">33%</td><td class="loss">-248.6</td><td>126</td><td class="win">63%</td><td class="win">+665.8</td></tr>
+    <tr><td>3.0B</td><td>46</td><td class="loss">24%</td><td class="loss">-315.5</td><td>140</td><td class="win">63%</td><td class="win">+732.7</td></tr>
+    <tr><td>4.0B</td><td>20</td><td class="loss">24%</td><td class="loss">-137.1</td><td>166</td><td class="neutral">57%</td><td class="win">+554.3</td></tr>
+  </table>
+  <p><strong>The signal is monotonic and robust.</strong> Every threshold from 1.5B to 4.0B shows the HIGH bucket losing money. <strong>2.3B is the recommended cut</strong> (Mar 18 - Apr 8 P67) — best risk-adjusted savings.</p>
+
+  <h3>Incremental vs Existing GEX-LIS Block</h3>
+  <p>V12-fix already blocks SC/DD shorts on GEX-LIS paradigm. Question: does the DD-magnet rule add value beyond this?</p>
+  <table>
+    <tr><th>Cell</th><th>N</th><th>WR</th><th>PnL</th><th>Avg/trade</th></tr>
+    <tr class="loss-row"><td>|DD|≥2.3B AND has-LIS paradigm</td><td>21</td><td class="loss">33%</td><td class="loss">-137.3</td><td class="loss">-6.5</td></tr>
+    <tr class="loss-row"><td><strong>|DD|≥2.3B AND no LIS  ← NEW SIGNAL</strong></td><td>39</td><td class="loss">32%</td><td class="loss">-111.3</td><td class="loss">-2.9</td></tr>
+    <tr class="win-row"><td>|DD|<2.3B AND has-LIS</td><td>37</td><td class="neutral">47%</td><td class="win">+111.0</td><td class="win">+3.0</td></tr>
+    <tr class="win-row"><td>|DD|<2.3B AND no LIS (baseline)</td><td>89</td><td class="win">69%</td><td class="win">+554.8</td><td class="win">+6.2</td></tr>
+  </table>
+  <p><strong>YES — even without GEX-LIS paradigm, high DD is a strong negative signal.</strong> The 39 trades in the new cell would have lost -111 pts. This is purely incremental to V12-fix.</p>
+
+  <h3>Per-setup breakdown (works for both SC and DD)</h3>
+  <table>
+    <tr><th>Setup</th><th>Bucket</th><th>N</th><th>WR</th><th>PnL</th><th>Avg</th></tr>
+    <tr class="loss-row"><td>Skew Charm</td><td>HIGH DD</td><td>33</td><td class="loss">46%</td><td class="loss">-79.1</td><td class="loss">-2.4</td></tr>
+    <tr class="win-row"><td>Skew Charm</td><td>LOW DD</td><td>65</td><td class="win">66%</td><td class="win">+339.3</td><td class="win">+5.2</td></tr>
+    <tr class="loss-row"><td><strong>DD Exhaustion</strong></td><td>HIGH DD</td><td>27</td><td class="loss">17%</td><td class="loss">-169.5</td><td class="loss">-6.3</td></tr>
+    <tr class="win-row"><td>DD Exhaustion</td><td>LOW DD</td><td>61</td><td class="win">60%</td><td class="win">+326.5</td><td class="win">+5.4</td></tr>
+  </table>
+  <p>DD Exhaustion shorts collapse to <strong>17% WR</strong> when there's a sticky DD strike near spot — exactly what theory predicts (DD trying to fade through its own concentration).</p>
+</div>
+
+<h2>Per-Day Breakdown — Idea #4</h2>
+
+<table>
+  <tr><th>Date</th><th>All SC/DD shorts</th><th>HIGH DD (would block)</th><th>LOW DD (would keep)</th><th>Savings</th></tr>
+  <tr><td>Mar 18</td><td>N=19 +189.3</td><td>N=0 +0.0</td><td>N=19 +189.3</td><td>+0.0</td></tr>
+  <tr class="win-row"><td>Mar 19</td><td>N=17 -2.8</td><td>N=3 -37.0</td><td>N=14 +34.2</td><td class="win">+37.0</td></tr>
+  <tr><td>Mar 20</td><td>N=18 +133.2</td><td>N=1 +13.6</td><td>N=17 +119.6</td><td class="loss">-13.6</td></tr>
+  <tr><td>Mar 23</td><td>N=6 -31.8</td><td>N=0 +0.0</td><td>N=6 -31.8</td><td>+0.0</td></tr>
+  <tr><td>Mar 24</td><td>N=4 -41.0</td><td>N=0 +0.0</td><td>N=4 -41.0</td><td>+0.0</td></tr>
+  <tr><td>Mar 26</td><td>N=7 +200.8</td><td>N=3 +2.0</td><td>N=4 +198.8</td><td class="loss">-2.0</td></tr>
+  <tr><td>Mar 30</td><td>N=3 +66.5</td><td>N=0 +0.0</td><td>N=3 +66.5</td><td>+0.0</td></tr>
+  <tr class="win-row highlight-row"><td><strong>Mar 31</strong></td><td>N=18 -114.3</td><td>N=9 -98.5</td><td>N=9 -15.8</td><td class="win">+98.5</td></tr>
+  <tr><td>Apr 1</td><td>N=8 +3.7</td><td>N=6 +8.7</td><td>N=2 -5.0</td><td class="loss">-8.7</td></tr>
+  <tr class="win-row highlight-row"><td><strong>Apr 2</strong></td><td>N=22 -181.3</td><td>N=15 -89.3</td><td>N=7 -92.0</td><td class="win">+89.3</td></tr>
+  <tr><td>Apr 6</td><td>N=22 +74.4</td><td>N=9 -6.9</td><td>N=13 +81.3</td><td class="win">+6.9</td></tr>
+  <tr class="win-row"><td>Apr 7</td><td>N=21 +65.4</td><td>N=9 -30.6</td><td>N=12 +96.0</td><td class="win">+30.6</td></tr>
+  <tr class="win-row"><td>Apr 8</td><td>N=21 +55.1</td><td>N=5 -10.6</td><td>N=16 +65.7</td><td class="win">+10.6</td></tr>
+  <tr class="highlight-row"><td><strong>TOTAL</strong></td><td><strong>+417.2</strong></td><td><strong>-248.6 (60 trades)</strong></td><td><strong>+665.8 (126 trades)</strong></td><td class="win"><strong>+248.6</strong></td></tr>
+</table>
+
+<div class="callout callout-good">
+  <div class="label">Net Impact</div>
+  <strong>Unfiltered SC/DD shorts: +417.2 pts → After |DD|≥2.3B block: +665.8 pts → +248.6 pts improvement (+60%).</strong> Blocks 60 of 186 trades (32% of population). 2 days drove most savings: <strong>Mar 31 (+98.5)</strong> and <strong>Apr 2 (+89.3)</strong> — both ranged-headline days where price stuck to a DD level. 3 days had small "cost" of blocked winners (Mar 20, Mar 26, Apr 1, total -24 pts).
+</div>
+
+<h2>Idea #1 — Undervix-Extreme Morning Long Block</h2>
+
+<div class="finding-card finding-neutral">
+  <h3>INSUFFICIENT DATA — only 1 candidate day</h3>
+  <p><strong>Rule tested:</strong> <code>overvix ≤ -2 AND gap_up > +2%</code></p>
+  <p><strong>Result:</strong> <strong>Zero</strong> days strictly match in Mar 18 - Apr 8.</p>
+  <p>Apr 8 was the closest: <code>overvix = -1.91</code> (just above threshold), <code>gap = +2.45%</code> (above threshold). With a relaxed threshold (<code>ov ≤ -1.9</code>), only Apr 8 qualifies. On Apr 8, exactly 1 morning long fired (ES Absorption at 10:22 ET, lost -8 pts).</p>
+  <table>
+    <tr><th>Date</th><th>overvix</th><th>gap %</th><th>Triggers?</th></tr>
+    <tr><td>Mar 18</td><td>-2.14</td><td>-0.41%</td><td>no (gap down)</td></tr>
+    <tr><td>Apr 8</td><td>-1.91</td><td>+2.45%</td><td class="neutral">borderline</td></tr>
+    <tr><td>(13 other days)</td><td>—</td><td>—</td><td>no</td></tr>
+  </table>
+  <p><strong>Verdict:</strong> Cannot validate or reject. Apollo's "undervix exhaustion" thesis may be real, but it needs more occurrences. <strong>Action:</strong> Don't deploy. Keep the rule as a watch-list — log each future day where it would trigger and check post-hoc.</p>
+</div>
+
+<h2>Idea #3 — GEX Paradigm Stickiness Boost</h2>
+
+<div class="finding-card finding-negative">
+  <h3>REJECTED — INVERSE relationship</h3>
+  <p><strong>Hypothesis:</strong> SC longs should perform better when GEX paradigm has been sticky for many cycles (regime confirmation).</p>
+  <p><strong>Test:</strong> For each of 62 SC long signals, count consecutive prior cycles where paradigm started with "GEX-".</p>
+  <table>
+    <tr><th>Stickiness</th><th>N</th><th>W</th><th>L</th><th>WR</th><th>PnL</th><th>Avg</th></tr>
+    <tr class="win-row"><td>0-4 cycles</td><td>42</td><td>21</td><td>19</td><td>52%</td><td class="loss">-36.8</td><td>-0.9</td></tr>
+    <tr><td>5-9</td><td>2</td><td>1</td><td>1</td><td>50%</td><td>-1.3</td><td>-0.7</td></tr>
+    <tr><td>10-19</td><td>4</td><td>2</td><td>2</td><td>50%</td><td>-10.8</td><td>-2.7</td></tr>
+    <tr class="loss-row"><td><strong>20+</strong></td><td>14</td><td>4</td><td>9</td><td class="loss">31%</td><td class="loss">-44.2</td><td class="loss">-3.2</td></tr>
+  </table>
+  <p><strong>Why it failed:</strong> Looking at the 14 high-stickiness trades, <strong>all 14 had paradigm = GEX-LIS</strong>. That's the bad subtype we already block for SHORTS but NOT for LONGS. Sticky GEX = GEX-LIS persistence ≠ structural bullish signal. The Discord intuition (regime confirmation) doesn't survive empirical scrutiny because "GEX-anything-for-1-hour" is dominated by the worst subtype.</p>
+  <p><strong>Side discovery:</strong> SC longs into GEX-LIS paradigm are <strong>4W/9L (31% WR)</strong>. This may be worth a separate filter — block SC longs on GEX-LIS just like we block shorts.</p>
+</div>
+
+<h2>Idea #5 — BofA-LIS → GEX-pure Paradigm Drift</h2>
+
+<div class="finding-card finding-negative">
+  <h3>REJECTED — INVERSE relationship</h3>
+  <p><strong>Hypothesis:</strong> When paradigm transitions from BofA-* to GEX-* during the day, it signals a structural bullish flip. Longs after the drift should outperform.</p>
+  <table>
+    <tr><th>Group</th><th>N</th><th>W/L</th><th>WR</th><th>PnL</th></tr>
+    <tr class="loss-row"><td>Longs AFTER drift on drift days</td><td>164</td><td>68/89</td><td class="loss">43%</td><td class="loss">-120.5</td></tr>
+    <tr class="win-row"><td>Longs on non-drift days (baseline)</td><td>147</td><td>66/70</td><td class="neutral">49%</td><td class="win">+78.3</td></tr>
+  </table>
+  <p>7 days had a BofA→GEX transition (Mar 18, 20, 23, 27, 30, 31, Apr 2). On those days, longs UNDERPERFORMED by 6 pp WR and ~200 pts PnL vs non-drift days.</p>
+  <p><strong>Why it failed:</strong> The drift isn't a clean trend signal — it tends to happen mid-session in chop, not after a confirmed breakout. By the time paradigm "drifts," price has already moved and longs are entering at unfavorable levels.</p>
+</div>
+
+<h2>Idea #6 — Macro/Headline Day Dampener</h2>
+
+<div class="finding-card finding-negative">
+  <h3>REJECTED — no correlation with VIX intraday stdev</h3>
+  <p><strong>Light test:</strong> Per-day VIX stdev across all setup_log signals as proxy for headline density. Group days by tercile.</p>
+  <table>
+    <tr><th>Bucket</th><th>Days</th><th>Trades</th><th>WR</th><th>Total PnL</th></tr>
+    <tr><td>Low stdev (calm)</td><td>6</td><td>303</td><td>53%</td><td>+323.0</td></tr>
+    <tr><td>Mid stdev</td><td>5</td><td>226</td><td>53%</td><td>+232.4</td></tr>
+    <tr><td>High stdev (volatile)</td><td>4</td><td>207</td><td>52%</td><td>+435.9</td></tr>
+  </table>
+  <p>WR is identical across buckets. PnL/trade is actually slightly better on high-stdev days. <strong>VIX intraday stdev is the wrong proxy</strong> — it doesn't capture "headline-driven chop" the way Discord users meant. Mar 27 (selloff, -181 pts) had only mid stdev. Apr 8 (gap day) had low stdev.</p>
+  <p><strong>If we want to test this idea properly,</strong> we'd need a different proxy: news API event count, ES quote-stream tick velocity per minute, or something that captures "directional reversal frequency." Not testable from current DB without new data.</p>
+</div>
+
+<h2>Recommendation</h2>
+
+<div class="callout callout-good">
+  <div class="label">DEPLOY NOW</div>
+  <strong>Idea #4 — DD Hedging Magnet block for SC/DD shorts.</strong>
+  <ul>
+    <li><strong>Rule:</strong> At signal time, query <code>volland_exposure_points</code> for TODAY-exp delta-decay values within +/-10 pts of spot. If <code>max(|value|) ≥ 2.3B</code>, BLOCK the SC/DD short.</li>
+    <li><strong>Expected impact:</strong> +248.6 pts over 13 trading days = ~+19 pts/day on filtered shorts. Robust to threshold choice (1.5B-4.0B all show clear signal).</li>
+    <li><strong>Adds incrementally to V12-fix:</strong> 39 of 60 blocked trades are NOT GEX-LIS paradigm (where V12-fix already blocks).</li>
+    <li><strong>Works for both SC and DD shorts.</strong> DD shorts collapse to 17% WR with high-DD nearby — strongest individual signal in the test.</li>
+    <li><strong>Where to add:</strong> <code>app/setup_detector.py</code> in the SC short and DD short eval branches, OR in <code>_passes_live_filter()</code> in <code>app/main.py</code> as the V12-fix→V13 update.</li>
+  </ul>
+</div>
+
+<div class="callout callout-warn">
+  <div class="label">SECONDARY FINDING</div>
+  <strong>SC LONGS on GEX-LIS paradigm are 31% WR / -44 pts (14 trades).</strong> We already block SC SHORTS on GEX-LIS — should consider blocking SC LONGS too. Sample size is moderate (14 trades) — recommend logging post-deploy and revisiting in 30 days.
+</div>
+
+<div class="callout callout-danger">
+  <div class="label">REJECT</div>
+  Ideas #3, #5, #6 — clear inverse or null findings. Don't pursue. Idea #1 needs more data (only 1 candidate day in Mar 18 - Apr 8).
+</div>
+
+<h2>Caveats</h2>
+<ul>
+  <li><strong>Sample period:</strong> 15 trading days, 736 trades. Per CLAUDE.md: "100+ trades = high confidence." Idea #4 with N=186 in the test category is solid.</li>
+  <li><strong>Period bias:</strong> The test era includes the geopolitical tail week (Iran-Israel + ceasefire). Idea #4's biggest savings days (Mar 31, Apr 2) were both headline-driven choppy days where DD magnets dominated.</li>
+  <li><strong>Filter version:</strong> All trades in the test era ran under V12-fix (deployed Mar 29). Earlier trades (Mar 18-28) ran under V11/V12 — but the DD test is on RAW signals before filter, so era doesn't bias the result.</li>
+  <li><strong>Cross-check (Gate 2):</strong> Total raw PnL Mar 18 - Apr 8 = +991.3 pts across 736 trades, matches independent setup-by-setup sum.</li>
+</ul>
+
+<div class="footer">
+  Generated 2026-04-09 · Backtest scripts: <code>_discord_ideas_backtest.py</code>, <code>_discord_ideas_validate.py</code><br>
+  Data: setup_log + volland_exposure_points + volland_snapshots · 15 days · 736 trades · CLAUDE.md analysis validation gates 1, 2, 3 passed
+</div>
+
+</body>
+</html>

@@ -1,0 +1,50 @@
+{
+  "period": {
+    "start": "2026-03-24",
+    "end": "2026-04-16",
+    "trading_days": 17
+  },
+  "scenarios": {
+    "1_actual": {
+      "n": 37,
+      "spx_pts": -23.75,
+      "usd_1mes": -118.75,
+      "monthly": -153.6764705882353,
+      "label": "Actual TSRT (bugs + V12-fix + 1-slot)"
+    },
+    "2_no_bugs": {
+      "n": 60,
+      "spx_pts": 117.25999999999998,
+      "usd_1mes": 586.2999999999998,
+      "monthly": 758.741176470588,
+      "label": "If no bugs (V12-fix + 1-slot clean)"
+    },
+    "3_2slot": {
+      "n": 76,
+      "spx_pts": 201.50000000000006,
+      "usd_1mes": 1007.5000000000002,
+      "monthly": 1303.823529411765,
+      "label": "If 2-slot shorts (V12-fix + 2-slot clean)"
+    },
+    "4_v13": {
+      "n": 35,
+      "spx_pts": 190.60999999999999,
+      "usd_1mes": 953.05,
+      "monthly": 1233.3588235294117,
+      "label": "If V13 from day one (V13 + 1-slot clean)"
+    },
+    "5_combined": {
+      "n": 42,
+      "spx_pts": 310.05000000000007,
+      "usd_1mes": 1550.2500000000005,
+      "monthly": 2006.205882352942,
+      "label": "V13 + 2-slot shorts (target future)"
+    }
+  },
+  "deltas": {
+    "bugs_cost": 705.05,
+    "v13_gain": 366.75000000000006,
+    "2slot_gain": 597.2000000000004,
+    "total_improvement": 1669.0000000000005
+  }
+}

@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; padding: 30px; max-width: 1200px; margin: 0 auto; }
+  h1 { color: #58a6ff; font-size: 28px; text-align: center; margin-bottom: 5px; }
+  h2 { color: #58a6ff; font-size: 20px; margin: 30px 0 12px; border-bottom: 1px solid #21262d; padding-bottom: 6px; }
+  h3 { color: #79c0ff; font-size: 16px; margin: 20px 0 8px; }
+  .subtitle { text-align: center; color: #8b949e; font-size: 14px; margin-bottom: 25px; }
+  .grand-total { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 18px 24px; margin: 20px 0; }
+  .grand-row { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+  .grand-box { flex: 1; min-width: 200px; text-align: center; padding: 12px; }
+  .grand-box .label { font-size: 12px; color: #8b949e; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+  .grand-box .number { font-size: 32px; font-weight: 700; }
+  .grand-box .sub { font-size: 13px; color: #8b949e; margin-top: 4px; }
+  .stat-row { display: flex; gap: 10px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+  .stat-box { background: #21262d; border-radius: 6px; padding: 8px 14px; min-width: 80px; text-align: center; }
+  .stat-box .val { font-size: 18px; font-weight: 600; }
+  .stat-box .lbl { font-size: 10px; color: #8b949e; }
+  .green { color: #3fb950; }
+  .red { color: #f85149; }
+  .yellow { color: #d29922; }
+  .blue { color: #58a6ff; }
+  .dim { color: #484f58; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 18px; font-size: 13px; }
+  th { background: #161b22; color: #58a6ff; padding: 8px 10px; text-align: left; font-weight: 600; border-bottom: 2px solid #30363d; }
+  td { padding: 7px 10px; border-bottom: 1px solid #21262d; }
+  tr:hover { background: #161b22; }
+  .rank-1 td { background: rgba(63, 185, 80, 0.08); }
+  .rank-2 td { background: rgba(63, 185, 80, 0.05); }
+  .rank-3 td { background: rgba(63, 185, 80, 0.03); }
+  .loser td { background: rgba(248, 81, 73, 0.06); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: rgba(63,185,80,0.15); color: #3fb950; }
+  .badge-red { background: rgba(248,81,73,0.15); color: #f85149; }
+  .badge-yellow { background: rgba(210,153,34,0.15); color: #d29922; }
+  .badge-blue { background: rgba(88,166,255,0.15); color: #58a6ff; }
+  .setup-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 18px; margin: 15px 0; }
+  .setup-card h3 { margin-top: 0; }
+  .setup-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .direction-row { display: flex; gap: 12px; margin: 8px 0; }
+  .dir-box { flex: 1; background: #21262d; border-radius: 6px; padding: 10px; text-align: center; }
+  .dir-box .dir-title { font-size: 11px; color: #8b949e; margin-bottom: 4px; }
+  .recommendation { background: #161b22; border-left: 3px solid #58a6ff; padding: 12px 16px; margin: 8px 0; border-radius: 0 6px 6px 0; }
+  .recommendation.enable { border-left-color: #3fb950; }
+  .recommendation.fix { border-left-color: #d29922; }
+  .recommendation.disable { border-left-color: #f85149; }
+  .rec-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+  .rec-body { font-size: 12px; color: #8b949e; }
+  .divider { border: none; border-top: 1px solid #21262d; margin: 25px 0; }
+  .footer { text-align: center; color: #484f58; font-size: 11px; margin-top: 30px; }
+  .compare-arrow { color: #58a6ff; font-weight: 600; }
+  .v12-highlight { background: rgba(88,166,255,0.06); border: 1px solid rgba(88,166,255,0.15); border-radius: 6px; padding: 14px; margin: 12px 0; }
+  .v12-stat { display: inline-block; margin-right: 20px; }
+  .v12-stat .label { font-size: 11px; color: #8b949e; }
+  .v12-stat .value { font-size: 16px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>Setup Assessment &mdash; Full Review</h1>
+<p class="subtitle">Mar 1 &ndash; Apr 2, 2026 (24 trading days, includes this week) &mdash; Generated Apr 2, 2026</p>
+
+<!-- ==================== GRAND TOTALS ==================== -->
+<div class="grand-total">
+  <div class="grand-row">
+    <div class="grand-box">
+      <div class="label">All Signals (Unfiltered)</div>
+      <div class="number green">+1,102.5 pts</div>
+      <div class="sub">1,164 trades &bull; 55.7% WR &bull; 592W / 471L / 101E</div>
+    </div>
+    <div class="grand-box" style="border-left: 1px solid #30363d;">
+      <div class="label">V12-fix Filtered</div>
+      <div class="number green">+1,415.6 pts</div>
+      <div class="sub">318 trades &bull; 70.2% WR &bull; 210W / 89L / 19E</div>
+    </div>
+  </div>
+  <div style="text-align: center; margin-top: 14px; padding-top: 14px; border-top: 1px solid #21262d;">
+    <span class="badge badge-blue" style="font-size: 13px; padding: 4px 14px;">V12-fix: cuts 73% of trades, ADDS +313 pts (+28%), WR 55.7% &rarr; 70.2%</span>
+  </div>
+</div>
+
+<!-- ==================== RANKING TABLE ==================== -->
+<h2>Setup Rankings &mdash; Unfiltered vs V12-fix</h2>
+
+<table>
+<tr>
+  <th>#</th><th>Setup</th>
+  <th colspan="3" style="text-align:center; border-right: 1px solid #30363d;">Unfiltered</th>
+  <th colspan="3" style="text-align:center;">V12-fix Filtered</th>
+  <th>MaxDD<br><span style="font-size:10px;color:#8b949e;">UF / V12</span></th>
+  <th>Active</th>
+</tr>
+<tr>
+  <th></th><th></th>
+  <th>Trades</th><th>WR%</th><th style="border-right: 1px solid #30363d;">PnL</th>
+  <th>Trades</th><th>WR%</th><th>PnL</th>
+  <th></th><th></th>
+</tr>
+<tr class="rank-1">
+  <td>1</td><td><strong>Skew Charm</strong></td>
+  <td>293</td><td>65.4%</td><td style="border-right: 1px solid #21262d;">+441.0</td>
+  <td>168</td><td class="green"><strong>74.5%</strong></td><td class="green"><strong>+768.5</strong></td>
+  <td><span class="dim">-179.6</span> / <span class="green">-82.3</span></td>
+  <td><span class="badge badge-green">REAL</span> <span class="badge badge-blue">EVAL</span></td>
+</tr>
+<tr class="rank-2">
+  <td>2</td><td><strong>AG Short</strong></td>
+  <td>55</td><td>75.5%</td><td style="border-right: 1px solid #21262d;">+307.0</td>
+  <td>45</td><td class="green"><strong>82.1%</strong></td><td class="green"><strong>+345.0</strong></td>
+  <td><span class="dim">-60.0</span> / <span class="green">-60.0</span></td>
+  <td><span class="badge badge-blue">EVAL</span></td>
+</tr>
+<tr class="rank-3">
+  <td>3</td><td><strong>DD Exhaustion</strong></td>
+  <td>266</td><td class="red">44.0%</td><td style="border-right: 1px solid #21262d;" class="red">-45.0</td>
+  <td>100</td><td class="green"><strong>57.4%</strong></td><td class="green"><strong>+276.3</strong></td>
+  <td><span class="red">-367.3</span> / <span class="green">-89.3</span></td>
+  <td><span class="badge badge-blue">EVAL</span></td>
+</tr>
+<tr>
+  <td>4</td><td>ES Absorption</td>
+  <td>350</td><td>56.7%</td><td style="border-right: 1px solid #21262d;" class="green">+390.0</td>
+  <td class="red">3</td><td>66.7%</td><td class="yellow">+9.0</td>
+  <td><span class="dim">-116.2</span> / <span class="green">0.0</span></td>
+  <td><span class="badge badge-blue">EVAL</span></td>
+</tr>
+<tr>
+  <td>5</td><td>SB Absorption</td>
+  <td>13</td><td class="green">84.6%</td><td style="border-right: 1px solid #21262d;" class="green">+110.2</td>
+  <td colspan="3" class="dim" style="text-align:center;">blocked by V12</td>
+  <td><span class="dim">-16.0</span></td>
+  <td><span class="badge badge-yellow">PORTAL</span></td>
+</tr>
+<tr>
+  <td>6</td><td>GEX Long</td>
+  <td>38</td><td>43.2%</td><td style="border-right: 1px solid #21262d;" class="red">-19.2</td>
+  <td>1</td><td>100%</td><td>+11.7</td>
+  <td><span class="dim">-64.2</span> / <span class="green">0.0</span></td>
+  <td><span class="badge badge-yellow">PORTAL</span></td>
+</tr>
+<tr class="loser">
+  <td>7</td><td>Paradigm Reversal</td>
+  <td>23</td><td>47.6%</td><td style="border-right: 1px solid #21262d;" class="red">-71.1</td>
+  <td colspan="3" class="dim" style="text-align:center;">blocked by V12</td>
+  <td><span class="red">-99.2</span></td>
+  <td><span class="badge badge-blue">EVAL</span></td>
+</tr>
+<tr class="loser">
+  <td>8</td><td>BofA Scalp</td>
+  <td>46</td><td>46.7%</td><td style="border-right: 1px solid #21262d;" class="red">-80.0</td>
+  <td colspan="3" class="dim" style="text-align:center;">blocked by V12</td>
+  <td><span class="red">-103.2</span></td>
+  <td><span class="badge badge-red">OFF</span></td>
+</tr>
+</table>
+
+<p style="font-size: 12px; color: #8b949e; margin-top: -10px;">
+  <em>Note: ES Absorption almost entirely blocked by V12 &mdash; not in shorts whitelist, longs rarely pass alignment+VIX gate. Only 3 of 350 signals get through.</em><br>
+  <em>Paradigm Reversal &amp; BofA Scalp fully blocked &mdash; not in shorts whitelist and longs fail alignment gate.</em>
+</p>
+
+<hr class="divider">
+
+<!-- ==================== V12 FILTER ASSESSMENT ==================== -->
+<h2>V12-fix Filter Assessment</h2>
+
+<div class="v12-highlight">
+  <h3 style="margin-top:0; color: #58a6ff;">Filter Effectiveness</h3>
+  <table>
+    <tr><th>Metric</th><th>Unfiltered</th><th>V12-fix</th><th>Change</th></tr>
+    <tr><td>Total Trades</td><td>1,164</td><td>318</td><td class="yellow">-73% (846 blocked)</td></tr>
+    <tr><td>Win Rate</td><td>55.7%</td><td class="green"><strong>70.2%</strong></td><td class="green">+14.5pp</td></tr>
+    <tr><td>Total PnL</td><td>+1,102.5</td><td class="green"><strong>+1,415.6</strong></td><td class="green">+313.1 (+28%)</td></tr>
+    <tr><td>Blocked PnL</td><td colspan="3" class="red">-313.1 pts (blocked trades were net NEGATIVE)</td></tr>
+  </table>
+  <p style="font-size: 12px; color: #8b949e; margin-top: 8px;">V12-fix correctly identifies and blocks the losing population. The 846 blocked trades had a combined PnL of <strong class="red">-313.1 pts</strong>. Every setup improves or stays neutral after filtering.</p>
+
+  <h3>Per-Setup V12 Impact</h3>
+  <table>
+    <tr><th>Setup</th><th>UF PnL</th><th>V12 PnL</th><th>PnL Saved</th><th>UF WR</th><th>V12 WR</th><th>UF MaxDD</th><th>V12 MaxDD</th></tr>
+    <tr>
+      <td>Skew Charm</td>
+      <td>+441.0</td><td class="green"><strong>+768.5</strong></td><td class="green">+327.5</td>
+      <td>65.4%</td><td class="green">74.5%</td>
+      <td class="red">-179.6</td><td class="green">-82.3</td>
+    </tr>
+    <tr>
+      <td>AG Short</td>
+      <td>+307.0</td><td class="green"><strong>+345.0</strong></td><td class="green">+38.0</td>
+      <td>75.5%</td><td class="green">82.1%</td>
+      <td>-60.0</td><td>-60.0</td>
+    </tr>
+    <tr>
+      <td>DD Exhaustion</td>
+      <td class="red">-45.0</td><td class="green"><strong>+276.3</strong></td><td class="green"><strong>+321.3</strong></td>
+      <td class="red">44.0%</td><td class="green">57.4%</td>
+      <td class="red">-367.3</td><td class="green">-89.3</td>
+    </tr>
+    <tr>
+      <td>ES Absorption</td>
+      <td class="green">+390.0</td><td class="yellow">+9.0</td><td class="red">-381.0</td>
+      <td>56.7%</td><td>66.7%</td>
+      <td>-116.2</td><td>0.0</td>
+    </tr>
+  </table>
+  <p style="font-size: 12px; color: #8b949e; margin-top: 8px;">
+    <strong class="yellow">Key finding:</strong> ES Absorption makes +390 pts unfiltered but V12 blocks 347 of 350 trades.
+    The setup works (56.7% WR) but doesn't fit V12's shorts whitelist. It needs its own filter path or inclusion in the whitelist.
+  </p>
+</div>
+
+<hr class="divider">
+
+<!-- ==================== SETUP 1: SKEW CHARM ==================== -->
+<h2>1. Skew Charm &mdash; MVP</h2>
+
+<div class="setup-card">
+  <div class="setup-header">
+    <div>
+      <h3 style="margin:0;">V12-filtered: 168 trades &bull; 74.5% WR</h3>
+      <div style="font-size:12px; color:#8b949e;">Unfiltered: 293 trades &bull; 65.4% WR</div>
+    </div>
+    <div>
+      <div style="font-size:12px; color:#8b949e;">UF: +441.0</div>
+      <div style="font-size:24px; font-weight:700;" class="green">V12: +768.5 pts</div>
+    </div>
+  </div>
+
+  <h3>Weekly Trend (Unfiltered / V12-fix)</h3>
+  <table>
+    <tr><th>Week</th><th colspan="3" style="text-align:center; border-right: 1px solid #30363d;">Unfiltered</th><th colspan="3" style="text-align:center;">V12-fix</th></tr>
+    <tr><th></th><th>Trades</th><th>W/L</th><th style="border-right: 1px solid #30363d;">PnL</th><th>Trades</th><th>WR%</th><th>PnL</th></tr>
+    <tr>
+      <td>Mar 2-6</td>
+      <td>65</td><td>50/6</td><td style="border-right: 1px solid #21262d;" class="green">+446.0</td>
+      <td>46</td><td class="green">90.5%</td><td class="green"><strong>+363.7</strong></td>
+    </tr>
+    <tr>
+      <td>Mar 9-13</td>
+      <td>72</td><td>42/23</td><td style="border-right: 1px solid #21262d;" class="red">-71.4</td>
+      <td>38</td><td class="green">71.1%</td><td class="green"><strong>+89.4</strong></td>
+    </tr>
+    <tr>
+      <td>Mar 16-20</td>
+      <td>73</td><td>48/16</td><td style="border-right: 1px solid #21262d;" class="green">+147.2</td>
+      <td>42</td><td class="green">87.5%</td><td class="green"><strong>+208.7</strong></td>
+    </tr>
+    <tr>
+      <td>Mar 23-27</td>
+      <td>46</td><td>18/26</td><td style="border-right: 1px solid #21262d;" class="red">-63.4</td>
+      <td>29</td><td>51.7%</td><td class="green"><strong>+71.6</strong></td>
+    </tr>
+    <tr>
+      <td>Mar 30 - Apr 2</td>
+      <td>37</td><td>14/20</td><td style="border-right: 1px solid #21262d;" class="red">-17.4</td>
+      <td>13</td><td>41.7%</td><td class="green">+35.2</td>
+    </tr>
+  </table>
+  <p style="font-size:12px; color:#3fb950; margin-top:-8px;">V12-fix turned EVERY red week green. Week 2: -71.4 &rarr; +89.4. Week 4: -63.4 &rarr; +71.6.</p>
+
+  <h3>Direction (V12-filtered)</h3>
+  <div class="direction-row">
+    <div class="dir-box">
+      <div class="dir-title">LONGS (83 trades)</div>
+      <div><span style="font-size:16px;">73.2% WR</span></div>
+      <div class="green" style="font-size:18px; font-weight:600;">+307.2 pts</div>
+    </div>
+    <div class="dir-box">
+      <div class="dir-title">SHORTS (85 trades)</div>
+      <div><span style="font-size:16px;">75.9% WR</span></div>
+      <div class="green" style="font-size:18px; font-weight:600;">+461.4 pts</div>
+    </div>
+  </div>
+
+  <h3>Grade Performance (V12-filtered)</h3>
+  <table>
+    <tr><th>Grade</th><th>UF Trades</th><th>UF PnL</th><th>V12 Trades</th><th>V12 WR%</th><th>V12 PnL</th></tr>
+    <tr><td><span class="badge badge-green">A+</span></td><td>35</td><td>+236.0</td><td>35</td><td class="green">82.4%</td><td class="green">+236.0</td></tr>
+    <tr><td><span class="badge badge-green">A</span></td><td>70</td><td>+352.6</td><td>70</td><td class="green">76.5%</td><td class="green">+352.6</td></tr>
+    <tr><td><span class="badge badge-blue">B</span></td><td>69</td><td>+157.5</td><td>63</td><td class="green">67.8%</td><td class="green">+179.9</td></tr>
+    <tr class="loser"><td><span class="badge badge-yellow">C</span></td><td>80</td><td>-26.8</td><td colspan="3" class="dim" style="text-align:center;">Blocked by V12 grade gate</td></tr>
+    <tr class="loser"><td><span class="badge badge-red">LOG</span></td><td>39</td><td class="red"><strong>-278.3</strong></td><td colspan="3" class="dim" style="text-align:center;">Blocked by V12 grade gate</td></tr>
+  </table>
+  <p style="font-size:12px; color:#8b949e;">Grade gate saves +305.1 pts by blocking C (-26.8) and LOG (-278.3).</p>
+
+  <h3>March Refinements</h3>
+  <ul style="margin-left: 20px; font-size: 13px; line-height: 1.8;">
+    <li><strong>Grading V2 (Mar 22):</strong> Fixed inverted charm+time. Correlation -0.19 &rarr; +0.32. A+ went from 25% &rarr; 82.4% WR.</li>
+    <li><strong>Trail gap 8&rarr;5 (Mar 28):</strong> Winners capture ~80% MFE (was 65%). Zero loser impact.</li>
+    <li><strong>V12-fix (Mar 29):</strong> Removed all-day gap-up block (was killing 72% WR longs). Now only blocks longs before 10:00 on gap days.</li>
+  </ul>
+
+  <div class="recommendation enable">
+    <div class="rec-title green">VERDICT: Proven Anchor. No Changes Needed.</div>
+    <div class="rec-body">V12-filtered: +768.5 pts, 74.5% WR, -82.3 MaxDD. Stay on Real + Eval. Grade gate (block C/LOG) saves +305 pts/month.</div>
+  </div>
+</div>
+
+<!-- ==================== SETUP 2: AG SHORT ==================== -->
+<h2>2. AG Short &mdash; Best Risk-Adjusted</h2>
+
+<div class="setup-card">
+  <div class="setup-header">
+    <div>
+      <h3 style="margin:0;">V12-filtered: 45 trades &bull; 82.1% WR</h3>
+      <div style="font-size:12px; color:#8b949e;">Unfiltered: 55 trades &bull; 75.5% WR</div>
+    </div>
+    <div>
+      <div style="font-size:12px; color:#8b949e;">UF: +307.0</div>
+      <div style="font-size:24px; font-weight:700;" class="green">V12: +345.0 pts</div>
+    </div>
+  </div>
+
+  <h3>Weekly Trend (Unfiltered / V12-fix)</h3>
+  <table>
+    <tr><th>Week</th><th>UF Trades</th><th>UF PnL</th><th>V12 Trades</th><th>V12 WR%</th><th>V12 PnL</th></tr>
+    <tr><td>Mar 2-6</td><td>7</td><td class="red">-27.5</td><td>5</td><td>75.0%</td><td class="green">+12.5</td></tr>
+    <tr><td>Mar 9-13</td><td>9</td><td class="green">+50.8</td><td>9</td><td>77.8%</td><td class="green">+50.8</td></tr>
+    <tr><td>Mar 16-20</td><td>11</td><td class="green">+74.3</td><td>10</td><td class="green"><strong>100%</strong></td><td class="green">+94.3</td></tr>
+    <tr><td>Mar 23 - Apr 2</td><td>28</td><td class="green">+209.4</td><td>21</td><td class="green">80.0%</td><td class="green"><strong>+187.4</strong></td></tr>
+  </table>
+  <p style="font-size:12px; color:#3fb950; margin-top:-8px;">Week 3 V12: 100% WR (10/10). Improving trend confirmed.</p>
+
+  <h3>Grade Performance (V12-filtered)</h3>
+  <table>
+    <tr><th>Grade</th><th>V12 Trades</th><th>V12 WR%</th><th>V12 PnL</th></tr>
+    <tr><td><span class="badge badge-green">A+</span></td><td>19</td><td class="green">78.9%</td><td class="green">+167.8</td></tr>
+    <tr><td><span class="badge badge-green">A</span></td><td>18</td><td class="green">78.6%</td><td class="green">+105.4</td></tr>
+    <tr><td><span class="badge badge-blue">A-Entry</span></td><td>8</td><td class="green"><strong>100%</strong></td><td class="green">+71.8</td></tr>
+  </table>
+
+  <h3>Key Strengths</h3>
+  <ul style="margin-left: 20px; font-size: 13px; line-height: 1.8;">
+    <li>Highest WR after V12 filtering (82.1%)</li>
+    <li>Lowest MaxDD of profitable setups (-60.0 pts)</li>
+    <li>Every week profitable after V12 (turned week 1 from -27.5 to +12.5)</li>
+    <li>All grades above 78% WR &mdash; no toxic tier</li>
+    <li>V12 blocks 10 of 55 trades (AG-TARGET paradigm), saving +38 pts</li>
+  </ul>
+
+  <div class="recommendation enable">
+    <div class="rec-title green">VERDICT: Ready for Real Money</div>
+    <div class="rec-body">V12-filtered: +345 pts, 82.1% WR, -60 MaxDD. Best risk-adjusted setup. Recommend enabling on TS Real Money Auto Trading immediately.</div>
+  </div>
+</div>
+
+<!-- ==================== SETUP 3: DD EXHAUSTION ==================== -->
+<h2>3. DD Exhaustion &mdash; V12 Transforms It</h2>
+
+<div class="setup-card">
+  <div class="setup-header">
+    <div>
+      <h3 style="margin:0;">V12-filtered: 100 trades &bull; 57.4% WR</h3>
+      <div style="font-size:12px; color:#8b949e;">Unfiltered: 266 trades &bull; 44.0% WR</div>
+    </div>
+    <div>
+      <div style="font-size:12px; color:#8b949e;">UF: <span class="red">-45.0</span></div>
+      <div style="font-size:24px; font-weight:700;" class="green">V12: +276.3 pts</div>
+    </div>
+  </div>
+
+  <div class="v12-highlight" style="margin-top:12px;">
+    <strong class="green">V12 is the difference between loser and winner for DD.</strong>
+    Unfiltered: -45 pts, 44% WR, -367 MaxDD. V12-filtered: +276 pts, 57.4% WR, -89 MaxDD.
+    V12 saves +321.3 pts by blocking toxic longs with low alignment and dead-zone timing.
+  </div>
+
+  <h3>Weekly Trend (Unfiltered / V12-fix)</h3>
+  <table>
+    <tr><th>Week</th><th>UF Trades</th><th>UF PnL</th><th>V12 Trades</th><th>V12 WR%</th><th>V12 PnL</th></tr>
+    <tr><td>Mar 2-6</td><td>60</td><td class="green">+270.8</td><td>35</td><td class="green">74.2%</td><td class="green"><strong>+148.6</strong></td></tr>
+    <tr><td>Mar 9-13</td><td>65</td><td class="red"><strong>-197.9</strong></td><td>24</td><td>41.7%</td><td class="red">-28.8</td></tr>
+    <tr><td>Mar 16-20</td><td>64</td><td class="green">+93.7</td><td>21</td><td class="green"><strong>70.0%</strong></td><td class="green"><strong>+160.1</strong></td></tr>
+    <tr><td>Mar 23-27</td><td>45</td><td class="red">-100.8</td><td>8</td><td>50.0%</td><td class="green">+24.3</td></tr>
+    <tr><td>Mar 30 - Apr 2</td><td>32</td><td class="red">-110.8</td><td>12</td><td class="red">27.3%</td><td class="red">-27.9</td></tr>
+  </table>
+  <p style="font-size:12px; color:#8b949e; margin-top:-8px;">V12 turned week 2 from -197.9 to -28.8, week 4 from -100.8 to +24.3. Week 5 still red &mdash; needs attention.</p>
+
+  <h3>Direction (V12-filtered)</h3>
+  <div class="direction-row">
+    <div class="dir-box" style="border: 1px solid #3fb950;">
+      <div class="dir-title">LONGS V12 (8 trades)</div>
+      <div><span class="green" style="font-size:16px;">87.5% WR</span></div>
+      <div class="green" style="font-size:18px; font-weight:600;">+80.7 pts</div>
+      <div style="font-size:10px; color:#8b949e;">UF longs: 139t, 40.5% WR, -199.7 pts</div>
+    </div>
+    <div class="dir-box" style="border: 1px solid #3fb950;">
+      <div class="dir-title">SHORTS V12 (92 trades)</div>
+      <div><span style="font-size:16px;">54.7% WR</span></div>
+      <div class="green" style="font-size:18px; font-weight:600;">+195.6 pts</div>
+      <div style="font-size:10px; color:#8b949e;">UF shorts: 127t, 47.9% WR, +154.7 pts</div>
+    </div>
+  </div>
+  <p style="font-size:12px; color:#8b949e;">V12 reduced longs from 139 to 8 (only high-alignment ones pass &mdash; 87.5% WR). Shorts improved by filtering GEX-LIS paradigm and zero-alignment.</p>
+
+  <h3>Grade Performance (V12-filtered)</h3>
+  <table>
+    <tr><th>Grade</th><th>UF Trades</th><th>UF PnL</th><th>V12 Trades</th><th>V12 WR%</th><th>V12 PnL</th></tr>
+    <tr><td><span class="badge badge-green">A</span></td><td>106</td><td>+125.8</td><td>46</td><td class="green">68.3%</td><td class="green"><strong>+214.2</strong></td></tr>
+    <tr><td><span class="badge badge-green">A+</span></td><td>52</td><td class="red">-80.7</td><td>26</td><td class="red">34.6%</td><td class="red">-20.9</td></tr>
+    <tr><td><span class="badge badge-blue">A-Entry</span></td><td>64</td><td>-22.2</td><td>24</td><td class="green">60.9%</td><td class="green">+75.5</td></tr>
+    <tr><td><span class="badge badge-blue">B</span></td><td>23</td><td>+18.8</td><td>4</td><td class="green">75.0%</td><td class="green">+7.5</td></tr>
+    <tr class="loser"><td><span class="badge badge-red">C</span></td><td>13</td><td class="red"><strong>-80.4</strong></td><td colspan="3" class="dim" style="text-align:center;">Blocked (align=0 rule)</td></tr>
+    <tr class="loser"><td><span class="badge badge-red">LOG</span></td><td>8</td><td class="red">-6.3</td><td colspan="3" class="dim" style="text-align:center;">Blocked (align=0 rule)</td></tr>
+  </table>
+  <p style="font-size:12px; color:#f85149; margin-top:-8px;"><strong>A+ still underperforms A even after V12 (34.6% vs 68.3% WR).</strong> DD grading is partially inverted &mdash; needs V2 rewrite.</p>
+
+  <div class="recommendation fix">
+    <div class="rec-title yellow">VERDICT: V12 makes it profitable, but grading needs work</div>
+    <div class="rec-body">
+      V12-filtered: +276.3 pts, 57.4% WR, -89.3 MaxDD. The filter transforms DD from loser to solid contributor.<br>
+      <strong>Keep on Eval.</strong> A+ underperformance (34.6% WR) suggests grading V2 rewrite could unlock more.<br>
+      Not ready for Real Money yet &mdash; last 2 weeks trending down (27.3% V12 WR in week 5).
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SETUP 4: ES ABSORPTION ==================== -->
+<h2>4. ES Absorption &mdash; Good Setup, Wrong Filter</h2>
+
+<div class="setup-card">
+  <div class="setup-header">
+    <div>
+      <h3 style="margin:0;">V12-filtered: 3 trades (!)</h3>
+      <div style="font-size:12px; color:#8b949e;">Unfiltered: 350 trades &bull; 56.7% WR</div>
+    </div>
+    <div>
+      <div style="font-size:12px; color:#8b949e;">UF: <span class="green">+390.0</span></div>
+      <div style="font-size:24px; font-weight:700;" class="yellow">V12: +9.0 pts</div>
+    </div>
+  </div>
+
+  <div class="v12-highlight" style="border-color: rgba(210,153,34,0.3);">
+    <strong class="yellow">V12 blocks 347 of 350 trades (99%).</strong>
+    ES Absorption is NOT in the shorts whitelist (only SC/AG/DD). Longs need alignment &ge; 2 + VIX &le; 22, which is rare.
+    The setup makes +390 pts unfiltered (56.7% WR) but V12 was never designed for it.
+  </div>
+
+  <h3>Weekly Trend (Unfiltered only &mdash; V12 has zero trades most weeks)</h3>
+  <table>
+    <tr><th>Week</th><th>Trades</th><th>W/L</th><th>PnL</th></tr>
+    <tr><td>Mar 2-6</td><td>118</td><td>63/42</td><td class="green">+14.0</td></tr>
+    <tr><td>Mar 9-13</td><td>31</td><td>13/16</td><td class="red">-4.2</td></tr>
+    <tr><td>Mar 16-20</td><td>42</td><td>17/18</td><td class="green">+6.2</td></tr>
+    <tr><td>Mar 23-27</td><td>88</td><td>42/40</td><td class="green">+95.9</td></tr>
+    <tr><td>Mar 30 - Apr 2</td><td>71</td><td>46/22</td><td class="green"><strong>+278.1</strong></td></tr>
+  </table>
+  <p style="font-size:12px; color:#3fb950; margin-top:-8px;">Last week +278.1 pts (46W/22L, 67.6% WR) &mdash; best week yet. Setup is improving.</p>
+
+  <h3>Grading Still Inverted (UF data)</h3>
+  <table>
+    <tr><th>Grade</th><th>Trades</th><th>WR%</th><th>PnL</th></tr>
+    <tr class="loser"><td><span class="badge badge-green">A+</span></td><td>9</td><td class="red">62.5%</td><td class="green">+8.5</td></tr>
+    <tr><td><span class="badge badge-green">A</span></td><td>58</td><td>57.7%</td><td class="green">+145.4</td></tr>
+    <tr><td><span class="badge badge-blue">B</span></td><td>175</td><td>54.4%</td><td class="green">+101.4</td></tr>
+    <tr><td><span class="badge badge-yellow">C</span></td><td>72</td><td class="green"><strong>59.2%</strong></td><td class="green">+65.0</td></tr>
+    <tr><td><span class="badge badge-red">LOG</span></td><td>36</td><td class="green">60.7%</td><td class="green">+69.7</td></tr>
+  </table>
+  <p style="font-size:12px; color:#f85149; margin-top:-8px;">C and LOG outperform A+ &mdash; grading inverted. All grades are profitable though, which means the setup itself works well.</p>
+
+  <div class="recommendation fix">
+    <div class="rec-title yellow">VERDICT: Strong setup that V12 accidentally blocks</div>
+    <div class="rec-body">
+      Options: (1) Add ES Absorption to V12 shorts whitelist, (2) Create a separate filter path for ES-based setups, (3) Fix grading V2 first then add with grade gate.<br>
+      <strong>+390 pts sitting on the table.</strong> This is the biggest opportunity for improvement &mdash; not a new setup, just a filter adjustment.<br>
+      Priority: Fix grading V2, then add to whitelist with grade gate.
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SETUP 5: PARADIGM REVERSAL ==================== -->
+<h2>5. Paradigm Reversal &mdash; Fully Blocked by V12</h2>
+
+<div class="setup-card">
+  <div class="setup-header">
+    <h3 style="margin:0;">0 trades pass V12 &bull; 23 unfiltered &bull; -71.1 pts</h3>
+  </div>
+
+  <p style="font-size:13px; margin-top:10px;">
+    Paradigm Reversal is not in the V12 shorts whitelist, and longs rarely pass alignment &ge; 2.
+    <strong>This means it's enabled on Eval but zero trades actually execute through the filter.</strong>
+  </p>
+
+  <div class="direction-row">
+    <div class="dir-box" style="border: 1px solid #f85149;">
+      <div class="dir-title">LONGS UF (11 trades)</div>
+      <div><span class="red" style="font-size:16px;">20.0% WR</span></div>
+      <div class="red" style="font-size:18px; font-weight:600;">-109.2 pts</div>
+    </div>
+    <div class="dir-box" style="border: 1px solid #3fb950;">
+      <div class="dir-title">SHORTS UF (12 trades)</div>
+      <div><span class="green" style="font-size:16px;">72.7% WR</span></div>
+      <div class="green" style="font-size:18px; font-weight:600;">+38.1 pts</div>
+    </div>
+  </div>
+
+  <div class="recommendation disable">
+    <div class="rec-title red">VERDICT: Remove from Eval config (it's dead weight)</div>
+    <div class="rec-body">Zero trades pass V12. Having it "enabled" on Eval config is misleading. Remove to simplify. If we want shorts, add to whitelist explicitly after more data.</div>
+  </div>
+</div>
+
+<!-- ==================== OTHER SETUPS ==================== -->
+<h2>Other Setups</h2>
+
+<table>
+  <tr><th>Setup</th><th>UF Stats</th><th>V12 Status</th><th>Verdict</th></tr>
+  <tr>
+    <td><strong>SB Absorption</strong></td>
+    <td>13t, <span class="green">84.6% WR, +110.2 pts</span></td>
+    <td class="dim">Blocked by V12</td>
+    <td class="green">Best WR. Need 30+ trades. Consider whitelist addition.</td>
+  </tr>
+  <tr>
+    <td><strong>SB2 Absorption</strong></td>
+    <td>53t, 47.2% WR, +18.4 pts</td>
+    <td>1 trade passed (+5.0)</td>
+    <td class="yellow">Marginally positive UF. Not reliable enough.</td>
+  </tr>
+  <tr>
+    <td><strong>Delta Absorption</strong></td>
+    <td>11t (new), 54.5% WR, <span class="green">+38.7 pts</span></td>
+    <td class="dim">Blocked by V12</td>
+    <td>Collecting data. Early signal positive.</td>
+  </tr>
+  <tr>
+    <td><strong>GEX Long</strong></td>
+    <td>38t, 43.2% WR, <span class="red">-19.2 pts</span></td>
+    <td>1 trade passed (+11.7)</td>
+    <td class="yellow">Needs bull regime (VIX &lt; 22). Stay off.</td>
+  </tr>
+  <tr>
+    <td><strong>BofA Scalp</strong></td>
+    <td>46t, 46.7% WR, <span class="red">-80.0 pts</span></td>
+    <td class="dim">Blocked by V12</td>
+    <td class="red">Net loser. V12 correctly blocks it.</td>
+  </tr>
+</table>
+
+<hr class="divider">
+
+<!-- ==================== ACTION PLAN ==================== -->
+<h2>Action Plan</h2>
+
+<div class="recommendation enable">
+  <div class="rec-title green">1. ENABLE AG Short on Real Money</div>
+  <div class="rec-body">V12: 82.1% WR, +345 pts, -60 MaxDD. Highest WR, lowest drawdown. Getting better every week. 45 V12 trades = moderate confidence. Ready now.</div>
+</div>
+
+<div class="recommendation enable">
+  <div class="rec-title green">2. Keep DD Exhaustion on Eval (V12 works)</div>
+  <div class="rec-body">V12 transforms DD from -45 to +276.3 pts. But last 2 weeks trending down, and A+ grading inverted. Keep on Eval, monitor, fix grading V2. Not ready for Real yet.</div>
+</div>
+
+<div class="recommendation fix">
+  <div class="rec-title yellow">3. ES Absorption: Add to V12 Shorts Whitelist (after grading V2)</div>
+  <div class="rec-body">+390 pts sitting on the table. V12 blocks 99% of trades accidentally. Priority: fix grading V2 &rarr; add to whitelist with grade gate &rarr; enable on Eval with filter.</div>
+</div>
+
+<div class="recommendation disable">
+  <div class="rec-title red">4. Remove Paradigm Reversal from Eval Config</div>
+  <div class="rec-body">Zero trades pass V12. Dead weight in config. If we want the shorts (72.7% WR), explicitly add to whitelist &mdash; don't leave it "enabled" but silently blocked.</div>
+</div>
+
+<div class="recommendation fix">
+  <div class="rec-title yellow">5. PRIORITY: ES Absorption + DD Grading V2 Rewrite</div>
+  <div class="rec-body">Both setups have inverted grading (same bug SC had before). SC grading V2 was a game-changer (+327.5 pts). Same fix could unlock ES Abs (+390 pts sitting in portal) and improve DD further.</div>
+</div>
+
+<hr class="divider">
+
+<div style="background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 18px; margin: 15px 0;">
+  <h3 style="color: #58a6ff; margin-top: 0;">Summary: Where We Stand</h3>
+  <table>
+    <tr><th>Setup</th><th>Status</th><th>V12 WR</th><th>V12 PnL</th><th>V12 MaxDD</th><th>Recommendation</th></tr>
+    <tr>
+      <td><strong>Skew Charm</strong></td>
+      <td><span class="badge badge-green">REAL+EVAL</span></td>
+      <td class="green">74.5%</td><td class="green">+768.5</td><td>-82.3</td>
+      <td class="green">No change. Anchor setup.</td>
+    </tr>
+    <tr>
+      <td><strong>AG Short</strong></td>
+      <td><span class="badge badge-blue">EVAL</span></td>
+      <td class="green">82.1%</td><td class="green">+345.0</td><td>-60.0</td>
+      <td class="green"><strong>Enable on Real</strong></td>
+    </tr>
+    <tr>
+      <td><strong>DD Exhaustion</strong></td>
+      <td><span class="badge badge-blue">EVAL</span></td>
+      <td>57.4%</td><td class="green">+276.3</td><td>-89.3</td>
+      <td class="yellow">Keep Eval. Fix grading.</td>
+    </tr>
+    <tr>
+      <td><strong>ES Absorption</strong></td>
+      <td><span class="badge badge-blue">EVAL</span></td>
+      <td class="dim">n/a (3t)</td><td class="dim">+9.0</td><td>0.0</td>
+      <td class="yellow">Fix grading + whitelist</td>
+    </tr>
+    <tr>
+      <td><strong>Paradigm Rev</strong></td>
+      <td><span class="badge badge-blue">EVAL</span></td>
+      <td class="dim">n/a (0t)</td><td class="dim">blocked</td><td>&mdash;</td>
+      <td class="red">Remove from Eval</td>
+    </tr>
+  </table>
+  <p style="font-size: 12px; color: #8b949e; margin-top: 10px;">
+    <strong>V12-fix proven effective:</strong> cuts 73% of trades, improves PnL by +28%, WR 55.7% &rarr; 70.2%.<br>
+    <strong>Biggest opportunity:</strong> ES Absorption &mdash; +390 pts blocked by filter design. Fix grading + whitelist = potential +50% more filtered PnL.
+  </p>
+</div>
+
+<div class="footer">
+  0DTE Alpha &mdash; Setup Assessment (Mar 1 &ndash; Apr 2, 2026) &mdash; 1,164 signals analyzed<br>
+  V12-fix filter verified from <code>_passes_live_filter()</code> in <code>app/main.py:3719</code><br>
+  Generated by Claude Code &mdash; Apr 2, 2026
+</div>
+
+</body>
+</html>

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discord Sync Apr 1-8, 2026</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    background: #0a0e17;
+    color: #c8d6e5;
+    line-height: 1.7;
+    padding: 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .report-header {
+    text-align: center;
+    padding: 2rem 0 1.5rem;
+    border-bottom: 1px solid #1a2a3a;
+    margin-bottom: 2rem;
+  }
+  .report-header h1 { color: #f5f6fa; font-size: 2.2rem; font-weight: 700; margin-bottom: 0.3rem; }
+  .report-header .subtitle { color: #778ca3; font-size: 0.95rem; }
+  .report-header .tag {
+    display: inline-block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 4px 14px;
+    border-radius: 20px;
+    margin-top: 0.8rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .tag-cyan { background: #00d2ff22; color: #00d2ff; }
+  .tag-gold { background: #ffd32a22; color: #ffd32a; }
+
+  h2 { color: #00d2ff; font-size: 1.35rem; font-weight: 600; margin: 2.5rem 0 1rem; border-bottom: 1px solid #1a2a3a; padding-bottom: 0.4rem; }
+  h3 { color: #ffd32a; font-size: 1.05rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+  p { margin-bottom: 0.8rem; }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .kpi-card {
+    background: #111927;
+    border: 1px solid #1a2a3a;
+    border-radius: 10px;
+    padding: 1.2rem 1rem;
+    text-align: center;
+  }
+  .kpi-card .label { color: #778ca3; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 500; }
+  .kpi-card .value { font-family: 'JetBrains Mono', monospace; font-size: 1.8rem; font-weight: 700; margin: 0.3rem 0; }
+  .kpi-card .note { color: #778ca3; font-size: 0.75rem; }
+  .value-green { color: #6ab04c; }
+  .value-red { color: #eb4d4b; }
+  .value-gold { color: #ffd32a; }
+  .value-cyan { color: #00d2ff; }
+  .value-white { color: #f5f6fa; }
+
+  .finding-card {
+    background: #111927;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    border-left: 4px solid;
+  }
+  .finding-critical { border-color: #eb4d4b; }
+  .finding-positive { border-color: #6ab04c; }
+  .finding-warning { border-color: #f9ca24; }
+  .finding-info { border-color: #00d2ff; }
+  .finding-card h3 { margin-top: 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+  th { color: #00d2ff; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; padding: 0.7rem 0.8rem; text-align: left; border-bottom: 2px solid #1a2a3a; font-weight: 600; }
+  td { font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; padding: 0.6rem 0.8rem; border-bottom: 1px solid #1a2a3a; vertical-align: top; }
+  tr:hover { background: #111927; }
+  .win { color: #6ab04c; font-weight: 600; }
+  .loss { color: #eb4d4b; font-weight: 600; }
+  .neutral { color: #ffd32a; }
+
+  .callout {
+    background: #1a2a3a;
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    margin: 1rem 0;
+    border-left: 3px solid #00d2ff;
+  }
+  .callout-warn { border-left-color: #f9ca24; background: #2a2a1a; }
+  .callout-danger { border-left-color: #eb4d4b; background: #2a1a1a; }
+  .callout-good { border-left-color: #6ab04c; background: #1a2a1a; }
+  .callout .label { color: #00d2ff; font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.3rem; }
+  .callout-warn .label { color: #f9ca24; }
+  .callout-danger .label { color: #eb4d4b; }
+  .callout-good .label { color: #6ab04c; }
+
+  .quote {
+    font-style: italic;
+    color: #c8d6e5;
+    border-left: 3px solid #00d2ff;
+    padding-left: 1rem;
+    margin: 0.7rem 0;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.92rem;
+  }
+  .quote .who { color: #ffd32a; font-style: normal; font-weight: 600; font-size: 0.82rem; }
+
+  .idea-card {
+    background: #111927;
+    border: 1px solid #1a2a3a;
+    border-radius: 12px;
+    padding: 1.4rem 1.6rem;
+    margin: 1.2rem 0;
+  }
+  .idea-card .idea-num {
+    display: inline-block;
+    background: #00d2ff22;
+    color: #00d2ff;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    letter-spacing: 0.5px;
+    margin-right: 0.5rem;
+  }
+  .idea-card h3 { display: inline; color: #f5f6fa; font-size: 1.05rem; }
+  .idea-card .meta { color: #778ca3; font-size: 0.82rem; margin: 0.5rem 0; }
+  .idea-card .rule { background: #0a0e17; padding: 0.8rem 1rem; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #ffd32a; margin: 0.7rem 0; border-left: 2px solid #ffd32a; }
+
+  ul { margin: 0.6rem 0 1rem 1.4rem; }
+  li { margin-bottom: 0.4rem; }
+
+  .footer {
+    text-align: center;
+    color: #778ca3;
+    font-size: 0.78rem;
+    padding: 2rem 0 0;
+    border-top: 1px solid #1a2a3a;
+    margin-top: 3rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="report-header">
+  <h1>Discord Sync — Apr 1-8, 2026</h1>
+  <div class="subtitle">Volland Daytrading Central + Official 0DTE Alerts → Ideas vs V12-fix</div>
+  <span class="tag tag-cyan">Discord Comparison #3</span>
+  <span class="tag tag-gold">Geopolitical Tail Week</span>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="label">Daytrading Msgs</div>
+    <div class="value value-cyan">2,460</div>
+    <div class="note">8 calendar days</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">0DTE Alerts</div>
+    <div class="value value-cyan">10</div>
+    <div class="note">Apollo official</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Ideas Surfaced</div>
+    <div class="value value-gold">6</div>
+    <div class="note">3 worth backtest</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Filter Changes</div>
+    <div class="value value-white">0</div>
+    <div class="note">test before deploy</div>
+  </div>
+</div>
+
+<div class="callout callout-warn">
+  <div class="label">⚠ Caveat</div>
+  This was a <strong>geopolitical tail-event week</strong>: Iran-Israel conflict → surprise ceasefire Apr 7 PM → +3% gap Apr 8. Any rule extracted here MUST be backtested on a normal-macro week before deploying. Per <code>feedback_analysis_validation.md</code>.
+</div>
+
+<h2>Daily Snapshot</h2>
+
+<table>
+  <tr>
+    <th>Date</th>
+    <th>Bias</th>
+    <th>Highlight</th>
+  </tr>
+  <tr>
+    <td>Apr 1</td>
+    <td class="neutral">Choppy</td>
+    <td>Apollo: <em>"6650 top for the week"</em> — <span class="loss">WRONG</span>, broke Apr 7</td>
+  </tr>
+  <tr>
+    <td>Apr 2</td>
+    <td class="loss">Fade</td>
+    <td>Yahya posted Citrini supply-chain memo (copper +30%, freight 2x)</td>
+  </tr>
+  <tr>
+    <td>Apr 3</td>
+    <td>—</td>
+    <td>Closed (Good Friday)</td>
+  </tr>
+  <tr>
+    <td>Apr 6</td>
+    <td class="win">Bullish GEX</td>
+    <td>Apollo: GEX, target 6640 — chopped, held</td>
+  </tr>
+  <tr>
+    <td>Apr 7 AM</td>
+    <td class="win">GEX bull</td>
+    <td>Apollo: target 6605 <span class="win">NAILED</span></td>
+  </tr>
+  <tr>
+    <td>Apr 7 PM</td>
+    <td class="win">Ceasefire pop</td>
+    <td>DarkMatter called 6725→6800→6825 vanna towers in real time, <span class="win">all hit</span></td>
+  </tr>
+  <tr>
+    <td>Apr 8</td>
+    <td class="neutral">+3% gap, fade</td>
+    <td>Apollo: <em>"fade rally — undervix exhaustion."</em> Chopped 6770-6800</td>
+  </tr>
+</table>
+
+<div class="callout callout-good">
+  <div class="label">Key observation</div>
+  Apollo's official channel was on <strong>GEX paradigm every single day</strong> Apr 1-8 — no AG calls all week. Multi-day GEX stickiness = regime signal.
+</div>
+
+<h2>Apollo Official 0DTE Alerts</h2>
+
+<table>
+  <tr>
+    <th>Date</th>
+    <th>AM Call</th>
+    <th>PM Update</th>
+    <th>Result</th>
+  </tr>
+  <tr>
+    <td>Apr 1</td>
+    <td>GEX pure, target 6600, LIS 6525</td>
+    <td>Toppy, support 6570 → 6530</td>
+    <td class="win">Correct</td>
+  </tr>
+  <tr>
+    <td>Apr 2</td>
+    <td>Top, large -DD, no support to 6500, overvixed</td>
+    <td>DD turned positive, support 6545</td>
+    <td class="win">Correct</td>
+  </tr>
+  <tr>
+    <td>Apr 6</td>
+    <td>GEX, LIS 6550, target 6640</td>
+    <td>Same, target 6620</td>
+    <td class="neutral">Held, chopped</td>
+  </tr>
+  <tr>
+    <td>Apr 7</td>
+    <td>GEX, target 6605, support 6550</td>
+    <td>Target hit, still overvixing</td>
+    <td class="win">NAILED (AM)</td>
+  </tr>
+  <tr>
+    <td>Apr 8</td>
+    <td>GEX, <strong>extreme undervixing</strong>, 6770 pivot, ceiling 6810</td>
+    <td>Same, 6790 ceiling, 6720 deeper support</td>
+    <td class="win">Correct</td>
+  </tr>
+</table>
+
+<h2>Top 6 Ideas to Test</h2>
+
+<div class="idea-card">
+  <span class="idea-num">#1</span><h3>Undervix-extreme morning long block (R48 candidate)</h3>
+  <div class="meta">Source: Apollo, Apr 8 10:50 ET</div>
+  <div class="quote">
+    "They are built around realized vol. Exceeding expected realized vol tends to mean revert in my experience."
+    <div class="who">— Apollo</div>
+  </div>
+  <div class="rule">IF VIX &lt; VIX3M − 2 AND gap_up &gt; 2% → BLOCK GEX Long first 60 min</div>
+  <p>This is the <strong>mirror</strong> of our overvix mean-reversion rule. We have <code>overvix ≥ +2</code> as a long boost but no <code>undervix ≤ −2</code> block. Apr 8 was the perfect example — Apollo was explicitly in the fade-rally camp from open.</p>
+</div>
+
+<div class="idea-card">
+  <span class="idea-num">#2</span><h3>Vanna tower sequential targeting (VIX-gated)</h3>
+  <div class="meta">Source: DarkMatter, Apr 7 18:28-19:05 ET</div>
+  <div class="quote">
+    "6725 is the first true resistance in this cluster… break that 22.5 on VIX and you will get those extra 20 pts… 6825 spx vanna and then you have 6800 spx gamma. That last 25 pt move will come depending on vol."
+    <div class="who">— DarkMatter (Edge Extractor)</div>
+  </div>
+  <div class="rule">For longs: identify (gamma shelf, vanna tower) pairs spaced 10-25 pts. Extend target to vanna tower ONLY if VIX crosses threshold.</div>
+  <p>We currently use a single +GEX/target magnet. Adding a conditional 2nd-tier target could capture full cluster moves. Apr 7 evening was a textbook example — DarkMatter walked the move 6725 → 6740 → 6800 → 6825, all hit.</p>
+</div>
+
+<div class="idea-card">
+  <span class="idea-num">#3</span><h3>GEX paradigm "stickiness" boost for SC longs</h3>
+  <div class="meta">Source: nofnogjustprofit, Apr 7 + BigBill, Apr 8</div>
+  <div class="quote">
+    "First time GEX has been sticky over multiple days… in the past I've seen GEX cycle between BofA / Sidial several times intraday."
+    <div class="who">— nofnogjustprofit</div>
+  </div>
+  <div class="quote">
+    "Lol, every day it was BOFA by 10:00-11:30."
+    <div class="who">— BigBill</div>
+  </div>
+  <div class="rule">IF paradigm == GEX for ≥ 20 consecutive cycles (~1hr) → upgrade SC long grade by one notch</div>
+  <p>We block SC/DD shorts on GEX-LIS already — but we don't <strong>reward sticky GEX for longs</strong>. Easy to test: group SC longs by <code>consecutive_gex_cycles_at_signal</code> and check WR.</p>
+</div>
+
+<div class="idea-card">
+  <span class="idea-num">#4</span><h3>DD hedging concentration magnet (third level type)</h3>
+  <div class="meta">Source: a_b_cdef, Apr 2 + disciple3</div>
+  <div class="quote">
+    "They continually keep hedging towards 6545/50."
+    <div class="who">— a_b_cdef</div>
+  </div>
+  <div class="quote">
+    "Find on my map a massive outsized hedging value with corresponding price action."
+    <div class="who">— disciple3</div>
+  </div>
+  <div class="rule">Tag strikes where |DD hedging value| &gt; X$ as "sticky magnet." When spot within 10 pts → flag SC/DD shorts as REDUCED conviction</div>
+  <p>This is a <strong>third level type</strong> beyond −GEX and LIS. Price wants to stick at concentrated DD-hedge strikes, not fade through them. Data is already in <code>volland_exposure_points</code> — no Volland worker change needed.</p>
+</div>
+
+<div class="idea-card">
+  <span class="idea-num">#5</span><h3>Paradigm drift detection (BofA-LIS → GEX-pure)</h3>
+  <div class="meta">Source: Tomtom9447, Apr 2</div>
+  <div class="quote">
+    "This BofA LIS keeps going up with DD turning more and more positive 😄 might as well just call it GEX pure."
+    <div class="who">— Tomtom9447</div>
+  </div>
+  <div class="rule">Track within-day paradigm transitions: BofA-LIS → GEX-PURE = structural bullish flip signal</div>
+  <p>LIS climbing + DD flipping positive = upward drift. Currently we treat subtype changes as noise. Could be a real-time long-bias amplifier — no new data needed.</p>
+</div>
+
+<div class="idea-card">
+  <span class="idea-num">#6</span><h3>Macro / headline-day dampener</h3>
+  <div class="meta">Source: charleyharley + yahyaz, Apr 7</div>
+  <div class="quote">
+    "Mega headline driven."
+    <div class="who">— yahyaz</div>
+  </div>
+  <div class="rule">Use intraday VIX stdev or ES range-bar velocity as headline-density proxy → reduce size or block non-GEX setups</div>
+  <p>V12-fix has <strong>no macro-day detection</strong>. The entire week was hostage to geopolitics. Pairs naturally with the SVB filter idea from Mar 27 sync.</p>
+</div>
+
+<h2>Surprising / Contrarian</h2>
+
+<div class="finding-card finding-critical">
+  <h3>Apollo WRONG — weekly forecast</h3>
+  <div class="quote">
+    "I think 6650 top for the week."
+    <div class="who">— Apollo, Apr 1</div>
+  </div>
+  <p>Market closed Apr 7 ≈ 6725 and gapped to ~6800 Apr 8. His weekly bias was too conservative given ceasefire tail risk. Not a tradable rule, but a reminder that <strong>multi-day forecasts decay fast in tail-event weeks</strong>.</p>
+</div>
+
+<div class="finding-card finding-positive">
+  <h3>DarkMatter RIGHT — real-time vanna walk</h3>
+  <p>From the ceasefire-headline print forward, walked clean target sequence 6725 → 6740-50 → 6800 → 6825 using vanna towers. Hit almost exactly. <strong>Best single-call performance of the week.</strong></p>
+</div>
+
+<div class="finding-card finding-positive">
+  <h3>Yahya RIGHT — dealer-setup conviction</h3>
+  <div class="quote">
+    "Irresponsible not to have some form of + delta exposure. Bold call type reading. Might not work today but pos expectancy longing this dealer setup."
+    <div class="who">— Yahya, Apr 6</div>
+  </div>
+  <p>Said this <strong>before</strong> the ceasefire pop. Market ripped the next session.</p>
+</div>
+
+<div class="finding-card finding-info">
+  <h3>jk23 RIGHT — VIX read on Iran headlines</h3>
+  <div class="quote">
+    "I'd expect VIX to be moving a lot higher into close if this is serious."
+    <div class="who">— jk23, Apr 7</div>
+  </div>
+  <p>Correctly identified that the market was NOT pricing escalation → implied ceasefire/fade was coming. Converted later that night.</p>
+</div>
+
+<h2>What I'd Skip</h2>
+
+<ul>
+  <li><strong>Apollo's 6650 weekly top</strong> — single forecast, geopolitical override, no rule</li>
+  <li><strong>Wizard short 6850</strong> — single discretionary call relayed second-hand</li>
+  <li><strong>2024 playbook analog</strong> (LordHelmet/Zack) — useful flag, not a filter</li>
+</ul>
+
+<h2>Bottom Line</h2>
+
+<div class="callout callout-good">
+  <div class="label">Recommended next step</div>
+  Best three for backtest: <strong>#1 (undervix block)</strong>, <strong>#3 (GEX stickiness boost)</strong>, <strong>#4 (DD hedging magnets)</strong>. All three require <strong>zero new data sources</strong> and target real gaps in V12-fix.
+</div>
+
+<p>None of these ideas duplicate V12-fix logic (longs &lt;10am on |gap|&gt;30, SC/DD 14:30-15:00 charm dead zone, SC/DD 15:30+, BofA after 14:30, SC C/LOG grades, SC/DD shorts on GEX-LIS).</p>
+
+<div class="footer">
+  Generated 2026-04-09 · Source: DiscordChatExporter JSON · 2,460 daytrading msgs + 10 Apollo alerts<br>
+  Discord Comparison #3 — prior syncs: Mar 19 (rejected 5), Apr 1 (added R38-R45)
+</div>
+
+</body>
+</html>

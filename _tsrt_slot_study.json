@@ -1,0 +1,284 @@
+{
+  "period": "2026-03-01 to 2026-04-17",
+  "tsrt_scope_n": 249,
+  "v13_passing_n": 182,
+  "v13_nocap": {
+    "pnl": 1316.0,
+    "n": 182
+  },
+  "v13_1cap": {
+    "pnl": 718.3,
+    "n": 119,
+    "fired": 119,
+    "skipped": 63,
+    "missed_pnl": 597.7
+  },
+  "v13_2cap": {
+    "pnl": 1064.64,
+    "n": 156,
+    "missed_pnl": 251.36
+  },
+  "v13_3cap": {
+    "pnl": 1234.0,
+    "n": 172,
+    "missed_pnl": 82.0
+  },
+  "v13_5cap": {
+    "pnl": 1296.9,
+    "n": 180
+  },
+  "longs": {
+    "signals": 63,
+    "fired": 44,
+    "skipped": 19,
+    "fired_pnl": 242.89000000000001,
+    "skipped_pnl": 52.6
+  },
+  "shorts": {
+    "signals": 119,
+    "fired": 75,
+    "skipped": 44,
+    "fired_pnl": 475.41,
+    "skipped_pnl": 545.1
+  },
+  "missed_by_outcome": {
+    "WIN": {
+      "n": 50,
+      "pnl": 674.98
+    },
+    "LOSS": {
+      "n": 6,
+      "pnl": -108.0
+    },
+    "EXPIRED": {
+      "n": 7,
+      "pnl": 30.72
+    }
+  },
+  "best_missed": [
+    {
+      "date": "03-26 17:19",
+      "setup": "Skew Charm",
+      "dir": "short",
+      "pnl": 72.96
+    },
+    {
+      "date": "03-26 16:52",
+      "setup": "AG Short",
+      "dir": "short",
+      "pnl": 70.12
+    },
+    {
+      "date": "03-10 17:18",
+      "setup": "Skew Charm",
+      "dir": "long",
+      "pnl": 32.2
+    },
+    {
+      "date": "03-05 19:55",
+      "setup": "Skew Charm",
+      "dir": "short",
+      "pnl": 20.7
+    },
+    {
+      "date": "03-10 19:45",
+      "setup": "Skew Charm",
+      "dir": "short",
+      "pnl": 19.8
+    },
+    {
+      "date": "04-07 17:55",
+      "setup": "Skew Charm",
+      "dir": "short",
+      "pnl": 19.8
+    },
+    {
+      "date": "04-08 20:22",
+      "setup": "Skew Charm",
+      "dir": "short",
+      "pnl": 18.9
+    },
+    {
+      "date": "04-06 18:53",
+      "setup": "Skew Charm",
+      "dir": "short",
+      "pnl": 17.6
+    },
+    {
+      "date": "03-06 21:48",
+      "setup": "Skew Charm",
+      "dir": "short",
+      "pnl": 17.2
+    },
+    {
+      "date": "03-12 17:08",
+      "setup": "AG Short",
+      "dir": "short",
+      "pnl": 16.1
+    }
+  ],
+  "daily_cap_impact": {
+    "2026-03-03": {
+      "fired": 10,
+      "skipped": 0,
+      "fired_pnl": 94.99000000000001,
+      "skipped_pnl": 0
+    },
+    "2026-03-04": {
+      "fired": 7,
+      "skipped": 6,
+      "fired_pnl": 45.6,
+      "skipped_pnl": 27.4
+    },
+    "2026-03-05": {
+      "fired": 8,
+      "skipped": 1,
+      "fired_pnl": 71.4,
+      "skipped_pnl": 20.7
+    },
+    "2026-03-09": {
+      "fired": 3,
+      "skipped": 0,
+      "fired_pnl": 36.2,
+      "skipped_pnl": 0
+    },
+    "2026-03-10": {
+      "fired": 8,
+      "skipped": 6,
+      "fired_pnl": 39.9,
+      "skipped_pnl": 80.3
+    },
+    "2026-03-11": {
+      "fired": 4,
+      "skipped": 2,
+      "fired_pnl": 38.5,
+      "skipped_pnl": -7.6
+    },
+    "2026-03-12": {
+      "fired": 6,
+      "skipped": 2,
+      "fired_pnl": 10.8,
+      "skipped_pnl": 27.0
+    },
+    "2026-03-13": {
+      "fired": 3,
+      "skipped": 4,
+      "fired_pnl": -4.199999999999999,
+      "skipped_pnl": 3.3999999999999986
+    },
+    "2026-03-16": {
+      "fired": 6,
+      "skipped": 4,
+      "fired_pnl": 32.599999999999994,
+      "skipped_pnl": 3.500000000000001
+    },
+    "2026-03-17": {
+      "fired": 5,
+      "skipped": 7,
+      "fired_pnl": 43.699999999999996,
+      "skipped_pnl": 63.4
+    },
+    "2026-03-18": {
+      "fired": 7,
+      "skipped": 5,
+      "fired_pnl": 53.300000000000004,
+      "skipped_pnl": 39.2
+    },
+    "2026-03-19": {
+      "fired": 6,
+      "skipped": 2,
+      "fired_pnl": 25.0,
+      "skipped_pnl": 20.5
+    },
+    "2026-03-23": {
+      "fired": 7,
+      "skipped": 2,
+      "fired_pnl": 25.5,
+      "skipped_pnl": 23.6
+    },
+    "2026-03-24": {
+      "fired": 4,
+      "skipped": 1,
+      "fired_pnl": 4.0,
+      "skipped_pnl": 8.02
+    },
+    "2026-03-25": {
+      "fired": 6,
+      "skipped": 10,
+      "fired_pnl": -18.299999999999997,
+      "skipped_pnl": 26.6
+    },
+    "2026-03-30": {
+      "fired": 3,
+      "skipped": 0,
+      "fired_pnl": 33.8,
+      "skipped_pnl": 0
+    },
+    "2026-04-02": {
+      "fired": 4,
+      "skipped": 0,
+      "fired_pnl": -15.2,
+      "skipped_pnl": 0
+    },
+    "2026-04-10": {
+      "fired": 2,
+      "skipped": 0,
+      "fired_pnl": 4.800000000000001,
+      "skipped_pnl": 0
+    },
+    "2026-03-02": {
+      "fired": 1,
+      "skipped": 2,
+      "fired_pnl": -20.0,
+      "skipped_pnl": 18.0
+    },
+    "2026-03-06": {
+      "fired": 3,
+      "skipped": 3,
+      "fired_pnl": 34.400000000000006,
+      "skipped_pnl": 33.5
+    },
+    "2026-03-26": {
+      "fired": 1,
+      "skipped": 2,
+      "fired_pnl": 65.31,
+      "skipped_pnl": 143.07999999999998
+    },
+    "2026-04-01": {
+      "fired": 1,
+      "skipped": 0,
+      "fired_pnl": -14.0,
+      "skipped_pnl": 0
+    },
+    "2026-04-06": {
+      "fired": 3,
+      "skipped": 2,
+      "fired_pnl": 6.800000000000001,
+      "skipped_pnl": 28.400000000000002
+    },
+    "2026-04-07": {
+      "fired": 3,
+      "skipped": 1,
+      "fired_pnl": 35.1,
+      "skipped_pnl": 19.8
+    },
+    "2026-04-08": {
+      "fired": 4,
+      "skipped": 1,
+      "fired_pnl": 47.5,
+      "skipped_pnl": 18.9
+    },
+    "2026-04-09": {
+      "fired": 2,
+      "skipped": 0,
+      "fired_pnl": 19.0,
+      "skipped_pnl": 0
+    },
+    "2026-04-16": {
+      "fired": 2,
+      "skipped": 0,
+      "fired_pnl": 21.799999999999997,
+      "skipped_pnl": 0
+    }
+  }
+}

@@ -1,0 +1,29 @@
+source,match_status,sig_id,time_et,direction,bar_indices,entry_idx,entry_price,delta,volume,buy_vol,sell_vol,body_ratio,is_green,duration_sec,max_delta_intrabar,min_delta_intrabar,vol_ratio,delta_zscore,price_trend_5,trend_consistency_5,mfe_30,mae_30,outcome,pnl,mfe,mae,bars_held,is_multi,note
+USER,BOTH,1,09:35,bullish,[np.int64(266)],266,6617.5,-293,947,327,620,1.0,False,6,3.0,-293.0,0.32,-0.92,-6.5,0.75,30.25,4.25,WIN,11.5,19.5,4.25,20,False,"-delta, green bar"
+USER,USER_ONLY,2,09:39,bullish,[np.int64(274)],274,6622.0,-197,1867,835,1032,0.85,False,23,54.0,-235.0,0.66,-0.93,3.75,0.75,28.25,1.75,WIN,7.0,15.0,1.75,12,False,confirmation of #1
+USER,USER_ONLY,3,09:46,bullish,"[np.int64(286), np.int64(287)]",287,6630.75,-36,6514,3239,3275,0.0,False,70,415.0,-485.0,1.6,1.83,-2.25,0.75,21.75,5.0,WIN,11.5,19.5,5.0,14,True,"2 bars at 9:46, combined flat, net -200 delta"
+USER,BOTH,4,09:52,bearish,"[np.int64(296), np.int64(297)]",297,6642.75,354,9372,4863,4509,0.75,False,90,589.0,-159.0,0.79,-0.5,7.5,0.75,5.75,12.75,LOSS,-5.25,2.75,7.5,3,True,"confirm, probably lost"
+USER,BOTH,5,10:11,bearish,[np.int64(317)],317,6645.5,14,3874,1944,1930,0.6,True,81,203.0,-145.0,1.24,0.07,0.5,0.5,24.75,10.0,LOSS,-7.5,0.5,8.25,2,False,"very strong, high volume, high +delta, max delta even higher, big red close -> market 6650->6622"
+USER,BOTH,6,11:05,bearish,"[np.int64(374), np.int64(375)]",375,6653.25,1442,6830,4136,2694,0.9444,True,86,891.0,-2.0,1.16,1.43,13.5,1.0,31.25,5.0,WIN,1.5,9.5,5.0,6,True,"11:05 + bar after, combined +400 delta, closed flat"
+USER,USER_ONLY,7,11:36,bullish,[np.int64(397)],397,6627.25,-756,6628,2936,3692,0.5,False,110,5.0,-756.0,1.44,-2.12,-10.25,1.0,24.75,5.25,LOSS,-2.0,6.0,3.0,7,False,"-477 delta, closed green, ""have DD but moved in favor strong"""
+USER,USER_ONLY,8,12:07,bearish,[np.int64(424)],424,6644.75,-10,2994,1492,1502,0.65,False,60,199.0,-10.0,0.7,-0.03,5.0,0.5,18.25,7.25,LOSS,-0.5,7.5,7.25,7,False,"+delta, red candle"
+USER,USER_ONLY,9,12:35,bullish,[np.int64(441)],441,6640.75,256,4136,2196,1940,0.6,True,100,256.0,-78.0,0.9,0.72,4.0,0.5,7.25,24.5,LOSS,-0.75,7.25,7.5,6,False,"-delta, closed green"
+USER,BOTH,10,12:41,bearish,"[np.int64(444), np.int64(445)]",445,6646.5,1203,8475,4839,3636,0.9706,True,212,873.0,-19.0,1.09,2.48,8.75,0.75,30.25,1.5,WIN,22.25,30.25,1.5,17,True,"combined +1200 delta, closed flat -> market moved +20 pts in favor"
+USER,BOTH,11,12:52,bullish,[np.int64(450)],450,6628.5,-491,2931,1220,1711,0.9,False,63,0.0,-491.0,0.65,-1.48,-18.0,1.0,11.0,12.25,LOSS,-2.25,5.75,3.0,5,False,"-delta, green close, but lost"
+USER,BOTH,12,14:13,bearish,[np.int64(483)],483,6638.75,-22,2958,1468,1490,0.35,True,103,9.0,-272.0,0.63,-0.06,7.5,1.0,14.75,30.25,LOSS,-8,0,8.75,2,False,"slightly +delta, doji bar, ""all delta is on the wick"""
+USER,BOTH,13,14:41,bullish,[np.int64(495)],495,6626.5,-372,3546,1587,1959,1.0,False,175,47.0,-385.0,0.79,-0.96,-9.5,0.5,65.5,2.5,WIN,34.5,42.5,2.5,17,False,"very strong, -900 delta, green close, ""all -delta below at wick, min delta -1300!"" -> market 6629->6668"
+USER,USER_ONLY,14,15:04,bullish,[np.int64(513)],513,6661.0,-142,3258,1558,1700,1.0,False,14,271.0,-300.0,0.67,-0.26,-2.5,0.5,31.0,1.5,WIN,23.0,31.0,1.5,11,False,continuation of #13
+MACHINE,MACHINE_ONLY,M2,09:44,bearish,[283],283,6634.75,322,5448,2885,2563,0.35,True,90,322.0,0.0,2.25,1.72,10.25,0.75,,,LOSS,-0.5,7.5,2.25,4,False,
+MACHINE,MACHINE_ONLY,M4,10:02,bearish,[307],307,6647.5,414,5850,3132,2718,0.4,False,73,576.0,-7.0,1.8,1.67,7.5,0.75,,,LOSS,-1.0,7.0,5.0,11,False,
+MACHINE,MACHINE_ONLY,M6,10:31,bearish,[341],341,6627.75,390,5052,2721,2331,0.4,True,85,390.0,-78.0,1.81,1.63,0.5,0.5,,,LOSS,-5.75,2.25,6.0,2,False,
+MACHINE,MACHINE_ONLY,M8,11:24,bullish,[389],389,6634.75,-545,6883,3169,3714,0.15,False,104,252.0,-545.0,1.58,-1.07,-18.0,1.0,,,LOSS,-2.0,6.0,5.0,7,False,
+MACHINE,MACHINE_ONLY,M9,11:54,bearish,[412],412,6626.75,394,7420,3907,3513,0.25,False,157,665.0,-90.0,1.76,1.23,1.0,0.75,,,LOSS,-8,0,9.75,2,False,
+MACHINE,MACHINE_ONLY,M10,12:12,bearish,[430],430,6644.0,420,3446,1933,1513,0.35,True,75,438.0,-10.0,0.83,1.09,-5.75,0.5,,,WIN,4.25,12.25,1.5,7,False,
+MACHINE,MACHINE_ONLY,M15,15:03,bearish,[512],512,6666.0,356,6356,3356,3000,0.4,True,46,378.0,-409.0,1.31,0.63,7.5,0.75,,,LOSS,-1.5,6.5,1.75,3,False,
+MACHINE,MACHINE_ONLY,M16,15:08,bearish,[530],530,6685.25,317,3679,1998,1681,0.35,True,21,318.0,-5.0,1.06,1.26,7.0,0.75,,,WIN,4.75,12.75,3.0,9,False,
+MACHINE,MACHINE_ONLY,M17,15:16,bearish,[552],552,6680.25,917,7433,2591,2049,0.1739,False,48,620.0,-54.0,1.89,1.8,10.0,0.75,,,LOSS,-1.5,6.5,3.5,5,True,
+MACHINE,MACHINE_ONLY,M18,15:26,bullish,[566],566,6663.25,-674,6364,1766,1911,0.3429,True,28,0.0,-414.0,1.13,-0.49,-10.75,0.75,,,LOSS,-2.0,6.0,4.0,11,True,
+MACHINE,MACHINE_ONLY,M19,15:31,bearish,[572],572,6665.75,421,3511,1966,1545,0.3,True,60,492.0,-73.0,1.03,1.86,1.0,0.75,,,LOSS,-2.25,5.75,2.75,3,False,
+MACHINE,MACHINE_ONLY,M20,15:36,bullish,[579],579,6656.5,-919,6457,2309,2605,0.3529,True,55,0.0,-480.0,1.79,-1.01,-8.5,0.75,,,WIN,4.0,12.0,0.75,9,True,
+MACHINE,MACHINE_ONLY,M21,15:41,bearish,[584],584,6661.75,339,4723,2531,2192,0.6,False,93,489.0,-12.0,1.6,1.06,5.25,0.5,,,LOSS,-1.0,7.0,6.75,18,False,
+MACHINE,MACHINE_ONLY,M22,15:52,bullish,[591],591,6662.0,-556,10256,4850,5406,0.6,True,153,84.0,-703.0,3.13,-1.84,-4.5,0.5,,,LOSS,-5.5,2.5,7.25,10,False,

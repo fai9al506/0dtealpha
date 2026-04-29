@@ -1,0 +1,692 @@
+{
+  "period": "2026-03-01 to 2026-04-17",
+  "baseline_trades": 390,
+  "baseline_pnl": 1570.36,
+  "v12_by_setup": {
+    "DD Exhaustion": {
+      "n": 128,
+      "pnl": 280.12,
+      "wr": 52.84552845528455
+    },
+    "Skew Charm": {
+      "n": 202,
+      "pnl": 885.0,
+      "wr": 72.82051282051282
+    },
+    "ES Absorption": {
+      "n": 8,
+      "pnl": 31.8,
+      "wr": 71.42857142857143
+    },
+    "AG Short": {
+      "n": 47,
+      "pnl": 369.34000000000003,
+      "wr": 82.92682926829268
+    },
+    "GEX Long": {
+      "n": 1,
+      "pnl": 11.7,
+      "wr": 100.0
+    },
+    "SB2 Absorption": {
+      "n": 2,
+      "pnl": -20.0,
+      "wr": 0.0
+    },
+    "Vanna Pivot Bounce": {
+      "n": 1,
+      "pnl": 10.0,
+      "wr": 100.0
+    },
+    "BofA Scalp": {
+      "n": 1,
+      "pnl": 2.4,
+      "wr": 0.0
+    }
+  },
+  "gex_dd": {
+    "blocks": 41,
+    "blocked_pnl": -175.43,
+    "kept_pnl": 1745.79,
+    "saved": 175.43000000000006,
+    "blocked_wl": [
+      15,
+      25
+    ]
+  },
+  "vanna": {
+    "blocks": 110,
+    "blocked_pnl": -129.13,
+    "kept_pnl": 1699.49,
+    "saved": 129.1300000000001,
+    "blocked_wl": [
+      50,
+      57
+    ]
+  },
+  "combined": {
+    "blocks": 135,
+    "blocked_pnl": -219.36,
+    "kept_pnl": 1789.72,
+    "saved": 219.36000000000013,
+    "blocked_wl": [
+      60,
+      71
+    ]
+  },
+  "overlap": {
+    "both": {
+      "n": 16,
+      "pnl": -85.2
+    },
+    "gex_only": {
+      "n": 25,
+      "pnl": -90.23
+    },
+    "van_only": {
+      "n": 94,
+      "pnl": -43.93
+    }
+  },
+  "rules": {
+    "GEX magnet above >=75": {
+      "n": 24,
+      "wr": 34.78260869565217,
+      "pnl": -126.0
+    },
+    "DD magnet near >=3B": {
+      "n": 17,
+      "wr": 41.1764705882353,
+      "pnl": -49.43
+    },
+    "DD short cliff=ABOVE": {
+      "n": 47,
+      "wr": 43.47826086956522,
+      "pnl": -35.9
+    },
+    "SC short cliff=A+peak=B": {
+      "n": 23,
+      "wr": 47.82608695652174,
+      "pnl": -32.4
+    },
+    "AG short cliff=B+peak=A": {
+      "n": 9,
+      "wr": 62.5,
+      "pnl": -2.900000000000002
+    },
+    "SC long cliff=A+peak=B": {
+      "n": 15,
+      "wr": 64.28571428571429,
+      "pnl": 27.27
+    }
+  },
+  "examples": {
+    "GEX magnet above >=75": {
+      "worst_losers_blocked": [
+        {
+          "date": "04-08 11:49",
+          "setup": "Skew Charm",
+          "direction": "short",
+          "grade": "A+",
+          "paradigm": "GEX-PURE",
+          "spot": 6772.06,
+          "outcome": "LOSS",
+          "pnl": -14.0,
+          "gex": 79.56008031,
+          "dd_b": 1.10133973272,
+          "vc": "B",
+          "vp": "A"
+        },
+        {
+          "date": "04-08 12:20",
+          "setup": "Skew Charm",
+          "direction": "short",
+          "grade": "A",
+          "paradigm": "GEX-PURE",
+          "spot": 6772.11,
+          "outcome": "LOSS",
+          "pnl": -14.0,
+          "gex": 82.87885977,
+          "dd_b": 2.03588759925,
+          "vc": "A",
+          "vp": "A"
+        }
+      ],
+      "best_winners_blocked": [
+        {
+          "date": "04-16 12:16",
+          "setup": "Skew Charm",
+          "direction": "short",
+          "grade": "B",
+          "paradigm": "AG-LIS",
+          "spot": 7049.79,
+          "outcome": "WIN",
+          "pnl": 17.4,
+          "gex": 84.00047517,
+          "dd_b": 0.8412604504500001,
+          "vc": "B",
+          "vp": "B"
+        },
+        {
+          "date": "04-15 12:11",
+          "setup": "Skew Charm",
+          "direction": "short",
+          "grade": "A",
+          "paradigm": "BOFA-PURE",
+          "spot": 6997.21,
+          "outcome": "WIN",
+          "pnl": 8.2,
+          "gex": 136.43301171999997,
+          "dd_b": 0.6667758120599999,
+          "vc": "A",
+          "vp": "A"
+        }
+      ]
+    },
+    "DD magnet near >=3B": {
+      "worst_losers_blocked": [
+        {
+          "date": "04-02 12:29",
+          "setup": "Skew Charm",
+          "direction": "short",
+          "grade": "B",
+          "paradigm": "GEX-PURE",
+          "spot": 6552.23,
+          "outcome": "LOSS",
+          "pnl": -14.0,
+          "gex": 13.237423680000003,
+          "dd_b": 3.12805674043,
+          "vc": "B",
+          "vp": "A"
+        },
+        {
+          "date": "04-07 11:31",
+          "setup": "Skew Charm",
+          "direction": "short",
+          "grade": "A",
+          "paradigm": "GEX-PURE",
+          "spot": 6553.23,
+          "outcome": "LOSS",
+          "pnl": -14.0,
+          "gex": 10.30634486,
+          "dd_b": 3.33423895533,
+          "vc": "A",
+          "vp": "B"
+        }
+      ],
+      "best_winners_blocked": [
+        {
+          "date": "04-01 13:00",
+          "setup": "DD Exhaustion",
+          "direction": "short",
+          "grade": "A",
+          "paradigm": "GEX-PURE",
+          "spot": 6603.29,
+          "outcome": "WIN",
+          "pnl": 22.0,
+          "gex": 44.986589939999995,
+          "dd_b": 3.61171106837,
+          "vc": "B",
+          "vp": "A"
+        },
+        {
+          "date": "04-07 13:39",
+          "setup": "Skew Charm",
+          "direction": "short",
+          "grade": "B",
+          "paradigm": "GEX-PURE",
+          "spot": 6598.95,
+          "outcome": "WIN",
+          "pnl": 9.0,
+          "gex": 29.203920759999995,
+          "dd_b": 4.99730366699,
+          "vc": "B",
+          "vp": "B"
+        }
+      ]
+    },
+    "DD short cliff=ABOVE": {
+      "worst_losers_blocked": [
+        {
+          "date": "03-04 11:34",
+          "setup": "DD Exhaustion",
+          "direction": "short",
+          "grade": "A-Entry",
+          "paradigm": "GEX-TARGET",
+          "spot": 6871.41,
+          "outcome": "LOSS",
+          "pnl": -12.0,
+          "gex": 25.6161,
+          "dd_b": 0.39573024207999996,
+          "vc": "A",
+          "vp": "A"
+        },
+        {
+          "date": "03-06 11:13",
+          "setup": "DD Exhaustion",
+          "direction": "short",
+          "grade": "A-Entry",
+          "paradigm": "SIDIAL-MESSY",
+          "spot": 6757.69,
+          "outcome": "LOSS",
+          "pnl": -12.0,
+          "gex": 0,
+          "dd_b": 0.98319460246,
+          "vc": "A",
+          "vp": "A"
+        }
+      ],
+      "best_winners_blocked": [
+        {
+          "date": "03-06 13:30",
+          "setup": "DD Exhaustion",
+          "direction": "short",
+          "grade": "A",
+          "paradigm": "BofA-LIS",
+          "spot": 6759.95,
+          "outcome": "WIN",
+          "pnl": 19.2,
+          "gex": 0,
+          "dd_b": 0.49334478526,
+          "vc": "A",
+          "vp": "A"
+        },
+        {
+          "date": "04-08 12:54",
+          "setup": "DD Exhaustion",
+          "direction": "short",
+          "grade": "B",
+          "paradigm": "GEX-PURE",
+          "spot": 6784.34,
+          "outcome": "WIN",
+          "pnl": 18.3,
+          "gex": 59.30092044,
+          "dd_b": 1.89302497801,
+          "vc": "A",
+          "vp": "A"
+        }
+      ]
+    },
+    "SC short cliff=A+peak=B": {
+      "worst_losers_blocked": [
+        {
+          "date": "03-06 10:17",
+          "setup": "Skew Charm",
+          "direction": "short",
+          "grade": "A",
+          "paradigm": "AG-TARGET",
+          "spot": 6742.35,
+          "outcome": "LOSS",
+          "pnl": -20.0,
+          "gex": 3.6927,
+          "dd_b": 0.82174257054,
+          "vc": "A",
+          "vp": "B"
+        },
+        {
+          "date": "03-09 11:44",
+          "setup": "Skew Charm",
+          "direction": "short",
+          "grade": "B",
+          "paradigm": "BOFA-PURE",
+          "spot": 6698.45,
+          "outcome": "LOSS",
+          "pnl": -20.0,
+          "gex": 0.01739999999999997,
+          "dd_b": 1.4997836064,
+          "vc": "A",
+          "vp": "B"
+        }
+      ],
+      "best_winners_blocked": [
+        {
+          "date": "04-01 13:13",
+          "setup": "Skew Charm",
+          "direction": "short",
+          "grade": "A",
+          "paradigm": "GEX-PURE",
+          "spot": 6607.95,
+          "outcome": "WIN",
+          "pnl": 38.7,
+          "gex": 55.03224096,
+          "dd_b": 2.8647997953,
+          "vc": "A",
+          "vp": "B"
+        },
+        {
+          "date": "04-16 09:45",
+          "setup": "Skew Charm",
+          "direction": "short",
+          "grade": "B",
+          "paradigm": "AG-LIS",
+          "spot": 7032.89,
+          "outcome": "WIN",
+          "pnl": 19.4,
+          "gex": 66.56467728,
+          "dd_b": 2.3046839874200002,
+          "vc": "A",
+          "vp": "B"
+        }
+      ]
+    },
+    "AG short cliff=B+peak=A": {
+      "worst_losers_blocked": [
+        {
+          "date": "03-12 11:25",
+          "setup": "AG Short",
+          "direction": "short",
+          "grade": "A",
+          "paradigm": "AG-PURE",
+          "spot": 6689.41,
+          "outcome": "LOSS",
+          "pnl": -20.0,
+          "gex": 0.18300000000000027,
+          "dd_b": 0.5324590061000001,
+          "vc": "B",
+          "vp": "A"
+        },
+        {
+          "date": "03-25 13:02",
+          "setup": "AG Short",
+          "direction": "short",
+          "grade": "A+",
+          "paradigm": "AG-PURE",
+          "spot": 6607.43,
+          "outcome": "LOSS",
+          "pnl": -20.0,
+          "gex": 13.277856349999997,
+          "dd_b": 1.2167569768900002,
+          "vc": "B",
+          "vp": "A"
+        }
+      ],
+      "best_winners_blocked": [
+        {
+          "date": "03-23 11:03",
+          "setup": "AG Short",
+          "direction": "short",
+          "grade": "A+",
+          "paradigm": "AG-LIS",
+          "spot": 6650.11,
+          "outcome": "WIN",
+          "pnl": 19.2,
+          "gex": 12.159249210000002,
+          "dd_b": 1.6362186084900001,
+          "vc": "B",
+          "vp": "A"
+        },
+        {
+          "date": "03-16 11:34",
+          "setup": "AG Short",
+          "direction": "short",
+          "grade": "A-Entry",
+          "paradigm": "AG-PURE",
+          "spot": 6714.41,
+          "outcome": "WIN",
+          "pnl": 13.2,
+          "gex": 20.8478,
+          "dd_b": 0.24953721246000002,
+          "vc": "B",
+          "vp": "A"
+        }
+      ]
+    },
+    "SC long cliff=A+peak=B": {
+      "worst_losers_blocked": [
+        {
+          "date": "03-12 09:45",
+          "setup": "Skew Charm",
+          "direction": "long",
+          "grade": "A",
+          "paradigm": "AG-PURE",
+          "spot": 6712.39,
+          "outcome": "LOSS",
+          "pnl": -20.0,
+          "gex": 2.2697000000000003,
+          "dd_b": 0.1608188509,
+          "vc": "A",
+          "vp": "B"
+        },
+        {
+          "date": "03-13 09:54",
+          "setup": "Skew Charm",
+          "direction": "long",
+          "grade": "B",
+          "paradigm": "GEX-LIS",
+          "spot": 6727.34,
+          "outcome": "LOSS",
+          "pnl": -20.0,
+          "gex": 6.923300000000001,
+          "dd_b": 0.71569321129,
+          "vc": "A",
+          "vp": "B"
+        }
+      ],
+      "best_winners_blocked": [
+        {
+          "date": "03-31 10:57",
+          "setup": "Skew Charm",
+          "direction": "long",
+          "grade": "B",
+          "paradigm": "GEX-LIS",
+          "spot": 6406.32,
+          "outcome": "WIN",
+          "pnl": 32.18,
+          "gex": 33.43429159,
+          "dd_b": 2.3625596512600002,
+          "vc": "A",
+          "vp": "B"
+        },
+        {
+          "date": "03-03 10:23",
+          "setup": "Skew Charm",
+          "direction": "long",
+          "grade": "A",
+          "paradigm": "AG-PURE",
+          "spot": 6713.34,
+          "outcome": "WIN",
+          "pnl": 16.39,
+          "gex": 0,
+          "dd_b": 0.92578066512,
+          "vc": "A",
+          "vp": "B"
+        }
+      ]
+    }
+  },
+  "tsrt": {
+    "setups_in_scope": "SC long + SC short + AG short",
+    "baseline_n": 249,
+    "baseline_pnl": 1254.34,
+    "baseline_wl": [
+      176,
+      60
+    ],
+    "v13_combined_n_blocked": 67,
+    "v13_combined_kept_n": 182,
+    "v13_combined_kept_pnl": 1316.0,
+    "v13_saved": 61.66000000000008,
+    "gex_dd_blocks_count": 20,
+    "gex_dd_blocks_pnl": -53.63,
+    "van_blocks_count": 51,
+    "van_blocks_pnl": -23.43
+  },
+  "tsrt_monthly": {
+    "2026-03": {
+      "n": 194,
+      "v12_pnl": 1132.44,
+      "v13_kept_n": 157,
+      "v13_pnl": 1143.1,
+      "saved": 10.659999999999854
+    },
+    "2026-04": {
+      "n": 55,
+      "v12_pnl": 121.9,
+      "v13_kept_n": 25,
+      "v13_pnl": 172.9,
+      "saved": 51.0
+    }
+  },
+  "daily": {
+    "2026-03-02": {
+      "n": 6,
+      "v12": 14.0,
+      "v13": 14.0
+    },
+    "2026-03-03": {
+      "n": 11,
+      "v12": 111.38,
+      "v13": 94.99000000000001
+    },
+    "2026-03-04": {
+      "n": 29,
+      "v12": 184.6,
+      "v13": 168.4
+    },
+    "2026-03-05": {
+      "n": 20,
+      "v12": 104.0,
+      "v13": 104.5
+    },
+    "2026-03-06": {
+      "n": 16,
+      "v12": 71.6,
+      "v13": 103.4
+    },
+    "2026-03-09": {
+      "n": 10,
+      "v12": -32.1,
+      "v13": 31.9
+    },
+    "2026-03-10": {
+      "n": 24,
+      "v12": 151.8,
+      "v13": 138.7
+    },
+    "2026-03-11": {
+      "n": 12,
+      "v12": 43.1,
+      "v13": 52.0
+    },
+    "2026-03-12": {
+      "n": 10,
+      "v12": -2.1999999999999975,
+      "v13": 37.800000000000004
+    },
+    "2026-03-13": {
+      "n": 9,
+      "v12": -32.800000000000004,
+      "v13": -0.8000000000000016
+    },
+    "2026-03-16": {
+      "n": 17,
+      "v12": 47.5,
+      "v13": 54.9
+    },
+    "2026-03-17": {
+      "n": 17,
+      "v12": 140.6,
+      "v13": 107.1
+    },
+    "2026-03-18": {
+      "n": 20,
+      "v12": 176.6,
+      "v13": 124.89999999999999
+    },
+    "2026-03-19": {
+      "n": 13,
+      "v12": 73.4,
+      "v13": 60.0
+    },
+    "2026-03-20": {
+      "n": 2,
+      "v12": 39.6,
+      "v13": 21.6
+    },
+    "2026-03-23": {
+      "n": 15,
+      "v12": 50.2,
+      "v13": 61.9
+    },
+    "2026-03-24": {
+      "n": 11,
+      "v12": -4.380000000000001,
+      "v13": 11.02
+    },
+    "2026-03-25": {
+      "n": 19,
+      "v12": 14.2,
+      "v13": 8.3
+    },
+    "2026-03-26": {
+      "n": 6,
+      "v12": 276.77,
+      "v13": 280.9
+    },
+    "2026-03-27": {
+      "n": 5,
+      "v12": -43.6,
+      "v13": -10.0
+    },
+    "2026-03-30": {
+      "n": 4,
+      "v12": 52.5,
+      "v13": 52.5
+    },
+    "2026-03-31": {
+      "n": 1,
+      "v12": 32.18,
+      "v13": 0
+    },
+    "2026-04-01": {
+      "n": 3,
+      "v12": 46.7,
+      "v13": -14.0
+    },
+    "2026-04-02": {
+      "n": 15,
+      "v12": -101.7,
+      "v13": -11.7
+    },
+    "2026-04-06": {
+      "n": 18,
+      "v12": 80.51,
+      "v13": 74.91
+    },
+    "2026-04-07": {
+      "n": 16,
+      "v12": 39.7,
+      "v13": 72.4
+    },
+    "2026-04-08": {
+      "n": 17,
+      "v12": 51.699999999999996,
+      "v13": 96.7
+    },
+    "2026-04-09": {
+      "n": 11,
+      "v12": 0.7999999999999992,
+      "v13": 29.8
+    },
+    "2026-04-10": {
+      "n": 7,
+      "v12": -4.1,
+      "v13": -9.399999999999999
+    },
+    "2026-04-13": {
+      "n": 1,
+      "v12": 10.0,
+      "v13": 10.0
+    },
+    "2026-04-15": {
+      "n": 10,
+      "v12": -48.6,
+      "v13": 0
+    },
+    "2026-04-16": {
+      "n": 15,
+      "v12": 26.399999999999995,
+      "v13": 23.0
+    }
+  }
+}

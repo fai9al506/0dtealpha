@@ -73,7 +73,12 @@ _pipeline_status = {
     "vol_error_since": 0,
     "sierra_es_error_since": 0,
     "sierra_vx_error_since": 0,
+    "ts_alert_sent": False,
+    "vol_alert_sent": False,
+    "sierra_es_alert_sent": False,
+    "sierra_vx_alert_sent": False,
     "reminder_minutes": 15,
+    "alert_threshold_minutes": 2,  # suppress alerts for outages < 2 min (silent recovery)
 }
 
 # Default alert settings (loaded from DB on startup)
@@ -11971,10 +11976,16 @@ def api_data_freshness():
     return result
 
 def check_pipeline_health():
-    """Check data pipeline freshness and send Telegram alerts on error/recovery."""
+    """Check data pipeline freshness and send Telegram alerts on error/recovery.
+
+    Threshold-gated alerts: outages shorter than alert_threshold_minutes (default 2)
+    resolve silently — no Telegram sent. Only sustained outages page the user.
+    Recovery alert fires only if an error alert was previously sent for this outage.
+    """
     freshness = api_data_freshness()
     now = time.time()
     reminder_sec = _pipeline_status["reminder_minutes"] * 60
+    threshold_sec = _pipeline_status["alert_threshold_minutes"] * 60
     is_open = market_open_now()
 
     for source, key_prefix, label in [
@@ -12000,28 +12011,41 @@ def check_pipeline_health():
             _pipeline_status[f"{key_prefix}_status"] = current
             continue
 
-        # Transition to error
+        # Transition to error: start tracking, do NOT alert yet (wait for threshold)
         if current == "error" and prev != "error":
-            print(f"[pipeline] {label}: {prev} → error (age={age_min}m), sending alert", flush=True)
+            print(f"[pipeline] {label}: {prev} → error (age={age_min}m), monitoring "
+                  f"(alert if outage >= {_pipeline_status['alert_threshold_minutes']}m)", flush=True)
             _pipeline_status[f"{key_prefix}_error_since"] = now
-            _pipeline_status[f"{key_prefix}_last_alert"] = now
+            _pipeline_status[f"{key_prefix}_last_alert"] = 0
+            _pipeline_status[f"{key_prefix}_alert_sent"] = False
             _pipeline_status[f"{key_prefix}_status"] = current
-            send_telegram(f"\U0001f534 DATA PIPELINE ERROR: {label} data is {age_min} minutes old — not updating")
             continue
 
-        # Still in error — send reminder
+        # Still in error — first alert when threshold crossed, then periodic reminders
         if current == "error" and prev == "error":
-            if (now - _pipeline_status[f"{key_prefix}_last_alert"]) >= reminder_sec:
-                down_min = round((now - _pipeline_status[f"{key_prefix}_error_since"]) / 60)
-                _pipeline_status[f"{key_prefix}_last_alert"] = now
-                send_telegram(f"\U0001f534 STILL DOWN: {label} data has been stale for {down_min} minutes")
+            outage_sec = now - _pipeline_status[f"{key_prefix}_error_since"]
+            down_min = round(outage_sec / 60)
+            if not _pipeline_status[f"{key_prefix}_alert_sent"]:
+                if outage_sec >= threshold_sec:
+                    _pipeline_status[f"{key_prefix}_alert_sent"] = True
+                    _pipeline_status[f"{key_prefix}_last_alert"] = now
+                    send_telegram(f"\U0001f534 DATA PIPELINE ERROR: {label} data is {down_min} minutes old — not updating")
+            else:
+                if (now - _pipeline_status[f"{key_prefix}_last_alert"]) >= reminder_sec:
+                    _pipeline_status[f"{key_prefix}_last_alert"] = now
+                    send_telegram(f"\U0001f534 STILL DOWN: {label} data has been stale for {down_min} minutes")
             continue
 
-        # Recovery from error
+        # Recovery: only Telegram if an error alert was actually sent (outage > threshold)
         if prev == "error" and current in ("ok", "stale"):
             down_min = round((now - _pipeline_status[f"{key_prefix}_error_since"]) / 60)
             _pipeline_status[f"{key_prefix}_status"] = current
-            send_telegram(f"\U0001f7e2 DATA RECOVERED: {label} is updating again (was down {down_min} minutes)")
+            if _pipeline_status.get(f"{key_prefix}_alert_sent"):
+                send_telegram(f"\U0001f7e2 DATA RECOVERED: {label} is updating again (was down {down_min} minutes)")
+            else:
+                print(f"[pipeline] {label}: silent recovery after brief outage ({down_min}m, "
+                      f"below {_pipeline_status['alert_threshold_minutes']}m threshold)", flush=True)
+            _pipeline_status[f"{key_prefix}_alert_sent"] = False
             continue
 
         _pipeline_status[f"{key_prefix}_status"] = current

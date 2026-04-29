@@ -305,6 +305,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     # Vanna Pivot Bounce added 2026-04-22 — LONGS only, bullish regime gated by main.py
     if setup_name not in ("Skew Charm", "AG Short", "Vanna Pivot Bounce"):
         print(f"[real-trader] skip {setup_name}: only SC/AG/VPB allowed on real accounts", flush=True)
+        _alert(f"⏭ SKIPPED {setup_name} {direction}: setup not in real-trader whitelist (SC/AG/VPB only)")
         return
 
     # Check master switch for this direction
@@ -312,24 +313,29 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     if not account_id:
         dir_str = "longs" if is_long else "shorts"
         print(f"[real-trader] skip {setup_name}: {dir_str} master switch OFF", flush=True)
+        _alert(f"⏭ SKIPPED {setup_name} {direction}: {dir_str} master switch OFF")
         return
 
-    # Validate account-direction binding (CRITICAL SAFETY)
+    # Validate account-direction binding (CRITICAL SAFETY) — already alerts internally
     if not _validate_account_direction(account_id, is_long):
         return
 
     if not setup_log_id:
         print(f"[real-trader] skip {setup_name}: no setup_log_id", flush=True)
+        _alert(f"⏭ SKIPPED {setup_name} {direction}: missing setup_log_id (race or detector bug)")
         return
 
     # Dedup: already tracking this setup_log_id
     with _lock:
         if setup_log_id in _active_orders:
             print(f"[real-trader] skip {setup_name} id={setup_log_id}: already active", flush=True)
+            _alert(f"⏭ SKIPPED {setup_name} {direction}: id={setup_log_id} already active in real-trader")
             return
         # DEDUP: block if same setup_name+direction placed within last 90s (deploy overlap)
         from datetime import timezone as _utc
         _now = datetime.now(_utc.utc)
+        _dedup_hit = False
+        _dedup_meta = None
         for _lid, _o in _active_orders.items():
             if (_o.get("setup_name") == setup_name and
                 _o.get("direction", "").lower() == direction.lower()):
@@ -339,13 +345,19 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                         _placed_dt = datetime.fromisoformat(_placed)
                         if _placed_dt.tzinfo is None:
                             _placed_dt = _placed_dt.replace(tzinfo=_utc.utc)
-                        if (_now - _placed_dt).total_seconds() < 90:
+                        _age = (_now - _placed_dt).total_seconds()
+                        if _age < 90:
                             print(f"[real-trader] DEDUP {setup_name} id={setup_log_id}: "
-                                  f"same setup placed {(_now - _placed_dt).total_seconds():.0f}s ago "
-                                  f"(id={_lid})", flush=True)
-                            return
+                                  f"same setup placed {_age:.0f}s ago (id={_lid})", flush=True)
+                            _dedup_hit = True
+                            _dedup_meta = (_lid, _age)
+                            break
                     except (ValueError, TypeError):
                         pass
+        if _dedup_hit:
+            _alert(f"⏭ SKIPPED {setup_name} {direction}: dedup 90s window "
+                   f"(prior id={_dedup_meta[0]}, {_dedup_meta[1]:.0f}s ago)")
+            return
 
     # Cap check: max concurrent per direction (asymmetric — longs=1, shorts=2)
     active_count = _count_active_for_direction(is_long)
@@ -359,6 +371,9 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                     and (o.get("direction", "").lower() in ("long", "bullish")) == is_long]
         print(f"[real-trader] skip {setup_name}: {dir_str} cap reached "
               f"({active_count}/{cap}) blocking={blocking}", flush=True)
+        _block_str = ", ".join(f"#{b[0]} {b[1]} ({b[3]})" for b in blocking) or "n/a"
+        _alert(f"⏭ SKIPPED {setup_name} {direction}: {dir_str} cap reached ({active_count}/{cap})\n"
+               f"Blocking: {_block_str}")
         return
 
     # Margin/buying power pre-check
@@ -800,7 +815,30 @@ def close_trade(setup_log_id: int, result_type: str):
         _persist_order(setup_log_id)
         print(f"[real-trader] closed: {setup_name} id={setup_log_id} "
               f"result={result_type} acct={account_id}", flush=True)
-        _alert(f"🏁 {setup_name} CLOSED: {result_type}")
+        # Build polished alert matching STOP FILLED / EOD FLATTEN format:
+        # direction + close fill + P&L + Day line. Falls back to bare format
+        # if exit price unavailable (network glitch on _flatten_position).
+        is_long = order["direction"].lower() in ("long", "bullish")
+        dir_label = "Long" if is_long else "Short"
+        close_fp = order.get("close_fill_price")
+        entry_fp = order.get("fill_price")
+        pnl = None
+        if close_fp is not None and entry_fp is not None:
+            try:
+                if is_long:
+                    pnl = (float(close_fp) - float(entry_fp)) * MES_POINT_VALUE * QTY
+                else:
+                    pnl = (float(entry_fp) - float(close_fp)) * MES_POINT_VALUE * QTY
+            except (TypeError, ValueError):
+                pnl = None
+        pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
+        if close_fp is not None:
+            _alert(f"🏁 {setup_name} CLOSED: {result_type}\n"
+                   f"{dir_label} {QTY} MES @ {close_fp}\n"
+                   f"P&L: {pnl_str}"
+                   f"{_day_line(account_id)}")
+        else:
+            _alert(f"🏁 {setup_name} CLOSED: {result_type}{_day_line(account_id)}")
     else:
         print(f"[real-trader] broker cleanup done (slot already released): "
               f"{setup_name} id={setup_log_id} acct={account_id}", flush=True)

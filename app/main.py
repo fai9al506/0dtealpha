@@ -3874,9 +3874,20 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None, grade: str | None = None,
                         vanna_regime: str | None = None) -> bool:
-    """Single source of truth for the LIVE auto-trade filter (currently V13).
-    V13 = V12-fix + (a) GEX/DD magnet + (b) vanna cliff/peak + (c) DD-specific quality gates.
+    """Single source of truth for the LIVE auto-trade filter (currently V14).
+    V14 = V13 + paradigm-aware SC long alignment rule (Apr 29 2026).
 
+    V14 SC long change (replaces V13 `align >= 2` gate for SC longs only):
+      - Block SC longs when align == 3 AND paradigm in {GEX-LIS, AG-LIS, AG-PURE, BOFA-MESSY}
+      - SIDIAL-EXTREME still blocked (any alignment).
+      - Other alignments accepted (align in {-3..3} except align=3 + bad paradigm).
+      Backtest Mar 1 - Apr 29 2026 (117 SC long trades after non-align gates):
+        V13 (align>=2): 70.0% WR, +$1,436
+        V14 (this rule): 78.1% WR, +$2,932 — net +$1,793 / +125% PnL (5x point value)
+        Per-trade swap: V14 blocks 49 align=3 + bad-para trades (-$801 drag) and
+        adds 61 align in {-1,1,2} trades (+$992 missed). Walk-forward 5/5 windows positive.
+
+    V13 layers preserved:
     (a) GEX/DD magnet on SC/DD shorts: GEX-above>=75 OR DD-near>=3B — +215 pts / 55 blocks.
     (b) Vanna cliff/peak rules (Feb-Apr 2026, 343t):
         - DD short + cliff=ABOVE (69t, 41% WR, -106 pts)
@@ -3893,11 +3904,8 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
           - paradigm BOFA-PURE: 67t, 40% WR, -104 pts (dealer-support regime)
           - grade A+: 51t, 38% WR, -68 pts (A+ worse than A — over-conviction)
           - grade C: 19t, 50% WR, -45 pts
-        Combined DD filter: 449t → 162t, PnL -34 → +309, MaxDD halved, PF 0.99 → 1.40.
 
-    Combined backtest Mar 1 - Apr 17 (SC/AG layer): V12-fix +1570 → V13 +1789 (+14%).
-    DD filter adds independently on top (DD not yet in TSRT scope, affects eval/SIM/logging).
-    Used for: Telegram sends, auto-trade gating, outcome notifications.
+    Used for: Telegram sends, auto-trade gating, eval-trader API, outcome notifications.
     Setups still fire and log to portal/setup_log — this only gates live execution.
     Change this ONE function when the filter evolves."""
     if setup_name in ("VIX Divergence", "IV Momentum", "Vanna Butterfly"):
@@ -3952,6 +3960,20 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         # Mean-revert paradigm crushes longs; shorts on SIDIAL-EXT = 69% WR, +280 pts
         if paradigm == "SIDIAL-EXTREME":
             return False
+        # ── V14 (Apr 29 2026): SC longs use paradigm-aware align rule, no align>=2 gate ──
+        # Study Mar 1 - Apr 29 2026 (117 trades after non-align gates):
+        #   V13 (align>=2): 70.0% WR, +$1,436
+        #   V14 (this): 78.1% WR, +$2,932 — net +$1,793 / +125% improvement
+        # Mechanism: V13 blocked 61 align in {-1,1,2} trades that were actually winners (+$992),
+        # and admitted 49 align=3 + bad-paradigm trades that lost (-$801).
+        if setup_name == "Skew Charm":
+            _vc, _vp = _v13_vanna_features()
+            if _vc == 'A' and _vp == 'B':
+                return False  # V13 vanna: cliff ABOVE + peak BELOW = 27t, 52% WR, -55 pts
+            if align == 3 and paradigm in ("GEX-LIS", "AG-LIS", "AG-PURE", "BOFA-MESSY"):
+                return False  # V14: 49t, -$801 drag (SIDIAL-EXTREME already blocked above)
+            return True  # SC longs accept all other alignments, exempt from VIX gate
+        # All non-SC longs keep the V13 align>=2 gate
         if align < 2:
             return False
         # ── V13 DD Exhaustion long-specific rules (Apr 18 2026) ──
@@ -3969,12 +3991,6 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                 return False  # 124t combined, -356 pts
             if grade == "C":
                 return False  # 21t, 22% WR, -112 pts
-        if setup_name == "Skew Charm":
-            # V13 vanna: SC long + cliff ABOVE + peak BELOW = 27t, 52% WR, -55.4 pts
-            _vc, _vp = _v13_vanna_features()
-            if _vc == 'A' and _vp == 'B':
-                return False
-            return True  # SC longs exempt from VIX gate
         if vix is not None and vix > 22:
             ov = overvix if overvix is not None else -99
             if ov < 2:
@@ -12543,7 +12559,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v13">V13 (live)</option><option value="v13le">V13-LE (real)</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -12658,6 +12674,58 @@ function passesStrategy(l, strat) {
       if (l.grade === 'C') return true;
     }
     return false;
+  }
+  function v14ScLongAlignBlock() {
+    // V14 (Apr 29 2026): SC longs blocked when align==3 AND bad paradigm.
+    // Other alignments accepted (replaces V13's blanket align>=2 gate for SC longs only).
+    if (sn !== 'Skew Charm' || !isLong) return false;
+    return align === 3 && ['GEX-LIS','AG-LIS','AG-PURE','BOFA-MESSY'].includes(l.paradigm);
+  }
+  function v10BaseV14() {
+    // Same as v10Base() but SC longs use V14 paradigm-aware rule, no align gate
+    if (isLong) {
+      if (sn === 'Skew Charm') {
+        if (l.paradigm === 'SIDIAL-EXTREME') return false;
+        if (v14ScLongAlignBlock()) return false;
+        return true;  // SC longs exempt from align gate AND VIX gate
+      }
+      if (align < 2) return false;
+      const vix = l.vix!=null?l.vix:0, ov = l.overvix!=null?l.overvix:-99;
+      if (vix > 22 && ov < 2) return false;
+      return true;
+    }
+    if ((sn==='Skew Charm'||sn==='DD Exhaustion') && l.paradigm==='GEX-LIS') return false;
+    if (sn==='Skew Charm') return true;
+    if (sn==='AG Short') return true;
+    if (sn==='DD Exhaustion' && align !== 0) return true;
+    return false;
+  }
+  if (strat === 'v14') {
+    if (!gapFilter(l.ts)) return false;
+    if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
+    if (sn==='VIX Divergence'||sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
+    if (!v11TimeGates(l.ts)) return false;
+    if (v13BullishBlock()) return false;
+    if (v13VannaBlock()) return false;
+    if (v13DDQualityBlock()) return false;
+    return v10BaseV14();
+  }
+  if (strat === 'v14le') {
+    if (sn !== 'Skew Charm' && sn !== 'AG Short') return false;
+    if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
+    if (!gapFilter(l.ts)) return false;
+    if (!v11TimeGates(l.ts)) return false;
+    if (v13BullishBlock()) return false;
+    if (v13VannaBlock()) return false;
+    if (isLong) {
+      if (l.paradigm==='SIDIAL-EXTREME') return false;
+      if (sn==='Skew Charm') { if (v14ScLongAlignBlock()) return false; return true; }
+      if (align<2) return false;
+    } else {
+      if ((sn==='Skew Charm') && l.paradigm==='GEX-LIS') return false;
+      if (sn==='AG Short' && l.paradigm==='AG-TARGET') return false;
+    }
+    return true;
   }
   if (strat === 'v13') {
     if (!gapFilter(l.ts)) return false;
@@ -14236,7 +14304,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v13">V13 (live)</option><option value="v13le">V13-LE (real)</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -17350,6 +17418,58 @@ DASH_HTML_TEMPLATE = """
         if (sn === 'AG Short') return true;
         if (sn === 'DD Exhaustion' && align !== 0) return true;
         return false;
+      }
+      function _tlV14ScLongAlignBlock() {
+        // V14: SC longs blocked when align==3 AND bad paradigm (replaces V13 align>=2 gate for SC longs)
+        if (sn !== 'Skew Charm' || !isLong) return false;
+        return align === 3 && ['GEX-LIS','AG-LIS','AG-PURE','BOFA-MESSY'].includes(l.paradigm);
+      }
+      function _tlV10BaseV14() {
+        if (isLong) {
+          if (sn === 'Skew Charm') {
+            if (l.paradigm === 'SIDIAL-EXTREME') return false;
+            if (_tlV14ScLongAlignBlock()) return false;
+            return true;
+          }
+          if (l.paradigm === 'SIDIAL-EXTREME') return false;
+          if (align < 2) return false;
+          const vix = l.vix != null ? l.vix : 0;
+          const ov = l.overvix != null ? l.overvix : -99;
+          if (vix > 22 && ov < 2) return false;
+          return true;
+        }
+        if ((sn === 'Skew Charm' || sn === 'DD Exhaustion') && l.paradigm === 'GEX-LIS') return false;
+        if (sn === 'Skew Charm') return true;
+        if (sn === 'AG Short') return true;
+        if (sn === 'DD Exhaustion' && align !== 0) return true;
+        return false;
+      }
+      if (strat === 'v14') {
+        if (!_tlGapFilter()) return false;
+        if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
+        if (sn === 'VIX Divergence' || sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
+        if (!_tlV11TimeGates()) return false;
+        if (_tlV13BullishBlock()) return false;
+        if (_tlV13VannaBlock()) return false;
+        if (_tlV13DDQualityBlock()) return false;
+        return _tlV10BaseV14();
+      }
+      if (strat === 'v14le') {
+        if (sn !== 'Skew Charm' && sn !== 'AG Short') return false;
+        if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
+        if (!_tlGapFilter()) return false;
+        if (!_tlV11TimeGates()) return false;
+        if (_tlV13BullishBlock()) return false;
+        if (_tlV13VannaBlock()) return false;
+        if (isLong) {
+          if (l.paradigm === 'SIDIAL-EXTREME') return false;
+          if (sn === 'Skew Charm') { if (_tlV14ScLongAlignBlock()) return false; return true; }
+          if (align < 2) return false;
+        } else {
+          if (sn === 'Skew Charm' && l.paradigm === 'GEX-LIS') return false;
+          if (sn === 'AG Short' && l.paradigm === 'AG-TARGET') return false;
+        }
+        return true;
       }
       if (strat === 'v13') {
         if (!_tlGapFilter()) return false;

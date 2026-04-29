@@ -34,3 +34,4 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 28 | 2026-03-21 | `stable-20260321-stock-gex-scanner` | Stock GEX Scanner added (59 stocks, data collection, independent from 0DTE). Two expirations: weekly + opex. |
 | 29 | 2026-03-25 | `stable-20260325-spy-dd-pre-impl` | Pre SPY DD implementation. Rollback to this if SPY DD capture breaks Volland pipeline. |
 | 30 | 2026-03-28 | `stable-20260328-pre-watchdog` | Pre Volland watchdog thread. Rollback if watchdog causes false exits. |
+| 31 | 2026-04-29 17:52 | `stable-20260429-175213` | Pre real-trader skip Telegram alerts + close_trade format fix + V14 SC long alignment rule. |

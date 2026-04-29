@@ -771,18 +771,26 @@ class ComplianceGate:
                 if "BOFA" in paradigm and "PURE" in paradigm:
                     return False, "DD blocked on BOFA-PURE paradigm (18% WR)"
 
-        # V10 filter (V9-SC + GEX-LIS block)
-        # Longs: alignment >= +2, VIX gate at 22 (SC exempt), overvix override
+        # V14 filter (defense-in-depth — API already applies _passes_live_filter, this mirrors it)
+        # Longs: SC uses V14 paradigm-aware rule; other longs require align>=2 + VIX gate
         # Shorts: whitelist SC + DD(align!=0) + AG, block GEX-LIS paradigm on SC/DD
         if cfg.get("greek_filter_enabled"):
             alignment = signal.get("greek_alignment", 0)
             _is_long = signal.get("direction", "") in ("long", "bullish")
             sname = signal.get("setup_name", "")
             if _is_long:
-                if alignment < 2:
-                    return False, f"Greek filter: long alignment {alignment:+d} < +2"
-                # V10: Skew Charm exempt from VIX gate (82% WR at VIX 22-26)
-                if sname != "Skew Charm":
+                _para = signal.get("paradigm") or ""
+                if _para == "SIDIAL-EXTREME":
+                    return False, "SIDIAL-EXTREME long blocked"
+                # V14 (Apr 29 2026): SC longs use paradigm-aware align rule, no align>=2 gate.
+                # Replaces V10/V13 blanket align>=2 for SC longs only. Backtest +$1,793 / +125%.
+                if sname == "Skew Charm":
+                    if alignment == 3 and _para in ("GEX-LIS", "AG-LIS", "AG-PURE", "BOFA-MESSY"):
+                        return False, f"V14: SC long align=3 + {_para} blocked"
+                    # SC longs accept all other alignments, exempt from VIX gate
+                else:
+                    if alignment < 2:
+                        return False, f"Greek filter: long alignment {alignment:+d} < +2"
                     _sig_vix = signal.get("vix")
                     _sig_ov = signal.get("overvix")
                     if _sig_vix is not None and _sig_vix > 22:

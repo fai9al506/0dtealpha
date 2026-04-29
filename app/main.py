@@ -5887,9 +5887,10 @@ def _on_rithmic_bar_complete(bars: list):
     global _last_absorption_bar_idx
     if not bars:
         return
-    # Only run during RTH market hours (10:00-16:00 ET, matching absorption time gate)
+    # Only run 10:00 - 15:45 ET. 15:45 cutoff prevents EOD-expired entries
+    # (signals fired in last 15 min usually expire before close, mostly noise).
     t = now_et()
-    if not (dtime(10, 0) <= t.time() <= dtime(16, 0)):
+    if not (dtime(10, 0) <= t.time() < dtime(15, 45)):
         return
     # Avoid re-evaluating the same bar
     last_bar = bars[-1]
@@ -12583,7 +12584,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="esabspure">ES Abs-Pure</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -12733,6 +12734,28 @@ function passesStrategy(l, strat) {
     if (v13VannaBlock()) return false;
     if (v13DDQualityBlock()) return false;
     return v10BaseV14();
+  }
+  if (strat === 'esabspure') {
+    // ES Abs-Pure: 4 mechanism-based rules for ES Absorption only
+    //   1. Setup must be ES Absorption
+    //   2. Time < 15:45 ET (operational — late entries expire)
+    //   3. Grade A+/A only (model's own conviction signal)
+    //   4. Direction-matched alignment (don't fight the Greek momentum)
+    //   5. Block AG-TARGET / AG-LIS paradigms (mechanism conflict — AG = trend, ES Abs = reversal)
+    if (sn !== 'ES Absorption') return false;
+    if (l.grade !== 'A' && l.grade !== 'A+') return false;
+    if (l.paradigm === 'AG-TARGET' || l.paradigm === 'AG-LIS') return false;
+    if (l.ts) {
+      const d = new Date(l.ts);
+      const etStr = d.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
+      const tp = (etStr.split(', ')[1] || etStr).split(':');
+      const mins = parseInt(tp[0]) * 60 + parseInt(tp[1]);
+      if (mins >= 945) return false;  // 15:45 ET cutoff
+    }
+    const align = l.greek_alignment || 0;
+    if (isLong && align < 0) return false;
+    if (!isLong && align > 0) return false;
+    return true;
   }
   if (strat === 'v14le') {
     if (sn !== 'Skew Charm' && sn !== 'AG Short') return false;
@@ -14328,7 +14351,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="esabspure">ES Abs-Pure</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -17477,6 +17500,17 @@ DASH_HTML_TEMPLATE = """
         if (_tlV13VannaBlock()) return false;
         if (_tlV13DDQualityBlock()) return false;
         return _tlV10BaseV14();
+      }
+      if (strat === 'esabspure') {
+        // ES Abs-Pure: 4 mechanism rules for ES Absorption only
+        if (sn !== 'ES Absorption') return false;
+        if (l.grade !== 'A' && l.grade !== 'A+') return false;
+        if (l.paradigm === 'AG-TARGET' || l.paradigm === 'AG-LIS') return false;
+        const mins = _tlEtMins();
+        if (mins != null && mins >= 945) return false;  // 15:45 cutoff
+        if (isLong && align < 0) return false;
+        if (!isLong && align > 0) return false;
+        return true;
       }
       if (strat === 'v14le') {
         if (sn !== 'Skew Charm' && sn !== 'AG Short') return false;

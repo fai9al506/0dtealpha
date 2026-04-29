@@ -1069,6 +1069,31 @@ def db_init():
         CREATE INDEX IF NOT EXISTS idx_vps_es_rb_date ON vps_es_range_bars(trade_date);
         """))
 
+        # ── Sierra shadow signal log (Phase 1: parallel detection, no live effects) ──
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS setup_log_shadow (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            data_source TEXT NOT NULL DEFAULT 'sierra',
+            setup_name TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            grade TEXT,
+            score DOUBLE PRECISION,
+            paradigm TEXT,
+            spot DOUBLE PRECISION,
+            es_price DOUBLE PRECISION,
+            lis DOUBLE PRECISION,
+            target DOUBLE PRECISION,
+            bar_idx INTEGER,
+            range_pts DOUBLE PRECISION,
+            vol_ratio DOUBLE PRECISION,
+            div_raw INTEGER,
+            extra JSONB
+        );
+        CREATE INDEX IF NOT EXISTS idx_setup_log_shadow_ts ON setup_log_shadow (ts DESC);
+        CREATE INDEX IF NOT EXISTS idx_setup_log_shadow_setup ON setup_log_shadow (setup_name, ts DESC);
+        """))
+
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS vps_vix_ticks (
             id BIGSERIAL PRIMARY KEY,
@@ -19598,7 +19623,9 @@ def eod_review_page(session: str = Cookie(default=None), date: str = Query(None)
 # ====== VPS DATA BRIDGE ENDPOINTS ======
 # Independent data collection from Sierra Chart via VPS.
 # Tables: vps_es_range_bars, vps_vix_ticks, vps_heartbeats
-# No integration with setup detector — data collection only.
+# Phase 1 (2026-04-29): added shadow signal detection on incoming bars.
+#   Sierra-driven absorption signals write to setup_log_shadow ONLY.
+#   No Telegram, no auto_trader, no real_trader. Live Rithmic path untouched.
 
 _VPS_API_KEY = os.getenv("VPS_API_KEY", "")
 
@@ -19608,6 +19635,374 @@ def _check_vps_auth(request):
         return True  # No key configured = open (dev mode)
     auth = request.headers.get("Authorization", "")
     return auth == f"Bearer {_VPS_API_KEY}"
+
+
+# ── Sierra shadow state and detection (Phase 1) ────────────────────────────
+# Independent from rithmic_es_stream. Tracks Sierra bar arrivals and runs
+# shadow absorption detection. Cooldown state is INDEPENDENT from live path.
+
+_sierra_state = {
+    "last_5pt_ts_end": None,
+    "last_5pt_bar_idx": -1,
+    "last_5pt_received_at": None,
+    "last_10pt_ts_end": None,
+    "last_10pt_bar_idx": -1,
+    "last_10pt_received_at": None,
+    "shadow_signals_5pt": 0,
+    "shadow_signals_10pt": 0,
+}
+_sierra_state_lock = Lock()
+
+# Independent cooldown state for shadow path (NOT shared with live setup_detector cooldowns)
+_shadow_cooldown_5pt = {
+    "last_bullish_bar": -100,
+    "last_bearish_bar": -100,
+    "last_checked_idx": -1,
+    "last_date": None,
+}
+_shadow_cooldown_sb_5pt = {
+    "last_bullish_bar": -100,
+    "last_bearish_bar": -100,
+    "last_checked_idx": -1,
+    "last_date": None,
+}
+_shadow_cooldown_sb2_5pt = {
+    "last_bullish_bar": -100,
+    "last_bearish_bar": -100,
+    "last_checked_idx": -1,
+    "last_date": None,
+}
+_shadow_cooldown_sb10_10pt = {
+    "last_bullish_bar": -100,
+    "last_bearish_bar": -100,
+    "last_checked_idx": -1,
+    "last_date": None,
+}
+_shadow_thread_lock = Lock()
+
+
+def get_sierra_state():
+    """Return current Sierra bridge state (for /api/health and debug)."""
+    with _sierra_state_lock:
+        return dict(_sierra_state)
+
+
+def _load_sierra_bars(range_pts: float, trade_date: str) -> list:
+    """Load Sierra bars for given range and session date from DB.
+    Returns list of bar dicts in setup_detector format."""
+    if not engine:
+        return []
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
+                       bar_volume, bar_buy_volume, bar_sell_volume, bar_delta,
+                       cumulative_delta, cvd_open, cvd_high, cvd_low, cvd_close,
+                       ts_start, ts_end, status
+                FROM vps_es_range_bars
+                WHERE trade_date = :td AND range_pts = :rp
+                ORDER BY bar_idx ASC
+            """), {"td": trade_date, "rp": range_pts}).mappings().all()
+        return [
+            {
+                "idx": r["bar_idx"],
+                "open": r["bar_open"], "high": r["bar_high"],
+                "low": r["bar_low"], "close": r["bar_close"],
+                "volume": r["bar_volume"], "delta": r["bar_delta"],
+                "buy_volume": r["bar_buy_volume"], "sell_volume": r["bar_sell_volume"],
+                "cvd": r["cvd_close"],
+                "cvd_open": r["cvd_open"], "cvd_high": r["cvd_high"],
+                "cvd_low": r["cvd_low"], "cvd_close": r["cvd_close"],
+                "ts_start": r["ts_start"].isoformat() if r["ts_start"] else "",
+                "ts_end": r["ts_end"].isoformat() if r["ts_end"] else "",
+                "status": r["status"],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        print(f"[shadow] _load_sierra_bars error: {e}", flush=True)
+        return []
+
+
+def _es_session_date_now() -> str:
+    """ES session date: after 18:00 ET = next calendar date."""
+    t = now_et()
+    if t.hour >= 18:
+        return (t + timedelta(days=1)).strftime("%Y-%m-%d")
+    return t.strftime("%Y-%m-%d")
+
+
+def _shadow_log_signal(setup_name: str, result: dict, range_pts: float):
+    """Insert shadow signal into setup_log_shadow. Never affects live path."""
+    if not engine:
+        return
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO setup_log_shadow
+                    (data_source, setup_name, direction, grade, score, paradigm,
+                     spot, es_price, lis, target, bar_idx, range_pts,
+                     vol_ratio, div_raw, extra)
+                VALUES
+                    ('sierra', :setup, :dir, :grade, :score, :paradigm,
+                     :spot, :es_price, :lis, :target, :bar_idx, :range_pts,
+                     :vol_ratio, :div_raw, :extra::jsonb)
+            """), {
+                "setup": setup_name,
+                "dir": result.get("direction", ""),
+                "grade": result.get("grade"),
+                "score": result.get("score"),
+                "paradigm": result.get("paradigm"),
+                "spot": result.get("spot"),
+                "es_price": result.get("abs_es_price") or result.get("es_price"),
+                "lis": result.get("lis"),
+                "target": result.get("target"),
+                "bar_idx": result.get("bar_idx"),
+                "range_pts": range_pts,
+                "vol_ratio": result.get("abs_vol_ratio") or result.get("vol_ratio"),
+                "div_raw": result.get("div_raw"),
+                "extra": json.dumps({
+                    k: v for k, v in result.items()
+                    if k not in {"direction", "grade", "score", "paradigm", "spot",
+                                 "abs_es_price", "lis", "target", "bar_idx",
+                                 "abs_vol_ratio", "div_raw"}
+                    and not isinstance(v, (list, dict))
+                }, default=str),
+            })
+        with _sierra_state_lock:
+            if range_pts >= 9.0:
+                _sierra_state["shadow_signals_10pt"] += 1
+            else:
+                _sierra_state["shadow_signals_5pt"] += 1
+        print(f"[shadow] {setup_name} {result.get('direction')} "
+              f"bar_idx={result.get('bar_idx')} grade={result.get('grade')} "
+              f"score={result.get('score')} (range={range_pts}pt)", flush=True)
+    except Exception as e:
+        print(f"[shadow] log signal error: {e}", flush=True)
+
+
+def _shadow_run_5pt():
+    """Shadow detection on Sierra 5pt bars: ES Absorption + SB + SB2.
+    Uses INDEPENDENT cooldown state. Reads bars from DB (vps_es_range_bars)."""
+    # Match the Rithmic time gate: 10:00 - 15:45 ET
+    t = now_et()
+    if not (dtime(10, 0) <= t.time() < dtime(15, 45)):
+        return
+
+    session_date = _es_session_date_now()
+    bars = _load_sierra_bars(5.0, session_date)
+    if len(bars) < 30:
+        return
+
+    # Volland stats (with combined SPX+SPY DD override)
+    volland_stats = None
+    try:
+        vstat = db_volland_stats()
+        if vstat and vstat.get("stats") and vstat["stats"].get("has_statistics"):
+            volland_stats = dict(vstat["stats"])
+            if _dd_combined_str:
+                volland_stats["delta_decay_hedging"] = _dd_combined_str
+    except Exception:
+        pass
+
+    # SPX spot
+    spx_spot = None
+    try:
+        msg = last_run_status.get("msg") or ""
+        parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+        spx_spot = float(parts.get("spot", ""))
+    except Exception:
+        pass
+
+    # ES Absorption — self-contained shadow detection (separate cooldown)
+    abs_result = _shadow_detect_absorption(bars, _shadow_cooldown_5pt, today=t.date())
+    if abs_result:
+        if volland_stats:
+            abs_result["paradigm"] = volland_stats.get("paradigm", "")
+        abs_result["spot"] = spx_spot
+        _shadow_log_signal("ES Absorption", abs_result, 5.0)
+
+    # SB Absorption + SB2 Absorption: use real evaluators with INDEPENDENT cooldown_state
+    try:
+        from app.setup_detector import (
+            evaluate_single_bar_absorption, evaluate_sb2_absorption,
+        )
+        sb_res = evaluate_single_bar_absorption(
+            bars, volland_stats, _setup_settings,
+            spx_spot=spx_spot, cooldown_state=_shadow_cooldown_sb_5pt,
+        )
+        if sb_res:
+            _shadow_log_signal("SB Absorption", sb_res, 5.0)
+        sb2_res = evaluate_sb2_absorption(
+            bars, volland_stats, _setup_settings,
+            spx_spot=spx_spot, cooldown_state=_shadow_cooldown_sb2_5pt,
+        )
+        if sb2_res:
+            _shadow_log_signal("SB2 Absorption", sb2_res, 5.0)
+    except Exception as e:
+        print(f"[shadow] sb/sb2 eval error: {e}", flush=True)
+
+
+def _shadow_run_10pt():
+    """Shadow SB10 detection on Sierra 10pt bars."""
+    t = now_et()
+    if not (dtime(10, 0) <= t.time() < dtime(15, 45)):
+        return
+
+    session_date = _es_session_date_now()
+    bars = _load_sierra_bars(10.0, session_date)
+    if len(bars) < 25:
+        return
+
+    volland_stats = None
+    try:
+        vstat = db_volland_stats()
+        if vstat and vstat.get("stats") and vstat["stats"].get("has_statistics"):
+            volland_stats = dict(vstat["stats"])
+            if _dd_combined_str:
+                volland_stats["delta_decay_hedging"] = _dd_combined_str
+    except Exception:
+        pass
+
+    spx_spot = None
+    try:
+        msg = last_run_status.get("msg") or ""
+        parts = dict(s.split("=", 1) for s in msg.split() if "=" in s)
+        spx_spot = float(parts.get("spot", ""))
+    except Exception:
+        pass
+
+    try:
+        from app.setup_detector import evaluate_single_bar_absorption
+        sb10_res = evaluate_single_bar_absorption(
+            bars, volland_stats, _setup_settings,
+            spx_spot=spx_spot, cooldown_state=_shadow_cooldown_sb10_10pt,
+        )
+        if sb10_res:
+            _shadow_log_signal("SB10 Absorption", sb10_res, 10.0)
+    except Exception as e:
+        print(f"[shadow] sb10 eval error: {e}", flush=True)
+
+
+def _shadow_detect_absorption(bars: list, cd_state: dict, today) -> dict | None:
+    """Inline shadow ES Absorption — mirrors setup_detector.evaluate_absorption
+    core logic but uses caller-provided cooldown state. No Volland scoring,
+    no grading complexity — just signal trigger detection for Phase 2 comparison.
+    """
+    LOOKBACK = 8
+    VOL_WINDOW = 20
+    MIN_VOL_RATIO = 1.5
+    COOLDOWN_BARS = 10
+    MIN_BARS = VOL_WINDOW + LOOKBACK
+
+    closed = [b for b in bars if b.get("status") == "closed"]
+    if len(closed) < MIN_BARS:
+        return None
+
+    trigger = closed[-1]
+    trigger_idx = trigger["idx"]
+
+    # Daily reset
+    if cd_state.get("last_date") != today:
+        cd_state["last_bullish_bar"] = -100
+        cd_state["last_bearish_bar"] = -100
+        cd_state["last_checked_idx"] = -1
+        cd_state["last_date"] = today
+
+    if trigger_idx <= cd_state["last_checked_idx"]:
+        return None
+    cd_state["last_checked_idx"] = trigger_idx
+
+    # Volume gate
+    recent = closed[-(VOL_WINDOW + 1):-1]
+    vol_avg = sum(b["volume"] for b in recent) / len(recent) if recent else 0
+    if vol_avg <= 0:
+        return None
+    vol_ratio = trigger["volume"] / vol_avg
+    if vol_ratio < MIN_VOL_RATIO:
+        return None
+
+    # Divergence
+    win = closed[-(LOOKBACK + 1):]
+    cvds = [b["cvd"] for b in win]
+    lows = [b["low"] for b in win]
+    highs = [b["high"] for b in win]
+    cvd_range = max(cvds) - min(cvds)
+    price_range = max(highs) - min(lows)
+    if cvd_range == 0 or price_range == 0:
+        return None
+
+    cvd_norm = (cvds[-1] - cvds[0]) / cvd_range
+    pl_norm = (lows[-1] - lows[0]) / price_range
+    ph_norm = (highs[-1] - highs[0]) / price_range
+
+    direction = None
+    div_raw = 0
+    if cvd_norm < -0.15:
+        gap = pl_norm - cvd_norm
+        if gap > 0.2:
+            direction = "bullish"
+            div_raw = 4 if gap > 1.2 else (3 if gap > 0.8 else (2 if gap > 0.4 else 1))
+    if cvd_norm > 0.15 and direction is None:
+        gap = cvd_norm - ph_norm
+        if gap > 0.2:
+            direction = "bearish"
+            div_raw = 4 if gap > 1.2 else (3 if gap > 0.8 else (2 if gap > 0.4 else 1))
+    if direction is None:
+        return None
+
+    # Cooldown
+    if direction == "bullish":
+        if trigger_idx - cd_state["last_bullish_bar"] < COOLDOWN_BARS:
+            return None
+        cd_state["last_bullish_bar"] = trigger_idx
+    else:
+        if trigger_idx - cd_state["last_bearish_bar"] < COOLDOWN_BARS:
+            return None
+        cd_state["last_bearish_bar"] = trigger_idx
+
+    return {
+        "direction": direction,
+        "div_raw": div_raw,
+        "abs_vol_ratio": round(vol_ratio, 2),
+        "abs_es_price": round(trigger["close"], 2),
+        "bar_idx": trigger_idx,
+        "high": trigger["high"],
+        "low": trigger["low"],
+        "cvd": trigger.get("cvd"),
+        "ts": trigger.get("ts_end", ""),
+        "grade": "SHADOW",
+        "score": 0,
+    }
+
+
+def _trigger_shadow_detection(range_pts: float, bar_idx: int, ts_end_str: str):
+    """Called from /api/vps/es/bar after insert. Fires shadow detection in a thread.
+    Skips if already evaluated this bar_idx (idempotent across retries)."""
+    with _sierra_state_lock:
+        if range_pts >= 9.0:
+            if bar_idx <= _sierra_state["last_10pt_bar_idx"]:
+                return  # already evaluated
+            _sierra_state["last_10pt_bar_idx"] = bar_idx
+            _sierra_state["last_10pt_ts_end"] = ts_end_str
+            _sierra_state["last_10pt_received_at"] = now_et().isoformat()
+            target_fn = _shadow_run_10pt
+        else:
+            if bar_idx <= _sierra_state["last_5pt_bar_idx"]:
+                return
+            _sierra_state["last_5pt_bar_idx"] = bar_idx
+            _sierra_state["last_5pt_ts_end"] = ts_end_str
+            _sierra_state["last_5pt_received_at"] = now_et().isoformat()
+            target_fn = _shadow_run_5pt
+
+    def _runner():
+        with _shadow_thread_lock:  # serialize shadow detection
+            try:
+                target_fn()
+            except Exception as e:
+                print(f"[shadow] detection error: {e}", flush=True)
+
+    Thread(target=_runner, daemon=True).start()
 
 
 @app.post("/api/vps/es/bar")
@@ -19667,6 +20062,16 @@ def vps_es_bar(request: Request, payload: dict = Body(...)):
                 "ts_end": payload["ts_end"],
                 "status": payload.get("status", "closed"),
             })
+        # Phase 1: fire shadow absorption detection (independent of live Rithmic path).
+        # Routes to 5pt or 10pt detector based on range_pts. Idempotent on bar_idx.
+        try:
+            _trigger_shadow_detection(
+                range_pts=float(payload.get("range_pts", 5.0)),
+                bar_idx=int(payload["idx"]),
+                ts_end_str=str(payload["ts_end"]),
+            )
+        except Exception as e:
+            print(f"[shadow] trigger error (non-fatal): {e}", flush=True)
         return {"ok": True}
     except Exception as e:
         print(f"[vps] es/bar error: {e}", flush=True)
@@ -19765,6 +20170,56 @@ def vps_heartbeat(request: Request, payload: dict = Body(...)):
         return {"ok": True}
     except Exception as e:
         print(f"[vps] heartbeat error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/sierra/shadow")
+def api_sierra_shadow_status(request: Request, hours: int = Query(24, ge=1, le=168)):
+    """Phase 1 shadow status: Sierra bar arrivals + recent shadow signals.
+    Public read-only endpoint for monitoring shadow detection health."""
+    if not engine:
+        return JSONResponse({"error": "no database"}, status_code=503)
+    try:
+        state = get_sierra_state()
+        with engine.begin() as conn:
+            recent_5pt = conn.execute(text("""
+                SELECT COUNT(*) AS bars, MAX(ts_end) AS last_ts
+                FROM vps_es_range_bars
+                WHERE range_pts = 5.0 AND ts_end >= NOW() - INTERVAL '24 hours'
+            """)).mappings().first()
+            recent_10pt = conn.execute(text("""
+                SELECT COUNT(*) AS bars, MAX(ts_end) AS last_ts
+                FROM vps_es_range_bars
+                WHERE range_pts = 10.0 AND ts_end >= NOW() - INTERVAL '24 hours'
+            """)).mappings().first()
+            shadow_signals = conn.execute(text("""
+                SELECT setup_name, direction, COUNT(*) AS n
+                FROM setup_log_shadow
+                WHERE ts >= NOW() - INTERVAL ':h hours'
+                GROUP BY setup_name, direction
+                ORDER BY setup_name, direction
+            """.replace(":h", str(hours)))).mappings().all()
+            recent_signals = conn.execute(text("""
+                SELECT id, ts, setup_name, direction, grade, score, paradigm,
+                       spot, es_price, bar_idx, range_pts, vol_ratio, div_raw
+                FROM setup_log_shadow
+                WHERE ts >= NOW() - INTERVAL ':h hours'
+                ORDER BY ts DESC LIMIT 50
+            """.replace(":h", str(hours)))).mappings().all()
+        return {
+            "state": state,
+            "bars_24h": {
+                "5pt": {"count": recent_5pt["bars"] if recent_5pt else 0,
+                        "last_ts": str(recent_5pt["last_ts"]) if recent_5pt and recent_5pt["last_ts"] else None},
+                "10pt": {"count": recent_10pt["bars"] if recent_10pt else 0,
+                         "last_ts": str(recent_10pt["last_ts"]) if recent_10pt and recent_10pt["last_ts"] else None},
+            },
+            "signal_counts": [dict(r) for r in shadow_signals],
+            "recent_signals": [
+                {**dict(r), "ts": str(r["ts"])} for r in recent_signals
+            ],
+        }
+    except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 

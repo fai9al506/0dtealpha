@@ -79,6 +79,7 @@ DEFAULT_CONFIG = {
     "telegram_bot_token": "",
     "telegram_chat_id": "",
     "range_pts": 5.0,
+    "range_pts_10": 10.0,           # Phase 1: parallel 10-pt builder for SB10 Absorption parity
     "vx_batch_seconds": 10,
     "heartbeat_seconds": 60,
     "post_timeout": 10,
@@ -355,9 +356,14 @@ class RailwayPoster:
             self._session.headers["Authorization"] = f"Bearer {api_key}"
         self._session.headers["Content-Type"] = "application/json"
 
-    def post_es_bar(self, bar: dict, trade_date: str):
-        payload = {**bar, "trade_date": trade_date}
+    def post_es_bar(self, bar: dict, trade_date: str, range_pts: float = 5.0):
+        payload = {**bar, "trade_date": trade_date, "range_pts": range_pts}
         return self._post("/api/vps/es/bar", payload)
+
+    def post_es_bar_10(self, bar: dict, trade_date: str):
+        """Phase 1: route 10-pt bars to same endpoint with range_pts=10.0
+        (UNIQUE constraint includes range_pts so 5pt/10pt bars don't collide)."""
+        return self.post_es_bar(bar, trade_date, range_pts=10.0)
 
     def post_vx_ticks(self, ticks: list):
         if not ticks:
@@ -660,6 +666,10 @@ class VPSDataBridge:
         self._lock = threading.Lock()
 
         self.bar_builder = RangeBarBuilder(cfg.get("range_pts", 5.0))
+        # Phase 1: parallel 10-pt builder for SB10 Absorption parity. Same tick stream,
+        # independent bar boundaries. Bars POSTed to /api/vps/es/bar10 on completion.
+        self.bar_builder_10 = RangeBarBuilder(cfg.get("range_pts_10", 10.0))
+        self._bars_posted_10 = 0
 
         self._vx_ticks = []
         self._vx_last_flush = time.time()
@@ -763,15 +773,24 @@ class VPSDataBridge:
             if new_date != self._session_date:
                 log.info(f"Session rollover: {self._session_date} -> {new_date}")
                 self.bar_builder.reset_session()
+                self.bar_builder_10.reset_session()
                 self._session_date = new_date
 
             buy_vol, sell_vol, delta = _classify_scid(
                 tick["bid_vol"], tick["ask_vol"], tick["volume"]
             )
+            ts_iso = tick["ts"].isoformat()
+
             completed = self.bar_builder.process_tick(
                 tick["price"], tick["volume"],
                 buy_vol, sell_vol, delta,
-                tick["ts"].isoformat(),
+                ts_iso,
+            )
+            # Phase 1: feed same tick into 10-pt builder. Independent state, same tick stream.
+            completed_10 = self.bar_builder_10.process_tick(
+                tick["price"], tick["volume"],
+                buy_vol, sell_vol, delta,
+                ts_iso,
             )
 
             if completed:
@@ -788,6 +807,20 @@ class VPSDataBridge:
                     daemon=True,
                 ).start()
                 self._bars_posted += 1
+
+            if completed_10:
+                log.info(
+                    f"ES10 bar #{completed_10['idx']}: "
+                    f"O={completed_10['open']:.2f} H={completed_10['high']:.2f} "
+                    f"L={completed_10['low']:.2f} C={completed_10['close']:.2f} "
+                    f"vol={completed_10['volume']} delta={completed_10['delta']:+d}"
+                )
+                threading.Thread(
+                    target=self.poster.post_es_bar_10,
+                    args=(completed_10, self._session_date),
+                    daemon=True,
+                ).start()
+                self._bars_posted_10 += 1
 
     def _poll_vx_ticks(self):
         """Read new VX ticks from .scid and buffer for batch posting."""
@@ -980,6 +1013,8 @@ class VPSDataBridge:
             "vx_ticks": self._vx_tick_count,
             "bars_completed": self.bar_builder.bar_idx,
             "bars_posted": self._bars_posted,
+            "bars_completed_10": self.bar_builder_10.bar_idx,
+            "bars_posted_10": self._bars_posted_10,
             "vx_batches_posted": self._vx_batches_posted,
             "market_open": _market_open(),
             "backfill_count": self._backfill_count,
@@ -999,7 +1034,7 @@ class VPSDataBridge:
         stale_tag = f" STALE({self._stale_cycles})" if self._stale_cycles > 0 else ""
         log.info(
             f"Heartbeat: ES ticks={self._es_tick_count} "
-            f"bars={self.bar_builder.bar_idx} "
+            f"bars={self.bar_builder.bar_idx} bars10={self.bar_builder_10.bar_idx} "
             f"VX ticks={self._vx_tick_count} "
             f"market={'OPEN' if _market_open() else 'CLOSED'}{stale_tag}"
         )

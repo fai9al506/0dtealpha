@@ -1699,12 +1699,14 @@ def _restore_open_trades():
                 dd_max_fav = 0.0
                 _max_bar_idx_db = _abs_bar_idx or 0  # fallback to trigger bar_idx
                 try:
+                    # Phase 3: route by ES_DATA_SOURCE (sierra | rithmic)
+                    _tbl, _src = _es_bars_table_filter()
                     with engine.begin() as conn:
-                        extremes = conn.execute(text("""
+                        extremes = conn.execute(text(f"""
                             SELECT MAX(bar_high) as hi, MIN(bar_low) as lo,
                                    MAX(bar_idx) as max_idx
-                            FROM es_range_bars
-                            WHERE trade_date = :td AND source = 'rithmic'
+                            FROM {_tbl}
+                            WHERE trade_date = :td {_src}
                               AND ts_end >= :entry_ts AND ts_end <= NOW()
                         """), {"td": ts.strftime("%Y-%m-%d"), "entry_ts": ts}).mappings().first()
                     if extremes and extremes["hi"] is not None:
@@ -4242,18 +4244,18 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
     es_bars_snapshot = []
     es_bars_10pt_snapshot = []
     try:
-        from rithmic_es_stream import get_rithmic_bars, get_rithmic_bars_10pt
-        rithmic_bars = get_rithmic_bars()
-        if rithmic_bars:
-            last_bar = rithmic_bars[-1]
+        # Phase 3: route through neutral accessors (sierra | rithmic by env var)
+        es_bars_now = get_es_bars()
+        if es_bars_now:
+            last_bar = es_bars_now[-1]
             es_price = last_bar.get("close")
-            es_bars_snapshot = rithmic_bars
-        rithmic_bars_10 = get_rithmic_bars_10pt()
-        if rithmic_bars_10:
-            es_bars_10pt_snapshot = rithmic_bars_10
+            es_bars_snapshot = es_bars_now
+        es_bars_10_now = get_es_bars_10pt()
+        if es_bars_10_now:
+            es_bars_10pt_snapshot = es_bars_10_now
             if not es_price:
-                es_price = rithmic_bars_10[-1].get("close")
-    except (ImportError, Exception):
+                es_price = es_bars_10_now[-1].get("close")
+    except Exception:
         pass
     if not es_bars_snapshot:
         with _es_quote_lock:
@@ -4802,9 +4804,8 @@ def _run_setup_check():
     # Pass combined DD string to Paradigm Reversal (instead of SPX-only)
     dd_hedging = _dd_combined_str or dd_hedging
 
-    # ES range bars from Rithmic in-memory (no DB query — already in memory, backfilled on restart)
-    from rithmic_es_stream import get_rithmic_bars
-    _rithmic_raw = get_rithmic_bars()
+    # Phase 3: ES range bars from active feed (sierra | rithmic by env var)
+    _rithmic_raw = get_es_bars()
     _rithmic_db_fmt = _rithmic_bars_as_db_format(_rithmic_raw)
     es_bars = _rithmic_db_fmt[-15:]  # last 15 bars for Paradigm Reversal
 
@@ -5513,8 +5514,8 @@ def _run_absorption_detection(bars: list) -> dict | None:
     trigger_price = result.get("abs_es_price")
     if trigger_price:
         try:
-            from rithmic_es_stream import get_rithmic_bars
-            current_bars = get_rithmic_bars()
+            # Phase 3: route through active feed (sierra | rithmic)
+            current_bars = get_es_bars()
             if current_bars:
                 current_price = current_bars[-1].get("close", trigger_price)
                 stale_dist = abs(current_price - trigger_price)
@@ -5925,13 +5926,13 @@ def _on_rithmic_bar_complete(bars: list):
     _last_absorption_bar_idx = bar_idx
     # Skip stale bars restored from DB after a deploy/restart.
     # Only fire absorption when trigger bar was built from live ticks.
+    # Phase 3: routed via get_es_live_since_idx (sierra returns 0 = no skip).
     try:
-        from rithmic_es_stream import get_live_since_idx
-        live_idx = get_live_since_idx()
+        live_idx = get_es_live_since_idx()
         if bar_idx < live_idx:
             print(f"[absorption] bar #{bar_idx} skipped: stale (live_since={live_idx})", flush=True)
             return
-    except (ImportError, Exception):
+    except Exception:
         pass
     # Offload to thread so Rithmic tick processing isn't blocked.
     # The bars snapshot is already a copy (list of dicts) so thread-safe.
@@ -5986,13 +5987,13 @@ def _on_rithmic_bar_10pt_complete(bars: list):
     if bar_idx <= _last_sb10_bar_idx:
         return
     _last_sb10_bar_idx = bar_idx
+    # Phase 3: routed via get_es_live_since_idx_10pt
     try:
-        from rithmic_es_stream import get_live_since_idx_10pt
-        live_idx = get_live_since_idx_10pt()
+        live_idx = get_es_live_since_idx_10pt()
         if bar_idx < live_idx:
             print(f"[sb10] bar #{bar_idx} skipped: stale (live_since={live_idx})", flush=True)
             return
-    except (ImportError, Exception):
+    except Exception:
         pass
     bars_copy = list(bars)
     print(f"[sb10] evaluating bar #{bar_idx} ({len(bars_copy)} bars total)", flush=True)
@@ -6602,8 +6603,10 @@ def _es_quote_stream_loop():
                               f"forming_range={fb_range}/{_es_quote['_range_pts']}",
                               flush=True)
 
-                # Fallback absorption: run on TS bars only if Rithmic is not connected
-                if ts_bar_snapshot:
+                # Fallback absorption on TS bars: only fires when Rithmic is the
+                # active feed AND is currently disconnected. With ES_DATA_SOURCE=sierra,
+                # Sierra is primary and TS bars must NOT duplicate-fire detection.
+                if ts_bar_snapshot and _es_data_source() == "rithmic":
                     try:
                         from rithmic_es_stream import get_rithmic_state
                         rithmic_ok = get_rithmic_state().get("connected", False)
@@ -7345,13 +7348,20 @@ def on_startup():
     # Start ES quote streaming thread (bid/ask delta classification)
     Thread(target=_es_quote_stream_loop, daemon=True).start()
     print("[es-quote] streaming thread started", flush=True)
-    # Start Rithmic ES stream (parallel pipeline — skips if RITHMIC_USER not set)
+    # Start Rithmic ES stream (parallel pipeline — skips if RITHMIC_USER not set,
+    # RITHMIC_DISABLED=true, or ES_DATA_SOURCE=sierra)
     from rithmic_es_stream import start_rithmic_stream, set_on_bar_complete, set_on_bar_10_complete
     start_rithmic_stream(engine, send_telegram)
     # Register absorption detection callbacks on Rithmic bar completion
     set_on_bar_complete(_on_rithmic_bar_complete)
     set_on_bar_10_complete(_on_rithmic_bar_10pt_complete)
     print("[absorption] registered proactive callbacks on Rithmic bar completion (5pt + 10pt)", flush=True)
+    # Phase 3: hydrate Sierra in-memory mirror from DB (lets ES_DATA_SOURCE=sierra
+    # serve get_es_bars() immediately after restart, before next POST arrives).
+    try:
+        _hydrate_sierra_bars_from_db()
+    except Exception as e:
+        print(f"[sierra] hydrate error (non-fatal): {e}", flush=True)
     # Initialize auto-trader (SIM ES execution — disabled by default)
     try:
         from app.auto_trader import init as auto_trader_init
@@ -7485,14 +7495,13 @@ def api_health(request: Request):
     with _es_quote_lock:
         es_quote_ok = _es_quote.get("stream_ok", False)
 
-    # Rithmic stream (primary ES data source)
+    # Phase 3: ES feed status (active source = sierra | rithmic by env var)
     rithmic_info = None
     rithmic_ok = False
     try:
-        from rithmic_es_stream import get_rithmic_state
-        rithmic_info = get_rithmic_state()
+        rithmic_info = get_es_state()
         rithmic_ok = rithmic_info.get("connected", False) if rithmic_info else False
-    except ImportError:
+    except Exception:
         pass
 
     # Overall status
@@ -8973,12 +8982,11 @@ def db_es_delta_bars(limit: int = 1400):
 
 @app.get("/api/es/delta/latest")
 def api_es_delta_latest():
-    """Get latest ES cumulative delta — reads from Rithmic state (primary) or TS quote (fallback)."""
-    # Try Rithmic first (primary)
+    """Get latest ES cumulative delta — reads from active ES feed (sierra|rithmic)."""
+    # Phase 3: route via active feed
     try:
-        from rithmic_es_stream import get_rithmic_state, get_rithmic_bars
-        state = get_rithmic_state()
-        bars = get_rithmic_bars()
+        state = get_es_state()
+        bars = get_es_bars()
         if state and state.get("connected") and bars:
             last_bar = bars[-1]
             total_vol = sum(b.get("volume", 0) for b in bars)
@@ -9028,15 +9036,17 @@ def api_es_delta_history(limit: int = Query(500, ge=1, le=2000)):
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
         today = datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d")
+        # Phase 3: route by ES_DATA_SOURCE
+        _tbl, _src = _es_bars_table_filter()
         with engine.begin() as conn:
-            rows = conn.execute(text("""
+            rows = conn.execute(text(f"""
                 SELECT ts_end AS ts, trade_date, 'rithmic' AS symbol,
                        cumulative_delta, bar_volume AS total_volume,
                        bar_buy_volume AS buy_volume, bar_sell_volume AS sell_volume,
                        bar_close AS last_price, 0 AS tick_count,
                        bar_high AS session_high, bar_low AS session_low
-                FROM es_range_bars
-                WHERE trade_date = :today AND source = 'rithmic'
+                FROM {_tbl}
+                WHERE trade_date = :today {_src}
                 ORDER BY bar_idx ASC
                 LIMIT :lim
             """), {"today": today, "lim": limit}).mappings().all()
@@ -9057,16 +9067,18 @@ def api_es_delta_bars(limit: int = Query(1400, ge=1, le=2000)):
         if not engine:
             return JSONResponse({"error": "DATABASE_URL not set"}, status_code=500)
         today = datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d")
+        # Phase 3: route by ES_DATA_SOURCE
+        _tbl, _src = _es_bars_table_filter()
         with engine.begin() as conn:
-            rows = conn.execute(text("""
+            rows = conn.execute(text(f"""
                 SELECT ts_end AS ts, trade_date, 'rithmic' AS symbol,
                        bar_delta, cumulative_delta,
                        bar_volume, bar_buy_volume, bar_sell_volume,
                        bar_open AS bar_open_price, bar_close AS bar_close_price,
                        bar_high AS bar_high_price, bar_low AS bar_low_price,
                        0 AS up_ticks, 0 AS down_ticks, 0 AS total_ticks
-                FROM es_range_bars
-                WHERE trade_date = :today AND source = 'rithmic'
+                FROM {_tbl}
+                WHERE trade_date = :today {_src}
                 ORDER BY bar_idx ASC
                 LIMIT :lim
             """), {"today": today, "lim": limit}).mappings().all()
@@ -9092,12 +9104,12 @@ def api_es_delta_rangebars(range_pts: float = Query(5.0, alias="range", ge=1.0, 
 
         # Primary: Rithmic exchange aggressor data (100% accurate)
         result = None
+        # Phase 3: route via active feed
         try:
-            from rithmic_es_stream import get_rithmic_bars
-            rithmic_bars = get_rithmic_bars()
-            if rithmic_bars:
-                result = rithmic_bars
-        except ImportError:
+            es_bars = get_es_bars()
+            if es_bars:
+                result = es_bars
+        except Exception:
             pass
 
         # Fallback: TS quote-stream bars (bid/ask inference)
@@ -10548,12 +10560,14 @@ def _calculate_absorption_outcome(entry: dict) -> dict:
         # Get ES range bars for that session date (5-pt for ES/SB, 10-pt for SB10)
         _rp = 10.0 if entry.get("setup_name") == "SB10 Absorption" else 5.0
         alert_date = ts.astimezone(NY).date() if ts.tzinfo else NY.localize(ts).date()
+        # Phase 3: route by ES_DATA_SOURCE
+        _tbl, _src = _es_bars_table_filter()
         with engine.begin() as conn:
-            bar_rows = conn.execute(text("""
+            bar_rows = conn.execute(text(f"""
                 SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
                        ts_start, ts_end, status
-                FROM es_range_bars
-                WHERE trade_date = :td AND source = 'rithmic' AND status = 'closed'
+                FROM {_tbl}
+                WHERE trade_date = :td {_src} AND status = 'closed'
                   AND range_pts = :rp
                 ORDER BY bar_idx ASC
             """), {"td": alert_date.isoformat(), "rp": _rp}).mappings().all()
@@ -11102,14 +11116,15 @@ def api_setup_log_outcome(log_id: int):
         market_close = NY.localize(datetime.combine(alert_date, dtime(16, 0)))
 
         if is_abs:
-            # ES Absorption: fetch ES range bars from es_range_bars table
+            # ES Absorption: fetch ES range bars from active feed (Phase 3 routed)
+            _tbl, _src = _es_bars_table_filter()
             with engine.begin() as conn:
-                es_rows = conn.execute(text("""
+                es_rows = conn.execute(text(f"""
                     SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
                            bar_volume, bar_delta, cumulative_delta,
                            ts_start, ts_end, status
-                    FROM es_range_bars
-                    WHERE trade_date = :td AND source = 'rithmic'
+                    FROM {_tbl}
+                    WHERE trade_date = :td {_src}
                     ORDER BY bar_idx ASC
                 """), {"td": alert_date.isoformat()}).mappings().all()
 
@@ -11268,13 +11283,15 @@ def api_setup_eod_review(date: str = Query(None, description="Date YYYY-MM-DD, d
             es_bars = []
 
             if is_abs:
+                # Phase 3: route by ES_DATA_SOURCE
+                _tbl, _src = _es_bars_table_filter()
                 with engine.begin() as conn:
-                    es_rows = conn.execute(text("""
+                    es_rows = conn.execute(text(f"""
                         SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
                                bar_volume, bar_delta, cumulative_delta,
                                ts_start, ts_end, status
-                        FROM es_range_bars
-                        WHERE trade_date = :td AND source = 'rithmic'
+                        FROM {_tbl}
+                        WHERE trade_date = :td {_src}
                         ORDER BY bar_idx ASC
                     """), {"td": alert_date.isoformat()}).mappings().all()
                 es_bars = [
@@ -19637,9 +19654,42 @@ def _check_vps_auth(request):
     return auth == f"Bearer {_VPS_API_KEY}"
 
 
+# ── Phase 3: ES_DATA_SOURCE switch (sierra | rithmic) ──────────────────────
+# Routes ES bar consumers + bar-completion callback to the active feed.
+# Default: 'sierra' (after Rithmic disabled 2026-04-30).
+# To revert to Rithmic: set ES_DATA_SOURCE=rithmic + unset RITHMIC_DISABLED.
+# Single env var swap, no code change required.
+
+def _es_data_source() -> str:
+    """Returns 'sierra' or 'rithmic'. Cached env read (cheap)."""
+    return os.getenv("ES_DATA_SOURCE", "sierra").strip().lower() or "sierra"
+
+
+def _es_bars_table_filter() -> tuple[str, str]:
+    """Returns (table_name, extra_where_clause) for ES bar SQL queries.
+    Routes by ES_DATA_SOURCE env var.
+      sierra  -> ('vps_es_range_bars', '')
+      rithmic -> ('es_range_bars', \" AND source = 'rithmic'\")
+    """
+    if _es_data_source() == "rithmic":
+        return ("es_range_bars", " AND source = 'rithmic'")
+    return ("vps_es_range_bars", "")
+
+
 # ── Sierra shadow state and detection (Phase 1) ────────────────────────────
 # Independent from rithmic_es_stream. Tracks Sierra bar arrivals and runs
 # shadow absorption detection. Cooldown state is INDEPENDENT from live path.
+# Phase 3: when ES_DATA_SOURCE=sierra, /api/vps/es/bar fires LIVE callbacks
+# instead of shadow. When ES_DATA_SOURCE=rithmic, shadow continues for
+# comparison purposes.
+
+# In-memory mirror of Sierra bars (populated by /api/vps/es/bar, capped).
+# Used by get_es_bars() / get_es_bars_10pt() when ES_DATA_SOURCE=sierra.
+_sierra_bars_5pt: list = []   # live in-memory list of Sierra 5pt bars (today)
+_sierra_bars_10pt: list = []  # live in-memory list of Sierra 10pt bars (today)
+_sierra_bars_lock = Lock()
+_sierra_bars_session_date: str | None = None  # tracks daily reset
+_SIERRA_BARS_MAX = 2000  # cap to bound memory; far above any single-day count
 
 _sierra_state = {
     "last_5pt_ts_end": None,
@@ -19685,6 +19735,143 @@ def get_sierra_state():
     """Return current Sierra bridge state (for /api/health and debug)."""
     with _sierra_state_lock:
         return dict(_sierra_state)
+
+
+def _record_sierra_bar(bar_payload: dict, range_pts: float):
+    """Append Sierra bar to in-memory mirror (called from /api/vps/es/bar after insert).
+    Daily reset on session date change. Capped at _SIERRA_BARS_MAX."""
+    global _sierra_bars_session_date
+    bar = {
+        "idx": int(bar_payload["idx"]),
+        "open": float(bar_payload["open"]),
+        "high": float(bar_payload["high"]),
+        "low": float(bar_payload["low"]),
+        "close": float(bar_payload["close"]),
+        "volume": int(bar_payload.get("volume", 0)),
+        "delta": int(bar_payload.get("delta", 0)),
+        "buy_volume": int(bar_payload.get("buy_volume", 0)),
+        "sell_volume": int(bar_payload.get("sell_volume", 0)),
+        "cvd": int(bar_payload.get("cvd", 0)),
+        "cvd_open": int(bar_payload.get("cvd_open", 0)),
+        "cvd_high": int(bar_payload.get("cvd_high", 0)),
+        "cvd_low": int(bar_payload.get("cvd_low", 0)),
+        "cvd_close": int(bar_payload.get("cvd_close", 0)),
+        "ts_start": str(bar_payload["ts_start"]),
+        "ts_end": str(bar_payload["ts_end"]),
+        "status": bar_payload.get("status", "closed"),
+    }
+    td = str(bar_payload.get("trade_date", ""))
+    with _sierra_bars_lock:
+        # Daily reset: if session date changes, clear both lists
+        if _sierra_bars_session_date and td and td != _sierra_bars_session_date:
+            _sierra_bars_5pt.clear()
+            _sierra_bars_10pt.clear()
+        _sierra_bars_session_date = td or _sierra_bars_session_date
+        target = _sierra_bars_10pt if range_pts >= 9.0 else _sierra_bars_5pt
+        # Idempotent: if same bar_idx already present, replace (handles VPS retry)
+        if target and target[-1]["idx"] >= bar["idx"]:
+            for i, b in enumerate(target):
+                if b["idx"] == bar["idx"]:
+                    target[i] = bar
+                    return
+        target.append(bar)
+        if len(target) > _SIERRA_BARS_MAX:
+            del target[: len(target) - _SIERRA_BARS_MAX]
+
+
+def _hydrate_sierra_bars_from_db():
+    """On startup or after restart: load today's Sierra bars from DB into memory.
+    Idempotent — safe to call multiple times."""
+    global _sierra_bars_session_date
+    if not engine:
+        return
+    session_date = _es_session_date_now()
+    try:
+        bars_5 = _load_sierra_bars(5.0, session_date)
+        bars_10 = _load_sierra_bars(10.0, session_date)
+    except Exception as e:
+        print(f"[sierra] hydrate error: {e}", flush=True)
+        return
+    with _sierra_bars_lock:
+        _sierra_bars_5pt.clear()
+        _sierra_bars_5pt.extend(bars_5)
+        _sierra_bars_10pt.clear()
+        _sierra_bars_10pt.extend(bars_10)
+        _sierra_bars_session_date = session_date
+    print(f"[sierra] hydrated from DB: {len(bars_5)} 5pt, {len(bars_10)} 10pt "
+          f"bars for {session_date}", flush=True)
+
+
+# ── Phase 3: neutral ES bar accessors (route by ES_DATA_SOURCE) ─────────────
+
+def get_es_bars() -> list:
+    """Phase 3: returns 5pt ES bars from active feed.
+    sierra  -> in-memory Sierra mirror (populated by /api/vps/es/bar)
+    rithmic -> rithmic_es_stream.get_rithmic_bars()
+    """
+    if _es_data_source() == "rithmic":
+        try:
+            from rithmic_es_stream import get_rithmic_bars
+            return get_rithmic_bars()
+        except Exception:
+            return []
+    with _sierra_bars_lock:
+        return list(_sierra_bars_5pt)
+
+
+def get_es_bars_10pt() -> list:
+    """Phase 3: returns 10pt ES bars from active feed."""
+    if _es_data_source() == "rithmic":
+        try:
+            from rithmic_es_stream import get_rithmic_bars_10pt
+            return get_rithmic_bars_10pt()
+        except Exception:
+            return []
+    with _sierra_bars_lock:
+        return list(_sierra_bars_10pt)
+
+
+def get_es_state() -> dict:
+    """Phase 3: returns connection/freshness state of active ES feed."""
+    if _es_data_source() == "rithmic":
+        try:
+            from rithmic_es_stream import get_rithmic_state
+            return get_rithmic_state()
+        except Exception:
+            return {"connected": False, "data_source": "rithmic", "error": "module"}
+    # Sierra state — derive 'connected' from freshness of last received bar
+    s = get_sierra_state()
+    last_recv = s.get("last_5pt_received_at")
+    connected = False
+    if last_recv:
+        try:
+            recv_dt = datetime.fromisoformat(last_recv)
+            connected = (now_et() - recv_dt).total_seconds() < 600  # 10 min freshness
+        except Exception:
+            pass
+    return {**s, "connected": connected, "data_source": "sierra"}
+
+
+def get_es_live_since_idx() -> int:
+    """Phase 3: bar_idx threshold below which bars are considered stale (from a
+    prior session restored via DB). Sierra path uses 0 (every POST is live)."""
+    if _es_data_source() == "rithmic":
+        try:
+            from rithmic_es_stream import get_live_since_idx
+            return get_live_since_idx()
+        except Exception:
+            return 0
+    return 0
+
+
+def get_es_live_since_idx_10pt() -> int:
+    if _es_data_source() == "rithmic":
+        try:
+            from rithmic_es_stream import get_live_since_idx_10pt
+            return get_live_since_idx_10pt()
+        except Exception:
+            return 0
+    return 0
 
 
 def _load_sierra_bars(range_pts: float, trade_date: str) -> list:
@@ -19977,30 +20164,54 @@ def _shadow_detect_absorption(bars: list, cd_state: dict, today) -> dict | None:
 
 
 def _trigger_shadow_detection(range_pts: float, bar_idx: int, ts_end_str: str):
-    """Called from /api/vps/es/bar after insert. Fires shadow detection in a thread.
-    Skips if already evaluated this bar_idx (idempotent across retries)."""
+    """Called from /api/vps/es/bar after insert. Routes to LIVE or SHADOW
+    detection based on ES_DATA_SOURCE env var:
+      sierra (default) -> fire LIVE _on_rithmic_bar_complete with Sierra bars
+      rithmic          -> fire shadow detection (Phase 1 behavior, for comparison)
+    Idempotent on bar_idx across retries.
+    """
+    is_10pt = range_pts >= 9.0
     with _sierra_state_lock:
-        if range_pts >= 9.0:
+        if is_10pt:
             if bar_idx <= _sierra_state["last_10pt_bar_idx"]:
                 return  # already evaluated
             _sierra_state["last_10pt_bar_idx"] = bar_idx
             _sierra_state["last_10pt_ts_end"] = ts_end_str
             _sierra_state["last_10pt_received_at"] = now_et().isoformat()
-            target_fn = _shadow_run_10pt
         else:
             if bar_idx <= _sierra_state["last_5pt_bar_idx"]:
                 return
             _sierra_state["last_5pt_bar_idx"] = bar_idx
             _sierra_state["last_5pt_ts_end"] = ts_end_str
             _sierra_state["last_5pt_received_at"] = now_et().isoformat()
-            target_fn = _shadow_run_5pt
+
+    is_live = (_es_data_source() == "sierra")
+    mode = "LIVE" if is_live else "shadow"
+    rng_label = "10pt" if is_10pt else "5pt"
+    print(f"[sierra-cb] {mode} {rng_label} bar #{bar_idx} ts_end={ts_end_str}", flush=True)
 
     def _runner():
-        with _shadow_thread_lock:  # serialize shadow detection
+        with _shadow_thread_lock:  # serialize detection
             try:
-                target_fn()
+                if is_live:
+                    # Phase 3: feed Sierra bars into the LIVE Rithmic callback path.
+                    # _on_rithmic_bar_complete is feed-agnostic (takes a bars list).
+                    bars = get_es_bars_10pt() if is_10pt else get_es_bars()
+                    if not bars:
+                        print(f"[sierra-cb] {rng_label} bars empty, skip", flush=True)
+                        return
+                    if is_10pt:
+                        _on_rithmic_bar_10pt_complete(bars)
+                    else:
+                        _on_rithmic_bar_complete(bars)
+                else:
+                    # Shadow path (Phase 1 behavior). Used when Rithmic is primary.
+                    if is_10pt:
+                        _shadow_run_10pt()
+                    else:
+                        _shadow_run_5pt()
             except Exception as e:
-                print(f"[shadow] detection error: {e}", flush=True)
+                print(f"[sierra-cb] {mode} {rng_label} error: {e}", flush=True)
 
     Thread(target=_runner, daemon=True).start()
 
@@ -20062,16 +20273,18 @@ def vps_es_bar(request: Request, payload: dict = Body(...)):
                 "ts_end": payload["ts_end"],
                 "status": payload.get("status", "closed"),
             })
-        # Phase 1: fire shadow absorption detection (independent of live Rithmic path).
-        # Routes to 5pt or 10pt detector based on range_pts. Idempotent on bar_idx.
+        # Phase 3: record bar in in-memory mirror, then fire detection.
+        # Detection is LIVE when ES_DATA_SOURCE=sierra, shadow when =rithmic.
         try:
+            range_pts_val = float(payload.get("range_pts", 5.0))
+            _record_sierra_bar(payload, range_pts_val)
             _trigger_shadow_detection(
-                range_pts=float(payload.get("range_pts", 5.0)),
+                range_pts=range_pts_val,
                 bar_idx=int(payload["idx"]),
                 ts_end_str=str(payload["ts_end"]),
             )
         except Exception as e:
-            print(f"[shadow] trigger error (non-fatal): {e}", flush=True)
+            print(f"[sierra-cb] trigger error (non-fatal): {e}", flush=True)
         return {"ok": True}
     except Exception as e:
         print(f"[vps] es/bar error: {e}", flush=True)

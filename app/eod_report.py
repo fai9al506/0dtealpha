@@ -427,46 +427,62 @@ _SETUP_MARKER = {
 
 
 def _query_range_bars(engine, trade_date):
-    """Query ES 5-pt range bars for a given date (Rithmic preferred, fallback live)."""
+    """Query ES 5-pt range bars for a given date.
+    Phase 3 (2026-04-30): Sierra primary via vps_es_range_bars (no source col).
+    Falls back to legacy es_range_bars (rithmic, then live) for historical dates."""
+    import os
     date_str = trade_date.isoformat()
+    active_source = os.getenv("ES_DATA_SOURCE", "sierra").strip().lower() or "sierra"
+    rows = []
     with engine.connect() as conn:
-        for source in ("rithmic", "live"):
+        # Sierra primary path
+        if active_source == "sierra":
             rows = conn.execute(text("""
                 SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
                        bar_volume, bar_delta, cvd_close, ts_start
-                FROM es_range_bars
-                WHERE trade_date = :d AND source = :src
+                FROM vps_es_range_bars
+                WHERE trade_date = :d AND range_pts = 5.0
                 ORDER BY bar_idx
-            """), {"d": date_str, "src": source}).fetchall()
-            if rows:
-                bars = []
-                for r in rows:
-                    ts_start = r[8]
-                    # convert to ET (UTC-5)
-                    if ts_start:
-                        try:
-                            if hasattr(ts_start, "utcoffset") and ts_start.utcoffset():
-                                from datetime import timezone
-                                dt_et = ts_start.astimezone(timezone(timedelta(hours=-4)))
-                            else:
-                                dt_et = ts_start - timedelta(hours=5)
-                        except Exception:
-                            dt_et = ts_start
-                    else:
-                        dt_et = None
-                    bars.append({
-                        "idx": r[0], "open": float(r[1]), "high": float(r[2]),
-                        "low": float(r[3]), "close": float(r[4]),
-                        "volume": int(r[5] or 0), "delta": int(r[6] or 0),
-                        "cvd": int(r[7] or 0), "dt_et": dt_et,
-                        "ts_raw": ts_start,  # original UTC for timestamp matching
-                    })
-                # filter RTH (9:30 - 16:00 ET)
-                rth = [b for b in bars if b["dt_et"] and
-                       (b["dt_et"].hour > 9 or (b["dt_et"].hour == 9 and b["dt_et"].minute >= 30)) and
-                       b["dt_et"].hour < 16]
-                return rth if rth else bars
-    return []
+            """), {"d": date_str}).fetchall()
+        # Legacy fallback (rithmic primary OR historical days before Sierra)
+        if not rows:
+            for source in ("rithmic", "live"):
+                rows = conn.execute(text("""
+                    SELECT bar_idx, bar_open, bar_high, bar_low, bar_close,
+                           bar_volume, bar_delta, cvd_close, ts_start
+                    FROM es_range_bars
+                    WHERE trade_date = :d AND source = :src
+                    ORDER BY bar_idx
+                """), {"d": date_str, "src": source}).fetchall()
+                if rows:
+                    break
+    if not rows:
+        return []
+    bars = []
+    for r in rows:
+        ts_start = r[8]
+        if ts_start:
+            try:
+                if hasattr(ts_start, "utcoffset") and ts_start.utcoffset():
+                    from datetime import timezone
+                    dt_et = ts_start.astimezone(timezone(timedelta(hours=-4)))
+                else:
+                    dt_et = ts_start - timedelta(hours=5)
+            except Exception:
+                dt_et = ts_start
+        else:
+            dt_et = None
+        bars.append({
+            "idx": r[0], "open": float(r[1]), "high": float(r[2]),
+            "low": float(r[3]), "close": float(r[4]),
+            "volume": int(r[5] or 0), "delta": int(r[6] or 0),
+            "cvd": int(r[7] or 0), "dt_et": dt_et,
+            "ts_raw": ts_start,
+        })
+    rth = [b for b in bars if b["dt_et"] and
+           (b["dt_et"].hour > 9 or (b["dt_et"].hour == 9 and b["dt_et"].minute >= 30)) and
+           b["dt_et"].hour < 16]
+    return rth if rth else bars
 
 
 def _find_nearest_bar(bars, bar_idx_to_x, trade_ts):

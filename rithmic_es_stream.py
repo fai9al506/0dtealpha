@@ -787,13 +787,19 @@ def _run_async_loop(engine, send_telegram_fn):
 def start_rithmic_stream(engine, send_telegram_fn=None):
     """Start the Rithmic ES stream in a daemon thread.
 
-    Skips silently if RITHMIC_USER is not set (no credentials = no stream).
-    Also skips if RITHMIC_DISABLED env var is truthy — useful when
-    subscription is intentionally paused (avoids reconnect spam + alerts).
+    Skips if RITHMIC_USER is not set (no credentials = no stream).
+    Skips if RITHMIC_DISABLED is truthy (subscription paused).
+    Skips if ES_DATA_SOURCE=sierra (Phase 3: Sierra primary, Rithmic disabled).
     """
     if os.getenv("RITHMIC_DISABLED", "").strip().lower() in ("1", "true", "yes"):
         print("[rithmic] RITHMIC_DISABLED=true — skipping Rithmic stream "
               "(no connect attempts, no Telegram alerts)", flush=True)
+        return
+
+    es_src = os.getenv("ES_DATA_SOURCE", "sierra").strip().lower() or "sierra"
+    if es_src == "sierra":
+        print("[rithmic] ES_DATA_SOURCE=sierra — skipping Rithmic stream "
+              "(Sierra is primary feed)", flush=True)
         return
 
     if not RITHMIC_USER:

@@ -788,7 +788,14 @@ def start_rithmic_stream(engine, send_telegram_fn=None):
     """Start the Rithmic ES stream in a daemon thread.
 
     Skips silently if RITHMIC_USER is not set (no credentials = no stream).
+    Also skips if RITHMIC_DISABLED env var is truthy — useful when
+    subscription is intentionally paused (avoids reconnect spam + alerts).
     """
+    if os.getenv("RITHMIC_DISABLED", "").strip().lower() in ("1", "true", "yes"):
+        print("[rithmic] RITHMIC_DISABLED=true — skipping Rithmic stream "
+              "(no connect attempts, no Telegram alerts)", flush=True)
+        return
+
     if not RITHMIC_USER:
         print("[rithmic] RITHMIC_USER not set, skipping Rithmic stream", flush=True)
         return

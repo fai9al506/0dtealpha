@@ -94,6 +94,29 @@ Supported formats: `.md`, `.txt`, `.pdf`, `.png`, `.jpg`
 - **Volland scraper worker** (`volland_worker_v2.py`) - Playwright route-based scraper for charm/vanna/gamma exposure data from vol.land
 - **ES cumulative delta** (integrated in `app/main.py`) - scheduler job pulls ES 1-min bars from TradeStation API
 - **ES quote stream** (integrated in `app/main.py`) - WebSocket stream builds bid/ask delta range bars from TradeStation ES quotes
+- **VPS data bridge** (`vps_data_bridge.py`) - tails Sierra Chart `.scid` files on VPS, builds 5pt + 10pt range bars + VX ticks, POSTs to Railway
+
+## ES Data Source: Sierra (default since 2026-04-30)
+
+Single env var routes the entire ES bar pipeline:
+- `ES_DATA_SOURCE=sierra` (code default, unset on Railway) → reads from `vps_es_range_bars`
+- `ES_DATA_SOURCE=rithmic` → reads from `es_range_bars WHERE source='rithmic'`
+
+**Key code paths in `app/main.py`:**
+- `_es_data_source()` — central routing helper (one env var read)
+- `_es_bars_table_filter()` — returns `(table, where_clause)` tuple for SQL queries
+- `get_es_bars()` / `get_es_bars_10pt()` / `get_es_state()` — neutral accessors that route by env var
+- In-memory mirror: `_sierra_bars_5pt` / `_sierra_bars_10pt` populated by `/api/vps/es/bar` POSTs, hydrated from DB at startup (`_hydrate_sierra_bars_from_db()`)
+- `/api/vps/es/bar` callback: routes LIVE detection (sierra) or shadow (rithmic) via `_trigger_shadow_detection()`
+
+**Reverting Rithmic anytime (no code change):**
+```bash
+railway variables --service 0dtealpha --set "ES_DATA_SOURCE=rithmic" --unset "RITHMIC_DISABLED"
+```
+
+**Real money trading is FEED-AGNOSTIC** — `real_trader.py`, `auto_trader.py`, `eval_trader.py` use SPX `chain_snapshots` + TS `@ES` quote stream. None of them read ES range bars. Switching feeds has zero impact on SC/AG/VPB/DD live trades.
+
+**Phase 1 shadow path** (`setup_log_shadow` table + `_shadow_run_5pt`/`_shadow_run_10pt`) stays in place but only fires when `ES_DATA_SOURCE=rithmic` — gives free Sierra-vs-Rithmic comparison the day Rithmic is restored.
 
 ## IMPORTANT: Volland Worker Versions (v1 vs v2)
 

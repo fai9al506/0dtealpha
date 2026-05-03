@@ -3960,6 +3960,31 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
             return False  # grade C contributed only 1.7% of PnL
         return True
 
+    # ── ES Absorption PURE (shipped 2026-05-03 to real-trader from shadow) ──
+    # 4 mechanism-based rules:
+    #   1. Time < 15:45 ET (operational — late entries expire)
+    #   2. Grade A+/A only (model's own grading_v3 confidence signal)
+    #   3. Direction-matched alignment (don't fight Greek momentum)
+    #   4. Block AG-TARGET / AG-LIS paradigms (trend setups conflict with reversal)
+    # Backtest Mar 1 - May 1: 168 trades, 67% WR, +518 pts portal, MaxDD 36, PF 1.99.
+    # Mar/Apr both halves positive: +$1,356 / +$1,234 MES.
+    # 73% green trading days. Worst single day -$80 MES at 1 MES.
+    # Promoted from shadow on backtest strength (166-trade sample, 7-18x VPB/VIX Div sample).
+    if setup_name == "ES Absorption":
+        if grade not in ("A", "A+"):
+            return False  # only model's high-confidence grades trade
+        if paradigm in ("AG-TARGET", "AG-LIS"):
+            return False  # AG paradigms are bullish-trend, ES Abs is reversal — mechanism conflict
+        # Time gate handled at detector level (main.py:5892, 15:45 cutoff).
+        # Direction-matched alignment: don't take reversal against momentum
+        align = greek_alignment or 0
+        is_bull = direction in ("long", "bullish")
+        if is_bull and align < 0:
+            return False
+        if not is_bull and align > 0:
+            return False
+        return True
+
     # ── VPB-Bull (Vanna Pivot Bounce V3) — Apr 22 2026 ──
     # Only LONGS fire live, only when vanna regime is BULLISH (pos magnet above +
     # neg repellent below = both forces pushing up). Backtest Mar 1-Apr 21 2026:
@@ -5737,30 +5762,13 @@ def _run_absorption_detection(bars: list) -> dict | None:
         })
         print(f"[outcome] tracking ES Absorption: target={target_lvl} stop={stop_lvl:.1f}", flush=True)
         # Auto-trade: ES Absorption uses ES price directly
-        # V10 filter: ES Absorption not in short whitelist
-        _abs_skip_greek = False
-        _abs_align = result.get("greek_alignment", 0)
-        _abs_is_long_dir = result["direction"] in ("long", "bullish")
-        if _abs_is_long_dir:
-            if _abs_align < 2:
-                print(f"[auto-trader] SKIPPED ES Absorption long: alignment {_abs_align:+d} < +2", flush=True)
-                _abs_skip_greek = True
-            # V9 VIX Gate: block longs when VIX > 22 UNLESS overvixed (>= +2)
-            elif _vix_last is not None and _vix_last > 22:
-                _ov = _overvix if _overvix is not None else -99
-                if _ov < 2:
-                    print(f"[auto-trader] SKIPPED ES Absorption long: V9 VIX gate — VIX={_vix_last:.1f}>22, overvix={_ov:+.1f}<+2", flush=True)
-                    _abs_skip_greek = True
-                else:
-                    print(f"[auto-trader] ALLOWED ES Absorption long: V9 overvix override — VIX={_vix_last:.1f}>22 but overvix={_ov:+.1f}>=+2", flush=True)
-        else:
-            # ES Absorption shorts not in V7+AG whitelist (toxic: -175.6 pts all-time)
-            print(f"[auto-trader] SKIPPED ES Absorption short: not in V7+AG whitelist", flush=True)
-            _abs_skip_greek = True
+        # PURE filter (shipped 2026-05-03): _passes_live_filter applies the 4-rule
+        # mechanism filter — time<15:45 + grade A/A+ + dir-aligned + no AG paradigms.
+        # _abs_passes_live computed at line 5706 above. Replaces old V10/V9 logic.
         if result.get("log_only"):
             print(f"[auto-trader] SKIPPED ES Absorption: log-only pattern ({result.get('pattern')})", flush=True)
-        elif _abs_skip_greek:
-            pass  # already logged above
+        elif not _abs_passes_live:
+            print(f"[auto-trader] SKIPPED ES Absorption: PURE filter blocked (grade={result.get('grade')} para={result.get('paradigm')} align={result.get('greek_alignment',0):+d})", flush=True)
         else:
             try:
                 from app import auto_trader
@@ -5786,6 +5794,19 @@ def _run_absorption_detection(bars: list) -> dict | None:
                         full_target_pts=target_dist,
                         limit_entry_price=None,
                     )
+                    # Real-trader: ES Absorption REAL accounts (PURE-filtered, shipped 2026-05-03)
+                    # Backtest Mar 1-May 1: 168t, 67% WR, +518pt portal, MaxDD 36, PF 1.99.
+                    # Real-money est at 1 MES: ~$1,200/mo gross.
+                    try:
+                        from app import real_trader
+                        real_trader.place_trade(
+                            setup_log_id=_current_setup_log.get("ES Absorption"),
+                            setup_name="ES Absorption", direction=result["direction"],
+                            es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
+                            charm_limit_price=None,
+                        )
+                    except Exception as e:
+                        print(f"[real-trader] ES Absorption place error: {e}", flush=True)
                 elif not es_px:
                     print(f"[auto-trader] SKIPPED ES Absorption: no ES price available", flush=True)
             except Exception as e:

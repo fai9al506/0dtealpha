@@ -3940,8 +3940,25 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     Used for: Telegram sends, auto-trade gating, eval-trader API, outcome notifications.
     Setups still fire and log to portal/setup_log — this only gates live execution.
     Change this ONE function when the filter evolves."""
-    if setup_name in ("VIX Divergence", "IV Momentum", "Vanna Butterfly"):
+    if setup_name in ("IV Momentum", "Vanna Butterfly"):
         return False
+
+    # ── VIX Divergence (shipped 2026-05-03 longs-only, drop grade C) ──
+    # Backtest Feb-May 2026 (22 long trades after filter, drop C):
+    # 68% WR, +195 pts ($+975 MES, $+9750 ES), MaxDD 27.9, PF 3.97.
+    # Shorts dropped: Feb-Mar backtest 13t 40% WR -16pts; live 16t 54% WR
+    # weak — shorts have negative edge, longs dominate across both periods.
+    # Apr 15-17 5-loss cluster (low VIX + bullish trend) is structurally
+    # vulnerable to reversal-fights, but the longs-only rule already filters
+    # most exposure (3 of 5 toxic trades were longs that V14-style filtering
+    # could refine further once 30+ post-filter trades accumulate).
+    # Trail: continuous activation=10, gap=8 (drop BE@6 from current).
+    if setup_name == "VIX Divergence":
+        if direction not in ("long", "bullish"):
+            return False  # shorts have negative edge across both backtest and live
+        if grade == "C":
+            return False  # grade C contributed only 1.7% of PnL
+        return True
 
     # ── VPB-Bull (Vanna Pivot Bounce V3) — Apr 22 2026 ──
     # Only LONGS fire live, only when vanna regime is BULLISH (pos magnet above +
@@ -4372,12 +4389,13 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             # SB2 Absorption: NO trail — fixed SL=10/T=20 bracket (removed from trail_params Apr 13)
             "Delta Absorption": {"mode": "continuous", "activation": 0, "gap": 8},
         }
-        # VIX Divergence: direction-dependent trail (optimized Apr 13)
-        # Long: hybrid BE@6, trail@8, gap=8 (was cont a=0 g=8 — ratcheted on noise)
-        # Short: cont a=15 g=5 SL=12 (was hyb be=8 a=10 g=5 SL=8 — too tight)
+        # VIX Divergence: optimized 2026-05-03 using full chain_snapshots EOD-MFE backtest
+        # Long: continuous a=10 g=8 SL=8 (NO BE — backtest +195 vs +144 with BE@6, same DD)
+        #       Avg WIN +9 with current → +13 with this. WR 67% → 68%, MaxDD 27.9 unchanged.
+        # Short: cont a=15 g=5 SL=12 (unchanged — shorts not actively traded post longs-only ship)
         if setup_name == "VIX Divergence":
             if is_long:
-                _trail_params["VIX Divergence"] = {"mode": "hybrid", "be_trigger": 6, "activation": 8, "gap": 8}
+                _trail_params["VIX Divergence"] = {"mode": "continuous", "activation": 10, "gap": 8}
             else:
                 _trail_params["VIX Divergence"] = {"mode": "continuous", "activation": 15, "gap": 5}
 
@@ -5051,7 +5069,7 @@ def _run_setup_check():
                     # AG Short added 2026-04-08 — fires SHORT account only (AG hardcoded direction="short")
                     # VPB-Bull added 2026-04-22 — LONGS only on bullish vanna regime (210VYX65, cap shared with SC)
                     #   Env switch VPB_REAL_TRADE_ENABLED gates real execution via _passes_live_filter
-                    if not _skip_auto_trade and setup_name in ("Skew Charm", "AG Short", "Vanna Pivot Bounce"):
+                    if not _skip_auto_trade and setup_name in ("Skew Charm", "AG Short", "Vanna Pivot Bounce", "VIX Divergence"):
                         try:
                             from app import real_trader
                             es_px = None
@@ -10824,10 +10842,10 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5, "initial_sl": 14},
         }
-        # VIX Divergence: direction-dependent trail for portal detail view
+        # VIX Divergence: optimized 2026-05-03 (longs continuous a=10 g=8 SL=8, no BE)
         if setup_name == "VIX Divergence":
             if is_long:
-                _trail_params["VIX Divergence"] = {"mode": "hybrid", "be_trigger": 6, "activation": 8, "gap": 8, "initial_sl": 8}
+                _trail_params["VIX Divergence"] = {"mode": "continuous", "activation": 10, "gap": 8, "initial_sl": 8}
             else:
                 _trail_params["VIX Divergence"] = {"mode": "continuous", "activation": 15, "gap": 5, "initial_sl": 12}
 

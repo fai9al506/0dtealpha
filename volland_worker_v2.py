@@ -290,8 +290,14 @@ def format_statistics(paradigm_data: dict, spot_vol_data: dict) -> dict:
         stats["paradigm"] = paradigm_data.get("paradigm")
 
         # Target: null or number → "$X,XXX" or None
+        # Defensive: vol.land sometimes sends 'NaN' string — coerce to None
         t = paradigm_data.get("target")
-        stats["target"] = f"${t:,.0f}" if t is not None else None
+        if isinstance(t, str):
+            try: t = float(t)
+            except (ValueError, TypeError): t = None
+        if isinstance(t, float) and t != t:  # NaN check
+            t = None
+        stats["target"] = f"${t:,.0f}" if isinstance(t, (int, float)) else None
 
         # LIS: [6923, 6943] → "$6,923 - $6,943" | [6859] → "$6,859" | 6859 → "$6,859"
         # Paradigm types: BofA/SIDIAL → 2 LIS no target, GEX → LIS + target, AG/Anti-GEX → 1 LIS + target
@@ -310,12 +316,23 @@ def format_statistics(paradigm_data: dict, spot_vol_data: dict) -> dict:
             stats["lines_in_sand"] = "(none)"
 
         # Delta decay hedging: 7298110681 → "$7,298,110,681"
+        # Defensive: same NaN-string handling as target/lis
         dd = paradigm_data.get("aggregatedDeltaDecay")
-        stats["delta_decay_hedging"] = f"${dd:,}" if dd is not None else None
+        if isinstance(dd, str):
+            try: dd = float(dd)
+            except (ValueError, TypeError): dd = None
+        if isinstance(dd, float) and dd != dd:
+            dd = None
+        stats["delta_decay_hedging"] = f"${dd:,.0f}" if isinstance(dd, (int, float)) else None
 
         # Volume: 1365839 → "1,365,839"
         vol = paradigm_data.get("totalZeroDteOptionVolume")
-        stats["opt_volume"] = f"{vol:,}" if vol is not None else None
+        if isinstance(vol, str):
+            try: vol = float(vol)
+            except (ValueError, TypeError): vol = None
+        if isinstance(vol, float) and vol != vol:
+            vol = None
+        stats["opt_volume"] = f"{vol:,.0f}" if isinstance(vol, (int, float)) else None
 
         # Aggregated charm — raw number for setup_detector (BofA Scalp)
         stats["aggregatedCharm"] = paradigm_data.get("aggregatedCharm")

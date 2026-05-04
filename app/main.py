@@ -7322,24 +7322,11 @@ def start_scheduler():
     sch.add_job(fetch_economic_calendar, "cron", day_of_week="mon", hour=8, minute=0,
                 id="econ_cal", coalesce=True, max_instances=1)
     # Stock GEX scanner — reduced schedule (protects core 0DTE pipeline)
-    # Weekly: 3x/day, Opex: 1x/day, Spot: every 5 min (1 API call)
-    try:
-        from app import stock_gex_scanner
-        # Weekly GEX: 10:00, 12:00, 15:00 ET
-        sch.add_job(stock_gex_scanner.run_weekly_scan, "cron",
-                    hour=10, minute=0, timezone=NY, id="stock_gex_weekly_10", coalesce=True, max_instances=1, misfire_grace_time=300)
-        sch.add_job(stock_gex_scanner.run_weekly_scan, "cron",
-                    hour=12, minute=0, timezone=NY, id="stock_gex_weekly_12", coalesce=True, max_instances=1, misfire_grace_time=300)
-        sch.add_job(stock_gex_scanner.run_weekly_scan, "cron",
-                    hour=15, minute=0, timezone=NY, id="stock_gex_weekly_15", coalesce=True, max_instances=1, misfire_grace_time=300)
-        # Opex GEX: 10:30 ET (staggered from weekly 10:00 to avoid TS API rate limit collision)
-        sch.add_job(stock_gex_scanner.run_opex_scan, "cron",
-                    hour=10, minute=30, timezone=NY, id="stock_gex_opex", coalesce=True, max_instances=1, misfire_grace_time=300)
-        # Spot monitor: every 5 min (1 batch API call for all stocks)
-        sch.add_job(stock_gex_scanner.run_spot_monitor, "interval",
-                    minutes=5, id="stock_gex_spot", coalesce=True, max_instances=1, misfire_grace_time=60)
-    except Exception as _gex_err:
-        print(f"[stock-gex] scheduler error (non-fatal): {_gex_err}", flush=True)
+    # 2026-05-04 (S22): scheduled scans DISABLED — 0 rows ever written despite
+    # init firing daily. Module is dead; the working stock GEX system is
+    # `/stock-gex-live` (different module, 107+ trades). API endpoints + page
+    # left intact to avoid 500s but return empty data. If reactivated,
+    # diagnose run_weekly_scan/run_spot_monitor before re-enabling cron jobs.
     # Stock GEX live — spot monitor (exit checks) + EOD summaries
     try:
         from app import stock_gex_live

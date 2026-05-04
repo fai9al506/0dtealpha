@@ -768,13 +768,20 @@ class VPSDataBridge:
         for tick in ticks:
             self._es_tick_count += 1
 
-            # Session rollover check
-            new_date = _es_session_date()
-            if new_date != self._session_date:
-                log.info(f"Session rollover: {self._session_date} -> {new_date}")
+            # S50 fix (2026-05-04): drive session date from the TICK timestamp,
+            # not wall-clock. Catch-up ticks (after Sierra reconnect) carry
+            # their real ts but were previously tagged with today's session,
+            # which on Apr 20 produced 1,014 mis-dated bars that had to be
+            # manually deleted + re-backfilled. Mirror what backfill does
+            # at line 451: session = _session_date_from_ts(tick["ts"]).
+            # _session_date_from_ts returns date; str() to match _es_session_date format.
+            tick_session = str(_session_date_from_ts(tick["ts"]))
+            if tick_session != self._session_date:
+                log.info(f"Session rollover: {self._session_date} -> {tick_session} "
+                         f"(driven by tick ts={tick['ts'].isoformat()})")
                 self.bar_builder.reset_session()
                 self.bar_builder_10.reset_session()
-                self._session_date = new_date
+                self._session_date = tick_session
 
             buy_vol, sell_vol, delta = _classify_scid(
                 tick["bid_vol"], tick["ask_vol"], tick["volume"]
@@ -803,7 +810,7 @@ class VPSDataBridge:
                 )
                 threading.Thread(
                     target=self.poster.post_es_bar,
-                    args=(completed, self._session_date),
+                    args=(completed, tick_session),
                     daemon=True,
                 ).start()
                 self._bars_posted += 1
@@ -817,7 +824,7 @@ class VPSDataBridge:
                 )
                 threading.Thread(
                     target=self.poster.post_es_bar_10,
-                    args=(completed_10, self._session_date),
+                    args=(completed_10, tick_session),
                     daemon=True,
                 ).start()
                 self._bars_posted_10 += 1

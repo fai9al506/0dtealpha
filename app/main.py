@@ -7311,6 +7311,14 @@ def start_scheduler():
                 id="broker_poll", coalesce=True, max_instances=1)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,
                 id="setup_eod", coalesce=True, max_instances=1)
+    # S81 — daily TSRT portal-vs-real reconcile at 16:15 ET
+    try:
+        from app.trade_reconcile import run_today as reconcile_run_today
+        sch.add_job(reconcile_run_today, "cron", hour=16, minute=15, timezone=NY,
+                    id="trade_reconcile", coalesce=True, max_instances=1,
+                    misfire_grace_time=300)
+    except Exception as e:
+        print(f"[reconcile] schedule error (non-fatal): {e}", flush=True)
     sch.add_job(fetch_economic_calendar, "cron", day_of_week="mon", hour=8, minute=0,
                 id="econ_cal", coalesce=True, max_instances=1)
     # Stock GEX scanner — reduced schedule (protects core 0DTE pipeline)
@@ -7419,6 +7427,12 @@ def on_startup():
         real_trader_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[real-trader] init error (non-fatal): {e}", flush=True)
+    # Initialize trade reconcile (S81 — daily portal-vs-real audit at 16:15 ET)
+    try:
+        from app.trade_reconcile import init as reconcile_init
+        reconcile_init(engine, ts_access_token, send_telegram_setups)
+    except Exception as e:
+        print(f"[reconcile] init error (non-fatal): {e}", flush=True)
     # Stock GEX scanner — reduced schedule (was 200+ calls/30min, now ~236/day)
     # Weekly: 3x/day (10, 12, 15 ET), Opex: 1x/day (10 ET), Spot: every 5 min (1 batch call)
     # No startup scans. 5s delay between stocks. Independent from 0DTE pipeline.

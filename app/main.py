@@ -7319,6 +7319,14 @@ def start_scheduler():
                     misfire_grace_time=300)
     except Exception as e:
         print(f"[reconcile] schedule error (non-fatal): {e}", flush=True)
+    # S28 — bot-down watchdog every 30 min during market hours
+    try:
+        from app.bot_health_watchdog import check as watchdog_check
+        sch.add_job(watchdog_check, "interval", minutes=30,
+                    id="bot_watchdog", coalesce=True, max_instances=1,
+                    misfire_grace_time=300)
+    except Exception as e:
+        print(f"[watchdog] schedule error (non-fatal): {e}", flush=True)
     sch.add_job(fetch_economic_calendar, "cron", day_of_week="mon", hour=8, minute=0,
                 id="econ_cal", coalesce=True, max_instances=1)
     # Stock GEX scanner — reduced schedule (protects core 0DTE pipeline)
@@ -7420,6 +7428,12 @@ def on_startup():
         reconcile_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[reconcile] init error (non-fatal): {e}", flush=True)
+    # Initialize bot-down watchdog (S28 — alerts when signals fire but no trades placed)
+    try:
+        from app.bot_health_watchdog import init as watchdog_init
+        watchdog_init(engine, send_telegram_setups)
+    except Exception as e:
+        print(f"[watchdog] init error (non-fatal): {e}", flush=True)
     # Stock GEX scanner — reduced schedule (was 200+ calls/30min, now ~236/day)
     # Weekly: 3x/day (10, 12, 15 ET), Opex: 1x/day (10 ET), Spot: every 5 min (1 batch call)
     # No startup scans. 5s delay between stocks. Independent from 0DTE pipeline.

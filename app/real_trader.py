@@ -716,25 +716,43 @@ def update_stop(setup_log_id: int, new_stop_price: float):
     # If market has bounced past the trail's target, the trail's intended exit
     # was already crossed. Execute that exit at current market price instead of
     # trying to modify to a now-invalid price.
+    #
+    # 2026-05-04: when live MES quote is unavailable (race right after entry,
+    # before quote stream catches up), fall back to entry fill_price. This blocks
+    # the "instant wrong-side fill" pattern that cost lid=2447/2449/2433 today —
+    # portal cycle's pre-existing max_fav was triggering an initial realign that
+    # placed the stop on the wrong side of fill_price.
+    fill_price = order.get("fill_price")
     current_mes = _get_current_mes_price()
-    if current_mes is not None:
+    ref_price = current_mes if current_mes is not None else fill_price
+    ref_label = "market" if current_mes is not None else "fill"
+    if ref_price is not None:
         SIDE_BUFFER = 0.5  # tolerate 2-tick race noise; real violations are >0.5pt
         wrong_side = False
-        if is_long and new_stop_price >= current_mes - SIDE_BUFFER:
+        if is_long and new_stop_price >= ref_price - SIDE_BUFFER:
             wrong_side = True
-            side_reason = (f"long trail {new_stop_price:.2f} >= market "
-                           f"{current_mes:.2f} (exit already crossed)")
-        elif not is_long and new_stop_price <= current_mes + SIDE_BUFFER:
+            side_reason = (f"long trail {new_stop_price:.2f} >= {ref_label} "
+                           f"{ref_price:.2f} (wrong side of entry)")
+        elif not is_long and new_stop_price <= ref_price + SIDE_BUFFER:
             wrong_side = True
-            side_reason = (f"short trail {new_stop_price:.2f} <= market "
-                           f"{current_mes:.2f} (exit already crossed)")
+            side_reason = (f"short trail {new_stop_price:.2f} <= {ref_label} "
+                           f"{ref_price:.2f} (wrong side of entry)")
         if wrong_side:
             print(f"[real-trader] WRONG-SIDE TRAIL id={setup_log_id}: "
                   f"{side_reason}", flush=True)
-            _alert(f"⚠️ {setup_name} TRAIL-EXIT via market\n"
-                   f"{side_reason}\n"
-                   f"Closing at ~{current_mes:.2f}")
-            close_trade(setup_log_id, "trail_market_exit")
+            # If quote was live (current_mes available) market has already
+            # crossed the trail level → exit at market. If quote was stale
+            # (fallback to fill_price) the trail is just trying to place a
+            # bad initial realign → REJECT the modify, keep current stop alive.
+            if current_mes is not None:
+                _alert(f"⚠️ {setup_name} TRAIL-EXIT via market\n"
+                       f"{side_reason}\n"
+                       f"Closing at ~{current_mes:.2f}")
+                close_trade(setup_log_id, "trail_market_exit")
+            else:
+                _alert(f"⚠️ {setup_name} stop modify BLOCKED\n"
+                       f"{side_reason}\n"
+                       f"Keeping current stop {old_stop:.2f}")
             return
 
     replace_payload = {
@@ -2034,13 +2052,21 @@ def _get_daily_realized_pnl(account_id: str) -> float | None:
 
 
 def _day_line(account_id: str) -> str:
-    """Format 'Day: +$XX.XX' line from broker's daily realized P&L.
-    Returns empty string on failure so alerts still send."""
-    pnl = _get_daily_realized_pnl(account_id)
-    if pnl is None:
+    """Format 'Day: +$XX.XX' line — sum across BOTH whitelisted accounts so the
+    user sees combined daily P&L (longs + shorts), not just the account that
+    triggered this alert. account_id arg kept for backward-compat but ignored.
+    Returns empty string if both queries fail so alerts still send."""
+    total = 0.0
+    got_any = False
+    for acct in ACCOUNT_WHITELIST:
+        v = _get_daily_realized_pnl(acct)
+        if v is not None:
+            total += v
+            got_any = True
+    if not got_any:
         return ""
-    sign = "+" if pnl >= 0 else "-"
-    return f"\nDay: {sign}${abs(pnl):.2f}"
+    sign = "+" if total >= 0 else "-"
+    return f"\nDay: {sign}${abs(total):.2f}"
 
 
 # ====== TS API HELPER ======

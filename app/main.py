@@ -12680,7 +12680,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="esabspure">ES Abs-Pure</option><option value="gexlongv3">GEX Long v3</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -13079,7 +13079,13 @@ function renderSummary(s, date) {
 function populateFilterOptions(trades) {
   const sel = document.getElementById('fSetup');
   const setups = [...new Set(trades.map(t => t.entry.setup_name))].sort();
-  sel.innerHTML = '<option value="">All</option>' + setups.map(s => '<option>'+s+'</option>').join('');
+  // Add variant filtered setups (✦ marker indicates filtered subset of base setup)
+  const variants = [];
+  if (setups.includes('GEX Long')) variants.push('<option value="GEX Long v3">GEX Long v3 ✦</option>');
+  if (setups.includes('ES Absorption')) variants.push('<option value="ES Abs-Pure">ES Abs-Pure ✦</option>');
+  sel.innerHTML = '<option value="">All</option>' +
+    setups.map(s => '<option>'+s+'</option>').join('') +
+    variants.join('');
 }
 
 function getFilteredTrades() {
@@ -13089,7 +13095,14 @@ function getFilteredTrades() {
   const fGrade = document.getElementById('fGrade').value;
   return _allTrades.filter(t => {
     if (fStrat && !passesStrategy(t.entry, fStrat)) return false;
-    if (fSetup && t.entry.setup_name !== fSetup) return false;
+    // Setup variant filters: GEX Long v3 / ES Abs-Pure are filtered subsets of base setup
+    if (fSetup === 'GEX Long v3') {
+      if (!passesStrategy(t.entry, 'gexlongv3')) return false;
+    } else if (fSetup === 'ES Abs-Pure') {
+      if (!passesStrategy(t.entry, 'esabspure')) return false;
+    } else if (fSetup && t.entry.setup_name !== fSetup) {
+      return false;
+    }
     if (fResult && (t.entry.outcome_result || '') !== fResult) return false;
     if (fGrade && t.entry.grade !== fGrade) return false;
     return true;
@@ -14466,7 +14479,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="options">Options Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Vanna Pivot Bounce</option><option>Delta Absorption</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option value="GEX Long v3">GEX Long v3 ✦</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option value="ES Abs-Pure">ES Abs-Pure ✦</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Vanna Pivot Bounce</option><option>Delta Absorption</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="pickday">Pick Day...</option><option value="week">This Week</option><option value="lastweek">Last Week</option><option value="month">This Month</option><option value="lastmonth">Last Month</option><option value="custom">Custom Range...</option></select>
@@ -14474,7 +14487,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="esabspure">ES Abs-Pure</option><option value="gexlongv3">GEX Long v3</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -17951,7 +17964,14 @@ DASH_HTML_TEMPLATE = """
       const todayStr = todayET.getFullYear()+'-'+String(todayET.getMonth()+1).padStart(2,'0')+'-'+String(todayET.getDate()).padStart(2,'0');
 
       return _tradeLogData.filter(l => {
-        if (fSetup && l.setup_name !== fSetup) return false;
+        // Setup variant filters (GEX Long v3 / ES Abs-Pure are filtered subsets of base setup)
+        if (fSetup === 'GEX Long v3') {
+          if (!_tlPassesStrategy(l, 'gexlongv3')) return false;
+        } else if (fSetup === 'ES Abs-Pure') {
+          if (!_tlPassesStrategy(l, 'esabspure')) return false;
+        } else if (fSetup && l.setup_name !== fSetup) {
+          return false;
+        }
         if (fGrade && l.grade !== fGrade) return false;
         if (fAlign !== '' && (l.greek_alignment == null || String(l.greek_alignment) !== fAlign)) return false;
         if (!_tlPassesStrategy(l, fStrat)) return false;

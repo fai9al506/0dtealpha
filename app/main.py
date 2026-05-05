@@ -12680,7 +12680,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="esabspure">ES Abs-Pure</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="esabspure">ES Abs-Pure</option><option value="gexlongv3">GEX Long v3</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -12851,6 +12851,33 @@ function passesStrategy(l, strat) {
     const align = l.greek_alignment || 0;
     if (isLong && align < 0) return false;
     if (!isLong && align > 0) return false;
+    return true;
+  }
+  if (strat === 'gexlongv3') {
+    // GEX Long v3 (2026-05-05): visual rules + alignment + hour gate.
+    // Validated 14 trades / 79% WR / +$552 / PF 3.63 over Feb 23 - May 4 (2.3 mo).
+    // Backtest used SL=14, target=GEX magnet (floor +10), trail act=15 gap=5.
+    // NOTE: this dropdown uses existing DB outcomes — exit improvement (SL 8→14, magnet target)
+    // not reflected in displayed pnl until detector code is updated.
+    if (sn !== 'GEX Long') return false;
+    if (!isLong) return false;
+    const align = l.greek_alignment || 0;
+    if (align < 0) return false;
+    if (l.ts) {
+      const d = new Date(l.ts);
+      const etStr = d.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
+      const tp = (etStr.split(', ')[1] || etStr).split(':');
+      const mins = parseInt(tp[0]) * 60 + parseInt(tp[1]);
+      if (mins >= 900) return false;  // 15:00 ET cutoff (drop late-day expiries)
+    }
+    // Visual structure approx: max +GEX strike must be ABOVE spot (bullish magnet),
+    // max -GEX strike must be BELOW spot (support floor). Per-strike charm rules
+    // (R5 alignment) cannot be checked client-side without server compute.
+    const spot = l.spot;
+    if (spot) {
+      if (l.max_plus_gex && l.max_plus_gex <= spot) return false;
+      if (l.max_minus_gex && l.max_minus_gex >= spot) return false;
+    }
     return true;
   }
   if (strat === 'v14le') {
@@ -14447,7 +14474,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="esabspure">ES Abs-Pure</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="esabspure">ES Abs-Pure</option><option value="gexlongv3">GEX Long v3</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -17606,6 +17633,23 @@ DASH_HTML_TEMPLATE = """
         if (mins != null && mins >= 945) return false;  // 15:45 cutoff
         if (isLong && align < 0) return false;
         if (!isLong && align > 0) return false;
+        return true;
+      }
+      if (strat === 'gexlongv3') {
+        // GEX Long v3 (2026-05-05): visual rules + alignment + hour gate.
+        // Backtest 14 trades / 79% WR / +$552 / PF 3.63 (Feb 23 - May 4, 2.3 mo).
+        // Recommended exit: SL=14, target=GEX magnet, trail act=15 gap=5 (not in DB outcomes).
+        if (sn !== 'GEX Long') return false;
+        if (!isLong) return false;
+        if (align < 0) return false;
+        const mins = _tlEtMins();
+        if (mins != null && mins >= 900) return false;  // 15:00 ET cutoff
+        // Visual structure: max +GEX strike ABOVE spot (magnet), max -GEX strike BELOW (support)
+        const spot = l.spot;
+        if (spot) {
+          if (l.max_plus_gex && l.max_plus_gex <= spot) return false;
+          if (l.max_minus_gex && l.max_minus_gex >= spot) return false;
+        }
         return true;
       }
       if (strat === 'v14le') {

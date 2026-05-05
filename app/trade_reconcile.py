@@ -184,35 +184,40 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
         if abs(gap_pts) >= GAP_FLAG_PTS:
             flagged_count += 1
             why = _classify_gap(state, gap_pts)
+            gap_emoji = "🟢" if gap_dollars > 0 else "🔴"
+            dir_arrow = "↗" if direction.lower() in ("long","bullish") else "↘"
             trade_lines.append(
-                f"⚠️ lid={lid} {setup} {direction[:1].upper()} "
-                f"acct={acct[-4:]}\n"
-                f"   portal={portal_pnl:+.1f}p, real={real_pts:+.1f}p, "
-                f"gap=${gap_dollars:+.0f}\n"
-                f"   → {why}"
+                f"{gap_emoji} <b>{setup}</b> {dir_arrow} #{lid} <i>{acct[-4:]}</i>\n"
+                f"   Portal {portal_pnl:+.1f}p  →  Real {real_pts:+.1f}p  "
+                f"<b>(gap ${gap_dollars:+.0f})</b>\n"
+                f"   <i>{why}</i>"
             )
 
     # Account-level reconcile vs broker
     acct_lines: list[str] = []
     acct_flag = False
+    acct_label = {'210VYX65': 'longs', '210VYX91': 'shorts'}
+    total_broker = 0.0
     for acct in ACCOUNTS:
         broker_pnl = _broker_realized_pnl(acct)
         tracked_dollars = real_total_pts_by_acct[acct] * MES_DOLLAR_PER_PT
         n = real_count_by_acct[acct]
+        label = acct_label.get(acct, acct[-4:])
         if broker_pnl is None:
             acct_lines.append(
-                f"  {acct[-4:]}: {n} trades tracked ${tracked_dollars:+.0f}, "
-                f"broker=API_ERR"
+                f"  • <b>{label}</b> ({acct[-4:]}): {n}t · tracked ${tracked_dollars:+.0f} · broker <i>API err</i>"
             )
             continue
+        total_broker += broker_pnl
         diff = broker_pnl - tracked_dollars
         marker = ""
         if abs(diff) >= ACCT_GAP_FLAG_DOLLARS:
             acct_flag = True
             marker = " ⚠️"
+        broker_emoji = "🟢" if broker_pnl >= 0 else "🔴"
         acct_lines.append(
-            f"  {acct[-4:]}: {n}t tracked ${tracked_dollars:+.0f}, "
-            f"broker ${broker_pnl:+.0f}, diff ${diff:+.0f}{marker}"
+            f"  {broker_emoji} <b>{label}</b> ({acct[-4:]}): {n}t · "
+            f"broker <b>${broker_pnl:+.0f}</b> · tracked ${tracked_dollars:+.0f} · diff ${diff:+.0f}{marker}"
         )
 
     summary = {
@@ -223,19 +228,24 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
         "tracked_real_dollars": sum(real_total_pts_by_acct.values()) * MES_DOLLAR_PER_PT,
     }
 
+    # Header — combined day P&L from broker totals
+    real_dollars = summary['tracked_real_dollars']
+    day_emoji = "🟢" if real_dollars > 0 else ("🔴" if real_dollars < 0 else "⚪")
+
     # Build Telegram message
     if flagged_count > 0 or acct_flag:
         lines = [
-            f"<b>📊 TSRT Reconcile {target_date}</b>",
-            f"Trades: {len(rows)} · Portal {portal_total_pts:+.1f}p · "
-            f"Real ${summary['tracked_real_dollars']:+.0f}",
+            f"<b>📊 TSRT Daily Reconcile</b> · {target_date}",
+            f"━━━━━━━━━━━━━━━━━━",
+            f"{day_emoji} <b>Day P&amp;L: ${real_dollars:+.0f}</b> across {len(rows)} trades",
+            f"<i>Portal sim: {portal_total_pts:+.1f}p (${portal_total_pts*MES_DOLLAR_PER_PT:+.0f})</i>",
             "",
         ]
         if trade_lines:
-            lines.append(f"<b>Flagged trades ({flagged_count}):</b>")
+            lines.append(f"<b>⚠️ Flagged ({flagged_count} trade{'s' if flagged_count!=1 else ''}):</b>")
             lines.extend(trade_lines)
             lines.append("")
-        lines.append("<b>Account totals:</b>")
+        lines.append(f"<b>📋 Per account:</b>")
         lines.extend(acct_lines)
 
         msg = "\n".join(lines)
@@ -254,8 +264,10 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
         if _send_telegram and len(rows) > 0:
             try:
                 _send_telegram(
-                    f"✅ TSRT Reconcile {target_date} clean: "
-                    f"{len(rows)} trades, all gaps < ${GAP_FLAG_PTS * MES_DOLLAR_PER_PT}"
+                    f"<b>✅ TSRT Reconcile</b> · {target_date}\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"{day_emoji} <b>Day P&amp;L: ${real_dollars:+.0f}</b> across {len(rows)} trades · "
+                    f"All gaps clean (&lt; ${GAP_FLAG_PTS * MES_DOLLAR_PER_PT:.0f})"
                 )
             except Exception:
                 pass

@@ -11596,6 +11596,23 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
         return []
 
 
+@app.get("/api/setup/gex_long_v3_overlay")
+def api_setup_gex_long_v3_overlay(rebuild: int = Query(0)):
+    """Per-trade v3 overlay: filter pass + re-simulated outcome (SL=14, magnet target,
+    trail 15/5). Replaces approximate JS filter + old DB outcomes for GEX Long v3 dropdown."""
+    if not engine:
+        return {"error": "no engine"}
+    try:
+        from app import gex_long_v3
+        overlay = gex_long_v3.get_overlay(engine, force_rebuild=bool(rebuild))
+        return {
+            "meta": gex_long_v3.overlay_meta(),
+            "trades": {str(k): v for k, v in overlay.items()},
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/setup/daily_gaps")
 def api_setup_daily_gaps():
     """Return gap (open - prev close) for each trading day. Used by V12 portal filter."""
@@ -17474,6 +17491,34 @@ DASH_HTML_TEMPLATE = """
     let _tradeLogData = [];
     let _tlDailyGaps = {};  // {date_str: gap_pts} for V12 filter
     fetch('/api/setup/daily_gaps', {cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_tlDailyGaps=d;}).catch(()=>{});
+    // GEX Long v3 server-side overlay: per-trade {pass, result, pnl, max_fav, verdict}
+    // Replaces approximate JS filter + old DB outcomes when v3 dropdown selected.
+    let _tlV3Overlay = null;        // {lid_str: {pass, result, pnl, ...}}
+    let _tlV3OverlayLoading = false;
+    function _tlV3Active() {
+      const fSetup = document.getElementById('tlFilterSetup');
+      const fStrat = document.getElementById('tlFilterStrategy');
+      return (fSetup && fSetup.value === 'GEX Long v3') ||
+             (fStrat && fStrat.value === 'gexlongv3');
+    }
+    async function _tlLoadV3Overlay() {
+      if (_tlV3Overlay || _tlV3OverlayLoading) return _tlV3Overlay;
+      _tlV3OverlayLoading = true;
+      try {
+        const r = await fetch('/api/setup/gex_long_v3_overlay', {cache:'no-store'});
+        const d = await r.json();
+        if (d && d.trades) _tlV3Overlay = d.trades;
+      } catch(e) { console.error('v3 overlay load:', e); }
+      finally { _tlV3OverlayLoading = false; }
+      return _tlV3Overlay;
+    }
+    // Returns overlay-aware {result, pnl} if v3 active, else null (use original l fields).
+    function _tlV3OutcomeFor(l) {
+      if (!_tlV3Active() || !_tlV3Overlay) return null;
+      const ov = _tlV3Overlay[String(l.id)];
+      if (!ov || !ov.pass) return null;
+      return {result: ov.result, pnl: (ov.pnl != null ? ov.pnl : null)};
+    }
     let _tlActiveSubTab = 'portal';
     let _tsSimData = [];
     let _evalLogData = [];
@@ -17966,7 +18011,14 @@ DASH_HTML_TEMPLATE = """
       return _tradeLogData.filter(l => {
         // Setup variant filters (GEX Long v3 / ES Abs-Pure are filtered subsets of base setup)
         if (fSetup === 'GEX Long v3') {
-          if (!_tlPassesStrategy(l, 'gexlongv3')) return false;
+          // Prefer server-side overlay (exact classifier + re-simulated exit). Fall back
+          // to approximate JS filter if overlay not yet loaded.
+          if (_tlV3Overlay) {
+            const ov = _tlV3Overlay[String(l.id)];
+            if (!ov || !ov.pass) return false;
+          } else if (!_tlPassesStrategy(l, 'gexlongv3')) {
+            return false;
+          }
         } else if (fSetup === 'ES Abs-Pure') {
           if (!_tlPassesStrategy(l, 'esabspure')) return false;
         } else if (fSetup && l.setup_name !== fSetup) {
@@ -17976,11 +18028,14 @@ DASH_HTML_TEMPLATE = """
         if (fAlign !== '' && (l.greek_alignment == null || String(l.greek_alignment) !== fAlign)) return false;
         if (!_tlPassesStrategy(l, fStrat)) return false;
 
-        // Result filter — prefer DB-stored outcome_result (consistent with outcome_pnl)
+        // Result filter — prefer DB-stored outcome_result (consistent with outcome_pnl).
+        // When v3 dropdown active, use overlay result instead.
         if (fResult) {
           const o = l.outcome || {};
           let res = '';
-          if (l.outcome_result) res = l.outcome_result;
+          const _ov = (_tlV3Active() && _tlV3Overlay) ? _tlV3Overlay[String(l.id)] : null;
+          if (_ov && _ov.pass) res = _ov.result || '';
+          else if (l.outcome_result) res = l.outcome_result;
           else if (o.first_event === 'pending') res = 'PENDING';
           else if (o.first_event === '10pt' || o.first_event === 'target' || o.first_event === '15pt') res = 'WIN';
           else if (o.first_event === 'stop') res = 'LOSS';
@@ -18045,6 +18100,17 @@ DASH_HTML_TEMPLATE = """
       hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>Align</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>';
       const filtered = _tlGetFiltered();
 
+      // v3 overlay helpers — override result/pnl with re-simulated exit when v3 dropdown active.
+      // (10p/Tgt/Stp column still reflects original SL/target — those are not re-simulated.)
+      const _v3On = _tlV3Active() && _tlV3Overlay;
+      function _v3OutOf(l) {
+        if (!_v3On) return null;
+        const ov = _tlV3Overlay[String(l.id)];
+        return (ov && ov.pass) ? ov : null;
+      }
+      function _resOf(l) { const o = _v3OutOf(l); return o ? (o.result || '') : (l.outcome_result || ''); }
+      function _pnlOf(l) { const o = _v3OutOf(l); return o ? o.pnl : l.outcome_pnl; }
+
       // Stats — use global stats from /api/setup/stats (all trades, not just current page)
       const gs = _tlGlobalStats || {};
       const gWins = gs.wins || 0;
@@ -18054,20 +18120,22 @@ DASH_HTML_TEMPLATE = """
       const gTotal = gs.total || 0;
       const gPnlColor = gPnl >= 0 ? '#22c55e' : '#ef4444';
       const gPnlStr = gTotal > 0 ? ((gPnl >= 0 ? '+' : '') + gPnl.toFixed(1)) : '--';
-      // Page stats for filtered view
+      // Page stats for filtered view (v3 overlay outcomes used when v3 active)
       let pageWins=0, pageLosses=0, pagePnl=0, pagePnlCount=0;
       filtered.forEach(l => {
-        if (l.outcome_result === 'WIN') pageWins++;
-        else if (l.outcome_result === 'LOSS') pageLosses++;
-        else if (l.outcome_result === 'EXPIRED') {
-          const epnl = l.outcome_pnl || 0;
+        const _r = _resOf(l);
+        const _p = _pnlOf(l);
+        if (_r === 'WIN') pageWins++;
+        else if (_r === 'LOSS') pageLosses++;
+        else if (_r === 'EXPIRED') {
+          const epnl = _p || 0;
           if (epnl > 0) pageWins++; else if (epnl < 0) pageLosses++;
         } else {
           const oo = l.outcome || {};
           if (oo.hit_target) pageWins++;
           else if (oo.hit_stop) pageLosses++;
         }
-        if (l.outcome_pnl != null) { pagePnl += l.outcome_pnl; pagePnlCount++; }
+        if (_p != null) { pagePnl += _p; pagePnlCount++; }
       });
       const fWr = (pageWins+pageLosses)>0 ? ((pageWins/(pageWins+pageLosses))*100).toFixed(0) : '--';
       const fPnlColor = pagePnl >= 0 ? '#22c55e' : '#ef4444';
@@ -18120,10 +18188,14 @@ DASH_HTML_TEMPLATE = """
         const stopIsLoss = o.hit_stop && o.first_event === 'stop';
         const cStop = stopIsLoss ? '#ef4444' : (o.hit_stop === false ? '#22c55e' : '#888');
 
-        // Result — prefer DB-stored outcome_result, then historical calculator
-        // Only show OPEN if neither target nor stop was hit yet
+        // Result — prefer v3 overlay (when active), then DB outcome, then historical calc.
+        const _v3o = _v3OutOf(l);
+        const _resVal = _resOf(l);
         let result = '';
-        if (l.outcome_result) {
+        if (_v3o) {
+          const rc = _resVal === 'WIN' ? '#22c55e' : _resVal === 'LOSS' ? '#ef4444' : '#888';
+          result = '<span style="color:'+rc+';font-weight:700" title="v3 sim (SL=14, magnet target, trail 15/5)">'+_resVal+' ✦</span>';
+        } else if (l.outcome_result) {
           const rc = l.outcome_result === 'WIN' ? '#22c55e' : l.outcome_result === 'LOSS' ? '#ef4444' : '#888';
           result = '<span style="color:'+rc+';font-weight:700">'+l.outcome_result+'</span>';
         } else if (o.hit_target) {
@@ -18137,7 +18209,8 @@ DASH_HTML_TEMPLATE = """
         // P&L
         let pnl = '--';
         let pnlC = '#888';
-        if (l.outcome_pnl != null) { pnl = (l.outcome_pnl >= 0 ? '+' : '') + l.outcome_pnl.toFixed(1); pnlC = l.outcome_pnl >= 0 ? '#22c55e' : '#ef4444'; }
+        const _pnlVal = _pnlOf(l);
+        if (_pnlVal != null) { pnl = (_pnlVal >= 0 ? '+' : '') + _pnlVal.toFixed(1); pnlC = _pnlVal >= 0 ? '#22c55e' : '#ef4444'; }
         else if (o.timeout_pnl != null) { pnl = (o.timeout_pnl >= 0 ? '+' : '') + o.timeout_pnl.toFixed(1); pnlC = o.timeout_pnl >= 0 ? '#22c55e' : '#ef4444'; }
 
         // Duration in minutes
@@ -18624,7 +18697,12 @@ DASH_HTML_TEMPLATE = """
       else if (_tlActiveSubTab === 'options') renderOptionsLog();
     }
     ['tlFilterSetup','tlFilterResult','tlFilterGrade','tlFilterDate','tlFilterAlign','tlFilterStrategy'].forEach(id => {
-      document.getElementById(id).addEventListener('change', _tlRerender);
+      document.getElementById(id).addEventListener('change', async () => {
+        if (_tlV3Active() && !_tlV3Overlay) {
+          await _tlLoadV3Overlay();
+        }
+        _tlRerender();
+      });
     });
     document.getElementById('tlSearch').addEventListener('input', _tlRerender);
 

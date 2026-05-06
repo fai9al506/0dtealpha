@@ -35,3 +35,4 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 29 | 2026-03-25 | `stable-20260325-spy-dd-pre-impl` | Pre SPY DD implementation. Rollback to this if SPY DD capture breaks Volland pipeline. |
 | 30 | 2026-03-28 | `stable-20260328-pre-watchdog` | Pre Volland watchdog thread. Rollback if watchdog causes false exits. |
 | 31 | 2026-04-29 17:52 | `stable-20260429-175213` | Pre real-trader skip Telegram alerts + close_trade format fix + V14 SC long alignment rule. |
+| 32 | 2026-05-06 15:22 | `stable-20260506-pre-s86` | Pre S86 4-fix deploy bundle (slippage fix + V14 ES Abs PURE filter + audit-trail fix + ES Abs C6 trail params). Rollback if any of the 4 changes misbehaves post-deploy. |

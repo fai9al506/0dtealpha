@@ -1936,6 +1936,26 @@ def log_setup(result_wrapper):
     if _current_setup_log["last_date"] != today:
         _current_setup_log = {"GEX Long": None, "GEX Velocity": None, "AG Short": None, "BofA Scalp": None, "ES Absorption": None, "SB Absorption": None, "SB10 Absorption": None, "SB2 Absorption": None, "Delta Absorption": None, "Paradigm Reversal": None, "DD Exhaustion": None, "Skew Charm": None, "Vanna Pivot Bounce": None, "Vanna Butterfly": None, "VIX Divergence": None, "last_date": today}
 
+    # AUDIT-TRAIL FIX (2026-05-06): never UPDATE setup_log row in-place when a real
+    # trade was placed against it. Today's lid=2530 was traded as grade=A @ 10:27,
+    # then re-fire at 10:49 UPDATE'd the same row to grade=C — destroying audit of
+    # what filter actually triggered the real money trade. Force INSERT new row by
+    # clearing the cached lid; the original row stays immutable.
+    _existing_lid = _current_setup_log.get(setup_name)
+    if (_existing_lid is not None
+            and reason not in ("new", "reformed")):
+        try:
+            with engine.begin() as _conn_chk:
+                _rt_exists = _conn_chk.execute(text(
+                    "SELECT 1 FROM real_trade_orders WHERE setup_log_id = :lid LIMIT 1"
+                ), {"lid": _existing_lid}).first()
+            if _rt_exists:
+                print(f"[setups] {setup_name} lid={_existing_lid} has real trade -- "
+                      f"forcing INSERT (was {reason}, audit preserved)", flush=True)
+                _current_setup_log[setup_name] = None
+        except Exception as _e:
+            print(f"[setups] audit check failed: {_e}", flush=True)
+
     try:
         with engine.begin() as conn:
             if reason in ("new", "reformed") or _current_setup_log.get(setup_name) is None:
@@ -1990,7 +2010,9 @@ def log_setup(result_wrapper):
                     "GEX Velocity": (8, 10, 5),
                     "AG Short": (14, 12, 5),
                     "Skew Charm": (14, 10, 5),
-                    "ES Absorption": (8, 10, 8),
+                    # ES Absorption C6 (2026-05-06): hybrid BE@5 + trail act=8 gap=3, no fixed target
+                    # Backtest 489t: PURE WR 56→62%, +$1839→+$4030, MaxDD 56→25pt
+                    "ES Absorption": (8, 8, 3),
                     "SB Absorption": (12, 20, 10),
                     "SB10 Absorption": (12, 20, 10),
                     "SB2 Absorption": (12, 20, 10),
@@ -4138,11 +4160,22 @@ def _compute_setup_levels(r: dict):
         stop_lvl = r.get("bofa_stop_level")
         return target_lvl, stop_lvl
 
-    if setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption"):
+    if setup_name == "ES Absorption":
+        # C6 (2026-05-06): trail-only, no fixed target. SL=8, hybrid BE@5 + trail act=8 gap=3.
+        # Backtest 489t since Feb 1: PURE 176t WR 56%→62%, +$1,839→+$4,030, MaxDD 56→25pt.
+        # Mechanism: ES Abs is reversal-style — winners run (+20-40pt), losers fail fast.
+        # Old T=10 capped runners; trail+BE captures more upside while protecting reversals.
         es_price = r.get("abs_es_price")
         if not es_price:
             return None, None
-        # Fixed target: SL=8/T=10
+        stop_lvl = es_price - 8 if is_long else es_price + 8
+        return None, round(stop_lvl, 2)
+
+    if setup_name in ("SB Absorption", "SB10 Absorption"):
+        es_price = r.get("abs_es_price")
+        if not es_price:
+            return None, None
+        # Fixed target: SL=8/T=10 (legacy, separate from ES Absorption)
         target_lvl = es_price + 10 if is_long else es_price - 10
         stop_lvl = es_price - 8 if is_long else es_price + 8
         return round(target_lvl, 2), round(stop_lvl, 2)
@@ -4409,6 +4442,9 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
+            # ES Absorption C6 (2026-05-06): hybrid BE@5 + trail act=8 gap=3, no fixed target.
+            # Backtest 489t / 176 PURE: 2.2x PnL, MaxDD halved 56→25pt.
+            "ES Absorption": {"mode": "hybrid", "be_trigger": 5, "activation": 8, "gap": 3},
             "SB Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
             "SB10 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
             # SB2 Absorption: NO trail — fixed SL=10/T=20 bracket (removed from trail_params Apr 13)
@@ -10877,6 +10913,8 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5, "initial_sl": 14},
+            # ES Absorption C6 (2026-05-06): hybrid BE@5 + trail act=8 gap=3, no fixed target
+            "ES Absorption": {"mode": "hybrid", "be_trigger": 5, "activation": 8, "gap": 3, "initial_sl": 8},
         }
         # VIX Divergence: optimized 2026-05-03 (longs continuous a=10 g=8 SL=8, no BE)
         if setup_name == "VIX Divergence":
@@ -12846,6 +12884,21 @@ function passesStrategy(l, strat) {
     if (v13BullishBlock()) return false;
     if (v13VannaBlock()) return false;
     if (v13DDQualityBlock()) return false;
+    // ES Abs-Pure: included in V14 live whitelist (TSRT live setups). Apply PURE rules.
+    if (sn === 'ES Absorption') {
+      if (l.grade !== 'A' && l.grade !== 'A+') return false;
+      if (l.paradigm === 'AG-TARGET' || l.paradigm === 'AG-LIS') return false;
+      if (l.ts) {
+        const d = new Date(l.ts);
+        const etStr = d.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
+        const tp = (etStr.split(', ')[1] || etStr).split(':');
+        const mins = parseInt(tp[0]) * 60 + parseInt(tp[1]);
+        if (mins >= 945) return false;  // 15:45 ET cutoff
+      }
+      if (isLong && align < 0) return false;
+      if (!isLong && align > 0) return false;
+      return true;
+    }
     return v10BaseV14();
   }
   if (strat === 'esabspure') {
@@ -17680,6 +17733,16 @@ DASH_HTML_TEMPLATE = """
         if (_tlV13BullishBlock()) return false;
         if (_tlV13VannaBlock()) return false;
         if (_tlV13DDQualityBlock()) return false;
+        // ES Abs-Pure: included in V14 live whitelist (TSRT live setups). Apply PURE rules.
+        if (sn === 'ES Absorption') {
+          if (l.grade !== 'A' && l.grade !== 'A+') return false;
+          if (l.paradigm === 'AG-TARGET' || l.paradigm === 'AG-LIS') return false;
+          const mins = _tlEtMins();
+          if (mins != null && mins >= 945) return false;
+          if (isLong && align < 0) return false;
+          if (!isLong && align > 0) return false;
+          return true;
+        }
         return _tlV10BaseV14();
       }
       if (strat === 'esabspure') {

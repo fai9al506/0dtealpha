@@ -423,11 +423,17 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
     exit_side = "Sell" if is_long else "Buy"
     trail_only = target_pts is None  # Opt2: no target, trail stop only
 
+    # 2026-05-06: Add slippage buffer to initial stop so 5-7pt fill slippage doesn't
+    # leave stop on top of fill (lid=2530 today: ES Abs short signal 7347, fill
+    # 7354.5, stop placed at signal+8=7355 = 0.5pt above fill = instant stop).
+    # The buffer protects pre-fill; on fill confirmation poll_order_status calls
+    # update_stop() to realign tight to fill_price ± stop_pts.
+    SLIPPAGE_BUFFER = 5.0
     if is_long:
-        es_stop = _round_mes(es_price - stop_pts)
+        es_stop = _round_mes(es_price - stop_pts - SLIPPAGE_BUFFER)
         es_target = None if trail_only else _round_mes(es_price + target_pts)
     else:
-        es_stop = _round_mes(es_price + stop_pts)
+        es_stop = _round_mes(es_price + stop_pts + SLIPPAGE_BUFFER)
         es_target = None if trail_only else _round_mes(es_price - target_pts)
 
     # 1. Market entry
@@ -507,6 +513,11 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
         "be_triggered": False,
         "trail_active": False,
         "ts_placed": datetime.utcnow().isoformat(),
+        # Stored for post-fill realign (slippage fix 2026-05-06): on fill detection,
+        # poll_order_status() re-anchors stop+target to fill_price ± these distances.
+        "stop_pts": stop_pts,
+        "target_pts": target_pts,
+        "signal_es_price": es_price,
     }
 
     with _lock:
@@ -1178,6 +1189,54 @@ def _check_order_fills(lid, order, broker_orders):
                    f"{dir_label} {QTY} MES @ {fill_price}\n"
                    f"Target: {order.get('target_price', 0):.2f} | "
                    f"Stop: {order['current_stop']:.2f}")
+
+            # Slippage fix (2026-05-06): re-anchor stop+target to fill_price ± distances
+            # (initial protective orders were placed at signal_price ± distances + 5pt
+            # buffer for the stop). Today's lid=2530: signal 7347, fill 7354.5 (7.5pt
+            # against), stop placed at signal+8=7355 = instant stop. Now stop is
+            # placed at signal+8+5=7360 then realigned here to fill+8=7362.5.
+            try:
+                stop_pts_local = order.get("stop_pts")
+                target_pts_local = order.get("target_pts")
+                is_long_local = order["direction"].lower() in ("long", "bullish")
+                # Realign stop
+                if stop_pts_local is not None and fill_price is not None:
+                    desired_stop = (fill_price - stop_pts_local) if is_long_local else (fill_price + stop_pts_local)
+                    desired_stop = _round_mes(desired_stop)
+                    if abs(desired_stop - order["current_stop"]) >= MES_TICK_SIZE:
+                        print(f"[real-trader] post-fill realign STOP id={lid}: "
+                              f"{order['current_stop']:.2f} -> {desired_stop:.2f} "
+                              f"(fill={fill_price}, stop_pts={stop_pts_local})", flush=True)
+                        update_stop(lid, desired_stop)
+                # Realign target (if has target limit, not trail-only)
+                if (target_pts_local is not None and fill_price is not None
+                        and order.get("target_order_id")
+                        and not order.get("trail_only")):
+                    desired_target = (fill_price + target_pts_local) if is_long_local else (fill_price - target_pts_local)
+                    desired_target = _round_mes(desired_target)
+                    cur_target = order.get("target_price")
+                    if cur_target is not None and abs(desired_target - cur_target) >= MES_TICK_SIZE:
+                        replace_payload = {
+                            "AccountID": account_id,
+                            "Symbol": MES_SYMBOL,
+                            "Quantity": str(QTY),
+                            "OrderType": "Limit",
+                            "LimitPrice": str(desired_target),
+                            "TimeInForce": {"Duration": "DAY"},
+                            "Route": "Intelligent",
+                        }
+                        tgt_resp = _ts_api("PUT", f"/orderexecution/orders/{order['target_order_id']}",
+                                           replace_payload, account_id)
+                        if tgt_resp:
+                            with _lock:
+                                order["target_price"] = desired_target
+                                new_orders = tgt_resp.get("Orders", [])
+                                if new_orders and new_orders[0].get("OrderID"):
+                                    order["target_order_id"] = new_orders[0]["OrderID"]
+                            print(f"[real-trader] post-fill realign TARGET id={lid}: "
+                                  f"{cur_target:.2f} -> {desired_target:.2f}", flush=True)
+            except Exception as exc:
+                print(f"[real-trader] post-fill realign error id={lid}: {exc}", flush=True)
         elif entry_status in ("REJ", "CAN", "EXP"):
             with _lock:
                 order["status"] = "closed"

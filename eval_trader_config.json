@@ -25,10 +25,20 @@
   "e2t_daily_pnl_cap": 525,
   "daily_loss_floor": -400,
   "setup_rules": {
-    "Paradigm Reversal": {
+    "GEX Long": {
+      "enabled": false,
+      "stop": 8,
+      "target": null
+    },
+    "GEX Velocity": {
+      "enabled": false,
+      "stop": 8,
+      "target": null
+    },
+    "AG Short": {
       "enabled": true,
       "stop": 12,
-      "target": 10
+      "target": null
     },
     "BofA Scalp": {
       "enabled": false,
@@ -36,39 +46,34 @@
       "target": "msg",
       "max_hold_min": 30
     },
-    "AG Short": {
-      "enabled": true,
-      "stop": 12,
-      "target": null
-    },
     "ES Absorption": {
       "enabled": true,
       "stop": 8,
-      "target": 10
-    },
-    "GEX Long": {
-      "enabled": false,
-      "stop": 8,
       "target": null
     },
-    "Vanna Pivot Bounce": {
+    "Paradigm Reversal": {
       "enabled": false,
-      "stop": 8,
+      "stop": 12,
       "target": 10
+    },
+    "DD Exhaustion": {
+      "enabled": false,
+      "stop": 12,
+      "target": null
     },
     "Skew Charm": {
       "enabled": true,
       "stop": 14,
       "target": null
     },
-    "GEX Velocity": {
+    "Vanna Pivot Bounce": {
       "enabled": true,
       "stop": 8,
-      "target": null
+      "target": 10
     },
-    "DD Exhaustion": {
+    "VIX Divergence": {
       "enabled": true,
-      "stop": 12,
+      "stop": 8,
       "target": null
     }
   },

@@ -215,14 +215,16 @@ DEFAULT_CONFIG = {
     # target = fixed take-profit distance; null/"msg" = use Volland target from Telegram
     # Mirrors production system: same stops, same targets, smaller size
     "setup_rules": {
-        "GEX Long":          {"enabled": True,  "stop": 8,  "target": None},
-        "GEX Velocity":      {"enabled": True,  "stop": 8,  "target": None},
+        "GEX Long":          {"enabled": False, "stop": 8,  "target": None},
+        "GEX Velocity":      {"enabled": False, "stop": 8,  "target": None},
         "AG Short":          {"enabled": True,  "stop": 12, "target": None},
         "BofA Scalp":        {"enabled": False, "stop": 12, "target": "msg", "max_hold_min": 30},
-        "ES Absorption":    {"enabled": True,  "stop": 8,  "target": 10},
-        "Paradigm Reversal": {"enabled": True,  "stop": 12, "target": 10},
-        "DD Exhaustion":     {"enabled": True,  "stop": 12, "target": None},
-        "Skew Charm":        {"enabled": False, "stop": 12, "target": None},
+        "ES Absorption":     {"enabled": True,  "stop": 8,  "target": None},
+        "Paradigm Reversal": {"enabled": False, "stop": 12, "target": 10},
+        "DD Exhaustion":     {"enabled": False, "stop": 12, "target": None},
+        "Skew Charm":        {"enabled": True,  "stop": 14, "target": None},
+        "Vanna Pivot Bounce":{"enabled": True,  "stop": 8,  "target": 10},
+        "VIX Divergence":    {"enabled": True,  "stop": 8,  "target": None},
     },
 
     # ── Master switch ──
@@ -760,6 +762,30 @@ class ComplianceGate:
         if not rules.get("enabled", True):
             return False, f"{signal['setup_name']} disabled"
 
+        # VIX Divergence: longs only, drop grade C (shipped 2026-05-03)
+        if signal["setup_name"] == "VIX Divergence":
+            if signal.get("direction") not in ("long", "bullish"):
+                return False, "VIX Div: shorts disabled"
+            if signal.get("grade") == "C":
+                return False, "VIX Div: grade C dropped"
+
+        # ES Absorption: PURE filter (mechanism-based, shipped 2026-05-03 to real-trader)
+        # Rules: time<15:45 + grade A/A+ + direction-aligned + block AG-TARGET/AG-LIS
+        if signal["setup_name"] == "ES Absorption":
+            if signal.get("grade") not in ("A", "A+"):
+                return False, f"ES Abs PURE: grade {signal.get('grade')} blocked (A+/A only)"
+            if signal.get("paradigm") in ("AG-TARGET", "AG-LIS"):
+                return False, f"ES Abs PURE: paradigm {signal.get('paradigm')} blocked"
+            now_et_local = datetime.now(ET)
+            if now_et_local.time() >= dtime(15, 45):
+                return False, "ES Abs PURE: past 15:45 cutoff"
+            align = signal.get("greek_alignment", 0)
+            is_bull = signal.get("direction") in ("long", "bullish")
+            if is_bull and align < 0:
+                return False, f"ES Abs PURE: bullish but align={align} < 0"
+            if not is_bull and align > 0:
+                return False, f"ES Abs PURE: bearish but align={align} > 0"
+
         # DD Exhaustion filters (enabled per-config)
         if signal["setup_name"] == "DD Exhaustion":
             if cfg.get("dd_block_after_14et"):
@@ -788,6 +814,9 @@ class ComplianceGate:
                     if alignment == 3 and _para in ("GEX-LIS", "AG-LIS", "AG-PURE", "BOFA-MESSY"):
                         return False, f"V14: SC long align=3 + {_para} blocked"
                     # SC longs accept all other alignments, exempt from VIX gate
+                elif sname == "ES Absorption":
+                    # ES Abs PURE filter (already enforced above) is exclusive — skip V14 generic gate
+                    pass
                 else:
                     if alignment < 2:
                         return False, f"Greek filter: long alignment {alignment:+d} < +2"
@@ -805,6 +834,9 @@ class ComplianceGate:
                 elif sname == "AG Short":
                     _short_allowed = True
                 elif sname == "DD Exhaustion" and alignment != 0:
+                    _short_allowed = True
+                elif sname == "ES Absorption":
+                    # ES Abs PURE filter (already enforced above) is exclusive — admit shorts
                     _short_allowed = True
                 if not _short_allowed:
                     return False, f"Greek filter: {sname} short not in V10 whitelist (align={alignment:+d})"
@@ -1783,13 +1815,15 @@ class PositionTracker:
     # DD Exhaustion: continuous trail (activation=20, gap=5)
     # GEX Long: hybrid trail (BE at +8, continuous trail activation=10 gap=5)
     # AG Short: hybrid trail (BE at +10, continuous trail activation=12 gap=5)
-    # ES Absorption: fixed target (SL=8/T=10), no trailing
+    # ES Absorption: hybrid trail (BE at +5, continuous trail activation=8 gap=3) — TSRT C6 ship 2026-05-06
     _TRAIL_PARAMS = {
         "DD Exhaustion":  {"mode": "continuous", "activation": 20, "gap": 5},
         "GEX Long":       {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
         "GEX Velocity":   {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
         "AG Short":       {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
         "Skew Charm":     {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
+        "VIX Divergence": {"mode": "continuous", "activation": 10, "gap": 8, "initial_sl": 8},
+        "ES Absorption":  {"mode": "hybrid", "be_trigger": 5, "activation": 8, "gap": 3},
     }
 
     def check_trail(self, es_price: float | None):
@@ -1800,7 +1834,8 @@ class PositionTracker:
           - Skew Charm:    hybrid — BE @ +10, then continuous trail (gap 5)
           - AG Short:      hybrid — BE @ +10, then continuous trail (gap 5)
           - GEX Long/Vel:  hybrid — BE @ +8,  then continuous trail (gap 5)
-          - Setups not in _TRAIL_PARAMS (ES Abs, Paradigm, BofA): no trail,
+          - ES Absorption: hybrid — BE @ +5,  then continuous trail (gap 3)
+          - Setups not in _TRAIL_PARAMS (Paradigm, BofA): no trail,
             ride the original fixed SL/target.
         """
         if not self.position or not es_price:

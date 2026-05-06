@@ -840,7 +840,9 @@ def close_trade(setup_log_id: int, result_type: str):
     if not already_closed:
         with _lock:
             order["status"] = "closed"
-            order["close_reason"] = result_type
+            # 2026-05-06: was `result_type` (corrupts close_reason with WIN/LOSS/EXPIRED outcome).
+            # Audit trail must reflect HOW closed (mechanism), not WHAT outcome.
+            order["close_reason"] = f"outcome_close_{result_type.lower()}"
         _persist_order(setup_log_id)
         print(f"[real-trader] closed: {setup_name} id={setup_log_id} "
               f"result={result_type} acct={account_id}", flush=True)
@@ -893,7 +895,9 @@ def force_release(setup_log_id: int, result_type: str):
             return
         old_status = order["status"]
         order["status"] = "closed"
-        order["close_reason"] = result_type
+        # 2026-05-06: was `result_type` (e.g., "LOSS"). Use descriptive label so
+        # close_reason audit trail reflects HOW (slot release on outcome) not WHAT.
+        order["close_reason"] = f"outcome_resolved_{result_type.lower()}"
     try:
         _persist_order(setup_log_id)
     except Exception as e:

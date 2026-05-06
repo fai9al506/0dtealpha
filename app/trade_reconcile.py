@@ -156,8 +156,13 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
 
         portal_total_pts += portal_pnl
 
+        # Count this trade against its account regardless of ghost status (2026-05-06 fix:
+        # was excluding ghosts, causing per-account count != header count).
+        if acct in real_count_by_acct:
+            real_count_by_acct[acct] += 1
+
         if fill is None or exit_p is None:
-            # Ghost candidate — no real exit recorded
+            # Ghost candidate — no real exit recorded (count already incremented above)
             gap_pts = -portal_pnl  # treat as full miss
             flagged_count += 1
             why = _classify_gap(state, gap_pts)
@@ -176,7 +181,6 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
 
         if acct in real_total_pts_by_acct:
             real_total_pts_by_acct[acct] += real_pts
-            real_count_by_acct[acct] += 1
 
         gap_pts = real_pts - portal_pnl
         gap_dollars = gap_pts * MES_DOLLAR_PER_PT
@@ -198,6 +202,7 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
     acct_flag = False
     acct_label = {'210VYX65': 'longs', '210VYX91': 'shorts'}
     total_broker = 0.0
+    broker_total_available = False
     for acct in ACCOUNTS:
         broker_pnl = _broker_realized_pnl(acct)
         tracked_dollars = real_total_pts_by_acct[acct] * MES_DOLLAR_PER_PT
@@ -208,6 +213,7 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
                 f"  • <b>{label}</b> ({acct[-4:]}): {n}t · tracked ${tracked_dollars:+.0f} · broker <i>API err</i>"
             )
             continue
+        broker_total_available = True
         total_broker += broker_pnl
         diff = broker_pnl - tracked_dollars
         marker = ""
@@ -226,10 +232,13 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
         "portal_total_pts": portal_total_pts,
         "flagged_trades": flagged_count,
         "tracked_real_dollars": sum(real_total_pts_by_acct.values()) * MES_DOLLAR_PER_PT,
+        "broker_real_dollars": total_broker,
     }
 
-    # Header — combined day P&L from broker totals
-    real_dollars = summary['tracked_real_dollars']
+    # Header — use broker total (truth, includes ghosts) when available;
+    # fallback to bot-tracked sum if broker API errored. (2026-05-06 fix: was using
+    # bot-tracked which excludes ghost trades, hid -$107 ghost loss in May 6 reconcile.)
+    real_dollars = total_broker if broker_total_available else summary['tracked_real_dollars']
     day_emoji = "🟢" if real_dollars > 0 else ("🔴" if real_dollars < 0 else "⚪")
 
     # Build Telegram message

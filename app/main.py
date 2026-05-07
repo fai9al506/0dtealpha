@@ -3830,11 +3830,24 @@ def send_summary_alert(time_label: str):
         print(f"[alerts] summary error: {e}", flush=True)
 
 
+_v13_gex_magnet_cache = {"ts": 0.0, "spot": 0.0, "value": 0.0}
+
 def _v13_gex_magnet_above() -> float:
-    """Top +GEX strike above spot from latest chain. Returns raw gamma*OI (no x100)."""
+    """Top +GEX strike above spot from latest chain. Returns raw gamma*OI (no x100).
+
+    2026-05-08 (S95): Cached 30s. Without cache, two calls within same dispatch
+    cycle could return different values (latest_df refreshes ~30s) — this caused
+    portal V14 (reads stored setup_log value) to disagree with production
+    _passes_live_filter (live recompute) at threshold edge. lid=2569 May 7:
+    stored 74.85 (portal PASS), live 75+ at dispatch (production BLOCK), winner
+    missed = $130. Cache aligns the two reads to one value per chain cycle."""
     spot = _last_known_spot
     if not spot or latest_df is None:
         return 0.0
+    now_ts = time.time()
+    if (now_ts - _v13_gex_magnet_cache["ts"] < 30
+            and abs(_v13_gex_magnet_cache["spot"] - spot) < 2):
+        return _v13_gex_magnet_cache["value"]
     try:
         with _df_lock:
             df = latest_df.copy()
@@ -3845,7 +3858,9 @@ def _v13_gex_magnet_above() -> float:
         p_oi = pd.to_numeric(df["P_OpenInterest"], errors="coerce").fillna(0.0)
         net_gex = (c_gamma * c_oi) - (p_gamma * p_oi)
         above = net_gex[strikes > spot]
-        return float(above.max()) if not above.empty else 0.0
+        result = float(above.max()) if not above.empty else 0.0
+        _v13_gex_magnet_cache.update({"ts": now_ts, "spot": float(spot), "value": result})
+        return result
     except Exception as e:
         print(f"[v13] gex_magnet_above error: {e}", flush=True)
         return 0.0

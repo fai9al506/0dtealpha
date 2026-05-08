@@ -893,6 +893,22 @@ def force_release(setup_log_id: int, result_type: str):
             return
         if order["status"] == "closed":
             return
+        # S99 Phase 2B (2026-05-09): if pending_entry, DEFER status change until
+        # fill_poll catches the FLL. Today's lid=2646: outcome tracker decided WIN
+        # within seconds of placement, set status=closed before bot saw FLL,
+        # _flatten_position skipped (status not filled), broker position drifted
+        # until orphan reconcile force-closed it (lost close_fill_price).
+        # Defer keeps cap slot held (status remains pending_entry, counted in cap)
+        # until poll_order_status detects FLL — then triggers proper close.
+        if order["status"] == "pending_entry":
+            order["pending_close_after_fill"] = result_type
+            try:
+                _persist_order(setup_log_id)
+            except Exception as e:
+                print(f"[real-trader] force_release persist (deferred) error: {e}", flush=True)
+            print(f"[real-trader] force_release DEFERRED: id={setup_log_id} "
+                  f"pending_entry — will close on fill poll (result={result_type})", flush=True)
+            return
         old_status = order["status"]
         order["status"] = "closed"
         # 2026-05-06: was `result_type` (e.g., "LOSS"). Use descriptive label so
@@ -931,16 +947,35 @@ def _flatten_position(order):
         _alert(f"🏁 {order['setup_name']} limit entry cancelled")
         return
 
+    # S99 Phase 2A (2026-05-09): handle pending_entry status. Today's lid=2646:
+    # outcome tracker fired before fill polled, force_release set status=closed,
+    # _flatten_position skipped because old check `if status == "filled"` was FALSE,
+    # but broker had filled the entry. Result: ghost position, orphan reconcile
+    # had to clean up at -$13 worse than would-have-been.
+    # Fix: cancel entry order if pending_entry, then ALWAYS check broker position
+    # (regardless of bot status). If broker has matching position, market-close.
+    if order.get("status") == "pending_entry" and order.get("entry_order_id"):
+        try:
+            _ts_api("DELETE", f"/orderexecution/orders/{order['entry_order_id']}", None, account_id)
+            print(f"[real-trader] cancelled pending market entry: {order.get('setup_name')} "
+                  f"id={order.get('setup_log_id')} acct={account_id}", flush=True)
+        except Exception as e:
+            print(f"[real-trader] entry cancel error: {e}", flush=True)
+        time.sleep(0.5)  # let cancel settle before broker position check
+
     # Wait for cancellations to settle
     time.sleep(0.5)
 
-    # Market close if position exists
-    if order["status"] == "filled":
+    # Market close if position exists at broker.
+    # S99: was `if order["status"] == "filled":` — too restrictive, missed ghosts
+    # where bot status was "closed" (force_release-d) but broker had position.
+    # Now: always check broker, market-close if position matches direction.
+    if order["status"] in ("filled", "pending_entry", "closed"):
         # Check broker position first -- don't create ghost positions
         broker_pos = _get_broker_position(account_id)
         if not broker_pos:
             print(f"[real-trader] flatten SKIPPED: broker already flat on {account_id} "
-                  f"(stop/target filled). {order['setup_name']}", flush=True)
+                  f"(stop/target filled or entry cancelled). {order.get('setup_name')}", flush=True)
             return
 
         # Verify direction matches
@@ -1057,15 +1092,25 @@ def reconcile_positions():
 
 
 def _reconcile_positions():
-    """Check broker positions match tracked orders. Alert on mismatch."""
+    """Check broker positions match tracked orders. Alert on mismatch.
+
+    S99 (2026-05-09 fix): expected_qty now includes both pending_entry and filled
+    statuses. Previously only counted filled, causing false ORPHAN alerts during
+    the 30s window between PLACED (status=pending_entry) and fill-poll catching
+    the FLL. Today's lid=2644 + 2646 both triggered false orphan-close attempts
+    because reconcile fired before fill_poll updated status. Race surface scales
+    linearly with cap (cap=2 = 2 concurrent windows; cap=3 = 3x exposure).
+    """
     for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
         if acct_id not in ACCOUNT_WHITELIST:
             continue
-        # Count expected qty from tracked orders
+        # Count expected qty from tracked orders (includes pending_entry to avoid
+        # false orphan during fill-poll lag). Aligns with cap-check (line 370).
         with _lock:
             expected_qty = sum(
                 QTY for o in _active_orders.values()
-                if o.get("account_id") == acct_id and o["status"] == "filled"
+                if o.get("account_id") == acct_id
+                and o["status"] in ("pending_entry", "filled")
             )
         # Query broker
         broker_pos = _get_broker_position(acct_id)
@@ -1088,9 +1133,12 @@ def _reconcile_positions():
                 _backfilled = []
                 _lost_price = []
                 with _lock:
+                    # S99: include pending_entry (entry placed, broker may have rejected/expired
+                    # but bot hasn't polled yet — we count this as ghost candidate).
                     _to_process = [
                         (lid, o) for lid, o in _active_orders.items()
-                        if o.get("account_id") == acct_id and o["status"] == "filled"
+                        if o.get("account_id") == acct_id
+                        and o["status"] in ("pending_entry", "filled")
                     ]
                 # Release lock while querying broker history (network call)
                 for lid, o in _to_process:
@@ -1241,10 +1289,29 @@ def _check_order_fills(lid, order, broker_orders):
                                   f"{cur_target:.2f} -> {desired_target:.2f}", flush=True)
             except Exception as exc:
                 print(f"[real-trader] post-fill realign error id={lid}: {exc}", flush=True)
+
+            # S99 Phase 2B (2026-05-09): if outcome tracker fired force_release
+            # while we were in pending_entry, it left a `pending_close_after_fill`
+            # marker. Now that fill is captured (fill_price recorded above),
+            # trigger the deferred close. close_trade can now flatten properly
+            # because status="filled" and broker has matching position.
+            pending_close = order.get("pending_close_after_fill")
+            if pending_close:
+                print(f"[real-trader] DEFERRED CLOSE firing: id={lid} "
+                      f"result={pending_close} (was pending_entry, now filled)", flush=True)
+                with _lock:
+                    order.pop("pending_close_after_fill", None)
+                try:
+                    force_release(lid, pending_close)
+                    close_trade(lid, pending_close)
+                except Exception as exc:
+                    print(f"[real-trader] deferred close error id={lid}: {exc}", flush=True)
         elif entry_status in ("REJ", "CAN", "EXP"):
             with _lock:
                 order["status"] = "closed"
                 order["close_reason"] = f"entry_{entry_status}"
+                # S99: clear deferred-close marker — entry never opened, no need to close
+                order.pop("pending_close_after_fill", None)
             changed = True
             rej_reason = (entry.get("RejectReason") or entry.get("StatusDescription")
                           or entry.get("Message", ""))

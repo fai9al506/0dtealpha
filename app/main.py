@@ -810,6 +810,18 @@ def db_init():
         END $$;
         """))
 
+        # VIX3M raw + VIX/VIX3M ratio columns — Discord pros use ratio at 0.83/0.80 thresholds
+        # (Apollo May 6: "Trim longs when under 0.83. Long short term Vol when under 0.8")
+        # BigBill stats since 12/31/18: 296 instances of ratio<=0.83, avg +0.26% over 10 days
+        # Added 2026-05-12 (S104). Read-only metric — informs regime, no gating logic yet.
+        for col, dtype in [("vix3m", "DOUBLE PRECISION"), ("vix_vix3m_ratio", "DOUBLE PRECISION")]:
+            conn.execute(text(f"""
+            DO $$ BEGIN
+                ALTER TABLE setup_log ADD COLUMN {col} {dtype};
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
+            """))
+
         # V13 regime data per trade — enables JS portal filter
         # vanna_regime (Apr 22 2026, VPB-Bull V3): "bullish"/"bearish"/"mixed" — VPB real-trade gate
         for col, dtype in [
@@ -2003,6 +2015,15 @@ def log_setup(result_wrapper):
                     insert_params.setdefault(_req_key, None)
                 # Overvix (VIX - VIX3M) — V8 Smart VIX Gate
                 insert_params["overvix"] = _overvix
+                # VIX3M + VIX/VIX3M ratio — Discord-pro regime metric (Apollo: <0.83 trim longs, <0.80 long-short-vol)
+                insert_params["vix3m"] = _vix3m_last
+                try:
+                    insert_params["vix_vix3m_ratio"] = (
+                        float(_vix_last) / float(_vix3m_last)
+                        if _vix_last and _vix3m_last and _vix3m_last > 0 else None
+                    )
+                except Exception:
+                    insert_params["vix_vix3m_ratio"] = None
                 # Trail params snapshot — for clean backtesting (no era guessing)
                 _tp_lookup = {
                     "DD Exhaustion": (12, 20, 5),
@@ -2066,7 +2087,8 @@ def log_setup(result_wrapper):
                          charm_limit_entry, overvix,
                          trail_sl, trail_activation, trail_gap,
                          v13_gex_above, v13_dd_near,
-                         vanna_cliff_side, vanna_peak_side, vanna_regime)
+                         vanna_cliff_side, vanna_peak_side, vanna_regime,
+                         vix3m, vix_vix3m_ratio)
                     VALUES
                         (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
                          :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
@@ -2078,7 +2100,8 @@ def log_setup(result_wrapper):
                          :charm_limit_entry, :overvix,
                          :trail_sl, :trail_activation, :trail_gap,
                          :v13_gex_above, :v13_dd_near,
-                         :vanna_cliff_side, :vanna_peak_side, :vanna_regime)
+                         :vanna_cliff_side, :vanna_peak_side, :vanna_regime,
+                         :vix3m, :vix_vix3m_ratio)
                     RETURNING id
                 """), insert_params)
                 log_id = result.fetchone()[0]
@@ -8482,7 +8505,7 @@ def api_debug_gex_analysis():
                        sl.setup_name, sl.direction, sl.grade, sl.score,
                        sl.greek_alignment, sl.spot_vol_beta,
                        sl.outcome_result, sl.outcome_pnl,
-                       sl.vix, sl.overvix
+                       sl.vix, sl.overvix, sl.vix3m, sl.vix_vix3m_ratio
                 FROM setup_log sl
                 WHERE sl.ts >= '2026-02-05'
                   AND sl.outcome_result IS NOT NULL
@@ -8495,7 +8518,9 @@ def api_debug_gex_analysis():
                 "svb": float(r.spot_vol_beta) if r.spot_vol_beta is not None and not math.isnan(float(r.spot_vol_beta)) else None,
                 "result": r.outcome_result, "pnl": float(r.outcome_pnl) if r.outcome_pnl else 0,
                 "vix": round(float(r.vix), 2) if r.vix is not None else None,
-                "overvix": round(float(r.overvix), 2) if r.overvix is not None else None
+                "overvix": round(float(r.overvix), 2) if r.overvix is not None else None,
+                "vix3m": round(float(r.vix3m), 2) if r.vix3m is not None else None,
+                "vix_vix3m_ratio": round(float(r.vix_vix3m_ratio), 4) if r.vix_vix3m_ratio is not None else None
             } for r in setup_days]
 
     except Exception as e:

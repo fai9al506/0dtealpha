@@ -7759,6 +7759,24 @@ def stock_gex_live_page(session: str = Cookie(None)):
     from app.stock_gex_live_page import STOCK_GEX_LIVE_HTML
     return HTMLResponse(STOCK_GEX_LIVE_HTML)
 
+@app.get("/dte0-gex")
+def dte0_gex_page(session: str = Cookie(None)):
+    """0DTE GEX scanner dashboard (SPX/SPY/QQQ/IWM, every 30 min)."""
+    user = get_current_user(session)
+    if not user:
+        return RedirectResponse("/login")
+    from app.dte0_gex_page import DTE0_GEX_HTML
+    return HTMLResponse(DTE0_GEX_HTML)
+
+@app.get("/real-trade")
+def real_trade_page(session: str = Cookie(None)):
+    """Real-trade status page — surfaces TS InitialMargin / DayTradeMargin."""
+    user = get_current_user(session)
+    if not user:
+        return RedirectResponse("/login")
+    from app.real_trade_page import REAL_TRADE_HTML
+    return HTMLResponse(REAL_TRADE_HTML)
+
 # ── Stock GEX Scanner API (independent from 0DTE) ──────────────────
 @app.get("/api/stock-gex/levels")
 def api_stock_gex_levels():

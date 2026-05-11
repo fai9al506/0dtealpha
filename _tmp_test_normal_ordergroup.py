@@ -34,18 +34,23 @@ def _auto_mes_symbol() -> str:
 
 
 def get_token() -> str:
-    """Get TS access token from refresh token (read env vars from Railway)."""
+    """Get TS access token from refresh token."""
     client_id = os.environ.get("TS_CLIENT_ID")
+    client_secret = os.environ.get("TS_CLIENT_SECRET")
     refresh = os.environ.get("TS_REFRESH_TOKEN")
-    if not client_id or not refresh:
+    if not (client_id and client_secret and refresh):
         raise SystemExit(
-            "Missing TS_CLIENT_ID / TS_REFRESH_TOKEN env vars.\n"
-            "Fetch from Railway: railway variables -s 0dtealpha --json\n"
-            "Then set them: $env:TS_CLIENT_ID='...'; $env:TS_REFRESH_TOKEN='...'"
+            "Need TS_CLIENT_ID, TS_CLIENT_SECRET, TS_REFRESH_TOKEN env vars."
         )
     resp = requests.post(
         "https://signin.tradestation.com/oauth/token",
-        data={"grant_type": "refresh_token", "client_id": client_id, "refresh_token": refresh},
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "scope": "openid profile MarketData ReadAccount Trade OptionSpreads offline_access",
+        },
         timeout=15,
     )
     resp.raise_for_status()

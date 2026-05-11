@@ -2160,3 +2160,98 @@ Conclusion: GEX-LIS is structurally bad for shorts regardless of Volland metrics
 - Commit: `ed340c3`
 
 ### Status: DEPLOYED — V10 live on Railway (SIM + E2T + real trader)
+
+---
+
+## 2026-05-11/12 — V14 Audit, Discord Cross-Validation, Regime Studies
+
+### V14 captures only 6% of total portal PnL in May
+
+May 1-11 (7 trading days, 297 trades, +554.3 pts total):
+
+| Group | Trades | WR | PnL (pts) |
+|---|---|---|---|
+| Total portal | 297 | 59% | +554.3 |
+| V14 captures (live TSRT-eligible) | 44 | 59% | +33.9 |
+| V14 excludes BY DESIGN (DD/ES Abs/PR/GEX Long) | ~131 | — | +267 |
+| V14 whitelist trades BLOCKED by Layer 1/2/V14 rules | ~62 | — | +253 |
+
+V14 setups same 59% WR as portal — not a quality issue, a quantity issue from over-filtering during current bullish regime.
+
+### Layer 1 GEX/DD magnet audit (Apr 17 - May 11, 142 trades)
+
+| Group | Trades | WR | PnL (pts) | MaxDD |
+|---|---|---|---|---|
+| Layer 1 PASS (V14 takes) | 90 | 57% | +195.8 | -22.4 |
+| Layer 1 BLOCK (V14 rejects) | 52 | 46% | +156.5 | -27.2 |
+
+7 days Layer 1 blocked winners, 5 days blocked losers. Net cost: ~$190/mo at 1 MES.
+
+### Layer 1 GEX-PURE carveout — pre-V14 validation FLIPS the conclusion
+
+Tested back-computed gex_above on Feb-Apr 16 SC shorts (pre-Layer 1 era):
+
+| Era | GEX-PURE + gex_above≥75 | Trades | WR | PnL (pts) |
+|---|---|---|---|---|
+| Feb-Apr 16 (back-computed) | Would-have-blocked | 7 | 14% | -36.4 |
+| Apr 17-30 (live) | Layer 1 blocked | 1 | 0% | -6.1 |
+| May 1-11 (live) | Layer 1 blocked | 16 | **75%** | **+82.5** |
+| Combined lifetime | All would-be-blocks | 24 | ~42% | +40 |
+
+May data alone looks compelling but Feb-Apr data shows Layer 1's premise was correct historically. May is a regime-specific anomaly. **HOLD V14 unchanged.** Re-evaluate at S102 audit mid-June.
+
+### Discord May 5-12 cross-validation
+
+Apollo / Wizard / Dark Matter explicitly trade backside shorts against GEX magnets in current regime — confirms our data. But all three flag "regime change coming" (VIX warning, breadth divergence, volatility tsunami). If/when regime reverts, Layer 1's premise re-activates. Discord study saved at `references/volland/Volland_Discord_DC_May5to12.md` (S103 ledger).
+
+### VIX/VIX3M ratio bucket study (1635 backfilled rows)
+
+Discord pros (Apollo, BigBill) use VIX/VIX3M ratio (not the difference we track as overvix). Aggregate findings:
+
+| Bucket | Direction | Trades | WR | PnL (pts) | Avg |
+|---|---|---|---|---|---|
+| Ratio ≥ 1.05 (deep overvix) | LONG | 31 | 26% | -111.7 | -3.60 |
+| Ratio ≥ 1.05 | SHORT | 17 | 65% | +136.7 | +8.04 |
+| Ratio 0.83-0.90 (mild undervix) | LONG | 321 | 45% | +920.1 | +2.87 |
+
+**Skew Charm LONG at ratio ≥ 1.05: 0% WR / -86.6 pts / 9 trades.** Block candidate but small sample. Logged in S104.
+
+Shipped: `vix3m` + `vix_vix3m_ratio` columns added to setup_log, exposed in `/api/strategic-data`. Read-only metric. Commit `a080537`.
+
+### Backside short test — DROPPED but reverse filter found
+
+Apollo's "short against past highs" definition (entry near session high, age-aged) failed across 5×5 distance/age sweep. **Inverse filter** (SC shorts ≥15pts AWAY from session high) showed +296 pts / 60% WR / DD -2 vs baseline +754 / 56% / -40.
+
+V14-era split:
+- V14-era FAR (≥15pt): 50 trades / 68% WR / +227 pts / DD -3 ← strong
+- V14-era NEAR (<15pt): 92 trades / 45% WR / +125 pts / DD -37 ← losers
+
+Pre-V14 era had OPPOSITE pattern. Regime flip is real but 50 trades = moderate sample. Queue for S102 audit mid-June.
+
+### Telegram HTML-escape bug fixed (commit `1da31ac`)
+
+`send_telegram_setups` uses `parse_mode=HTML`. Raw `<` in messages like `$327 < $700` was parsed as HTML tag opener, Telegram returned 400, message silently dropped. Fix: `html.escape()` in `_alert()` of real_trader/auto_trader/options_trader. Critical bug: caused user to miss yesterday's insufficient-margin alert for lid=2655.
+
+### TS MES margin diagnosis — overnight rate likely applied (S101)
+
+Account 210VYX91 with 1 MES open showed BP=$327 against cash $2,811 = $2,484 hold ≈ TS overnight short rate ($2,499). TS rule: "valid stop required at all times" for day-rate ($264.80). Our 3-sequential-POST order flow creates ~500ms naked-position window.
+
+Shipped diagnostic logging (`_get_buying_power()` now dumps `InitialMargin`, `DayTradeMargin`, `MaintenanceMargin`). Lowered `REAL_TRADE_MARGIN_PER_MES=300` so a 2nd trade reaches TS instead of being self-blocked. Tomorrow's first trade gives definitive `BalanceDetail` proof.
+
+**SIM NORMAL ordergroup test result (2026-05-12 evening):** Status 200. TS ACCEPTED atomic Buy+Sell+Sell ordergroup — Feb 2026 belief that "BRK requires same-side" was for `Type=BRK` only; `Type=NORMAL` has no same-side rule. Stop+target rejected due to SIM BP -$12,500 (account state), not API design. **Path to atomic ordergroup viable** — needs healthier SIM to fully validate, then refactor `place_trade()`.
+
+### 0DTE GEX scanner shipped (S84, commit `6b4a9b9`)
+
+New `app/dte0_gex_scanner.py` — 4 symbols (SPX/SPY/QQQ/IWM) every 30 min, data-only. Reuses `get_chain_rows()`. New table `dte0_gex_scans`. 5 API endpoints. Dashboard at `/dte0-gex`. Real-trade margin dashboard at `/real-trade`. Tomorrow 09:30 ET = first scheduled scan; ~1,200 rows/month for cross-index analysis.
+
+### Tasks logged
+
+- **S100** Telegram HTML-escape fix — DONE
+- **S101** Margin diagnosis day — verify tomorrow EOD
+- **S102** V14 over-restriction audit — mid-June
+- **S103** Discord ledger (evergreen) — updated with May 5-12
+- **S104** VIX/VIX3M ratio logging — DONE; analyze in ~30 days
+- **S105** CAIA volatility tsunami signal — read, deferred (needs VVIX)
+- **S106** Backside short — DROPPED; reverse filter queued for S102
+- **S84** 0DTE GEX scanner — DONE
+

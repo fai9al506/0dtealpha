@@ -2028,6 +2028,13 @@ def get_full_status() -> dict:
                 acct["realized_pnl"] = float(detail.get("RealizedProfitLoss", 0))
                 acct["unrealized_pnl"] = float(detail.get("UnrealizedProfitLoss", 0))
                 acct["day_trade_excess"] = float(detail.get("DayTradeExcess", 0))
+                # Diagnosis: which margin rate is TS applying?
+                # If DayTradeMargin > 0 and InitialMargin == 0 → intraday rate active (~$265/MES)
+                # If InitialMargin > 0 and DayTradeMargin == 0 → overnight rate active (~$2,499/MES)
+                acct["initial_margin"] = float(detail.get("InitialMargin", 0))
+                acct["day_trade_margin"] = float(detail.get("DayTradeMargin", 0))
+                acct["maintenance_margin"] = float(detail.get("MaintenanceMargin", 0))
+                acct["required_margin"] = float(detail.get("RequiredMargin", 0))
         except Exception as e:
             acct["balance_error"] = str(e)
         # Positions
@@ -2149,6 +2156,13 @@ def _get_buying_power(account_id: str) -> float | None:
         else:
             return None
         bp = b.get("BuyingPower") or b.get("CashBalance")
+        # Diagnostic dump: which margin rate is TS applying right now?
+        # MES intraday ~$265, overnight ~$2,499. This tells us the truth on every BP check.
+        detail = b.get("BalanceDetail", {}) or {}
+        print(f"[real-trader] margin-check {account_id} | BP={bp} cash={b.get('CashBalance')} "
+              f"InitialMargin={detail.get('InitialMargin')} DayTradeMargin={detail.get('DayTradeMargin')} "
+              f"MaintenanceMargin={detail.get('MaintenanceMargin')} RequiredMargin={detail.get('RequiredMargin')}",
+              flush=True)
         return float(bp) if bp else None
     except Exception as e:
         print(f"[real-trader] buying power query error on {account_id}: {e}", flush=True)

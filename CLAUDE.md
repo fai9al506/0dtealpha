@@ -436,9 +436,28 @@ Completely independent from 0DTE SPX pipeline. **Data collection only** — no a
 
 **DB tables:** `stock_gex_scans` (weekly scans), `stock_gex_alerts` (triggered alerts)
 
+### 0DTE GEX Scanner (`app/dte0_gex_scanner.py`) — added 2026-05-12
+
+Independent module collecting 0DTE GEX data for SPX/SPY/QQQ/IWM every 30 min during market hours. Data collection only — no alerts, no setup detection.
+
+- **Symbols:** SPX (`$SPXW.X`), SPY, QQQ, IWM with their respective strike intervals/proximity
+- **Schedule:** `cron minute="0,30"` (anchored to wall clock) during 9:30-16:00 ET
+- **DB table:** `dte0_gex_scans` (id, symbol, scan_ts, scan_date, spot, expiration, exp_label='0dte', key_levels JSONB, gex_data JSONB, totals)
+- **Reuses:** `get_chain_rows()` + `get_0dte_exp()` from main.py via lazy import (no circular dep)
+- **API:** `/api/dte0-gex/levels`, `/detail?symbol=`, `/history?symbol=&days=`, `/status`, `POST /scan`
+- **Dashboard:** `/dte0-gex` — 4-card visualization with key levels, magnets, support, GEX mass above/below
+- **Per-symbol error isolation:** SPX failure won't block IWM
+
+### Real-trade margin dashboard — added 2026-05-12
+
+- `/real-trade` HTML page surfaces TS `BalanceDetail.InitialMargin` + `DayTradeMargin` per account
+- Auto-refresh 30s; verdict logic: if InitialMargin>0 AND DayTradeMargin=0 → OVERNIGHT RATE warning
+- Reads `/api/real-trade/status` which calls `real_trader.get_full_status()`
+
 ### Database Tables
 - `chain_snapshots` - SPX/SPXW options chain data with Greeks
 - `spy_chain_snapshots` - SPY options chain data (same schema, isolated table)
+- `dte0_gex_scans` - 0DTE GEX snapshots for SPX/SPY/QQQ/IWM every 30 min (S84)
 - `volland_snapshots` - raw scraped data with statistics (paradigm, LIS, charm, etc.)
 - `volland_exposure_points` - parsed exposure points by strike (charm, vanna, gamma, deltaDecay)
 - `es_delta_snapshots` - ES cumulative delta state (every 30s, from TradeStation @ES bars)

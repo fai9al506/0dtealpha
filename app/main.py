@@ -7403,6 +7403,21 @@ def start_scheduler():
         print(f"[watchdog] schedule error (non-fatal): {e}", flush=True)
     sch.add_job(fetch_economic_calendar, "cron", day_of_week="mon", hour=8, minute=0,
                 id="econ_cal", coalesce=True, max_instances=1)
+    # 0DTE GEX scanner (S84) — SPX/SPY/QQQ/IWM, every 30 min on wall clock
+    try:
+        from app import dte0_gex_scanner
+        def _dte0_gex_job():
+            t = now_et().time()
+            if now_et().weekday() >= 5:
+                return
+            if not (dtime(9, 30) <= t <= dtime(16, 0)):
+                return
+            dte0_gex_scanner.run_scan()
+        sch.add_job(_dte0_gex_job, "cron", minute="0,30",
+                    id="dte0_gex_scan", coalesce=True, max_instances=1,
+                    misfire_grace_time=120)
+    except Exception as e:
+        print(f"[dte0-gex] schedule error (non-fatal): {e}", flush=True)
     # Stock GEX scanner — reduced schedule (protects core 0DTE pipeline)
     # 2026-05-04 (S22): scheduled scans DISABLED — 0 rows ever written despite
     # init firing daily. Module is dead; the working stock GEX system is
@@ -7516,6 +7531,12 @@ def on_startup():
         stock_gex_init(engine, api_get, send_telegram)
     except Exception as e:
         print(f"[stock-gex] init error (non-fatal): {e}", flush=True)
+    # 0DTE GEX scanner — SPX/SPY/QQQ/IWM, every 30 min, data-only (S84)
+    try:
+        from app.dte0_gex_scanner import init as dte0_gex_init
+        dte0_gex_init(engine, api_get)
+    except Exception as e:
+        print(f"[dte0-gex] init error (non-fatal): {e}", flush=True)
     # Stock GEX live — trade monitoring + EOD (GEX scans still from scanner above)
     try:
         from app.stock_gex_live import init as stock_gex_live_init
@@ -7785,6 +7806,58 @@ def api_stock_gex_trigger_scan():
         from app import stock_gex_scanner
         import threading
         t = threading.Thread(target=stock_gex_scanner.run_scan, daemon=True)
+        t.start()
+        return {"status": "scan started"}
+    except Exception as e:
+        return {"error": str(e)}
+
+# ── 0DTE GEX Scanner API (SPX/SPY/QQQ/IWM, every 30 min) ───────────
+
+@app.get("/api/dte0-gex/levels")
+def api_dte0_gex_levels():
+    """Latest 0DTE GEX key levels for all 4 symbols."""
+    try:
+        from app import dte0_gex_scanner
+        return dte0_gex_scanner.get_all_levels()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/dte0-gex/detail")
+def api_dte0_gex_detail(symbol: str = Query(...)):
+    """Full per-strike 0DTE GEX detail for one symbol."""
+    try:
+        from app import dte0_gex_scanner
+        d = dte0_gex_scanner.get_symbol_detail(symbol)
+        return d or {"error": f"no data for {symbol}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/dte0-gex/history")
+def api_dte0_gex_history(symbol: str = Query(...), days: int = Query(5)):
+    """0DTE GEX scan history for one symbol over N days."""
+    try:
+        from app import dte0_gex_scanner
+        return {"symbol": symbol, "days": days,
+                "scans": dte0_gex_scanner.get_scan_history(symbol, days)}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/dte0-gex/status")
+def api_dte0_gex_status():
+    """0DTE GEX scanner status + last scan result."""
+    try:
+        from app import dte0_gex_scanner
+        return dte0_gex_scanner.get_status()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api/dte0-gex/scan")
+def api_dte0_gex_trigger_scan():
+    """Manually trigger a 0DTE GEX scan (async)."""
+    try:
+        from app import dte0_gex_scanner
+        import threading
+        t = threading.Thread(target=dte0_gex_scanner.run_scan, daemon=True)
         t.start()
         return {"status": "scan started"}
     except Exception as e:

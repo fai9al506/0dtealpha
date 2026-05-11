@@ -1009,7 +1009,10 @@ def _alert(msg: str):
         return  # portal-only: no Telegram
     if _send_telegram:
         try:
-            _send_telegram(msg)
+            # send_telegram_setups uses parse_mode=HTML; escape raw '<', '&'
+            # so messages with characters like '<' don't get rejected with 400.
+            import html as _html
+            _send_telegram(_html.escape(msg))
         except Exception as e:
             print(f"[options] telegram error: {e}", flush=True)
     print(f"[options] {msg}", flush=True)

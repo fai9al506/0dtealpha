@@ -10,7 +10,7 @@
 # Cap: 2 concurrent per direction.
 # Trail: SC trail (BE trigger=10, activation=10, gap=5).
 
-import os, json, math, time, calendar, requests, zoneinfo
+import os, json, math, time, calendar, html, requests, zoneinfo
 from datetime import datetime, date, timedelta
 from threading import Lock
 
@@ -2391,7 +2391,10 @@ def _alert(msg: str):
     """Send Telegram alert for EVERY action -- this is real money."""
     if _send_telegram:
         try:
-            _send_telegram(msg)
+            # send_telegram_setups uses parse_mode=HTML, so any raw '<' or '&'
+            # in the message body (e.g. "$327 < $700") breaks the parser and
+            # the alert is silently dropped. Escape before sending.
+            _send_telegram(html.escape(msg))
         except Exception as e:
             print(f"[real-trader] alert send failed: {e}", flush=True)
     print(f"[real-trader] ALERT: {msg}", flush=True)

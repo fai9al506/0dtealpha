@@ -1835,7 +1835,10 @@ def _alert_critical(msg: str):
     """Critical safety alerts — always send Telegram. For orphans, position mismatches, etc."""
     if _send_telegram:
         try:
-            _send_telegram(msg)
+            # send_telegram_setups uses parse_mode=HTML; escape raw '<', '&'
+            # so messages like "$327 < $700" don't get rejected with 400.
+            import html as _html
+            _send_telegram(_html.escape(msg))
         except Exception as e:
             print(f"[auto-trader] critical alert send failed: {e}", flush=True)
     print(f"[auto-trader] CRITICAL: {msg}", flush=True)

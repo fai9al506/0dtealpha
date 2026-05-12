@@ -1248,6 +1248,14 @@ def _check_order_fills(lid, order, broker_orders):
             # buffer for the stop). Today's lid=2530: signal 7347, fill 7354.5 (7.5pt
             # against), stop placed at signal+8=7355 = instant stop. Now stop is
             # placed at signal+8+5=7360 then realigned here to fill+8=7362.5.
+            #
+            # 2026-05-12 verification (lid=2707 VIX Div, fill==signal zero-slippage):
+            # Realign block called update_stop() but state never advanced from initial
+            # buffered stop. Root cause inferred (logs rotated): silent failure in
+            # update_stop (network/timeout or stale broker_orders snapshot returning
+            # FAILED). Stop then fired at the un-realigned 7363.75 instead of 7368.75,
+            # turning a -$40 loss into -$65. Fix: verify current_stop advanced, retry
+            # once on mismatch, alert loudly on persistent failure.
             try:
                 stop_pts_local = order.get("stop_pts")
                 target_pts_local = order.get("target_pts")
@@ -1256,11 +1264,45 @@ def _check_order_fills(lid, order, broker_orders):
                 if stop_pts_local is not None and fill_price is not None:
                     desired_stop = (fill_price - stop_pts_local) if is_long_local else (fill_price + stop_pts_local)
                     desired_stop = _round_mes(desired_stop)
-                    if abs(desired_stop - order["current_stop"]) >= MES_TICK_SIZE:
+                    pre_realign_stop = order["current_stop"]
+                    if abs(desired_stop - pre_realign_stop) >= MES_TICK_SIZE:
                         print(f"[real-trader] post-fill realign STOP id={lid}: "
-                              f"{order['current_stop']:.2f} -> {desired_stop:.2f} "
+                              f"{pre_realign_stop:.2f} -> {desired_stop:.2f} "
                               f"(fill={fill_price}, stop_pts={stop_pts_local})", flush=True)
                         update_stop(lid, desired_stop)
+                        # Verify the realign actually advanced the in-memory stop.
+                        # If status flipped to "closed" (wrong-side close path), skip
+                        # verification — that's a legitimate exit, not a silent failure.
+                        with _lock:
+                            post_stop = order.get("current_stop")
+                            post_status = order.get("status")
+                        if post_status == "filled" and post_stop is not None \
+                                and abs(post_stop - desired_stop) >= MES_TICK_SIZE:
+                            # Silent failure: update_stop returned without advancing
+                            # state (network None, wrong-side-with-no-quote alert path,
+                            # or other non-close failure). Retry once before alerting.
+                            print(f"[real-trader] post-fill realign VERIFY FAILED id={lid}: "
+                                  f"current_stop={post_stop:.2f} desired={desired_stop:.2f} "
+                                  f"— retrying", flush=True)
+                            update_stop(lid, desired_stop)
+                            with _lock:
+                                post_stop = order.get("current_stop")
+                                post_status = order.get("status")
+                            if post_status == "filled" and post_stop is not None \
+                                    and abs(post_stop - desired_stop) >= MES_TICK_SIZE:
+                                # Persistent failure — alert loudly. Stop still sits
+                                # at the buffered level (=initial + SLIPPAGE_BUFFER
+                                # extra risk). Trader needs to know so they can
+                                # manually flatten or adjust if desired.
+                                extra_risk = abs(post_stop - desired_stop)
+                                _alert(
+                                    f"🚨 {order['setup_name']} REALIGN FAILED id={lid}\n"
+                                    f"Stop still at {post_stop:.2f} (wanted {desired_stop:.2f})\n"
+                                    f"Extra risk: {extra_risk:.1f} pts (~${extra_risk * MES_POINT_VALUE * QTY:.2f})\n"
+                                    f"Position open — manual review if needed"
+                                )
+                                print(f"[real-trader] post-fill realign PERSISTENT FAILURE id={lid}: "
+                                      f"locked-in extra risk {extra_risk:.2f} pts", flush=True)
                 # Realign target (if has target limit, not trail-only)
                 if (target_pts_local is not None and fill_price is not None
                         and order.get("target_order_id")

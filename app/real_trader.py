@@ -75,7 +75,8 @@ MAX_CONCURRENT_PER_DIR = MAX_CONCURRENT_LONG
 FIRST_TARGET_PTS = 10.0
 MES_TICK_SIZE = 0.25
 MES_POINT_VALUE = 5.0
-MARGIN_PER_MES = float(os.getenv("REAL_TRADE_MARGIN_PER_MES", "700"))  # TS intraday margin $686.75/MES (Jan 2026)
+def _margin_per_mes() -> float:
+    return float(os.getenv("REAL_TRADE_MARGIN_PER_MES", "700"))  # TS intraday margin $686.75/MES (Jan 2026)
 DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_DAILY_LOSS_LIMIT", "300"))  # max daily loss in $
 
 # SC Trail parameters
@@ -379,7 +380,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     # Margin/buying power pre-check
     bp = _get_buying_power(account_id)
     if bp is not None:
-        margin_needed = QTY * MARGIN_PER_MES
+        margin_needed = QTY * _margin_per_mes()
         if bp < margin_needed:
             print(f"[real-trader] skip {setup_name}: insufficient buying power on {account_id} "
                   f"(${bp:,.0f} < ${margin_needed:,.0f})", flush=True)
@@ -2062,7 +2063,7 @@ def get_full_status() -> dict:
             acct["orders_error"] = str(e)
         # Margin warning
         if acct.get("buying_power") is not None:
-            margin_needed = MARGIN_PER_MES * QTY
+            margin_needed = _margin_per_mes() * QTY
             acct["can_trade"] = acct["buying_power"] >= margin_needed
             acct["margin_buffer"] = round(acct["buying_power"] - margin_needed, 2)
             losses_until_margin = int(acct.get("margin_buffer", 0) / (14 * MES_POINT_VALUE * QTY)) if acct.get("margin_buffer", 0) > 0 else 0

@@ -11478,7 +11478,9 @@ def api_setup_eod_review(date: str = Query(None, description="Date YYYY-MM-DD, d
                        outcome_result, outcome_pnl, outcome_max_profit,
                        outcome_max_loss, outcome_first_event, outcome_elapsed_min,
                        greek_alignment, vix, overvix, spot_vol_beta,
-                       charm_limit_entry
+                       charm_limit_entry,
+                       vanna_cliff_side, vanna_peak_side,
+                       v13_gex_above, v13_dd_near
                 FROM setup_log
                 WHERE date(ts AT TIME ZONE 'America/New_York') = :d
                 ORDER BY ts ASC

@@ -13010,7 +13010,13 @@ function passesStrategy(l, strat) {
   if (strat === 'v14') {
     if (!gapFilter(l.ts)) return false;
     if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
-    if (sn==='VIX Divergence'||sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
+    if (sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
+    // VIX Divergence: longs only, drop grade C (shipped 2026-05-03 to real_trader).
+    if (sn==='VIX Divergence') {
+      if (!isLong) return false;
+      if (l.grade === 'C') return false;
+      return true;
+    }
     if (!v11TimeGates(l.ts)) return false;
     if (v13BullishBlock()) return false;
     if (v13VannaBlock()) return false;
@@ -13082,7 +13088,14 @@ function passesStrategy(l, strat) {
     return true;
   }
   if (strat === 'v14le') {
-    if (sn !== 'Skew Charm' && sn !== 'AG Short') return false;
+    if (sn !== 'Skew Charm' && sn !== 'AG Short' && sn !== 'VIX Divergence') return false;
+    // VIX Divergence: longs only, drop grade C (shipped 2026-05-03 to real_trader).
+    // No gap/time/vanna/bullish/DD-quality gates — VIX Div has its own mechanism.
+    if (sn === 'VIX Divergence') {
+      if (!isLong) return false;
+      if (l.grade === 'C') return false;
+      return true;
+    }
     if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
     if (!gapFilter(l.ts)) return false;
     if (!v11TimeGates(l.ts)) return false;
@@ -17859,7 +17872,13 @@ DASH_HTML_TEMPLATE = """
       if (strat === 'v14') {
         if (!_tlGapFilter()) return false;
         if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
-        if (sn === 'VIX Divergence' || sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
+        if (sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
+        // VIX Divergence: longs only, drop grade C (shipped 2026-05-03 to real_trader).
+        if (sn === 'VIX Divergence') {
+          if (!isLong) return false;
+          if (l.grade === 'C') return false;
+          return true;
+        }
         if (!_tlV11TimeGates()) return false;
         if (_tlV13BullishBlock()) return false;
         if (_tlV13VannaBlock()) return false;
@@ -17905,7 +17924,14 @@ DASH_HTML_TEMPLATE = """
         return true;
       }
       if (strat === 'v14le') {
-        if (sn !== 'Skew Charm' && sn !== 'AG Short') return false;
+        if (sn !== 'Skew Charm' && sn !== 'AG Short' && sn !== 'VIX Divergence') return false;
+        // VIX Divergence: longs only, drop grade C (shipped 2026-05-03 to real_trader).
+        // No gap/time/vanna/bullish gates — VIX Div has its own mechanism.
+        if (sn === 'VIX Divergence') {
+          if (!isLong) return false;
+          if (l.grade === 'C') return false;
+          return true;
+        }
         if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
         if (!_tlGapFilter()) return false;
         if (!_tlV11TimeGates()) return false;

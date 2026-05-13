@@ -9079,7 +9079,7 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 "max_plus_gex, max_minus_gex, "
                 "outcome_result, outcome_pnl, "
                 "vanna_all, vanna_weekly, vanna_monthly, spot_vol_beta, greek_alignment, "
-                "charm_limit_entry, overvix, vix "
+                "charm_limit_entry, overvix, vix, vanna_regime "
                 "FROM setup_log "
                 "WHERE id > :since AND ts::date = :today AND grade != 'LOG' "
                 "ORDER BY id ASC"
@@ -9089,6 +9089,7 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
         for r in rows:
             row = dict(r)
             # V11: filter at API level so all consumers (eval, real) get clean signals
+            # S115 fix (2026-05-13): pass vanna_regime so VPB gate works on eval path
             if not _passes_live_filter(
                 row["setup_name"], row["direction"],
                 row.get("greek_alignment") or 0,
@@ -9096,6 +9097,7 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 overvix=float(row["overvix"]) if row.get("overvix") else None,
                 paradigm=row.get("paradigm"),
                 grade=row.get("grade"),
+                vanna_regime=row.get("vanna_regime"),
             ):
                 continue
             # Compute target/stop levels

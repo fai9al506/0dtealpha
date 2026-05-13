@@ -6,6 +6,7 @@ Receives all data as parameters; no imports from main.py.
 """
 from collections import deque
 from datetime import date, datetime, time as dtime, timedelta
+import os
 import re
 import pytz
 
@@ -109,9 +110,44 @@ def is_first_hour():
     return dtime(9, 30) <= now.time() <= dtime(10, 30)
 
 
+# ── GEX Long v3 visual classifier (shipped 2026-05-13 behind env flag) ─────
+# Verified backtest 2026-05-06 (gex_long_v3.py): 14 trades / 77% WR / +$552 / PF 3.63
+# over Feb 23 - May 4. Visual structure + alignment + hour gate. SL=14, target
+# floor +10, trail act=15 gap=5. Env: GEX_LONG_V3_ENABLED=true to enable LIVE.
+
+def _gex_long_v3_classify(features):
+    """Map v3 features dict -> verdict ('A++','A','B','C','BAD','NO_DATA').
+
+    Features expected (all bools except gex_magnet_strike):
+      CORE_R3 / CORE_R2 / R5_align / R_charm_bullish / R_gex_regime_pos / R_VETO
+
+    Mirrors `_classify()` in app/gex_long_v3.py.
+    """
+    if features is None:
+        return 'NO_DATA'
+    if not features.get('CORE_R3'):
+        return 'BAD'
+    if features.get('R_VETO'):
+        return 'BAD'
+    if features.get('CORE_R2') and features.get('R5_align') and \
+       (features.get('R_charm_bullish') or features.get('R_gex_regime_pos')):
+        return 'A++'
+    if features.get('CORE_R2') and (features.get('R5_align') or features.get('R_charm_bullish')):
+        return 'A'
+    if features.get('CORE_R2') or features.get('R5_align'):
+        return 'B'
+    return 'C'
+
+
+def is_gex_long_v3_enabled():
+    """Single source of truth for v3 env flag. Default OFF."""
+    return os.getenv("GEX_LONG_V3_ENABLED", "false").lower() == "true"
+
+
 # ── Main evaluation ────────────────────────────────────────────────────────
 
-def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings):
+def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings,
+                       v3_features=None):
     """
     Evaluate GEX Long setup using force alignment framework.
 
@@ -125,38 +161,64 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
 
     A+ = all forces aligned bullish and close.
     Returns a result dict or None.
+
+    v3 mode (env GEX_LONG_V3_ENABLED=true): replaces force-scoring entry rules
+    with verified visual classifier + hour gate. Caller passes v3_features dict
+    computed from per-strike GEX + charm (see app.main `_gex_long_v3_features`).
+    Alignment gate (>=0) is applied later in main._passes_live_filter (alignment
+    is computed AFTER check_setups returns).
     """
     if not settings.get("gex_long_enabled", True):
         return None
 
+    v3_on = is_gex_long_v3_enabled()
+
     # Base conditions
     if not paradigm or "GEX" not in str(paradigm).upper():
         return None
-    # Block toxic paradigm subtypes (GEX-TARGET=no upside room, GEX-MESSY=not clean)
+    # v1/v2 paradigm guard: block GEX-TARGET / GEX-MESSY (no upside / messy regime).
+    # v3 uses its own visual classifier (no paradigm subtype block) — keep it permissive
+    # at the paradigm level and let the classifier veto via R_VETO / CORE_R3.
     paradigm_upper = str(paradigm).upper()
-    if "TARGET" in paradigm_upper or "MESSY" in paradigm_upper:
-        return None
+    if not v3_on:
+        if "TARGET" in paradigm_upper or "MESSY" in paradigm_upper:
+            return None
     if spot is None or lis is None or target is None:
         return None
     if max_plus_gex is None or max_minus_gex is None:
         return None
+
+    # ── v3 entry filter (visual classifier + hour gate) ─────────────────
+    # When enabled: replace v1 gap/upside checks with v3's structural rules.
+    # alignment gate (>=0) is enforced downstream in _passes_live_filter().
+    v3_verdict = None
+    v3_magnet_strike = None
+    if v3_on:
+        v3_verdict = _gex_long_v3_classify(v3_features)
+        if v3_features is not None:
+            v3_magnet_strike = v3_features.get('gex_magnet_strike')
+        if v3_verdict not in ('A++', 'A', 'B'):
+            return None  # v3 entry filter fails (BAD/C/NO_DATA)
+        # Hour gate: t_et.hour < 15 (per app/gex_long_v3.py line 186)
+        if datetime.now(NY).hour >= 15:
+            return None
 
     max_gap = settings.get("gex_max_gap", 5)
     min_upside = settings.get("gex_min_upside", 10)
 
     # Gap: absolute distance to LIS (allow above OR below)
     gap = abs(spot - lis)
-    if gap > max_gap:
+    if not v3_on and gap > max_gap:
         return None
 
     # +GEX must be above spot with room (magnet up)
     upside_gex = max_plus_gex - spot
-    if upside_gex < min_upside:
+    if not v3_on and upside_gex < min_upside:
         return None
 
     # Target must be above spot with room (magnet up)
     upside_target = target - spot
-    if upside_target < min_upside:
+    if not v3_on and upside_target < min_upside:
         return None
 
     upside = min(upside_target, upside_gex)
@@ -235,15 +297,21 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
     composite = lis_score + neg_gex_score + pos_gex_score + target_score + lis_type_score + time_score
 
     # ── Grade ───────────────────────────────────────────────────────────
-    thresholds = settings.get("grade_thresholds", DEFAULT_SETUP_SETTINGS["grade_thresholds"])
-    grade = compute_grade(composite, thresholds)
+    # v3 mode: use visual classifier verdict directly (A++/A/B map to A+/A/B grades).
+    # v1 mode: use force-scoring composite vs thresholds.
+    if v3_on:
+        _v3_to_grade = {"A++": "A+", "A": "A", "B": "B"}
+        grade = _v3_to_grade.get(v3_verdict, "B")
+    else:
+        thresholds = settings.get("grade_thresholds", DEFAULT_SETUP_SETTINGS["grade_thresholds"])
+        grade = compute_grade(composite, thresholds)
 
     if grade is None:
         return None
 
     rr_ratio = upside / gap if gap > 0 else 99
 
-    return {
+    result = {
         "setup_name": "GEX Long",
         "direction": "long",
         "grade": grade,
@@ -266,6 +334,12 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
         "target_cluster_score": target_score,   # Target magnet (0-15)
         "rr_score": lis_type_score + time_score, # LIS type + time (0-20)
     }
+    # v3 fields: expose verdict + magnet strike so main.py / portal can route on them
+    if v3_on:
+        result["gex_long_v3"] = True
+        result["v3_verdict"] = v3_verdict
+        result["v3_gex_magnet_strike"] = v3_magnet_strike
+    return result
 
 
 # ── GEX Velocity evaluation (separate from GEX Long) ──────────────────────
@@ -4693,7 +4767,8 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
                  vix=None,
                  vanna_pin_strike=None, vanna_pin_value=None, chain_df=None,
                  vanna_all=None,
-                 svb_correlation=None, vanna_0dte_ratio=None):
+                 svb_correlation=None, vanna_0dte_ratio=None,
+                 gex_long_v3_features=None):
     """
     Main entry point called from main.py.
     Returns a list of result wrappers (each has keys: result, notify, notify_reason, message).
@@ -4734,7 +4809,8 @@ def check_setups(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, setti
     else:
         _cooldown["_gone_count"] = 0
 
-    gex_result = evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings)
+    gex_result = evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings,
+                                    v3_features=gex_long_v3_features)
     if gex_result is not None:
         notify, reason = should_notify(gex_result)
         results.append({

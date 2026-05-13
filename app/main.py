@@ -2025,9 +2025,11 @@ def log_setup(result_wrapper):
                 except Exception:
                     insert_params["vix_vix3m_ratio"] = None
                 # Trail params snapshot — for clean backtesting (no era guessing)
+                from app.setup_detector import is_gex_long_v3_enabled as _v3_on
+                _gex_long_tp_tuple = (14, 15, 5) if _v3_on() else (8, 10, 5)
                 _tp_lookup = {
                     "DD Exhaustion": (12, 20, 5),
-                    "GEX Long": (8, 10, 5),
+                    "GEX Long": _gex_long_tp_tuple,
                     "GEX Velocity": (8, 10, 5),
                     "AG Short": (14, 12, 5),
                     "Skew Charm": (14, 10, 5),
@@ -3962,6 +3964,98 @@ def _v13_vanna_features() -> tuple[str | None, str | None]:
         return None, None
 
 
+# ── GEX Long v3 live features (shipped 2026-05-13 behind env flag) ─────────
+# Builds the v3 visual classifier inputs (CORE_R3 / CORE_R2 / R5_align / etc.)
+# from live data: per-strike GEX from latest_df (signed gamma*OI*100, NO x100
+# scale conflict because v3 only cares about sign + relative magnitude) and
+# per-strike charm from latest volland_exposure_points snapshot.
+#
+# Mirrors `_features()` in app/gex_long_v3.py (which queries gamma from
+# volland_exposure_points for backtest). For LIVE use we read GEX from
+# latest_df (same source as max_plus_gex / max_minus_gex passed to detector)
+# to stay aligned with the rest of the production pipeline.
+
+_gex_long_v3_cache = {"ts": 0.0, "spot": 0.0, "features": None}
+
+def _gex_long_v3_features() -> dict | None:
+    """Compute v3 visual classifier features at signal time.
+
+    Returns dict with keys: gex_magnet_strike, CORE_R3, CORE_R2, R5_align,
+    R_charm_bullish, R_gex_regime_pos, R_VETO. Or None if data unavailable.
+    Cached 30s (volland charm refreshes ~120s, chain ~30s)."""
+    spot = _last_known_spot
+    if not spot or latest_df is None or not engine:
+        return None
+    now_ts = time.time()
+    if (now_ts - _gex_long_v3_cache["ts"] < 30
+            and abs(_gex_long_v3_cache["spot"] - spot) < 2
+            and _gex_long_v3_cache["features"] is not None):
+        return _gex_long_v3_cache["features"]
+    try:
+        # Per-strike GEX from latest options chain (in +/-50pt band).
+        # Signed: call_gex - put_gex (matches v3 backtest sign convention from
+        # volland gamma points — positive above spot = call wall, negative below
+        # = put support).
+        with _df_lock:
+            df = latest_df.copy()
+        strikes = pd.to_numeric(df["Strike"], errors="coerce").fillna(0.0).astype(float)
+        c_gamma = pd.to_numeric(df["C_Gamma"], errors="coerce").fillna(0.0).astype(float)
+        c_oi = pd.to_numeric(df["C_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+        p_gamma = pd.to_numeric(df["P_Gamma"], errors="coerce").fillna(0.0).astype(float)
+        p_oi = pd.to_numeric(df["P_OpenInterest"], errors="coerce").fillna(0.0).astype(float)
+        net_gex = (c_gamma * c_oi) - (p_gamma * p_oi)
+        mask = (strikes >= spot - 50) & (strikes <= spot + 50)
+        gex = [(float(s), float(v)) for s, v in zip(strikes[mask], net_gex[mask])]
+        if not gex:
+            return None
+
+        # Per-strike charm from latest volland_exposure_points snapshot (TODAY
+        # not required for charm — v3 backtest uses all-charm endpoint).
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT strike::float AS strike, value::float AS value
+                FROM volland_exposure_points
+                WHERE greek = 'charm' AND ticker = 'SPX'
+                  AND ts_utc = (SELECT MAX(ts_utc) FROM volland_exposure_points
+                                WHERE greek = 'charm')
+                  AND strike::float BETWEEN :lo AND :hi
+                ORDER BY strike
+            """), {"lo": float(spot) - 50, "hi": float(spot) + 50}).fetchall()
+        charm = [(float(r[0]), float(r[1])) for r in rows]
+        if not charm:
+            return None
+
+        gex_below = [(s, v) for s, v in gex if s < spot]
+        gex_above = [(s, v) for s, v in gex if s > spot]
+        charm_above = [(s, v) for s, v in charm if s > spot]
+        sg_below = max(gex_below, key=lambda x: abs(x[1])) if gex_below else (None, 0)
+        sg_above = max(gex_above, key=lambda x: abs(x[1])) if gex_above else (None, 0)
+        neg_charm_above = [(s, v) for s, v in charm_above if v < 0]
+        bullish_charm_magnet = min(neg_charm_above, key=lambda x: x[1])[0] if neg_charm_above else None
+
+        total_gex = sum(v for _, v in gex)
+        total_charm = sum(v for _, v in charm)
+        above_charm_pos_pct = (sum(1 for _, v in charm_above if v > 0) /
+                               max(len(charm_above), 1) * 100)
+
+        R5_align = (bullish_charm_magnet is not None and sg_above[0] is not None
+                    and sg_above[1] > 0 and abs(bullish_charm_magnet - sg_above[0]) <= 10)
+        features = {
+            'gex_magnet_strike': sg_above[0],
+            'CORE_R3': sg_above[1] > 0,
+            'CORE_R2': sg_below[1] < 0,
+            'R5_align': R5_align,
+            'R_charm_bullish': total_charm < 0,
+            'R_gex_regime_pos': total_gex >= 0,
+            'R_VETO': (above_charm_pos_pct >= 80) and (not R5_align),
+        }
+        _gex_long_v3_cache.update({"ts": now_ts, "spot": float(spot), "features": features})
+        return features
+    except Exception as e:
+        print(f"[gex-long-v3] features error: {e}", flush=True)
+        return None
+
+
 def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None, grade: str | None = None,
@@ -4243,8 +4337,21 @@ def _compute_setup_levels(r: dict):
         return None, round(stop_lvl, 2)
 
     if setup_name in ("GEX Long", "GEX Velocity"):
-        # Trailing stop — no fixed target; initial SL = 8 pts
-        # Hybrid trail: BE at +8, continuous trail activation=10, gap=5
+        # v1: trailing, initial SL = 8 pts (hybrid trail BE@8, act=10, gap=5).
+        # v3 (GEX_LONG_V3_ENABLED=true, GEX Long only): SL = 14, continuous trail
+        # act=15 gap=5. v3 also uses magnet target floor (entry+10) — handled
+        # below as fixed target_lvl for outcome tracking.
+        from app.setup_detector import is_gex_long_v3_enabled
+        if setup_name == "GEX Long" and is_gex_long_v3_enabled():
+            sl_pts = 14
+            magnet = r.get("v3_gex_magnet_strike")
+            target_floor = spot + 10 if is_long else spot - 10
+            if magnet is not None and is_long:
+                target_lvl = max(float(magnet), target_floor)
+            else:
+                target_lvl = target_floor
+            stop_lvl = spot - sl_pts if is_long else spot + sl_pts
+            return round(target_lvl, 2), round(stop_lvl, 2)
         stop_lvl = spot - 8 if is_long else spot + 8
         return None, round(stop_lvl, 2)
 
@@ -4474,9 +4581,13 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         pnl = None
 
         # Trail params — defined once, used by both ES-based and SPX-based paths
+        from app.setup_detector import is_gex_long_v3_enabled as _v3_on
+        _gex_long_trail = ({"mode": "continuous", "activation": 15, "gap": 5}
+                           if _v3_on()
+                           else {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5})
         _trail_params = {
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
-            "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
+            "GEX Long": _gex_long_trail,
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
@@ -4996,7 +5107,9 @@ def _run_setup_check():
 
     _ts_pre_detect = time.time()
     print(f"[timing-debug] pre-detect: dd_parse+volland_parse took {_ts_pre_detect - _ts_volland:.1f}s", flush=True)
-    from app.setup_detector import check_setups as _check_setups_fn
+    # GEX Long v3 features: compute only when env flag enabled (zero overhead when off).
+    from app.setup_detector import check_setups as _check_setups_fn, is_gex_long_v3_enabled
+    _v3_feats = _gex_long_v3_features() if is_gex_long_v3_enabled() else None
     result_wrappers = _check_setups_fn(
         spot, paradigm, lis, target, max_plus_gex, max_minus_gex, _setup_settings,
         lis_lower=lis_lower, lis_upper=lis_upper, aggregated_charm=aggregated_charm,
@@ -5010,6 +5123,7 @@ def _run_setup_check():
         vanna_all=_vanna_cache.get("all"),
         svb_correlation=svb_correlation,
         vanna_0dte_ratio=_vanna_0dte_ratio,
+        gex_long_v3_features=_v3_feats,
     )
     _ts_post_detect = time.time()
     print(f"[timing-debug] check_setups returned {len(result_wrappers)} results in {_ts_post_detect - _ts_pre_detect:.1f}s", flush=True)
@@ -11038,9 +11152,13 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         # DD Exhaustion: continuous trail (activation=20, gap=5, initial_sl=12)
         # GEX Long: hybrid trail (BE at +8, continuous trail activation=10 gap=5, initial_sl=8)
         # AG Short: hybrid trail (BE at +10, continuous trail activation=12 gap=5)
+        from app.setup_detector import is_gex_long_v3_enabled as _v3_on
+        _gex_long_tp = ({"mode": "continuous", "activation": 15, "gap": 5, "initial_sl": 14}
+                        if _v3_on()
+                        else {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8})
         _trail_params = {
             "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5, "initial_sl": 12},
-            "GEX Long": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
+            "GEX Long": _gex_long_tp,
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5, "initial_sl": 14},

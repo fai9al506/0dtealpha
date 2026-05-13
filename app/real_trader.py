@@ -304,9 +304,13 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     # Setup filter: only trade Skew Charm + AG Short + VPB-Bull (defense-in-depth, main.py also filters)
     # AG Short added 2026-04-08 — SHORT account only (AG hardcoded direction="short")
     # Vanna Pivot Bounce added 2026-04-22 — LONGS only, bullish regime gated by main.py
-    if setup_name not in ("Skew Charm", "AG Short", "Vanna Pivot Bounce", "VIX Divergence", "ES Absorption"):
-        print(f"[real-trader] skip {setup_name}: only SC/AG/VPB/VIXDiv/ESAbs allowed on real accounts", flush=True)
-        _alert(f"⏭ SKIPPED {setup_name} {direction}: setup not in real-trader whitelist (SC/AG/VPB/VIXDiv/ESAbs only)")
+    # GEX Long v3 (2026-05-13): added behind GEX_LONG_V3_ENABLED env flag only.
+    _allowed = {"Skew Charm", "AG Short", "Vanna Pivot Bounce", "VIX Divergence", "ES Absorption"}
+    if os.getenv("GEX_LONG_V3_ENABLED", "false").lower() == "true":
+        _allowed.add("GEX Long")
+    if setup_name not in _allowed:
+        print(f"[real-trader] skip {setup_name}: not in real-trader whitelist", flush=True)
+        _alert(f"⏭ SKIPPED {setup_name} {direction}: setup not in real-trader whitelist")
         return
 
     # Check master switch for this direction

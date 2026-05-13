@@ -1,0 +1,185 @@
+{
+  "_meta": {
+    "description": "Day-level Discord context extracted from curated extracts. NOT message-level matching (raw timestamped chat unavailable for full period). Each date entry: Apollo AM/PM paradigm, key levels, regime tags (vix posture, vanna), explicit named patterns flagged by pros.",
+    "sources": [
+      "references/volland/Volland_Discord_DC_May5to12.md (daily AM/PM table)",
+      "exports/discord_sync_apr01_08.html (daily snapshot + Apollo alerts table)",
+      ".claude-memory/research_discord_ideas_mar23.md (Mar 23 one-shot)",
+      ".claude-memory/project_discord_analysis.md (Mar 27-31 summary)",
+      "tmp_discord_dump.txt + tmp_beginners_dump.txt (raw KSA-timestamped chat Mar 18-21)"
+    ],
+    "tz_note": "Discord raw timestamps are KSA (UTC+3). KSA - 7h = ET.",
+    "build_date": "2026-05-13"
+  },
+  "dates": {
+    "2026-03-23": {
+      "apollo_am_paradigm": null,
+      "apollo_pm_paradigm": null,
+      "key_levels": [],
+      "regime_tags": ["geopolitical_overnight_gap", "trump_iran_headline"],
+      "named_patterns": ["volatility_spike_pause_candidate", "gap_day"],
+      "pro_bias": "bearish_gap_recovery",
+      "notes": "200pt futures spike pre-market. All 4 morning losses (09:45-10:38 ET) charm-limit entries. Volatility-spike-pause idea from this date."
+    },
+    "2026-03-27": {
+      "apollo_am_paradigm": null,
+      "apollo_pm_paradigm": null,
+      "key_levels": [],
+      "regime_tags": ["selloff"],
+      "named_patterns": [],
+      "pro_bias": "bearish",
+      "notes": "Discord called selloff correctly. V12-fix produced -19.6 across 3 trades."
+    },
+    "2026-03-30": {
+      "apollo_am_paradigm": null,
+      "apollo_pm_paradigm": null,
+      "key_levels": [],
+      "regime_tags": ["selloff"],
+      "named_patterns": [],
+      "pro_bias": "bearish_mixed",
+      "notes": "Mixed/bearish Discord bias. V12-fix +66.5 across 3 trades."
+    },
+    "2026-03-31": {
+      "apollo_am_paradigm": null,
+      "apollo_pm_paradigm": null,
+      "key_levels": [6510, 6525, 6530],
+      "regime_tags": ["rally"],
+      "named_patterns": ["apollo_fade_call", "darkmatter_target"],
+      "pro_bias": "bullish",
+      "notes": "Apollo called 6510 fade. DM called 6525 ES target. jk23 called 6530 close (correct)."
+    },
+    "2026-04-01": {
+      "apollo_am_paradigm": "GEX",
+      "apollo_pm_paradigm": "GEX",
+      "key_levels": [6525, 6530, 6570, 6600],
+      "regime_tags": ["overvixed_choppy"],
+      "named_patterns": ["gex_pure", "apollo_weekly_top_call_6650"],
+      "pro_bias": "bullish_choppy",
+      "notes": "Apollo AM: GEX pure, target 6600, LIS 6525. PM: support 6570 -> 6530. Apollo called 6650 top of the week (WRONG)."
+    },
+    "2026-04-02": {
+      "apollo_am_paradigm": "GEX",
+      "apollo_pm_paradigm": "GEX",
+      "key_levels": [6500, 6545, 6545.5, 6500],
+      "regime_tags": ["overvixed", "large_neg_dd"],
+      "named_patterns": ["dd_concentration_magnet"],
+      "pro_bias": "bearish_to_bullish",
+      "notes": "Apollo AM: top, large -DD, no support to 6500, overvixed. PM: DD turned positive, support 6545. Citrini supply-chain memo (copper +30%, freight 2x)."
+    },
+    "2026-04-03": {
+      "apollo_am_paradigm": null,
+      "apollo_pm_paradigm": null,
+      "key_levels": [],
+      "regime_tags": ["holiday_closed"],
+      "named_patterns": [],
+      "pro_bias": null,
+      "notes": "Good Friday - markets closed."
+    },
+    "2026-04-06": {
+      "apollo_am_paradigm": "GEX",
+      "apollo_pm_paradigm": "GEX",
+      "key_levels": [6550, 6620, 6640],
+      "regime_tags": [],
+      "named_patterns": ["yahya_dealer_setup_long"],
+      "pro_bias": "bullish",
+      "notes": "Apollo: GEX, LIS 6550, target 6640. PM: target 6620. Yahya RIGHT - dealer-setup conviction longs."
+    },
+    "2026-04-07": {
+      "apollo_am_paradigm": "GEX",
+      "apollo_pm_paradigm": "GEX",
+      "key_levels": [6550, 6605, 6725, 6740, 6800, 6825],
+      "regime_tags": ["ceasefire_pop"],
+      "named_patterns": ["darkmatter_vanna_walk", "vanna_tower_sequential"],
+      "pro_bias": "bullish",
+      "notes": "Apollo AM: GEX, target 6605 NAILED. PM ceasefire pop. DM walked 6725 -> 6740 -> 6800 -> 6825 vanna towers, all hit."
+    },
+    "2026-04-08": {
+      "apollo_am_paradigm": "GEX",
+      "apollo_pm_paradigm": "GEX",
+      "key_levels": [6720, 6770, 6790, 6810],
+      "regime_tags": ["undervixing_extreme", "gap_up_3pct"],
+      "named_patterns": ["fade_rally_undervix_exhaustion"],
+      "pro_bias": "bearish_fade_rally",
+      "notes": "Apollo: GEX, extreme undervixing, 6770 pivot, ceiling 6810. PM 6790 ceiling, 6720 deeper support. Apollo: 'fade rally - undervix exhaustion.' Chopped."
+    },
+    "2026-05-04": {
+      "apollo_am_paradigm": "AG-MESSY",
+      "apollo_pm_paradigm": "BofA",
+      "key_levels": [7200, 7220, 7255, 7150, 7180, 7230],
+      "regime_tags": ["vol_elevated", "vanna_supportive_pm"],
+      "named_patterns": [],
+      "pro_bias": "neutral",
+      "notes": "AM AG messy. PM shifted to BofA. Vanna supportive PM."
+    },
+    "2026-05-05": {
+      "apollo_am_paradigm": "BofA",
+      "apollo_pm_paradigm": "BofA",
+      "key_levels": [7240, 7250, 7270, 7290, 7300],
+      "regime_tags": ["undervixing", "watch_vix"],
+      "named_patterns": [],
+      "pro_bias": "neutral_bullish",
+      "notes": "BofA both AM/PM. Support 7240/7250, weak resistance 7270. PM still 7240/7250 / 7290-7300 higher order."
+    },
+    "2026-05-06": {
+      "apollo_am_paradigm": "AG",
+      "apollo_pm_paradigm": "BofA",
+      "key_levels": [7255, 7300, 7355],
+      "regime_tags": ["overvixing", "negative_vanna_both_weeks"],
+      "named_patterns": ["wizard_vix_warning"],
+      "pro_bias": "bearish",
+      "notes": "AM AG could shift BofA. PM shifted BofA. 7355 upper resistance multi-test. Overvixing more PM. Negative vanna across tenors. Wizard: 'VIX flashing warning signs.'"
+    },
+    "2026-05-07": {
+      "apollo_am_paradigm": "DD-positive",
+      "apollo_pm_paradigm": "BofA",
+      "key_levels": [7310, 7320, 7350, 7360, 7380, 7385],
+      "regime_tags": ["undervixing", "negative_vanna_tenors", "dd_neutral_pm"],
+      "named_patterns": [],
+      "pro_bias": "neutral",
+      "notes": "AM DD positive, support 7360, resist 7380/7385. PM BofA, 7350 upper / 7320-7310 vanna support."
+    },
+    "2026-05-08": {
+      "apollo_am_paradigm": "GEX",
+      "apollo_pm_paradigm": "GEX",
+      "key_levels": [7370, 7380, 7400, 7420, 7450],
+      "regime_tags": ["slightly_overvixing", "dd_supportive", "breadth_divergence_warning"],
+      "named_patterns": ["never_under", "jpm_collar_short", "darkmatter_breadth"],
+      "pro_bias": "bullish_caution",
+      "notes": "GEX both AM/PM. Support 7380/7370 AM, 7400 big pivot PM. JPM Q2 collar 500pts ITM on short calls. DM breadth divergence warning."
+    },
+    "2026-05-11": {
+      "apollo_am_paradigm": "GEX",
+      "apollo_pm_paradigm": "GEX",
+      "key_levels": [7380, 7390, 7400, 7416, 7420, 7425, 7430, 7450],
+      "regime_tags": ["overvixing", "flow_divergence_warning"],
+      "named_patterns": ["backside_short", "apollo_iceberg_3k_seller_7430", "108_orders_7300"],
+      "pro_bias": "bullish_target_hit",
+      "notes": "GEX AM. PM GEX target hit. 7425 pivot, 7450 next. Apollo: 'over 7416 you are back in normal GEX'. LordHelmet: 'backside short scalp territory'. 3k limit seller at 7430 ES. Apollo flow divergence."
+    },
+    "2026-05-12": {
+      "apollo_am_paradigm": null,
+      "apollo_pm_paradigm": null,
+      "key_levels": [],
+      "regime_tags": [],
+      "named_patterns": [],
+      "pro_bias": null,
+      "notes": "Last day of May 5-12 sync window. No specific entry in daily table."
+    }
+  },
+  "trader_named_patterns_definitions": {
+    "apollo_iceberg": "Apollo flags large hidden order at specific level (e.g. 3k seller at 7430 ES)",
+    "backside_short": "Apollo def: short against past highs after retracement; failed retest of recent high",
+    "darkmatter_vanna_walk": "DM walks sequential vanna tower targets in real-time",
+    "darkmatter_breadth": "DM flags breadth divergence warning",
+    "jpm_collar_short": "JPM Q2 collar deep ITM on short calls, supply pressure on rallies",
+    "wizard_vix_warning": "Wizard explicit VIX warning sign call",
+    "never_under": "Bull regime where key levels hold first test then break higher (May 8-11)",
+    "fade_rally_undervix_exhaustion": "Apollo: fade rally on extreme undervix exhaustion (Apr 8 type)",
+    "dd_concentration_magnet": "Dealers hedging concentrated at specific strike, sticky magnet",
+    "yahya_dealer_setup_long": "Yahya: dealer-setup conviction long bias",
+    "vanna_tower_sequential": "DM stacked vanna towers spaced 10-25 pts (Apr 7 ceasefire pop)",
+    "apollo_fade_call": "Apollo explicit fade-target call at specific level",
+    "darkmatter_target": "DM specific ES/SPX target call",
+    "dealer_oclock": "Post-2pm dealer hedging window where charm moves accelerate"
+  }
+}

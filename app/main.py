@@ -65,18 +65,22 @@ _pipeline_status = {
     "vol_status": "ok",
     "sierra_es_status": "ok",
     "sierra_vx_status": "ok",
+    "es_quote_status": "ok",  # S114: ES quote stream freshness (powers real_trader dispatch)
     "ts_last_alert": 0,
     "vol_last_alert": 0,
     "sierra_es_last_alert": 0,
     "sierra_vx_last_alert": 0,
+    "es_quote_last_alert": 0,
     "ts_error_since": 0,
     "vol_error_since": 0,
     "sierra_es_error_since": 0,
     "sierra_vx_error_since": 0,
+    "es_quote_error_since": 0,
     "ts_alert_sent": False,
     "vol_alert_sent": False,
     "sierra_es_alert_sent": False,
     "sierra_vx_alert_sent": False,
+    "es_quote_alert_sent": False,
     "reminder_minutes": 15,
     "alert_threshold_minutes": 2,  # suppress alerts for outages < 2 min (silent recovery)
 }
@@ -5352,7 +5356,17 @@ def _run_setup_check():
                                     charm_limit_price=None,
                                 )
                             elif not es_px:
+                                # S114: ES quote stream stale AND REST fallback returned None.
+                                # Was previously a silent skip — now logs skip_reason and
+                                # fires a rate-limited Telegram so the leak is visible.
                                 print(f"[real-trader] SKIPPED {setup_name}: no ES price", flush=True)
+                                try:
+                                    real_trader.log_no_es_px_skip(
+                                        _current_setup_log.get(setup_name),
+                                        setup_name, r["direction"],
+                                    )
+                                except Exception as _e:
+                                    print(f"[real-trader] no-es-px audit log failed: {_e}", flush=True)
                         except Exception as e:
                             print(f"[real-trader] place error: {e}", flush=True)
             elif reason == "grade_upgrade":
@@ -6043,7 +6057,18 @@ def _run_absorption_detection(bars: list) -> dict | None:
                     except Exception as e:
                         print(f"[real-trader] ES Absorption place error: {e}", flush=True)
                 elif not es_px:
+                    # S114: auto-trader path skipped too — but the real-money leak
+                    # is the real_trader call that never fires. Mark skip_reason on
+                    # setup_log + fire rate-limited Telegram so the audit is loud.
                     print(f"[auto-trader] SKIPPED ES Absorption: no ES price available", flush=True)
+                    try:
+                        from app import real_trader as _rt_audit
+                        _rt_audit.log_no_es_px_skip(
+                            _current_setup_log.get("ES Absorption"),
+                            "ES Absorption", result["direction"],
+                        )
+                    except Exception as _e:
+                        print(f"[real-trader] no-es-px audit log failed (ES Abs): {_e}", flush=True)
             except Exception as e:
                 print(f"[auto-trader] absorption place error: {e}", flush=True)
             # Options trader: buy SPXW 0DTE on ES Absorption (behind Greek filter)
@@ -12344,6 +12369,11 @@ def api_data_freshness():
         "volland": {"last_update": None, "age_seconds": None, "status": "closed"},
         "sierra_es": {"last_update": None, "age_seconds": None, "status": "closed"},
         "sierra_vx": {"last_update": None, "age_seconds": None, "status": "closed"},
+        # S114: ES quote stream powers real_trader entry-price lookup. If it goes
+        # stale and the REST fallback also returns None, every real-trader
+        # dispatch is silently skipped (S113 audit found 10 such victims). Track
+        # freshness here so check_pipeline_health() pages on a 2+ min outage.
+        "es_quote": {"last_update": None, "age_seconds": None, "status": "closed"},
     }
 
     # TS API: use in-memory last_run_status (pulled every 30s, not DB which saves every 5min)
@@ -12482,6 +12512,46 @@ def api_data_freshness():
             result["sierra_es"]["status"] = "stale"
             result["sierra_es"]["suppressed_by_vx"] = True
 
+    # ES quote stream freshness (S114): read in-memory _last_trade_time written
+    # by the WebSocket trade handler. Format is now_et().isoformat() = tz-aware
+    # ET ISO string. Thresholds: <120s ok, <300s stale, >=300s error.
+    try:
+        with _es_quote_lock:
+            last_trade_ts = _es_quote.get("_last_trade_time")
+            stream_ok = _es_quote.get("stream_ok", False)
+        if last_trade_ts:
+            try:
+                q_time = datetime.fromisoformat(last_trade_ts)
+                if q_time.tzinfo is not None:
+                    age = (datetime.now(q_time.tzinfo) - q_time).total_seconds()
+                else:
+                    age = (now_et.replace(tzinfo=None) - q_time).total_seconds()
+                if not is_open:
+                    q_status = "closed"
+                elif age < 120:
+                    q_status = "ok"
+                elif age < 300:
+                    q_status = "stale"
+                else:
+                    q_status = "error"
+                result["es_quote"] = {
+                    "last_update": q_time.isoformat(),
+                    "age_seconds": int(age),
+                    "status": q_status,
+                    "stream_ok": stream_ok,
+                }
+            except Exception as e:
+                print(f"[data_freshness] es_quote parse error: {e}", flush=True)
+        elif is_open:
+            # No trades seen yet during market hours — treat as error so the
+            # 2-min threshold gate can decide whether to page.
+            result["es_quote"] = {
+                "last_update": None, "age_seconds": None,
+                "status": "error", "stream_ok": stream_ok,
+            }
+    except Exception as e:
+        print(f"[data_freshness] es_quote error: {e}", flush=True)
+
     return result
 
 def check_pipeline_health():
@@ -12502,6 +12572,9 @@ def check_pipeline_health():
         ("volland", "vol", "Volland"),
         ("sierra_es", "sierra_es", "Sierra ES"),
         ("sierra_vx", "sierra_vx", "Sierra VX"),
+        # S114: ES quote stream — when this goes stale, real_trader silently
+        # skips placements because _get_es_price_fallback() also fails.
+        ("es_quote", "es_quote", "ES quote stream"),
     ]:
         current = freshness[source]["status"]
         prev = _pipeline_status[f"{key_prefix}_status"]

@@ -283,6 +283,71 @@ def _count_active_for_direction(is_long: bool) -> int:
     return count
 
 
+# ====== SKIP-REASON TELEMETRY (S114) ======
+# When real_trader rejects a signal (cap, dedup, margin, whitelist, etc.) we
+# record the reason on setup_log so post-hoc audits can attribute every V14-pass
+# signal that did not result in a real trade. Wrapped in try/except so a missing
+# column (pre-ALTER) or DB hiccup never breaks the trade flow.
+
+# Rate-limit table for skip-reason Telegram alerts (S114). Most skip reasons
+# already alert via _alert() inline; we only need a *dedicated* rate-limited
+# Telegram for the "no ES price" class since that one previously had NO alert
+# at all and was the silent leak found in the S113 audit.
+_skip_alert_last: dict[str, float] = {}
+_SKIP_ALERT_COOLDOWN_S = 300  # 5 min per reason key
+
+
+def _log_skip_reason(setup_log_id, reason: str):
+    """Best-effort UPDATE setup_log.real_trade_skip_reason. Never raises.
+
+    Defensive: the column may not yet exist (pre-ALTER) — swallow any error.
+    """
+    if not setup_log_id or not _engine:
+        return
+    try:
+        from sqlalchemy import text
+        with _engine.begin() as conn:
+            conn.execute(
+                text("UPDATE setup_log SET real_trade_skip_reason = :r WHERE id = :id"),
+                {"r": reason, "id": setup_log_id},
+            )
+    except Exception as e:
+        # Column missing, DB blip, or shutdown — log but never propagate.
+        print(f"[real-trader] skip-reason log failed (non-fatal): {e}", flush=True)
+
+
+def _alert_no_es_px(setup_name: str, direction: str):
+    """Rate-limited Telegram for the 'ES quote stream returned None' skip.
+
+    This is the S114 case: previously silent. Cooldown 5 min per setup_name+dir
+    so a stream outage doesn't spam dozens of alerts during the burst window.
+    """
+    key = f"no_es_px:{setup_name}:{direction.lower()}"
+    now = time.time()
+    last = _skip_alert_last.get(key, 0)
+    if now - last < _SKIP_ALERT_COOLDOWN_S:
+        return
+    _skip_alert_last[key] = now
+    _alert(f"⚠️ SKIPPED {setup_name} {direction}: ES quote unavailable (stream stale)\n"
+           f"Account dispatch aborted — no entry price.")
+
+
+def log_no_es_px_skip(setup_log_id, setup_name: str, direction: str):
+    """Public entry point for upstream callers (main.py) that detect a missing
+    ES price BEFORE invoking place_trade(). Writes skip_reason + fires alert.
+
+    Defensive: try/except so any failure cannot impact the surrounding code.
+    """
+    try:
+        _log_skip_reason(setup_log_id, "no_es_px")
+    except Exception as e:
+        print(f"[real-trader] log_no_es_px_skip db error: {e}", flush=True)
+    try:
+        _alert_no_es_px(setup_name, direction)
+    except Exception as e:
+        print(f"[real-trader] log_no_es_px_skip alert error: {e}", flush=True)
+
+
 # ====== MAIN ENTRY POINT ======
 
 def place_trade(setup_log_id: int, setup_name: str, direction: str,
@@ -310,6 +375,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         _allowed.add("GEX Long")
     if setup_name not in _allowed:
         print(f"[real-trader] skip {setup_name}: not in real-trader whitelist", flush=True)
+        _log_skip_reason(setup_log_id, "whitelist_reject")
         _alert(f"⏭ SKIPPED {setup_name} {direction}: setup not in real-trader whitelist")
         return
 
@@ -318,14 +384,17 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     if not account_id:
         dir_str = "longs" if is_long else "shorts"
         print(f"[real-trader] skip {setup_name}: {dir_str} master switch OFF", flush=True)
+        _log_skip_reason(setup_log_id, f"{dir_str}_off")
         _alert(f"⏭ SKIPPED {setup_name} {direction}: {dir_str} master switch OFF")
         return
 
     # Validate account-direction binding (CRITICAL SAFETY) — already alerts internally
     if not _validate_account_direction(account_id, is_long):
+        _log_skip_reason(setup_log_id, "account_direction_mismatch")
         return
 
     if not setup_log_id:
+        # NOTE: can't log skip_reason without an id, but the alert below still fires.
         print(f"[real-trader] skip {setup_name}: no setup_log_id", flush=True)
         _alert(f"⏭ SKIPPED {setup_name} {direction}: missing setup_log_id (race or detector bug)")
         return
@@ -334,6 +403,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     with _lock:
         if setup_log_id in _active_orders:
             print(f"[real-trader] skip {setup_name} id={setup_log_id}: already active", flush=True)
+            _log_skip_reason(setup_log_id, "already_active")
             _alert(f"⏭ SKIPPED {setup_name} {direction}: id={setup_log_id} already active in real-trader")
             return
         # DEDUP: block if same setup_name+direction placed within last 90s (deploy overlap)
@@ -360,6 +430,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                     except (ValueError, TypeError):
                         pass
         if _dedup_hit:
+            _log_skip_reason(setup_log_id, "dedup_window")
             _alert(f"⏭ SKIPPED {setup_name} {direction}: dedup 90s window "
                    f"(prior id={_dedup_meta[0]}, {_dedup_meta[1]:.0f}s ago)")
             return
@@ -377,6 +448,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         print(f"[real-trader] skip {setup_name}: {dir_str} cap reached "
               f"({active_count}/{cap}) blocking={blocking}", flush=True)
         _block_str = ", ".join(f"#{b[0]} {b[1]} ({b[3]})" for b in blocking) or "n/a"
+        _log_skip_reason(setup_log_id, f"cap_{dir_str}_full")
         _alert(f"⏭ SKIPPED {setup_name} {direction}: {dir_str} cap reached ({active_count}/{cap})\n"
                f"Blocking: {_block_str}")
         return
@@ -388,6 +460,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         if bp < margin_needed:
             print(f"[real-trader] skip {setup_name}: insufficient buying power on {account_id} "
                   f"(${bp:,.0f} < ${margin_needed:,.0f})", flush=True)
+            _log_skip_reason(setup_log_id, "margin_insufficient")
             _alert(f"⚠️ SKIPPED {setup_name}: insufficient margin\n"
                    f"Account: {account_id} | BP: ${bp:,.0f} < ${margin_needed:,.0f}")
             return
@@ -396,6 +469,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     daily_loss = _get_daily_realized_loss()
     if daily_loss >= DAILY_LOSS_LIMIT:
         print(f"[real-trader] CIRCUIT BREAKER: daily loss ${daily_loss:,.0f} >= limit ${DAILY_LOSS_LIMIT:,.0f}", flush=True)
+        _log_skip_reason(setup_log_id, "daily_loss_limit")
         _alert(f"🚨 CIRCUIT BREAKER HIT\n"
                f"Daily loss: ${daily_loss:,.0f} >= ${DAILY_LOSS_LIMIT:,.0f}\n"
                f"No more trades today.")

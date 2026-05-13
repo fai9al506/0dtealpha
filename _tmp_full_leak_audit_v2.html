@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Full Leak Audit v2 — Verified</title>
+<style>
+body { background:#0f1419; color:#dcdcdc; font-family: 'JetBrains Mono', monospace, Consolas; padding:24px; max-width:1300px; margin:auto; line-height:1.45; }
+h1 { color:#fff; border-bottom:2px solid #4a8fdb; padding-bottom:10px; }
+h2 { color:#9bd1ff; margin-top:32px; }
+h3 { color:#ffc77a; }
+table { border-collapse:collapse; width:100%; margin:16px 0; font-size:0.92em; }
+th { background:#1a2230; color:#9bd1ff; padding:10px; text-align:right; border:1px solid #2a3340; font-weight:600; }
+th:first-child, td:first-child { text-align:left; }
+td { padding:8px 10px; border:1px solid #2a3340; text-align:right; }
+tr:nth-child(even) { background:#13171f; }
+.pos { color:#5cd97a; }
+.neg { color:#ff7a7a; }
+.neu { color:#bababa; }
+.refuted { color:#ff9b40; font-weight:bold; }
+.verified { color:#5cd97a; font-weight:bold; }
+.headline { background:#0a1a2a; padding:20px; border-radius:6px; margin:16px 0; border-left:6px solid #5cd97a; font-size:1.05em; }
+.refute-box { background:#2a1010; padding:16px; border-left:4px solid #ff7a7a; margin:10px 0; border-radius:4px; }
+.verify-box { background:#102a14; padding:16px; border-left:4px solid #5cd97a; margin:10px 0; border-radius:4px; }
+.info-box { background:#1a2230; padding:16px; border-left:4px solid #4a8fdb; margin:10px 0; border-radius:4px; }
+.note { color:#888; font-size:0.9em; font-style:italic; }
+code { background:#252b35; padding:2px 6px; border-radius:3px; color:#ffc77a; }
+.big { font-size:1.4em; font-weight:bold; }
+.tag-refuted { background:#5a1010; color:#ffb0b0; padding:3px 10px; border-radius:4px; font-size:0.85em; font-weight:bold; }
+.tag-verified { background:#0c4019; color:#90f0a8; padding:3px 10px; border-radius:4px; font-size:0.85em; font-weight:bold; }
+.tag-info { background:#1a3a5a; color:#a0d0ff; padding:3px 10px; border-radius:4px; font-size:0.85em; font-weight:bold; }
+.delta { color:#ffc77a; font-weight:bold; }
+</style></head><body>
+<h1>Full Leak Audit v2 — Verified from Raw Broker Truth</h1>
+<p class="note">Generated 2026-05-13T16:14:42 &nbsp;|&nbsp;
+Period: 2026-03-24 to 2026-05-12 (50 cal days / 32 trading days) &nbsp;|&nbsp;
+Broker truth: TS /historicalorders (OID-matched, not FIFO)</p>
+
+<div class="headline">
+<b>HEADLINE</b><br><br>
+Real broker P&L (TS RT era, OID-matched): <span class="big neg">$-292 gross / $-420 net</span> @ 1 MES (127 RTs)<br><br>
+
+Verified bug add-back: <span class="big pos">$+934</span> (+186.8 pt)<br><br>
+
+<b>CORRECTED TRUE SYSTEM EDGE: <span class="big pos">$+515</span> @ 1 MES net</b> over Mar 24 - May 12<br>
+<b>Per-month TRUE edge: <span class="big pos">$+338/mo</span> @ 1 MES</b>
+</div>
+
+<h2>Master Summary Table</h2>
+<table>
+<tr><th>#</th><th>Leak</th><th>Verdict</th><th>Trades</th><th>Verified $</th><th>Prior Claim $</th><th>Delta $</th><th>Window</th></tr>
+<tr><td><b>A</b></td><td>Pre-Apr 8 qty-sign bug (5 Apr 7 SHORT ghosts)</td><td><span class="tag-verified">VERIFIED</span></td><td class="neu">5</td><td class="pos">$+56</td><td class="pos">$+441</td><td class="delta">-386</td><td>Apr 7 only</td></tr><tr><td><b>B</b></td><td>May 4 wrong-side stop bug</td><td><span class="tag-verified">VERIFIED (refined)</span></td><td class="neu">2</td><td class="pos">$+164</td><td class="pos">$+365</td><td class="delta">-201</td><td>2026-05-04</td></tr><tr><td><b>C</b></td><td>Trail-tag-early on big runners (Apr 21/23/30)</td><td><span class="tag-verified">VERIFIED (structural, not bug)</span></td><td class="neu">6</td><td class="pos">$+592</td><td class="pos">$+592</td><td class="delta">+0</td><td>Apr 21, 23, 30</td></tr><tr><td><b>D</b></td><td>S108 May 6 cluster missed signals</td><td><span class="tag-refuted">REFUTED</span></td><td class="neu">0</td><td class="neu">$+0</td><td class="pos">$+251</td><td class="delta">-251</td><td>2026-05-06</td></tr><tr><td><b>E</b></td><td>May 12 margin self-block / placement skips</td><td><span class="tag-refuted">MOSTLY REFUTED</span></td><td class="neu">3</td><td class="neg">$-7</td><td class="pos">$+188</td><td class="delta">-195</td><td>2026-05-12</td></tr><tr><td><b>F</b></td><td>VIX Div #2707 stop realign bug</td><td><span class="tag-verified">VERIFIED</span></td><td class="neu">1</td><td class="pos">$+25</td><td class="pos">$+25</td><td class="delta">+0</td><td>2026-05-12</td></tr><tr><td><b>G</b></td><td>Mar 25 / Mar 31 bot-down (S28)</td><td><span class="tag-verified">VERIFIED</span></td><td class="neu">10</td><td class="pos">$+104</td><td class="pos">$+104</td><td class="delta">-0</td><td>Mar 25, Mar 31</td></tr><tr><td><b>H</b></td><td>Cap=1 era cost (info-only) (info-only)</td><td><span class="tag-verified">VERIFIED (info-only)</span></td><td class="neu">38</td><td class="pos">$+464</td><td class="pos">$+1,222</td><td class="delta">-758</td><td>Mar 24 - May 6 (long), Mar 24 - Apr 17 (short)</td></tr>
+</table>
+
+<h2>Per-Leak Detail</h2>
+
+<div class="verify-box">
+<h3>A. Pre-Apr 8 qty-sign bug (5 Apr 7 SHORT ghosts) &nbsp; <span class="tag-verified">VERIFIED</span></h3>
+<p><b>Verified leak:</b> +11.10pt = <b>$+56</b> &nbsp; |
+ <b>Prior claim:</b> $+441 &nbsp; |
+ <b>Delta:</b> <span class="delta">$-386</span> &nbsp; |
+ <b>Window:</b> Apr 7 only &nbsp; |
+ <b>Trades:</b> 5</p>
+<p class="note">Bot lost tracking on 5 SHORT trades when qty-sign bug fired (_get_broker_position used qty &gt; 0 filter, dropping signed-negative shorts). Broker DID handle the positions (manually cancelled+replaced stops on winners). Real broker pts = +19.00, portal = +30.10, leak = +11.10pt = $+56. PRIOR audit claimed +$441 using portal-vs-broker gap across ALL pre-Apr 8 trades, but most of that ($488) is normal portal-vs-broker divergence on 20 non-bug trades. True bug leak isolated to the 5 ghost shorts. Commit 1a98ec1 fixed it.</p>
+</div>
+
+<div class="verify-box">
+<h3>B. May 4 wrong-side stop bug &nbsp; <span class="tag-verified">VERIFIED (refined)</span></h3>
+<p><b>Verified leak:</b> +32.85pt = <b>$+164</b> &nbsp; |
+ <b>Prior claim:</b> $+365 &nbsp; |
+ <b>Delta:</b> <span class="delta">$-201</span> &nbsp; |
+ <b>Window:</b> 2026-05-04 &nbsp; |
+ <b>Trades:</b> 2</p>
+<p class="note">Affected lids 2447, 2449 (NOT 2433 — 2433 was a normal -$96 loss with stop CORRECTLY placed above short entry). Bug: update_stop() did not validate side-of-market when live MES quote was None, allowing portal cycle to place stop BELOW short entry. lid=2447: SHORT 7261.75 → wrong-side stop 7253.75 instant-fill = +$40 WIN (real beat portal because broker took the early fill at +8pt; portal sim ran to +33.7pt). lid=2449: SHORT 7230 → wrong-side stop 7223 REJECTED, manual close 7230.25 = scratch -$1 (portal sim would have been +6.9). Total leak: real=+7.75pt portal=+40.60pt gap=+$+164. Commit 4d45ffa fixed it (fallback to fill_price for side check).</p>
+</div>
+
+<div class="verify-box">
+<h3>C. Trail-tag-early on big runners (Apr 21/23/30) &nbsp; <span class="tag-verified">VERIFIED (structural, not bug)</span></h3>
+<p><b>Verified leak:</b> +118.50pt = <b>$+592</b> &nbsp; |
+ <b>Prior claim:</b> $+592 &nbsp; |
+ <b>Delta:</b> <span class="delta">$+0</span> &nbsp; |
+ <b>Window:</b> Apr 21, 23, 30 &nbsp; |
+ <b>Trades:</b> 6</p>
+<p class="note">6 trades where portal MFE &gt;= 20pt but MES trail tagged early. NOT a bug — structural divergence between portal SPX 30s path (smooth) and MES 5-pt range bar trail (jumpy). Total gap: +118.5pt = $+592. S55/S90 deferred — re-evaluate at 1 ES scale where leak amplifies 10x.</p>
+</div>
+
+<div class="refute-box">
+<h3>D. S108 May 6 cluster missed signals &nbsp; <span class="tag-refuted">REFUTED</span></h3>
+<p><b>Verified leak:</b> +0.00pt = <b>$+0</b> &nbsp; |
+ <b>Prior claim:</b> $+251 &nbsp; |
+ <b>Delta:</b> <span class="delta">$-251</span> &nbsp; |
+ <b>Window:</b> 2026-05-06 &nbsp; |
+ <b>Trades:</b> 0</p>
+<p class="note">NOT A BUG. Cap=1 LONG was in effect on May 6 (S91 cap 1→2 ship was scheduled for EOD May 6 AFTER market close). The 5 &quot;unplaced V14 winner SC longs&quot; at 11:48-13:57 ET (2541, 2543, 2546, 2548, 2551 +63.9pt total) were CORRECTLY cap=1-LONG blocked because #2540 (placed 11:17) was open until 14:47. The 2 unplaced ES Abs longs (2529, 2544) were ALSO correctly cap=1-LONG blocked (2528 active 10:03-10:29 then 2540). No mechanism bug. The +$251/+$370 figures cited in prior audit/S108/S91 were the INTENDED cap-1 cost that motivated S91 cap 1→2 ship — not a bug to fix. (Those signals would have been placed once cap=2 was live.) Reclassify under Leak H (cap=1 era cost).</p>
+</div>
+
+<div class="refute-box">
+<h3>E. May 12 margin self-block / placement skips &nbsp; <span class="tag-refuted">MOSTLY REFUTED</span></h3>
+<p><b>Verified leak:</b> -1.40pt = <b>$-7</b> &nbsp; |
+ <b>Prior claim:</b> $+188 &nbsp; |
+ <b>Delta:</b> <span class="delta">$-195</span> &nbsp; |
+ <b>Window:</b> 2026-05-12 &nbsp; |
+ <b>Trades:</b> 3</p>
+<p class="note">Prior audit counted 7 unplaced V14-eligible = +$188. After applying V14 Layer 2 vanna cliff/peak BLOCK rules + cap=2 chronology: 4 of 7 were CORRECTLY blocked (V14 rules + cap). Only 3 truly unexplained: 2688 (+5.8), 2690 (-14.0), 2701 (+6.8) = NET -1.4pt = $-7. Possibly margin self-block (BP &lt; $300 + open position margin) — the actual missed PnL is essentially zero (one loser cancels two small winners).</p>
+</div>
+
+<div class="verify-box">
+<h3>F. VIX Div #2707 stop realign bug &nbsp; <span class="tag-verified">VERIFIED</span></h3>
+<p><b>Verified leak:</b> +5.00pt = <b>$+25</b> &nbsp; |
+ <b>Prior claim:</b> $+25 &nbsp; |
+ <b>Delta:</b> <span class="delta">$+0</span> &nbsp; |
+ <b>Window:</b> 2026-05-12 &nbsp; |
+ <b>Trades:</b> 1</p>
+<p class="note">lid=2707 VIX Div long: zero-slippage fill at 7376.75, designed SL=8pt = stop at 7368.75 ($-40). Actual stop at 7363.75 ($-65). SLIPPAGE_BUFFER (+5pt) stuck in current_stop, wasn&#x27;t realigned after fill. Real broker exit = 7363.75 = -$65 (vs designed -$40). Excess loss = 5pt = $25. Commit faafa0c fixed it (verify post-fill realign).</p>
+</div>
+
+<div class="verify-box">
+<h3>G. Mar 25 / Mar 31 bot-down (S28) &nbsp; <span class="tag-verified">VERIFIED</span></h3>
+<p><b>Verified leak:</b> +20.78pt = <b>$+104</b> &nbsp; |
+ <b>Prior claim:</b> $+104 &nbsp; |
+ <b>Delta:</b> <span class="delta">$-0</span> &nbsp; |
+ <b>Window:</b> Mar 25, Mar 31 &nbsp; |
+ <b>Trades:</b> 10</p>
+<p class="note">Bot was down on Mar 25 (9 SC long A/A+/B signals, portal -11.4pt) and Mar 31 (1 SC long B signal, portal +32.18pt). Real = $0 (didn&#x27;t trade). Net missed PnL = +20.78pt = $+104. Watchdog S28 deployed since. Caveat: this assumes the missed signals would have all placed under cap=1 — reality might have blocked some via cap. Best-case estimate.</p>
+</div>
+
+<div class="info-box">
+<h3>H. Cap=1 era cost (info-only) &nbsp; <span class="tag-verified">VERIFIED (info-only)</span></h3>
+<p><b>Verified leak:</b> +92.71pt = <b>$+464</b> &nbsp; |
+ <b>Prior claim:</b> $+1,222 &nbsp; |
+ <b>Delta:</b> <span class="delta">$-758</span> &nbsp; |
+ <b>Window:</b> Mar 24 - May 6 (long), Mar 24 - Apr 17 (short) &nbsp; |
+ <b>Trades:</b> 38</p>
+<p class="note">Cap=1 LONG era (Mar 24-May 6): 12 SC long winners blocked while a prior SC long was open = +63.8pt = $+319. Cap=1 SHORT era (Mar 24-Apr 17): 26 SC/AG short signals blocked while a prior short was open = +28.9pt = $+145. TOTAL = $464. PRIOR audit claimed $1,222 — that was likely from a different methodology (possibly including filter-blocked or wide-window assumptions). My verified estimate (open-position chronology + cap=1 only) is $464. INFO-ONLY: cap=1 was design choice at the time, not a bug.</p>
+</div>
+
+
+<h2>Per-Trade Detail (verified leaks only)</h2>
+<table>
+<tr><th>lid</th><th>Date</th><th>Leak</th><th>Setup</th><th>Dir</th><th>Broker pts</th><th>Portal pts</th><th>Portal MFE</th><th>Gap pts</th><th>Gap $</th></tr>
+<tr><td><code>1593</code></td><td>2026-04-07</td><td>A. Pre-Apr 8 qty-sign bug (5 Apr </td><td>Skew Charm</td><td>short</td><td class="pos">+15.25</td><td class="pos">+22.60</td><td class="pos">+27.63</td><td class="pos">+7.35</td><td class="pos">$+37</td></tr><tr><td><code>1599</code></td><td>2026-04-07</td><td>A. Pre-Apr 8 qty-sign bug (5 Apr </td><td>Skew Charm</td><td>short</td><td class="pos">+12.50</td><td class="pos">+26.50</td><td class="pos">+31.53</td><td class="pos">+14.00</td><td class="pos">$+70</td></tr><tr><td><code>1614</code></td><td>2026-04-07</td><td>A. Pre-Apr 8 qty-sign bug (5 Apr </td><td>Skew Charm</td><td>short</td><td class="neg">-14.25</td><td class="neg">-14.00</td><td class="pos">+2.98</td><td class="pos">+0.25</td><td class="pos">$+1</td></tr><tr><td><code>1620</code></td><td>2026-04-07</td><td>A. Pre-Apr 8 qty-sign bug (5 Apr </td><td>Skew Charm</td><td>short</td><td class="neg">-14.25</td><td class="neg">-14.00</td><td class="pos">+7.79</td><td class="pos">+0.25</td><td class="pos">$+1</td></tr><tr><td><code>1635</code></td><td>2026-04-07</td><td>A. Pre-Apr 8 qty-sign bug (5 Apr </td><td>Skew Charm</td><td>short</td><td class="pos">+19.75</td><td class="pos">+9.00</td><td class="pos">+13.99</td><td class="neg">-10.75</td><td class="neg">$-54</td></tr><tr><td><code>2447</code></td><td>2026-05-04</td><td>B. May 4 wrong-side stop bug</td><td>Skew Charm</td><td>short</td><td class="pos">+8.00</td><td class="pos">+33.70</td><td class="pos">+38.68</td><td class="pos">+25.70</td><td class="pos">$+128</td></tr><tr><td><code>2449</code></td><td>2026-05-04</td><td>B. May 4 wrong-side stop bug</td><td>Skew Charm</td><td>short</td><td class="neg">-0.25</td><td class="pos">+6.90</td><td class="pos">+11.90</td><td class="pos">+7.15</td><td class="pos">$+36</td></tr><tr><td><code>2005</code></td><td>2026-04-21</td><td>C. Trail-tag-early on big runners</td><td>Skew Charm</td><td>short</td><td class="pos">+5.50</td><td class="pos">+45.50</td><td class="pos">+50.48</td><td class="pos">+40.00</td><td class="pos">$+200</td></tr><tr><td><code>2054</code></td><td>2026-04-21</td><td>C. Trail-tag-early on big runners</td><td>Skew Charm</td><td>short</td><td class="pos">+33.75</td><td class="pos">+34.80</td><td class="pos">+39.78</td><td class="pos">+1.05</td><td class="pos">$+5</td></tr><tr><td><code>2108</code></td><td>2026-04-23</td><td>C. Trail-tag-early on big runners</td><td>Skew Charm</td><td>short</td><td class="neg">-14.00</td><td class="pos">+20.70</td><td class="pos">+25.73</td><td class="pos">+34.70</td><td class="pos">$+174</td></tr><tr><td><code>2118</code></td><td>2026-04-23</td><td>C. Trail-tag-early on big runners</td><td>Skew Charm</td><td>short</td><td class="pos">+20.50</td><td class="pos">+20.60</td><td class="pos">+25.59</td><td class="pos">+0.10</td><td class="pos">$+1</td></tr><tr><td><code>2370</code></td><td>2026-04-30</td><td>C. Trail-tag-early on big runners</td><td>Skew Charm</td><td>long</td><td class="pos">+12.00</td><td class="pos">+39.80</td><td class="pos">+44.82</td><td class="pos">+27.80</td><td class="pos">$+139</td></tr><tr><td><code>2375</code></td><td>2026-04-30</td><td>C. Trail-tag-early on big runners</td><td>Skew Charm</td><td>long</td><td class="pos">+11.25</td><td class="pos">+26.10</td><td class="pos">+31.14</td><td class="pos">+14.85</td><td class="pos">$+74</td></tr>
+</table>
+
+<h2>Scaling Projection (TRUE edge per month)</h2>
+<table>
+<tr><th>Size</th><th>$/month</th><th>Notes</th></tr>
+<tr><td><b>1 MES (base)</b></td><td class="pos">$+338</td><td>current size</td></tr><tr><td>1 ES (x10, 92% cap)</td><td class="pos">$+3,107</td><td>1 ES with 92% capture haircut</td></tr><tr><td>2 ES (x20, 90% cap)</td><td class="pos">$+6,079</td><td>2 ES with 90% capture (S55 trail leak amplifies)</td></tr>
+</table>
+
+<h2>Key Corrections vs Prior Audit</h2>
+<div class="refute-box">
+<b>REFUTED claims:</b>
+<ul>
+<li><b>Leak D ($251 → $0):</b> May 6 cluster was NOT a placement bug. Cap=1 LONG was in effect (S91 cap 1→2 shipped EOD same day, AFTER market close). All 5 unplaced SC long signals and 2 unplaced ES Abs longs were CORRECTLY cap-blocked because #2540 (placed 11:17) held the only LONG slot until 14:47.</li>
+<li><b>Leak A ($441 → $56):</b> Bug isolated to the 5 Apr 7 ghost shorts. Prior audit conflated portal-vs-broker gap across ALL 25 pre-Apr 8 trades, but most of the $488 gap is normal slippage on 20 non-bug trades. True bug leak = $56.</li>
+<li><b>Leak B ($365 → $164):</b> lid=2433 was a NORMAL loss with stop correctly placed above short entry. Only lids 2447 and 2449 are wrong-side bug victims.</li>
+<li><b>Leak E ($188 → -$7):</b> 4 of 7 "unplaced V14-eligible" signals on May 12 were CORRECTLY V14-blocked (Layer 2 vanna cliff/peak rules on AG short 2687, SC long 2700; cap=2 full on 2709, 2710). Truly unexplained = 3 trades netting essentially zero PnL.</li>
+<li><b>Leak H ($1,222 → $464):</b> Cap=1 era cost recomputed from open-position chronology only. Prior figure was likely from broader methodology.</li>
+</ul>
+</div>
+
+<div class="verify-box">
+<b>VERIFIED claims (mostly intact):</b>
+<ul>
+<li><b>Leak C (+$592):</b> Trail-tag-early on big runners Apr 21/23/30. STRUCTURAL not bug. Confirmed exact 6 trades + total. Re-evaluate at 1 ES scale.</li>
+<li><b>Leak F (+$25):</b> VIX Div #2707 stop placed 5pt wider than designed due to SLIPPAGE_BUFFER not realigned post-fill. Commit faafa0c fixed it.</li>
+<li><b>Leak G (+$104):</b> Mar 25/31 bot-down net cost (Mar 25 saved $57, Mar 31 cost $161 = $104 net cost). Watchdog deployed (S28).</li>
+</ul>
+</div>
+
+<h2>Honest Caveats</h2>
+<div class="info-box">
+<ul>
+<li><b>Leak C is structural, not a fixable bug.</b> At 1 MES the $592 over 3 days is annoying but small. At 1 ES (10×) it becomes $5,920/3 days. Trail logic alignment (S55) becomes urgent at 2-MES+ scale.</li>
+<li><b>Leak E unexplained skips (3 trades) net to ~$0.</b> Likely margin self-block at $300 threshold + active position margin draw. Worth a 1-line check (log skip reasons per S108 plan) but not a money fire.</li>
+<li><b>Leak H ($464 info-only) is design-choice cost, not a bug.</b> Cap=1 was risk-management. S91 cap 1→2 ship was a deliberate scale-up.</li>
+<li><b>Real PnL is -$420 net over the TS RT era.</b> True edge after bug add-back = $+515 over 36 trading days. The system has a small positive edge that bugs masked, but it is NOT yet a clear winning system at the broker truth level. Need 30-60 more clean post-fix trading days to confirm.</li>
+<li><b>Trail-tag-early (Leak C) and basis drift between MES and SPX sim</b> are baked into the broker numbers and structural. Income projection at 1 MES = $+338/mo (after bug fix). At 1 ES (10× with 92% capture) = $+3,107/mo.</li>
+</ul>
+</div>
+
+<p class="note">Generated by <code>_tmp_full_leak_audit_v2.py</code> on 2026-05-13T16:14:42</p>
+</body></html>

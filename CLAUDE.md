@@ -454,6 +454,53 @@ Independent module collecting 0DTE GEX data for SPX/SPY/QQQ/IWM every 30 min dur
 - Auto-refresh 30s; verdict logic: if InitialMargin>0 AND DayTradeMargin=0 → OVERNIGHT RATE warning
 - Reads `/api/real-trade/status` which calls `real_trader.get_full_status()`
 
+### S55: MES-driven trail simulation (portal realism) — added 2026-05-13
+
+Productionized from `_tmp_s55_mes_trail_prototype.py`. Portal-side **realism fix**,
+NOT new alpha — explains the gap between portal "simulated outcome" (walks SPX
+30s chain) and real broker fills (walk MES 5pt range bars). Validated on 80 V14
+trades Apr 15-May 12: mean |real - mes_sim| = 2.35pt vs |real - chain_sim| = 6.70pt
+(MES-sim 2.85× more honest as a predictor of real outcomes).
+
+- **Module:** `app/mes_sim_backfill.py` — `mes_walk()` simulator + `compute_mes_sim_outcome()`
+  high-level wrapper + `backfill_for_date()` / `backfill_range()` for historical fill.
+- **Live integration:** `_check_setup_outcomes()` in `app/main.py` calls
+  `compute_mes_sim_outcome` immediately after the chain-sim UPDATE, scoped to the
+  V14 real-trader whitelist (SC / AG Short / VPB / VIX Div / ES Abs). Failure is
+  silent — pre-migration the column UPDATE errors out and the code skips. Live
+  cycle never crashes.
+- **Data source:** `vps_es_range_bars` (range_pts=5) for ES H/L per bar.
+- **Within-bar ordering:** conservative adverse-first (stop fills before favorable
+  extreme on whipsaw bars) — matches real stop-market behavior.
+- **DB columns** (post-migration `_tmp_s55_db_migration.sql`): three on `setup_log`:
+  - `mes_sim_outcome_pnl` NUMERIC — MES-walk simulated P&L in points
+  - `mes_sim_outcome_result` TEXT — WIN / LOSS / EXPIRED
+  - `mes_sim_max_fav` NUMERIC — MES-walk MFE in points
+- **Portal display:** trade-log dropdown rows show a small `✦±N.N` badge next to
+  P&L when `mes_sim_outcome_pnl` is populated. Tooltip: "MES-sim (S55 — matches
+  real broker ±2.35pt)". `/api/setup/log_with_outcomes` and `/api/setup/eod-review`
+  both try `SELECT mes_sim_*` first and fall back to legacy on column-missing.
+- **Backfill runner:** `_tmp_s55_backfill_runner.py` — defaults to 2026-04-15 → today,
+  V14 whitelist only. Has a market-hours guard. `--dry-run` to preview.
+
+**Run sequence post-migration:**
+
+```bash
+# 1. apply migration (post-16:10 ET)
+psql $DATABASE_URL -f _tmp_s55_db_migration.sql
+
+# 2. backfill historical rows
+python _tmp_s55_backfill_runner.py
+
+# 3. push code (which starts live writes for new outcomes)
+git push
+```
+
+**Reading the badge:** ✦+24.5 means the MES-sim says +24.5pt P&L. If chain-sim
+shows +42.0pt and MES-sim shows +24.5pt, the portal was over-stating the trade
+by ~17.5pt — that's the trail-tag-early divergence on big runners (S55's main
+finding).
+
 ### Database Tables
 - `chain_snapshots` - SPX/SPXW options chain data with Greeks
 - `spy_chain_snapshots` - SPY options chain data (same schema, isolated table)
@@ -465,6 +512,7 @@ Independent module collecting 0DTE GEX data for SPX/SPY/QQQ/IWM every 30 min dur
 - `setup_cooldowns` - persisted cooldown state (trade_date, JSONB state including swing tracker)
 - `auto_trade_orders` - MES SIM auto-trade order state (setup_log_id PK, JSONB state with split-target tracking, crash recovery)
 - `stock_gex_scans` - Stock GEX data every 30 min (symbol, scan_date, spot, expiration, exp_label weekly/opex, key_levels JSONB, gex_data JSONB)
+- `setup_log.mes_sim_outcome_pnl / mes_sim_outcome_result / mes_sim_max_fav` (S55, 2026-05-13) - MES-driven trail simulation outcomes (portal realism, not new alpha; populated for V14 whitelist setups only)
 
 ## Railway Deployment
 

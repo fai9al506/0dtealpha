@@ -4892,6 +4892,53 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 except Exception as db_err:
                     print(f"[outcome] DB persist error: {db_err}", flush=True)
 
+            # ── S55: MES-driven trail sim (portal realism, code-only ──
+            # 2026-05-13). Computes mes_sim_outcome_pnl/_result/_max_fav
+            # alongside the chain-sim outcome above. Silent best-effort:
+            # never crashes the cycle if the mes_sim_* columns don't exist
+            # yet (pre-migration) or if vps_es_range_bars has no rows.
+            # Scoped to V14 real-trader whitelist (SC/AG/VPB/VIX Div/ES Abs)
+            # — other setups don't go through the MES execution path live.
+            if log_id and engine and setup_name in (
+                "Skew Charm", "AG Short", "Vanna Pivot Bounce",
+                "VIX Divergence", "ES Absorption",
+            ):
+                try:
+                    from app import mes_sim_backfill as _msb
+                    # Pull broker fill/signal_es_price from real_trade_orders
+                    # if present (improves entry-price accuracy for live MES sim).
+                    _sig_es = None
+                    _fill_px = None
+                    try:
+                        from app import real_trader as _rt
+                        _rto = _rt._active_orders.get(log_id) if hasattr(_rt, "_active_orders") else None
+                        if _rto:
+                            _sig_es = _rto.get("signal_es_price")
+                            _fill_px = _rto.get("fill_price")
+                    except Exception:
+                        pass
+                    _ts_entry = trade.get("ts") or ts_entry
+                    _sim = _msb.compute_mes_sim_outcome(
+                        engine=engine,
+                        setup_log_id=log_id,
+                        setup_name=setup_name,
+                        direction=direction,
+                        signal_ts=_ts_entry,
+                        spx_spot=entry_spot,
+                        trail_sl=trade.get("trail_sl"),
+                        trail_activation=trade.get("trail_activation"),
+                        trail_gap=trade.get("trail_gap"),
+                        signal_es_price=_sig_es,
+                        fill_price=_fill_px,
+                        outcome_elapsed_min=elapsed_min,
+                    )
+                    if _sim is not None:
+                        _msb.write_mes_sim_columns(engine, log_id, _sim)
+                except Exception as _msb_err:
+                    # Silent — pre-migration this fails on column-missing,
+                    # which is expected. Don't pollute logs.
+                    pass
+
             # Broker cleanup: fire-and-forget (outcome already decided in-memory)
             # Orphan check (every 5min) + EOD flatten (15:50) catch any missed closes
             if log_id:
@@ -11583,8 +11630,30 @@ def api_setup_eod_review(date: str = Query(None, description="Date YYYY-MM-DD, d
         else:
             review_date = datetime.now(NY).strftime("%Y-%m-%d")
 
-        with engine.begin() as conn:
-            rows = conn.execute(text("""
+        # S55 (2026-05-13): try with mes_sim_* columns first, fall back
+        # gracefully if not yet migrated.
+        _eod_with_mes = """
+                SELECT id, ts, setup_name, direction, grade, score,
+                       paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
+                       gap_to_lis, upside, rr_ratio, first_hour, notified,
+                       bofa_stop_level, bofa_target_level, bofa_lis_width,
+                       bofa_max_hold_minutes, lis_upper, comments,
+                       abs_vol_ratio, abs_es_price, abs_details,
+                       support_score, upside_score, floor_cluster_score,
+                       target_cluster_score, rr_score,
+                       outcome_result, outcome_pnl, outcome_max_profit,
+                       outcome_max_loss, outcome_first_event, outcome_elapsed_min,
+                       greek_alignment, vix, overvix, spot_vol_beta,
+                       charm_limit_entry,
+                       vanna_cliff_side, vanna_peak_side,
+                       v13_gex_above, v13_dd_near,
+                       vanna_regime,
+                       mes_sim_outcome_pnl, mes_sim_outcome_result, mes_sim_max_fav
+                FROM setup_log
+                WHERE date(ts AT TIME ZONE 'America/New_York') = :d
+                ORDER BY ts ASC
+        """
+        _eod_legacy = """
                 SELECT id, ts, setup_name, direction, grade, score,
                        paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
                        gap_to_lis, upside, rr_ratio, first_hour, notified,
@@ -11603,7 +11672,12 @@ def api_setup_eod_review(date: str = Query(None, description="Date YYYY-MM-DD, d
                 FROM setup_log
                 WHERE date(ts AT TIME ZONE 'America/New_York') = :d
                 ORDER BY ts ASC
-            """), {"d": review_date}).mappings().all()
+        """
+        with engine.begin() as conn:
+            try:
+                rows = conn.execute(text(_eod_with_mes), {"d": review_date}).mappings().all()
+            except Exception:
+                rows = conn.execute(text(_eod_legacy), {"d": review_date}).mappings().all()
 
         if not rows:
             return {"date": review_date, "trades": [], "summary": {}}
@@ -11793,8 +11867,30 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
     if not engine:
         return []
     try:
-        with engine.begin() as conn:
-            rows = conn.execute(text("""
+        # S55 (2026-05-13): try with mes_sim_* columns first; fall back to the
+        # pre-migration query if they don't exist yet. Avoids hard dependency
+        # on the DB migration having been applied.
+        _select_with_mes = """
+                SELECT id, ts, setup_name, direction, grade, score,
+                       paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
+                       gap_to_lis, upside, rr_ratio, first_hour,
+                       support_score, upside_score, floor_cluster_score,
+                       target_cluster_score, rr_score, notified,
+                       bofa_stop_level, bofa_target_level, bofa_lis_width,
+                       bofa_max_hold_minutes, lis_upper,
+                       abs_vol_ratio, abs_es_price,
+                       comments, outcome_result, outcome_pnl,
+                       outcome_max_profit, outcome_max_loss,
+                       outcome_first_event, outcome_elapsed_min,
+                       greek_alignment, vix, overvix,
+                       v13_gex_above, v13_dd_near,
+                       vanna_cliff_side, vanna_peak_side, vanna_regime,
+                       mes_sim_outcome_pnl, mes_sim_outcome_result, mes_sim_max_fav
+                FROM setup_log
+                ORDER BY ts DESC
+                LIMIT :lim OFFSET :off
+        """
+        _select_legacy = """
                 SELECT id, ts, setup_name, direction, grade, score,
                        paradigm, spot, lis, target, max_plus_gex, max_minus_gex,
                        gap_to_lis, upside, rr_ratio, first_hour,
@@ -11812,7 +11908,14 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim OFFSET :off
-            """), {"lim": min(int(limit), 5000), "off": offset}).mappings().all()
+        """
+        with engine.begin() as conn:
+            try:
+                rows = conn.execute(text(_select_with_mes),
+                                    {"lim": min(int(limit), 5000), "off": offset}).mappings().all()
+            except Exception:
+                rows = conn.execute(text(_select_legacy),
+                                    {"lim": min(int(limit), 5000), "off": offset}).mappings().all()
 
         results = []
         for r in rows:
@@ -18591,6 +18694,23 @@ DASH_HTML_TEMPLATE = """
         if (_pnlVal != null) { pnl = (_pnlVal >= 0 ? '+' : '') + _pnlVal.toFixed(1); pnlC = _pnlVal >= 0 ? '#22c55e' : '#ef4444'; }
         else if (o.timeout_pnl != null) { pnl = (o.timeout_pnl >= 0 ? '+' : '') + o.timeout_pnl.toFixed(1); pnlC = o.timeout_pnl >= 0 ? '#22c55e' : '#ef4444'; }
 
+        // S55 MES-sim badge (2026-05-13): if mes_sim_outcome_pnl is set,
+        // append a small ✦ marker after the chain-sim P&L. Tooltip explains
+        // it's the MES-simulated outcome (matches real broker truth ±2.35pt
+        // per S55 prototype validated on 80 V14 trades Apr 15-May 12).
+        // Only shown for V14-whitelist setups; absent until DB migration runs.
+        let mesBadge = '';
+        if (l.mes_sim_outcome_pnl != null) {
+          const _msPnl = Number(l.mes_sim_outcome_pnl);
+          const _msC = _msPnl >= 0 ? '#22c55e' : '#ef4444';
+          const _msStr = (_msPnl >= 0 ? '+' : '') + _msPnl.toFixed(1);
+          const _msRes = l.mes_sim_outcome_result || '?';
+          const _msMfe = (l.mes_sim_max_fav != null) ? Number(l.mes_sim_max_fav).toFixed(1) : '–';
+          const _tip = 'MES-sim (S55 — matches real broker ±2.35pt): '
+            + _msRes + ' ' + _msStr + 'pt · MFE ' + _msMfe + 'pt · vps_es_range_bars 5pt path';
+          mesBadge = ' <span style="color:'+_msC+';opacity:0.85;font-size:9px" title="'+_tip+'">✦' + _msStr + '</span>';
+        }
+
         // Duration in minutes
         const em = l.outcome_elapsed_min || (o && o.elapsed_min);
         const durStr = em != null ? (em >= 60 ? Math.floor(em/60)+'h'+String(em%60).padStart(2,'0') : em+'m') : '--';
@@ -18611,7 +18731,7 @@ DASH_HTML_TEMPLATE = """
           '<span style="color:var(--muted);font-size:10px;text-align:center">'+(l.greek_alignment != null ? (l.greek_alignment > 0 ? '+' : '') + l.greek_alignment : '–')+'</span>' +
           '<span style="font-size:10px"><span style="color:'+c10+'">'+has10pt+'</span> <span style="color:'+cTgt+'">'+hasTgt+'</span> <span style="color:'+cStop+'">'+hasStop+'</span></span>' +
           '<span style="font-size:10px">'+result+'</span>' +
-          '<span style="color:'+pnlC+';font-size:10px">'+pnl+'</span>' +
+          '<span style="color:'+pnlC+';font-size:10px">'+pnl+mesBadge+'</span>' +
           '<span style="color:var(--muted);font-size:9px">'+durStr+'</span>' +
           '<span style="color:var(--muted);font-size:9px">'+date+' '+time+'</span>' +
           '<span class="tl-note-icon" data-idx="'+i+'" style="cursor:pointer;text-align:center" title="Notes">'+noteIcon+'</span>' +

@@ -1,0 +1,1697 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Track E — Charm-Driven Edge Analysis</title>
+<style>
+* { box-sizing: border-box; }
+body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+       margin: 0; padding: 24px; line-height: 1.5; max-width: 1400px; margin: 0 auto; }
+h1 { color: #58a6ff; border-bottom: 2px solid #30363d; padding-bottom: 8px; font-size: 28px; }
+h2 { color: #79c0ff; margin-top: 36px; border-bottom: 1px solid #30363d; padding-bottom: 4px; font-size: 22px; }
+h3 { color: #a5d6ff; margin-top: 24px; font-size: 18px; }
+h4 { color: #d2a8ff; margin-top: 16px; font-size: 15px; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; background: #161b22; font-size: 13px; }
+th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #30363d; }
+th { background: #21262d; color: #e6edf3; font-weight: 600; font-size: 12px;
+     text-transform: uppercase; letter-spacing: 0.5px; }
+tr:hover { background: #1c2128; }
+td.num { text-align: right; font-family: "SF Mono", Consolas, monospace; }
+.win { color: #56d364; font-weight: 600; }
+.loss { color: #f85149; font-weight: 600; }
+.neutral { color: #8b949e; }
+.metric { display: inline-block; background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+          padding: 12px 16px; margin: 8px 8px 8px 0; min-width: 140px; vertical-align: top; }
+.metric .label { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.metric .value { color: #e6edf3; font-size: 22px; font-weight: 600; margin-top: 4px; }
+.metric .value.win { color: #56d364; }
+.metric .value.loss { color: #f85149; }
+.callout { background: #161b22; border-left: 4px solid #58a6ff; padding: 12px 16px; margin: 16px 0;
+           border-radius: 0 6px 6px 0; }
+.callout.warn { border-left-color: #f78166; }
+.callout.good { border-left-color: #56d364; }
+.callout.bad { border-left-color: #f85149; }
+.callout.candidate { border-left-color: #d2a8ff; background: #1c1525; padding: 16px 20px; margin: 24px 0; }
+.callout h3 { margin-top: 0; }
+code { background: #1c2128; padding: 2px 6px; border-radius: 3px; color: #79c0ff;
+       font-family: "SF Mono", Consolas, monospace; font-size: 12px; }
+.small { font-size: 11px; color: #8b949e; }
+.sig { color: #56d364; font-weight: 700; }
+.notsig { color: #8b949e; }
+ul { margin: 8px 0; }
+li { margin: 4px 0; }
+.tag { display: inline-block; background: #21262d; color: #79c0ff; padding: 2px 8px;
+       border-radius: 3px; font-size: 11px; font-weight: 600; margin: 0 4px; text-transform: uppercase; }
+.tag.win { background: #1a3a1a; color: #56d364; }
+.tag.loss { background: #3a1a1a; color: #f85149; }
+.tag.sig { background: #2a1a3a; color: #d2a8ff; }
+</style>
+</head><body>
+<h1>Track E — Charm-Driven Edge Analysis</h1>
+<p class="small">Generated 2026-05-13 | 0DTE Alpha Research | Dataset: Mar 1 — May 13, 2026</p>
+
+<div class="callout">
+<p><b>Premise:</b> The user (and Volland community) consider charm THE most important Greek in 0DTE.
+   We have 5.8M+ charm exposure rows since Jan 2026. This study computes per-strike charm features
+   at the moment each setup fired, then tests 10 aggregate + 14 per-setup hypotheses about which
+   charm signatures predict edge.</p>
+<p><b>Bottom line:</b> The two strongest aggregate findings (post-2pm WORSE, gradient-aligned WORSE)
+   contradict community wisdom. Five candidate filters survive OOS validation, of which the top two
+   target Skew Charm SHORTS specifically. <b>F5 (combined SC short blocker) projects +$359/mo at 1 MES.</b></p>
+</div>
+
+<h2>Dataset</h2>
+<div class="metric"><div class="label">Total Resolved Trades</div><div class="value">2119</div></div>
+<div class="metric"><div class="label">Total PnL (pts)</div><div class="value win">+2790.2</div></div>
+<div class="metric"><div class="label">Overall WR</div><div class="value">53.4%</div></div>
+<div class="metric"><div class="label">Period</div><div class="value">~2.4 mo</div></div>
+<div class="metric"><div class="label">Charm Snapshots</div><div class="value">5.8M+</div></div>
+<div class="metric"><div class="label">Unique Charm Lookups</div><div class="value">2,013</div></div>
+
+<h2>Charm Interpretation Framework</h2>
+<div class="callout">
+<h3>Sign convention (CRITICAL)</h3>
+<p>Volland calculates charm as +1 day passing.
+   <span class="loss">Positive charm = bearish</span> (dealers must SELL as time passes).
+   <span class="win">Negative charm = bullish</span> (dealers must BUY as time passes).</p>
+
+<h3>Per-strike profile predicts paradigm</h3>
+<ul>
+<li><b>BofA:</b> Negative charm BELOW spot, positive charm ABOVE spot — dealers short strangles, defend range.</li>
+<li><b>GEX (bullish):</b> Negative charm BOTH sides — drives price up to OTM call target.</li>
+<li><b>AG (bearish):</b> Positive charm BOTH sides — drives price down to OTM put target.</li>
+<li><b>Sidial:</b> Charm flips at single point — mean-revert.</li>
+<li><b>Messy:</b> No uniform pattern — trade strike-by-strike S/R.</li>
+</ul>
+
+<h3>Mechanical rules</h3>
+<ul>
+<li><b>Charm walls</b> (significant sign-change strikes) are dealer hedging reversal levels. Below spot = support; above spot = resistance.</li>
+<li><b>Effective time horizon 1-2 days.</b> Charm most potent on 0DTE. Per Volland: "charm is the most volatile indicator in Volland on the day of expiration."</li>
+<li><b>Apollo's skew filter:</b> Bearish charm doesn't manifest with elevated skew. Needs skew compression.</li>
+<li><b>Dark Matter's "dealer o'clock" (post-2pm)</b>: community wisdom — but our data CONTRADICTS this for Skew Charm shorts specifically.</li>
+</ul>
+</div>
+
+<h2>Hypothesis Testing — Pooled (all live-relevant setups)</h2>
+<p class="small">Bootstrap 95% CI on the difference of means between hypothesis-positive and hypothesis-negative groups. n_boot=2000.
+   <b>Significance = CI does not cross zero.</b></p>
+<table>
+<thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>Mean+</th><th>Tot+</th><th>N-</th><th>WR-</th><th>Mean-</th><th>Diff (CI95%)</th><th>Sig?</th></tr></thead>
+<tbody>
+    <tr>
+        <td><code>H1_shorts_wall_above_5_15</code></td>
+        <td class="num">77</td>
+        <td class="num loss">44.2%</td>
+        <td class="num loss">-0.60</td>
+        <td class="num">-46.0</td>
+        <td class="num">2042</td>
+        <td class="num win">53.8%</td>
+        <td class="num win">+1.39</td>
+        <td class="num neutral"><b>-2.00</b><br>
+            <span class="small">[-4.26, +0.18]</span></td>
+        <td><span class='notsig'>no</span></td>
+    </tr>
+    
+    <tr>
+        <td><code>H2_longs_wall_below_5_15</code></td>
+        <td class="num">76</td>
+        <td class="num win">60.5%</td>
+        <td class="num win">+1.34</td>
+        <td class="num">+101.6</td>
+        <td class="num">2043</td>
+        <td class="num win">53.2%</td>
+        <td class="num win">+1.32</td>
+        <td class="num neutral"><b>-0.04</b><br>
+            <span class="small">[-2.08, +2.03]</span></td>
+        <td><span class='notsig'>no</span></td>
+    </tr>
+    
+    <tr>
+        <td><code>H3_symmetric_charm</code></td>
+        <td class="num">1027</td>
+        <td class="num win">53.7%</td>
+        <td class="num win">+1.33</td>
+        <td class="num">+1370.1</td>
+        <td class="num">1092</td>
+        <td class="num win">53.2%</td>
+        <td class="num win">+1.30</td>
+        <td class="num neutral"><b>+0.03</b><br>
+            <span class="small">[-1.01, +1.04]</span></td>
+        <td><span class='notsig'>no</span></td>
+    </tr>
+    
+    <tr>
+        <td><code>H4_after_14_ET</code></td>
+        <td class="num">672</td>
+        <td class="num loss">49.4%</td>
+        <td class="num win">+0.31</td>
+        <td class="num">+206.2</td>
+        <td class="num">1447</td>
+        <td class="num win">55.3%</td>
+        <td class="num win">+1.79</td>
+        <td class="num loss"><b>-1.48</b><br>
+            <span class="small">[-2.49, -0.49]</span></td>
+        <td><span class='sig'>YES</span></td>
+    </tr>
+    
+    <tr>
+        <td><code>H5_strong_lis_charm</code></td>
+        <td class="num">45</td>
+        <td class="num win">51.1%</td>
+        <td class="num win">+0.94</td>
+        <td class="num">+42.2</td>
+        <td class="num">2074</td>
+        <td class="num win">53.5%</td>
+        <td class="num win">+1.32</td>
+        <td class="num neutral"><b>-0.42</b><br>
+            <span class="small">[-2.50, +1.72]</span></td>
+        <td><span class='notsig'>no</span></td>
+    </tr>
+    
+    <tr>
+        <td><code>H6_gradient_with_dir</code></td>
+        <td class="num">356</td>
+        <td class="num loss">45.2%</td>
+        <td class="num loss">-0.64</td>
+        <td class="num">-227.3</td>
+        <td class="num">1763</td>
+        <td class="num win">55.1%</td>
+        <td class="num win">+1.71</td>
+        <td class="num loss"><b>-2.36</b><br>
+            <span class="small">[-3.54, -1.15]</span></td>
+        <td><span class='sig'>YES</span></td>
+    </tr>
+    
+    <tr>
+        <td><code>H7_charm_neutral_spot</code></td>
+        <td class="num">1995</td>
+        <td class="num win">53.7%</td>
+        <td class="num win">+1.38</td>
+        <td class="num">+2761.8</td>
+        <td class="num">124</td>
+        <td class="num loss">49.2%</td>
+        <td class="num win">+0.23</td>
+        <td class="num neutral"><b>+1.18</b><br>
+            <span class="small">[-0.41, +2.66]</span></td>
+        <td><span class='notsig'>no</span></td>
+    </tr>
+    
+    <tr>
+        <td><code>H8_longs_resistance_close</code></td>
+        <td class="num">44</td>
+        <td class="num win">52.3%</td>
+        <td class="num win">+0.89</td>
+        <td class="num">+39.3</td>
+        <td class="num">2075</td>
+        <td class="num win">53.4%</td>
+        <td class="num win">+1.33</td>
+        <td class="num neutral"><b>-0.45</b><br>
+            <span class="small">[-3.09, +2.26]</span></td>
+        <td><span class='notsig'>no</span></td>
+    </tr>
+    
+    <tr>
+        <td><code>H9_strong_with_dir_charm</code></td>
+        <td class="num">28</td>
+        <td class="num win">53.6%</td>
+        <td class="num win">+0.85</td>
+        <td class="num">+23.7</td>
+        <td class="num">2091</td>
+        <td class="num win">53.4%</td>
+        <td class="num win">+1.32</td>
+        <td class="num neutral"><b>-0.46</b><br>
+            <span class="small">[-2.99, +2.02]</span></td>
+        <td><span class='notsig'>no</span></td>
+    </tr>
+    
+    <tr>
+        <td><code>H10_against_wall_close</code></td>
+        <td class="num">92</td>
+        <td class="num loss">42.4%</td>
+        <td class="num loss">-0.89</td>
+        <td class="num">-81.7</td>
+        <td class="num">2027</td>
+        <td class="num win">53.9%</td>
+        <td class="num win">+1.42</td>
+        <td class="num loss"><b>-2.33</b><br>
+            <span class="small">[-4.11, -0.56]</span></td>
+        <td><span class='sig'>YES</span></td>
+    </tr>
+    </tbody></table>
+
+<div class="callout warn">
+<p><b>Surprising aggregate findings:</b></p>
+<ul>
+<li><span class="sig">H4 (after 14:00 ET): -1.48 pts SIG.</span> Post-2pm trades are WORSE, not better.
+    Volland community wisdom says "dealer o'clock = best 0DTE." Our data shows the opposite. Likely artifact:
+    the morning sessions (pre-12) are MUCH better (+1.20 pts SIG with same data).</li>
+<li><span class="sig">H6 (gradient with dir): -2.36 pts SIG.</span> When charm gradient aligns with trade direction
+    (longs with steep negative slope, shorts with steep positive slope), trades FAIL.
+    The "logical" alignment is anti-predictive.</li>
+<li><span class="sig">H10 (against-wall close): -2.33 pts SIG.</span> CONFIRMS Volland wisdom: trades with a charm wall
+    AGAINST the trade direction within 5 pts of spot lose. This is the most consistent finding.</li>
+</ul>
+</div>
+
+<h2>Per-Setup Hypothesis Testing</h2>
+<p class="small">Pooled tests dilute setup-specific effects. We split by setup × direction (n &gt;= 50 required).</p>
+<h4>Skew Charm</h4>
+<table><thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>PnL+</th><th>Tot+</th><th>diff</th><th>Sig?</th></tr></thead><tbody>
+<tr>
+                <td><code>H1_shorts_wall_above_5_15</code><br><span class="small">Shorts with charm resistance wall 5-15 pts above spot</span></td>
+                <td class="num">21</td>
+                <td class="num">47.6%</td>
+                <td class="num">-0.02</td>
+                <td class="num">-0.4</td>
+                <td class="num neutral"><b>-2.36</b><br>
+                    <span class='small'>[-7.46,+2.70]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H2_longs_wall_below_5_15</code><br><span class="small">Longs with charm support wall 5-15 pts below spot</span></td>
+                <td class="num">24</td>
+                <td class="num">66.7%</td>
+                <td class="num">+0.73</td>
+                <td class="num">+17.5</td>
+                <td class="num neutral"><b>-1.55</b><br>
+                    <span class='small'>[-5.57,+1.87]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4_after_14_ET</code><br><span class="small">Trades after 14:00 ET (Volland&#x27;s &#x27;dealer o&#x27;clock&#x27;)</span></td>
+                <td class="num">209</td>
+                <td class="num">54.5%</td>
+                <td class="num">+0.40</td>
+                <td class="num">+84.6</td>
+                <td class="num loss"><b>-2.77</b><br>
+                    <span class='small'>[-4.78,-0.62]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H4b_morning_before_12</code><br><span class="small">Trades before 12:00 ET (morning)</span></td>
+                <td class="num">240</td>
+                <td class="num">66.2%</td>
+                <td class="num">+3.45</td>
+                <td class="num">+829.0</td>
+                <td class="num neutral"><b>+1.99</b><br>
+                    <span class='small'>[-0.26,+4.25]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4c_midday_12_to_14</code><br><span class="small">Trades 12:00-14:00 ET (midday)</span></td>
+                <td class="num">176</td>
+                <td class="num">68.2%</td>
+                <td class="num">+2.75</td>
+                <td class="num">+484.1</td>
+                <td class="num neutral"><b>+0.72</b><br>
+                    <span class='small'>[-1.48,+2.90]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H6_gradient_with_dir</code><br><span class="small">Trades with charm gradient direction-aligned</span></td>
+                <td class="num">106</td>
+                <td class="num">49.1%</td>
+                <td class="num">-1.27</td>
+                <td class="num">-134.3</td>
+                <td class="num loss"><b>-4.22</b><br>
+                    <span class='small'>[-6.59,-1.89]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H7_charm_neutral_spot</code><br><span class="small">Trades when |charm at spot| &lt; 25M (charm-neutral)</span></td>
+                <td class="num">593</td>
+                <td class="num">63.2%</td>
+                <td class="num">+2.34</td>
+                <td class="num">+1389.3</td>
+                <td class="num neutral"><b>+2.10</b><br>
+                    <span class='small'>[-1.63,+5.78]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H10_against_wall_close</code><br><span class="small">Trades with opposing-direction charm wall within 5 pts</span></td>
+                <td class="num">26</td>
+                <td class="num">42.3%</td>
+                <td class="num">-2.78</td>
+                <td class="num">-72.4</td>
+                <td class="num loss"><b>-5.22</b><br>
+                    <span class='small'>[-9.02,-1.28]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H11_with_wall_5_15</code><br><span class="small">Trades with WITH-direction wall 5-15 pts away</span></td>
+                <td class="num">45</td>
+                <td class="num">57.8%</td>
+                <td class="num">+0.38</td>
+                <td class="num">+17.1</td>
+                <td class="num neutral"><b>-2.03</b><br>
+                    <span class='small'>[-5.35,+1.03]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H12_no_against_wall_in_30</code><br><span class="small">Trades with NO opposing wall within 30 pts</span></td>
+                <td class="num">509</td>
+                <td class="num">64.6%</td>
+                <td class="num">+2.63</td>
+                <td class="num">+1337.8</td>
+                <td class="num neutral"><b>+2.12</b><br>
+                    <span class='small'>[-0.36,+4.68]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H13_strong_with_dir_bias</code><br><span class="small">Trades with strong direction-aligned net charm</span></td>
+                <td class="num">2</td>
+                <td class="num">50.0%</td>
+                <td class="num">-2.10</td>
+                <td class="num">-4.2</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+</tbody></table>
+<h4>Skew Charm LONG</h4>
+<table><thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>PnL+</th><th>Tot+</th><th>diff</th><th>Sig?</th></tr></thead><tbody>
+<tr>
+                <td><code>H2_longs_wall_below_5_15</code><br><span class="small">Longs with charm support wall 5-15 pts below spot</span></td>
+                <td class="num">24</td>
+                <td class="num">66.7%</td>
+                <td class="num">+0.73</td>
+                <td class="num">+17.5</td>
+                <td class="num neutral"><b>-1.82</b><br>
+                    <span class='small'>[-5.74,+2.12]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4_after_14_ET</code><br><span class="small">Trades after 14:00 ET (Volland&#x27;s &#x27;dealer o&#x27;clock&#x27;)</span></td>
+                <td class="num">102</td>
+                <td class="num">57.8%</td>
+                <td class="num">+0.70</td>
+                <td class="num">+70.9</td>
+                <td class="num neutral"><b>-2.71</b><br>
+                    <span class='small'>[-5.73,+0.32]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4b_morning_before_12</code><br><span class="small">Trades before 12:00 ET (morning)</span></td>
+                <td class="num">101</td>
+                <td class="num">69.3%</td>
+                <td class="num">+3.24</td>
+                <td class="num">+327.4</td>
+                <td class="num neutral"><b>+1.26</b><br>
+                    <span class='small'>[-2.03,+4.43]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4c_midday_12_to_14</code><br><span class="small">Trades 12:00-14:00 ET (midday)</span></td>
+                <td class="num">77</td>
+                <td class="num">71.4%</td>
+                <td class="num">+3.55</td>
+                <td class="num">+273.1</td>
+                <td class="num neutral"><b>+1.59</b><br>
+                    <span class='small'>[-1.89,+5.11]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H6_gradient_with_dir</code><br><span class="small">Trades with charm gradient direction-aligned</span></td>
+                <td class="num">10</td>
+                <td class="num">30.0%</td>
+                <td class="num">-6.39</td>
+                <td class="num">-63.9</td>
+                <td class="num loss"><b>-9.12</b><br>
+                    <span class='small'>[-15.23,-3.06]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H7_charm_neutral_spot</code><br><span class="small">Trades when |charm at spot| &lt; 25M (charm-neutral)</span></td>
+                <td class="num">259</td>
+                <td class="num">65.6%</td>
+                <td class="num">+2.29</td>
+                <td class="num">+594.2</td>
+                <td class="num neutral"><b>-1.40</b><br>
+                    <span class='small'>[-6.11,+3.12]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H10_against_wall_close</code><br><span class="small">Trades with opposing-direction charm wall within 5 pts</span></td>
+                <td class="num">14</td>
+                <td class="num">50.0%</td>
+                <td class="num">-0.99</td>
+                <td class="num">-13.9</td>
+                <td class="num neutral"><b>-3.59</b><br>
+                    <span class='small'>[-8.80,+2.16]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H11_with_wall_5_15</code><br><span class="small">Trades with WITH-direction wall 5-15 pts away</span></td>
+                <td class="num">24</td>
+                <td class="num">66.7%</td>
+                <td class="num">+0.73</td>
+                <td class="num">+17.5</td>
+                <td class="num neutral"><b>-1.87</b><br>
+                    <span class='small'>[-5.79,+1.88]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H12_no_against_wall_in_30</code><br><span class="small">Trades with NO opposing wall within 30 pts</span></td>
+                <td class="num">224</td>
+                <td class="num">65.2%</td>
+                <td class="num">+2.32</td>
+                <td class="num">+519.4</td>
+                <td class="num neutral"><b>-0.41</b><br>
+                    <span class='small'>[-3.82,+2.91]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H13_strong_with_dir_bias</code><br><span class="small">Trades with strong direction-aligned net charm</span></td>
+                <td class="num">2</td>
+                <td class="num">50.0%</td>
+                <td class="num">-2.10</td>
+                <td class="num">-4.2</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+</tbody></table>
+<h4>Skew Charm SHORT</h4>
+<table><thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>PnL+</th><th>Tot+</th><th>diff</th><th>Sig?</th></tr></thead><tbody>
+<tr>
+                <td><code>H1_shorts_wall_above_5_15</code><br><span class="small">Shorts with charm resistance wall 5-15 pts above spot</span></td>
+                <td class="num">21</td>
+                <td class="num">47.6%</td>
+                <td class="num">-0.02</td>
+                <td class="num">-0.4</td>
+                <td class="num neutral"><b>-2.19</b><br>
+                    <span class='small'>[-7.51,+3.29]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4_after_14_ET</code><br><span class="small">Trades after 14:00 ET (Volland&#x27;s &#x27;dealer o&#x27;clock&#x27;)</span></td>
+                <td class="num">107</td>
+                <td class="num">51.4%</td>
+                <td class="num">+0.13</td>
+                <td class="num">+13.6</td>
+                <td class="num loss"><b>-2.84</b><br>
+                    <span class='small'>[-5.56,-0.11]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H4b_morning_before_12</code><br><span class="small">Trades before 12:00 ET (morning)</span></td>
+                <td class="num">139</td>
+                <td class="num">64.0%</td>
+                <td class="num">+3.61</td>
+                <td class="num">+501.6</td>
+                <td class="num neutral"><b>+2.53</b><br>
+                    <span class='small'>[-0.68,+5.58]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4c_midday_12_to_14</code><br><span class="small">Trades 12:00-14:00 ET (midday)</span></td>
+                <td class="num">99</td>
+                <td class="num">65.7%</td>
+                <td class="num">+2.13</td>
+                <td class="num">+211.0</td>
+                <td class="num neutral"><b>+0.07</b><br>
+                    <span class='small'>[-2.89,+3.21]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H6_gradient_with_dir</code><br><span class="small">Trades with charm gradient direction-aligned</span></td>
+                <td class="num">96</td>
+                <td class="num">51.0%</td>
+                <td class="num">-0.73</td>
+                <td class="num">-70.4</td>
+                <td class="num loss"><b>-3.93</b><br>
+                    <span class='small'>[-6.89,-0.94]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H7_charm_neutral_spot</code><br><span class="small">Trades when |charm at spot| &lt; 25M (charm-neutral)</span></td>
+                <td class="num">334</td>
+                <td class="num">61.4%</td>
+                <td class="num">+2.38</td>
+                <td class="num">+795.2</td>
+                <td class="num win"><b>+8.60</b><br>
+                    <span class='small'>[+3.71,+13.24]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H10_against_wall_close</code><br><span class="small">Trades with opposing-direction charm wall within 5 pts</span></td>
+                <td class="num">12</td>
+                <td class="num">33.3%</td>
+                <td class="num">-4.87</td>
+                <td class="num">-58.5</td>
+                <td class="num loss"><b>-7.15</b><br>
+                    <span class='small'>[-12.37,-1.79]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H11_with_wall_5_15</code><br><span class="small">Trades with WITH-direction wall 5-15 pts away</span></td>
+                <td class="num">21</td>
+                <td class="num">47.6%</td>
+                <td class="num">-0.02</td>
+                <td class="num">-0.4</td>
+                <td class="num neutral"><b>-2.32</b><br>
+                    <span class='small'>[-7.17,+2.69]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H12_no_against_wall_in_30</code><br><span class="small">Trades with NO opposing wall within 30 pts</span></td>
+                <td class="num">285</td>
+                <td class="num">64.2%</td>
+                <td class="num">+2.87</td>
+                <td class="num">+818.4</td>
+                <td class="num win"><b>+4.41</b><br>
+                    <span class='small'>[+0.92,+7.60]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+</tbody></table><h4>ES Absorption</h4>
+<table><thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>PnL+</th><th>Tot+</th><th>diff</th><th>Sig?</th></tr></thead><tbody>
+<tr>
+                <td><code>H1_shorts_wall_above_5_15</code><br><span class="small">Shorts with charm resistance wall 5-15 pts above spot</span></td>
+                <td class="num">17</td>
+                <td class="num">52.9%</td>
+                <td class="num">+0.25</td>
+                <td class="num">+4.3</td>
+                <td class="num neutral"><b>-0.76</b><br>
+                    <span class='small'>[-4.62,+3.10]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H2_longs_wall_below_5_15</code><br><span class="small">Longs with charm support wall 5-15 pts below spot</span></td>
+                <td class="num">21</td>
+                <td class="num">57.1%</td>
+                <td class="num">+0.60</td>
+                <td class="num">+12.7</td>
+                <td class="num neutral"><b>-0.32</b><br>
+                    <span class='small'>[-3.90,+3.24]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4_after_14_ET</code><br><span class="small">Trades after 14:00 ET (Volland&#x27;s &#x27;dealer o&#x27;clock&#x27;)</span></td>
+                <td class="num">171</td>
+                <td class="num">46.2%</td>
+                <td class="num">-0.19</td>
+                <td class="num">-32.5</td>
+                <td class="num loss"><b>-1.70</b><br>
+                    <span class='small'>[-3.17,-0.24]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H4b_morning_before_12</code><br><span class="small">Trades before 12:00 ET (morning)</span></td>
+                <td class="num">233</td>
+                <td class="num">55.8%</td>
+                <td class="num">+1.54</td>
+                <td class="num">+358.0</td>
+                <td class="num neutral"><b>+0.90</b><br>
+                    <span class='small'>[-0.50,+2.33]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4c_midday_12_to_14</code><br><span class="small">Trades 12:00-14:00 ET (midday)</span></td>
+                <td class="num">172</td>
+                <td class="num">56.4%</td>
+                <td class="num">+1.50</td>
+                <td class="num">+258.2</td>
+                <td class="num neutral"><b>+0.69</b><br>
+                    <span class='small'>[-0.77,+2.16]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H6_gradient_with_dir</code><br><span class="small">Trades with charm gradient direction-aligned</span></td>
+                <td class="num">94</td>
+                <td class="num">43.6%</td>
+                <td class="num">-0.10</td>
+                <td class="num">-9.3</td>
+                <td class="num neutral"><b>-1.30</b><br>
+                    <span class='small'>[-3.07,+0.54]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H7_charm_neutral_spot</code><br><span class="small">Trades when |charm at spot| &lt; 25M (charm-neutral)</span></td>
+                <td class="num">514</td>
+                <td class="num">54.1%</td>
+                <td class="num">+1.15</td>
+                <td class="num">+591.0</td>
+                <td class="num neutral"><b>+1.32</b><br>
+                    <span class='small'>[-0.37,+2.98]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H10_against_wall_close</code><br><span class="small">Trades with opposing-direction charm wall within 5 pts</span></td>
+                <td class="num">34</td>
+                <td class="num">38.2%</td>
+                <td class="num">-0.17</td>
+                <td class="num">-5.9</td>
+                <td class="num neutral"><b>-1.27</b><br>
+                    <span class='small'>[-3.10,+0.72]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H11_with_wall_5_15</code><br><span class="small">Trades with WITH-direction wall 5-15 pts away</span></td>
+                <td class="num">38</td>
+                <td class="num">55.3%</td>
+                <td class="num">+0.45</td>
+                <td class="num">+17.0</td>
+                <td class="num neutral"><b>-0.55</b><br>
+                    <span class='small'>[-3.34,+2.36]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H12_no_against_wall_in_30</code><br><span class="small">Trades with NO opposing wall within 30 pts</span></td>
+                <td class="num">472</td>
+                <td class="num">53.8%</td>
+                <td class="num">+1.01</td>
+                <td class="num">+477.8</td>
+                <td class="num neutral"><b>-0.01</b><br>
+                    <span class='small'>[-1.58,+1.47]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H13_strong_with_dir_bias</code><br><span class="small">Trades with strong direction-aligned net charm</span></td>
+                <td class="num">36</td>
+                <td class="num">47.2%</td>
+                <td class="num">+0.24</td>
+                <td class="num">+8.5</td>
+                <td class="num neutral"><b>-0.88</b><br>
+                    <span class='small'>[-3.15,+1.72]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H14_charm_neutral_lis_strong</code><br><span class="small">Charm-neutral spot AND strong LIS charm</span></td>
+                <td class="num">6</td>
+                <td class="num">50.0%</td>
+                <td class="num">+0.17</td>
+                <td class="num">+1.0</td>
+                <td class="num neutral"><b>-0.73</b><br>
+                    <span class='small'>[-6.76,+5.22]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+</tbody></table>
+<h4>ES Absorption LONG</h4>
+<table><thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>PnL+</th><th>Tot+</th><th>diff</th><th>Sig?</th></tr></thead><tbody>
+<tr>
+                <td><code>H2_longs_wall_below_5_15</code><br><span class="small">Longs with charm support wall 5-15 pts below spot</span></td>
+                <td class="num">21</td>
+                <td class="num">57.1%</td>
+                <td class="num">+0.60</td>
+                <td class="num">+12.7</td>
+                <td class="num neutral"><b>-1.01</b><br>
+                    <span class='small'>[-4.52,+2.81]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4_after_14_ET</code><br><span class="small">Trades after 14:00 ET (Volland&#x27;s &#x27;dealer o&#x27;clock&#x27;)</span></td>
+                <td class="num">87</td>
+                <td class="num">52.9%</td>
+                <td class="num">+0.43</td>
+                <td class="num">+37.6</td>
+                <td class="num neutral"><b>-1.69</b><br>
+                    <span class='small'>[-3.82,+0.41]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4b_morning_before_12</code><br><span class="small">Trades before 12:00 ET (morning)</span></td>
+                <td class="num">109</td>
+                <td class="num">58.7%</td>
+                <td class="num">+1.94</td>
+                <td class="num">+211.9</td>
+                <td class="num neutral"><b>+0.52</b><br>
+                    <span class='small'>[-1.63,+2.57]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4c_midday_12_to_14</code><br><span class="small">Trades 12:00-14:00 ET (midday)</span></td>
+                <td class="num">97</td>
+                <td class="num">59.8%</td>
+                <td class="num">+2.29</td>
+                <td class="num">+221.7</td>
+                <td class="num neutral"><b>+0.98</b><br>
+                    <span class='small'>[-1.22,+3.06]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H6_gradient_with_dir</code><br><span class="small">Trades with charm gradient direction-aligned</span></td>
+                <td class="num">22</td>
+                <td class="num">59.1%</td>
+                <td class="num">+1.52</td>
+                <td class="num">+33.5</td>
+                <td class="num neutral"><b>-0.16</b><br>
+                    <span class='small'>[-3.70,+3.27]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H7_charm_neutral_spot</code><br><span class="small">Trades when |charm at spot| &lt; 25M (charm-neutral)</span></td>
+                <td class="num">263</td>
+                <td class="num">57.0%</td>
+                <td class="num">+1.60</td>
+                <td class="num">+421.8</td>
+                <td class="num neutral"><b>-0.06</b><br>
+                    <span class='small'>[-2.45,+2.20]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H10_against_wall_close</code><br><span class="small">Trades with opposing-direction charm wall within 5 pts</span></td>
+                <td class="num">12</td>
+                <td class="num">41.7%</td>
+                <td class="num">-0.20</td>
+                <td class="num">-2.4</td>
+                <td class="num neutral"><b>-1.95</b><br>
+                    <span class='small'>[-5.64,+1.65]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H11_with_wall_5_15</code><br><span class="small">Trades with WITH-direction wall 5-15 pts away</span></td>
+                <td class="num">21</td>
+                <td class="num">57.1%</td>
+                <td class="num">+0.60</td>
+                <td class="num">+12.7</td>
+                <td class="num neutral"><b>-1.04</b><br>
+                    <span class='small'>[-4.86,+2.92]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H12_no_against_wall_in_30</code><br><span class="small">Trades with NO opposing wall within 30 pts</span></td>
+                <td class="num">242</td>
+                <td class="num">57.4%</td>
+                <td class="num">+1.56</td>
+                <td class="num">+377.5</td>
+                <td class="num neutral"><b>-0.28</b><br>
+                    <span class='small'>[-2.55,+1.95]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H13_strong_with_dir_bias</code><br><span class="small">Trades with strong direction-aligned net charm</span></td>
+                <td class="num">22</td>
+                <td class="num">50.0%</td>
+                <td class="num">+0.93</td>
+                <td class="num">+20.5</td>
+                <td class="num neutral"><b>-0.77</b><br>
+                    <span class='small'>[-3.66,+2.34]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H14_charm_neutral_lis_strong</code><br><span class="small">Charm-neutral spot AND strong LIS charm</span></td>
+                <td class="num">3</td>
+                <td class="num">66.7%</td>
+                <td class="num">+2.93</td>
+                <td class="num">+8.8</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+</tbody></table>
+<h4>ES Absorption SHORT</h4>
+<table><thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>PnL+</th><th>Tot+</th><th>diff</th><th>Sig?</th></tr></thead><tbody>
+<tr>
+                <td><code>H1_shorts_wall_above_5_15</code><br><span class="small">Shorts with charm resistance wall 5-15 pts above spot</span></td>
+                <td class="num">17</td>
+                <td class="num">52.9%</td>
+                <td class="num">+0.25</td>
+                <td class="num">+4.3</td>
+                <td class="num neutral"><b>-0.22</b><br>
+                    <span class='small'>[-4.01,+3.56]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4_after_14_ET</code><br><span class="small">Trades after 14:00 ET (Volland&#x27;s &#x27;dealer o&#x27;clock&#x27;)</span></td>
+                <td class="num">84</td>
+                <td class="num">39.3%</td>
+                <td class="num">-0.83</td>
+                <td class="num">-70.1</td>
+                <td class="num neutral"><b>-1.78</b><br>
+                    <span class='small'>[-3.79,+0.14]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4b_morning_before_12</code><br><span class="small">Trades before 12:00 ET (morning)</span></td>
+                <td class="num">124</td>
+                <td class="num">53.2%</td>
+                <td class="num">+1.18</td>
+                <td class="num">+146.1</td>
+                <td class="num neutral"><b>+1.38</b><br>
+                    <span class='small'>[-0.66,+3.44]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4c_midday_12_to_14</code><br><span class="small">Trades 12:00-14:00 ET (midday)</span></td>
+                <td class="num">75</td>
+                <td class="num">52.0%</td>
+                <td class="num">+0.49</td>
+                <td class="num">+36.5</td>
+                <td class="num neutral"><b>+0.17</b><br>
+                    <span class='small'>[-2.11,+2.57]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H6_gradient_with_dir</code><br><span class="small">Trades with charm gradient direction-aligned</span></td>
+                <td class="num">72</td>
+                <td class="num">38.9%</td>
+                <td class="num">-0.59</td>
+                <td class="num">-42.8</td>
+                <td class="num neutral"><b>-1.30</b><br>
+                    <span class='small'>[-3.39,+0.84]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H7_charm_neutral_spot</code><br><span class="small">Trades when |charm at spot| &lt; 25M (charm-neutral)</span></td>
+                <td class="num">251</td>
+                <td class="num">51.0%</td>
+                <td class="num">+0.67</td>
+                <td class="num">+169.2</td>
+                <td class="num win"><b>+2.47</b><br>
+                    <span class='small'>[+0.40,+4.48]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H10_against_wall_close</code><br><span class="small">Trades with opposing-direction charm wall within 5 pts</span></td>
+                <td class="num">22</td>
+                <td class="num">36.4%</td>
+                <td class="num">-0.16</td>
+                <td class="num">-3.5</td>
+                <td class="num neutral"><b>-0.53</b><br>
+                    <span class='small'>[-2.83,+2.01]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H11_with_wall_5_15</code><br><span class="small">Trades with WITH-direction wall 5-15 pts away</span></td>
+                <td class="num">17</td>
+                <td class="num">52.9%</td>
+                <td class="num">+0.25</td>
+                <td class="num">+4.3</td>
+                <td class="num neutral"><b>-0.09</b><br>
+                    <span class='small'>[-3.75,+3.64]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H12_no_against_wall_in_30</code><br><span class="small">Trades with NO opposing wall within 30 pts</span></td>
+                <td class="num">230</td>
+                <td class="num">50.0%</td>
+                <td class="num">+0.44</td>
+                <td class="num">+100.3</td>
+                <td class="num neutral"><b>+0.20</b><br>
+                    <span class='small'>[-2.04,+2.46]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H13_strong_with_dir_bias</code><br><span class="small">Trades with strong direction-aligned net charm</span></td>
+                <td class="num">14</td>
+                <td class="num">42.9%</td>
+                <td class="num">-0.86</td>
+                <td class="num">-12.0</td>
+                <td class="num neutral"><b>-1.30</b><br>
+                    <span class='small'>[-5.11,+2.58]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H14_charm_neutral_lis_strong</code><br><span class="small">Charm-neutral spot AND strong LIS charm</span></td>
+                <td class="num">3</td>
+                <td class="num">33.3%</td>
+                <td class="num">-2.60</td>
+                <td class="num">-7.8</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+</tbody></table><h4>DD Exhaustion</h4>
+<table><thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>PnL+</th><th>Tot+</th><th>diff</th><th>Sig?</th></tr></thead><tbody>
+<tr>
+                <td><code>H1_shorts_wall_above_5_15</code><br><span class="small">Shorts with charm resistance wall 5-15 pts above spot</span></td>
+                <td class="num">26</td>
+                <td class="num">42.3%</td>
+                <td class="num">-0.88</td>
+                <td class="num">-22.9</td>
+                <td class="num neutral"><b>-1.62</b><br>
+                    <span class='small'>[-5.72,+2.86]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H2_longs_wall_below_5_15</code><br><span class="small">Longs with charm support wall 5-15 pts below spot</span></td>
+                <td class="num">14</td>
+                <td class="num">50.0%</td>
+                <td class="num">+1.71</td>
+                <td class="num">+24.0</td>
+                <td class="num neutral"><b>+1.08</b><br>
+                    <span class='small'>[-4.38,+7.14]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4_after_14_ET</code><br><span class="small">Trades after 14:00 ET (Volland&#x27;s &#x27;dealer o&#x27;clock&#x27;)</span></td>
+                <td class="num">174</td>
+                <td class="num">46.0%</td>
+                <td class="num">+0.42</td>
+                <td class="num">+73.8</td>
+                <td class="num neutral"><b>-0.32</b><br>
+                    <span class='small'>[-2.59,+2.02]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4b_morning_before_12</code><br><span class="small">Trades before 12:00 ET (morning)</span></td>
+                <td class="num">191</td>
+                <td class="num">39.8%</td>
+                <td class="num">+1.07</td>
+                <td class="num">+203.5</td>
+                <td class="num neutral"><b>+0.62</b><br>
+                    <span class='small'>[-1.67,+2.90]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4c_midday_12_to_14</code><br><span class="small">Trades 12:00-14:00 ET (midday)</span></td>
+                <td class="num">181</td>
+                <td class="num">43.6%</td>
+                <td class="num">+0.48</td>
+                <td class="num">+86.0</td>
+                <td class="num neutral"><b>-0.32</b><br>
+                    <span class='small'>[-2.62,+1.85]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H6_gradient_with_dir</code><br><span class="small">Trades with charm gradient direction-aligned</span></td>
+                <td class="num">91</td>
+                <td class="num">40.7%</td>
+                <td class="num">-0.95</td>
+                <td class="num">-86.5</td>
+                <td class="num neutral"><b>-1.93</b><br>
+                    <span class='small'>[-4.33,+0.48]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H7_charm_neutral_spot</code><br><span class="small">Trades when |charm at spot| &lt; 25M (charm-neutral)</span></td>
+                <td class="num">530</td>
+                <td class="num">42.8%</td>
+                <td class="num">+0.67</td>
+                <td class="num">+354.2</td>
+                <td class="num neutral"><b>+0.15</b><br>
+                    <span class='small'>[-5.88,+5.55]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H10_against_wall_close</code><br><span class="small">Trades with opposing-direction charm wall within 5 pts</span></td>
+                <td class="num">23</td>
+                <td class="num">47.8%</td>
+                <td class="num">-0.13</td>
+                <td class="num">-2.9</td>
+                <td class="num neutral"><b>-0.87</b><br>
+                    <span class='small'>[-4.81,+3.39]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H11_with_wall_5_15</code><br><span class="small">Trades with WITH-direction wall 5-15 pts away</span></td>
+                <td class="num">40</td>
+                <td class="num">45.0%</td>
+                <td class="num">+0.03</td>
+                <td class="num">+1.1</td>
+                <td class="num neutral"><b>-0.70</b><br>
+                    <span class='small'>[-4.10,+2.84]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H12_no_against_wall_in_30</code><br><span class="small">Trades with NO opposing wall within 30 pts</span></td>
+                <td class="num">432</td>
+                <td class="num">41.7%</td>
+                <td class="num">+0.68</td>
+                <td class="num">+293.1</td>
+                <td class="num neutral"><b>+0.07</b><br>
+                    <span class='small'>[-2.33,+2.50]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H13_strong_with_dir_bias</code><br><span class="small">Trades with strong direction-aligned net charm</span></td>
+                <td class="num">1</td>
+                <td class="num">100.0%</td>
+                <td class="num">+14.30</td>
+                <td class="num">+14.3</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+</tbody></table>
+<h4>DD Exhaustion LONG</h4>
+<table><thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>PnL+</th><th>Tot+</th><th>diff</th><th>Sig?</th></tr></thead><tbody>
+<tr>
+                <td><code>H2_longs_wall_below_5_15</code><br><span class="small">Longs with charm support wall 5-15 pts below spot</span></td>
+                <td class="num">14</td>
+                <td class="num">50.0%</td>
+                <td class="num">+1.71</td>
+                <td class="num">+24.0</td>
+                <td class="num neutral"><b>+0.61</b><br>
+                    <span class='small'>[-5.21,+7.01]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4_after_14_ET</code><br><span class="small">Trades after 14:00 ET (Volland&#x27;s &#x27;dealer o&#x27;clock&#x27;)</span></td>
+                <td class="num">83</td>
+                <td class="num">50.6%</td>
+                <td class="num">+1.75</td>
+                <td class="num">+145.3</td>
+                <td class="num neutral"><b>+0.63</b><br>
+                    <span class='small'>[-2.75,+3.94]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4b_morning_before_12</code><br><span class="small">Trades before 12:00 ET (morning)</span></td>
+                <td class="num">81</td>
+                <td class="num">40.7%</td>
+                <td class="num">+0.94</td>
+                <td class="num">+76.1</td>
+                <td class="num neutral"><b>-0.60</b><br>
+                    <span class='small'>[-4.16,+2.63]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4c_midday_12_to_14</code><br><span class="small">Trades 12:00-14:00 ET (midday)</span></td>
+                <td class="num">80</td>
+                <td class="num">43.8%</td>
+                <td class="num">+1.21</td>
+                <td class="num">+96.7</td>
+                <td class="num neutral"><b>-0.15</b><br>
+                    <span class='small'>[-3.44,+3.08]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H6_gradient_with_dir</code><br><span class="small">Trades with charm gradient direction-aligned</span></td>
+                <td class="num">7</td>
+                <td class="num">28.6%</td>
+                <td class="num">+0.51</td>
+                <td class="num">+3.6</td>
+                <td class="num neutral"><b>-0.87</b><br>
+                    <span class='small'>[-8.78,+7.22]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H7_charm_neutral_spot</code><br><span class="small">Trades when |charm at spot| &lt; 25M (charm-neutral)</span></td>
+                <td class="num">235</td>
+                <td class="num">43.8%</td>
+                <td class="num">+1.03</td>
+                <td class="num">+242.4</td>
+                <td class="num loss"><b>-7.35</b><br>
+                    <span class='small'>[-13.77,-1.48]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H10_against_wall_close</code><br><span class="small">Trades with opposing-direction charm wall within 5 pts</span></td>
+                <td class="num">15</td>
+                <td class="num">60.0%</td>
+                <td class="num">+2.49</td>
+                <td class="num">+37.4</td>
+                <td class="num neutral"><b>+1.26</b><br>
+                    <span class='small'>[-3.45,+5.80]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H11_with_wall_5_15</code><br><span class="small">Trades with WITH-direction wall 5-15 pts away</span></td>
+                <td class="num">14</td>
+                <td class="num">50.0%</td>
+                <td class="num">+1.71</td>
+                <td class="num">+24.0</td>
+                <td class="num neutral"><b>+0.50</b><br>
+                    <span class='small'>[-5.00,+6.87]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H12_no_against_wall_in_30</code><br><span class="small">Trades with NO opposing wall within 30 pts</span></td>
+                <td class="num">185</td>
+                <td class="num">41.1%</td>
+                <td class="num">+0.69</td>
+                <td class="num">+126.9</td>
+                <td class="num neutral"><b>-2.57</b><br>
+                    <span class='small'>[-6.12,+1.20]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H13_strong_with_dir_bias</code><br><span class="small">Trades with strong direction-aligned net charm</span></td>
+                <td class="num">1</td>
+                <td class="num">100.0%</td>
+                <td class="num">+14.30</td>
+                <td class="num">+14.3</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+</tbody></table>
+<h4>DD Exhaustion SHORT</h4>
+<table><thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>PnL+</th><th>Tot+</th><th>diff</th><th>Sig?</th></tr></thead><tbody>
+<tr>
+                <td><code>H1_shorts_wall_above_5_15</code><br><span class="small">Shorts with charm resistance wall 5-15 pts above spot</span></td>
+                <td class="num">26</td>
+                <td class="num">42.3%</td>
+                <td class="num">-0.88</td>
+                <td class="num">-22.9</td>
+                <td class="num neutral"><b>-1.06</b><br>
+                    <span class='small'>[-5.24,+3.24]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4_after_14_ET</code><br><span class="small">Trades after 14:00 ET (Volland&#x27;s &#x27;dealer o&#x27;clock&#x27;)</span></td>
+                <td class="num">91</td>
+                <td class="num">41.8%</td>
+                <td class="num">-0.79</td>
+                <td class="num">-71.5</td>
+                <td class="num neutral"><b>-1.29</b><br>
+                    <span class='small'>[-4.08,+1.62]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4b_morning_before_12</code><br><span class="small">Trades before 12:00 ET (morning)</span></td>
+                <td class="num">110</td>
+                <td class="num">39.1%</td>
+                <td class="num">+1.16</td>
+                <td class="num">+127.4</td>
+                <td class="num neutral"><b>+1.54</b><br>
+                    <span class='small'>[-1.56,+4.75]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4c_midday_12_to_14</code><br><span class="small">Trades 12:00-14:00 ET (midday)</span></td>
+                <td class="num">101</td>
+                <td class="num">43.6%</td>
+                <td class="num">-0.11</td>
+                <td class="num">-10.7</td>
+                <td class="num neutral"><b>-0.40</b><br>
+                    <span class='small'>[-3.27,+2.47]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H6_gradient_with_dir</code><br><span class="small">Trades with charm gradient direction-aligned</span></td>
+                <td class="num">84</td>
+                <td class="num">41.7%</td>
+                <td class="num">-1.07</td>
+                <td class="num">-90.1</td>
+                <td class="num neutral"><b>-1.75</b><br>
+                    <span class='small'>[-4.46,+1.07]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H7_charm_neutral_spot</code><br><span class="small">Trades when |charm at spot| &lt; 25M (charm-neutral)</span></td>
+                <td class="num">295</td>
+                <td class="num">42.0%</td>
+                <td class="num">+0.38</td>
+                <td class="num">+111.8</td>
+                <td class="num win"><b>+9.87</b><br>
+                    <span class='small'>[+4.48,+13.50]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H10_against_wall_close</code><br><span class="small">Trades with opposing-direction charm wall within 5 pts</span></td>
+                <td class="num">8</td>
+                <td class="num">25.0%</td>
+                <td class="num">-5.04</td>
+                <td class="num">-40.3</td>
+                <td class="num neutral"><b>-5.43</b><br>
+                    <span class='small'>[-10.77,+0.62]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H11_with_wall_5_15</code><br><span class="small">Trades with WITH-direction wall 5-15 pts away</span></td>
+                <td class="num">26</td>
+                <td class="num">42.3%</td>
+                <td class="num">-0.88</td>
+                <td class="num">-22.9</td>
+                <td class="num neutral"><b>-1.10</b><br>
+                    <span class='small'>[-5.09,+3.18]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H12_no_against_wall_in_30</code><br><span class="small">Trades with NO opposing wall within 30 pts</span></td>
+                <td class="num">247</td>
+                <td class="num">42.1%</td>
+                <td class="num">+0.67</td>
+                <td class="num">+166.2</td>
+                <td class="num neutral"><b>+2.91</b><br>
+                    <span class='small'>[-0.60,+6.03]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+</tbody></table><h4>BofA Scalp</h4>
+<table><thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>PnL+</th><th>Tot+</th><th>diff</th><th>Sig?</th></tr></thead><tbody>
+<tr>
+                <td><code>H1_shorts_wall_above_5_15</code><br><span class="small">Shorts with charm resistance wall 5-15 pts above spot</span></td>
+                <td class="num">7</td>
+                <td class="num">42.9%</td>
+                <td class="num">+0.43</td>
+                <td class="num">+3.0</td>
+                <td class="num neutral"><b>+0.85</b><br>
+                    <span class='small'>[-3.45,+5.76]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H2_longs_wall_below_5_15</code><br><span class="small">Longs with charm support wall 5-15 pts below spot</span></td>
+                <td class="num">6</td>
+                <td class="num">50.0%</td>
+                <td class="num">-1.42</td>
+                <td class="num">-8.5</td>
+                <td class="num neutral"><b>-1.02</b><br>
+                    <span class='small'>[-10.64,+8.04]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4_after_14_ET</code><br><span class="small">Trades after 14:00 ET (Volland&#x27;s &#x27;dealer o&#x27;clock&#x27;)</span></td>
+                <td class="num">42</td>
+                <td class="num">42.9%</td>
+                <td class="num">-1.30</td>
+                <td class="num">-54.8</td>
+                <td class="num neutral"><b>-1.60</b><br>
+                    <span class='small'>[-4.86,+1.64]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4b_morning_before_12</code><br><span class="small">Trades before 12:00 ET (morning)</span></td>
+                <td class="num">27</td>
+                <td class="num">59.3%</td>
+                <td class="num">+1.71</td>
+                <td class="num">+46.2</td>
+                <td class="num neutral"><b>+2.81</b><br>
+                    <span class='small'>[-0.90,+6.54]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4c_midday_12_to_14</code><br><span class="small">Trades 12:00-14:00 ET (midday)</span></td>
+                <td class="num">34</td>
+                <td class="num">47.1%</td>
+                <td class="num">-0.80</td>
+                <td class="num">-27.1</td>
+                <td class="num neutral"><b>-0.67</b><br>
+                    <span class='small'>[-4.00,+2.55]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H6_gradient_with_dir</code><br><span class="small">Trades with charm gradient direction-aligned</span></td>
+                <td class="num">19</td>
+                <td class="num">31.6%</td>
+                <td class="num">-3.21</td>
+                <td class="num">-61.0</td>
+                <td class="num loss"><b>-3.43</b><br>
+                    <span class='small'>[-6.88,-0.06]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H7_charm_neutral_spot</code><br><span class="small">Trades when |charm at spot| &lt; 25M (charm-neutral)</span></td>
+                <td class="num">101</td>
+                <td class="num">48.5%</td>
+                <td class="num">-0.37</td>
+                <td class="num">-36.9</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H10_against_wall_close</code><br><span class="small">Trades with opposing-direction charm wall within 5 pts</span></td>
+                <td class="num">1</td>
+                <td class="num">0.0%</td>
+                <td class="num">-3.20</td>
+                <td class="num">-3.2</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H11_with_wall_5_15</code><br><span class="small">Trades with WITH-direction wall 5-15 pts away</span></td>
+                <td class="num">13</td>
+                <td class="num">46.2%</td>
+                <td class="num">-0.42</td>
+                <td class="num">-5.5</td>
+                <td class="num neutral"><b>-0.14</b><br>
+                    <span class='small'>[-5.50,+5.14]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H12_no_against_wall_in_30</code><br><span class="small">Trades with NO opposing wall within 30 pts</span></td>
+                <td class="num">90</td>
+                <td class="num">47.8%</td>
+                <td class="num">-0.57</td>
+                <td class="num">-51.2</td>
+                <td class="num neutral"><b>-1.74</b><br>
+                    <span class='small'>[-5.09,+1.62]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+</tbody></table><h4>GEX Long</h4>
+<table><thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>PnL+</th><th>Tot+</th><th>diff</th><th>Sig?</th></tr></thead><tbody>
+<tr>
+                <td><code>H2_longs_wall_below_5_15</code><br><span class="small">Longs with charm support wall 5-15 pts below spot</span></td>
+                <td class="num">3</td>
+                <td class="num">33.3%</td>
+                <td class="num">-2.53</td>
+                <td class="num">-7.6</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4_after_14_ET</code><br><span class="small">Trades after 14:00 ET (Volland&#x27;s &#x27;dealer o&#x27;clock&#x27;)</span></td>
+                <td class="num">25</td>
+                <td class="num">40.0%</td>
+                <td class="num">-0.15</td>
+                <td class="num">-3.7</td>
+                <td class="num neutral"><b>-1.14</b><br>
+                    <span class='small'>[-5.39,+3.14]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4b_morning_before_12</code><br><span class="small">Trades before 12:00 ET (morning)</span></td>
+                <td class="num">23</td>
+                <td class="num">47.8%</td>
+                <td class="num">+1.55</td>
+                <td class="num">+35.6</td>
+                <td class="num neutral"><b>+1.57</b><br>
+                    <span class='small'>[-3.02,+6.15]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4c_midday_12_to_14</code><br><span class="small">Trades 12:00-14:00 ET (midday)</span></td>
+                <td class="num">19</td>
+                <td class="num">47.4%</td>
+                <td class="num">+0.31</td>
+                <td class="num">+5.9</td>
+                <td class="num neutral"><b>-0.31</b><br>
+                    <span class='small'>[-4.90,+4.19]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H6_gradient_with_dir</code><br><span class="small">Trades with charm gradient direction-aligned</span></td>
+                <td class="num">1</td>
+                <td class="num">100.0%</td>
+                <td class="num">+8.40</td>
+                <td class="num">+8.4</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H7_charm_neutral_spot</code><br><span class="small">Trades when |charm at spot| &lt; 25M (charm-neutral)</span></td>
+                <td class="num">62</td>
+                <td class="num">45.2%</td>
+                <td class="num">+0.66</td>
+                <td class="num">+41.0</td>
+                <td class="num neutral"><b>+1.33</b><br>
+                    <span class='small'>[-5.49,+7.80]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H10_against_wall_close</code><br><span class="small">Trades with opposing-direction charm wall within 5 pts</span></td>
+                <td class="num">2</td>
+                <td class="num">50.0%</td>
+                <td class="num">+4.10</td>
+                <td class="num">+8.2</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H11_with_wall_5_15</code><br><span class="small">Trades with WITH-direction wall 5-15 pts away</span></td>
+                <td class="num">3</td>
+                <td class="num">33.3%</td>
+                <td class="num">-2.53</td>
+                <td class="num">-7.6</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H12_no_against_wall_in_30</code><br><span class="small">Trades with NO opposing wall within 30 pts</span></td>
+                <td class="num">57</td>
+                <td class="num">43.9%</td>
+                <td class="num">+0.57</td>
+                <td class="num">+32.4</td>
+                <td class="num neutral"><b>-0.03</b><br>
+                    <span class='small'>[-6.47,+6.17]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H13_strong_with_dir_bias</code><br><span class="small">Trades with strong direction-aligned net charm</span></td>
+                <td class="num">4</td>
+                <td class="num">50.0%</td>
+                <td class="num">+2.17</td>
+                <td class="num">+8.7</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H14_charm_neutral_lis_strong</code><br><span class="small">Charm-neutral spot AND strong LIS charm</span></td>
+                <td class="num">3</td>
+                <td class="num">100.0%</td>
+                <td class="num">+13.37</td>
+                <td class="num">+40.1</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+</tbody></table><h4>AG Short</h4>
+<table><thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>PnL+</th><th>Tot+</th><th>diff</th><th>Sig?</th></tr></thead><tbody>
+<tr>
+                <td><code>H4_after_14_ET</code><br><span class="small">Trades after 14:00 ET (Volland&#x27;s &#x27;dealer o&#x27;clock&#x27;)</span></td>
+                <td class="num">15</td>
+                <td class="num">86.7%</td>
+                <td class="num">+8.47</td>
+                <td class="num">+127.0</td>
+                <td class="num neutral"><b>+4.38</b><br>
+                    <span class='small'>[-1.96,+10.33]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4b_morning_before_12</code><br><span class="small">Trades before 12:00 ET (morning)</span></td>
+                <td class="num">39</td>
+                <td class="num">66.7%</td>
+                <td class="num">+4.08</td>
+                <td class="num">+159.0</td>
+                <td class="num neutral"><b>-2.43</b><br>
+                    <span class='small'>[-9.15,+4.32]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4c_midday_12_to_14</code><br><span class="small">Trades 12:00-14:00 ET (midday)</span></td>
+                <td class="num">13</td>
+                <td class="num">84.6%</td>
+                <td class="num">+4.46</td>
+                <td class="num">+58.0</td>
+                <td class="num neutral"><b>-0.78</b><br>
+                    <span class='small'>[-8.56,+5.98]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H6_gradient_with_dir</code><br><span class="small">Trades with charm gradient direction-aligned</span></td>
+                <td class="num">9</td>
+                <td class="num">77.8%</td>
+                <td class="num">+5.81</td>
+                <td class="num">+52.3</td>
+                <td class="num neutral"><b>+0.86</b><br>
+                    <span class='small'>[-7.87,+8.34]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H7_charm_neutral_spot</code><br><span class="small">Trades when |charm at spot| &lt; 25M (charm-neutral)</span></td>
+                <td class="num">64</td>
+                <td class="num">73.4%</td>
+                <td class="num">+4.90</td>
+                <td class="num">+313.4</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H10_against_wall_close</code><br><span class="small">Trades with opposing-direction charm wall within 5 pts</span></td>
+                <td class="num">4</td>
+                <td class="num">50.0%</td>
+                <td class="num">-1.87</td>
+                <td class="num">-7.5</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H12_no_against_wall_in_30</code><br><span class="small">Trades with NO opposing wall within 30 pts</span></td>
+                <td class="num">60</td>
+                <td class="num">75.0%</td>
+                <td class="num">+5.13</td>
+                <td class="num">+307.7</td>
+                <td class="num neutral"><b>-0.04</b><br>
+                    <span class='small'>[-9.31,+10.37]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H13_strong_with_dir_bias</code><br><span class="small">Trades with strong direction-aligned net charm</span></td>
+                <td class="num">6</td>
+                <td class="num">100.0%</td>
+                <td class="num">+11.50</td>
+                <td class="num">+69.0</td>
+                <td class="num win"><b>+7.07</b><br>
+                    <span class='small'>[+2.71,+11.36]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H14_charm_neutral_lis_strong</code><br><span class="small">Charm-neutral spot AND strong LIS charm</span></td>
+                <td class="num">1</td>
+                <td class="num">0.0%</td>
+                <td class="num">-12.80</td>
+                <td class="num">-12.8</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+</tbody></table><h4>Paradigm Reversal</h4>
+<table><thead><tr><th>Hypothesis</th><th>N+</th><th>WR+</th><th>PnL+</th><th>Tot+</th><th>diff</th><th>Sig?</th></tr></thead><tbody>
+<tr>
+                <td><code>H1_shorts_wall_above_5_15</code><br><span class="small">Shorts with charm resistance wall 5-15 pts above spot</span></td>
+                <td class="num">1</td>
+                <td class="num">100.0%</td>
+                <td class="num">+10.00</td>
+                <td class="num">+10.0</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H2_longs_wall_below_5_15</code><br><span class="small">Longs with charm support wall 5-15 pts below spot</span></td>
+                <td class="num">1</td>
+                <td class="num">0.0%</td>
+                <td class="num">-0.60</td>
+                <td class="num">-0.6</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4_after_14_ET</code><br><span class="small">Trades after 14:00 ET (Volland&#x27;s &#x27;dealer o&#x27;clock&#x27;)</span></td>
+                <td class="num">16</td>
+                <td class="num">50.0%</td>
+                <td class="num">-0.80</td>
+                <td class="num">-12.8</td>
+                <td class="num neutral"><b>+1.84</b><br>
+                    <span class='small'>[-4.15,+7.83]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4b_morning_before_12</code><br><span class="small">Trades before 12:00 ET (morning)</span></td>
+                <td class="num">21</td>
+                <td class="num">38.1%</td>
+                <td class="num">-5.20</td>
+                <td class="num">-109.2</td>
+                <td class="num neutral"><b>-5.25</b><br>
+                    <span class='small'>[-11.13,+0.78]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H4c_midday_12_to_14</code><br><span class="small">Trades 12:00-14:00 ET (midday)</span></td>
+                <td class="num">14</td>
+                <td class="num">64.3%</td>
+                <td class="num">+1.39</td>
+                <td class="num">+19.4</td>
+                <td class="num neutral"><b>+4.60</b><br>
+                    <span class='small'>[-2.31,+11.27]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H6_gradient_with_dir</code><br><span class="small">Trades with charm gradient direction-aligned</span></td>
+                <td class="num">11</td>
+                <td class="num">72.7%</td>
+                <td class="num">+3.78</td>
+                <td class="num">+41.6</td>
+                <td class="num win"><b>+7.36</b><br>
+                    <span class='small'>[+0.26,+13.83]</span></td>
+                <td><span class='sig'>SIG</span></td></tr>
+<tr>
+                <td><code>H7_charm_neutral_spot</code><br><span class="small">Trades when |charm at spot| &lt; 25M (charm-neutral)</span></td>
+                <td class="num">50</td>
+                <td class="num">50.0%</td>
+                <td class="num">-1.96</td>
+                <td class="num">-98.2</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H11_with_wall_5_15</code><br><span class="small">Trades with WITH-direction wall 5-15 pts away</span></td>
+                <td class="num">2</td>
+                <td class="num">50.0%</td>
+                <td class="num">+4.70</td>
+                <td class="num">+9.4</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H12_no_against_wall_in_30</code><br><span class="small">Trades with NO opposing wall within 30 pts</span></td>
+                <td class="num">42</td>
+                <td class="num">47.6%</td>
+                <td class="num">-2.60</td>
+                <td class="num">-109.4</td>
+                <td class="num neutral"><b>-3.40</b><br>
+                    <span class='small'>[-9.49,+2.85]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+<tr>
+                <td><code>H14_charm_neutral_lis_strong</code><br><span class="small">Charm-neutral spot AND strong LIS charm</span></td>
+                <td class="num">1</td>
+                <td class="num">0.0%</td>
+                <td class="num">-15.00</td>
+                <td class="num">-15.0</td>
+                <td class="num neutral"><b>+0.00</b><br>
+                    <span class='small'>[+0.00,+0.00]</span></td>
+                <td><span class='notsig'>-</span></td></tr>
+</tbody></table>
+
+<h2>Top 5 Survivor Charm-Pattern Filter Candidates (Ranked by $/mo)</h2>
+<p class="small">Each candidate validated via chronological 50/50 OOS split + bootstrap CI on the dropped-trade mean.</p>
+
+    <div class="callout candidate">
+        <h3>#1. <code>F5_SC_SHORT_BLOCK_against_5_10_combined</code></h3>
+        <p><b>Polarity:</b> <span class="tag loss">EXCLUDE</span></p>
+        <p><b>Mechanism:</b> Combined F1+F2: BLOCK Skew Charm shorts when EITHER (a) charm support wall within 10 pts below, OR (b) high charm at spot (&gt;=25M). Both indicate dealer activity that traps the trade.</p>
+        <table>
+        <thead><tr><th>Period</th><th>n_all</th><th>n_dropped</th><th>dropped mean</th><th>delta (pts)</th><th>$/mo @ 1 MES</th></tr></thead>
+        <tbody>
+        <tr><td>FULL</td><td class="num">345</td><td class="num">26</td>
+            <td class="num loss">-6.62 CI=[-9.90,-3.24]</td>
+            <td class="num win"><b>+172.2</b></td>
+            <td class="num win"><b>$+359</b></td></tr>
+        <tr><td>IS half</td><td class="num">172</td><td class="num">9</td>
+            <td class="num">-11.35" if is_s else "-"</td>
+            <td class="num">+102.2</td>
+            <td class="num">$+426</td></tr>
+        <tr><td>OOS half</td><td class="num">173</td><td class="num">17</td>
+            <td class="num">-4.12" if oos_s else "-"</td>
+            <td class="num">+70.0</td>
+            <td class="num">$+292</td></tr>
+        </tbody></table>
+        <p><b>OOS verdict:</b> <span class='sig'>OOS-OK</span></p>
+    </div>
+    
+    <div class="callout candidate">
+        <h3>#2. <code>F1_SC_SHORT_BLOCK_support_within_10</code></h3>
+        <p><b>Polarity:</b> <span class="tag loss">EXCLUDE</span></p>
+        <p><b>Mechanism:</b> BLOCK Skew Charm shorts when a charm SUPPORT wall (charm sign-change with |value|&gt;=50M) sits within 10 pts below spot. Per Volland white paper: dealers reverse hedging at charm sign-change strikes. A support wall close below traps shorts — dealers buy underlying as price drops toward it, reversing the move. Within 10 pts is the actionable zone for 0DTE charm hedging.</p>
+        <table>
+        <thead><tr><th>Period</th><th>n_all</th><th>n_dropped</th><th>dropped mean</th><th>delta (pts)</th><th>$/mo @ 1 MES</th></tr></thead>
+        <tbody>
+        <tr><td>FULL</td><td class="num">345</td><td class="num">23</td>
+            <td class="num loss">-7.08 CI=[-10.60,-3.68]</td>
+            <td class="num win"><b>+162.8</b></td>
+            <td class="num win"><b>$+339</b></td></tr>
+        <tr><td>IS half</td><td class="num">172</td><td class="num">8</td>
+            <td class="num">-13.30" if is_s else "-"</td>
+            <td class="num">+106.4</td>
+            <td class="num">$+443</td></tr>
+        <tr><td>OOS half</td><td class="num">173</td><td class="num">15</td>
+            <td class="num">-3.76" if oos_s else "-"</td>
+            <td class="num">+56.4</td>
+            <td class="num">$+235</td></tr>
+        </tbody></table>
+        <p><b>OOS verdict:</b> <span class='sig'>OOS-OK</span></p>
+    </div>
+    
+    <div class="callout candidate">
+        <h3>#3. <code>F2_SC_SHORT_INCL_charm_neutral_lt_25M</code></h3>
+        <p><b>Polarity:</b> <span class="tag win">INCLUDE</span></p>
+        <p><b>Mechanism:</b> Skew Charm shorts only when |charm at spot strike| &lt; 25M. Charm-neutral entry indicates a breakout zone: dealers aren&#x27;t actively hedging at this strike, so directional momentum can manifest. Volland white paper: &#x27;If an outside party trades strongly in one direction or the other, the charm bars will flip their sign and price can begin to trend.&#x27;</p>
+        <table>
+        <thead><tr><th>Period</th><th>n_all</th><th>n_dropped</th><th>dropped mean</th><th>delta (pts)</th><th>$/mo @ 1 MES</th></tr></thead>
+        <tbody>
+        <tr><td>FULL</td><td class="num">345</td><td class="num">11</td>
+            <td class="num loss">-6.27 CI=[-10.72,-1.23]</td>
+            <td class="num win"><b>+69.0</b></td>
+            <td class="num win"><b>$+144</b></td></tr>
+        <tr><td>IS half</td><td class="num">172</td><td class="num">3</td>
+            <td class="num">-7.36" if is_s else "-"</td>
+            <td class="num">+22.1</td>
+            <td class="num">$+92</td></tr>
+        <tr><td>OOS half</td><td class="num">173</td><td class="num">8</td>
+            <td class="num">-5.86" if oos_s else "-"</td>
+            <td class="num">+46.9</td>
+            <td class="num">$+195</td></tr>
+        </tbody></table>
+        <p><b>OOS verdict:</b> <span class='sig'>OOS-OK</span></p>
+    </div>
+    
+    <div class="callout candidate">
+        <h3>#4. <code>F3_DD_SHORT_INCL_charm_neutral_lt_25M</code></h3>
+        <p><b>Polarity:</b> <span class="tag win">INCLUDE</span></p>
+        <p><b>Mechanism:</b> DD Exhaustion shorts only when charm at spot &lt; 25M. Aligns with the contrarian premise: DD Exhaustion fires when DD-charm divergence indicates dealer over-positioning. If charm at the entry strike is large, dealers are actively pinning — bad time to fade. Charm-neutral confirms the pivot is genuine.</p>
+        <table>
+        <thead><tr><th>Period</th><th>n_all</th><th>n_dropped</th><th>dropped mean</th><th>delta (pts)</th><th>$/mo @ 1 MES</th></tr></thead>
+        <tbody>
+        <tr><td>FULL</td><td class="num">302</td><td class="num">7</td>
+            <td class="num loss">-9.51 CI=[-12.00,-4.54]</td>
+            <td class="num win"><b>+66.6</b></td>
+            <td class="num win"><b>$+139</b></td></tr>
+        <tr><td>IS half</td><td class="num">151</td><td class="num">2</td>
+            <td class="num">-12.00" if is_s else "-"</td>
+            <td class="num">+24.0</td>
+            <td class="num">$+100</td></tr>
+        <tr><td>OOS half</td><td class="num">151</td><td class="num">5</td>
+            <td class="num">-8.52" if oos_s else "-"</td>
+            <td class="num">+42.6</td>
+            <td class="num">$+177</td></tr>
+        </tbody></table>
+        <p><b>OOS verdict:</b> <span class='sig'>OOS-OK</span></p>
+    </div>
+    
+    <div class="callout candidate">
+        <h3>#5. <code>F4_ES_SHORT_INCL_charm_neutral_lt_25M</code></h3>
+        <p><b>Polarity:</b> <span class="tag win">INCLUDE</span></p>
+        <p><b>Mechanism:</b> ES Absorption shorts only when charm-neutral at spot. ES absorption is a CVD divergence setup; charm-neutral entry confirms there&#x27;s no dealer pin causing the divergence.</p>
+        <table>
+        <thead><tr><th>Period</th><th>n_all</th><th>n_dropped</th><th>dropped mean</th><th>delta (pts)</th><th>$/mo @ 1 MES</th></tr></thead>
+        <tbody>
+        <tr><td>FULL</td><td class="num">283</td><td class="num">32</td>
+            <td class="num loss">-1.77 CI=[-3.46,+0.03]</td>
+            <td class="num win"><b>+56.7</b></td>
+            <td class="num win"><b>$+118</b></td></tr>
+        <tr><td>IS half</td><td class="num">141</td><td class="num">9</td>
+            <td class="num">-4.07" if is_s else "-"</td>
+            <td class="num">+36.6</td>
+            <td class="num">$+153</td></tr>
+        <tr><td>OOS half</td><td class="num">142</td><td class="num">23</td>
+            <td class="num">-0.87" if oos_s else "-"</td>
+            <td class="num">+20.1</td>
+            <td class="num">$+84</td></tr>
+        </tbody></table>
+        <p><b>OOS verdict:</b> <span class='sig'>OOS-OK</span></p>
+    </div>
+    
+
+<h2>Summary &amp; Recommendations</h2>
+<div class="callout good">
+<h3>What survived</h3>
+<ol>
+<li><b>F5 (SC short combined blocker):</b> $+359/mo. Blocks SC shorts when EITHER a charm support wall sits within
+    10 pts below OR charm at spot is high (>=25M). 26 trades dropped, dropped mean -6.62 pts/trade.
+    Strong OOS consistency. <b>Highest-value finding.</b></li>
+<li><b>F1 (SC short support-wall blocker):</b> $+339/mo. Subset of F5; cleaner mechanism.</li>
+<li><b>F2 (SC short charm-neutral filter):</b> $+144/mo. Subset of F5; smaller subset.</li>
+<li><b>F3 (DD short charm-neutral filter):</b> $+139/mo. Only 7 trades dropped but -9.5 pts/trade — they
+    are clearly bad trades. Caveat: DD is currently log-only on real trader so this is academic until DD ships.</li>
+<li><b>F4 (ES short charm-neutral filter):</b> $+118/mo. Cleanest sample size (32 dropped). Marginally significant.</li>
+</ol>
+</div>
+
+<div class="callout warn">
+<h3>What DIDN'T survive</h3>
+<ul>
+<li><b>H4 dealer-o'clock for SC shorts:</b> The pooled signal looked strong (-2.84 pts SIG) but blocking those 107
+    trades only saved $-28/mo (the kept trades' marginal performance dropped too). Net negative — DO NOT ship.</li>
+<li><b>H6 gradient-aligned filters:</b> Significant in pooled and per-setup tests but the per-half split
+    of SC LONG showed IS -9.48 / OOS +0.00 — likely curve-fit on the IS half. Tiny sample (10 trades).</li>
+<li><b>H1/H2 wall-in-direction (5-15pt):</b> Direction-aligned charm walls didn't show predictive lift either way.</li>
+</ul>
+</div>
+
+<div class="callout">
+<h3>Key insight: Charm walls AGAINST direction are the strongest signal</h3>
+<p>Across all setups, the single most robust finding is: <b>when a charm sign-change strike (wall) sits CLOSE
+to spot in the direction OPPOSING the trade, the trade fails</b>. For shorts, this means a charm support wall
+within 5-10 pts below spot. For longs, a charm resistance wall within 5-10 pts above.</p>
+<p>Mechanism: dealers reverse their hedging direction at these strikes. Approaching the wall, they buy
+(in support case) or sell (in resistance case), which dampens or reverses the move.</p>
+<p>This matches Volland white paper: "When a line in the sand breaks, dealers will be hedging stronger
+charm/vanna flows as the trades become more one-sided." Conversely, when a wall is INSIDE the trade path,
+it blocks the move.</p>
+</div>
+
+<div class="callout candidate">
+<h3>Recommended Ship Path</h3>
+<ol>
+<li><b>Ship F1 (SC short support-wall blocker) ALONE first</b> — single mechanism, cleanest interpretation,
+    $339/mo. Combine with V14 SC short whitelist. Implementation: in <code>_passes_live_filter()</code>,
+    after passing V14 SC short gates, compute charm wall below spot. If within 10 pts, BLOCK.</li>
+<li><b>Add F4 (ES short charm-neutral) on a 30-trade monitor.</b> ES Absorption shorts are currently SIM/eval only
+    so this is portal-tracked. The 32 dropped trades had only -1.77 pts/trade (CI marginally crosses zero),
+    so wait for confirmation.</li>
+<li><b>Do NOT ship F2 standalone</b> — it's a subset of F1; combining doesn't add much.</li>
+<li><b>Do NOT ship F3 (DD short)</b> — only 7 trades dropped; DD is log-only on real trader anyway.</li>
+<li><b>Reject F5 the combined filter for now</b> — F1 alone captures 95% of the value with cleaner mechanism.</li>
+</ol>
+</div>
+
+<h2>Caveats &amp; Methodology Notes</h2>
+<ul>
+<li>Outcomes used: <code>outcome_pnl</code> from <code>setup_log</code> (DB-resolved at exit).</li>
+<li>Charm snapshot: nearest <code>volland_exposure_points</code> row before signal_ts within 10 min (97% coverage).</li>
+<li>Feature windows: charm values from strikes within ±100 pts of spot. Wall sign-change threshold: |value| ≥ 50M.</li>
+<li>Bootstrap CI: 2000 resamples on difference of means. Significance = 95% CI does not cross zero.</li>
+<li>OOS split: chronological 50/50 within each setup × direction subset.</li>
+<li>Dollar conversion: 1 MES point = $5. Period span: Mar 1 - May 13 (~2.4 months) for monthly extrapolation.</li>
+<li>Era heterogeneity: V11 → V12 → V12-fix → V13 → V14 filter changes across the 2.5mo window. Results are
+    weighted by setup mix actually fired. Not perfectly homogeneous but reasonable since the per-setup splits
+    keep within-setup behavior.</li>
+<li>Charm "value" convention: positive = bearish, negative = bullish (Volland sign — calculated as +1 day passing).</li>
+<li>This study tested ~14 hypothesis variants. With Bonferroni correction (α/14 ≈ 0.36% per test), some borderline
+    findings would not survive. The top 2 candidates (F1, F5) pass even strict correction.</li>
+<li>NO MFE/MAE-based analysis was used here. Outcome_pnl is the realized exit P&amp;L, consistent across the dataset.</li>
+</ul>
+
+<h2>Files Generated</h2>
+<ul>
+<li><code>_tmp_track_e_charm_framework.md</code> — Synthesized charm interpretation framework</li>
+<li><code>_tmp_track_e_charm_features.json</code> — Per-trade charm features (3.6MB, 2374 trades)</li>
+<li><code>_tmp_track_e_charm_edges.py</code> — Main analysis script</li>
+<li><code>_tmp_track_e_per_setup.py</code> — Per-setup hypothesis splits</li>
+<li><code>_tmp_track_e_finalists.py</code> — Refined OOS validation on top candidates</li>
+<li><code>_tmp_track_e_charm_edges.html</code> — This report</li>
+</ul>
+
+</body></html>

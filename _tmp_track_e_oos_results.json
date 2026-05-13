@@ -1,0 +1,366 @@
+[
+  {
+    "label": "C1_SC_short_charm_neutral",
+    "is_period": [
+      "2026-03-02",
+      "2026-04-08"
+    ],
+    "oos_period": [
+      "2026-04-08",
+      "2026-05-12"
+    ],
+    "full": {
+      "n_pos": 334,
+      "n_neg": 11,
+      "pos_mean": 2.3807185628742515,
+      "pos_total": 795.1600000000001,
+      "pos_wr": 0.6137724550898204,
+      "neg_mean": -6.27,
+      "diff": 8.578207443295225,
+      "ci_lo": 3.4953520685900927,
+      "ci_hi": 13.366554164398472,
+      "sig": true
+    },
+    "is": {
+      "n_pos": 169,
+      "n_neg": 3,
+      "pos_mean": 2.6500591715976327,
+      "pos_total": 447.85999999999996,
+      "pos_wr": 0.6390532544378699,
+      "neg_mean": -7.3566666666666665,
+      "diff": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "sig": false
+    },
+    "oos": {
+      "n_pos": 165,
+      "n_neg": 8,
+      "pos_mean": 2.1048484848484854,
+      "pos_total": 347.30000000000007,
+      "pos_wr": 0.5878787878787879,
+      "neg_mean": -5.8625,
+      "diff": 7.9492380808080805,
+      "ci_lo": 2.0920132575757573,
+      "ci_hi": 13.505028409090905,
+      "sig": true
+    },
+    "polarity": "include",
+    "mechanism": "Skew Charm shorts only when charm at spot strike is near zero (<25M absolute). Indicates breakout-zone setup where dealers aren't pinning the strike.",
+    "setup": "Skew Charm",
+    "direction": "short",
+    "monthly_dollars": 143.68750000000006
+  },
+  {
+    "label": "C2_SC_short_no_against_wall",
+    "is_period": [
+      "2026-03-02",
+      "2026-04-08"
+    ],
+    "oos_period": [
+      "2026-04-08",
+      "2026-05-12"
+    ],
+    "full": {
+      "n_pos": 285,
+      "n_neg": 60,
+      "pos_mean": 2.871719298245614,
+      "pos_total": 818.44,
+      "pos_wr": 0.6421052631578947,
+      "neg_mean": -1.5375000000000003,
+      "diff": 4.438497719298246,
+      "ci_lo": 0.9944304824561403,
+      "ci_hi": 7.984852850877193,
+      "sig": true
+    },
+    "is": {
+      "n_pos": 141,
+      "n_neg": 31,
+      "pos_mean": 3.368368794326241,
+      "pos_total": 474.94,
+      "pos_wr": 0.6666666666666666,
+      "neg_mean": -1.5854838709677421,
+      "diff": 4.979279873408068,
+      "ci_lo": -0.5720155570807592,
+      "ci_hi": 10.52983842370167,
+      "sig": false
+    },
+    "oos": {
+      "n_pos": 144,
+      "n_neg": 29,
+      "pos_mean": 2.3854166666666665,
+      "pos_total": 343.5,
+      "pos_wr": 0.6180555555555556,
+      "neg_mean": -1.486206896551724,
+      "diff": 3.9039403895274583,
+      "ci_lo": -0.5136093151340996,
+      "ci_hi": 8.008782327586205,
+      "sig": false
+    },
+    "polarity": "include",
+    "mechanism": "Skew Charm shorts only when there is no charm support wall within 30 pts below spot. Avoids shorts into nearby support that would reverse.",
+    "setup": "Skew Charm",
+    "direction": "short",
+    "monthly_dollars": 192.1875
+  },
+  {
+    "label": "C3_SC_short_against_wall_block",
+    "is_period": [
+      "2026-03-02",
+      "2026-04-08"
+    ],
+    "oos_period": [
+      "2026-04-08",
+      "2026-05-12"
+    ],
+    "full": {
+      "n_pos": 12,
+      "n_neg": 333,
+      "pos_mean": -4.874999999999999,
+      "pos_total": -58.49999999999999,
+      "pos_wr": 0.3333333333333333,
+      "neg_mean": 2.3564264264264265,
+      "diff": -7.297828268268269,
+      "ci_lo": -12.459325075075075,
+      "ci_hi": -1.8055390390390431,
+      "sig": true
+    },
+    "is": {
+      "n_pos": 3,
+      "n_neg": 169,
+      "pos_mean": -13.833333333333334,
+      "pos_total": -41.5,
+      "pos_wr": 0.0,
+      "neg_mean": 2.7650295857988163,
+      "diff": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "sig": false
+    },
+    "oos": {
+      "n_pos": 9,
+      "n_neg": 164,
+      "pos_mean": -1.8888888888888888,
+      "pos_total": -17.0,
+      "pos_wr": 0.4444444444444444,
+      "neg_mean": 1.9353658536585365,
+      "diff": -3.8068086720867207,
+      "ci_lo": -9.632996273712736,
+      "ci_hi": 2.0133214769647667,
+      "sig": false
+    },
+    "polarity": "exclude",
+    "mechanism": "BLOCK Skew Charm shorts when a charm support wall sits within 5 pts below spot. Dealers will buy at that level, reversing the short.",
+    "setup": "Skew Charm",
+    "direction": "short",
+    "monthly_dollars": 121.87499999999999
+  },
+  {
+    "label": "C4_DD_short_charm_neutral",
+    "is_period": [
+      "2026-03-02",
+      "2026-04-08"
+    ],
+    "oos_period": [
+      "2026-04-08",
+      "2026-05-12"
+    ],
+    "full": {
+      "n_pos": 295,
+      "n_neg": 7,
+      "pos_mean": 0.3790508474576272,
+      "pos_total": 111.82000000000002,
+      "pos_wr": 0.42033898305084744,
+      "neg_mean": -9.514285714285714,
+      "diff": 9.856845042776433,
+      "ci_lo": 4.858770702179177,
+      "ci_hi": 13.433551694915248,
+      "sig": true
+    },
+    "is": {
+      "n_pos": 149,
+      "n_neg": 2,
+      "pos_mean": 1.5518120805369129,
+      "pos_total": 231.22000000000003,
+      "pos_wr": 0.436241610738255,
+      "neg_mean": -12.0,
+      "diff": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "sig": false
+    },
+    "oos": {
+      "n_pos": 146,
+      "n_neg": 5,
+      "pos_mean": -0.8178082191780823,
+      "pos_total": -119.40000000000002,
+      "pos_wr": 0.4041095890410959,
+      "neg_mean": -8.52,
+      "diff": 7.637345662100456,
+      "ci_lo": 0.6479280821917803,
+      "ci_hi": 12.50900684931506,
+      "sig": true
+    },
+    "polarity": "include",
+    "mechanism": "DD Exhaustion shorts only when charm at spot near zero. Aligns with contrarian setup design: spot is in a charm-neutral pivot zone.",
+    "setup": "DD Exhaustion",
+    "direction": "short",
+    "monthly_dollars": 138.75
+  },
+  {
+    "label": "C5_SC_LONG_gradient_block",
+    "is_period": [
+      "2026-03-02",
+      "2026-03-27"
+    ],
+    "oos_period": [
+      "2026-03-27",
+      "2026-05-13"
+    ],
+    "full": {
+      "n_pos": 10,
+      "n_neg": 270,
+      "pos_mean": -6.389999999999999,
+      "pos_total": -63.89999999999999,
+      "pos_wr": 0.3,
+      "neg_mean": 2.7236296296296296,
+      "diff": -9.129945802469136,
+      "ci_lo": -15.020008333333333,
+      "ci_hi": -2.6727657407407435,
+      "sig": true
+    },
+    "is": {
+      "n_pos": 8,
+      "n_neg": 132,
+      "pos_mean": -8.4125,
+      "pos_total": -67.3,
+      "pos_wr": 0.25,
+      "neg_mean": 1.1454545454545455,
+      "diff": -9.476939797979798,
+      "ci_lo": -15.996265151515152,
+      "ci_hi": -2.2546117424242453,
+      "sig": true
+    },
+    "oos": {
+      "n_pos": 2,
+      "n_neg": 138,
+      "pos_mean": 1.7000000000000002,
+      "pos_total": 3.4000000000000004,
+      "pos_wr": 0.5,
+      "neg_mean": 4.233188405797101,
+      "diff": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "sig": false
+    },
+    "polarity": "exclude",
+    "mechanism": "BLOCK Skew Charm longs when charm gradient is steeply negative across strikes near spot. Counter-intuitively, when charm 'aligns' with long via steep negative slope, the trades fail (anti-predictive in our data).",
+    "setup": "Skew Charm",
+    "direction": "long",
+    "monthly_dollars": 133.12499999999997
+  },
+  {
+    "label": "C6_SC_short_after_14_block",
+    "is_period": [
+      "2026-03-02",
+      "2026-04-08"
+    ],
+    "oos_period": [
+      "2026-04-08",
+      "2026-05-12"
+    ],
+    "full": {
+      "n_pos": 107,
+      "n_neg": 238,
+      "pos_mean": 0.1273831775700935,
+      "pos_total": 13.630000000000003,
+      "pos_wr": 0.514018691588785,
+      "neg_mean": 2.9939495798319324,
+      "diff": -2.8750199735595174,
+      "ci_lo": -5.656243304798555,
+      "ci_hi": -0.08735841906856517,
+      "sig": true
+    },
+    "is": {
+      "n_pos": 53,
+      "n_neg": 119,
+      "pos_mean": 0.5043396226415092,
+      "pos_total": 26.72999999999999,
+      "pos_wr": 0.5849056603773585,
+      "neg_mean": 3.35344537815126,
+      "diff": -2.7781343977591035,
+      "ci_lo": -7.603195100681782,
+      "ci_hi": 2.0137188045029313,
+      "sig": false
+    },
+    "oos": {
+      "n_pos": 54,
+      "n_neg": 119,
+      "pos_mean": -0.24259259259259267,
+      "pos_total": -13.100000000000003,
+      "pos_wr": 0.4444444444444444,
+      "neg_mean": 2.634453781512605,
+      "diff": -2.8351810457516344,
+      "ci_lo": -6.383330220977279,
+      "ci_hi": 0.7893946467475831,
+      "sig": false
+    },
+    "polarity": "exclude",
+    "mechanism": "BLOCK Skew Charm shorts after 14:00 ET. Contradicts Volland's 'dealer o'clock' wisdom for this specific setup \u2014 SC shorts post-2pm have WR 51% vs 65% pre-2pm.",
+    "setup": "Skew Charm",
+    "direction": "short",
+    "monthly_dollars": -28.395833333333336
+  },
+  {
+    "label": "C7_ES_short_charm_neutral",
+    "is_period": [
+      "2026-03-02",
+      "2026-03-27"
+    ],
+    "oos_period": [
+      "2026-03-30",
+      "2026-05-13"
+    ],
+    "full": {
+      "n_pos": 251,
+      "n_neg": 32,
+      "pos_mean": 0.6741035856573706,
+      "pos_total": 169.20000000000002,
+      "pos_wr": 0.5099601593625498,
+      "neg_mean": -1.771875,
+      "diff": 2.4524445219123505,
+      "ci_lo": 0.36053909362549813,
+      "ci_hi": 4.413778324203186,
+      "sig": true
+    },
+    "is": {
+      "n_pos": 132,
+      "n_neg": 9,
+      "pos_mean": 0.7757575757575758,
+      "pos_total": 102.4,
+      "pos_wr": 0.553030303030303,
+      "neg_mean": -4.066666666666666,
+      "diff": 4.850652188552188,
+      "ci_lo": 1.3762121212121214,
+      "ci_hi": 8.46157196969697,
+      "sig": true
+    },
+    "oos": {
+      "n_pos": 119,
+      "n_neg": 23,
+      "pos_mean": 0.561344537815126,
+      "pos_total": 66.8,
+      "pos_wr": 0.46218487394957986,
+      "neg_mean": -0.8739130434782609,
+      "diff": 1.495089099987821,
+      "ci_lo": -1.1457279868469126,
+      "ci_hi": 3.972101753744974,
+      "sig": false
+    },
+    "polarity": "include",
+    "mechanism": "ES Absorption shorts only when charm-neutral at spot. Marginal but significant.",
+    "setup": "ES Absorption",
+    "direction": "bearish",
+    "monthly_dollars": 118.125
+  }
+]

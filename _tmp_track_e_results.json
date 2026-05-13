@@ -1,0 +1,292 @@
+[
+  {
+    "name": "H1_shorts_wall_above_5_15",
+    "n_pos": 77,
+    "n_neg": 2042,
+    "wr_pos": 0.44155844155844154,
+    "wr_neg": 0.5377081292850147,
+    "pnl_pos_total": -45.96,
+    "pnl_neg_total": 2836.2,
+    "pnl_pos_mean": -0.5968831168831166,
+    "pnl_pos_ci": [
+      -2.741038961038961,
+      1.5717662337662317
+    ],
+    "pnl_neg_mean": 1.388932419196866,
+    "pnl_neg_ci": [
+      0.8799707394711069,
+      1.9277635896180212
+    ],
+    "diff_mean": -2.0017370700039434,
+    "diff_ci": [
+      -4.263423559789868,
+      0.177019159342126
+    ],
+    "ci_clears_zero": false,
+    "desc": "Shorts with charm wall above spot in 5-15pt range",
+    "is_diff": -1.7686364812801931,
+    "oos_diff": -2.3000558589870908,
+    "oos_clears_zero": false
+  },
+  {
+    "name": "H2_longs_wall_below_5_15",
+    "n_pos": 76,
+    "n_neg": 2043,
+    "wr_pos": 0.6052631578947368,
+    "wr_neg": 0.5315712187958884,
+    "pnl_pos_total": 101.57000000000001,
+    "pnl_neg_total": 2688.67,
+    "pnl_pos_mean": 1.3364473684210527,
+    "pnl_pos_ci": [
+      -0.7106019736842104,
+      3.5448684210526267
+    ],
+    "pnl_neg_mean": 1.316040137053353,
+    "pnl_neg_ci": [
+      0.824326847772883,
+      1.8285859030837
+    ],
+    "diff_mean": -0.04049276480021638,
+    "diff_ci": [
+      -2.08089601849705,
+      2.0281766494061872
+    ],
+    "ci_clears_zero": false,
+    "desc": "Longs with charm wall below spot in 5-15pt range",
+    "is_diff": -2.6362595602526726,
+    "oos_diff": 1.7143751957379298,
+    "oos_clears_zero": false
+  },
+  {
+    "name": "H3_symmetric_charm",
+    "n_pos": 1027,
+    "n_neg": 1092,
+    "wr_pos": 0.5365141187925998,
+    "wr_neg": 0.532051282051282,
+    "pnl_pos_total": 1370.08,
+    "pnl_neg_total": 1420.16,
+    "pnl_pos_mean": 1.334060370009737,
+    "pnl_pos_ci": [
+      0.586123417721519,
+      2.060065238558909
+    ],
+    "pnl_neg_mean": 1.3005128205128207,
+    "pnl_neg_ci": [
+      0.618070054945055,
+      1.9731538461538463
+    ],
+    "diff_mean": 0.031137907219362913,
+    "diff_ci": [
+      -1.0061231684981686,
+      1.0391852338062781
+    ],
+    "ci_clears_zero": false,
+    "desc": "Trades when charm is symmetric (|sym|<0.2)",
+    "is_diff": 0.5436675566475028,
+    "oos_diff": -0.5770429313649008,
+    "oos_clears_zero": false
+  },
+  {
+    "name": "H4_after_14_ET",
+    "n_pos": 672,
+    "n_neg": 1447,
+    "wr_pos": 0.49404761904761907,
+    "wr_neg": 0.55286800276434,
+    "pnl_pos_total": 206.2,
+    "pnl_neg_total": 2584.04,
+    "pnl_pos_mean": 0.30684523809523806,
+    "pnl_pos_ci": [
+      -0.4580528273809524,
+      1.0923385416666667
+    ],
+    "pnl_neg_mean": 1.7857912923289565,
+    "pnl_neg_ci": [
+      1.187577401520387,
+      2.413104008293019
+    ],
+    "diff_mean": -1.4836421234306614,
+    "diff_ci": [
+      -2.4939684800449204,
+      -0.49491327294566817
+    ],
+    "ci_clears_zero": true,
+    "desc": "Trades after 14:00 ET (dealer o'clock)",
+    "is_diff": -1.1313269958188972,
+    "oos_diff": -1.7908673647305078,
+    "oos_clears_zero": true
+  },
+  {
+    "name": "H5_strong_lis_charm",
+    "n_pos": 45,
+    "n_neg": 2074,
+    "wr_pos": 0.5111111111111111,
+    "wr_neg": 0.5347155255544841,
+    "pnl_pos_total": 42.199999999999996,
+    "pnl_neg_total": 2748.04,
+    "pnl_pos_mean": 0.9377777777777778,
+    "pnl_pos_ci": [
+      -1.1155555555555556,
+      3.0468333333333324
+    ],
+    "pnl_neg_mean": 1.3249951783992284,
+    "pnl_neg_ci": [
+      0.8325779893924783,
+      1.8484093539054962
+    ],
+    "diff_mean": -0.41823957837779924,
+    "diff_ci": [
+      -2.5030999946426657,
+      1.7208484678024198
+    ],
+    "ci_clears_zero": false,
+    "desc": "Trades when charm at LIS strike >= 200M (strong LIS)",
+    "is_diff": -0.812511070740435,
+    "oos_diff": -0.06519638513513518,
+    "oos_clears_zero": false
+  },
+  {
+    "name": "H6_gradient_with_dir",
+    "n_pos": 356,
+    "n_neg": 1763,
+    "wr_pos": 0.45224719101123595,
+    "wr_neg": 0.5507657402155417,
+    "pnl_pos_total": -227.25000000000003,
+    "pnl_neg_total": 3017.49,
+    "pnl_pos_mean": -0.6383426966292135,
+    "pnl_pos_ci": [
+      -1.6885997191011237,
+      0.3956636235955054
+    ],
+    "pnl_neg_mean": 1.7115655133295518,
+    "pnl_neg_ci": [
+      1.1519496596710153,
+      2.2669822745320474
+    ],
+    "diff_mean": -2.3605752473200687,
+    "diff_ci": [
+      -3.5394784852651573,
+      -1.1473366663851838
+    ],
+    "ci_clears_zero": true,
+    "desc": "Trades when charm gradient aligns with trade direction",
+    "is_diff": -2.1212535415086733,
+    "oos_diff": -2.7642364268206157,
+    "oos_clears_zero": true
+  },
+  {
+    "name": "H7_charm_neutral_spot",
+    "n_pos": 1995,
+    "n_neg": 124,
+    "wr_pos": 0.5368421052631579,
+    "wr_neg": 0.49193548387096775,
+    "pnl_pos_total": 2761.85,
+    "pnl_neg_total": 28.389999999999993,
+    "pnl_pos_mean": 1.3843859649122807,
+    "pnl_pos_ci": [
+      0.8640428571428571,
+      1.9357690476190477
+    ],
+    "pnl_neg_mean": 0.22895161290322574,
+    "pnl_neg_ci": [
+      -1.2755705645161288,
+      1.6339435483870952
+    ],
+    "diff_mean": 1.1758017459374241,
+    "diff_ci": [
+      -0.4120713901689709,
+      2.664291372584686
+    ],
+    "ci_clears_zero": false,
+    "desc": "Trades when charm at spot strike is near-zero (<25M)",
+    "is_diff": 1.2795479225885125,
+    "oos_diff": 1.2698460663751305,
+    "oos_clears_zero": false
+  },
+  {
+    "name": "H8_longs_resistance_close",
+    "n_pos": 44,
+    "n_neg": 2075,
+    "wr_pos": 0.5227272727272727,
+    "wr_neg": 0.5344578313253012,
+    "pnl_pos_total": 39.3,
+    "pnl_neg_total": 2750.94,
+    "pnl_pos_mean": 0.8931818181818181,
+    "pnl_pos_ci": [
+      -1.5664772727272729,
+      3.570624999999999
+    ],
+    "pnl_neg_mean": 1.3257542168674699,
+    "pnl_neg_ci": [
+      0.8285153012048194,
+      1.8239478313253008
+    ],
+    "diff_mean": -0.4470867254107339,
+    "diff_ci": [
+      -3.08794713033954,
+      2.256272705366918
+    ],
+    "ci_clears_zero": false,
+    "desc": "Longs with charm RESISTANCE wall within 5 pts above spot",
+    "is_diff": -4.2416696542425685,
+    "oos_diff": 1.613011230620155,
+    "oos_clears_zero": false
+  },
+  {
+    "name": "H9_strong_with_dir_charm",
+    "n_pos": 28,
+    "n_neg": 2091,
+    "wr_pos": 0.5357142857142857,
+    "wr_neg": 0.5341941654710665,
+    "pnl_pos_total": 23.72,
+    "pnl_neg_total": 2766.52,
+    "pnl_pos_mean": 0.8471428571428571,
+    "pnl_pos_ci": [
+      -1.5609821428571427,
+      3.5229107142857146
+    ],
+    "pnl_neg_mean": 1.323060736489718,
+    "pnl_neg_ci": [
+      0.8429593495934959,
+      1.835594093735055
+    ],
+    "diff_mean": -0.46295143694062996,
+    "diff_ci": [
+      -2.988802059848329,
+      2.0175428793468595
+    ],
+    "ci_clears_zero": false,
+    "desc": "Trades where net charm in \u00b130 is strongly with direction (>1B)",
+    "is_diff": -2.5119625603448275,
+    "oos_diff": 2.01909794284035,
+    "oos_clears_zero": false
+  },
+  {
+    "name": "H10_against_wall_close",
+    "n_pos": 92,
+    "n_neg": 2027,
+    "wr_pos": 0.42391304347826086,
+    "wr_neg": 0.5392205229403059,
+    "pnl_pos_total": -81.68,
+    "pnl_neg_total": 2871.92,
+    "pnl_pos_mean": -0.887826086956522,
+    "pnl_pos_ci": [
+      -2.6207826086956523,
+      0.8674836956521734
+    ],
+    "pnl_neg_mean": 1.4168327577701036,
+    "pnl_neg_ci": [
+      0.8993277010360137,
+      1.927244819930932
+    ],
+    "diff_mean": -2.33147629630424,
+    "diff_ci": [
+      -4.110254844919671,
+      -0.5579097858261335
+    ],
+    "ci_clears_zero": true,
+    "desc": "Trades where wall AGAINST trade direction is within 5 pts",
+    "is_diff": -4.062864921660529,
+    "oos_diff": -1.6691888740825653,
+    "oos_clears_zero": false
+  }
+]

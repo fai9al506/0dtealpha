@@ -1,0 +1,277 @@
+[
+  {
+    "id": "F1_SC_SHORT_BLOCK_support_within_10",
+    "mechanism": "BLOCK Skew Charm shorts when a charm SUPPORT wall (charm sign-change with |value|>=50M) sits within 10 pts below spot. Per Volland white paper: dealers reverse hedging at charm sign-change strikes. A support wall close below traps shorts \u2014 dealers buy underlying as price drops toward it, reversing the move. Within 10 pts is the actionable zone for 0DTE charm hedging.",
+    "polarity": "exclude",
+    "full": {
+      "n_all": 345,
+      "n_kept": 322,
+      "n_dropped": 23,
+      "all_pnl": 726.1899999999999,
+      "kept_pnl": 888.99,
+      "dropped_pnl": -162.8,
+      "kept_wr": 0.6335403726708074,
+      "all_wr": 0.6057971014492753,
+      "delta": 162.80000000000007,
+      "dropped_mean": -7.078260869565218,
+      "dropped_ci": [
+        -10.595978260869567,
+        -3.682282608695654
+      ]
+    },
+    "is": {
+      "n_all": 172,
+      "n_kept": 164,
+      "n_dropped": 8,
+      "all_pnl": 425.79,
+      "kept_pnl": 532.19,
+      "dropped_pnl": -106.4,
+      "kept_wr": 0.6585365853658537,
+      "all_wr": 0.6337209302325582,
+      "delta": 106.40000000000003,
+      "dropped_mean": -13.3,
+      "dropped_ci": [
+        -17.113437499999996,
+        -8.125
+      ]
+    },
+    "oos": {
+      "n_all": 173,
+      "n_kept": 158,
+      "n_dropped": 15,
+      "all_pnl": 300.4,
+      "kept_pnl": 356.8,
+      "dropped_pnl": -56.4,
+      "kept_wr": 0.6075949367088608,
+      "all_wr": 0.5780346820809249,
+      "delta": 56.400000000000034,
+      "dropped_mean": -3.76,
+      "dropped_ci": [
+        -7.573833333333333,
+        0.09999999999999977
+      ]
+    },
+    "monthly_dollars": 339.1666666666668,
+    "oos_consistent": true
+  },
+  {
+    "id": "F2_SC_SHORT_INCL_charm_neutral_lt_25M",
+    "mechanism": "Skew Charm shorts only when |charm at spot strike| < 25M. Charm-neutral entry indicates a breakout zone: dealers aren't actively hedging at this strike, so directional momentum can manifest. Volland white paper: 'If an outside party trades strongly in one direction or the other, the charm bars will flip their sign and price can begin to trend.'",
+    "polarity": "include",
+    "full": {
+      "n_all": 345,
+      "n_kept": 334,
+      "n_dropped": 11,
+      "all_pnl": 726.1899999999999,
+      "kept_pnl": 795.16,
+      "dropped_pnl": -68.97,
+      "kept_wr": 0.6137724550898204,
+      "all_wr": 0.6057971014492753,
+      "delta": 68.97000000000003,
+      "dropped_mean": -6.27,
+      "dropped_ci": [
+        -10.725,
+        -1.2280909090909096
+      ]
+    },
+    "is": {
+      "n_all": 172,
+      "n_kept": 169,
+      "n_dropped": 3,
+      "all_pnl": 425.79,
+      "kept_pnl": 447.86,
+      "dropped_pnl": -22.07,
+      "kept_wr": 0.6390532544378699,
+      "all_wr": 0.6337209302325582,
+      "delta": 22.069999999999993,
+      "dropped_mean": -7.3566666666666665,
+      "dropped_ci": [
+        -7.3566666666666665,
+        -7.3566666666666665
+      ]
+    },
+    "oos": {
+      "n_all": 173,
+      "n_kept": 165,
+      "n_dropped": 8,
+      "all_pnl": 300.4,
+      "kept_pnl": 347.3,
+      "dropped_pnl": -46.9,
+      "kept_wr": 0.5878787878787879,
+      "all_wr": 0.5780346820809249,
+      "delta": 46.900000000000034,
+      "dropped_mean": -5.8625,
+      "dropped_ci": [
+        -11.2128125,
+        -0.4993750000000032
+      ]
+    },
+    "monthly_dollars": 143.68750000000006,
+    "oos_consistent": true
+  },
+  {
+    "id": "F3_DD_SHORT_INCL_charm_neutral_lt_25M",
+    "mechanism": "DD Exhaustion shorts only when charm at spot < 25M. Aligns with the contrarian premise: DD Exhaustion fires when DD-charm divergence indicates dealer over-positioning. If charm at the entry strike is large, dealers are actively pinning \u2014 bad time to fade. Charm-neutral confirms the pivot is genuine.",
+    "polarity": "include",
+    "full": {
+      "n_all": 302,
+      "n_kept": 295,
+      "n_dropped": 7,
+      "all_pnl": 45.22,
+      "kept_pnl": 111.82,
+      "dropped_pnl": -66.6,
+      "kept_wr": 0.42033898305084744,
+      "all_wr": 0.4139072847682119,
+      "delta": 66.6,
+      "dropped_mean": -9.514285714285714,
+      "dropped_ci": [
+        -12.0,
+        -4.542857142857143
+      ]
+    },
+    "is": {
+      "n_all": 151,
+      "n_kept": 149,
+      "n_dropped": 2,
+      "all_pnl": 207.22,
+      "kept_pnl": 231.22,
+      "dropped_pnl": -24.0,
+      "kept_wr": 0.436241610738255,
+      "all_wr": 0.4304635761589404,
+      "delta": 24.0,
+      "dropped_mean": -12.0,
+      "dropped_ci": [
+        -12.0,
+        -12.0
+      ]
+    },
+    "oos": {
+      "n_all": 151,
+      "n_kept": 146,
+      "n_dropped": 5,
+      "all_pnl": -162.0,
+      "kept_pnl": -119.4,
+      "dropped_pnl": -42.6,
+      "kept_wr": 0.4041095890410959,
+      "all_wr": 0.3973509933774834,
+      "delta": 42.599999999999994,
+      "dropped_mean": -8.52,
+      "dropped_ci": [
+        -12.0,
+        -1.5599999999999998
+      ]
+    },
+    "monthly_dollars": 138.75,
+    "oos_consistent": true
+  },
+  {
+    "id": "F4_ES_SHORT_INCL_charm_neutral_lt_25M",
+    "mechanism": "ES Absorption shorts only when charm-neutral at spot. ES absorption is a CVD divergence setup; charm-neutral entry confirms there's no dealer pin causing the divergence.",
+    "polarity": "include",
+    "full": {
+      "n_all": 283,
+      "n_kept": 251,
+      "n_dropped": 32,
+      "all_pnl": 112.5,
+      "kept_pnl": 169.2,
+      "dropped_pnl": -56.7,
+      "kept_wr": 0.5099601593625498,
+      "all_wr": 0.4876325088339223,
+      "delta": 56.69999999999999,
+      "dropped_mean": -1.771875,
+      "dropped_ci": [
+        -3.45953125,
+        0.03460937499999871
+      ]
+    },
+    "is": {
+      "n_all": 141,
+      "n_kept": 132,
+      "n_dropped": 9,
+      "all_pnl": 65.8,
+      "kept_pnl": 102.4,
+      "dropped_pnl": -36.6,
+      "kept_wr": 0.553030303030303,
+      "all_wr": 0.5319148936170213,
+      "delta": 36.60000000000001,
+      "dropped_mean": -4.066666666666666,
+      "dropped_ci": [
+        -7.466666666666667,
+        -0.7777777777777779
+      ]
+    },
+    "oos": {
+      "n_all": 142,
+      "n_kept": 119,
+      "n_dropped": 23,
+      "all_pnl": 46.699999999999996,
+      "kept_pnl": 66.8,
+      "dropped_pnl": -20.1,
+      "kept_wr": 0.46218487394957986,
+      "all_wr": 0.44366197183098594,
+      "delta": 20.1,
+      "dropped_mean": -0.8739130434782609,
+      "dropped_ci": [
+        -2.722173913043478,
+        1.1828260869565206
+      ]
+    },
+    "monthly_dollars": 118.12499999999999,
+    "oos_consistent": true
+  },
+  {
+    "id": "F5_SC_SHORT_BLOCK_against_5_10_combined",
+    "mechanism": "Combined F1+F2: BLOCK Skew Charm shorts when EITHER (a) charm support wall within 10 pts below, OR (b) high charm at spot (>=25M). Both indicate dealer activity that traps the trade.",
+    "polarity": "exclude",
+    "full": {
+      "n_all": 345,
+      "n_kept": 319,
+      "n_dropped": 26,
+      "all_pnl": 726.1899999999999,
+      "kept_pnl": 898.36,
+      "dropped_pnl": -172.17,
+      "kept_wr": 0.6332288401253918,
+      "all_wr": 0.6057971014492753,
+      "delta": 172.17000000000007,
+      "dropped_mean": -6.621923076923077,
+      "dropped_ci": [
+        -9.901192307692305,
+        -3.2372115384615388
+      ]
+    },
+    "is": {
+      "n_all": 172,
+      "n_kept": 163,
+      "n_dropped": 9,
+      "all_pnl": 425.79,
+      "kept_pnl": 527.96,
+      "dropped_pnl": -102.17,
+      "kept_wr": 0.656441717791411,
+      "all_wr": 0.6337209302325582,
+      "delta": 102.17000000000002,
+      "dropped_mean": -11.352222222222222,
+      "dropped_ci": [
+        -16.28888888888889,
+        -5.204972222222224
+      ]
+    },
+    "oos": {
+      "n_all": 173,
+      "n_kept": 156,
+      "n_dropped": 17,
+      "all_pnl": 300.4,
+      "kept_pnl": 370.4,
+      "dropped_pnl": -70.0,
+      "kept_wr": 0.6089743589743589,
+      "all_wr": 0.5780346820809249,
+      "delta": 70.0,
+      "dropped_mean": -4.117647058823529,
+      "dropped_ci": [
+        -7.906176470588235,
+        -0.5995588235294144
+      ]
+    },
+    "monthly_dollars": 358.68750000000017,
+    "oos_consistent": true
+  }
+]

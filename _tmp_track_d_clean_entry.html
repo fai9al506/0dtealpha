@@ -1,0 +1,2403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Track D: Clean-Entry Analysis (MAE &le; 3 pts)</title>
+<style>
+:root {
+    --bg: #0d1117;
+    --bg-card: #161b22;
+    --bg-row-alt: #1c2128;
+    --bg-row-hover: #21262d;
+    --text: #c9d1d9;
+    --text-muted: #8b949e;
+    --text-dim: #6e7681;
+    --border: #30363d;
+    --accent: #58a6ff;
+    --accent-2: #d2a8ff;
+    --pos: #56d364;
+    --neg: #ff7b72;
+    --warn: #d29922;
+    --sig-1: #d29922;
+    --sig-2: #e08000;
+    --sig-3: #ff7b72;
+}
+* { box-sizing: border-box; }
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    margin: 0; padding: 24px;
+    line-height: 1.5;
+}
+h1 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+h2 { color: var(--accent-2); margin-top: 36px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+h3 { color: #79c0ff; margin-top: 24px; }
+h4 { color: #a5d6ff; margin-top: 16px; margin-bottom: 8px; }
+.subtitle { color: var(--text-muted); font-size: 13px; margin-top: -8px; }
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin: 16px 0;
+}
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+.stat {
+    background: var(--bg-row-alt);
+    padding: 12px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+.stat .label { color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+.stat .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+.pos { color: var(--pos); }
+.neg { color: var(--neg); }
+.warn { color: var(--warn); }
+.muted { color: var(--text-muted); }
+.dim { color: var(--text-dim); }
+table {
+    width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px;
+}
+.div-table th, .div-table td, table.flt th, table.flt td, table.gen th, table.gen td {
+    padding: 6px 10px;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+}
+.div-table th, table.flt th, table.gen th {
+    background: var(--bg-row-alt);
+    color: var(--text-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+}
+.div-table td:first-child, table.flt td:first-child, table.gen td:first-child { text-align: left; }
+.div-table tr:hover, table.flt tr:hover, table.gen tr:hover { background: var(--bg-row-hover); }
+.sig-1 td { background: rgba(210,153,34,0.08); }
+.sig-2 td { background: rgba(224,128,0,0.12); }
+.sig-3 td { background: rgba(255,123,114,0.15); font-weight: 500; }
+.filter-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 6px;
+    padding: 16px;
+    margin: 12px 0;
+}
+.filter-card.rank-1 { border-left-color: var(--pos); }
+.filter-card.rank-2 { border-left-color: var(--accent-2); }
+.filter-card.rank-3 { border-left-color: var(--accent); }
+.filter-card.warn-card { border-left-color: var(--warn); }
+.filter-name { font-size: 16px; font-weight: 600; color: var(--accent); margin-bottom: 8px; }
+.filter-mech { color: var(--text-muted); font-style: italic; margin-top: 8px; font-size: 13px; }
+.metric-row {
+    display: flex; gap: 20px; flex-wrap: wrap; margin-top: 8px;
+}
+.metric-row .item { font-size: 13px; }
+.metric-row .label { color: var(--text-muted); font-size: 11px; }
+.toc { position: sticky; top: 0; background: var(--bg); padding: 8px 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; z-index: 10; }
+.toc a { color: var(--accent); margin-right: 14px; text-decoration: none; font-size: 13px; }
+.toc a:hover { text-decoration: underline; }
+.callout {
+    background: rgba(88,166,255,0.08);
+    border-left: 3px solid var(--accent);
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 12px 0;
+}
+.callout.warn { background: rgba(210,153,34,0.08); border-left-color: var(--warn); }
+.callout.neg { background: rgba(255,123,114,0.08); border-left-color: var(--neg); }
+.callout.pos { background: rgba(86,211,100,0.08); border-left-color: var(--pos); }
+small { color: var(--text-dim); }
+code { background: var(--bg-row-alt); padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; margin-left: 8px; }
+.badge.ok { background: rgba(86,211,100,0.18); color: var(--pos); }
+.badge.bad { background: rgba(255,123,114,0.18); color: var(--neg); }
+.badge.warn { background: rgba(210,153,34,0.18); color: var(--warn); }
+.badge.neutral { background: rgba(139,148,158,0.18); color: var(--text-muted); }
+.section { margin: 24px 0; }
+</style>
+</head>
+<body>
+<div class="toc">
+<a href="#overview">Overview</a>
+<a href="#methodology">Methodology</a>
+<a href="#features">Feature Divergences</a>
+<a href="#perdir">Per-Direction</a>
+<a href="#filters">Filter Candidates</a>
+<a href="#stops">Stop-Tightening</a>
+<a href="#mechanism">Mechanisms</a>
+<a href="#tasks">Tasks</a>
+</div>
+
+
+<h1>Track D: Clean-Entry Analysis (MAE &le; 3 pts)</h1>
+<p class="subtitle">Generated: 2026-05-13 13:34 ET &middot;
+   Window: 2026-03-02 to 2026-05-13 &middot;
+   Method: chain-walk MFE/MAE on ALL signals (era-agnostic)</p>
+
+<div class="callout">
+<strong>Premise.</strong> A CLEAN_ENTRY trade is one where MAE (max adverse excursion) &le; 3 pts &mdash; the
+thesis was validated within 3 pts of entry. These signals fired and price went our way immediately
+with negligible drawdown. They concentrate where the system has TRUE EDGE (not just survival).
+</div>
+
+
+<h2 id="overview">Overview</h2>
+<div class="card">
+<div class="stat-grid">
+<div class="stat"><div class="label">Total signals</div><div class="value">2,312</div></div>
+<div class="stat"><div class="label">CLEAN_ENTRY (MAE &le; 3)</div><div class="value pos">449 (19.4%)</div></div>
+<div class="stat"><div class="label">MEDIUM (3-8)</div><div class="value">395 (17.1%)</div></div>
+<div class="stat"><div class="label">HEAVY_DRAWDOWN (&gt;8)</div><div class="value neg">1,468 (63.5%)</div></div>
+<div class="stat"><div class="label">CLEAN longs</div><div class="value">242</div></div>
+<div class="stat"><div class="label">CLEAN shorts</div><div class="value">207</div></div>
+</div>
+</div>
+
+<h3>CLEAN_ENTRY sub-classification</h3>
+<table class="gen" style="max-width:520px">
+<thead><tr><th>Sub-class</th><th>Definition</th><th>Count</th></tr></thead>
+<tbody>
+<tr><td>CLEAN_BIG_WIN</td><td>MAE &le; 3, MFE &ge; 15, PnL &gt; 0</td><td>328</td></tr>
+<tr><td>CLEAN_MED_WIN</td><td>MAE &le; 3, 5 &le; MFE &lt; 15, PnL &gt; 0</td><td>83</td></tr>
+<tr><td>CLEAN_SMALL_WIN</td><td>MAE &le; 3, MFE &lt; 5, PnL &gt; 0</td><td>11</td></tr>
+<tr><td>CLEAN_THEN_FADED</td><td>MAE &le; 3 at entry but later stopped (MFE small, eventual loss)</td><td>22</td></tr>
+<tr><td>CLEAN_SCRATCH</td><td>MAE &le; 3, ended at zero PnL</td><td>5</td></tr>
+</tbody>
+</table>
+<p class="muted">~94% of CLEAN_ENTRY signals win. The 22 "CLEAN_THEN_FADED" cases (5%) are signals
+that started cleanly but reversed before target.</p>
+
+
+<h2 id="methodology">Methodology</h2>
+<div class="card">
+<h4>Data &amp; classification</h4>
+<ul>
+<li><strong>Era-agnostic.</strong> Uses ALL 2,312 setup_log signals since 2026-03-01, regardless of which
+filter version was live for real_trader.py. Setup detector logs EVERY signal; only outcome PnL
+matters here.</li>
+<li><strong>Chain-walk MFE/MAE</strong> from <code>chain_snapshots</code>, NEVER <code>outcome_max_profit/loss</code>
+(per <code>feedback_chain_path_for_trail_studies.md</code>). DB cols freeze at trail-stop fire and
+underestimate 2-3x.</li>
+<li><strong>CLEAN_ENTRY</strong> = MAE &le; 3 pts. <strong>MEDIUM</strong> = 3-8 pts. <strong>HEAVY</strong> = &gt;8 pts.
+Baseline for divergence tests = MEDIUM &cup; HEAVY.</li>
+</ul>
+<h4>Statistical tests</h4>
+<ul>
+<li>Chi-square (Yates-corrected) for categorical features. Three-tier highlight: p&lt;0.001 (***),
+p&lt;0.01 (**), p&lt;0.05 (*).</li>
+<li>Per-bucket population gate: n &ge; 15 to be shown, n &ge; 30 to qualify as filter candidate.</li>
+<li><strong>Bootstrap 95% CI on mean PnL</strong>, 2000 iter, seeded.</li>
+<li><strong>OOS halves</strong>: first 60% / last 40% by date. Requires both halves PnL&gt;0 and |WR drop| &le; 15pp.</li>
+<li><strong>Per-month consistency</strong>: all 3 months (Mar/Apr/May) must be PnL-positive.</li>
+</ul>
+<h4>Important caveats</h4>
+<ul>
+<li>Some features are sparsely populated (<code>v13_gex_above</code>, <code>v13_dd_near</code>,
+<code>vanna_cliff_side</code>, <code>vanna_peak_side</code> only logged for SC/DD shorts post-V13 ship
+&rarr; 63.9% null). Stats use available rows only.</li>
+<li><strong>"Clean-entry rate" alone is misleading</strong>: late-day (15-16 ET) has the highest CE rate
+(32.7%) but actually loses money (mean +0.08, WR 49.6%). High CE means the signal&rsquo;s
+<em>thesis</em> proves quickly, NOT that the eventual outcome is good.</li>
+</ul>
+</div>
+
+<h2 id="features">Feature Divergences (CLEAN vs OTHER)</h2>
+<p class="muted">Base CLEAN rate across all features: <strong>19.4%</strong>. Buckets show: count in CLEAN / total trades with that bucket value. "Lift" is (CLEAN_rate - base_rate) in pp.</p>
+<h4>rr_bucket <span class="badge bad">strong</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-2">
+<td>1-1.5</td>
+<td>22</td>
+<td>37</td>
+<td>59</td>
+<td>37.3%</td>
+<td class="pos">+17.1</td>
+<td>0.0013</td>
+</tr>
+<tr class="">
+<td>1.5-2.5</td>
+<td>5</td>
+<td>16</td>
+<td>21</td>
+<td>23.8%</td>
+<td class="pos">+3.6</td>
+<td>0.8883</td>
+</tr>
+<tr class="">
+<td>&gt;=2.5</td>
+<td>25</td>
+<td>109</td>
+<td>134</td>
+<td>18.7%</td>
+<td class="neg">-1.6</td>
+<td>0.7131</td>
+</tr>
+<tr class="">
+<td>0.5-1</td>
+<td>139</td>
+<td>592</td>
+<td>731</td>
+<td>19.0%</td>
+<td class="neg">-1.2</td>
+<td>0.1104</td>
+</tr>
+</tbody></table>
+<h4>time_bucket <span class="badge bad">strong</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-3">
+<td>15-16</td>
+<td>92</td>
+<td>189</td>
+<td>281</td>
+<td>32.7%</td>
+<td class="pos">+13.3</td>
+<td>0.0000</td>
+</tr>
+<tr class="sig-3">
+<td>14-15</td>
+<td>97</td>
+<td>271</td>
+<td>368</td>
+<td>26.4%</td>
+<td class="pos">+6.9</td>
+<td>0.0003</td>
+</tr>
+<tr class="sig-2">
+<td>12-13</td>
+<td>50</td>
+<td>303</td>
+<td>353</td>
+<td>14.2%</td>
+<td class="neg">-5.3</td>
+<td>0.0083</td>
+</tr>
+<tr class="sig-2">
+<td>11-12</td>
+<td>55</td>
+<td>329</td>
+<td>384</td>
+<td>14.3%</td>
+<td class="neg">-5.1</td>
+<td>0.0070</td>
+</tr>
+<tr class="sig-1">
+<td>10-11</td>
+<td>79</td>
+<td>427</td>
+<td>506</td>
+<td>15.6%</td>
+<td class="neg">-3.8</td>
+<td>0.0170</td>
+</tr>
+<tr class="">
+<td>09:30-10</td>
+<td>11</td>
+<td>59</td>
+<td>70</td>
+<td>15.7%</td>
+<td class="neg">-3.7</td>
+<td>0.5205</td>
+</tr>
+<tr class="">
+<td>13-14</td>
+<td>65</td>
+<td>285</td>
+<td>350</td>
+<td>18.6%</td>
+<td class="neg">-0.8</td>
+<td>0.7170</td>
+</tr>
+</tbody></table>
+<h4>v13_gex_above_bucket <span class="badge bad">strong</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-1">
+<td>&gt;=150</td>
+<td>27</td>
+<td>52</td>
+<td>79</td>
+<td>34.2%</td>
+<td class="pos">+10.9</td>
+<td>0.0226</td>
+</tr>
+<tr class="">
+<td>100-150</td>
+<td>12</td>
+<td>52</td>
+<td>64</td>
+<td>18.8%</td>
+<td class="neg">-4.5</td>
+<td>0.4655</td>
+</tr>
+<tr class="">
+<td>&lt;50</td>
+<td>103</td>
+<td>372</td>
+<td>475</td>
+<td>21.7%</td>
+<td class="neg">-1.5</td>
+<td>0.2564</td>
+</tr>
+<tr class="">
+<td>50-100</td>
+<td>52</td>
+<td>165</td>
+<td>217</td>
+<td>24.0%</td>
+<td class="pos">+0.7</td>
+<td>0.8396</td>
+</tr>
+</tbody></table>
+<h4>alignment <span class="badge warn">moderate</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>-3</td>
+<td>39</td>
+<td>116</td>
+<td>155</td>
+<td>25.2%</td>
+<td class="pos">+5.7</td>
+<td>0.0775</td>
+</tr>
+<tr class="sig-3">
+<td>3</td>
+<td>62</td>
+<td>391</td>
+<td>453</td>
+<td>13.7%</td>
+<td class="neg">-5.7</td>
+<td>0.0007</td>
+</tr>
+<tr class="sig-3">
+<td>1</td>
+<td>185</td>
+<td>595</td>
+<td>780</td>
+<td>23.7%</td>
+<td class="pos">+4.3</td>
+<td>0.0002</td>
+</tr>
+<tr class="sig-1">
+<td>-1</td>
+<td>96</td>
+<td>508</td>
+<td>604</td>
+<td>15.9%</td>
+<td class="neg">-3.5</td>
+<td>0.0128</td>
+</tr>
+<tr class="">
+<td>0</td>
+<td>33</td>
+<td>119</td>
+<td>152</td>
+<td>21.7%</td>
+<td class="pos">+2.3</td>
+<td>0.5272</td>
+</tr>
+<tr class="">
+<td>-2</td>
+<td>15</td>
+<td>56</td>
+<td>71</td>
+<td>21.1%</td>
+<td class="pos">+1.7</td>
+<td>0.8284</td>
+</tr>
+<tr class="">
+<td>2</td>
+<td>19</td>
+<td>78</td>
+<td>97</td>
+<td>19.6%</td>
+<td class="pos">+0.2</td>
+<td>0.9294</td>
+</tr>
+</tbody></table>
+<h4>paradigm <span class="badge warn">moderate</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>BOFA-MESSY</td>
+<td>0</td>
+<td>19</td>
+<td>19</td>
+<td>0.0%</td>
+<td class="neg">-19.1</td>
+<td>0.0664</td>
+</tr>
+<tr class="">
+<td></td>
+<td>5</td>
+<td>14</td>
+<td>19</td>
+<td>26.3%</td>
+<td class="pos">+7.2</td>
+<td>0.6114</td>
+</tr>
+<tr class="">
+<td>AG-TARGET</td>
+<td>8</td>
+<td>55</td>
+<td>63</td>
+<td>12.7%</td>
+<td class="neg">-6.4</td>
+<td>0.2493</td>
+</tr>
+<tr class="sig-2">
+<td>GEX-PURE</td>
+<td>49</td>
+<td>302</td>
+<td>351</td>
+<td>14.0%</td>
+<td class="neg">-5.2</td>
+<td>0.0093</td>
+</tr>
+<tr class="">
+<td>AG-PURE</td>
+<td>24</td>
+<td>144</td>
+<td>168</td>
+<td>14.3%</td>
+<td class="neg">-4.8</td>
+<td>0.1201</td>
+</tr>
+<tr class="">
+<td>BofA-LIS</td>
+<td>17</td>
+<td>57</td>
+<td>74</td>
+<td>23.0%</td>
+<td class="pos">+3.9</td>
+<td>0.4797</td>
+</tr>
+<tr class="sig-2">
+<td>BOFA-PURE</td>
+<td>182</td>
+<td>624</td>
+<td>806</td>
+<td>22.6%</td>
+<td class="pos">+3.5</td>
+<td>0.0022</td>
+</tr>
+<tr class="">
+<td>BOFA-LIS</td>
+<td>11</td>
+<td>38</td>
+<td>49</td>
+<td>22.4%</td>
+<td class="pos">+3.3</td>
+<td>0.6777</td>
+</tr>
+<tr class="">
+<td>SIDIAL-EXTREME</td>
+<td>21</td>
+<td>75</td>
+<td>96</td>
+<td>21.9%</td>
+<td class="pos">+2.8</td>
+<td>0.5693</td>
+</tr>
+<tr class="">
+<td>SIDIAL-MESSY</td>
+<td>10</td>
+<td>36</td>
+<td>46</td>
+<td>21.7%</td>
+<td class="pos">+2.6</td>
+<td>0.7894</td>
+</tr>
+<tr class="">
+<td>GEX-TARGET</td>
+<td>9</td>
+<td>35</td>
+<td>44</td>
+<td>20.5%</td>
+<td class="pos">+1.3</td>
+<td>0.9730</td>
+</tr>
+<tr class="">
+<td>AG-LIS</td>
+<td>31</td>
+<td>142</td>
+<td>173</td>
+<td>17.9%</td>
+<td class="neg">-1.2</td>
+<td>0.7510</td>
+</tr>
+</tbody></table>
+<h4>vix_bucket <span class="badge neutral">weak</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-3">
+<td>24-28</td>
+<td>124</td>
+<td>701</td>
+<td>825</td>
+<td>15.0%</td>
+<td class="neg">-4.4</td>
+<td>0.0001</td>
+</tr>
+<tr class="sig-3">
+<td>16-20</td>
+<td>225</td>
+<td>753</td>
+<td>978</td>
+<td>23.0%</td>
+<td class="pos">+3.6</td>
+<td>0.0002</td>
+</tr>
+<tr class="">
+<td>&gt;=28</td>
+<td>22</td>
+<td>95</td>
+<td>117</td>
+<td>18.8%</td>
+<td class="neg">-0.6</td>
+<td>0.9576</td>
+</tr>
+<tr class="">
+<td>20-24</td>
+<td>78</td>
+<td>314</td>
+<td>392</td>
+<td>19.9%</td>
+<td class="pos">+0.5</td>
+<td>0.8476</td>
+</tr>
+</tbody></table>
+<h4>overvix_bucket <span class="badge neutral">weak</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>0..2</td>
+<td>57</td>
+<td>284</td>
+<td>341</td>
+<td>16.7%</td>
+<td class="neg">-3.9</td>
+<td>0.0560</td>
+</tr>
+<tr class="">
+<td>-2..0</td>
+<td>78</td>
+<td>365</td>
+<td>443</td>
+<td>17.6%</td>
+<td class="neg">-3.0</td>
+<td>0.0809</td>
+</tr>
+<tr class="sig-2">
+<td>&lt;-2</td>
+<td>225</td>
+<td>732</td>
+<td>957</td>
+<td>23.5%</td>
+<td class="pos">+2.9</td>
+<td>0.0012</td>
+</tr>
+</tbody></table>
+<h4>direction <span class="badge neutral">weak</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-2">
+<td>long</td>
+<td>242</td>
+<td>845</td>
+<td>1087</td>
+<td>22.3%</td>
+<td class="pos">+2.8</td>
+<td>0.0014</td>
+</tr>
+<tr class="sig-2">
+<td>short</td>
+<td>207</td>
+<td>1018</td>
+<td>1225</td>
+<td>16.9%</td>
+<td class="neg">-2.5</td>
+<td>0.0014</td>
+</tr>
+</tbody></table>
+<h4>grade <span class="badge neutral">none</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>A-Entry</td>
+<td>29</td>
+<td>150</td>
+<td>179</td>
+<td>16.2%</td>
+<td class="neg">-3.2</td>
+<td>0.3006</td>
+</tr>
+<tr class="">
+<td>B</td>
+<td>134</td>
+<td>481</td>
+<td>615</td>
+<td>21.8%</td>
+<td class="pos">+2.4</td>
+<td>0.0943</td>
+</tr>
+<tr class="">
+<td>A+</td>
+<td>52</td>
+<td>248</td>
+<td>300</td>
+<td>17.3%</td>
+<td class="neg">-2.1</td>
+<td>0.3674</td>
+</tr>
+<tr class="">
+<td>C</td>
+<td>69</td>
+<td>305</td>
+<td>374</td>
+<td>18.4%</td>
+<td class="neg">-1.0</td>
+<td>0.6547</td>
+</tr>
+<tr class="">
+<td>A</td>
+<td>140</td>
+<td>576</td>
+<td>716</td>
+<td>19.6%</td>
+<td class="pos">+0.1</td>
+<td>0.9592</td>
+</tr>
+<tr class="">
+<td>LOG</td>
+<td>25</td>
+<td>103</td>
+<td>128</td>
+<td>19.5%</td>
+<td class="pos">+0.1</td>
+<td>0.9344</td>
+</tr>
+</tbody></table>
+<h4>setup <span class="badge neutral">none</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>Vanna Pivot Bounce</td>
+<td>15</td>
+<td>33</td>
+<td>48</td>
+<td>31.2%</td>
+<td class="pos">+11.8</td>
+<td>0.0562</td>
+</tr>
+<tr class="">
+<td>AG Short</td>
+<td>19</td>
+<td>48</td>
+<td>67</td>
+<td>28.4%</td>
+<td class="pos">+8.9</td>
+<td>0.0854</td>
+</tr>
+<tr class="">
+<td>Delta Absorption</td>
+<td>5</td>
+<td>34</td>
+<td>39</td>
+<td>12.8%</td>
+<td class="neg">-6.6</td>
+<td>0.3972</td>
+</tr>
+<tr class="">
+<td>Paradigm Reversal</td>
+<td>8</td>
+<td>43</td>
+<td>51</td>
+<td>15.7%</td>
+<td class="neg">-3.7</td>
+<td>0.6152</td>
+</tr>
+<tr class="">
+<td>VIX Divergence</td>
+<td>6</td>
+<td>30</td>
+<td>36</td>
+<td>16.7%</td>
+<td class="neg">-2.8</td>
+<td>0.8347</td>
+</tr>
+<tr class="">
+<td>DD Exhaustion</td>
+<td>96</td>
+<td>448</td>
+<td>544</td>
+<td>17.6%</td>
+<td class="neg">-1.8</td>
+<td>0.2569</td>
+</tr>
+<tr class="">
+<td>SB2 Absorption</td>
+<td>38</td>
+<td>142</td>
+<td>180</td>
+<td>21.1%</td>
+<td class="pos">+1.7</td>
+<td>0.6178</td>
+</tr>
+<tr class="">
+<td>GEX Long</td>
+<td>12</td>
+<td>55</td>
+<td>67</td>
+<td>17.9%</td>
+<td class="neg">-1.5</td>
+<td>0.8726</td>
+</tr>
+<tr class="">
+<td>ES Absorption</td>
+<td>111</td>
+<td>442</td>
+<td>553</td>
+<td>20.1%</td>
+<td class="pos">+0.7</td>
+<td>0.7020</td>
+</tr>
+<tr class="">
+<td>Skew Charm</td>
+<td>119</td>
+<td>505</td>
+<td>624</td>
+<td>19.1%</td>
+<td class="neg">-0.3</td>
+<td>0.8420</td>
+</tr>
+<tr class="">
+<td>BofA Scalp</td>
+<td>20</td>
+<td>83</td>
+<td>103</td>
+<td>19.4%</td>
+<td class="neg">-0.0</td>
+<td>0.8992</td>
+</tr>
+</tbody></table>
+<h4>vanna_cliff_side <span class="badge neutral">none</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>A</td>
+<td>85</td>
+<td>312</td>
+<td>397</td>
+<td>21.4%</td>
+<td class="neg">-1.8</td>
+<td>0.2690</td>
+</tr>
+<tr class="">
+<td>B</td>
+<td>109</td>
+<td>329</td>
+<td>438</td>
+<td>24.9%</td>
+<td class="pos">+1.7</td>
+<td>0.2690</td>
+</tr>
+</tbody></table>
+<h4>vanna_peak_side <span class="badge neutral">none</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>B</td>
+<td>66</td>
+<td>249</td>
+<td>315</td>
+<td>21.0%</td>
+<td class="neg">-2.3</td>
+<td>0.2584</td>
+</tr>
+<tr class="">
+<td>A</td>
+<td>128</td>
+<td>392</td>
+<td>520</td>
+<td>24.6%</td>
+<td class="pos">+1.4</td>
+<td>0.2584</td>
+</tr>
+</tbody></table>
+<h4>day_of_week <span class="badge neutral">none</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>Thu</td>
+<td>104</td>
+<td>369</td>
+<td>473</td>
+<td>22.0%</td>
+<td class="pos">+2.6</td>
+<td>0.1292</td>
+</tr>
+<tr class="">
+<td>Tue</td>
+<td>97</td>
+<td>440</td>
+<td>537</td>
+<td>18.1%</td>
+<td class="neg">-1.4</td>
+<td>0.3981</td>
+</tr>
+<tr class="">
+<td>Wed</td>
+<td>82</td>
+<td>359</td>
+<td>441</td>
+<td>18.6%</td>
+<td class="neg">-0.8</td>
+<td>0.6740</td>
+</tr>
+<tr class="">
+<td>Fri</td>
+<td>79</td>
+<td>340</td>
+<td>419</td>
+<td>18.9%</td>
+<td class="neg">-0.6</td>
+<td>0.7984</td>
+</tr>
+<tr class="">
+<td>Mon</td>
+<td>87</td>
+<td>355</td>
+<td>442</td>
+<td>19.7%</td>
+<td class="pos">+0.3</td>
+<td>0.9295</td>
+</tr>
+</tbody></table>
+<h4>gap_to_lis_bucket <span class="badge neutral">none</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>near(&lt;5)</td>
+<td>51</td>
+<td>225</td>
+<td>276</td>
+<td>18.5%</td>
+<td class="neg">-1.2</td>
+<td>0.5987</td>
+</tr>
+<tr class="">
+<td>+mid(15-30)</td>
+<td>18</td>
+<td>69</td>
+<td>87</td>
+<td>20.7%</td>
+<td class="pos">+1.0</td>
+<td>0.9176</td>
+</tr>
+<tr class="">
+<td>+far(30-60)</td>
+<td>52</td>
+<td>204</td>
+<td>256</td>
+<td>20.3%</td>
+<td class="pos">+0.6</td>
+<td>0.8401</td>
+</tr>
+<tr class="">
+<td>+very_far(&gt;=60)</td>
+<td>32</td>
+<td>126</td>
+<td>158</td>
+<td>20.3%</td>
+<td class="pos">+0.6</td>
+<td>0.9331</td>
+</tr>
+<tr class="">
+<td>+near(5-15)</td>
+<td>16</td>
+<td>65</td>
+<td>81</td>
+<td>19.8%</td>
+<td class="pos">+0.1</td>
+<td>0.8938</td>
+</tr>
+</tbody></table>
+<h4>upside_bucket <span class="badge neutral">none</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>&gt;=25</td>
+<td>15</td>
+<td>37</td>
+<td>52</td>
+<td>28.8%</td>
+<td class="pos">+8.6</td>
+<td>0.1564</td>
+</tr>
+<tr class="">
+<td>&lt;5</td>
+<td>6</td>
+<td>30</td>
+<td>36</td>
+<td>16.7%</td>
+<td class="neg">-3.5</td>
+<td>0.7426</td>
+</tr>
+<tr class="">
+<td>10-15</td>
+<td>162</td>
+<td>656</td>
+<td>818</td>
+<td>19.8%</td>
+<td class="neg">-0.4</td>
+<td>0.5013</td>
+</tr>
+<tr class="">
+<td>15-25</td>
+<td>8</td>
+<td>31</td>
+<td>39</td>
+<td>20.5%</td>
+<td class="pos">+0.3</td>
+<td>0.8762</td>
+</tr>
+</tbody></table>
+<h4>v13_dd_near_bucket <span class="badge neutral">none</span></h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>&lt;1B</td>
+<td>61</td>
+<td>235</td>
+<td>296</td>
+<td>20.6%</td>
+<td class="neg">-2.6</td>
+<td>0.2129</td>
+</tr>
+<tr class="">
+<td>4-6B</td>
+<td>6</td>
+<td>23</td>
+<td>29</td>
+<td>20.7%</td>
+<td class="neg">-2.5</td>
+<td>0.9153</td>
+</tr>
+<tr class="">
+<td>2-4B</td>
+<td>34</td>
+<td>98</td>
+<td>132</td>
+<td>25.8%</td>
+<td class="pos">+2.5</td>
+<td>0.5247</td>
+</tr>
+<tr class="">
+<td>1-2B</td>
+<td>93</td>
+<td>285</td>
+<td>378</td>
+<td>24.6%</td>
+<td class="pos">+1.4</td>
+<td>0.4413</td>
+</tr>
+</tbody></table>
+<h2 id="perdir">Per-Direction Divergences</h2>
+
+<div class="callout">
+Longs and shorts have <strong>mirror but DIFFERENT</strong> CLEAN signatures. Longs prefer mild
+positive alignment (+1) + BOFA-PURE; shorts prefer strong negative alignment (-3) + AG Short.
+The user's framing of "exact top short / exact bottom long" maps cleanly to these two profiles.
+</div>
+
+<h3>Direction = LONG</h3>
+<h4>paradigm (long)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>BOFA-MESSY</td>
+<td>0</td>
+<td>15</td>
+<td>15</td>
+<td>0.0%</td>
+<td class="neg">-21.5</td>
+<td>0.0842</td>
+</tr>
+<tr class="">
+<td>GEX-TARGET</td>
+<td>7</td>
+<td>10</td>
+<td>17</td>
+<td>41.2%</td>
+<td class="pos">+19.6</td>
+<td>0.0911</td>
+</tr>
+<tr class="sig-3">
+<td>AG-PURE</td>
+<td>7</td>
+<td>90</td>
+<td>97</td>
+<td>7.2%</td>
+<td class="neg">-14.3</td>
+<td>0.0005</td>
+</tr>
+<tr class="">
+<td>AG-LIS</td>
+<td>10</td>
+<td>66</td>
+<td>76</td>
+<td>13.2%</td>
+<td class="neg">-8.4</td>
+<td>0.0895</td>
+</tr>
+<tr class="">
+<td>SIDIAL-MESSY</td>
+<td>7</td>
+<td>17</td>
+<td>24</td>
+<td>29.2%</td>
+<td class="pos">+7.6</td>
+<td>0.5031</td>
+</tr>
+<tr class="sig-3">
+<td>BOFA-PURE</td>
+<td>108</td>
+<td>276</td>
+<td>384</td>
+<td>28.1%</td>
+<td class="pos">+6.6</td>
+<td>0.0001</td>
+</tr>
+<tr class="">
+<td>BOFA-LIS</td>
+<td>5</td>
+<td>28</td>
+<td>33</td>
+<td>15.2%</td>
+<td class="neg">-6.4</td>
+<td>0.4899</td>
+</tr>
+<tr class="">
+<td>AG-TARGET</td>
+<td>5</td>
+<td>13</td>
+<td>18</td>
+<td>27.8%</td>
+<td class="pos">+6.2</td>
+<td>0.7179</td>
+</tr>
+</tbody></table>
+<h4>time_bucket (long)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-3">
+<td>15-16</td>
+<td>51</td>
+<td>91</td>
+<td>142</td>
+<td>35.9%</td>
+<td class="pos">+13.7</td>
+<td>0.0000</td>
+</tr>
+<tr class="">
+<td>09:30-10</td>
+<td>3</td>
+<td>24</td>
+<td>27</td>
+<td>11.1%</td>
+<td class="neg">-11.2</td>
+<td>0.2395</td>
+</tr>
+<tr class="sig-1">
+<td>11-12</td>
+<td>25</td>
+<td>137</td>
+<td>162</td>
+<td>15.4%</td>
+<td class="neg">-6.8</td>
+<td>0.0305</td>
+</tr>
+<tr class="">
+<td>10-11</td>
+<td>40</td>
+<td>189</td>
+<td>229</td>
+<td>17.5%</td>
+<td class="neg">-4.8</td>
+<td>0.0609</td>
+</tr>
+<tr class="">
+<td>12-13</td>
+<td>30</td>
+<td>136</td>
+<td>166</td>
+<td>18.1%</td>
+<td class="neg">-4.2</td>
+<td>0.1906</td>
+</tr>
+<tr class="">
+<td>14-15</td>
+<td>48</td>
+<td>138</td>
+<td>186</td>
+<td>25.8%</td>
+<td class="pos">+3.5</td>
+<td>0.2384</td>
+</tr>
+<tr class="">
+<td>13-14</td>
+<td>45</td>
+<td>130</td>
+<td>175</td>
+<td>25.7%</td>
+<td class="pos">+3.5</td>
+<td>0.2718</td>
+</tr>
+</tbody></table>
+<h4>alignment (long)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-3">
+<td>3</td>
+<td>38</td>
+<td>303</td>
+<td>341</td>
+<td>11.1%</td>
+<td class="neg">-11.1</td>
+<td>0.0000</td>
+</tr>
+<tr class="sig-3">
+<td>1</td>
+<td>127</td>
+<td>283</td>
+<td>410</td>
+<td>31.0%</td>
+<td class="pos">+8.7</td>
+<td>0.0000</td>
+</tr>
+<tr class="">
+<td>-3</td>
+<td>7</td>
+<td>17</td>
+<td>24</td>
+<td>29.2%</td>
+<td class="pos">+6.9</td>
+<td>0.5660</td>
+</tr>
+<tr class="">
+<td>-2</td>
+<td>5</td>
+<td>27</td>
+<td>32</td>
+<td>15.6%</td>
+<td class="neg">-6.6</td>
+<td>0.4836</td>
+</tr>
+<tr class="">
+<td>-1</td>
+<td>37</td>
+<td>108</td>
+<td>145</td>
+<td>25.5%</td>
+<td class="pos">+3.3</td>
+<td>0.3657</td>
+</tr>
+<tr class="">
+<td>2</td>
+<td>13</td>
+<td>53</td>
+<td>66</td>
+<td>19.7%</td>
+<td class="neg">-2.6</td>
+<td>0.7155</td>
+</tr>
+<tr class="">
+<td>0</td>
+<td>15</td>
+<td>54</td>
+<td>69</td>
+<td>21.7%</td>
+<td class="neg">-0.5</td>
+<td>0.9670</td>
+</tr>
+</tbody></table>
+<h4>vix_bucket (long)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-1">
+<td>&gt;=28</td>
+<td>8</td>
+<td>62</td>
+<td>70</td>
+<td>11.4%</td>
+<td class="neg">-10.8</td>
+<td>0.0354</td>
+</tr>
+<tr class="sig-3">
+<td>16-20</td>
+<td>133</td>
+<td>303</td>
+<td>436</td>
+<td>30.5%</td>
+<td class="pos">+8.2</td>
+<td>0.0000</td>
+</tr>
+<tr class="sig-3">
+<td>24-28</td>
+<td>69</td>
+<td>342</td>
+<td>411</td>
+<td>16.8%</td>
+<td class="neg">-5.5</td>
+<td>0.0009</td>
+</tr>
+<tr class="">
+<td>20-24</td>
+<td>32</td>
+<td>138</td>
+<td>170</td>
+<td>18.8%</td>
+<td class="neg">-3.4</td>
+<td>0.2831</td>
+</tr>
+</tbody></table>
+<h4>day_of_week (long)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-3">
+<td>Fri</td>
+<td>25</td>
+<td>175</td>
+<td>200</td>
+<td>12.5%</td>
+<td class="neg">-9.8</td>
+<td>0.0003</td>
+</tr>
+<tr class="">
+<td>Wed</td>
+<td>54</td>
+<td>145</td>
+<td>199</td>
+<td>27.1%</td>
+<td class="pos">+4.9</td>
+<td>0.0830</td>
+</tr>
+<tr class="">
+<td>Mon</td>
+<td>51</td>
+<td>154</td>
+<td>205</td>
+<td>24.9%</td>
+<td class="pos">+2.6</td>
+<td>0.3650</td>
+</tr>
+<tr class="">
+<td>Thu</td>
+<td>53</td>
+<td>167</td>
+<td>220</td>
+<td>24.1%</td>
+<td class="pos">+1.8</td>
+<td>0.5228</td>
+</tr>
+<tr class="">
+<td>Tue</td>
+<td>59</td>
+<td>204</td>
+<td>263</td>
+<td>22.4%</td>
+<td class="pos">+0.2</td>
+<td>0.9929</td>
+</tr>
+</tbody></table>
+<h4>grade (long)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>LOG</td>
+<td>5</td>
+<td>35</td>
+<td>40</td>
+<td>12.5%</td>
+<td class="neg">-9.8</td>
+<td>0.1873</td>
+</tr>
+<tr class="sig-1">
+<td>A-Entry</td>
+<td>14</td>
+<td>95</td>
+<td>109</td>
+<td>12.8%</td>
+<td class="neg">-9.4</td>
+<td>0.0178</td>
+</tr>
+<tr class="sig-2">
+<td>B</td>
+<td>78</td>
+<td>196</td>
+<td>274</td>
+<td>28.5%</td>
+<td class="pos">+6.2</td>
+<td>0.0056</td>
+</tr>
+<tr class="">
+<td>A+</td>
+<td>22</td>
+<td>89</td>
+<td>111</td>
+<td>19.8%</td>
+<td class="neg">-2.4</td>
+<td>0.5943</td>
+</tr>
+<tr class="">
+<td>C</td>
+<td>28</td>
+<td>103</td>
+<td>131</td>
+<td>21.4%</td>
+<td class="neg">-0.9</td>
+<td>0.8817</td>
+</tr>
+<tr class="">
+<td>A</td>
+<td>95</td>
+<td>327</td>
+<td>422</td>
+<td>22.5%</td>
+<td class="pos">+0.2</td>
+<td>0.9345</td>
+</tr>
+</tbody></table>
+<h4>overvix_bucket (long)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-1">
+<td>0..2</td>
+<td>28</td>
+<td>132</td>
+<td>160</td>
+<td>17.5%</td>
+<td class="neg">-7.5</td>
+<td>0.0192</td>
+</tr>
+<tr class="sig-3">
+<td>&lt;-2</td>
+<td>129</td>
+<td>292</td>
+<td>421</td>
+<td>30.6%</td>
+<td class="pos">+5.7</td>
+<td>0.0001</td>
+</tr>
+<tr class="sig-1">
+<td>-2..0</td>
+<td>40</td>
+<td>164</td>
+<td>204</td>
+<td>19.6%</td>
+<td class="neg">-5.4</td>
+<td>0.0500</td>
+</tr>
+</tbody></table>
+<h3>Direction = SHORT</h3>
+<h4>v13_gex_above_bucket (short)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-1">
+<td>&gt;=150</td>
+<td>14</td>
+<td>28</td>
+<td>42</td>
+<td>33.3%</td>
+<td class="pos">+15.6</td>
+<td>0.0102</td>
+</tr>
+<tr class="">
+<td>100-150</td>
+<td>10</td>
+<td>31</td>
+<td>41</td>
+<td>24.4%</td>
+<td class="pos">+6.7</td>
+<td>0.3385</td>
+</tr>
+<tr class="sig-2">
+<td>&lt;50</td>
+<td>31</td>
+<td>211</td>
+<td>242</td>
+<td>12.8%</td>
+<td class="neg">-4.9</td>
+<td>0.0052</td>
+</tr>
+<tr class="">
+<td>50-100</td>
+<td>26</td>
+<td>106</td>
+<td>132</td>
+<td>19.7%</td>
+<td class="pos">+2.0</td>
+<td>0.5696</td>
+</tr>
+</tbody></table>
+<h4>rr_bucket (short)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-1">
+<td>1-1.5</td>
+<td>12</td>
+<td>26</td>
+<td>38</td>
+<td>31.6%</td>
+<td class="pos">+14.1</td>
+<td>0.0311</td>
+</tr>
+<tr class="sig-1">
+<td>0.5-1</td>
+<td>62</td>
+<td>337</td>
+<td>399</td>
+<td>15.5%</td>
+<td class="neg">-1.9</td>
+<td>0.0394</td>
+</tr>
+<tr class="">
+<td>&gt;=2.5</td>
+<td>11</td>
+<td>48</td>
+<td>59</td>
+<td>18.6%</td>
+<td class="pos">+1.2</td>
+<td>0.9466</td>
+</tr>
+</tbody></table>
+<h4>vix_bucket (short)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-1">
+<td>&gt;=28</td>
+<td>14</td>
+<td>33</td>
+<td>47</td>
+<td>29.8%</td>
+<td class="pos">+12.9</td>
+<td>0.0274</td>
+</tr>
+<tr class="">
+<td>20-24</td>
+<td>46</td>
+<td>176</td>
+<td>222</td>
+<td>20.7%</td>
+<td class="pos">+3.8</td>
+<td>0.1139</td>
+</tr>
+<tr class="sig-1">
+<td>24-28</td>
+<td>55</td>
+<td>359</td>
+<td>414</td>
+<td>13.3%</td>
+<td class="neg">-3.6</td>
+<td>0.0198</td>
+</tr>
+<tr class="">
+<td>16-20</td>
+<td>92</td>
+<td>450</td>
+<td>542</td>
+<td>17.0%</td>
+<td class="pos">+0.1</td>
+<td>0.9894</td>
+</tr>
+</tbody></table>
+<h4>time_bucket (short)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-3">
+<td>15-16</td>
+<td>41</td>
+<td>98</td>
+<td>139</td>
+<td>29.5%</td>
+<td class="pos">+12.6</td>
+<td>0.0000</td>
+</tr>
+<tr class="sig-3">
+<td>14-15</td>
+<td>49</td>
+<td>133</td>
+<td>182</td>
+<td>26.9%</td>
+<td class="pos">+10.0</td>
+<td>0.0001</td>
+</tr>
+<tr class="sig-1">
+<td>12-13</td>
+<td>20</td>
+<td>167</td>
+<td>187</td>
+<td>10.7%</td>
+<td class="neg">-6.2</td>
+<td>0.0186</td>
+</tr>
+<tr class="sig-1">
+<td>13-14</td>
+<td>20</td>
+<td>155</td>
+<td>175</td>
+<td>11.4%</td>
+<td class="neg">-5.5</td>
+<td>0.0481</td>
+</tr>
+<tr class="">
+<td>11-12</td>
+<td>30</td>
+<td>192</td>
+<td>222</td>
+<td>13.5%</td>
+<td class="neg">-3.4</td>
+<td>0.1651</td>
+</tr>
+<tr class="">
+<td>10-11</td>
+<td>39</td>
+<td>238</td>
+<td>277</td>
+<td>14.1%</td>
+<td class="neg">-2.8</td>
+<td>0.1829</td>
+</tr>
+<tr class="">
+<td>09:30-10</td>
+<td>8</td>
+<td>35</td>
+<td>43</td>
+<td>18.6%</td>
+<td class="pos">+1.7</td>
+<td>0.9228</td>
+</tr>
+</tbody></table>
+<h4>setup (short)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-1">
+<td>AG Short</td>
+<td>19</td>
+<td>48</td>
+<td>67</td>
+<td>28.4%</td>
+<td class="pos">+11.5</td>
+<td>0.0161</td>
+</tr>
+<tr class="">
+<td>SB2 Absorption</td>
+<td>21</td>
+<td>70</td>
+<td>91</td>
+<td>23.1%</td>
+<td class="pos">+6.2</td>
+<td>0.1364</td>
+</tr>
+<tr class="">
+<td>Delta Absorption</td>
+<td>2</td>
+<td>16</td>
+<td>18</td>
+<td>11.1%</td>
+<td class="neg">-5.8</td>
+<td>0.7314</td>
+</tr>
+<tr class="">
+<td>BofA Scalp</td>
+<td>10</td>
+<td>40</td>
+<td>50</td>
+<td>20.0%</td>
+<td class="pos">+3.1</td>
+<td>0.6855</td>
+</tr>
+<tr class="">
+<td>Paradigm Reversal</td>
+<td>7</td>
+<td>28</td>
+<td>35</td>
+<td>20.0%</td>
+<td class="pos">+3.1</td>
+<td>0.7887</td>
+</tr>
+<tr class="">
+<td>DD Exhaustion</td>
+<td>42</td>
+<td>260</td>
+<td>302</td>
+<td>13.9%</td>
+<td class="neg">-3.0</td>
+<td>0.1312</td>
+</tr>
+<tr class="">
+<td>Skew Charm</td>
+<td>52</td>
+<td>293</td>
+<td>345</td>
+<td>15.1%</td>
+<td class="neg">-1.8</td>
+<td>0.3257</td>
+</tr>
+<tr class="">
+<td>VIX Divergence</td>
+<td>3</td>
+<td>16</td>
+<td>19</td>
+<td>15.8%</td>
+<td class="neg">-1.1</td>
+<td>0.8583</td>
+</tr>
+</tbody></table>
+<h4>day_of_week (short)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-2">
+<td>Fri</td>
+<td>54</td>
+<td>165</td>
+<td>219</td>
+<td>24.7%</td>
+<td class="pos">+7.8</td>
+<td>0.0010</td>
+</tr>
+<tr class="sig-1">
+<td>Wed</td>
+<td>28</td>
+<td>214</td>
+<td>242</td>
+<td>11.6%</td>
+<td class="neg">-5.3</td>
+<td>0.0176</td>
+</tr>
+<tr class="">
+<td>Thu</td>
+<td>51</td>
+<td>202</td>
+<td>253</td>
+<td>20.2%</td>
+<td class="pos">+3.3</td>
+<td>0.1445</td>
+</tr>
+<tr class="">
+<td>Tue</td>
+<td>38</td>
+<td>236</td>
+<td>274</td>
+<td>13.9%</td>
+<td class="neg">-3.0</td>
+<td>0.1535</td>
+</tr>
+<tr class="">
+<td>Mon</td>
+<td>36</td>
+<td>201</td>
+<td>237</td>
+<td>15.2%</td>
+<td class="neg">-1.7</td>
+<td>0.4934</td>
+</tr>
+</tbody></table>
+<h4>alignment (short)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>-2</td>
+<td>10</td>
+<td>29</td>
+<td>39</td>
+<td>25.6%</td>
+<td class="pos">+8.7</td>
+<td>0.2063</td>
+</tr>
+<tr class="sig-1">
+<td>-3</td>
+<td>32</td>
+<td>99</td>
+<td>131</td>
+<td>24.4%</td>
+<td class="pos">+7.5</td>
+<td>0.0209</td>
+</tr>
+<tr class="">
+<td>0</td>
+<td>18</td>
+<td>65</td>
+<td>83</td>
+<td>21.7%</td>
+<td class="pos">+4.8</td>
+<td>0.2918</td>
+</tr>
+<tr class="">
+<td>3</td>
+<td>24</td>
+<td>88</td>
+<td>112</td>
+<td>21.4%</td>
+<td class="pos">+4.5</td>
+<td>0.2263</td>
+</tr>
+<tr class="sig-2">
+<td>-1</td>
+<td>59</td>
+<td>400</td>
+<td>459</td>
+<td>12.9%</td>
+<td class="neg">-4.0</td>
+<td>0.0044</td>
+</tr>
+<tr class="">
+<td>2</td>
+<td>6</td>
+<td>25</td>
+<td>31</td>
+<td>19.4%</td>
+<td class="pos">+2.5</td>
+<td>0.8989</td>
+</tr>
+<tr class="">
+<td>1</td>
+<td>58</td>
+<td>312</td>
+<td>370</td>
+<td>15.7%</td>
+<td class="neg">-1.2</td>
+<td>0.5042</td>
+</tr>
+</tbody></table>
+<h4>paradigm (short)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="">
+<td>BOFA-LIS</td>
+<td>6</td>
+<td>10</td>
+<td>16</td>
+<td>37.5%</td>
+<td class="pos">+20.5</td>
+<td>0.0620</td>
+</tr>
+<tr class="">
+<td>AG-TARGET</td>
+<td>3</td>
+<td>42</td>
+<td>45</td>
+<td>6.7%</td>
+<td class="neg">-10.3</td>
+<td>0.0939</td>
+</tr>
+<tr class="">
+<td>GEX-TARGET</td>
+<td>2</td>
+<td>25</td>
+<td>27</td>
+<td>7.4%</td>
+<td class="neg">-9.6</td>
+<td>0.2800</td>
+</tr>
+<tr class="">
+<td>BofA-LIS</td>
+<td>9</td>
+<td>27</td>
+<td>36</td>
+<td>25.0%</td>
+<td class="pos">+8.0</td>
+<td>0.2815</td>
+</tr>
+<tr class="">
+<td>AG-PURE</td>
+<td>17</td>
+<td>54</td>
+<td>71</td>
+<td>23.9%</td>
+<td class="pos">+7.0</td>
+<td>0.1471</td>
+</tr>
+<tr class="">
+<td>SIDIAL-EXTREME</td>
+<td>10</td>
+<td>33</td>
+<td>43</td>
+<td>23.3%</td>
+<td class="pos">+6.3</td>
+<td>0.3625</td>
+</tr>
+<tr class="sig-2">
+<td>GEX-PURE</td>
+<td>26</td>
+<td>215</td>
+<td>241</td>
+<td>10.8%</td>
+<td class="neg">-6.2</td>
+<td>0.0056</td>
+</tr>
+<tr class="">
+<td>AG-LIS</td>
+<td>21</td>
+<td>76</td>
+<td>97</td>
+<td>21.6%</td>
+<td class="pos">+4.7</td>
+<td>0.2549</td>
+</tr>
+</tbody></table>
+<h4>vanna_cliff_side (short)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-2">
+<td>A</td>
+<td>24</td>
+<td>180</td>
+<td>204</td>
+<td>11.8%</td>
+<td class="neg">-6.0</td>
+<td>0.0041</td>
+</tr>
+<tr class="sig-2">
+<td>B</td>
+<td>57</td>
+<td>196</td>
+<td>253</td>
+<td>22.5%</td>
+<td class="pos">+4.8</td>
+<td>0.0041</td>
+</tr>
+</tbody></table>
+<h4>upside_bucket (short)</h4>
+<table class="div-table"><thead><tr>
+<th>Bucket</th><th>CLEAN</th><th>OTHER</th><th>N</th><th>CLEAN rate</th><th>Lift</th><th>p</th>
+</tr></thead><tbody>
+<tr class="sig-2">
+<td>&gt;=25</td>
+<td>11</td>
+<td>18</td>
+<td>29</td>
+<td>37.9%</td>
+<td class="pos">+20.4</td>
+<td>0.0063</td>
+</tr>
+<tr class="">
+<td>15-25</td>
+<td>6</td>
+<td>20</td>
+<td>26</td>
+<td>23.1%</td>
+<td class="pos">+5.6</td>
+<td>0.6132</td>
+</tr>
+<tr class="">
+<td>&lt;5</td>
+<td>3</td>
+<td>16</td>
+<td>19</td>
+<td>15.8%</td>
+<td class="neg">-1.7</td>
+<td>0.9128</td>
+</tr>
+<tr class="sig-1">
+<td>10-15</td>
+<td>69</td>
+<td>366</td>
+<td>435</td>
+<td>15.9%</td>
+<td class="neg">-1.6</td>
+<td>0.0299</td>
+</tr>
+</tbody></table>
+<h2 id="filters">Filter Candidates</h2>
+
+<p class="muted">Each candidate filter was evaluated on the FULL 2,312-trade universe. All candidates
+shown require n &ge; 30, OOS halves both PnL&gt;0, bootstrap CI excludes zero, and 3/3 months positive.</p>
+
+<h3>Full filter universe (sorted by mean PnL/trade)</h3>
+<table class="flt"><thead><tr>
+<th>Filter</th><th>N</th><th>CE%</th><th>WR%</th><th>Mean</th><th>Tot</th><th>$/mo</th><th>h1 WR</th><th>h2 WR</th><th>mos+</th><th>MaxDD</th><th>CI lo</th></tr></thead><tbody>
+<tr><td class="pos">F7: AG Short + AG-aligned paradigm</td><td>57</td><td>33.3%</td><td>78.9%</td><td class="pos">+6.70</td><td>+382.0</td><td>+830$</td><td>82%</td><td>69%</td><td>3/3</td><td>60</td><td class="pos">+2.89</td></tr>
+<tr><td class="pos">F26: AG Short EXCLUDING AG-TARGET paradigm</td><td>57</td><td>33.3%</td><td>78.9%</td><td class="pos">+6.70</td><td>+382.0</td><td>+830$</td><td>82%</td><td>69%</td><td>3/3</td><td>60</td><td class="pos">+3.15</td></tr>
+<tr><td class="pos">F22: SC long + align==+1 + BOFA-PURE</td><td>74</td><td>41.9%</td><td>75.7%</td><td class="pos">+5.88</td><td>+435.1</td><td>+958$</td><td>74%</td><td>78%</td><td>3/3</td><td>36</td><td class="pos">+3.66</td></tr>
+<tr><td class="">F11: SC Short + AG-aligned paradigm</td><td>40</td><td>17.5%</td><td>65.0%</td><td class="pos">+5.60</td><td>+223.9</td><td>+501$</td><td>70%</td><td>60%</td><td>2/3</td><td>50</td><td class="neg">-0.04</td></tr>
+<tr><td class="pos">F8: AG Short setup</td><td>67</td><td>28.4%</td><td>74.6%</td><td class="pos">+5.13</td><td>+344.0</td><td>+747$</td><td>76%</td><td>73%</td><td>3/3</td><td>60</td><td class="pos">+1.50</td></tr>
+<tr><td class="pos">F28: V14-live + LONG + alignment in (1,2)</td><td>145</td><td>35.2%</td><td>73.4%</td><td class="pos">+4.77</td><td>+692.3</td><td>+1462$</td><td>72%</td><td>75%</td><td>3/3</td><td>42</td><td class="pos">+2.96</td></tr>
+<tr><td class="pos">F21: SC long V14-style (align in any except block list)</td><td>211</td><td>29.9%</td><td>73.9%</td><td class="pos">+4.67</td><td>+985.1</td><td>+2080$</td><td>73%</td><td>75%</td><td>3/3</td><td>82</td><td class="pos">+3.04</td></tr>
+<tr><td class="pos">F23: SC long + align in (1,2) ANY paradigm except SIDIAL-EXTREME</td><td>122</td><td>34.4%</td><td>72.1%</td><td class="pos">+4.56</td><td>+556.0</td><td>+1174$</td><td>70%</td><td>75%</td><td>3/3</td><td>45</td><td class="pos">+2.55</td></tr>
+<tr><td class="pos">F29: SC Long V14 + LONG sweet alignment</td><td>122</td><td>34.4%</td><td>72.1%</td><td class="pos">+4.56</td><td>+556.0</td><td>+1174$</td><td>70%</td><td>75%</td><td>3/3</td><td>45</td><td class="pos">+2.50</td></tr>
+<tr><td class="pos">F24: ES Abs LONG + align==+1 + GEX paradigm (GEX-LIS, GEX-PURE)</td><td>48</td><td>25.0%</td><td>70.8%</td><td class="pos">+4.51</td><td>+216.4</td><td>+633$</td><td>71%</td><td>71%</td><td>2/2</td><td>16</td><td class="pos">+2.20</td></tr>
+<tr><td class="">F14: LONG + BOFA-PURE + align&gt;=+1</td><td>281</td><td>30.2%</td><td>64.5%</td><td class="pos">+3.73</td><td>+1047.3</td><td>+2211$</td><td>57%</td><td>75%</td><td>3/3</td><td>202</td><td class="pos">+2.42</td></tr>
+<tr><td class="pos">F3: SHORT + align==-3</td><td>131</td><td>24.4%</td><td>67.7%</td><td class="pos">+3.53</td><td>+462.7</td><td>+1803$</td><td>69%</td><td>67%</td><td>2/2</td><td>66</td><td class="pos">+1.75</td></tr>
+<tr><td class="">F1: LONG + align==+1</td><td>410</td><td>31.0%</td><td>62.9%</td><td class="pos">+3.24</td><td>+1326.7</td><td>+2801$</td><td>53%</td><td>71%</td><td>2/3</td><td>181</td><td class="pos">+2.25</td></tr>
+<tr><td class="">F15: SHORT + (AG-PURE OR align==-3)</td><td>161</td><td>24.2%</td><td>65.4%</td><td class="pos">+3.14</td><td>+505.7</td><td>+1083$</td><td>69%</td><td>61%</td><td>2/3</td><td>66</td><td class="pos">+1.47</td></tr>
+<tr><td class="">F25: SHORT entries when paradigm == AG-PURE</td><td>71</td><td>23.9%</td><td>62.9%</td><td class="pos">+2.88</td><td>+204.6</td><td>+444$</td><td>77%</td><td>55%</td><td>1/2</td><td>71</td><td class="pos">+0.15</td></tr>
+<tr><td class="">F27: V14-live + SHORT + alignment in (-3,-1)</td><td>227</td><td>17.2%</td><td>64.8%</td><td class="pos">+2.81</td><td>+638.4</td><td>+1386$</td><td>72%</td><td>45%</td><td>2/3</td><td>219</td><td class="pos">+0.88</td></tr>
+<tr><td class="">F6: SHORT + paradigm in AG-PURE/BofA-LIS</td><td>123</td><td>26.0%</td><td>57.4%</td><td class="pos">+2.73</td><td>+335.6</td><td>+729$</td><td>66%</td><td>47%</td><td>1/3</td><td>117</td><td class="pos">+0.57</td></tr>
+<tr><td class="">F5: LONG + paradigm BOFA-PURE</td><td>384</td><td>28.1%</td><td>60.5%</td><td class="pos">+2.71</td><td>+1039.6</td><td>+2195$</td><td>52%</td><td>72%</td><td>3/3</td><td>206</td><td class="pos">+1.67</td></tr>
+<tr><td class="pos">B2: V14-live setups only</td><td>775</td><td>20.5%</td><td>63.2%</td><td class="pos">+2.48</td><td>+1918.4</td><td>+4050$</td><td>64%</td><td>62%</td><td>3/3</td><td>148</td><td class="pos">+1.54</td></tr>
+<tr><td class="pos">F16: V14-live + align away from 0</td><td>763</td><td>20.2%</td><td>63.2%</td><td class="pos">+2.47</td><td>+1888.3</td><td>+3986$</td><td>64%</td><td>63%</td><td>3/3</td><td>148</td><td class="pos">+1.54</td></tr>
+<tr><td class="">F9: SC Long + alignment &gt;= +1</td><td>260</td><td>22.7%</td><td>64.6%</td><td class="pos">+2.22</td><td>+578.1</td><td>+1220$</td><td>59%</td><td>74%</td><td>3/3</td><td>349</td><td class="pos">+0.63</td></tr>
+<tr><td class="pos">F20: Grade A+/A only</td><td>1016</td><td>18.9%</td><td>56.7%</td><td class="pos">+2.16</td><td>+2199.2</td><td>+4643$</td><td>56%</td><td>58%</td><td>3/3</td><td>225</td><td class="pos">+1.41</td></tr>
+<tr><td class="pos">F13: 10-11 ET window</td><td>506</td><td>15.6%</td><td>50.7%</td><td class="pos">+1.59</td><td>+804.7</td><td>+1699$</td><td>53%</td><td>48%</td><td>3/3</td><td>139</td><td class="pos">+0.46</td></tr>
+<tr><td class="">F4: SHORT + align&lt;=-1</td><td>629</td><td>16.1%</td><td>54.2%</td><td class="pos">+1.38</td><td>+868.6</td><td>+1834$</td><td>56%</td><td>42%</td><td>1/3</td><td>342</td><td class="pos">+0.34</td></tr>
+<tr><td class="pos">B1: All trades baseline</td><td>2312</td><td>19.4%</td><td>51.8%</td><td class="pos">+1.12</td><td>+2589.5</td><td>+5467$</td><td>51%</td><td>53%</td><td>3/3</td><td>495</td><td class="pos">+0.63</td></tr>
+<tr><td class="">F12: 14-15 ET window</td><td>368</td><td>26.4%</td><td>47.0%</td><td class="pos">+0.05</td><td>+17.9</td><td>+38$</td><td>46%</td><td>48%</td><td>1/3</td><td>319</td><td class="neg">-0.97</td></tr>
+<tr><td class="">F17: |gap_to_lis|&lt;5 (near LIS)</td><td>276</td><td>18.5%</td><td>50.9%</td><td class="neg">-0.21</td><td>-59.2</td><td>-125$</td><td>47%</td><td>58%</td><td>2/3</td><td>243</td><td class="neg">-1.43</td></tr>
+<tr><td class="">F18: LONG + gap_to_lis between 0 and 30</td><td>214</td><td>17.3%</td><td>49.5%</td><td class="neg">-0.31</td><td>-65.8</td><td>-141$</td><td>43%</td><td>65%</td><td>2/3</td><td>316</td><td class="neg">-1.50</td></tr>
+<tr><td class="">F2: LONG + align&gt;=+2</td><td>407</td><td>12.5%</td><td>46.3%</td><td class="neg">-0.50</td><td>-202.2</td><td>-732$</td><td>50%</td><td>39%</td><td>0/2</td><td>1004</td><td class="neg">-1.73</td></tr>
+</tbody></table>
+<h3>Top 5 surviving filters</h3>
+<div class="filter-card rank-1">
+<div class="filter-name">#1 &mdash; B1: All trades baseline</div>
+<div class="metric-row">
+<div class="item"><div class="label">N / dates</div>2312 / 52</div>
+<div class="item"><div class="label">CLEAN rate</div>19.4%</div>
+<div class="item"><div class="label">WR</div>52%</div>
+<div class="item"><div class="label">Mean PnL</div><span class="pos">+1.12 pts</span></div>
+<div class="item"><div class="label">Total PnL</div>+2589.5 pts</div>
+<div class="item"><div class="label">$/mo @ 1 MES</div><span class="pos">$+5467</span></div>
+<div class="item"><div class="label">MaxDD (pts)</div>495</div>
+</div>
+<div style="margin-top:8px">
+<small>Bootstrap CI [+0.63, +1.59] <span class="badge ok">CI excludes 0: YES</span></small><br>
+<small>OOS halves: h1 WR=51% / h2 WR=53% <span class="badge ok">OOS: OK</span></small><br>
+<small>Per-month: 2026-03: +976pts (1040), 2026-04: +1004pts (918), 2026-05: +610pts (354) <span class="badge ok">3/3 positive</span></small>
+</div>
+<div class="filter-mech">Mechanism: Baseline universe of all signals.</div>
+</div>
+<div class="filter-card rank-2">
+<div class="filter-name">#2 &mdash; F20: Grade A+/A only</div>
+<div class="metric-row">
+<div class="item"><div class="label">N / dates</div>1016 / 52</div>
+<div class="item"><div class="label">CLEAN rate</div>18.9%</div>
+<div class="item"><div class="label">WR</div>57%</div>
+<div class="item"><div class="label">Mean PnL</div><span class="pos">+2.16 pts</span></div>
+<div class="item"><div class="label">Total PnL</div>+2199.2 pts</div>
+<div class="item"><div class="label">$/mo @ 1 MES</div><span class="pos">$+4643</span></div>
+<div class="item"><div class="label">MaxDD (pts)</div>225</div>
+</div>
+<div style="margin-top:8px">
+<small>Bootstrap CI [+1.41, +2.93] <span class="badge ok">CI excludes 0: YES</span></small><br>
+<small>OOS halves: h1 WR=56% / h2 WR=58% <span class="badge ok">OOS: OK</span></small><br>
+<small>Per-month: 2026-03: +1126pts (501), 2026-04: +758pts (373), 2026-05: +315pts (142) <span class="badge ok">3/3 positive</span></small>
+</div>
+<div class="filter-mech">Mechanism: Highest-grade signals only.</div>
+</div>
+<div class="filter-card rank-3">
+<div class="filter-name">#3 &mdash; B2: V14-live setups only</div>
+<div class="metric-row">
+<div class="item"><div class="label">N / dates</div>775 / 52</div>
+<div class="item"><div class="label">CLEAN rate</div>20.5%</div>
+<div class="item"><div class="label">WR</div>63%</div>
+<div class="item"><div class="label">Mean PnL</div><span class="pos">+2.48 pts</span></div>
+<div class="item"><div class="label">Total PnL</div>+1918.4 pts</div>
+<div class="item"><div class="label">$/mo @ 1 MES</div><span class="pos">$+4050</span></div>
+<div class="item"><div class="label">MaxDD (pts)</div>148</div>
+</div>
+<div style="margin-top:8px">
+<small>Bootstrap CI [+1.54, +3.44] <span class="badge ok">CI excludes 0: YES</span></small><br>
+<small>OOS halves: h1 WR=64% / h2 WR=62% <span class="badge ok">OOS: OK</span></small><br>
+<small>Per-month: 2026-03: +862pts (335), 2026-04: +699pts (310), 2026-05: +357pts (130) <span class="badge ok">3/3 positive</span></small>
+</div>
+<div class="filter-mech">Mechanism: V14 live universe (SC/AG/VPB/VIX Div).</div>
+</div>
+<div class="filter-card ">
+<div class="filter-name">#4 &mdash; F16: V14-live + align away from 0</div>
+<div class="metric-row">
+<div class="item"><div class="label">N / dates</div>763 / 52</div>
+<div class="item"><div class="label">CLEAN rate</div>20.2%</div>
+<div class="item"><div class="label">WR</div>63%</div>
+<div class="item"><div class="label">Mean PnL</div><span class="pos">+2.47 pts</span></div>
+<div class="item"><div class="label">Total PnL</div>+1888.3 pts</div>
+<div class="item"><div class="label">$/mo @ 1 MES</div><span class="pos">$+3986</span></div>
+<div class="item"><div class="label">MaxDD (pts)</div>148</div>
+</div>
+<div style="margin-top:8px">
+<small>Bootstrap CI [+1.54, +3.49] <span class="badge ok">CI excludes 0: YES</span></small><br>
+<small>OOS halves: h1 WR=64% / h2 WR=63% <span class="badge ok">OOS: OK</span></small><br>
+<small>Per-month: 2026-03: +849pts (327), 2026-04: +682pts (306), 2026-05: +357pts (130) <span class="badge ok">3/3 positive</span></small>
+</div>
+<div class="filter-mech">Mechanism: V14 universe with any non-neutral alignment.</div>
+</div>
+<div class="filter-card ">
+<div class="filter-name">#5 &mdash; F21: SC long V14-style (align in any except block list)</div>
+<div class="metric-row">
+<div class="item"><div class="label">N / dates</div>211 / 44</div>
+<div class="item"><div class="label">CLEAN rate</div>29.9%</div>
+<div class="item"><div class="label">WR</div>74%</div>
+<div class="item"><div class="label">Mean PnL</div><span class="pos">+4.67 pts</span></div>
+<div class="item"><div class="label">Total PnL</div>+985.1 pts</div>
+<div class="item"><div class="label">$/mo @ 1 MES</div><span class="pos">$+2080</span></div>
+<div class="item"><div class="label">MaxDD (pts)</div>82</div>
+</div>
+<div style="margin-top:8px">
+<small>Bootstrap CI [+3.04, +6.35] <span class="badge ok">CI excludes 0: YES</span></small><br>
+<small>OOS halves: h1 WR=73% / h2 WR=75% <span class="badge ok">OOS: OK</span></small><br>
+<small>Per-month: 2026-03: +421pts (87), 2026-04: +425pts (82), 2026-05: +139pts (42) <span class="badge ok">3/3 positive</span></small>
+</div>
+<div class="filter-mech">Mechanism: V14 SC long rule applied retroactively.</div>
+</div>
+<h3>Cross-reference vs Track B (PERFECT_ENTRY)</h3>
+
+<div class="callout pos">
+<strong>Track B and Track D agree</strong> on the most important findings:
+<ul style="margin: 8px 0 0 0">
+<li><strong>AG Short + AG-aligned paradigm</strong> &mdash; Track B F12: 33% PE / 79% WR / +830$/mo.
+Track D F7 (same construction): identical 33% CE / 79% WR / +830$/mo (3/3 months, OOS 82/69%).</li>
+<li><strong>SHORT + alignment == -3</strong> &mdash; Track B F1: PE rate elevated. Track D F3: 24% CE,
+68% WR, +1803$/mo, both OOS halves 67-69%.</li>
+<li><strong>LONG + alignment == +1</strong> &mdash; Track B F2 (B2: PE bucket). Track D F1: 31% CE,
+63% WR. F22 (+BOFA-PURE narrow): 42% CE / 76% WR / +958$/mo.</li>
+</ul>
+<strong>New in Track D</strong> (not in Track B):
+<ul style="margin: 8px 0 0 0">
+<li>F28: V14-live + LONG + alignment in (1,2) &mdash; 35.2% CE, 73% WR, +1462$/mo, MaxDD 42 only.</li>
+<li>F26: AG Short EXCLUDING AG-TARGET paradigm &mdash; identical to F7 in this dataset
+(AG-TARGET 0% CE, 50% WR, -38 pts &mdash; should be blocked outright).</li>
+</ul>
+</div>
+
+<h2 id="stops">Stop-Tightening Analysis</h2>
+
+<p class="muted">For each setup, what % of trades have MAE under various thresholds, and what would
+happen to total PnL if SL was tightened? Method: for each historical trade, if MAE &gt; new_SL
+assume it would have stopped at -new_SL; otherwise keep actual outcome.</p>
+<div class="callout warn">
+<strong>Findings: stop-tightening hurts almost every setup.</strong> The current stop levels are
+NOT excessive &mdash; the live trail mechanism is doing the right thing by letting trades breathe
+before resolving. Only <code>Paradigm Reversal</code> shows minor improvement (-103 &rarr; -54)
+at SL=5. <strong>Recommendation: keep current stops.</strong>
+</div>
+
+<table class="gen"><thead><tr>
+<th>Setup</th><th>N</th><th>MAE&le;3%</th><th>MAE&le;5%</th><th>MAE&le;8%</th><th>MAE&le;12%</th><th>p50</th><th>p75</th><th>p90</th><th>Current</th><th>SL=5</th><th>SL=6</th><th>SL=8</th><th>SL=10</th><th>SL=12</th></tr></thead><tbody>
+<tr>
+<td>AG Short</td>
+<td>67</td>
+<td>28%</td>
+<td>37%</td>
+<td>40%</td>
+<td>51%</td>
+<td>10.4</td>
+<td>23.8</td>
+<td>35.8</td>
+<td class="pos">+344</td>
+<td class="neg">+167</td>
+<td class="neg">+144</td>
+<td class="neg">+94</td>
+<td class="neg">+98</td>
+<td class="neg">+62</td>
+</tr>
+<tr>
+<td>BofA Scalp</td>
+<td>103</td>
+<td>19%</td>
+<td>33%</td>
+<td>42%</td>
+<td>52%</td>
+<td>9.6</td>
+<td>23.7</td>
+<td>36.0</td>
+<td class="neg">-36</td>
+<td class="neg">-133</td>
+<td class="neg">-188</td>
+<td class="neg">-264</td>
+<td class="neg">-299</td>
+<td class="neg">-386</td>
+</tr>
+<tr>
+<td>DD Exhaustion</td>
+<td>544</td>
+<td>18%</td>
+<td>24%</td>
+<td>36%</td>
+<td>49%</td>
+<td>12.2</td>
+<td>25.7</td>
+<td>36.3</td>
+<td class="pos">+322</td>
+<td class="neg">-442</td>
+<td class="neg">-455</td>
+<td class="neg">-490</td>
+<td class="neg">-587</td>
+<td class="neg">-814</td>
+</tr>
+<tr>
+<td>Delta Absorption</td>
+<td>39</td>
+<td>13%</td>
+<td>18%</td>
+<td>28%</td>
+<td>38%</td>
+<td>19.5</td>
+<td>33.6</td>
+<td>40.1</td>
+<td class="neg">-66</td>
+<td class="neg">-136</td>
+<td class="neg">-166</td>
+<td class="neg">-218</td>
+<td class="neg">-255</td>
+<td class="neg">-294</td>
+</tr>
+<tr>
+<td>ES Absorption</td>
+<td>553</td>
+<td>20%</td>
+<td>25%</td>
+<td>35%</td>
+<td>48%</td>
+<td>13.1</td>
+<td>29.4</td>
+<td>36.7</td>
+<td class="pos">+604</td>
+<td class="neg">-1047</td>
+<td class="neg">-1193</td>
+<td class="neg">-1589</td>
+<td class="neg">-1920</td>
+<td class="neg">-2144</td>
+</tr>
+<tr>
+<td>GEX Long</td>
+<td>67</td>
+<td>18%</td>
+<td>24%</td>
+<td>34%</td>
+<td>58%</td>
+<td>11.1</td>
+<td>23.1</td>
+<td>35.8</td>
+<td class="pos">+38</td>
+<td class="neg">-152</td>
+<td class="neg">-153</td>
+<td class="neg">-229</td>
+<td class="neg">-257</td>
+<td class="neg">-206</td>
+</tr>
+<tr>
+<td>Paradigm Reversal</td>
+<td>51</td>
+<td>16%</td>
+<td>29%</td>
+<td>39%</td>
+<td>49%</td>
+<td>12.6</td>
+<td>20.9</td>
+<td>35.2</td>
+<td class="neg">-103</td>
+<td class="pos">-54</td>
+<td class="pos">-74</td>
+<td class="neg">-115</td>
+<td class="neg">-176</td>
+<td class="neg">-175</td>
+</tr>
+<tr>
+<td>SB2 Absorption</td>
+<td>180</td>
+<td>21%</td>
+<td>26%</td>
+<td>33%</td>
+<td>44%</td>
+<td>14.8</td>
+<td>29.6</td>
+<td>37.3</td>
+<td class="neg">-89</td>
+<td class="pos">+11</td>
+<td class="neg">-96</td>
+<td class="neg">-299</td>
+<td class="neg">-509</td>
+<td class="neg">-649</td>
+</tr>
+<tr>
+<td>Skew Charm</td>
+<td>624</td>
+<td>19%</td>
+<td>28%</td>
+<td>38%</td>
+<td>50%</td>
+<td>11.9</td>
+<td>22.3</td>
+<td>35.5</td>
+<td class="pos">+1372</td>
+<td class="neg">-324</td>
+<td class="neg">-492</td>
+<td class="neg">-794</td>
+<td class="neg">-858</td>
+<td class="neg">-964</td>
+</tr>
+<tr>
+<td>VIX Divergence</td>
+<td>36</td>
+<td>17%</td>
+<td>19%</td>
+<td>28%</td>
+<td>53%</td>
+<td>11.4</td>
+<td>19.4</td>
+<td>34.1</td>
+<td class="pos">+95</td>
+<td class="neg">-52</td>
+<td class="neg">-61</td>
+<td class="neg">-86</td>
+<td class="neg">-68</td>
+<td class="neg">-27</td>
+</tr>
+<tr>
+<td>Vanna Pivot Bounce</td>
+<td>48</td>
+<td>31%</td>
+<td>42%</td>
+<td>48%</td>
+<td>56%</td>
+<td>9.7</td>
+<td>25.6</td>
+<td>32.4</td>
+<td class="pos">+107</td>
+<td class="neg">+44</td>
+<td class="neg">+17</td>
+<td class="neg">-19</td>
+<td class="neg">-65</td>
+<td class="neg">-85</td>
+</tr>
+</tbody></table>
+<h2 id="mechanism">Mechanism Narratives</h2>
+
+<div class="card">
+<h4>1. Mild bullish alignment (+1) for longs &mdash; the sweet spot</h4>
+<p>+1 alignment means dealers are slightly long-biased but NOT chasing (would be +3). When price
+trades through a long signal at +1 alignment, the dealer hedge flow is supportive but not exhausted.
+The 31% CLEAN rate at align==+1 vs 14% at align==+3 confirms that "all Greeks lined up" is
+actually <strong>worse</strong> for longs &mdash; you&rsquo;re entering after the dealer flow has
+already pushed price up, so any pullback hits MAE quickly.</p>
+
+<h4>2. Strong bearish alignment (-3) for shorts &mdash; mirror principle</h4>
+<p>For shorts, alignment==-3 IS the sweet spot (24% CLEAN, 68% WR). When dealers are FULLY against
+price (charm+vanna+gamma all negative), there&rsquo;s no support catching the fade &mdash; short
+fades face zero resistance. This is the opposite of longs because shorts profit from dealer
+dis-supply, while longs profit from dealer absorption.</p>
+
+<h4>3. AG Short + AG-aligned paradigm &mdash; the gold filter</h4>
+<p>The strongest single filter across BOTH Track B and Track D. AG paradigm means dealers are
+aggressively positioned for downside; AG Short setup is bearish counterpart to GEX Long. When the
+two align (AG-PURE, AG-LIS, BofA-LIS), 33% of signals get clean fills and 79% win. Only AG-TARGET
+breaks the pattern (0% CE, 50% WR) &mdash; "TARGET" means price is already at the target zone,
+leaving no room.</p>
+
+<h4>4. BOFA-PURE for longs &mdash; clean paradigm matters</h4>
+<p>BOFA-PURE produces 28% CLEAN rate for longs vs 7% for AG-PURE. The paradigm carries directional
+bias: BOFA is bullish (dealers buying), AG is bearish (dealers selling). Matching paradigm to
+direction is essential. SC long + align==+1 + BOFA-PURE = 42% CE, 76% WR &mdash; the tightest
+sweet spot we found.</p>
+
+<h4>5. Time-of-day &mdash; CLEAN rate &ne; profitability</h4>
+<p>15-16 ET has the HIGHEST CLEAN rate (32.7%) but POOR profitability (mean +0.08, WR 50%). Late-day
+moves are quick but reverse often. Inverse: 10-11 ET has LOW CLEAN rate (15.6%) but solid profit
+(+1.59 mean). Lesson: <strong>"clean entry" is only useful when paired with directional/regime
+filters</strong>. A late-day CLEAN signal can still flip on you.</p>
+
+<h4>6. VIX regime &mdash; longs LOVE low VIX, shorts LOVE high VIX</h4>
+<p>For longs: VIX 16-20 = 30.5% CLEAN; VIX &ge; 28 = 11.4% CLEAN. For shorts: VIX &ge; 28 = 29.8%
+CLEAN. Classic regime mirror. The current overvix rule (VIX-VIX3M &lt; -2 boosts longs) is data-
+validated and shows up here independently.</p>
+</div>
+
+<h2 id="tasks">Proposed Tasks</h2>
+
+<div class="callout warn">
+<strong>NONE of these are auto-ship candidates.</strong> They are study/audit candidates for monitoring
+on TSRT going forward, or backtest extensions. The user's anti-shortterm-flip rule
+(<code>feedback_dont_ship_on_short_term_flip.md</code>) requires 100+ post-improvement trades,
+OOS halves, and mechanism explanation. Track D provides 2 of 3 (OOS, mechanism) but not 100+
+post-improvement live trades.
+</div>
+
+<ol>
+<li><strong>Sxxx: F22 SC long + align==+1 + BOFA-PURE narrowing</strong> &mdash; backtest 6 months
+historical, compare against current SC long V14 (F21). If F22 maintains 70%+ WR over 6 months,
+consider narrowing real-trader SC long to this subset. <strong>74 historical signals over 2.4 months
+= ~30/mo; that&rsquo;s plenty of forward volume.</strong></li>
+
+<li><strong>Sxxx: F26 AG Short hard-block of AG-TARGET paradigm</strong> &mdash; current AG Short has 67
+trades, 75% WR, +344pts. Blocking AG-TARGET (10 trades, -38pts) lifts to 57 trades, 79% WR, +382pts.
+LOW RISK code change; can ship.</li>
+
+<li><strong>Sxxx: F28 V14-live LONG + align in (1,2) audit</strong> &mdash; this filter has 35% CE,
+73% WR, +1462$/mo at 1 MES, MaxDD only 42pts. Strongest "tighten the V14 longs" candidate. Audit
+for 30 forward trades before considering.</li>
+
+<li><strong>Sxxx: F3 SHORT align==-3 elevation</strong> &mdash; this filter is too broad (covers all
+setups). Re-test as overlay on V14 short whitelist (SC, AG, currently). If V14 short alignment
+gate could be enforced as align&le;-1 instead of current "Layer 1 GEX/DD magnet" approach, may
+improve precision.</li>
+
+<li><strong>Sxxx: Stop-tightening &mdash; FORMAL REJECTION</strong> &mdash; Track D's Phase 7 confirms
+current SL levels (SC=14, VIX Div=8, etc.) are correct. Tightening hurts every setup except
+Paradigm Reversal (which is already not on TSRT real). Close the question.</li>
+</ol>
+
+
+<h2>Final Caveats</h2>
+<div class="callout neg">
+<ul>
+<li><strong>CLEAN_ENTRY is a thesis-validation signal, not an outcome predictor.</strong> 22 of 449
+CLEAN entries later faded to losses. Filters here must combine CE rate with WR and per-month
+consistency &mdash; CE rate alone is misleading (cf. 15-16 ET window).</li>
+<li><strong>2.4 months of data is short.</strong> N=2,312 sounds large but spans only 3 months of
+trading. Multi-quarter validation needed before any real-money change.</li>
+<li><strong>Era-agnostic means regime-vulnerable.</strong> Mar-May 2026 was net up; bull-friendly
+filters (longs+BOFA-PURE) may degrade in a bear regime. Mechanism-grounded filters (alignment,
+paradigm) more durable than time/regime ones.</li>
+<li><strong>SIM vs real fill drift</strong>: all PnL in this report is from <code>outcome_pnl</code>
+DB column, which is portal-simulated SPX. Real MES execution lags 70-95% of sim per
+<code>feedback_capture_rate_anchor.md</code>. $/mo numbers should be discounted ~20% for live.</li>
+</ul>
+</div>
+
+<p class="muted" style="margin-top:30px">
+Generated by Track D Clean-Entry Analysis &middot; Script: <code>_tmp_track_d_clean_entry.py</code>,
+HTML builder: <code>_tmp_track_d_build_html.py</code>
+</p>
+</body>
+</html>

@@ -11480,7 +11480,8 @@ def api_setup_eod_review(date: str = Query(None, description="Date YYYY-MM-DD, d
                        greek_alignment, vix, overvix, spot_vol_beta,
                        charm_limit_entry,
                        vanna_cliff_side, vanna_peak_side,
-                       v13_gex_above, v13_dd_near
+                       v13_gex_above, v13_dd_near,
+                       vanna_regime
                 FROM setup_log
                 WHERE date(ts AT TIME ZONE 'America/New_York') = :d
                 ORDER BY ts ASC
@@ -11689,7 +11690,7 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
                        outcome_first_event, outcome_elapsed_min,
                        greek_alignment, vix, overvix,
                        v13_gex_above, v13_dd_near,
-                       vanna_cliff_side, vanna_peak_side
+                       vanna_cliff_side, vanna_peak_side, vanna_regime
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim OFFSET :off
@@ -13090,12 +13091,33 @@ function passesStrategy(l, strat) {
     return true;
   }
   if (strat === 'v14le') {
-    if (sn !== 'Skew Charm' && sn !== 'AG Short' && sn !== 'VIX Divergence') return false;
+    // V14-LE = exact real_trader whitelist mirror: SC + AG + VPB + VIX Div + ES Abs PURE
+    if (sn !== 'Skew Charm' && sn !== 'AG Short' && sn !== 'VIX Divergence' && sn !== 'Vanna Pivot Bounce' && sn !== 'ES Absorption') return false;
     // VIX Divergence: longs only, drop grade C (shipped 2026-05-03 to real_trader).
-    // No gap/time/vanna/bullish/DD-quality gates — VIX Div has its own mechanism.
     if (sn === 'VIX Divergence') {
       if (!isLong) return false;
       if (l.grade === 'C') return false;
+      return true;
+    }
+    // Vanna Pivot Bounce: longs only, only in bullish vanna regime (VPB-Bull V3, Apr 22 2026).
+    if (sn === 'Vanna Pivot Bounce') {
+      if (!isLong) return false;
+      if (l.vanna_regime !== 'bullish') return false;
+      return true;
+    }
+    // ES Absorption PURE: grade A/A+, no AG-TARGET/AG-LIS paradigm, time<15:45 ET, direction-matched align.
+    if (sn === 'ES Absorption') {
+      if (l.grade !== 'A' && l.grade !== 'A+') return false;
+      if (l.paradigm === 'AG-TARGET' || l.paradigm === 'AG-LIS') return false;
+      if (l.ts) {
+        const d = new Date(l.ts);
+        const etStr = d.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
+        const tp = (etStr.split(', ')[1] || etStr).split(':');
+        const mins = parseInt(tp[0]) * 60 + parseInt(tp[1]);
+        if (mins >= 945) return false;  // 15:45 ET cutoff
+      }
+      if (isLong && align < 0) return false;
+      if (!isLong && align > 0) return false;
       return true;
     }
     if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
@@ -17926,12 +17948,28 @@ DASH_HTML_TEMPLATE = """
         return true;
       }
       if (strat === 'v14le') {
-        if (sn !== 'Skew Charm' && sn !== 'AG Short' && sn !== 'VIX Divergence') return false;
+        // V14-LE = exact real_trader whitelist mirror: SC + AG + VPB + VIX Div + ES Abs PURE
+        if (sn !== 'Skew Charm' && sn !== 'AG Short' && sn !== 'VIX Divergence' && sn !== 'Vanna Pivot Bounce' && sn !== 'ES Absorption') return false;
         // VIX Divergence: longs only, drop grade C (shipped 2026-05-03 to real_trader).
-        // No gap/time/vanna/bullish gates — VIX Div has its own mechanism.
         if (sn === 'VIX Divergence') {
           if (!isLong) return false;
           if (l.grade === 'C') return false;
+          return true;
+        }
+        // Vanna Pivot Bounce: longs only, only in bullish vanna regime (VPB-Bull V3, Apr 22 2026).
+        if (sn === 'Vanna Pivot Bounce') {
+          if (!isLong) return false;
+          if (l.vanna_regime !== 'bullish') return false;
+          return true;
+        }
+        // ES Absorption PURE: grade A/A+, no AG-TARGET/AG-LIS paradigm, time<15:45 ET, direction-matched align.
+        if (sn === 'ES Absorption') {
+          if (l.grade !== 'A' && l.grade !== 'A+') return false;
+          if (l.paradigm === 'AG-TARGET' || l.paradigm === 'AG-LIS') return false;
+          const mins = _tlEtMins();
+          if (mins != null && mins >= 945) return false;
+          if (isLong && align < 0) return false;
+          if (!isLong && align > 0) return false;
           return true;
         }
         if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;

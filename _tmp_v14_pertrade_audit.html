@@ -1,0 +1,1230 @@
+<!doctype html>
+<html><head><meta charset='utf-8'><title>V14 Per-Trade Audit</title>
+<style>
+  body { background:#0d0d12; color:#e8e8ec; font-family: 'Segoe UI', system-ui, sans-serif; margin: 20px; }
+  h1, h2, h3 { color: #fcc419; border-bottom: 1px solid #444; padding-bottom: 6px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 12px; }
+  th, td { border: 1px solid #2a2a2e; padding: 5px 8px; text-align: left; }
+  th { background: #1a1a22; color: #fcc419; font-weight: 600; }
+  tr:nth-child(even) { background: #15151a; }
+  tr:hover { background: #20202a; }
+  .verdict { padding: 20px; border-radius: 8px; margin: 20px 0; font-size: 18px; }
+  .stat { display: inline-block; background:#1a1a22; padding: 12px 18px; margin: 6px; border-radius: 6px; min-width: 200px; }
+  .stat .label { font-size: 11px; color: #999; text-transform: uppercase; }
+  .stat .value { font-size: 22px; font-weight: bold; color: #fcc419; }
+  .narrative { font-size: 11px; color: #999; }
+  .caveat { background: #2a1a00; border-left: 4px solid #fab005; padding: 12px; margin: 12px 0; }
+</style></head>
+<body>
+<h1>V14-Era Per-Trade Root-Cause Audit</h1>
+<div class='caveat'>
+  <b>Sample:</b> 52 real-money MES trades from 2026-04-29 - 2026-05-13 (V14 era).
+  <b>Confidence:</b> Directional only (n &lt; 50 = small sample). Use as hypothesis test, not final proof.
+</div>
+
+<h2>Top-line metrics</h2>
+<div>
+  <div class='stat'><div class='label'>Total real PnL</div><div class='value'>-31.5 pt<br>$-158</div></div>
+  <div class='stat'><div class='label'>Total portal sim PnL</div><div class='value'>+99.2 pt<br>$+496</div></div>
+  <div class='stat'><div class='label'>Total gap (real - portal)</div><div class='value' style='color:#ff6b6b'>-130.7 pt<br>$-653</div></div>
+  <div class='stat'><div class='label'>TRAIL_TAG_EARLY gap</div><div class='value'>-140.3 pt<br>$-702</div></div>
+  <div class='stat'><div class='label'>% gap from MES-wick</div><div class='value' style='color:#51cf66'>107.4%</div></div>
+</div>
+
+<div class='verdict' style='background:#51cf66;color:#0d0d12;font-weight:bold;'>
+  HYPOTHESIS VERDICT: CONFIRMED<br>
+  <span style='font-size:14px;font-weight:normal;'>
+    User hypothesis: 90%+ of portal-vs-real gap from MES tick wicks tagging trail stops SPX never sees.<br>
+    Measured: 107.4% of total $ gap classified TRAIL_TAG_EARLY.
+  </span>
+</div>
+
+<h2>Category summary</h2>
+<table>
+  <thead><tr><th>Category</th><th>n</th><th>Real PnL</th><th>Portal sim PnL</th><th>Gap (real-portal)</th><th>Architecture-fix PnL</th><th>Delta (arch-real)</th></tr></thead>
+  <tbody>
+    
+        <tr>
+          <td style="background:#ff8787;color:#000;font-weight:bold;padding:6px;border-radius:4px;">TRAIL_TAG_FAV_WICK</td>
+          <td>6</td>
+          <td>+48.50 ($+242.50)</td>
+          <td>+127.81 ($+639.05)</td>
+          <td>-79.31 ($-396.55)</td>
+          <td>+124.81 ($+624.05)</td>
+          <td>+76.31 ($+381.55)</td>
+        </tr>
+        <tr>
+          <td style="background:#ff6b6b;color:#000;font-weight:bold;padding:6px;border-radius:4px;">TRAIL_TAG_ADVERSE_WICK</td>
+          <td>3</td>
+          <td>-41.25 ($-206.25)</td>
+          <td>+19.79 ($+98.95)</td>
+          <td>-61.04 ($-305.20)</td>
+          <td>+18.29 ($+91.45)</td>
+          <td>+59.54 ($+297.70)</td>
+        </tr>
+        <tr>
+          <td style="background:#82c91e;color:#000;font-weight:bold;padding:6px;border-radius:4px;">MES_FAVORABLE</td>
+          <td>2</td>
+          <td>+19.25 ($+96.25)</td>
+          <td>-8.79 ($-43.95)</td>
+          <td>+28.04 ($+140.20)</td>
+          <td>+19.25 ($+96.25)</td>
+          <td>+0.00 ($+0.00)</td>
+        </tr>
+        <tr>
+          <td style="background:#e67e22;color:#000;font-weight:bold;padding:6px;border-radius:4px;">BUG_GHOST_RECONCILE</td>
+          <td>5</td>
+          <td>-3.50 ($-17.50)</td>
+          <td>+20.24 ($+101.20)</td>
+          <td>-23.74 ($-118.70)</td>
+          <td>-3.50 ($-17.50)</td>
+          <td>+0.00 ($+0.00)</td>
+        </tr>
+        <tr>
+          <td style="background:#fab005;color:#000;font-weight:bold;padding:6px;border-radius:4px;">BUG_EOD_FLATTEN</td>
+          <td>5</td>
+          <td>-20.00 ($-100.00)</td>
+          <td>-42.67 ($-213.35)</td>
+          <td>+22.67 ($+113.35)</td>
+          <td>-20.00 ($-100.00)</td>
+          <td>+0.00 ($+0.00)</td>
+        </tr>
+        <tr>
+          <td style="background:#6c757d;color:#000;font-weight:bold;padding:6px;border-radius:4px;">SL_HIT_BOTH</td>
+          <td>12</td>
+          <td>-170.50 ($-852.50)</td>
+          <td>-156.75 ($-783.75)</td>
+          <td>-13.75 ($-68.75)</td>
+          <td>-170.50 ($-852.50)</td>
+          <td>+0.00 ($+0.00)</td>
+        </tr>
+        <tr>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:6px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>14</td>
+          <td>+116.25 ($+581.25)</td>
+          <td>+103.09 ($+515.45)</td>
+          <td>+13.16 ($+65.80)</td>
+          <td>+116.25 ($+581.25)</td>
+          <td>+0.00 ($+0.00)</td>
+        </tr>
+        <tr>
+          <td style="background:#cc5de8;color:#000;font-weight:bold;padding:6px;border-radius:4px;">BUG_STOP_REJECTED</td>
+          <td>1</td>
+          <td>-0.25 ($-1.25)</td>
+          <td>+12.35 ($+61.75)</td>
+          <td>-12.60 ($-63.00)</td>
+          <td>-0.25 ($-1.25)</td>
+          <td>+0.00 ($+0.00)</td>
+        </tr>
+        <tr>
+          <td style="background:#9775fa;color:#000;font-weight:bold;padding:6px;border-radius:4px;">OUTCOME_RESOLVED</td>
+          <td>4</td>
+          <td>+20.00 ($+100.00)</td>
+          <td>+24.09 ($+120.45)</td>
+          <td>-4.09 ($-20.45)</td>
+          <td>+20.00 ($+100.00)</td>
+          <td>+0.00 ($+0.00)</td>
+        </tr>
+    <tr style='font-weight:bold;background:#222'>
+      <td>TOTAL</td>
+      <td>52</td>
+      <td>-31.50 ($-157.50)</td>
+      <td>+99.16 ($+495.80)</td>
+      <td>-130.66 ($-653.30)</td>
+      <td>+104.35 ($+521.75)</td>
+      <td style='color:#51cf66'>+135.85 ($+679.25)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Architecture-change simulation</h2>
+<p>Proposal: keep broker hard SL for capital protection, but drive trail/BE/target exits from SPX 30s/2-min path (market-close at SPX trigger).
+Assumes 0.5pt slippage on each market exit.</p>
+<div class='stat'><div class='label'>Real total</div><div class='value'>-31.5 pt / $-157.50</div></div>
+<div class='stat'><div class='label'>Architecture-fix total (sim)</div><div class='value'>+104.3 pt / $+521.75</div></div>
+<div class='stat'><div class='label'>Net improvement (sim)</div><div class='value' style='color:#51cf66'>+135.8 pt / $+679.25</div></div>
+<div class='stat'><div class='label'>Expected real (80% capture)</div><div class='value' style='color:#51cf66'>+108.7 pt / $+543.40</div></div>
+<p style='font-size:11px;color:#aaa'>Per <code>feedback_capture_rate_anchor.md</code>: apply 75-85% capture rate when projecting sim&rarr;real. Default 80% blend at 1 MES.</p>
+
+<h2>TRAIL_TAG_EARLY deep-dive: SPX vs MES excursion</h2>
+<p>For each TRAIL_TAG_EARLY trade, MES wick is larger than SPX wick by avg +6.19 pt (worst case +33.95 pt).
+This is the wick that tagged the broker stop while SPX path never saw it.</p>
+<table>
+  <thead><tr><th>lid</th><th>SPX max-adv</th><th>MES max-adv</th><th>MES-SPX divergence</th></tr></thead>
+  <tbody><tr><td>2530</td><td>+7.55</td><td>+41.50</td><td style='color:#ff6b6b'>+33.95</td></tr><tr><td>2433</td><td>+16.85</td><td>+22.25</td><td style='color:#ff6b6b'>+5.40</td></tr><tr><td>2528</td><td>+4.89</td><td>+8.75</td><td style='color:#ff6b6b'>+3.86</td></tr><tr><td>2442</td><td>+0.33</td><td>+3.25</td><td style='color:#ff6b6b'>+2.92</td></tr><tr><td>2713</td><td>+0.59</td><td>+3.25</td><td style='color:#ff6b6b'>+2.66</td></tr><tr><td>2447</td><td>+0.00</td><td>+2.50</td><td style='color:#ff6b6b'>+2.50</td></tr><tr><td>2306</td><td>+13.84</td><td>+16.25</td><td style='color:#ff6b6b'>+2.41</td></tr><tr><td>2644</td><td>+6.65</td><td>+9.00</td><td style='color:#ff6b6b'>+2.35</td></tr><tr><td>2705</td><td>+7.59</td><td>+7.25</td><td style='color:#ff6b6b'>-0.34</td></tr></tbody>
+</table>
+
+<h2>Per-trade detail</h2>
+<table>
+  <thead><tr>
+    <th>lid</th><th>signal_ts</th><th>setup</th><th>dir</th><th>grade</th><th>para</th>
+    <th>SPX entry</th><th>MES entry</th>
+    <th>real_pnl</th><th>portal_pnl</th><th>gap</th>
+    <th>portal_event</th><th>real_event</th>
+    <th>SPX max-adv</th><th>MES max-adv</th>
+    <th>category</th><th>arch_pnl</th><th>narrative</th>
+  </tr></thead>
+  <tbody>
+        <tr>
+          <td>2306</td>
+          <td>2026-04-29 13:54:57</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>A+</td>
+          <td>BOFA-PURE</td>
+          <td>7130.0</td>
+          <td>7159.2</td>
+          <td>-14.00</td>
+          <td>+6.06</td>
+          <td style="color:#ff6b6b">-20.06</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+13.84</td>
+          <td>+16.25</td>
+          <td style="background:#ff6b6b;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">TRAIL_TAG_ADVERSE_WICK</td>
+          <td>+5.56</td>
+          <td style="font-size:11px;color:#aaa">Real broker SL fired (loss -14.0pt) while SPX portal would have exited at trail for +6.1pt. SPX-path max-adv was only 13.8pt vs SL distance 14pt.</td>
+        </tr>
+        <tr>
+          <td>2315</td>
+          <td>2026-04-29 15:22:27</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>A+</td>
+          <td>BOFA-PURE</td>
+          <td>7130.6</td>
+          <td>7160.5</td>
+          <td>+10.25</td>
+          <td>+6.72</td>
+          <td style="color:#51cf66">+3.53</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+2.50</td>
+          <td>+12.00</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>+10.25</td>
+          <td style="font-size:11px;color:#aaa">Gap=+3.53pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2323</td>
+          <td>2026-04-29 16:24:57</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>B</td>
+          <td>BOFA-PURE</td>
+          <td>7123.2</td>
+          <td>7155.5</td>
+          <td>+7.50</td>
+          <td>+7.49</td>
+          <td style="color:#51cf66">+0.01</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+5.96</td>
+          <td>+17.00</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>+7.50</td>
+          <td style="font-size:11px;color:#aaa">Gap=+0.01pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2333</td>
+          <td>2026-04-29 17:31:57</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>B</td>
+          <td>BOFA-PURE</td>
+          <td>7124.6</td>
+          <td>7153.2</td>
+          <td>+10.00</td>
+          <td>+8.97</td>
+          <td style="color:#51cf66">+1.03</td>
+          <td>trail</td>
+          <td>trail_market_exit</td>
+          <td>+4.48</td>
+          <td>+19.25</td>
+          <td style="background:#9775fa;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">OUTCOME_RESOLVED</td>
+          <td>+10.00</td>
+          <td style="font-size:11px;color:#aaa">Bot market-exited at trail trigger (rare path)</td>
+        </tr>
+        <tr>
+          <td>2346</td>
+          <td>2026-04-29 19:11:59</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>B</td>
+          <td>BOFA-PURE</td>
+          <td>7130.7</td>
+          <td>7160.5</td>
+          <td>+0.25</td>
+          <td>-2.86</td>
+          <td style="color:#51cf66">+3.11</td>
+          <td>eod</td>
+          <td>eod_flatten</td>
+          <td>+6.23</td>
+          <td>+12.00</td>
+          <td style="background:#fab005;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BUG_EOD_FLATTEN</td>
+          <td>+0.25</td>
+          <td style="font-size:11px;color:#aaa">Held overnight (eod flatten). portal exit_event=eod</td>
+        </tr>
+        <tr>
+          <td>2358</td>
+          <td>2026-04-30 14:16:59</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>A+</td>
+          <td>BOFA-PURE</td>
+          <td>7131.7</td>
+          <td>7159.0</td>
+          <td>+12.75</td>
+          <td>+5.21</td>
+          <td style="color:#51cf66">+7.54</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+0.00</td>
+          <td>+1.50</td>
+          <td style="background:#82c91e;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">MES_FAVORABLE</td>
+          <td>+12.75</td>
+          <td style="font-size:11px;color:#aaa">Real outperformed SPX path by +7.54pt (MES had bigger favorable swing than SPX showed).</td>
+        </tr>
+        <tr>
+          <td>2361</td>
+          <td>2026-04-30 14:49:59</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>A</td>
+          <td>BOFA-PURE</td>
+          <td>7151.3</td>
+          <td>7181.5</td>
+          <td>+11.00</td>
+          <td>+11.09</td>
+          <td style="color:#ff6b6b">-0.09</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+0.00</td>
+          <td>+1.75</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>+11.00</td>
+          <td style="font-size:11px;color:#aaa">Gap=-0.09pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2370</td>
+          <td>2026-04-30 16:41:59</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>A</td>
+          <td>BOFA-PURE</td>
+          <td>7172.4</td>
+          <td>7203.2</td>
+          <td>+12.00</td>
+          <td>+8.61</td>
+          <td style="color:#51cf66">+3.39</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+9.79</td>
+          <td>+10.50</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>+12.00</td>
+          <td style="font-size:11px;color:#aaa">Gap=+3.39pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2375</td>
+          <td>2026-04-30 17:43:01</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>A</td>
+          <td>BOFA-PURE</td>
+          <td>7187.4</td>
+          <td>7217.2</td>
+          <td>+11.25</td>
+          <td>+7.49</td>
+          <td style="color:#51cf66">+3.76</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+0.00</td>
+          <td>+2.75</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>+11.25</td>
+          <td style="font-size:11px;color:#aaa">Gap=+3.76pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2427</td>
+          <td>2026-05-01 19:11:43</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>B</td>
+          <td>BOFA-PURE</td>
+          <td>7242.4</td>
+          <td>7270.2</td>
+          <td>+1.25</td>
+          <td>-8.60</td>
+          <td style="color:#51cf66">+9.85</td>
+          <td>eod</td>
+          <td>eod_flatten</td>
+          <td>+8.60</td>
+          <td>+16.75</td>
+          <td style="background:#fab005;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BUG_EOD_FLATTEN</td>
+          <td>+1.25</td>
+          <td style="font-size:11px;color:#aaa">Held overnight (eod flatten). portal exit_event=eod</td>
+        </tr>
+        <tr>
+          <td>2433</td>
+          <td>2026-05-04 14:00:31</td>
+          <td>AG Short</td>
+          <td>short</td>
+          <td>A</td>
+          <td>AG-LIS</td>
+          <td>7227.3</td>
+          <td>7248.8</td>
+          <td>-19.25</td>
+          <td>+8.57</td>
+          <td style="color:#ff6b6b">-27.82</td>
+          <td>trail</td>
+          <td>LOSS</td>
+          <td>+16.85</td>
+          <td>+22.25</td>
+          <td style="background:#ff6b6b;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">TRAIL_TAG_ADVERSE_WICK</td>
+          <td>+8.07</td>
+          <td style="font-size:11px;color:#aaa">Real broker SL fired (loss -19.2pt) while SPX portal would have exited at trail for +8.6pt. SPX-path max-adv was only 16.8pt vs SL distance 20.0pt.</td>
+        </tr>
+        <tr>
+          <td>2434</td>
+          <td>2026-05-04 13:46:31</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>B</td>
+          <td>AG-LIS</td>
+          <td>7228.9</td>
+          <td>7253.8</td>
+          <td>+8.75</td>
+          <td>+6.04</td>
+          <td style="color:#51cf66">+2.71</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+5.58</td>
+          <td>+54.25</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>+8.75</td>
+          <td style="font-size:11px;color:#aaa">Gap=+2.71pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2442</td>
+          <td>2026-05-04 14:53:28</td>
+          <td>AG Short</td>
+          <td>short</td>
+          <td>A+</td>
+          <td>AG-LIS</td>
+          <td>7243.1</td>
+          <td>7267.8</td>
+          <td>+8.50</td>
+          <td>+24.34</td>
+          <td style="color:#ff6b6b">-15.84</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+0.33</td>
+          <td>+3.25</td>
+          <td style="background:#ff8787;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">TRAIL_TAG_FAV_WICK</td>
+          <td>+23.84</td>
+          <td style="font-size:11px;color:#aaa">Real trail/BE fired at +8.5pt; SPX path would have run further to trail for +24.3pt. MES wick over-tightened trail.</td>
+        </tr>
+        <tr>
+          <td>2444</td>
+          <td>2026-05-04 14:56:58</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>B</td>
+          <td>AG-LIS</td>
+          <td>7236.6</td>
+          <td>7265.2</td>
+          <td>-14.00</td>
+          <td>-14.00</td>
+          <td style="color:#51cf66">+0.00</td>
+          <td>stop</td>
+          <td>stop_filled</td>
+          <td>+22.85</td>
+          <td>+65.75</td>
+          <td style="background:#6c757d;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">SL_HIT_BOTH</td>
+          <td>-14.00</td>
+          <td style="font-size:11px;color:#aaa">Both initial SL. real=-14.0 portal=-14.0 gap=+0.00</td>
+        </tr>
+        <tr>
+          <td>2447</td>
+          <td>2026-05-04 15:03:01</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>A</td>
+          <td>BOFA-PURE</td>
+          <td>7234.0</td>
+          <td>7261.8</td>
+          <td>+8.00</td>
+          <td>+15.27</td>
+          <td style="color:#ff6b6b">-7.27</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+0.00</td>
+          <td>+2.50</td>
+          <td style="background:#ff8787;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">TRAIL_TAG_FAV_WICK</td>
+          <td>+14.77</td>
+          <td style="font-size:11px;color:#aaa">Real trail/BE fired at +8.0pt; SPX path would have run further to trail for +15.3pt. MES wick over-tightened trail.</td>
+        </tr>
+        <tr>
+          <td>2449</td>
+          <td>2026-05-04 15:34:58</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>A</td>
+          <td>BOFA-PURE</td>
+          <td>7199.7</td>
+          <td>7230.0</td>
+          <td>-0.25</td>
+          <td>+12.35</td>
+          <td style="color:#ff6b6b">-12.60</td>
+          <td>trail</td>
+          <td>stop_rejected_asyn</td>
+          <td>+3.46</td>
+          <td>+9.75</td>
+          <td style="background:#cc5de8;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BUG_STOP_REJECTED</td>
+          <td>-0.25</td>
+          <td style="font-size:11px;color:#aaa">Broker rejected stop order async — bot market-exited at -0.25. Portal would have done +12.35 via trail.</td>
+        </tr>
+        <tr>
+          <td>2466</td>
+          <td>2026-05-04 16:48:28</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>B</td>
+          <td>BOFA-PURE</td>
+          <td>7190.8</td>
+          <td>7217.8</td>
+          <td>-14.00</td>
+          <td>-14.00</td>
+          <td style="color:#51cf66">+0.00</td>
+          <td>stop</td>
+          <td>stop_filled</td>
+          <td>+14.35</td>
+          <td>+22.00</td>
+          <td style="background:#6c757d;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">SL_HIT_BOTH</td>
+          <td>-14.00</td>
+          <td style="font-size:11px;color:#aaa">Both initial SL. real=-14.0 portal=-14.0 gap=+0.00</td>
+        </tr>
+        <tr>
+          <td>2470</td>
+          <td>2026-05-04 17:18:58</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>B</td>
+          <td>BOFA-PURE</td>
+          <td>7205.2</td>
+          <td>7232.0</td>
+          <td>+5.00</td>
+          <td>+8.93</td>
+          <td style="color:#ff6b6b">-3.93</td>
+          <td>trail</td>
+          <td>ghost_reconcile</td>
+          <td>+7.07</td>
+          <td>+7.75</td>
+          <td style="background:#e67e22;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BUG_GHOST_RECONCILE</td>
+          <td>+5.00</td>
+          <td style="font-size:11px;color:#aaa">Reconciler-recovered close; bot/broker state diverged. real_pnl=+5.00 portal=+8.93</td>
+        </tr>
+        <tr>
+          <td>2473</td>
+          <td>2026-05-04 17:49:31</td>
+          <td>VIX Divergence</td>
+          <td>long</td>
+          <td>A</td>
+          <td>BOFA-PURE</td>
+          <td>7205.8</td>
+          <td>7232.5</td>
+          <td>-8.00</td>
+          <td>-8.00</td>
+          <td style="color:#51cf66">+0.00</td>
+          <td>stop</td>
+          <td>stop_filled</td>
+          <td>+10.02</td>
+          <td>+15.00</td>
+          <td style="background:#6c757d;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">SL_HIT_BOTH</td>
+          <td>-8.00</td>
+          <td style="font-size:11px;color:#aaa">Both initial SL. real=-8.0 portal=-8.0 gap=+0.00</td>
+        </tr>
+        <tr>
+          <td>2484</td>
+          <td>2026-05-04 19:22:58</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>B</td>
+          <td>BOFA-PURE</td>
+          <td>7201.7</td>
+          <td>7226.5</td>
+          <td>-1.50</td>
+          <td>-2.46</td>
+          <td style="color:#51cf66">+0.96</td>
+          <td>eod</td>
+          <td>eod_flatten</td>
+          <td>+4.13</td>
+          <td>+3.25</td>
+          <td style="background:#fab005;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BUG_EOD_FLATTEN</td>
+          <td>-1.50</td>
+          <td style="font-size:11px;color:#aaa">Held overnight (eod flatten). portal exit_event=eod</td>
+        </tr>
+        <tr>
+          <td>2490</td>
+          <td>2026-05-05 14:13:00</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>A+</td>
+          <td>AG-PURE</td>
+          <td>7254.9</td>
+          <td>7279.8</td>
+          <td>+5.75</td>
+          <td>+6.42</td>
+          <td style="color:#ff6b6b">-0.67</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+0.00</td>
+          <td>+20.25</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>+5.75</td>
+          <td style="font-size:11px;color:#aaa">Gap=-0.67pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2492</td>
+          <td>2026-05-05 14:18:01</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>B</td>
+          <td>AG-LIS</td>
+          <td>7242.7</td>
+          <td>7276.5</td>
+          <td>+5.00</td>
+          <td>+9.52</td>
+          <td style="color:#ff6b6b">-4.52</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+0.00</td>
+          <td>+9.50</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>+5.00</td>
+          <td style="font-size:11px;color:#aaa">Gap=-4.52pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2497</td>
+          <td>2026-05-05 14:43:30</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>A+</td>
+          <td>BOFA-PURE</td>
+          <td>7253.6</td>
+          <td>7279.2</td>
+          <td>-14.00</td>
+          <td>-14.00</td>
+          <td style="color:#51cf66">+0.00</td>
+          <td>stop</td>
+          <td>stop_filled</td>
+          <td>+14.74</td>
+          <td>+20.75</td>
+          <td style="background:#6c757d;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">SL_HIT_BOTH</td>
+          <td>-14.00</td>
+          <td style="font-size:11px;color:#aaa">Both initial SL. real=-14.0 portal=-14.0 gap=+0.00</td>
+        </tr>
+        <tr>
+          <td>2520</td>
+          <td>2026-05-05 19:10:00</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>B</td>
+          <td>AG-LIS</td>
+          <td>7271.4</td>
+          <td>7296.8</td>
+          <td>-5.25</td>
+          <td>-14.00</td>
+          <td style="color:#51cf66">+8.75</td>
+          <td>stop</td>
+          <td>eod_flatten</td>
+          <td>+15.01</td>
+          <td>+14.00</td>
+          <td style="background:#fab005;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BUG_EOD_FLATTEN</td>
+          <td>-5.25</td>
+          <td style="font-size:11px;color:#aaa">Held overnight (eod flatten). portal exit_event=stop</td>
+        </tr>
+        <tr>
+          <td>2528</td>
+          <td>2026-05-06 14:03:44</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>A+</td>
+          <td>AG-PURE</td>
+          <td>7319.5</td>
+          <td>7345.2</td>
+          <td>+6.25</td>
+          <td>+23.18</td>
+          <td style="color:#ff6b6b">-16.93</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+4.89</td>
+          <td>+8.75</td>
+          <td style="background:#ff8787;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">TRAIL_TAG_FAV_WICK</td>
+          <td>+22.68</td>
+          <td style="font-size:11px;color:#aaa">Real trail/BE fired at +6.2pt; SPX path would have run further to trail for +23.2pt. MES wick over-tightened trail.</td>
+        </tr>
+        <tr>
+          <td>2530</td>
+          <td>2026-05-06 14:49:10</td>
+          <td>ES Absorption</td>
+          <td>bearish</td>
+          <td>C</td>
+          <td>AG-PURE</td>
+          <td>7340.1</td>
+          <td>7354.5</td>
+          <td>-0.50</td>
+          <td>+5.23</td>
+          <td style="color:#ff6b6b">-5.73</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+7.55</td>
+          <td>+41.50</td>
+          <td style="background:#ff8787;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">TRAIL_TAG_FAV_WICK</td>
+          <td>+4.73</td>
+          <td style="font-size:11px;color:#aaa">Real trail/BE fired at -0.5pt; SPX path would have run further to trail for +5.2pt. MES wick over-tightened trail.</td>
+        </tr>
+        <tr>
+          <td>2532</td>
+          <td>2026-05-06 14:33:09</td>
+          <td>AG Short</td>
+          <td>short</td>
+          <td>A</td>
+          <td>AG-PURE</td>
+          <td>7330.7</td>
+          <td>7359.0</td>
+          <td>-20.75</td>
+          <td>-20.00</td>
+          <td style="color:#ff6b6b">-0.75</td>
+          <td>stop</td>
+          <td>LOSS</td>
+          <td>+22.13</td>
+          <td>+37.00</td>
+          <td style="background:#6c757d;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">SL_HIT_BOTH</td>
+          <td>-20.75</td>
+          <td style="font-size:11px;color:#aaa">Both initial SL. real=-20.8 portal=-20.0 gap=-0.75</td>
+        </tr>
+        <tr>
+          <td>2540</td>
+          <td>2026-05-06 15:17:10</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>A</td>
+          <td>BOFA-PURE</td>
+          <td>7342.2</td>
+          <td>7368.0</td>
+          <td>+10.75</td>
+          <td>+9.87</td>
+          <td style="color:#51cf66">+0.88</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+10.29</td>
+          <td>+13.25</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>+10.75</td>
+          <td style="font-size:11px;color:#aaa">Gap=+0.88pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2565</td>
+          <td>2026-05-07 13:50:50</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>A</td>
+          <td>BOFA-PURE</td>
+          <td>7361.4</td>
+          <td>7385.5</td>
+          <td>-14.00</td>
+          <td>-14.00</td>
+          <td style="color:#51cf66">+0.00</td>
+          <td>stop</td>
+          <td>stop_filled</td>
+          <td>+14.25</td>
+          <td>+24.50</td>
+          <td style="background:#6c757d;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">SL_HIT_BOTH</td>
+          <td>-14.00</td>
+          <td style="font-size:11px;color:#aaa">Both initial SL. real=-14.0 portal=-14.0 gap=+0.00</td>
+        </tr>
+        <tr>
+          <td>2575</td>
+          <td>2026-05-07 15:01:20</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>A+</td>
+          <td>BOFA-PURE</td>
+          <td>7383.1</td>
+          <td>7407.2</td>
+          <td>-14.00</td>
+          <td>-14.00</td>
+          <td style="color:#51cf66">+0.00</td>
+          <td>stop</td>
+          <td>stop_filled</td>
+          <td>+14.78</td>
+          <td>+61.50</td>
+          <td style="background:#6c757d;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">SL_HIT_BOTH</td>
+          <td>-14.00</td>
+          <td style="font-size:11px;color:#aaa">Both initial SL. real=-14.0 portal=-14.0 gap=+0.00</td>
+        </tr>
+        <tr>
+          <td>2644</td>
+          <td>2026-05-08 18:47:30</td>
+          <td>ES Absorption</td>
+          <td>bullish</td>
+          <td>A</td>
+          <td>BOFA-PURE</td>
+          <td>7392.1</td>
+          <td>7416.8</td>
+          <td>-8.00</td>
+          <td>+5.16</td>
+          <td style="color:#ff6b6b">-13.16</td>
+          <td>eod</td>
+          <td>stop_filled</td>
+          <td>+6.65</td>
+          <td>+9.00</td>
+          <td style="background:#ff6b6b;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">TRAIL_TAG_ADVERSE_WICK</td>
+          <td>+4.66</td>
+          <td style="font-size:11px;color:#aaa">Real broker SL fired (loss -8.0pt) while SPX portal would have exited at eod for +5.2pt. SPX-path max-adv was only 6.6pt vs SL distance 8pt.</td>
+        </tr>
+        <tr>
+          <td>2646</td>
+          <td>2026-05-08 19:04:49</td>
+          <td>ES Absorption</td>
+          <td>bullish</td>
+          <td>A</td>
+          <td>BOFA-PURE</td>
+          <td>7388.3</td>
+          <td>7412.8</td>
+          <td>+5.00</td>
+          <td>+8.99</td>
+          <td style="color:#ff6b6b">-3.99</td>
+          <td>eod</td>
+          <td>outcome_resolved_w</td>
+          <td>+0.00</td>
+          <td>+2.50</td>
+          <td style="background:#9775fa;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">OUTCOME_RESOLVED</td>
+          <td>+5.00</td>
+          <td style="font-size:11px;color:#aaa">Outcome tracker resolved (outcome_resolved_win), broker stop never fired. real=5.0 portal=+8.99</td>
+        </tr>
+        <tr>
+          <td>2651</td>
+          <td>2026-05-11 13:46:13</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>A+</td>
+          <td>GEX-PURE</td>
+          <td>7409.8</td>
+          <td>7433.5</td>
+          <td>+6.50</td>
+          <td>-14.00</td>
+          <td style="color:#51cf66">+20.50</td>
+          <td>stop</td>
+          <td>stop_filled</td>
+          <td>+14.75</td>
+          <td>+21.25</td>
+          <td style="background:#82c91e;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">MES_FAVORABLE</td>
+          <td>+6.50</td>
+          <td style="font-size:11px;color:#aaa">Real outperformed SPX path by +20.50pt (MES had bigger favorable swing than SPX showed).</td>
+        </tr>
+        <tr>
+          <td>2657</td>
+          <td>2026-05-11 14:47:43</td>
+          <td>Skew Charm</td>
+          <td>short</td>
+          <td>A+</td>
+          <td>GEX-PURE</td>
+          <td>7411.6</td>
+          <td>7435.0</td>
+          <td>-14.00</td>
+          <td>-14.00</td>
+          <td style="color:#51cf66">+0.00</td>
+          <td>stop</td>
+          <td>stop_filled</td>
+          <td>+15.43</td>
+          <td>+19.75</td>
+          <td style="background:#6c757d;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">SL_HIT_BOTH</td>
+          <td>-14.00</td>
+          <td style="font-size:11px;color:#aaa">Both initial SL. real=-14.0 portal=-14.0 gap=+0.00</td>
+        </tr>
+        <tr>
+          <td>2684</td>
+          <td>2026-05-12 13:47:57</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>A+</td>
+          <td>BofA-LIS</td>
+          <td>7380.0</td>
+          <td>7403.0</td>
+          <td>-14.00</td>
+          <td>-14.00</td>
+          <td style="color:#51cf66">+0.00</td>
+          <td>stop</td>
+          <td>stop_filled</td>
+          <td>+19.54</td>
+          <td>+39.50</td>
+          <td style="background:#6c757d;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">SL_HIT_BOTH</td>
+          <td>-14.00</td>
+          <td style="font-size:11px;color:#aaa">Both initial SL. real=-14.0 portal=-14.0 gap=+0.00</td>
+        </tr>
+        <tr>
+          <td>2696</td>
+          <td>2026-05-12 14:57:28</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>A+</td>
+          <td>AG-PURE</td>
+          <td>7357.8</td>
+          <td>7382.2</td>
+          <td>-14.00</td>
+          <td>-14.00</td>
+          <td style="color:#51cf66">+0.00</td>
+          <td>stop</td>
+          <td>ghost_reconcile</td>
+          <td>+18.32</td>
+          <td>+18.75</td>
+          <td style="background:#e67e22;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BUG_GHOST_RECONCILE</td>
+          <td>-14.00</td>
+          <td style="font-size:11px;color:#aaa">Reconciler-recovered close; bot/broker state diverged. real_pnl=-14.00 portal=-14.00</td>
+        </tr>
+        <tr>
+          <td>2697</td>
+          <td>2026-05-12 15:32:51</td>
+          <td>ES Absorption</td>
+          <td>bullish</td>
+          <td>A</td>
+          <td>AG-PURE</td>
+          <td>7348.6</td>
+          <td>7371.5</td>
+          <td>+5.25</td>
+          <td>+6.13</td>
+          <td style="color:#ff6b6b">-0.88</td>
+          <td>trail</td>
+          <td>outcome_resolved_w</td>
+          <td>+0.82</td>
+          <td>+7.75</td>
+          <td style="background:#9775fa;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">OUTCOME_RESOLVED</td>
+          <td>+5.25</td>
+          <td style="font-size:11px;color:#aaa">Outcome tracker resolved (outcome_resolved_win), broker stop never fired. real=5.25 portal=+6.13</td>
+        </tr>
+        <tr>
+          <td>2705</td>
+          <td>2026-05-12 15:58:55</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>A</td>
+          <td>BOFA-PURE</td>
+          <td>7346.7</td>
+          <td>7371.0</td>
+          <td>+16.50</td>
+          <td>+33.15</td>
+          <td style="color:#ff6b6b">-16.65</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+7.59</td>
+          <td>+7.25</td>
+          <td style="background:#ff8787;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">TRAIL_TAG_FAV_WICK</td>
+          <td>+32.65</td>
+          <td style="font-size:11px;color:#aaa">Real trail/BE fired at +16.5pt; SPX path would have run further to trail for +33.2pt. MES wick over-tightened trail.</td>
+        </tr>
+        <tr>
+          <td>2707</td>
+          <td>2026-05-12 16:15:41</td>
+          <td>VIX Divergence</td>
+          <td>long</td>
+          <td>A+</td>
+          <td>AG-LIS</td>
+          <td>7352.5</td>
+          <td>7376.8</td>
+          <td>-13.00</td>
+          <td>-8.00</td>
+          <td style="color:#ff6b6b">-5.00</td>
+          <td>stop</td>
+          <td>stop_filled</td>
+          <td>+8.04</td>
+          <td>+13.00</td>
+          <td style="background:#6c757d;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">SL_HIT_BOTH</td>
+          <td>-13.00</td>
+          <td style="font-size:11px;color:#aaa">Both initial SL. real=-13.0 portal=-8.0 gap=-5.00</td>
+        </tr>
+        <tr>
+          <td>2713</td>
+          <td>2026-05-12 17:11:44</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>B</td>
+          <td>BOFA-PURE</td>
+          <td>7353.2</td>
+          <td>7378.0</td>
+          <td>+9.75</td>
+          <td>+26.64</td>
+          <td style="color:#ff6b6b">-16.89</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+0.59</td>
+          <td>+3.25</td>
+          <td style="background:#ff8787;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">TRAIL_TAG_FAV_WICK</td>
+          <td>+26.14</td>
+          <td style="font-size:11px;color:#aaa">Real trail/BE fired at +9.8pt; SPX path would have run further to trail for +26.6pt. MES wick over-tightened trail.</td>
+        </tr>
+        <tr>
+          <td>2716</td>
+          <td>2026-05-12 17:43:44</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>B</td>
+          <td>BOFA-PURE</td>
+          <td>7368.0</td>
+          <td>7393.5</td>
+          <td>+11.75</td>
+          <td>+11.88</td>
+          <td style="color:#ff6b6b">-0.13</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+2.48</td>
+          <td>+4.00</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>+11.75</td>
+          <td style="font-size:11px;color:#aaa">Gap=-0.13pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2718</td>
+          <td>2026-05-12 18:20:14</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>A</td>
+          <td>BOFA-PURE</td>
+          <td>7374.6</td>
+          <td>7397.8</td>
+          <td>+7.25</td>
+          <td>+5.20</td>
+          <td style="color:#51cf66">+2.05</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+0.00</td>
+          <td>+2.50</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>+7.25</td>
+          <td style="font-size:11px;color:#aaa">Gap=+2.05pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2726</td>
+          <td>2026-05-12 19:20:11</td>
+          <td>AG Short</td>
+          <td>short</td>
+          <td>C</td>
+          <td>AG-LIS</td>
+          <td>7387.7</td>
+          <td>7414.0</td>
+          <td>-14.75</td>
+          <td>-14.75</td>
+          <td style="color:#51cf66">+0.00</td>
+          <td>stop</td>
+          <td>eod_flatten</td>
+          <td>+17.96</td>
+          <td>+20.00</td>
+          <td style="background:#fab005;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BUG_EOD_FLATTEN</td>
+          <td>-14.75</td>
+          <td style="font-size:11px;color:#aaa">Held overnight (eod flatten). portal exit_event=stop</td>
+        </tr>
+        <tr>
+          <td>2728</td>
+          <td>2026-05-12 19:24:11</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>B</td>
+          <td>AG-LIS</td>
+          <td>7391.1</td>
+          <td>7413.0</td>
+          <td>+8.75</td>
+          <td>+12.78</td>
+          <td style="color:#ff6b6b">-4.03</td>
+          <td>trail</td>
+          <td>ghost_reconcile</td>
+          <td>+0.00</td>
+          <td>+2.50</td>
+          <td style="background:#e67e22;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BUG_GHOST_RECONCILE</td>
+          <td>+8.75</td>
+          <td style="font-size:11px;color:#aaa">Reconciler-recovered close; bot/broker state diverged. real_pnl=+8.75 portal=+12.78</td>
+        </tr>
+        <tr>
+          <td>2730</td>
+          <td>2026-05-13 13:45:17</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>A</td>
+          <td>BOFA-PURE</td>
+          <td>7387.4</td>
+          <td>7411.2</td>
+          <td>+6.75</td>
+          <td>+6.55</td>
+          <td style="color:#51cf66">+0.20</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+6.30</td>
+          <td>+12.00</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>+6.75</td>
+          <td style="font-size:11px;color:#aaa">Gap=+0.20pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2733</td>
+          <td>2026-05-13 14:04:57</td>
+          <td>ES Absorption</td>
+          <td>bullish</td>
+          <td>A</td>
+          <td>SIDIAL-EXTREME</td>
+          <td>7395.7</td>
+          <td>7416.5</td>
+          <td>+0.75</td>
+          <td>+5.07</td>
+          <td style="color:#ff6b6b">-4.32</td>
+          <td>trail</td>
+          <td>ghost_reconcile</td>
+          <td>+3.01</td>
+          <td>+3.00</td>
+          <td style="background:#e67e22;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BUG_GHOST_RECONCILE</td>
+          <td>+0.75</td>
+          <td style="font-size:11px;color:#aaa">Reconciler-recovered close; bot/broker state diverged. real_pnl=+0.75 portal=+5.07</td>
+        </tr>
+        <tr>
+          <td>2735</td>
+          <td>2026-05-13 14:12:17</td>
+          <td>ES Absorption</td>
+          <td>bearish</td>
+          <td>A+</td>
+          <td>SIDIAL-EXTREME</td>
+          <td>7396.6</td>
+          <td>7414.2</td>
+          <td>-16.00</td>
+          <td>-8.00</td>
+          <td style="color:#ff6b6b">-8.00</td>
+          <td>stop</td>
+          <td>stop_filled</td>
+          <td>+9.51</td>
+          <td>+69.75</td>
+          <td style="background:#6c757d;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">SL_HIT_BOTH</td>
+          <td>-16.00</td>
+          <td style="font-size:11px;color:#aaa">Both initial SL. real=-16.0 portal=-8.0 gap=-8.00</td>
+        </tr>
+        <tr>
+          <td>2737</td>
+          <td>2026-05-13 14:22:12</td>
+          <td>ES Absorption</td>
+          <td>bearish</td>
+          <td>A+</td>
+          <td>SIDIAL-EXTREME</td>
+          <td>7403.8</td>
+          <td>7422.0</td>
+          <td>-5.50</td>
+          <td>-8.00</td>
+          <td style="color:#51cf66">+2.50</td>
+          <td>stop</td>
+          <td>stop_filled</td>
+          <td>+9.07</td>
+          <td>+62.00</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>-5.50</td>
+          <td style="font-size:11px;color:#aaa">Gap=+2.50pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2740</td>
+          <td>2026-05-13 15:42:27</td>
+          <td>ES Absorption</td>
+          <td>bearish</td>
+          <td>A</td>
+          <td>SIDIAL-EXTREME</td>
+          <td>7423.8</td>
+          <td>7444.8</td>
+          <td>-0.25</td>
+          <td>+0.00</td>
+          <td style="color:#ff6b6b">-0.25</td>
+          <td>breakeven</td>
+          <td>outcome_resolved_l</td>
+          <td>+0.10</td>
+          <td>+39.25</td>
+          <td style="background:#9775fa;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">OUTCOME_RESOLVED</td>
+          <td>-0.25</td>
+          <td style="font-size:11px;color:#aaa">Outcome tracker resolved (outcome_resolved_loss), broker stop never fired. real=-0.25 portal=+0.00</td>
+        </tr>
+        <tr>
+          <td>2744</td>
+          <td>2026-05-13 15:54:26</td>
+          <td>Skew Charm</td>
+          <td>long</td>
+          <td>A+</td>
+          <td>BOFA-PURE</td>
+          <td>7418.4</td>
+          <td>7444.5</td>
+          <td>+13.75</td>
+          <td>+14.21</td>
+          <td style="color:#ff6b6b">-0.46</td>
+          <td>trail</td>
+          <td>stop_filled</td>
+          <td>+1.05</td>
+          <td>+4.50</td>
+          <td style="background:#74c0fc;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BASIS_DRIFT</td>
+          <td>+13.75</td>
+          <td style="font-size:11px;color:#aaa">Gap=-0.46pt within basis drift threshold.</td>
+        </tr>
+        <tr>
+          <td>2748</td>
+          <td>2026-05-13 16:28:59</td>
+          <td>AG Short</td>
+          <td>short</td>
+          <td>C</td>
+          <td>AG-LIS</td>
+          <td>7438.6</td>
+          <td>7464.2</td>
+          <td>-14.75</td>
+          <td>-14.75</td>
+          <td style="color:#51cf66">+0.00</td>
+          <td>stop</td>
+          <td>stop_filled</td>
+          <td>+19.89</td>
+          <td>+19.75</td>
+          <td style="background:#6c757d;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">SL_HIT_BOTH</td>
+          <td>-14.75</td>
+          <td style="font-size:11px;color:#aaa">Both initial SL. real=-14.8 portal=-14.8 gap=+0.00</td>
+        </tr>
+        <tr>
+          <td>2759</td>
+          <td>2026-05-13 18:14:56</td>
+          <td>AG Short</td>
+          <td>short</td>
+          <td>B</td>
+          <td>AG-LIS</td>
+          <td>7458.5</td>
+          <td>7478.0</td>
+          <td>-4.00</td>
+          <td>+7.46</td>
+          <td style="color:#ff6b6b">-11.46</td>
+          <td>trail</td>
+          <td>ghost_reconcile</td>
+          <td>+0.39</td>
+          <td>+6.00</td>
+          <td style="background:#e67e22;color:#000;font-weight:bold;padding:4px 8px;border-radius:4px;">BUG_GHOST_RECONCILE</td>
+          <td>-4.00</td>
+          <td style="font-size:11px;color:#aaa">Reconciler-recovered close; bot/broker state diverged. real_pnl=-4.00 portal=+7.46</td>
+        </tr></tbody>
+</table>
+
+<h2>Risk catalog: edge cases where architecture proposal would fail</h2>
+<ul>
+  <li><b>Bot offline (Railway redeploy/crash)</b> — SPX-trail signal can't fire if poller dead. Broker hard SL still protects but trail not advanced. Mitigation: heartbeat alert on SPX-poller, fallback to MES-trail if poller >2 cycles late.</li>
+  <li><b>30s SPX poll vs sub-second MES move</b> — In a true flash crash, SPX can drop 20+ pts between 30s polls. Broker hard SL at 14pt is your capital backstop, fine, but missed trail-lock opportunity if 20pt drop happens in 30s window.</li>
+  <li><b>chain_snapshots is 2-min not 30s in V14 era</b> — even worse latency than assumed 30s. Means SPX-driven trail will lag MES wicks by 1-2 min. To make this proposal viable, would need to switch chain_snapshots polling back to 30s.</li>
+  <li><b>SPX gap below trail level</b> — if SPX gaps through the trail level (rare intraday but possible at open), broker SL would catch it sooner than SPX-trail. Net: SPX-trail might lose 2-3pt more on the gap. Mitigation: floor SPX exit at broker SL level.</li>
+  <li><b>SIM trade differs from real trade</b> — the architecture-fix sim above assumes &quot;market exit at SPX trigger&quot; happens cleanly. In real life, between SPX poll detecting trigger and bot sending market order, MES could have wicked another 1-2pt. Net effect: arch fix captures ~80% of theoretical gain, not 100%.</li>
+</ul>
+
+<h2>Methodology and validation</h2>
+<ul>
+  <li>Trail/SL params lifted verbatim from <code>app/main.py:4592-4614</code></li>
+  <li>SPX path from <code>chain_snapshots</code> (2-min interval in V14 era — confirmed empirically)</li>
+  <li>MES bars from <code>vps_es_range_bars</code> (5pt range)</li>
+  <li>Real PnL from <code>state.fill_price</code> / <code>state.stop_fill_price</code> in MES space</li>
+  <li>Portal sim uses prev-spot &rarr; current-spot segment hi/lo to capture intra-cycle touches</li>
+  <li>Architecture-fix assumes 0.5pt slippage per market exit (conservative)</li>
+</ul>
+
+<p style='color:#666;font-size:11px;margin-top:30px'>Generated 2026-05-14T03:01:45 | Working dir: G:/My Drive/Python/MyProject/GitHub/0dtealpha</p>
+</body></html>

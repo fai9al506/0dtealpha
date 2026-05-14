@@ -909,12 +909,24 @@ def close_trade(setup_log_id: int, result_type: str):
         if not order:
             return
         already_closed = order["status"] == "closed"
+        # 2026-05-14 Bug 2 fix: exclude this lid from reconcile's expected_qty
+        # and ghost-stamp candidates during _flatten_position's 2-5sec window.
+        # Without this, reconcile races and overwrites close_reason with
+        # 'ghost_reconcile' for direct-close paths (trail_market_exit,
+        # modify_rejected, stop_rejected_async, deferred close after fill).
+        order["closing_in_progress"] = True
 
     setup_name = order["setup_name"]
     account_id = order["account_id"]
 
     # Flatten: cancel pending orders + market close (idempotent — safe to re-run)
-    _flatten_position(order)
+    try:
+        _flatten_position(order)
+    finally:
+        # Always clear the flag, even on exception, so reconcile can detect
+        # genuine orphans/ghosts on next cycle.
+        with _lock:
+            order.pop("closing_in_progress", None)
 
     if not already_closed:
         with _lock:
@@ -1100,6 +1112,10 @@ def _flatten_position(order):
             if orders_list:
                 close_oid = orders_list[0].get("OrderID")
             if close_oid:
+                # 2026-05-14 Bug 3 fix: store close OID so _backfill_ghost_fill
+                # can recover the fill price if reconcile/restart wipes the
+                # in-memory close_fill_price before persistence.
+                order["close_order_id"] = close_oid
                 time.sleep(1)
                 close_fp = _get_order_fill_price(close_oid, account_id)
                 if close_fp:
@@ -1192,10 +1208,15 @@ def _reconcile_positions():
         # Count expected qty from tracked orders (includes pending_entry to avoid
         # false orphan during fill-poll lag). Aligns with cap-check (line 370).
         with _lock:
+            # 2026-05-14 Bug 2 fix: exclude orders currently in close_trade's
+            # _flatten_position window (closing_in_progress=True) — they will
+            # naturally transition to closed within seconds; counting them as
+            # expected leads to false GHOST stamps during the close race.
             expected_qty = sum(
                 QTY for o in _active_orders.values()
                 if o.get("account_id") == acct_id
                 and o["status"] in ("pending_entry", "filled")
+                and not o.get("closing_in_progress")
             )
         # Query broker
         broker_pos = _get_broker_position(acct_id)
@@ -1220,10 +1241,14 @@ def _reconcile_positions():
                 with _lock:
                     # S99: include pending_entry (entry placed, broker may have rejected/expired
                     # but bot hasn't polled yet — we count this as ghost candidate).
+                    # 2026-05-14 Bug 2 fix: skip closing_in_progress lids — the active
+                    # close_trade will persist close_fill_price and the proper close_reason
+                    # within seconds.
                     _to_process = [
                         (lid, o) for lid, o in _active_orders.items()
                         if o.get("account_id") == acct_id
                         and o["status"] in ("pending_entry", "filled")
+                        and not o.get("closing_in_progress")
                     ]
                 # Release lock while querying broker history (network call)
                 for lid, o in _to_process:
@@ -1616,8 +1641,13 @@ def _backfill_ghost_fill(order: dict) -> tuple[str, float] | None:
     if acct not in ACCOUNT_WHITELIST:
         return None
     try:
-        # Check the closing orders first — if broker says flat, one of these must have filled
-        for field, oid_key in (("stop_fill_price", "stop_order_id"),
+        # Check the closing orders first — if broker says flat, one of these must have filled.
+        # 2026-05-14 Bug 3 fix: check close_order_id first (the actual market-close
+        # placed by _flatten_position). When that path runs, the original stop is
+        # DELETE'd before the market sell, so stop_order_id will have status=OUT
+        # not FLL, and backfill via stop OID returns None.
+        for field, oid_key in (("close_fill_price", "close_order_id"),
+                                ("stop_fill_price", "stop_order_id"),
                                 ("target_fill_price", "target_order_id")):
             oid = order.get(oid_key)
             if not oid:

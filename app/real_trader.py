@@ -950,6 +950,12 @@ def close_trade(setup_log_id: int, result_type: str):
         else:
             _alert(f"🏁 {setup_name} CLOSED: {result_type}{_day_line(account_id)}")
     else:
+        # 2026-05-14 fix: _flatten_position may have set close_fill_price in
+        # memory (line ~1100). force_release already persisted with the older
+        # state (no close_fill_price). Persist now so daily reconcile can match
+        # real broker fills. Without this, every outcome_resolved_* trade lands
+        # in DB with close_fill_price=None → NO_EXIT in reconcile.
+        _persist_order(setup_log_id)
         print(f"[real-trader] broker cleanup done (slot already released): "
               f"{setup_name} id={setup_log_id} acct={account_id}", flush=True)
 

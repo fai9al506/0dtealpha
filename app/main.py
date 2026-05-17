@@ -15121,7 +15121,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (proposed)</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -18313,6 +18313,57 @@ DASH_HTML_TEMPLATE = """
           if (!isLong && align > 0) return false;
           return true;
         }
+        return _tlV10BaseV14();
+      }
+      if (strat === 'v16') {
+        // V16 (2026-05-17): V14 + 4 new block rules + DD Exhaustion long admit.
+        // R5 SC long GEX-LIS, R2 SC long OpEx Fri, R10 ES Abs bear hr>=14, R12 AG short OpEx Fri.
+        // DD Long ADMIT via V14 quality gates (align<3, vix<22, paradigm not bad, grade!=C).
+        function _tlIsMonthlyOpex() {
+          if (!l.ts) return false;
+          const d = new Date(l.ts);
+          const etStr = d.toLocaleString('en-US',{timeZone:'America/New_York'});
+          const ed = new Date(etStr);
+          return ed.getDay() === 5 && ed.getDate() >= 15 && ed.getDate() <= 21;
+        }
+        // V16 admits DD Exhaustion long (V14 internal quality gates still apply)
+        if (sn === 'DD Exhaustion' && isLong) {
+          if (l.paradigm === 'SIDIAL-EXTREME') return false;
+          if (align >= 3) return false;
+          const vix = l.vix != null ? l.vix : 0;
+          if (vix >= 22) return false;
+          if (['GEX-LIS','AG-LIS','AG-PURE','BofA-LIS','BOFA-MESSY'].includes(l.paradigm)) return false;
+          if (l.grade === 'C') return false;
+          return true;
+        }
+        // V14 base filter:
+        if (!_tlGapFilter()) return false;
+        if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
+        if (sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
+        if (sn === 'VIX Divergence') {
+          if (!isLong) return false;
+          if (l.grade === 'C') return false;
+          return true;
+        }
+        if (!_tlV11TimeGates()) return false;
+        if (_tlV13BullishBlock()) return false;
+        if (_tlV13VannaBlock()) return false;
+        if (_tlV13DDQualityBlock()) return false;
+        if (sn === 'ES Absorption') {
+          if (l.grade !== 'A' && l.grade !== 'A+') return false;
+          if (l.paradigm === 'AG-TARGET' || l.paradigm === 'AG-LIS') return false;
+          const mins = _tlEtMins();
+          if (mins != null && mins >= 945) return false;
+          if (isLong && align < 0) return false;
+          if (!isLong && align > 0) return false;
+          // V16 R10: ES Abs bearish hr >= 14 ET
+          if (!isLong && mins != null && mins >= 840) return false;
+          return true;
+        }
+        // V16 ADDED blocks on top of V14 base (only fire if v14 base would pass)
+        if (sn === 'Skew Charm' && isLong && l.paradigm === 'GEX-LIS') return false;  // R5
+        if (sn === 'Skew Charm' && isLong && _tlIsMonthlyOpex()) return false;  // R2
+        if (sn === 'AG Short' && _tlIsMonthlyOpex()) return false;  // R12
         return _tlV10BaseV14();
       }
       if (strat === 'esabspure') {

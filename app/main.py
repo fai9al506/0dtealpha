@@ -4115,6 +4115,15 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     if setup_name in ("IV Momentum", "Vanna Butterfly"):
         return False
 
+    # ── GEX Long v3 (2026-05-18): PORTAL-ONLY by default ──
+    # When GEX_LONG_V3_ENABLED=true, detector fires v3 signals to setup_log so
+    # they appear in the portal. But Telegram + real trader stay silent unless
+    # GEX_LONG_V3_REAL_TRADE_ENABLED=true (separate explicit opt-in). This
+    # provides observation-only mode for evaluating v3 in production.
+    if setup_name == "GEX Long":
+        if os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower() != "true":
+            return False  # portal-only mode: signal logged but no live alerts/trades
+
     # ── VIX Divergence (shipped 2026-05-03 longs-only, drop grade C) ──
     # Backtest Feb-May 2026 (22 long trades after filter, drop C):
     # 68% WR, +195 pts ($+975 MES, $+9750 ES), MaxDD 27.9, PF 3.97.

@@ -378,9 +378,12 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     # Setup filter: only trade Skew Charm + AG Short + VPB-Bull (defense-in-depth, main.py also filters)
     # AG Short added 2026-04-08 — SHORT account only (AG hardcoded direction="short")
     # Vanna Pivot Bounce added 2026-04-22 — LONGS only, bullish regime gated by main.py
-    # GEX Long v3 (2026-05-13): added behind GEX_LONG_V3_ENABLED env flag only.
+    # GEX Long v3 (2026-05-13): split into TWO flags 2026-05-18:
+    #   - GEX_LONG_V3_ENABLED        → detector fires v3 signals to setup_log (portal display)
+    #   - GEX_LONG_V3_REAL_TRADE_ENABLED → real trader places live trades (default false = PORTAL-ONLY)
+    # This lets us monitor v3 signals in portal without committing real money.
     _allowed = {"Skew Charm", "AG Short", "Vanna Pivot Bounce", "VIX Divergence", "ES Absorption"}
-    if os.getenv("GEX_LONG_V3_ENABLED", "false").lower() == "true":
+    if os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower() == "true":
         _allowed.add("GEX Long")
     # ── V16 (2026-05-17): DD Exhaustion long admit (gated by V14 quality rules in
     # _passes_live_filter: align<3, vix<22, paradigm not in bad-set, grade!=C).

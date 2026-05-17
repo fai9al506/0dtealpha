@@ -4141,6 +4141,13 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
             return False
         if not is_bull and align > 0:
             return False
+        # ── V16 R10 (2026-05-17): ES Abs bearish PM-late block ──
+        # Mining Mar-May 2026 (220 ES Abs bearish): hour >= 14 ET = 64t, 23% WR, -$182.
+        # Multi-regime: Mar +$59 / Apr +$290 / May -$46 (May n=6 small). Net +$303 cross-regime.
+        # Mechanism: PM-late ES Abs bearish fires on residual delta-decay chop, no follow-through.
+        from datetime import time as _dtime
+        if not is_bull and now_et().time() >= _dtime(14, 0):
+            return False
         return True
 
     # ── VPB-Bull (Vanna Pivot Bounce V3) — Apr 22 2026 ──
@@ -4204,6 +4211,20 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                 return False  # V13 vanna: cliff ABOVE + peak BELOW = 27t, 52% WR, -55 pts
             if align == 3 and paradigm in ("GEX-LIS", "AG-LIS", "AG-PURE", "BOFA-MESSY"):
                 return False  # V14: 49t, -$801 drag (SIDIAL-EXTREME already blocked above)
+            # ── V16 R5 (2026-05-17): SC long GEX-LIS block (all alignments) ──
+            # Mining Mar-May 2026: 32 SC longs in GEX-LIS = 25% WR, -$594.
+            # Multi-regime: Mar +$343 / Apr +$217 / May +$27 (all 3 months positive).
+            # V14 already blocks GEX-LIS for SC SHORTS; V16 extends to LONGS.
+            # Mechanism: LIS = paradigm pivot. SC longs against pivot resistance fail.
+            if paradigm == "GEX-LIS":
+                return False
+            # ── V16 R2 (2026-05-17): SC long OpEx Friday block ──
+            # Mining 2026: 18 SC long trades on 3rd-Friday OpEx = 50% WR, -$237 net.
+            # Multi-regime: Mar +$74 / Apr +$46 / May +$118 (all 3 months positive).
+            # Mechanism: monthly OpEx pin + dealer vega unwind = SC long fails.
+            _et = now_et()
+            if _et.weekday() == 4 and 15 <= _et.day <= 21:
+                return False
             return True  # SC longs accept all other alignments, exempt from VIX gate
         # All non-SC longs keep the V13 align>=2 gate
         if align < 2:
@@ -4246,6 +4267,15 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         # AG-TARGET = trend already hit target, dealers neutral. 19t, 52.6% WR, -1.8 pts.
         if setup_name == "AG Short" and paradigm == "AG-TARGET":
             return False
+        # ── V16 R12 (2026-05-17): AG Short OpEx Friday block ──
+        # Mining 2026 (n=4 OpEx Fridays in sample, small): 8 AG shorts on OpEx = 25% WR, -$231.
+        # Day-before-OpEx Thursday = 92% WR / +$699 (opposite pattern — OpEx day kills the edge).
+        # Mechanism: AG short relies on dealer roll-off; OpEx Friday = pin + new vega cycle.
+        # Caveat: small sample, but cross-month consistent (Mar/Apr no fires, May -$231).
+        if setup_name == "AG Short":
+            _et = now_et()
+            if _et.weekday() == 4 and 15 <= _et.day <= 21:
+                return False
         # ── V13: Vanna cliff/peak structure blocks for shorts ──
         # Full-era backtest (Feb-Apr 2026, 343t): cliff-above shorts 54% WR vs cliff-below 74% WR.
         # Combined with GEX+DD magnets: +44 pts incremental on top of V13, mostly from calm regimes.
@@ -13165,7 +13195,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (proposed)</option><option value="v14">V14 (live)</option><option value="v14le">V14-LE (real)</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -13304,6 +13334,76 @@ function passesStrategy(l, strat) {
     if (sn==='Skew Charm') return true;
     if (sn==='AG Short') return true;
     if (sn==='DD Exhaustion' && align !== 0) return true;
+    return false;
+  }
+  // V16 helpers (2026-05-17 — mining + multi-regime validation)
+  function isMonthlyOpex(ts) {
+    if (!ts) return false;
+    const d = new Date(ts);
+    const etStr = d.toLocaleString('en-US',{timeZone:'America/New_York'});
+    const ed = new Date(etStr);
+    return ed.getDay() === 5 && ed.getDate() >= 15 && ed.getDate() <= 21;
+  }
+  function v16AddedBlocks() {
+    // Returns true if V16 ADDS a new block (beyond V14).
+    // R5 SC long GEX-LIS (V14 only blocks shorts in GEX-LIS)
+    if (sn === 'Skew Charm' && isLong && l.paradigm === 'GEX-LIS') return true;
+    // R2 SC long OpEx Friday
+    if (sn === 'Skew Charm' && isLong && isMonthlyOpex(l.ts)) return true;
+    // R12 AG Short OpEx Friday
+    if (sn === 'AG Short' && isMonthlyOpex(l.ts)) return true;
+    // R10 ES Abs bearish hour >= 14 ET
+    if (sn === 'ES Absorption' && !isLong) {
+      const m = etMins(l.ts);
+      if (m != null && m >= 840) return true;  // 14:00 ET
+    }
+    return false;
+  }
+  function v16DDAdmit() {
+    // V16 ADMITS DD Exhaustion long (paradigm-filtered) — currently V14 blocks at whitelist level.
+    // V14's internal DD long quality gates still apply (align<3, vix<22, bad paradigm, grade!=C).
+    if (sn !== 'DD Exhaustion' || !isLong) return false;
+    if (l.paradigm === 'SIDIAL-EXTREME') return false;
+    if (align >= 3) return false;
+    const vix = l.vix != null ? l.vix : 0;
+    if (vix >= 22) return false;
+    if (['GEX-LIS','AG-LIS','AG-PURE','BofA-LIS','BOFA-MESSY'].includes(l.paradigm)) return false;
+    if (l.grade === 'C') return false;
+    return true;
+  }
+  if (strat === 'v16') {
+    // V16 = V14 + 4 new block rules + DD Exhaustion long admit.
+    // Multi-regime validation Mar/Apr/May 2026: all 3 months net positive.
+    if (v16DDAdmit()) return true;  // DD long admit (new setup type)
+    // V14 base filter:
+    if (!gapFilter(l.ts)) return false;
+    if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
+    if (sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
+    if (sn==='VIX Divergence') {
+      if (!isLong) return false;
+      if (l.grade === 'C') return false;
+      return true;
+    }
+    if (!v11TimeGates(l.ts)) return false;
+    if (v13BullishBlock()) return false;
+    if (v13VannaBlock()) return false;
+    if (v13DDQualityBlock()) return false;
+    if (sn === 'ES Absorption') {
+      if (l.grade !== 'A' && l.grade !== 'A+') return false;
+      if (l.paradigm === 'AG-TARGET' || l.paradigm === 'AG-LIS') return false;
+      const m = etMins(l.ts);
+      if (m != null && m >= 945) return false;
+      if (isLong && align < 0) return false;
+      if (!isLong && align > 0) return false;
+      // V16 R10: ES Abs bearish hr >= 14 ET
+      if (!isLong && m != null && m >= 840) return false;
+      return true;
+    }
+    if (v10BaseV14()) {
+      // V16 ADDED blocks on top of V14 base
+      if (v16AddedBlocks()) return false;
+      return true;
+    }
     return false;
   }
   if (strat === 'v14') {

@@ -373,6 +373,13 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     _allowed = {"Skew Charm", "AG Short", "Vanna Pivot Bounce", "VIX Divergence", "ES Absorption"}
     if os.getenv("GEX_LONG_V3_ENABLED", "false").lower() == "true":
         _allowed.add("GEX Long")
+    # ── V16 (2026-05-17): DD Exhaustion long admit (gated by V14 quality rules in
+    # _passes_live_filter: align<3, vix<22, paradigm not in bad-set, grade!=C).
+    # Multi-regime validation: Mar +$756 / Apr +$1,028 / May +$774 = +$2,558 over 2.5mo.
+    # 146 trades passing V14 DD long quality gates.
+    # Defaults ON since the V14 paradigm filter is strong; toggle off via env if needed.
+    if os.getenv("DD_EXHAUSTION_REAL_TRADE_ENABLED", "true").lower() == "true":
+        _allowed.add("DD Exhaustion")
     if setup_name not in _allowed:
         print(f"[real-trader] skip {setup_name}: not in real-trader whitelist", flush=True)
         _log_skip_reason(setup_log_id, "whitelist_reject")

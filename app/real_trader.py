@@ -1669,7 +1669,10 @@ def _get_order_fill_price(order_id: str, account_id: str) -> float | None:
 
 def _backfill_ghost_fill(order: dict) -> tuple[str, float] | None:
     """Try to recover the real fill price of a position that the bot missed.
-    Checks stop_order_id → target_order_id → entry_order_id (reverse chronological).
+    Checks stop_order_id → target_order_id → close_order_id, then falls back to
+    scanning broker historicalorders for an opposite-direction market fill that
+    matches our qty + entered after our ts_placed.
+
     Returns (field_name, fill_price) or None if nothing found. Safe to call — all
     exceptions swallowed to keep reconciliation working under any broker hiccup."""
     acct = order.get("account_id", "")
@@ -1690,6 +1693,72 @@ def _backfill_ghost_fill(order: dict) -> tuple[str, float] | None:
             fp = _get_order_fill_price(oid, acct)
             if fp is not None and fp > 0:
                 return (field, float(fp))
+
+        # 2026-05-18 Bug 3 EXTENSION: heuristic fallback when no tracked OID
+        # produced a fill price. Covers cases where the position was closed by:
+        #   - User manual TS UI flatten (stop gets cancelled, no close_oid tracked)
+        #   - _close_broker_orphans path (no tracked OID lookup)
+        #   - Other external close mechanisms we don't capture
+        #
+        # Strategy: scan historicalorders for opposite-direction market FLL
+        # of matching qty, with OpenedDateTime AFTER our entry. If exactly one
+        # such candidate exists in the last 60 minutes from now, use it.
+        # Ambiguous (multiple candidates) → return None to avoid mis-attribution.
+        is_long = (order.get("direction") or "").lower() in ("long", "bullish")
+        close_side = "Sell" if is_long else "Buy"
+        entry_ts_str = order.get("ts_placed")  # ISO string
+        if entry_ts_str:
+            from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+            try:
+                # Parse our entry timestamp
+                entry_dt = _dt.fromisoformat(entry_ts_str.replace("Z", "+00:00"))
+                if entry_dt.tzinfo is None:
+                    entry_dt = entry_dt.replace(tzinfo=_tz.utc)
+                # Query broker historicalorders for today
+                today = _dt.now(_tz.utc).strftime("%m-%d-%Y")
+                data = _ts_api("GET",
+                               f"/brokerage/accounts/{acct}/historicalorders?since={today}&pageSize=600",
+                               None, acct)
+                candidates = []
+                for o in (data or {}).get("Orders", []):
+                    if o.get("Status") != "FLL":
+                        continue
+                    if o.get("OrderType") != "Market":
+                        continue
+                    legs = o.get("Legs", [{}])[0]
+                    if legs.get("BuyOrSell") != close_side:
+                        continue
+                    if str(legs.get("QuantityOrdered", "")) != str(QTY):
+                        continue
+                    # Parse close timestamp
+                    closed_str = o.get("ClosedDateTime") or o.get("OpenedDateTime", "")
+                    if not closed_str:
+                        continue
+                    try:
+                        closed_dt = _dt.fromisoformat(closed_str.replace("Z", "+00:00"))
+                        if closed_dt.tzinfo is None:
+                            closed_dt = closed_dt.replace(tzinfo=_tz.utc)
+                    except (ValueError, TypeError):
+                        continue
+                    # Must be AFTER our entry, within reasonable window
+                    if closed_dt < entry_dt:
+                        continue
+                    if closed_dt - entry_dt > _td(hours=8):  # cap to same session
+                        continue
+                    candidates.append((closed_dt, o))
+                if len(candidates) == 1:
+                    fp = _extract_fill_price(candidates[0][1])
+                    if fp is not None and fp > 0:
+                        print(f"[real-trader] ghost backfill HEURISTIC match for "
+                              f"lid={order.get('setup_log_id')}: 1 candidate {close_side} "
+                              f"Market FLL at {fp}", flush=True)
+                        return ("close_fill_price", float(fp))
+                elif len(candidates) > 1:
+                    print(f"[real-trader] ghost backfill HEURISTIC ambiguous for "
+                          f"lid={order.get('setup_log_id')}: {len(candidates)} candidates "
+                          f"— skipping to avoid mis-attribution", flush=True)
+            except Exception as e_inner:
+                print(f"[real-trader] heuristic backfill inner error: {e_inner}", flush=True)
     except Exception as e:
         print(f"[real-trader] ghost backfill error for lid={order.get('setup_log_id')}: {e}", flush=True)
     return None

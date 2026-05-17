@@ -79,6 +79,15 @@ def _margin_per_mes() -> float:
     return float(os.getenv("REAL_TRADE_MARGIN_PER_MES", "700"))  # TS intraday margin $686.75/MES (Jan 2026)
 DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_DAILY_LOSS_LIMIT", "300"))  # max daily loss in $
 
+# ── S131 (2026-05-17): SPX-driven exit mode ──
+# When enabled: broker SL stays at initial fill (-stop_pts) as SAFETY NET only.
+# Bot's internal trail tracks SPX path. When SPX price crosses internal trail
+# level, bot fires market exit + cancels broker SL pre-empting MES tick wicks.
+# Closes the -$9.65/trade trail-tag-early gap per S132 audit (107% of V14 era).
+# Rollback: set env back to false. Broker SL still active = safety net throughout.
+def _spx_exit_enabled() -> bool:
+    return os.getenv("SPX_EXIT_ENABLED", "false").lower() == "true"
+
 # SC Trail parameters
 BE_TRIGGER_PTS = 10.0    # move stop to breakeven after 10pts profit
 TRAIL_ACTIVATION_PTS = 10.0  # trail activates at 10pts
@@ -851,6 +860,25 @@ def update_stop(setup_log_id: int, new_stop_price: float):
                        f"{side_reason}\n"
                        f"Keeping current stop {old_stop:.2f}")
             return
+
+    # ── S131 (2026-05-17): SPX-driven exit mode ──
+    # Skip broker PUT — track internal trail only. Broker SL stays as safety net.
+    # When SPX retraces past internal trail, update_trail() fires market exit
+    # via close_trade("spx_trail_exit") pre-empting MES tick wicks.
+    if _spx_exit_enabled():
+        with _lock:
+            order["current_stop"] = new_stop_price
+            first_realign = not order.get("initial_realign_done")
+            order["initial_realign_done"] = True
+        _persist_order(setup_log_id)
+        print(f"[real-trader] [S131] internal trail tracked: id={setup_log_id} "
+              f"{old_stop:.2f} -> {new_stop_price:.2f} (broker SL stays as safety net)",
+              flush=True)
+        if not (first_realign and abs(new_stop_price - old_stop) < 3.0):
+            _alert(f"📍 {setup_name} S131 internal trail\n"
+                   f"{old_stop:.2f} → {new_stop_price:.2f}\n"
+                   f"Broker SL unchanged (safety net)")
+        return
 
     replace_payload = {
         "AccountID": account_id,
@@ -1736,6 +1764,28 @@ def update_trail(setup_log_id: int, current_es_price: float):
             update_stop(setup_log_id, new_stop)
         elif not is_long and new_stop < current_stop:
             update_stop(setup_log_id, new_stop)
+
+    # ── S131 (2026-05-17): SPX-driven exit trigger ──
+    # When SPX exit mode is on, broker SL doesn't trail. We detect "price has
+    # crossed internal trail" here and fire immediate market exit + cancel SL.
+    # This pre-empts broker SL from firing on MES tick wicks (the trail-tag-early
+    # leak, S132: -$9.65/trade = 107% of V14-era execution gap).
+    if _spx_exit_enabled():
+        with _lock:
+            check_stop = order.get("current_stop")
+        if check_stop is not None:
+            crossed = (is_long and current_es_price <= check_stop) or \
+                      (not is_long and current_es_price >= check_stop)
+            if crossed:
+                print(f"[real-trader] [S131] SPX trail-exit fire: "
+                      f"id={setup_log_id} price={current_es_price:.2f} "
+                      f"{'<=' if is_long else '>='} stop={check_stop:.2f}",
+                      flush=True)
+                _alert(f"🎯 {order['setup_name']} S131 SPX TRAIL-EXIT\n"
+                       f"ES {current_es_price:.2f} {'<=' if is_long else '>='} "
+                       f"internal trail {check_stop:.2f}\n"
+                       f"Market-closing + cancelling broker SL...")
+                close_trade(setup_log_id, "spx_trail_exit")
 
 
 # ====== EOD FLATTEN ======

@@ -36,7 +36,6 @@ SCSFExport scsf_VXDomSnapshot(SCStudyInterfaceRef sc)
         sc.AutoLoop             = 0;
         sc.UpdateAlways         = 1;
         sc.MaintainAdditionalChartDataArrays = 0;
-        sc.MaintainHistoricalStudyData = 0;
         sc.UsesMarketDepthData  = 1;
         sc.GraphRegion          = 0;
 
@@ -66,24 +65,21 @@ SCSFExport scsf_VXDomSnapshot(SCStudyInterfaceRef sc)
     if (InEnabled.GetYesNo() == 0)
         return;
 
-    // ---- Throttle: one snap per InSnapIntervalSec ----
-    int& LastSnapSecOfDay = sc.GetPersistentInt(1);
-    int& LastSnapDay      = sc.GetPersistentInt(2);
+    // ---- Throttle: one snap per InSnapIntervalSec (epoch-second based) ----
+    int& LastSnapEpoch = sc.GetPersistentInt(1);
 
-    SCDateTime Now = sc.CurrentSystemDateTime;
-    int NowSecOfDay = Now.GetTimeAsSecondsInt();
-    int NowDay      = (int)Now.GetDate();
-    int Interval    = InSnapIntervalSec.GetInt();
+    int NowEpoch = (int)time(NULL);
+    int Interval = InSnapIntervalSec.GetInt();
 
-    if (NowDay == LastSnapDay && (NowSecOfDay - LastSnapSecOfDay) < Interval)
+    if (LastSnapEpoch > 0 && (NowEpoch - LastSnapEpoch) < Interval)
         return;
 
-    LastSnapSecOfDay = NowSecOfDay;
-    LastSnapDay      = NowDay;
+    LastSnapEpoch = NowEpoch;
 
     // ---- Build JSONL line ----
     int MaxLevels = InMaxLevels.GetInt();
 
+    SCDateTime Now = sc.CurrentSystemDateTime;
     int Y, M, D, H, Mi, S;
     Now.GetDateTimeYMDHMS(Y, M, D, H, Mi, S);
 

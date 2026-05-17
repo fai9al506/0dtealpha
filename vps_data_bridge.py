@@ -86,6 +86,10 @@ DEFAULT_CONFIG = {
     "stale_timeout_minutes": 5,     # Reconnect if no ticks for this long during market hours
     "vol_signal_file": "C:/SierraChart/Data/vol_signal.txt",
     "vol_signal_poll_seconds": 2,
+    "vx_dom_file": "C:/SierraChart/Data/vx_dom.jsonl",
+    "vx_dom_features_file": "C:/SierraChart/Data/vx_dom_features.csv",
+    "vx_dom_poll_seconds": 5,
+    "vx_dom_batch_size": 50,
 }
 
 # ─── ES Symbol Helper ────────────────────────────────────────────────────────
@@ -375,6 +379,11 @@ class RailwayPoster:
 
     def post_vol_signal(self, signal: dict):
         return self._post("/api/vps/vol/signal", signal)
+
+    def post_vx_dom_batch(self, snaps: list):
+        if not snaps:
+            return True
+        return self._post("/api/vps/vx/dom", {"snaps": snaps})
 
     def get_last_es_bar(self):
         """Query Railway for the last stored ES bar timestamp and bar_idx."""
@@ -693,6 +702,14 @@ class VPSDataBridge:
         self._vol_signal_last_content = ""
         self._vol_signals_posted = 0
 
+        # VX DOM snapshot tailer (Phase B — Apollo-style depth capture)
+        self._vx_dom_file = cfg.get("vx_dom_file", "C:/SierraChart/Data/vx_dom.jsonl")
+        self._vx_dom_features_file = cfg.get("vx_dom_features_file", "")
+        self._vx_dom_poll = cfg.get("vx_dom_poll_seconds", 5)
+        self._vx_dom_batch_size = cfg.get("vx_dom_batch_size", 50)
+        self._vx_dom_last_pos = 0
+        self._vx_dom_snaps_posted = 0
+
         # Stats
         self._es_tick_count = 0
         self._vx_tick_count = 0
@@ -894,6 +911,8 @@ class VPSDataBridge:
         hb_interval = self.cfg.get("heartbeat_seconds", 60)
         vol_interval = self._vol_signal_poll
         last_vol_check = 0.0
+        vx_dom_interval = self._vx_dom_poll
+        last_vx_dom_check = 0.0
 
         while self._running:
             try:
@@ -912,6 +931,11 @@ class VPSDataBridge:
                 if now - last_vol_check >= vol_interval:
                     self._check_vol_signal()
                     last_vol_check = now
+
+                # Tail VX DOM JSONL
+                if now - last_vx_dom_check >= vx_dom_interval:
+                    self._check_vx_dom()
+                    last_vx_dom_check = now
 
                 # Heartbeat + stale detection
                 if now - self._last_heartbeat >= hb_interval:
@@ -1006,6 +1030,64 @@ class VPSDataBridge:
         except Exception as e:
             log.warning(f"Vol signal check error: {e}")
 
+    def _check_vx_dom(self):
+        """Tail vx_dom.jsonl (append-mode). Parse new JSON lines, batch-POST to Railway."""
+        try:
+            if not self._vx_dom_file:
+                return
+            fpath = Path(self._vx_dom_file)
+            if not fpath.exists():
+                return
+
+            size = fpath.stat().st_size
+            if size < self._vx_dom_last_pos:
+                self._vx_dom_last_pos = 0  # file rotated/truncated
+            if size <= self._vx_dom_last_pos:
+                return
+
+            with open(fpath, "rb") as f:
+                f.seek(self._vx_dom_last_pos)
+                chunk = f.read(size - self._vx_dom_last_pos)
+                new_pos = size
+
+            text_data = chunk.decode("utf-8", errors="ignore")
+            lines = [ln for ln in text_data.splitlines() if ln.strip()]
+            if not lines:
+                self._vx_dom_last_pos = new_pos
+                return
+
+            batch = []
+            for ln in lines:
+                try:
+                    snap = json.loads(ln)
+                    if isinstance(snap, dict) and "ts" in snap:
+                        batch.append(snap)
+                except Exception:
+                    continue
+
+            if not batch:
+                self._vx_dom_last_pos = new_pos
+                return
+
+            bs = max(1, self._vx_dom_batch_size)
+            sent = 0
+            all_ok = True
+            for i in range(0, len(batch), bs):
+                ok = self.poster.post_vx_dom_batch(batch[i:i+bs])
+                if ok:
+                    sent += len(batch[i:i+bs])
+                else:
+                    all_ok = False
+                    break
+
+            # Only advance file position if every chunk succeeded — else retry next cycle
+            if all_ok:
+                self._vx_dom_last_pos = new_pos
+            self._vx_dom_snaps_posted += sent
+
+        except Exception as e:
+            log.warning(f"VX DOM tailer error: {e}")
+
     def _send_heartbeat(self):
         forming = self.bar_builder.forming_bar
         es_size = self._es_tailer.file_size if self._es_tailer else 0
@@ -1028,6 +1110,7 @@ class VPSDataBridge:
             "stale_cycles": self._stale_cycles,
             "es_scid_size_mb": round(es_size / 1024 / 1024, 1),
             "vol_signals_posted": self._vol_signals_posted,
+            "vx_dom_snaps_posted": self._vx_dom_snaps_posted,
             "forming_bar": {
                 "open": forming["open"],
                 "high": forming["high"],

@@ -16,6 +16,8 @@
 // =============================================================================
 
 #include "sierrachart.h"
+#include <cstdio>
+#include <ctime>
 
 SCDLLName("VX DOM Snapshot")
 
@@ -129,17 +131,17 @@ SCSFExport scsf_VXDomSnapshot(SCStudyInterfaceRef sc)
 
     Line += "]}\n";
 
-    // ---- Write raw JSONL (append mode) ----
+    // ---- Write raw JSONL (append mode via standard C fopen) ----
+    // sc.OpenFile() append mode is unreliable / not in the public enum;
+    // standard CRT fopen("ab") is portable inside Sierra DLLs.
     SCString DomPath = InOutputFile.GetPathAndFileName();
     if (DomPath.GetLength() > 0)
     {
-        int hFile = 0;
-        // Sierra OpenFile mode 3 = open for appending. Returns 1 on success.
-        if (sc.OpenFile(DomPath, 3, hFile) != 0)
+        FILE* f = fopen(DomPath.GetChars(), "ab");
+        if (f != NULL)
         {
-            unsigned int Written = 0;
-            sc.WriteFile(hFile, Line.GetChars(), Line.GetLength(), &Written);
-            sc.CloseFile(hFile);
+            fwrite(Line.GetChars(), 1, Line.GetLength(), f);
+            fclose(f);
         }
     }
 
@@ -166,12 +168,11 @@ SCSFExport scsf_VXDomSnapshot(SCStudyInterfaceRef sc)
         SCString FeatPath = InFeaturesFile.GetPathAndFileName();
         if (FeatPath.GetLength() > 0)
         {
-            int hFeat = 0;
-            if (sc.OpenFile(FeatPath, 3, hFeat) != 0)
+            FILE* fFeat = fopen(FeatPath.GetChars(), "ab");
+            if (fFeat != NULL)
             {
-                unsigned int Written = 0;
-                sc.WriteFile(hFeat, FeatLine.GetChars(), FeatLine.GetLength(), &Written);
-                sc.CloseFile(hFeat);
+                fwrite(FeatLine.GetChars(), 1, FeatLine.GetLength(), fFeat);
+                fclose(fFeat);
             }
         }
     }

@@ -47,7 +47,7 @@ _v3_cache_lock = threading.Lock()
 _CACHE_TTL_SEC = 3600  # rebuild hourly during market hours
 
 SL_PTS = 14.0
-TARGET_FLOOR = 10.0
+TARGET_FLOOR = 20.0  # raised 10→20 on 2026-05-18 (v3.1.1) — prevented premature +10 exits when magnet close to entry. Audit on 16 v3.1 trades: +14 pts (+$70 MES), zero regressions, WR unchanged 80%.
 TRAIL_ACT = 15.0
 TRAIL_GAP = 5.0
 

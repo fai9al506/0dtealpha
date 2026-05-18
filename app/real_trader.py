@@ -285,7 +285,7 @@ def _count_active_for_direction(is_long: bool) -> int:
     count = 0
     with _lock:
         for o in _active_orders.values():
-            if o["status"] in ("pending_entry", "pending_limit", "filled"):
+            if o["status"] in ("pending_entry", "pending_limit", "pending_stop_entry", "filled"):
                 o_is_long = o["direction"].lower() in ("long", "bullish")
                 if o_is_long == is_long:
                     count += 1
@@ -467,7 +467,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         # Log which orders are blocking (for debugging stale-order issues)
         blocking = [(lid, o.get("setup_name"), o.get("ts_placed", "")[:10], o.get("status"))
                     for lid, o in _active_orders.items()
-                    if o.get("status") in ("pending_entry", "pending_limit", "filled")
+                    if o.get("status") in ("pending_entry", "pending_limit", "pending_stop_entry", "filled")
                     and (o.get("direction", "").lower() in ("long", "bullish")) == is_long]
         print(f"[real-trader] skip {setup_name}: {dir_str} cap reached "
               f"({active_count}/{cap}) blocking={blocking}", flush=True)
@@ -506,12 +506,105 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                            charm_limit_price)
         return
 
+    # BUG 2 FIX (2026-05-18, Option A): VIX Divergence uses STOP-ENTRY confirmation.
+    # The detector and backtest both assume entry only fires when price moves +/-1.5
+    # in trade direction (proving the setup's directional thesis). Real trader was
+    # firing Market orders immediately — caught the reversal half the time. Lid 2911
+    # today (2026-05-18) lost -$56 because price went straight DOWN from entry,
+    # outcome tracker correctly logged TIMEOUT (entry never confirmed) but broker
+    # filled market and stopped out. Switch to StopMarket buy/sell confirmation.
+    if setup_name == "VIX Divergence":
+        _place_stop_entry(setup_log_id, setup_name, direction, is_long,
+                          account_id, es_price, stop_pts, target_pts,
+                          confirm_offset_pts=1.5, timeout_minutes=30)
+        return
+
     # Standard market entry
     _place_market_entry(setup_log_id, setup_name, direction, is_long,
                         account_id, es_price, stop_pts, target_pts)
 
 
 # ====== ORDER PLACEMENT ======
+
+def _place_stop_entry(setup_log_id, setup_name, direction, is_long,
+                      account_id, es_price, stop_pts, target_pts,
+                      confirm_offset_pts=1.5, timeout_minutes=30):
+    """Stop-entry confirmation order — only fills if price moves in trade direction.
+    Long: BuyStop at es_price + confirm_offset.
+    Short: SellStop at es_price - confirm_offset.
+    If not filled within timeout_minutes, the order should be cancelled
+    (poll_order_status handles timeout cleanup).
+
+    BUG 2 FIX (2026-05-18, Option A): VIX Div backtest assumes stop-entry
+    confirmation. Previously fired Market — caught half the reversals.
+    """
+    if not _validate_account_direction(account_id, is_long):
+        return
+    side = "Buy" if is_long else "Sell"
+    if is_long:
+        trigger_price = _round_mes(es_price + confirm_offset_pts)
+    else:
+        trigger_price = _round_mes(es_price - confirm_offset_pts)
+
+    entry_payload = {
+        "AccountID": account_id,
+        "Symbol": MES_SYMBOL,
+        "Quantity": str(QTY),
+        "OrderType": "StopMarket",
+        "StopPrice": str(trigger_price),
+        "TradeAction": side,
+        "TimeInForce": {"Duration": "DAY"},
+        "Route": "Intelligent",
+    }
+    print(f"[real-trader] PLACING STOP-ENTRY: {setup_name} {side} {QTY} {MES_SYMBOL} "
+          f"@ trigger {trigger_price} (signal ~{es_price:.2f}, "
+          f"+/-{confirm_offset_pts}pt confirmation) on {account_id}", flush=True)
+    resp = _ts_api("POST", "/orderexecution/orders", entry_payload, account_id)
+    ok, entry_oid = _order_ok(resp)
+    if not ok:
+        _alert(f"🚨 FAILED stop-entry for {setup_name}\n"
+               f"Account: {account_id}\n"
+               f"Side: {side} {QTY} {MES_SYMBOL} stop-trigger {trigger_price}")
+        return
+
+    # Record as pending_stop_entry — poll_order_status will detect fill OR timeout
+    from datetime import datetime as _dt, timezone as _utc, timedelta as _td
+    now = _dt.now(_utc.utc)
+    timeout_at = (now + _td(minutes=timeout_minutes)).isoformat()
+    order = {
+        "setup_log_id": setup_log_id,
+        "setup_name": setup_name,
+        "direction": direction.lower(),
+        "account_id": account_id,
+        "status": "pending_stop_entry",  # NEW status — distinguishes from pending_limit/pending_entry
+        "entry_order_id": entry_oid,
+        "signal_es_price": es_price,
+        "trigger_price": trigger_price,
+        "confirm_offset_pts": confirm_offset_pts,
+        "stop_pts": stop_pts,
+        "target_pts": target_pts,
+        "stop_entry_timeout_at": timeout_at,
+        "stop_order_id": None,
+        "target_order_id": None,
+        "close_order_id": None,
+        "fill_price": None,
+        "current_stop": None,
+        "max_favorable": 0.0,
+        "trail_active": False,
+        "be_triggered": False,
+        "trail_only": target_pts is None,
+        "ts_placed": now.isoformat(),
+        "close_reason": None,
+        "close_fill_price": None,
+    }
+    with _lock:
+        _active_orders[setup_log_id] = order
+    _persist_order(setup_log_id)
+    _alert(f"🎯 {setup_name} {direction.upper()} STOP-ENTRY placed\n"
+           f"Trigger: {trigger_price} (signal {es_price:.2f}, +/-{confirm_offset_pts}pt)\n"
+           f"Timeout: {timeout_minutes}min\n"
+           f"Account: {account_id}")
+
 
 def _place_market_entry(setup_log_id, setup_name, direction, is_long,
                         account_id, es_price, stop_pts, target_pts):
@@ -873,20 +966,39 @@ def update_stop(setup_log_id: int, new_stop_price: float):
     # Skip broker PUT — track internal trail only. Broker SL stays as safety net.
     # When SPX retraces past internal trail, update_trail() fires market exit
     # via close_trade("spx_trail_exit") pre-empting MES tick wicks.
+    #
+    # BUG 5 FIX (2026-05-18): post-fill INITIAL REALIGN must still PUT the broker.
+    # The initial broker stop is placed at fill ± (stop_pts + SLIPPAGE_BUFFER=5pt)
+    # to protect against fill slippage. After fill confirmation, the realign is
+    # supposed to tighten the broker stop to fill ± stop_pts (removing the buffer).
+    # Pre-fix: S131 skipped this realign → broker SL stayed +5pt wider → every
+    # stop-out lost an extra $25 on a -19pt fill instead of -14pt intended.
+    # Today (2026-05-18) cost: ~$50 across 2 stop-out trades (2937 + 2929).
+    # Fix: detect "first realign after fill" and STILL push to broker; subsequent
+    # trail updates skip PUT as designed.
     if _spx_exit_enabled():
         with _lock:
-            order["current_stop"] = new_stop_price
             first_realign = not order.get("initial_realign_done")
+            if not first_realign:
+                # Trail-mode update — S131 internal only
+                order["current_stop"] = new_stop_price
             order["initial_realign_done"] = True
-        _persist_order(setup_log_id)
-        print(f"[real-trader] [S131] internal trail tracked: id={setup_log_id} "
-              f"{old_stop:.2f} -> {new_stop_price:.2f} (broker SL stays as safety net)",
-              flush=True)
-        if not (first_realign and abs(new_stop_price - old_stop) < 3.0):
-            _alert(f"📍 {setup_name} S131 internal trail\n"
-                   f"{old_stop:.2f} → {new_stop_price:.2f}\n"
-                   f"Broker SL unchanged (safety net)")
-        return
+        if first_realign:
+            # CRITICAL: remove SLIPPAGE_BUFFER from broker SL. Fall through to PUT.
+            print(f"[real-trader] [S131] FIRST realign — pushing to broker to remove "
+                  f"slippage buffer (id={setup_log_id}): {old_stop:.2f} -> {new_stop_price:.2f}",
+                  flush=True)
+            # DO NOT return — fall through to broker PUT below
+        else:
+            _persist_order(setup_log_id)
+            print(f"[real-trader] [S131] internal trail tracked: id={setup_log_id} "
+                  f"{old_stop:.2f} -> {new_stop_price:.2f} (broker SL stays as safety net)",
+                  flush=True)
+            if abs(new_stop_price - old_stop) >= 3.0:
+                _alert(f"📍 {setup_name} S131 internal trail\n"
+                       f"{old_stop:.2f} → {new_stop_price:.2f}\n"
+                       f"Broker SL unchanged (safety net)")
+            return
 
     replace_payload = {
         "AccountID": account_id,
@@ -1087,6 +1199,14 @@ def _flatten_position(order):
         _alert(f"🏁 {order['setup_name']} limit entry cancelled")
         return
 
+    # BUG 2 FIX: cancel pending VIX Div stop-entry if outcome resolves before fill
+    if order.get("status") == "pending_stop_entry" and order.get("entry_order_id"):
+        _ts_api("DELETE", f"/orderexecution/orders/{order['entry_order_id']}", None, account_id)
+        print(f"[real-trader] cancelled pending stop-entry: {order['setup_name']} "
+              f"acct={account_id}", flush=True)
+        _alert(f"🏁 {order['setup_name']} stop-entry cancelled (outcome resolved before confirm)")
+        return
+
     # S99 Phase 2A (2026-05-09): handle pending_entry status. Today's lid=2646:
     # outcome tracker fired before fill polled, force_release set status=closed,
     # _flatten_position skipped because old check `if status == "filled"` was FALSE,
@@ -1111,6 +1231,31 @@ def _flatten_position(order):
     # where bot status was "closed" (force_release-d) but broker had position.
     # Now: always check broker, market-close if position matches direction.
     if order["status"] in ("filled", "pending_entry", "closed"):
+        # BUG 3b FIX (2026-05-18): before checking position, verify our stop didn't
+        # already fill. Race condition on lid 2935 today: bot fired Market Sell
+        # at 12:27:04 even though broker StopMarket already filled at 12:26:54 →
+        # opened unintended short by mistake. If stop_order_id shows FLL,
+        # broker already closed — backfill the fill price and skip the close.
+        stop_oid = order.get("stop_order_id")
+        if stop_oid:
+            stop_fp = _get_order_fill_price(stop_oid, account_id)
+            if stop_fp is not None:
+                order["stop_fill_price"] = stop_fp
+                order["close_fill_price"] = stop_fp  # for portal/reconcile
+                order["close_reason"] = order.get("close_reason") or "stop_filled_race_caught"
+                print(f"[real-trader] flatten SKIPPED: stop_order_id={stop_oid} already FLL "
+                      f"at {stop_fp} — broker beat us to it (race caught). "
+                      f"{order.get('setup_name')} acct={account_id}", flush=True)
+                # Cancel any other pending orders (target etc) and return
+                for oid_key in ("target_order_id",):
+                    oid = order.get(oid_key)
+                    if oid:
+                        try:
+                            _ts_api("DELETE", f"/orderexecution/orders/{oid}", None, account_id)
+                        except Exception:
+                            pass
+                return
+
         # Check broker position first -- don't create ghost positions
         broker_pos = _get_broker_position(account_id)
         if not broker_pos:
@@ -1181,7 +1326,7 @@ def poll_order_status():
         if not _active_orders:
             return
         pending = [(lid, o) for lid, o in _active_orders.items()
-                   if o["status"] in ("pending_entry", "pending_limit", "filled")]
+                   if o["status"] in ("pending_entry", "pending_limit", "pending_stop_entry", "filled")]
     if not pending:
         return
 
@@ -1376,6 +1521,61 @@ def _check_order_fills(lid, order, broker_orders):
                                f"in {elapsed/60:.0f} min -- trade skipped")
                 except (ValueError, TypeError):
                     pass
+
+    # BUG 2 FIX (2026-05-18): Check VIX Div stop-entry fill or timeout.
+    # If filled, transition to "filled" and place SL/target like a market entry would.
+    if order["status"] == "pending_stop_entry" and order.get("entry_order_id"):
+        entry = broker_orders.get(order["entry_order_id"], {})
+        entry_status = entry.get("Status", "")
+        if entry_status == "FLL":
+            fill_price = _extract_fill_price(entry)
+            with _lock:
+                order["status"] = "filled"
+                order["fill_price"] = fill_price
+            changed = True
+            print(f"[real-trader] STOP-ENTRY CONFIRMED: {order['setup_name']} "
+                  f"@ {fill_price} (trigger {order.get('trigger_price')}) acct={account_id}",
+                  flush=True)
+            _alert(f"🟢 {order['setup_name']} STOP-ENTRY CONFIRMED\n"
+                   f"{order['direction'].upper()} {QTY} MES @ {fill_price}\n"
+                   f"Now placing protective SL...")
+            # Now place the SL — same as deferred limit-entry flow
+            _place_deferred_protective_orders(lid, order, fill_price)
+        elif entry_status in ("REJ", "CAN", "EXP"):
+            with _lock:
+                order["status"] = "closed"
+                order["close_reason"] = f"stop_entry_{entry_status}"
+            changed = True
+            print(f"[real-trader] stop-entry {entry_status}: {order['setup_name']} "
+                  f"acct={account_id}", flush=True)
+            _alert(f"⚠️ {order['setup_name']} STOP-ENTRY {entry_status}")
+        else:
+            # Check 30-min timeout
+            timeout_at = order.get("stop_entry_timeout_at")
+            if timeout_at:
+                try:
+                    from datetime import datetime as _dt, timezone as _utc
+                    timeout_dt = _dt.fromisoformat(timeout_at)
+                    if _dt.now(_utc.utc) > timeout_dt:
+                        # Cancel the stop-entry order
+                        try:
+                            _ts_api("DELETE",
+                                    f"/orderexecution/orders/{order['entry_order_id']}",
+                                    None, account_id)
+                        except Exception as e:
+                            print(f"[real-trader] stop-entry cancel error: {e}", flush=True)
+                        with _lock:
+                            order["status"] = "closed"
+                            order["close_reason"] = "stop_entry_timeout"
+                        changed = True
+                        _alert(f"🏁 {order['setup_name']} STOP-ENTRY EXPIRED\n"
+                               f"Trigger {order.get('trigger_price')} not hit in "
+                               f"30min — confirmation never arrived, trade skipped.")
+                except (ValueError, TypeError):
+                    pass
+        if changed:
+            _persist_order(lid)
+        return  # exit early — no other status checks apply
 
     # Check market entry fill
     if order["status"] == "pending_entry" and order.get("entry_order_id"):
@@ -1645,26 +1845,39 @@ def _extract_fill_price(entry_order: dict) -> float | None:
 
 def _get_order_fill_price(order_id: str, account_id: str) -> float | None:
     """Get fill price for a specific order by polling broker.
-    Checks BOTH live /orders AND /historicalorders (filled orders may have moved
-    to history between our polls). Returns fill price or None if not found/not filled."""
+
+    BUG 3 FIX (2026-05-18): TS API /historicalorders?since={today} returns 0 rows
+    (since is exclusive of today). For INTRADAY recovery we must use /orders
+    only — but stop-fill orders may take a few seconds to flip from ACK→FLL.
+    Solution: poll /orders up to 3x with 1.5s delay. Also use yesterday as the
+    fallback since date so trades that linger past midnight get caught.
+
+    Verified 2026-05-18 with TS API: today's fills LIVE in /orders, never in
+    historicalorders. 12 historical ghost trades lost fill price due to old logic.
+    """
     if account_id not in ACCOUNT_WHITELIST:
         return None
-    # 1) Try live orders first (faster, always current)
+    import time as _time
+    # 1) Poll live /orders up to 3 times — handles ACK→FLL transition lag.
+    for attempt in range(3):
+        try:
+            data = _ts_api("GET", f"/brokerage/accounts/{account_id}/orders", None, account_id)
+            if data:
+                for o in data.get("Orders", []):
+                    if o.get("OrderID") == order_id and o.get("Status") == "FLL":
+                        return _extract_fill_price(o)
+        except Exception:
+            pass
+        if attempt < 2:
+            _time.sleep(1.5)
+    # 2) Fall back to historical orders with YESTERDAY date (today returns 0 — TS quirk).
     try:
-        data = _ts_api("GET", f"/brokerage/accounts/{account_id}/orders", None, account_id)
-        if data:
-            for o in data.get("Orders", []):
-                if o.get("OrderID") == order_id and o.get("Status") == "FLL":
-                    return _extract_fill_price(o)
-    except Exception:
-        pass
-    # 2) Fall back to historical orders (stop fills often move to history quickly)
-    try:
-        from datetime import datetime as _dt, timezone as _tz
-        # Use today's date in UTC — covers intraday stop fills
-        today = _dt.now(_tz.utc).strftime("%m-%d-%Y")
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        # since=yesterday returns orders from yesterday onward; today's order may
+        # still be in /orders not /historicalorders, so this is best-effort.
+        yesterday = (_dt.now(_tz.utc) - _td(days=1)).strftime("%m-%d-%Y")
         data = _ts_api("GET",
-                       f"/brokerage/accounts/{account_id}/historicalorders?since={today}&pageSize=600",
+                       f"/brokerage/accounts/{account_id}/historicalorders?since={yesterday}&pageSize=600",
                        None, account_id)
         if data:
             for o in data.get("Orders", []):
@@ -1672,6 +1885,10 @@ def _get_order_fill_price(order_id: str, account_id: str) -> float | None:
                     return _extract_fill_price(o)
     except Exception as e:
         print(f"[real-trader] historicalorders lookup failed for {order_id}: {e}", flush=True)
+    # 3) Loud alert if still nothing — this is the leak that 12 historical trades hit.
+    print(f"[real-trader] WARN: fill price NOT FOUND for OID={order_id} acct={account_id} "
+          f"(both /orders×3 and /historicalorders since=yesterday returned no FLL match)",
+          flush=True)
     return None
 
 
@@ -1722,16 +1939,18 @@ def _backfill_ghost_fill(order: dict) -> tuple[str, float] | None:
                 entry_dt = _dt.fromisoformat(entry_ts_str.replace("Z", "+00:00"))
                 if entry_dt.tzinfo is None:
                     entry_dt = entry_dt.replace(tzinfo=_tz.utc)
-                # Query broker historicalorders for today
-                today = _dt.now(_tz.utc).strftime("%m-%d-%Y")
+                # BUG 3 FIX (2026-05-18): use yesterday (today returns 0 — TS quirk).
+                # ALSO include StopMarket — stop fills are the dominant close path
+                # for SL-style setups (was filtering them out before).
+                yesterday = (_dt.now(_tz.utc) - _td(days=1)).strftime("%m-%d-%Y")
                 data = _ts_api("GET",
-                               f"/brokerage/accounts/{acct}/historicalorders?since={today}&pageSize=600",
+                               f"/brokerage/accounts/{acct}/historicalorders?since={yesterday}&pageSize=600",
                                None, acct)
                 candidates = []
                 for o in (data or {}).get("Orders", []):
                     if o.get("Status") != "FLL":
                         continue
-                    if o.get("OrderType") != "Market":
+                    if o.get("OrderType") not in ("Market", "StopMarket"):
                         continue
                     legs = o.get("Legs", [{}])[0]
                     if legs.get("BuyOrSell") != close_side:

@@ -6020,6 +6020,14 @@ def _run_absorption_detection(bars: list) -> dict | None:
     else:
         result["charm_limit_entry"] = None
 
+    # BUG 1 FIX (2026-05-18): snapshot greek_alignment BEFORE log_setup + filter call.
+    # Without this, a concurrent _vanna_cache refresh between line 5934 (computation)
+    # and the filter check could rewrite result["greek_alignment"] mid-flight, letting
+    # an align=-1 ES Abs bullish signal slip past the filter (lid 2935 today: -$54 real).
+    _abs_align_at_trigger = int(result.get("greek_alignment") or 0)
+    result["greek_alignment"] = _abs_align_at_trigger  # freeze in result for log_setup audit
+    print(f"[absorption] align_at_trigger={_abs_align_at_trigger:+d} (frozen for filter+log)", flush=True)
+
     # Always log signal to setup_log for history (regardless of cooldown)
     rw = {
         "result": result,
@@ -6031,7 +6039,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
 
     # Send Telegram only when notification gate passes AND live filter
     _abs_passes_live = _passes_live_filter("ES Absorption", result["direction"],
-                                           result.get("greek_alignment", 0), _vix_last, _overvix,
+                                           _abs_align_at_trigger, _vix_last, _overvix,
                                            paradigm=result.get("paradigm"), grade=result.get("grade"))
     if fire and _abs_passes_live:
         try:

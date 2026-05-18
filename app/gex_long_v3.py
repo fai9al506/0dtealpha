@@ -1,16 +1,23 @@
-"""GEX Long v3 — server-side filter + exit simulator for portal overlay.
+"""GEX Long v3.1 — server-side filter + exit simulator for portal overlay.
 
-Lifted from `_tmp_gex_long_v3_validate.py` (verified 2026-05-06: 14 trades / 77% WR /
-+$552 / PF 3.63 over Feb 23 - May 4). Used by `/api/setup/gex_long_v3_overlay`.
+v3.0 verified 2026-05-06: 14 trades / 77% WR / +$552 / PF 3.63 over Feb 23 - May 4.
+v3.1 patch (2026-05-18): tightens R_VETO carveout. v3.0 let one weak negative charm
+strike at the GEX magnet override an 80%+ positive-charm wall above spot, admitting
+fundamentally bearish setups (e.g. lid 2883: −100B regime, 80% pos charm wall,
+neg_charm magnet only 29% of strongest +charm above — lost −14 pts). v3.1 only
+allows the R5_align carveout if the negative charm magnet is at least 50% as strong
+as the dominant +charm wall it has to overcome. Backtest: 17→16 trades, WR 75→80%,
+PnL +155→+169 pts (+$70 MES) on 94-trade GEX Long sample Feb-May 2026.
 
-v3 specification:
+v3.1 specification:
   Visual classifier (per-strike GEX + charm features around spot):
     CORE_R3: max +GEX strike above spot has positive value
     CORE_R2: max -GEX strike below spot has negative value
     R5_align: bullish charm magnet (most-negative charm above spot) within 10pts of max +GEX above
+    R5_align_strong: R5_align AND |neg_charm_magnet| >= 50% of strongest +charm above (v3.1)
     R_charm_bullish: total charm < 0
     R_gex_regime_pos: total gex >= 0
-    R_VETO: >=80% of charm-above-spot strikes positive AND not R5_align
+    R_VETO (v3.1): >=80% of charm-above-spot strikes positive AND not R5_align_strong
 
     Verdict:
       !CORE_R3 or R_VETO -> BAD
@@ -80,7 +87,9 @@ def _features(cur, t_utc, spot: float) -> Optional[dict]:
     sg_below = max(gex_below, key=lambda x: abs(x[1])) if gex_below else (None, 0)
     sg_above = max(gex_above, key=lambda x: abs(x[1])) if gex_above else (None, 0)
     neg_charm_above = [(s, v) for s, v in charm_above if v < 0]
-    bullish_charm_magnet = min(neg_charm_above, key=lambda x: x[1])[0] if neg_charm_above else None
+    pos_charm_above = [(s, v) for s, v in charm_above if v > 0]
+    bullish_charm_magnet = min(neg_charm_above, key=lambda x: x[1]) if neg_charm_above else None
+    strongest_pos_charm_above = max(pos_charm_above, key=lambda x: x[1]) if pos_charm_above else (None, 0)
 
     total_gex = sum(v for _, v in gex)
     total_charm = sum(v for _, v in charm)
@@ -88,7 +97,13 @@ def _features(cur, t_utc, spot: float) -> Optional[dict]:
                            max(len(charm_above), 1) * 100)
 
     R5_align = (bullish_charm_magnet is not None and sg_above[0] is not None
-                and sg_above[1] > 0 and abs(bullish_charm_magnet - sg_above[0]) <= 10)
+                and sg_above[1] > 0 and abs(bullish_charm_magnet[0] - sg_above[0]) <= 10)
+    # v3.1: negative charm magnet must be at least 50% of strongest +charm above
+    R5_align_strong = R5_align and (
+        bullish_charm_magnet is not None
+        and strongest_pos_charm_above[1] > 0
+        and abs(bullish_charm_magnet[1]) >= 0.5 * strongest_pos_charm_above[1]
+    )
     return {
         'gex_magnet_strike': sg_above[0],
         'CORE_R3': sg_above[1] > 0,
@@ -96,7 +111,8 @@ def _features(cur, t_utc, spot: float) -> Optional[dict]:
         'R5_align': R5_align,
         'R_charm_bullish': total_charm < 0,
         'R_gex_regime_pos': total_gex >= 0,
-        'R_VETO': (above_charm_pos_pct >= 80) and (not R5_align),
+        # v3.1: carveout requires STRONG R5_align (neg_charm >= 50% of dominant +charm wall)
+        'R_VETO': (above_charm_pos_pct >= 80) and (not R5_align_strong),
     }
 
 

@@ -4249,8 +4249,17 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
             if _et.weekday() == 4 and 15 <= _et.day <= 21:
                 return False
             return True  # SC longs accept all other alignments, exempt from VIX gate
-        # All non-SC longs keep the V13 align>=2 gate
-        if align < 2:
+        # ── V16.1 (2026-05-18): DD long align gate carve-out ──
+        # V13 align>=2 gate was inherited from generic non-SC longs but applied to
+        # DD longs too, blocking align=+1 DD trades that have real cross-regime edge.
+        # Cross-regime audit Feb-May 2026 (122 DD long align=+1 trades, all good-paradigm,
+        # vix<22, not grade C): Mar -$1 (flat) / Apr +$298 / May +$268 = +$580 / 3 months.
+        # No blowup month. Block negative alignment only (align>=0 admits 0,1,2; V14 gate
+        # at line 4262 still blocks align>=3).
+        if setup_name == "DD Exhaustion":
+            if align < 0:
+                return False  # block negative alignment, admit 0/1/2 (V14 still blocks 3)
+        elif align < 2:
             return False
         # ── V13 DD Exhaustion long-specific rules (Apr 18 2026) ──
         # Study: 209 DD long trades since Feb, 45% WR, -91 pts, MaxDD -529. Three OOS-stable rules:
@@ -13392,9 +13401,14 @@ function passesStrategy(l, strat) {
   }
   function v16DDAdmit() {
     // V16 ADMITS DD Exhaustion long (paradigm-filtered) — currently V14 blocks at whitelist level.
-    // V14's internal DD long quality gates still apply (align<3, vix<22, bad paradigm, grade!=C).
+    // V14's internal DD long quality gates apply: align in {0,1,2}, vix<22, good paradigm, grade!=C.
+    // V16.1 (2026-05-18): tightened to align >= 0 to MATCH live filter (live blocks negative
+    // alignment via the V13 non-SC long gate). Previously this was align<3 (admitting -3..2)
+    // which over-counted by ~$170 pts in May (23 trades with align=+1 portal admitted but live
+    // blocked at align<2 V13 gate). Live filter now also admits align in {0,1,2} for DD longs.
     if (sn !== 'DD Exhaustion' || !isLong) return false;
     if (l.paradigm === 'SIDIAL-EXTREME') return false;
+    if (align < 0) return false;  // V16.1: block negative alignment to match live filter
     if (align >= 3) return false;
     const vix = l.vix != null ? l.vix : 0;
     if (vix >= 22) return false;
@@ -18358,8 +18372,11 @@ DASH_HTML_TEMPLATE = """
           return ed.getDay() === 5 && ed.getDate() >= 15 && ed.getDate() <= 21;
         }
         // V16 admits DD Exhaustion long (V14 internal quality gates still apply)
+        // V16.1 (2026-05-18): added align >= 0 to MATCH live filter (live blocks negative
+        // alignment via the V13 non-SC long gate at main.py:4253).
         if (sn === 'DD Exhaustion' && isLong) {
           if (l.paradigm === 'SIDIAL-EXTREME') return false;
+          if (align < 0) return false;
           if (align >= 3) return false;
           const vix = l.vix != null ? l.vix : 0;
           if (vix >= 22) return false;

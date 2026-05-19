@@ -88,6 +88,24 @@ DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_DAILY_LOSS_LIMIT", "300"))  # max
 def _spx_exit_enabled() -> bool:
     return os.getenv("SPX_EXIT_ENABLED", "false").lower() == "true"
 
+
+# ── Atomic bracket (2026-05-19): submit entry + SL [+ target] in ONE POST ──
+# User-clarified rationale: this is NOT a margin fix. TS displays scary margin
+# numbers (InitialMargin=$2,649, negative BP) but doesn't actually block orders
+# on them — they're cosmetic, not enforced (verified S101 manual test). Margin
+# pre-check removed via the patch above (S156). Atomic ordergroup is still
+# worth shipping for THREE other reasons: (1) eliminates the 200-500ms naked
+# window between sequential entry-fill and SL-POST — if SL POST fails or
+# network blips, no orphan unprotected position; (2) single network round-trip
+# vs 3 (latency reduction); (3) TS guarantees SL is registered at entry
+# submission. Confirmed accepted on SIM 2026-05-19 (3 OrderIDs returned from
+# 1 POST to /orderexecution/ordergroups Type=NORMAL). Feature flag default
+# OFF: deploy code, flip true after user confirms first real-money atomic
+# placement shows "[real-trader] PLACED ATOMIC:" log line with all 3 OrderIDs.
+# Sequential path preserved as fallback.
+def _atomic_bracket_enabled() -> bool:
+    return os.getenv("ATOMIC_BRACKET_ENABLED", "false").lower() == "true"
+
 # SC Trail parameters
 BE_TRIGGER_PTS = 10.0    # move stop to breakeven after 10pts profit
 TRAIL_ACTIVATION_PTS = 10.0  # trail activates at 10pts
@@ -149,6 +167,36 @@ def _order_ok(resp: dict | None) -> tuple[bool, str | None]:
         return False, first.get("OrderID")
     oid = first.get("OrderID")
     return bool(oid), oid
+
+
+def _extract_ts_error(resp: dict | None) -> str:
+    """Extract TS rejection text for diagnostic logging/alerts.
+    Returns empty string if no error. Checks all known TS error response shapes."""
+    if not resp:
+        return ""
+    # Shape 1: Orders[].Message on FAILED
+    orders = resp.get("Orders", [])
+    if orders and orders[0].get("Error") == "FAILED":
+        msg = orders[0].get("Message") or ""
+        if msg:
+            return msg[:200]
+    # Shape 2: top-level Errors list
+    errs = resp.get("Errors", [])
+    if isinstance(errs, list) and errs:
+        msg = (errs[0].get("Message") if isinstance(errs[0], dict) else str(errs[0])) or ""
+        if msg:
+            return msg[:200]
+    # Shape 3: top-level Error string
+    err = resp.get("Error")
+    if err:
+        return str(err)[:200]
+    return ""
+
+
+# Rate-limit FAILED entry alerts so a margin-cascade burst doesn't spam Telegram.
+# Key: f"{setup_name}:{account_id}"  Value: last alert epoch.
+_failed_alert_last: dict[str, float] = {}
+_FAILED_ALERT_COOLDOWN_S = 60
 
 
 # ====== STATE ======
@@ -477,17 +525,18 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                f"Blocking: {_block_str}")
         return
 
-    # Margin/buying power pre-check
-    bp = _get_buying_power(account_id)
-    if bp is not None:
-        margin_needed = QTY * _margin_per_mes()
-        if bp < margin_needed:
-            print(f"[real-trader] skip {setup_name}: insufficient buying power on {account_id} "
-                  f"(${bp:,.0f} < ${margin_needed:,.0f})", flush=True)
-            _log_skip_reason(setup_log_id, "margin_insufficient")
-            _alert(f"⚠️ SKIPPED {setup_name}: insufficient margin\n"
-                   f"Account: {account_id} | BP: ${bp:,.0f} < ${margin_needed:,.0f}")
-            return
+    # Margin pre-check REMOVED (2026-05-19, user-directed): user clarified via S101
+    # manual testing that the BP/margin numbers TS displays are *cosmetic only* —
+    # TS does NOT block orders based on them. Orders go through with negative BP
+    # and "insufficient" margin display. Our pre-check was the only thing blocking
+    # placement. Today's missed: lid 2987 +$35, 2991 ~$0, 3022 +$73.50 = ~$108.
+    # If TS does reject (whatever the real reason), the entry POST returns an
+    # error and the rejection handler at the entry call site captures TS's exact
+    # reason text in skip_reason + Telegram alert. Diagnostic margin-check still
+    # runs via _get_buying_power() for stdout visibility (InitialMargin /
+    # DayTradeMargin per attempt) — its return value is no longer consumed for
+    # blocking decisions.
+    _get_buying_power(account_id)  # logs margin diagnostic to stdout, return ignored
 
     # Daily loss circuit breaker
     daily_loss = _get_daily_realized_loss()
@@ -632,6 +681,113 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
         es_stop = _round_mes(es_price + stop_pts + SLIPPAGE_BUFFER)
         es_target = None if trail_only else _round_mes(es_price - target_pts)
 
+    # === ATOMIC BRACKET PATH (feature flag) ===
+    # When ATOMIC_BRACKET_ENABLED=true, submit entry+SL [+ target] as ONE atomic
+    # NORMAL ordergroup. Eliminates the 200-500ms naked window that triggers TS
+    # overnight margin charging. Proven accepted on SIM 2026-05-19. See
+    # _atomic_bracket_enabled() comment block above for full context.
+    if _atomic_bracket_enabled():
+        entry_order = {
+            "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(QTY),
+            "OrderType": "Market", "TradeAction": side,
+            "TimeInForce": {"Duration": "DAY"}, "Route": "Intelligent",
+        }
+        stop_order = {
+            "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(QTY),
+            "OrderType": "StopMarket", "StopPrice": str(es_stop),
+            "TradeAction": exit_side,
+            "TimeInForce": {"Duration": "DAY"}, "Route": "Intelligent",
+        }
+        group_orders = [entry_order, stop_order]
+        if not trail_only and es_target is not None:
+            group_orders.append({
+                "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(QTY),
+                "OrderType": "Limit", "LimitPrice": str(es_target),
+                "TradeAction": exit_side,
+                "TimeInForce": {"Duration": "DAY"}, "Route": "Intelligent",
+            })
+        group_payload = {"Type": "NORMAL", "Orders": group_orders}
+        print(f"[real-trader] PLACING ATOMIC: {setup_name} {side} {QTY} {MES_SYMBOL} "
+              f"@ ~{es_price:.2f} stop={es_stop:.2f} target={'trail' if trail_only else f'{es_target:.2f}'} "
+              f"on {account_id}", flush=True)
+        group_resp = _ts_api("POST", "/orderexecution/ordergroups", group_payload, account_id)
+        # Parse 3-order response. TS returns one Orders[] with same order as request.
+        entry_oid = stop_oid = t1_oid = None
+        atomic_ok = False
+        if group_resp and isinstance(group_resp.get("Orders"), list):
+            sub_orders = group_resp["Orders"]
+            if len(sub_orders) >= 2:
+                e_first = sub_orders[0]
+                s_first = sub_orders[1]
+                if e_first.get("Error") != "FAILED" and e_first.get("OrderID"):
+                    entry_oid = e_first["OrderID"]
+                    atomic_ok = True
+                if s_first.get("Error") != "FAILED" and s_first.get("OrderID"):
+                    stop_oid = s_first["OrderID"]
+                if len(sub_orders) >= 3 and not trail_only:
+                    t_first = sub_orders[2]
+                    if t_first.get("Error") != "FAILED" and t_first.get("OrderID"):
+                        t1_oid = t_first["OrderID"]
+        if not atomic_ok:
+            err_text = _extract_ts_error(group_resp)
+            reason_short = (err_text[:80] or "atomic_rejection").replace("\n", " ")
+            _log_skip_reason(setup_log_id, f"ts_reject:{reason_short}")
+            alert_key = f"{setup_name}:{account_id}"
+            now_t = time.time()
+            if now_t - _failed_alert_last.get(alert_key, 0) >= _FAILED_ALERT_COOLDOWN_S:
+                _failed_alert_last[alert_key] = now_t
+                _alert(f"🚨 TS REJECTED atomic bracket: {setup_name}\n"
+                       f"Account: {account_id}\n"
+                       f"Side: {side} {QTY} {MES_SYMBOL} @ ~{es_price:.2f}\n"
+                       f"TS said: {err_text or '(no error text)'}")
+            return
+        if stop_oid is None:
+            # Entry accepted but SL rejected — naked position, fall back to standalone SL POST
+            print(f"[real-trader] atomic: entry OK ({entry_oid}) but SL rejected in group; "
+                  f"placing standalone SL", flush=True)
+            stop_payload = {
+                "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(QTY),
+                "OrderType": "StopMarket", "StopPrice": str(es_stop),
+                "TradeAction": exit_side,
+                "TimeInForce": {"Duration": "DAY"}, "Route": "Intelligent",
+            }
+            sr = _ts_api("POST", "/orderexecution/orders", stop_payload, account_id)
+            so_ok, stop_oid = _order_ok(sr)
+            if not so_ok:
+                _alert(f"🚨 MANUAL INTERVENTION: {setup_name} atomic-entry placed "
+                       f"(id={entry_oid}) but BOTH atomic SL AND fallback SL FAILED!\n"
+                       f"Account: {account_id}")
+                stop_oid = None
+        # Atomic path success — skip the sequential path below
+        order = {
+            "setup_log_id": setup_log_id, "setup_name": setup_name,
+            "direction": direction, "account_id": account_id,
+            "entry_order_id": entry_oid, "target_order_id": t1_oid,
+            "stop_order_id": stop_oid, "current_stop": es_stop,
+            "target_price": es_target, "trail_only": trail_only,
+            "status": "pending_entry", "fill_price": None,
+            "max_favorable": 0.0, "be_triggered": False, "trail_active": False,
+            "ts_placed": datetime.utcnow().isoformat(),
+            "stop_pts": stop_pts, "target_pts": target_pts,
+            "signal_es_price": es_price, "atomic_bracket": True,
+        }
+        with _lock:
+            _active_orders[setup_log_id] = order
+        _persist_order(setup_log_id)
+        dir_str = "LONG" if is_long else "SHORT"
+        tgt_str = "TRAIL-ONLY" if trail_only else f"{es_target:.2f}"
+        print(f"[real-trader] PLACED ATOMIC: {setup_name} {dir_str} {QTY} {MES_SYMBOL} "
+              f"@ ~{es_price:.2f} target={tgt_str} stop={es_stop:.2f} "
+              f"acct={account_id} ids=entry:{entry_oid}/stop:{stop_oid}/tgt:{t1_oid}",
+              flush=True)
+        dir_label = "Long" if is_long else "Short"
+        _alert(f"🟢 {setup_name} PLACED [ATOMIC]\n"
+               f"{dir_label} {QTY} MES @ ~{es_price:.2f}\n"
+               f"Target: {tgt_str} | Stop: {es_stop:.2f}")
+        return
+    # === END ATOMIC PATH ===
+
+    # === LEGACY SEQUENTIAL PATH (fallback when ATOMIC_BRACKET_ENABLED=false) ===
     # 1. Market entry
     entry_payload = {
         "AccountID": account_id,
@@ -647,9 +803,28 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
     resp = _ts_api("POST", "/orderexecution/orders", entry_payload, account_id)
     ok, entry_oid = _order_ok(resp)
     if not ok:
-        _alert(f"🚨 FAILED entry for {setup_name}\n"
-               f"Account: {account_id}\n"
-               f"Side: {side} {QTY} {MES_SYMBOL} @ ~{es_price:.2f}")
+        # TS rejection: capture the actual reason for S101 diagnostic + skip_reason.
+        # Now that the bot-side margin pre-check is removed (2026-05-19), TS is the
+        # sole authority on whether to fill — its rejection text tells us exactly
+        # which constraint blocked us (margin, position limit, route, symbol, etc.).
+        err_text = _extract_ts_error(resp)
+        reason_short = (err_text[:80] or "unknown_rejection").replace("\n", " ")
+        _log_skip_reason(setup_log_id, f"ts_reject:{reason_short}")
+        # Rate-limit alerts per setup+account so a margin-cascade burst (5 signals in
+        # 30s during a regime) doesn't spam Telegram with 5 near-identical alerts.
+        alert_key = f"{setup_name}:{account_id}"
+        now_t = time.time()
+        last_t = _failed_alert_last.get(alert_key, 0)
+        if now_t - last_t >= _FAILED_ALERT_COOLDOWN_S:
+            _failed_alert_last[alert_key] = now_t
+            _alert(f"🚨 TS REJECTED entry: {setup_name}\n"
+                   f"Account: {account_id}\n"
+                   f"Side: {side} {QTY} {MES_SYMBOL} @ ~{es_price:.2f}\n"
+                   f"TS said: {err_text or '(no error text)'}")
+        else:
+            print(f"[real-trader] TS reject for {setup_name} on {account_id} — "
+                  f"alert suppressed (cooldown {_FAILED_ALERT_COOLDOWN_S}s). "
+                  f"Reason: {err_text}", flush=True)
         return
 
     # 2. Stop order

@@ -416,7 +416,17 @@ def log_no_es_px_skip(setup_log_id, setup_name: str, direction: str):
 # Kill switch (manual): if 3 consecutive losses on this bucket, flip env false.
 def _is_double_up_bucket(setup_name: str, direction: str,
                          paradigm: str | None, align: int | None) -> bool:
-    if os.getenv("SC_BOFA_PURE_DOUBLE_UP_ENABLED", "true").lower() != "true":
+    # Default FALSE (2026-05-19, user-directed reassessment): "+$1,833/mo" claim
+    # was gross-sim with no capture-rate or regime-decay haircut. Realistic lift
+    # ~$650-850/mo at 1 MES. Apr +$1,550 → May +$284 = 81% MTD decay; capture
+    # rate on THIS bucket not validated on real money post-fixes (V16.1 + S131 +
+    # margin removal + atomic bracket all just shipped — attribution will be
+    # messy if 2x stacks on top). Plan: 20-30 SC long BOFA-PURE align=+1 fires
+    # at 1x post-deploy, measure capture rate on this bucket specifically, THEN
+    # flip env to true if capture confirms expectation. Cost of waiting ~$400-800
+    # over 3-4 weeks; cost of being wrong at 2x = real DD acceleration on
+    # unvalidated bucket.
+    if os.getenv("SC_BOFA_PURE_DOUBLE_UP_ENABLED", "false").lower() != "true":
         return False
     if setup_name != "Skew Charm":
         return False

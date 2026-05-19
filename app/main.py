@@ -13456,16 +13456,28 @@ function passesStrategy(l, strat) {
   if (strat === 'v16') {
     // V16 = V14 + 4 new block rules + DD Exhaustion long admit.
     // Multi-regime validation Mar/Apr/May 2026: all 3 months net positive.
+    //
+    // V16 portal view = EXACT MIRROR of TSRT (real_trader.py) behavior.
+    // The user opens this view to see "what TSRT actually fired today".
+    // ANY setup not in real_trader's effective whitelist must NOT pass V16.
+    // Real_trader whitelist (real_trader.py:385 + env gates as of 2026-05-19):
+    //   Skew Charm, AG Short, Vanna Pivot Bounce, ES Absorption, DD Exhaustion (env true)
+    //   VIX Divergence: VIX_DIV_REAL_TRADE_ENABLED=false (default false) → BLOCK
+    //   GEX Long:      GEX_LONG_V3_REAL_TRADE_ENABLED=false (default false) → BLOCK
+    //   BofA Scalp, Paradigm Reversal, SB2 Absorption, etc: not in whitelist → BLOCK
+    // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
+    const _v16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
+                                  'ES Absorption', 'DD Exhaustion']);
+    if (!_v16Allowed.has(sn)) return false;
     if (v16DDAdmit()) return true;  // DD long admit (new setup type)
     // V14 base filter:
     if (!gapFilter(l.ts)) return false;
     if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
     if (sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
-    if (sn==='VIX Divergence') {
-      if (!isLong) return false;
-      if (l.grade === 'C') return false;
-      return true;
-    }
+    // VIX Divergence block path removed (2026-05-19): real_trader has it disabled,
+    // so V16 view must not show as "passed".  When VIX_DIV_REAL_TRADE_ENABLED flips
+    // back to true, both this block (add VIX Div longs-only admit) AND the _v16Allowed
+    // set above need updating.
     if (!v11TimeGates(l.ts)) return false;
     if (v13BullishBlock()) return false;
     if (v13VannaBlock()) return false;
@@ -18403,6 +18415,19 @@ DASH_HTML_TEMPLATE = """
         // V16 (2026-05-17): V14 + 4 new block rules + DD Exhaustion long admit.
         // R5 SC long GEX-LIS, R2 SC long OpEx Fri, R10 ES Abs bear hr>=14, R12 AG short OpEx Fri.
         // DD Long ADMIT via V14 quality gates (align<3, vix<22, paradigm not bad, grade!=C).
+        //
+        // V16 portal/trade-log view = EXACT MIRROR of TSRT (real_trader.py) behavior.
+        // User opens this to verify what TSRT actually fired today. ANY setup not in
+        // real_trader's effective whitelist must NOT pass V16.
+        // Real_trader whitelist (real_trader.py:385 + env gates as of 2026-05-19):
+        //   Skew Charm, AG Short, Vanna Pivot Bounce, ES Absorption, DD Exhaustion (env true)
+        //   VIX Divergence: VIX_DIV_REAL_TRADE_ENABLED=false → BLOCK
+        //   GEX Long:      GEX_LONG_V3_REAL_TRADE_ENABLED=false → BLOCK
+        //   BofA, Paradigm Reversal, SB2 Absorption, others: not in whitelist → BLOCK
+        // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
+        const _tlV16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
+                                        'ES Absorption', 'DD Exhaustion']);
+        if (!_tlV16Allowed.has(sn)) return false;
         function _tlIsMonthlyOpex() {
           if (!l.ts) return false;
           const d = new Date(l.ts);
@@ -18427,11 +18452,9 @@ DASH_HTML_TEMPLATE = """
         if (!_tlGapFilter()) return false;
         if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
         if (sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
-        if (sn === 'VIX Divergence') {
-          if (!isLong) return false;
-          if (l.grade === 'C') return false;
-          return true;
-        }
+        // VIX Divergence path removed (2026-05-19): blocked by _tlV16Allowed gate above
+        // since VIX_DIV_REAL_TRADE_ENABLED=false on real_trader. When that env flips back
+        // to true, re-add the VIX Div longs-only admit AND update _tlV16Allowed.
         if (!_tlV11TimeGates()) return false;
         if (_tlV13BullishBlock()) return false;
         if (_tlV13VannaBlock()) return false;

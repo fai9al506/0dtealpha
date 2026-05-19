@@ -5395,7 +5395,12 @@ def _run_setup_check():
                     # AG Short added 2026-04-08 — fires SHORT account only (AG hardcoded direction="short")
                     # VPB-Bull added 2026-04-22 — LONGS only on bullish vanna regime (210VYX65, cap shared with SC)
                     #   Env switch VPB_REAL_TRADE_ENABLED gates real execution via _passes_live_filter
-                    if not _skip_auto_trade and setup_name in ("Skew Charm", "AG Short", "Vanna Pivot Bounce", "VIX Divergence"):
+                    # DD Exhaustion added 2026-05-18 (CRITICAL audit fix) — S138/V16 admit was incomplete
+                    #   without this dispatch line; real_trader.place_trade was never called for DD signals.
+                    #   _passes_live_filter still gates direction/quality (DD longs align>=0 per V16.1).
+                    #   DD SHORTS explicitly BLOCKED here per S145 cross-regime audit (Apr -$1,096 blowup).
+                    _dd_short_block = (setup_name == "DD Exhaustion" and r["direction"] not in ("long", "bullish"))
+                    if not _skip_auto_trade and not _dd_short_block and setup_name in ("Skew Charm", "AG Short", "Vanna Pivot Bounce", "VIX Divergence", "DD Exhaustion"):
                         try:
                             from app import real_trader
                             es_px = None

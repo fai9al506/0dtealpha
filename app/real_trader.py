@@ -1523,7 +1523,7 @@ def _check_order_fills(lid, order, broker_orders):
                     pass
 
     # BUG 2 FIX (2026-05-18): Check VIX Div stop-entry fill or timeout.
-    # If filled, transition to "filled" and place SL/target like a market entry would.
+    # If filled, transition to "filled" and place SL (trail-only setup — no target).
     if order["status"] == "pending_stop_entry" and order.get("entry_order_id"):
         entry = broker_orders.get(order["entry_order_id"], {})
         entry_status = entry.get("Status", "")
@@ -1539,8 +1539,32 @@ def _check_order_fills(lid, order, broker_orders):
             _alert(f"🟢 {order['setup_name']} STOP-ENTRY CONFIRMED\n"
                    f"{order['direction'].upper()} {QTY} MES @ {fill_price}\n"
                    f"Now placing protective SL...")
-            # Now place the SL — same as deferred limit-entry flow
-            _place_deferred_protective_orders(lid, order, fill_price)
+            # Place protective SL only (VIX Div is trail-only — no target limit order).
+            # AUDIT FIX (2026-05-18): can't reuse _place_deferred_protective_orders because
+            # it reads `deferred_stop_pts` (limit-entry-specific) and always places a target.
+            # Inline the SL placement instead, matching trail-only setups.
+            is_long_se = order["direction"].lower() in ("long", "bullish")
+            exit_side_se = "Sell" if is_long_se else "Buy"
+            stop_pts_se = order.get("stop_pts") or 8.0
+            es_stop_se = _round_mes((fill_price - stop_pts_se) if is_long_se else (fill_price + stop_pts_se))
+            stop_payload = {
+                "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(QTY),
+                "OrderType": "StopMarket", "StopPrice": str(es_stop_se),
+                "TradeAction": exit_side_se,
+                "TimeInForce": {"Duration": "DAY"}, "Route": "Intelligent",
+            }
+            stop_resp = _ts_api("POST", "/orderexecution/orders", stop_payload, account_id)
+            stop_ok, stop_oid = _order_ok(stop_resp)
+            with _lock:
+                order["stop_order_id"] = stop_oid if stop_ok else None
+                order["current_stop"] = es_stop_se
+                order["initial_realign_done"] = True  # placed at fill ± stop_pts, no buffer needed
+            if stop_ok:
+                print(f"[real-trader] STOP-ENTRY protective SL placed: {order['setup_name']} "
+                      f"stop={es_stop_se:.2f} acct={account_id}", flush=True)
+            else:
+                _alert(f"🚨 MANUAL INTERVENTION: {order['setup_name']} stop-entry FILLED "
+                       f"@ {fill_price} but STOP FAILED!\nAccount: {account_id}")
         elif entry_status in ("REJ", "CAN", "EXP"):
             with _lock:
                 order["status"] = "closed"

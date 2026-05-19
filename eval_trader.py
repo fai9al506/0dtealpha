@@ -833,8 +833,11 @@ class ComplianceGate:
                     _short_allowed = True
                 elif sname == "AG Short":
                     _short_allowed = True
-                elif sname == "DD Exhaustion" and alignment != 0:
-                    _short_allowed = True
+                elif sname == "DD Exhaustion":
+                    if signal.get("direction") not in ("long", "bullish"):
+                        return False, "DD shorts blocked (S145 audit: Apr -$1,096 blowup)"
+                    if alignment != 0:
+                        _short_allowed = True
                 elif sname == "ES Absorption":
                     # ES Abs PURE filter (already enforced above) is exclusive — admit shorts
                     _short_allowed = True

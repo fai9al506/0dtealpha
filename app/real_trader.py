@@ -2689,7 +2689,14 @@ def _get_buying_power(account_id: str) -> float | None:
             b = balances
         else:
             return None
-        bp = b.get("BuyingPower") or b.get("CashBalance")
+        # Bug fix (2026-05-19): `or` short-circuits on BP=0 (falsy), silently falling
+        # back to CashBalance — a *different* number. When TS reports BuyingPower=0
+        # (margin fully consumed but position still open), this returned CashBalance
+        # instead, misrepresenting actual BP and bypassing the margin gate. Use
+        # explicit None check so 0 is treated as authoritative.
+        bp = b.get("BuyingPower")
+        if bp is None:
+            bp = b.get("CashBalance")
         # Diagnostic dump: which margin rate is TS applying right now?
         # MES intraday ~$265, overnight ~$2,499. This tells us the truth on every BP check.
         detail = b.get("BalanceDetail", {}) or {}

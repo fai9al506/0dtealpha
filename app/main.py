@@ -4229,9 +4229,17 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         # Mechanism: V13 blocked 61 align in {-1,1,2} trades that were actually winners (+$992),
         # and admitted 49 align=3 + bad-paradigm trades that lost (-$801).
         if setup_name == "Skew Charm":
-            _vc, _vp = _v13_vanna_features()
-            if _vc == 'A' and _vp == 'B':
-                return False  # V13 vanna: cliff ABOVE + peak BELOW = 27t, 52% WR, -55 pts
+            # V13.2 (2026-05-19): SC LONG cliff=A peak=B block REMOVED.
+            # Feb-May 2026 re-verification (n=12, all OOS Apr-May):
+            #   mean +7.55 pts, bootstrap 95% CI [+1.07, +13.25] — statistically positive
+            #   (only combo where CI strictly excludes zero). All grades positive,
+            #   both months positive (Apr +14, May +77).
+            # Today's lid=2995 SC LONG A cliff=A peak=B fired and won +11.5 pts portal,
+            # validating the removal. Original Feb-Apr study (27t, -55 pts) appears to be
+            # sample noise or regime artifact — current data is opposite-signed with
+            # statistical confidence.
+            # Sample is still small (n=12); watch for reversion if SC LONG cliff=A peak=B
+            # mean drops below 0 over the next 20 trades.
             if align == 3 and paradigm in ("GEX-LIS", "AG-LIS", "AG-PURE", "BOFA-MESSY"):
                 return False  # V14: 49t, -$801 drag (SIDIAL-EXTREME already blocked above)
             # ── V16 R5 (2026-05-17): SC long GEX-LIS block (all alignments) ──
@@ -4313,12 +4321,20 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         # Combined with GEX+DD magnets: +44 pts incremental on top of V13, mostly from calm regimes.
         _vc, _vp = _v13_vanna_features()
         if _vc is not None:
-            if setup_name == "DD Exhaustion" and _vc == 'A':
-                return False  # 69t, 41% WR, -106 pts
+            # V13.2 (2026-05-19): DD short block narrowed from "cliff=A any peak" to
+            # "cliff=A peak=B only". Feb-May 2026 re-verification:
+            #   cliff=A peak=A: n=35, mean +0.54 pts, CI [-3.86, +4.97] — neutral edge,
+            #     no reason to block (was 18/35 losers vs admits; Apr -43 / May +62 regime split)
+            #   cliff=A peak=B: n=24, mean -3.30 pts, CI [-7.23, +0.87] — confirmed negative
+            #     (both months negative: Apr -61, May -18)
+            # SC SHORT cliff=A peak=B and AG SHORT cliff=B peak=A blocks KEPT for now
+            # (CI crosses zero; small samples). Tasks.md tracking for re-verification.
+            if setup_name == "DD Exhaustion" and _vc == 'A' and _vp == 'B':
+                return False  # 24t, 33% WR, -79 pts (V13.2 narrowed scope)
             if setup_name == "Skew Charm" and _vc == 'A' and _vp == 'B':
-                return False  # 27t, 48% WR, -48 pts
+                return False  # 27t, 48% WR, -48 pts (V13 — SC SHORT still blocked, observe)
             if setup_name == "AG Short" and _vc == 'B' and _vp == 'A':
-                return False  # 20t, 56% WR, -12 pts
+                return False  # 20t, 56% WR, -12 pts (V13 — AG SHORT still blocked, observe)
         if setup_name in ("Skew Charm", "AG Short"):
             return True
         if setup_name == "DD Exhaustion":
@@ -5307,6 +5323,18 @@ def _run_setup_check():
                                                    r.get("greek_alignment", 0), _vix_last, _overvix,
                                                    paradigm=r.get("paradigm"), grade=grade,
                                                    vanna_regime=r.get("vanna_regime"))
+                # Observability fix (2026-05-19): log skip_reason when filter blocks.
+                # Pre-fix: filter-blocked trades had real_trade_skip_reason=NULL — couldn't
+                # tell from DB if vanna/paradigm/grade/align/cap was the cause. Today's 3
+                # missed SC winners (lid 2993/2995/3002, +38.5pt unrealized) had no skip
+                # trail. Now we tag "live_filter_block" — paradigm/grade/cliff/peak/align
+                # are already separate columns so the specific rule is derivable post-hoc.
+                if not _passes_live and _current_setup_log.get(setup_name):
+                    try:
+                        from app import real_trader as _rt_skip
+                        _rt_skip._log_skip_reason(_current_setup_log.get(setup_name), "live_filter_block")
+                    except Exception:
+                        pass  # observability is best-effort, never crash the dispatch
                 # Setup fire notifications disabled — only real_trader sends to Telegram
                 if _passes_live:
                     print(f"[setups] {setup_name} NEW: {grade} — passes live filter (Telegram via real_trader only)", flush=True)

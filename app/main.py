@@ -13357,15 +13357,19 @@ function passesStrategy(l, strat) {
   }
   function v13VannaBlock() {
     // Vanna cliff + peak rules (require vanna_cliff_side; pre-V13 trades have null = skip)
+    // V13.2 (2026-05-19, commit ad45341): SC LONG cliff=A peak=B REMOVED (n=12 CI
+    // strictly positive). DD SHORT narrowed from "cliff=A any peak" to "cliff=A peak=B
+    // only" (peak=A had zero edge, no reason to block). SC SHORT and AG SHORT blocks
+    // KEPT (CI crosses 0 — Tasks S155 observe + revisit 2026-06-15).
     const c = l.vanna_cliff_side, p = l.vanna_peak_side;
     if (c == null) return false;
     if (!isLong) {
-      if (sn === 'DD Exhaustion' && c === 'A') return true;
+      // V13.2: DD short narrowed to cliff=A peak=B only (peak=A admit)
+      if (sn === 'DD Exhaustion' && c === 'A' && p === 'B') return true;
       if (sn === 'Skew Charm' && c === 'A' && p === 'B') return true;
       if (sn === 'AG Short' && c === 'B' && p === 'A') return true;
-    } else {
-      if (sn === 'Skew Charm' && c === 'A' && p === 'B') return true;
     }
+    // V13.2: SC LONG cliff=A peak=B block REMOVED (n=12 mean +7.55, CI [+1.07,+13.25])
     return false;
   }
   function v13DDQualityBlock() {
@@ -18274,15 +18278,17 @@ DASH_HTML_TEMPLATE = """
         return false;
       }
       function _tlV13VannaBlock() {
+        // V13.2 (2026-05-19, commit ad45341): SC LONG cliff=A peak=B REMOVED.
+        // DD SHORT narrowed from "cliff=A any peak" to "cliff=A peak=B only".
+        // SC SHORT + AG SHORT kept (CI crosses 0 — Tasks S155 observe).
         const c = l.vanna_cliff_side, p = l.vanna_peak_side;
         if (c == null) return false;
         if (!isLong) {
-          if (sn === 'DD Exhaustion' && c === 'A') return true;
+          if (sn === 'DD Exhaustion' && c === 'A' && p === 'B') return true;  // V13.2 narrowed
           if (sn === 'Skew Charm' && c === 'A' && p === 'B') return true;
           if (sn === 'AG Short' && c === 'B' && p === 'A') return true;
-        } else {
-          if (sn === 'Skew Charm' && c === 'A' && p === 'B') return true;
         }
+        // V13.2: SC LONG cliff=A peak=B block REMOVED
         return false;
       }
       function _tlV13DDQualityBlock() {

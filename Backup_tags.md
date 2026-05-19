@@ -36,3 +36,4 @@ Full backup tags for the 0DTE Alpha project. Use `git checkout <tag>` to revert 
 | 30 | 2026-03-28 | `stable-20260328-pre-watchdog` | Pre Volland watchdog thread. Rollback if watchdog causes false exits. |
 | 31 | 2026-04-29 17:52 | `stable-20260429-175213` | Pre real-trader skip Telegram alerts + close_trade format fix + V14 SC long alignment rule. |
 | 32 | 2026-05-06 15:22 | `stable-20260506-pre-s86` | Pre S86 4-fix deploy bundle (slippage fix + V14 ES Abs PURE filter + audit-trail fix + ES Abs C6 trail params). Rollback if any of the 4 changes misbehaves post-deploy. |
+| 33 | 2026-05-18 21:00 | `stable-20260518-2100-v16-1-bug-fixes` | After day-long ship: V16.1 DD long align carve-out + 5 critical bug fixes (Bug 1/2/3a/3b/5) + DD dispatch gap closed + VIX Div disabled + GEX Long v3.1/v3.1.1. 8 commits today. Projection: $1,000-1,400/mo at 1 MES. Rollback point if June reveals issues with the new code. |

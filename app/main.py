@@ -5449,6 +5449,10 @@ def _run_setup_check():
                                     setup_name=setup_name, direction=r["direction"],
                                     es_price=es_px, target_pts=_target_dist, stop_pts=stop_dist,
                                     charm_limit_price=None,
+                                    # S149: pass paradigm + alignment for double-up bucket detection
+                                    # (SC long BOFA-PURE align=+1 → 2 MES instead of 1).
+                                    paradigm=r.get("paradigm"),
+                                    greek_alignment=r.get("greek_alignment"),
                                 )
                             elif not es_px:
                                 # S114: ES quote stream stale AND REST fallback returned None.
@@ -6156,6 +6160,9 @@ def _run_absorption_detection(bars: list) -> dict | None:
                             setup_name="ES Absorption", direction=result["direction"],
                             es_price=es_px, target_pts=target_dist, stop_pts=stop_dist,
                             charm_limit_price=None,
+                            # S149: ES Abs is not in the SC long bucket so this is just defensive
+                            paradigm=result.get("paradigm"),
+                            greek_alignment=result.get("greek_alignment"),
                         )
                     except Exception as e:
                         print(f"[real-trader] ES Absorption place error: {e}", flush=True)

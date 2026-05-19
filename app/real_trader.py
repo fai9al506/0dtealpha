@@ -405,11 +405,45 @@ def log_no_es_px_skip(setup_log_id, setup_name: str, direction: str):
         print(f"[real-trader] log_no_es_px_skip alert error: {e}", flush=True)
 
 
+# ── S149 double-up bucket: SC long BOFA-PURE align=+1 → 2x MES ──
+# S20 review hit threshold 2026-05-18: 75t / 73% WR / +$1,833 over Mar-May
+# (Apr 47t/79% +$1,550, May 28t/67% +$284). At 2x MES this bucket alone
+# projects ~$1,833/mo additional at 1 MES base.
+# Risk: cap=3 × 2 MES = 6 MES max long exposure (margin per S141 verified
+# intraday ~$265 × 6 = $1,590 ≈ 53% of $3k acct — safe).
+# Daily loss cap $300 absorbs ~2 losers at 2x.
+# Env flag default ON; flip false to emergency-rollback to 1x without redeploy.
+# Kill switch (manual): if 3 consecutive losses on this bucket, flip env false.
+def _is_double_up_bucket(setup_name: str, direction: str,
+                         paradigm: str | None, align: int | None) -> bool:
+    if os.getenv("SC_BOFA_PURE_DOUBLE_UP_ENABLED", "true").lower() != "true":
+        return False
+    if setup_name != "Skew Charm":
+        return False
+    if direction.lower() not in ("long", "bullish"):
+        return False
+    if paradigm != "BOFA-PURE":
+        return False
+    if align != 1:
+        return False
+    return True
+
+
+def _effective_qty(setup_name: str, direction: str,
+                   paradigm: str | None, align: int | None) -> int:
+    """Returns intended quantity for this trade (1 default, 2 for S149 bucket)."""
+    if _is_double_up_bucket(setup_name, direction, paradigm, align):
+        return 2
+    return QTY
+
+
 # ====== MAIN ENTRY POINT ======
 
 def place_trade(setup_log_id: int, setup_name: str, direction: str,
                 es_price: float, target_pts: float | None, stop_pts: float,
-                charm_limit_price: float | None = None):
+                charm_limit_price: float | None = None,
+                paradigm: str | None = None,
+                greek_alignment: int | None = None):
     """Place 1 MES REAL trade when a setup fires.
 
     Args:
@@ -420,8 +454,14 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         target_pts: distance in points to target (None for trailing setups)
         stop_pts: distance in points to stop
         charm_limit_price: MES limit entry price (charm S/R shorts). None = market order.
+        paradigm: Volland paradigm (passed from main.py dispatch for S149 bucket detection)
+        greek_alignment: -3..+3 alignment (passed from main.py dispatch for S149)
     """
     is_long = direction.lower() in ("long", "bullish")
+
+    # S149: determine effective quantity (1 default, 2 for SC long BOFA-PURE align=+1).
+    # Computed BEFORE all gates so cap/dedup/alerts can reference it consistently.
+    qty = _effective_qty(setup_name, direction, paradigm, greek_alignment)
 
     # Setup filter: only trade Skew Charm + AG Short + VPB-Bull (defense-in-depth, main.py also filters)
     # AG Short added 2026-04-08 — SHORT account only (AG hardcoded direction="short")
@@ -552,7 +592,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     if charm_limit_price is not None and not is_long:
         _place_limit_entry(setup_log_id, setup_name, direction, is_long,
                            account_id, es_price, stop_pts, target_pts,
-                           charm_limit_price)
+                           charm_limit_price, qty=qty)
         return
 
     # BUG 2 FIX (2026-05-18, Option A): VIX Divergence uses STOP-ENTRY confirmation.
@@ -565,19 +605,19 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     if setup_name == "VIX Divergence":
         _place_stop_entry(setup_log_id, setup_name, direction, is_long,
                           account_id, es_price, stop_pts, target_pts,
-                          confirm_offset_pts=1.5, timeout_minutes=30)
+                          confirm_offset_pts=1.5, timeout_minutes=30, qty=qty)
         return
 
     # Standard market entry
     _place_market_entry(setup_log_id, setup_name, direction, is_long,
-                        account_id, es_price, stop_pts, target_pts)
+                        account_id, es_price, stop_pts, target_pts, qty=qty)
 
 
 # ====== ORDER PLACEMENT ======
 
 def _place_stop_entry(setup_log_id, setup_name, direction, is_long,
                       account_id, es_price, stop_pts, target_pts,
-                      confirm_offset_pts=1.5, timeout_minutes=30):
+                      confirm_offset_pts=1.5, timeout_minutes=30, qty: int = 1):
     """Stop-entry confirmation order — only fills if price moves in trade direction.
     Long: BuyStop at es_price + confirm_offset.
     Short: SellStop at es_price - confirm_offset.
@@ -598,14 +638,14 @@ def _place_stop_entry(setup_log_id, setup_name, direction, is_long,
     entry_payload = {
         "AccountID": account_id,
         "Symbol": MES_SYMBOL,
-        "Quantity": str(QTY),
+        "Quantity": str(qty),
         "OrderType": "StopMarket",
         "StopPrice": str(trigger_price),
         "TradeAction": side,
         "TimeInForce": {"Duration": "DAY"},
         "Route": "Intelligent",
     }
-    print(f"[real-trader] PLACING STOP-ENTRY: {setup_name} {side} {QTY} {MES_SYMBOL} "
+    print(f"[real-trader] PLACING STOP-ENTRY: {setup_name} {side} {qty} {MES_SYMBOL} "
           f"@ trigger {trigger_price} (signal ~{es_price:.2f}, "
           f"+/-{confirm_offset_pts}pt confirmation) on {account_id}", flush=True)
     resp = _ts_api("POST", "/orderexecution/orders", entry_payload, account_id)
@@ -613,7 +653,7 @@ def _place_stop_entry(setup_log_id, setup_name, direction, is_long,
     if not ok:
         _alert(f"🚨 FAILED stop-entry for {setup_name}\n"
                f"Account: {account_id}\n"
-               f"Side: {side} {QTY} {MES_SYMBOL} stop-trigger {trigger_price}")
+               f"Side: {side} {qty} {MES_SYMBOL} stop-trigger {trigger_price}")
         return
 
     # Record as pending_stop_entry — poll_order_status will detect fill OR timeout
@@ -645,6 +685,7 @@ def _place_stop_entry(setup_log_id, setup_name, direction, is_long,
         "ts_placed": now.isoformat(),
         "close_reason": None,
         "close_fill_price": None,
+        "quantity": qty,  # S149
     }
     with _lock:
         _active_orders[setup_log_id] = order
@@ -656,9 +697,10 @@ def _place_stop_entry(setup_log_id, setup_name, direction, is_long,
 
 
 def _place_market_entry(setup_log_id, setup_name, direction, is_long,
-                        account_id, es_price, stop_pts, target_pts):
-    """Place market entry + stop (+ optional target) for 1 MES.
+                        account_id, es_price, stop_pts, target_pts, qty: int = 1):
+    """Place market entry + stop (+ optional target).
     When target_pts is None: trail-only mode (Opt2) — no target limit order placed.
+    qty: number of MES contracts (default 1; 2 for S149 SC long BOFA-PURE align=+1 bucket).
     """
     # Final safety check before placing order
     if not _validate_account_direction(account_id, is_long):
@@ -688,12 +730,12 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
     # _atomic_bracket_enabled() comment block above for full context.
     if _atomic_bracket_enabled():
         entry_order = {
-            "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(QTY),
+            "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(qty),
             "OrderType": "Market", "TradeAction": side,
             "TimeInForce": {"Duration": "DAY"}, "Route": "Intelligent",
         }
         stop_order = {
-            "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(QTY),
+            "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(qty),
             "OrderType": "StopMarket", "StopPrice": str(es_stop),
             "TradeAction": exit_side,
             "TimeInForce": {"Duration": "DAY"}, "Route": "Intelligent",
@@ -701,13 +743,13 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
         group_orders = [entry_order, stop_order]
         if not trail_only and es_target is not None:
             group_orders.append({
-                "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(QTY),
+                "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(qty),
                 "OrderType": "Limit", "LimitPrice": str(es_target),
                 "TradeAction": exit_side,
                 "TimeInForce": {"Duration": "DAY"}, "Route": "Intelligent",
             })
         group_payload = {"Type": "NORMAL", "Orders": group_orders}
-        print(f"[real-trader] PLACING ATOMIC: {setup_name} {side} {QTY} {MES_SYMBOL} "
+        print(f"[real-trader] PLACING ATOMIC: {setup_name} {side} {qty} {MES_SYMBOL} "
               f"@ ~{es_price:.2f} stop={es_stop:.2f} target={'trail' if trail_only else f'{es_target:.2f}'} "
               f"on {account_id}", flush=True)
         group_resp = _ts_api("POST", "/orderexecution/ordergroups", group_payload, account_id)
@@ -738,7 +780,7 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
                 _failed_alert_last[alert_key] = now_t
                 _alert(f"🚨 TS REJECTED atomic bracket: {setup_name}\n"
                        f"Account: {account_id}\n"
-                       f"Side: {side} {QTY} {MES_SYMBOL} @ ~{es_price:.2f}\n"
+                       f"Side: {side} {qty} {MES_SYMBOL} @ ~{es_price:.2f}\n"
                        f"TS said: {err_text or '(no error text)'}")
             return
         if stop_oid is None:
@@ -746,7 +788,7 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
             print(f"[real-trader] atomic: entry OK ({entry_oid}) but SL rejected in group; "
                   f"placing standalone SL", flush=True)
             stop_payload = {
-                "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(QTY),
+                "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(qty),
                 "OrderType": "StopMarket", "StopPrice": str(es_stop),
                 "TradeAction": exit_side,
                 "TimeInForce": {"Duration": "DAY"}, "Route": "Intelligent",
@@ -770,19 +812,21 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
             "ts_placed": datetime.utcnow().isoformat(),
             "stop_pts": stop_pts, "target_pts": target_pts,
             "signal_es_price": es_price, "atomic_bracket": True,
+            "quantity": qty,  # S149: stored so downstream poll/update/flatten know the size
         }
         with _lock:
             _active_orders[setup_log_id] = order
         _persist_order(setup_log_id)
         dir_str = "LONG" if is_long else "SHORT"
         tgt_str = "TRAIL-ONLY" if trail_only else f"{es_target:.2f}"
-        print(f"[real-trader] PLACED ATOMIC: {setup_name} {dir_str} {QTY} {MES_SYMBOL} "
+        _q_tag = f" [{qty}x]" if qty != QTY else ""
+        print(f"[real-trader] PLACED ATOMIC: {setup_name} {dir_str} {qty} {MES_SYMBOL} "
               f"@ ~{es_price:.2f} target={tgt_str} stop={es_stop:.2f} "
               f"acct={account_id} ids=entry:{entry_oid}/stop:{stop_oid}/tgt:{t1_oid}",
               flush=True)
         dir_label = "Long" if is_long else "Short"
-        _alert(f"🟢 {setup_name} PLACED [ATOMIC]\n"
-               f"{dir_label} {QTY} MES @ ~{es_price:.2f}\n"
+        _alert(f"🟢 {setup_name} PLACED [ATOMIC]{_q_tag}\n"
+               f"{dir_label} {qty} MES @ ~{es_price:.2f}\n"
                f"Target: {tgt_str} | Stop: {es_stop:.2f}")
         return
     # === END ATOMIC PATH ===
@@ -792,13 +836,13 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
     entry_payload = {
         "AccountID": account_id,
         "Symbol": MES_SYMBOL,
-        "Quantity": str(QTY),
+        "Quantity": str(qty),
         "OrderType": "Market",
         "TradeAction": side,
         "TimeInForce": {"Duration": "DAY"},
         "Route": "Intelligent",
     }
-    print(f"[real-trader] PLACING: {setup_name} {side} {QTY} {MES_SYMBOL} "
+    print(f"[real-trader] PLACING: {setup_name} {side} {qty} {MES_SYMBOL} "
           f"@ ~{es_price:.2f} on {account_id}", flush=True)
     resp = _ts_api("POST", "/orderexecution/orders", entry_payload, account_id)
     ok, entry_oid = _order_ok(resp)
@@ -819,7 +863,7 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
             _failed_alert_last[alert_key] = now_t
             _alert(f"🚨 TS REJECTED entry: {setup_name}\n"
                    f"Account: {account_id}\n"
-                   f"Side: {side} {QTY} {MES_SYMBOL} @ ~{es_price:.2f}\n"
+                   f"Side: {side} {qty} {MES_SYMBOL} @ ~{es_price:.2f}\n"
                    f"TS said: {err_text or '(no error text)'}")
         else:
             print(f"[real-trader] TS reject for {setup_name} on {account_id} — "
@@ -831,7 +875,7 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
     stop_payload = {
         "AccountID": account_id,
         "Symbol": MES_SYMBOL,
-        "Quantity": str(QTY),
+        "Quantity": str(qty),
         "OrderType": "StopMarket",
         "StopPrice": str(es_stop),
         "TradeAction": exit_side,
@@ -845,7 +889,7 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
         _alert(f"🚨 MANUAL INTERVENTION: {setup_name} entry placed "
                f"(id={entry_oid}) but STOP FAILED!\n"
                f"Account: {account_id}\n"
-               f"Side: {side} {QTY} {MES_SYMBOL} @ ~{es_price:.2f} Stop: {es_stop:.2f}")
+               f"Side: {side} {qty} {MES_SYMBOL} @ ~{es_price:.2f} Stop: {es_stop:.2f}")
 
     # 3. Target limit (skip for trail-only / Opt2 — saves margin, lets runners run)
     t1_oid = None
@@ -853,7 +897,7 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
         t1_payload = {
             "AccountID": account_id,
             "Symbol": MES_SYMBOL,
-            "Quantity": str(QTY),
+            "Quantity": str(qty),
             "OrderType": "Limit",
             "LimitPrice": str(es_target),
             "TradeAction": exit_side,
@@ -889,6 +933,7 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
         "stop_pts": stop_pts,
         "target_pts": target_pts,
         "signal_es_price": es_price,
+        "quantity": qty,  # S149: stored so downstream poll/update/flatten know the size
     }
 
     with _lock:
@@ -897,19 +942,20 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
 
     dir_str = "LONG" if is_long else "SHORT"
     tgt_str = "TRAIL-ONLY" if trail_only else f"{es_target:.2f}"
-    print(f"[real-trader] PLACED: {setup_name} {dir_str} {QTY} {MES_SYMBOL} "
+    _q_tag = f" [{qty}x]" if qty != QTY else ""
+    print(f"[real-trader] PLACED: {setup_name} {dir_str} {qty} {MES_SYMBOL} "
           f"@ ~{es_price:.2f} target={tgt_str} stop={es_stop:.2f} "
           f"acct={account_id} ids=entry:{entry_oid}/stop:{stop_oid}/tgt:{t1_oid}",
           flush=True)
     dir_label = "Long" if is_long else "Short"
-    _alert(f"🟢 {setup_name} PLACED\n"
-           f"{dir_label} {QTY} MES @ ~{es_price:.2f}\n"
+    _alert(f"🟢 {setup_name} PLACED{_q_tag}\n"
+           f"{dir_label} {qty} MES @ ~{es_price:.2f}\n"
            f"Target: {tgt_str} | Stop: {es_stop:.2f}")
 
 
 def _place_limit_entry(setup_log_id, setup_name, direction, is_long,
                        account_id, es_price, stop_pts, target_pts,
-                       limit_entry_price):
+                       limit_entry_price, qty: int = 1):
     """Charm S/R: place LIMIT entry only. Stop/target placed after fill (Phase 2)."""
     # Final safety check
     if not _validate_account_direction(account_id, is_long):
@@ -921,21 +967,21 @@ def _place_limit_entry(setup_log_id, setup_name, direction, is_long,
     entry_payload = {
         "AccountID": account_id,
         "Symbol": MES_SYMBOL,
-        "Quantity": str(QTY),
+        "Quantity": str(qty),
         "OrderType": "Limit",
         "LimitPrice": str(limit_price),
         "TradeAction": side,
         "TimeInForce": {"Duration": "DAY"},
         "Route": "Intelligent",
     }
-    print(f"[real-trader] PLACING LIMIT: {setup_name} {side} {QTY} {MES_SYMBOL} "
+    print(f"[real-trader] PLACING LIMIT: {setup_name} {side} {qty} {MES_SYMBOL} "
           f"LIMIT @ {limit_price:.2f} on {account_id}", flush=True)
     resp = _ts_api("POST", "/orderexecution/orders", entry_payload, account_id)
     ok, entry_oid = _order_ok(resp)
     if not ok:
         _alert(f"🚨 FAILED limit entry for {setup_name}\n"
                f"Account: {account_id}\n"
-               f"Side: {side} {QTY} {MES_SYMBOL} LIMIT @ {limit_price:.2f}")
+               f"Side: {side} {qty} {MES_SYMBOL} LIMIT @ {limit_price:.2f}")
         return
 
     order = {
@@ -959,6 +1005,7 @@ def _place_limit_entry(setup_log_id, setup_name, direction, is_long,
         "deferred_stop_pts": stop_pts,
         "deferred_target_pts": target_pts,
         "deferred_es_price": es_price,
+        "quantity": qty,  # S149
     }
 
     with _lock:
@@ -966,12 +1013,13 @@ def _place_limit_entry(setup_log_id, setup_name, direction, is_long,
     _persist_order(setup_log_id)
 
     dir_str = "LONG" if is_long else "SHORT"
-    print(f"[real-trader] LIMIT placed: {setup_name} {dir_str} {QTY} {MES_SYMBOL} "
+    _q_tag = f" [{qty}x]" if qty != QTY else ""
+    print(f"[real-trader] LIMIT placed: {setup_name} {dir_str} {qty} {MES_SYMBOL} "
           f"LIMIT @ {limit_price:.2f} (market was {es_price:.2f}) "
           f"acct={account_id} id={entry_oid}", flush=True)
     dir_label = "Long" if is_long else "Short"
-    _alert(f"🟢 {setup_name} LIMIT entry\n"
-           f"{dir_label} {QTY} MES LIMIT @ {limit_price:.2f}\n"
+    _alert(f"🟢 {setup_name} LIMIT entry{_q_tag}\n"
+           f"{dir_label} {qty} MES LIMIT @ {limit_price:.2f}\n"
            f"[CHARM S/R] Waiting for fill (market @ {es_price:.2f})")
 
 
@@ -983,6 +1031,7 @@ def _place_deferred_protective_orders(lid, order, fill_price):
     stop_pts = order["deferred_stop_pts"]
     target_pts = order.get("deferred_target_pts")
     setup_name = order["setup_name"]
+    qty = order.get("quantity") or QTY  # S149
 
     if is_long:
         es_stop = _round_mes(fill_price - stop_pts)
@@ -1002,7 +1051,7 @@ def _place_deferred_protective_orders(lid, order, fill_price):
     stop_payload = {
         "AccountID": account_id,
         "Symbol": MES_SYMBOL,
-        "Quantity": str(QTY),
+        "Quantity": str(qty),
         "OrderType": "StopMarket",
         "StopPrice": str(es_stop),
         "TradeAction": exit_side,
@@ -1021,7 +1070,7 @@ def _place_deferred_protective_orders(lid, order, fill_price):
     t1_payload = {
         "AccountID": account_id,
         "Symbol": MES_SYMBOL,
-        "Quantity": str(QTY),
+        "Quantity": str(qty),
         "OrderType": "Limit",
         "LimitPrice": str(es_target),
         "TradeAction": exit_side,
@@ -1178,7 +1227,7 @@ def update_stop(setup_log_id: int, new_stop_price: float):
     replace_payload = {
         "AccountID": account_id,
         "Symbol": MES_SYMBOL,
-        "Quantity": str(QTY),
+        "Quantity": str(order.get("quantity") or QTY),  # S149
         "OrderType": "StopMarket",
         "StopPrice": str(new_stop_price),
         "TimeInForce": {"Duration": "DAY"},
@@ -1274,19 +1323,20 @@ def close_trade(setup_log_id: int, result_type: str):
         dir_label = "Long" if is_long else "Short"
         close_fp = order.get("close_fill_price")
         entry_fp = order.get("fill_price")
+        _qc = order.get("quantity") or QTY  # S149
         pnl = None
         if close_fp is not None and entry_fp is not None:
             try:
                 if is_long:
-                    pnl = (float(close_fp) - float(entry_fp)) * MES_POINT_VALUE * QTY
+                    pnl = (float(close_fp) - float(entry_fp)) * MES_POINT_VALUE * _qc
                 else:
-                    pnl = (float(entry_fp) - float(close_fp)) * MES_POINT_VALUE * QTY
+                    pnl = (float(entry_fp) - float(close_fp)) * MES_POINT_VALUE * _qc
             except (TypeError, ValueError):
                 pnl = None
         pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
         if close_fp is not None:
             _alert(f"🏁 {setup_name} CLOSED: {result_type}\n"
-                   f"{dir_label} {QTY} MES @ {close_fp}\n"
+                   f"{dir_label} {_qc} MES @ {close_fp}\n"
                    f"P&L: {pnl_str}"
                    f"{_day_line(account_id)}")
         else:
@@ -1450,7 +1500,9 @@ def _flatten_position(order):
                    f"MANUAL REVIEW NEEDED")
             return
 
-        close_qty = min(QTY, broker_pos["qty"])
+        # S149: respect tracked order qty (could be 2 for SC long BOFA-PURE align=+1)
+        _intended_qty = order.get("quantity") or QTY
+        close_qty = min(_intended_qty, broker_pos["qty"])
         close_payload = {
             "AccountID": account_id,
             "Symbol": MES_SYMBOL,
@@ -1711,8 +1763,9 @@ def _check_order_fills(lid, order, broker_orders):
             print(f"[real-trader] STOP-ENTRY CONFIRMED: {order['setup_name']} "
                   f"@ {fill_price} (trigger {order.get('trigger_price')}) acct={account_id}",
                   flush=True)
+            qty_se = order.get("quantity") or QTY  # S149
             _alert(f"🟢 {order['setup_name']} STOP-ENTRY CONFIRMED\n"
-                   f"{order['direction'].upper()} {QTY} MES @ {fill_price}\n"
+                   f"{order['direction'].upper()} {qty_se} MES @ {fill_price}\n"
                    f"Now placing protective SL...")
             # Place protective SL only (VIX Div is trail-only — no target limit order).
             # AUDIT FIX (2026-05-18): can't reuse _place_deferred_protective_orders because
@@ -1723,7 +1776,7 @@ def _check_order_fills(lid, order, broker_orders):
             stop_pts_se = order.get("stop_pts") or 8.0
             es_stop_se = _round_mes((fill_price - stop_pts_se) if is_long_se else (fill_price + stop_pts_se))
             stop_payload = {
-                "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(QTY),
+                "AccountID": account_id, "Symbol": MES_SYMBOL, "Quantity": str(qty_se),
                 "OrderType": "StopMarket", "StopPrice": str(es_stop_se),
                 "TradeAction": exit_side_se,
                 "TimeInForce": {"Duration": "DAY"}, "Route": "Intelligent",
@@ -1786,11 +1839,12 @@ def _check_order_fills(lid, order, broker_orders):
                 order["status"] = "filled"
                 order["fill_price"] = fill_price
             changed = True
+            _qf = order.get("quantity") or QTY  # S149
             print(f"[real-trader] FILLED: {order['setup_name']} "
-                  f"{QTY} {MES_SYMBOL} @ {fill_price} acct={account_id}", flush=True)
+                  f"{_qf} {MES_SYMBOL} @ {fill_price} acct={account_id}", flush=True)
             dir_label = "Long" if order["direction"].lower() in ("long", "bullish") else "Short"
             _alert(f"🟢 {order['setup_name']} FILLED\n"
-                   f"{dir_label} {QTY} MES @ {fill_price}\n"
+                   f"{dir_label} {_qf} MES @ {fill_price}\n"
                    f"Target: {order.get('target_price', 0):.2f} | "
                    f"Stop: {order['current_stop']:.2f}")
 
@@ -1846,10 +1900,11 @@ def _check_order_fills(lid, order, broker_orders):
                                 # extra risk). Trader needs to know so they can
                                 # manually flatten or adjust if desired.
                                 extra_risk = abs(post_stop - desired_stop)
+                                _qrf = order.get("quantity") or QTY  # S149
                                 _alert(
                                     f"🚨 {order['setup_name']} REALIGN FAILED id={lid}\n"
                                     f"Stop still at {post_stop:.2f} (wanted {desired_stop:.2f})\n"
-                                    f"Extra risk: {extra_risk:.1f} pts (~${extra_risk * MES_POINT_VALUE * QTY:.2f})\n"
+                                    f"Extra risk: {extra_risk:.1f} pts (~${extra_risk * MES_POINT_VALUE * _qrf:.2f})\n"
                                     f"Position open — manual review if needed"
                                 )
                                 print(f"[real-trader] post-fill realign PERSISTENT FAILURE id={lid}: "
@@ -1865,7 +1920,7 @@ def _check_order_fills(lid, order, broker_orders):
                         replace_payload = {
                             "AccountID": account_id,
                             "Symbol": MES_SYMBOL,
-                            "Quantity": str(QTY),
+                            "Quantity": str(order.get("quantity") or QTY),  # S149
                             "OrderType": "Limit",
                             "LimitPrice": str(desired_target),
                             "TimeInForce": {"Duration": "DAY"},
@@ -1931,18 +1986,19 @@ def _check_order_fills(lid, order, broker_orders):
                     _cancel_order_verified(order["stop_order_id"], account_id,
                                            f"stop after target fill ({order['setup_name']})")
                 pnl = None
+                _qf = order.get("quantity") or QTY  # S149
                 if tgt_fp and order.get("fill_price"):
                     is_long = order["direction"].lower() in ("long", "bullish")
                     if is_long:
-                        pnl = (tgt_fp - order["fill_price"]) * MES_POINT_VALUE * QTY
+                        pnl = (tgt_fp - order["fill_price"]) * MES_POINT_VALUE * _qf
                     else:
-                        pnl = (order["fill_price"] - tgt_fp) * MES_POINT_VALUE * QTY
+                        pnl = (order["fill_price"] - tgt_fp) * MES_POINT_VALUE * _qf
                 pnl_str = f"${pnl:.2f}" if pnl is not None else "n/a"
                 dir_label = "Long" if order["direction"].lower() in ("long", "bullish") else "Short"
                 print(f"[real-trader] TARGET filled: {order['setup_name']} "
                       f"@ {tgt_fp} pnl={pnl_str} acct={account_id}", flush=True)
                 _alert(f"🏁 {order['setup_name']} TARGET FILLED\n"
-                       f"{dir_label} {QTY} MES @ {tgt_fp}\n"
+                       f"{dir_label} {_qf} MES @ {tgt_fp}\n"
                        f"P&L: {pnl_str}"
                        f"{_day_line(account_id)}")
 
@@ -1978,18 +2034,19 @@ def _check_order_fills(lid, order, broker_orders):
                     _cancel_order_verified(order["target_order_id"], account_id,
                                            f"target after stop fill ({order['setup_name']})")
                 pnl = None
+                _qs = order.get("quantity") or QTY  # S149
                 if stop_fp and order.get("fill_price"):
                     is_long = order["direction"].lower() in ("long", "bullish")
                     if is_long:
-                        pnl = (stop_fp - order["fill_price"]) * MES_POINT_VALUE * QTY
+                        pnl = (stop_fp - order["fill_price"]) * MES_POINT_VALUE * _qs
                     else:
-                        pnl = (order["fill_price"] - stop_fp) * MES_POINT_VALUE * QTY
+                        pnl = (order["fill_price"] - stop_fp) * MES_POINT_VALUE * _qs
                 pnl_str = f"${pnl:.2f}" if pnl is not None else "n/a"
                 dir_label = "Long" if order["direction"].lower() in ("long", "bullish") else "Short"
                 print(f"[real-trader] STOP filled: {order['setup_name']} "
                       f"@ {stop_fp} pnl={pnl_str} acct={account_id}", flush=True)
                 _alert(f"🏁 {order['setup_name']} STOP FILLED\n"
-                       f"{dir_label} {QTY} MES @ {stop_fp}\n"
+                       f"{dir_label} {_qs} MES @ {stop_fp}\n"
                        f"P&L: {pnl_str}"
                        f"{_day_line(account_id)}")
 
@@ -2154,7 +2211,9 @@ def _backfill_ghost_fill(order: dict) -> tuple[str, float] | None:
                     legs = o.get("Legs", [{}])[0]
                     if legs.get("BuyOrSell") != close_side:
                         continue
-                    if str(legs.get("QuantityOrdered", "")) != str(QTY):
+                    # S149: accept either 1 or the order's tracked qty (could be 2)
+                    _qexp = str(order.get("quantity") or QTY)
+                    if str(legs.get("QuantityOrdered", "")) != _qexp:
                         continue
                     # Parse close timestamp
                     closed_str = o.get("ClosedDateTime") or o.get("OpenedDateTime", "")
@@ -2408,24 +2467,25 @@ def flatten_all_eod():
 
             # Compute P&L and send Telegram per trade
             entry_fp = order.get("fill_price")
+            _qe = order.get("quantity") or QTY  # S149
             pnl = None
             if close_fp is not None and entry_fp is not None:
                 is_long = order["direction"].lower() in ("long", "bullish")
                 if is_long:
-                    pnl = (close_fp - entry_fp) * MES_POINT_VALUE * QTY
+                    pnl = (close_fp - entry_fp) * MES_POINT_VALUE * _qe
                 else:
-                    pnl = (entry_fp - close_fp) * MES_POINT_VALUE * QTY
+                    pnl = (entry_fp - close_fp) * MES_POINT_VALUE * _qe
             pnl_str = f"${pnl:.2f}" if pnl is not None else "n/a"
             dir_label = "Long" if order["direction"].lower() in ("long", "bullish") else "Short"
             if close_fp is not None:
                 _alert(f"🏁 {order['setup_name']} EOD FLATTEN\n"
-                       f"{dir_label} {QTY} MES @ {close_fp}\n"
+                       f"{dir_label} {_qe} MES @ {close_fp}\n"
                        f"P&L: {pnl_str}"
                        f"{_day_line(acct_id)}")
             else:
                 # Fallback if we couldn't retrieve fill price
                 _alert(f"🏁 {order['setup_name']} EOD FLATTEN\n"
-                       f"{dir_label} {QTY} MES\n"
+                       f"{dir_label} {_qe} MES\n"
                        f"P&L: n/a (fill price unavailable)"
                        f"{_day_line(acct_id)}")
             print(f"[real-trader] EOD marked closed: {order['setup_name']} id={lid} "

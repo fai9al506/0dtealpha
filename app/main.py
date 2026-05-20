@@ -5428,6 +5428,15 @@ def _run_setup_check():
                     #   _passes_live_filter still gates direction/quality (DD longs align>=0 per V16.1).
                     #   DD SHORTS explicitly BLOCKED here per S145 cross-regime audit (Apr -$1,096 blowup).
                     _dd_short_block = (setup_name == "DD Exhaustion" and r["direction"] not in ("long", "bullish"))
+                    # S165 (2026-05-20): _dd_short_block was previously silent. If a DD
+                    # short passes _passes_live_filter (rare — usually live filter catches
+                    # them at v13DDQualityBlock) and hits this defense, write skip_reason.
+                    if _dd_short_block and not _skip_auto_trade and _current_setup_log.get(setup_name):
+                        try:
+                            from app import real_trader as _rt_skip
+                            _rt_skip._log_skip_reason(_current_setup_log.get(setup_name), "dd_short_block")
+                        except Exception:
+                            pass
                     if not _skip_auto_trade and not _dd_short_block and setup_name in ("Skew Charm", "AG Short", "Vanna Pivot Bounce", "VIX Divergence", "DD Exhaustion"):
                         try:
                             from app import real_trader
@@ -6123,8 +6132,27 @@ def _run_absorption_detection(bars: list) -> dict | None:
         # _abs_passes_live computed at line 5706 above. Replaces old V10/V9 logic.
         if result.get("log_only"):
             print(f"[auto-trader] SKIPPED ES Absorption: log-only pattern ({result.get('pattern')})", flush=True)
+            # S165 (2026-05-20): silent skip telemetry — log so DB audit reflects reality
+            _abs_sid = _current_setup_log.get("ES Absorption")
+            if _abs_sid:
+                try:
+                    from app import real_trader as _rt_skip
+                    _rt_skip._log_skip_reason(_abs_sid, "log_only_pattern")
+                except Exception:
+                    pass
         elif not _abs_passes_live:
             print(f"[auto-trader] SKIPPED ES Absorption: PURE filter blocked (grade={result.get('grade')} para={result.get('paradigm')} align={result.get('greek_alignment',0):+d})", flush=True)
+            # S165 (2026-05-20): ES Absorption had its own dispatch path missing the
+            # S114 skip_reason logging that's already on main.py:5335 for the regular
+            # setup loop. Today's 8 silent-skip whitelist signals (lid 3041/3047/3050/
+            # 3056/3065/3068/3072/3077) were all ES Abs blocked here without a DB trail.
+            _abs_sid = _current_setup_log.get("ES Absorption")
+            if _abs_sid:
+                try:
+                    from app import real_trader as _rt_skip
+                    _rt_skip._log_skip_reason(_abs_sid, "live_filter_block")
+                except Exception:
+                    pass
         else:
             try:
                 from app import auto_trader
@@ -13476,6 +13504,11 @@ function passesStrategy(l, strat) {
     const _v16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
                                   'ES Absorption', 'DD Exhaustion']);
     if (!_v16Allowed.has(sn)) return false;
+    // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT via main.py:5430
+    // _dd_short_block. V16 portal must mirror — previously fell through v13DDQualityBlock
+    // which only blocked some shorts (grade A+/C or BOFA-PURE), letting grade-B DD shorts
+    // on non-BOFA-PURE paradigms appear as "V16 passed" when TSRT was rejecting them.
+    if (sn === 'DD Exhaustion' && !isLong) return false;
     if (v16DDAdmit()) return true;  // DD long admit (new setup type)
     // V14 base filter:
     if (!gapFilter(l.ts)) return false;
@@ -18435,6 +18468,8 @@ DASH_HTML_TEMPLATE = """
         const _tlV16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
                                         'ES Absorption', 'DD Exhaustion']);
         if (!_tlV16Allowed.has(sn)) return false;
+        // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT — mirror it here.
+        if (sn === 'DD Exhaustion' && !isLong) return false;
         function _tlIsMonthlyOpex() {
           if (!l.ts) return false;
           const d = new Date(l.ts);

@@ -2887,33 +2887,30 @@ def _get_broker_position(account_id: str) -> dict | None:
 
 
 def _get_daily_realized_loss() -> float:
-    """Sum realized losses for today from setup_log outcomes for real trades.
-    Uses setup_log.outcome_pnl × MES_POINT_VALUE for closed real trades.
-    Returns positive $ amount of losses only."""
-    if not _engine:
-        return 0.0
+    """Return today's NET realized loss across both whitelisted accounts, in $.
+    Positive return = net down by that much. Zero = flat or net green.
+
+    S161 fix (2026-05-20): Previous implementation summed setup_log.outcome_pnl
+    where pnl<0 — a gross-loss calculation using SPX-side outcome labels rather
+    than broker reality. That tripped the breaker on a +$388 GREEN day because
+    6 SPX-labelled "losses" totalled -60pt × $5/MES = exactly the $300 limit,
+    even though 3 of them closed favorably on broker due to SPX↔MES divergence.
+
+    New behavior reads TS BalanceDetail.RealizedProfitLoss directly (same field
+    used by `_day_line()` for Telegram alerts), sums across both ACCOUNT_WHITELIST
+    accounts, and returns the absolute net loss only (or 0 if net flat/green).
+    Breaker now trips only when REAL BROKER MONEY is down >= DAILY_LOSS_LIMIT."""
     try:
-        from sqlalchemy import text
-        today = datetime.now(NY).strftime("%Y-%m-%d")
-        with _engine.begin() as conn:
-            # Find today's real trades via real_trade_orders table
-            rows = conn.execute(text(
-                f"SELECT setup_log_id, state FROM {DB_TABLE} "
-                f"WHERE state->>'status' = 'closed'"
-            )).fetchall()
-            total_loss = 0.0
-            for row in rows:
-                log_id = row[0]
-                state = row[1] if isinstance(row[1], dict) else {}
-                # Check setup_log for outcome_pnl
-                pnl_row = conn.execute(text(
-                    "SELECT outcome_pnl FROM setup_log "
-                    "WHERE id = :lid AND ts::date = :today AND outcome_pnl < 0"
-                ), {"lid": log_id, "today": today}).fetchone()
-                if pnl_row:
-                    loss_pts = abs(float(pnl_row[0]))
-                    total_loss += loss_pts * MES_POINT_VALUE * QTY
-            return total_loss
+        net = 0.0
+        got_any = False
+        for acct in ACCOUNT_WHITELIST:
+            v = _get_daily_realized_pnl(acct)
+            if v is not None:
+                net += v
+                got_any = True
+        if not got_any:
+            return 0.0
+        return max(0.0, -net)  # positive value when net loss; 0 when flat/green
     except Exception as e:
         print(f"[real-trader] daily loss query error: {e}", flush=True)
         return 0.0

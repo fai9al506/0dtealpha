@@ -19072,22 +19072,16 @@ DASH_HTML_TEMPLATE = """
         if (_pnlVal != null) { pnl = (_pnlVal >= 0 ? '+' : '') + _pnlVal.toFixed(1); pnlC = _pnlVal >= 0 ? '#22c55e' : '#ef4444'; }
         else if (o.timeout_pnl != null) { pnl = (o.timeout_pnl >= 0 ? '+' : '') + o.timeout_pnl.toFixed(1); pnlC = o.timeout_pnl >= 0 ? '#22c55e' : '#ef4444'; }
 
-        // S55 MES-sim badge (2026-05-13): if mes_sim_outcome_pnl is set,
-        // append a small ✦ marker after the chain-sim P&L. Tooltip explains
-        // it's the MES-simulated outcome (matches real broker truth ±2.35pt
-        // per S55 prototype validated on 80 V14 trades Apr 15-May 12).
-        // Only shown for V14-whitelist setups; absent until DB migration runs.
+        // S55 MES-sim badge REMOVED 2026-05-20 EOD per user request.
+        // Reason: today's data (4 placed trades) showed MES-sim mean error 7.5pt
+        // vs chain-sim 3.79pt — almost 2x WORSE than chain-sim. The S55 backtest
+        // claim of "2.85x more honest" on 80 V14 trades Apr 15-May 12 appears
+        // overfit and/or the simulator has drifted. User feedback: "it was never
+        // honest" — removing display per their lived experience.
+        // Underlying mes_sim_outcome_pnl/_result/_max_fav DB writes in
+        // _check_setup_outcomes() retained for future re-validation; badge can
+        // be re-enabled here if the simulator is fixed/recalibrated.
         let mesBadge = '';
-        if (l.mes_sim_outcome_pnl != null) {
-          const _msPnl = Number(l.mes_sim_outcome_pnl);
-          const _msC = _msPnl >= 0 ? '#22c55e' : '#ef4444';
-          const _msStr = (_msPnl >= 0 ? '+' : '') + _msPnl.toFixed(1);
-          const _msRes = l.mes_sim_outcome_result || '?';
-          const _msMfe = (l.mes_sim_max_fav != null) ? Number(l.mes_sim_max_fav).toFixed(1) : '–';
-          const _tip = 'MES-sim (S55 — matches real broker ±2.35pt): '
-            + _msRes + ' ' + _msStr + 'pt · MFE ' + _msMfe + 'pt · vps_es_range_bars 5pt path';
-          mesBadge = ' <span style="color:'+_msC+';opacity:0.85;font-size:9px" title="'+_tip+'">✦' + _msStr + '</span>';
-        }
 
         // Duration in minutes
         const em = l.outcome_elapsed_min || (o && o.elapsed_min);

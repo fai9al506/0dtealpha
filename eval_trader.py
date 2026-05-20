@@ -52,7 +52,11 @@ def _init_log_file():
 # ─── Constants ────────────────────────────────────────────────────────────────
 MES_POINT_VALUE = 5.0   # $5 per point per MES contract
 MES_TICK_SIZE = 0.25     # MES minimum price increment
-MAX_SIGNAL_AGE_S = 120   # Skip signals older than 2 min (prevents stale entries after restart)
+MAX_SIGNAL_AGE_S = 300   # Skip signals older than 5 min. Bumped from 120s (Phase 1 2026-05-11):
+                         # log analysis showed 12-15 V14-eligible signals in 120-300s window
+                         # skipped during transient API hiccups. 5 min keeps market context fresh
+                         # while recovering legitimate signals delayed by Railway 502s / network blips.
+                         # Overnight gaps (1000s+) still correctly skipped.
 TRADE_DEDUP_WINDOW = 120  # Block duplicate setup+direction within 2 min (deploy overlap guard)
 _trade_dedup: dict[tuple[str, str], float] = {}  # (setup_name, direction) → timestamp
 _TIGHTEN_GAP_PTS = 5.0   # Low-conviction opposing signal: tighten SL to this many pts from spot
@@ -690,6 +694,11 @@ class ComplianceGate:
         self.last_reset_date = None
         self._first_spot_today = None  # Track first spot for momentum filter
         self.tick_trade_done = False    # E2T day-count tick trade placed today
+        # S151 smart-ban: after 2 consecutive stops on same (setup,direction),
+        # ban that combo for the day. Lifted on any same-direction non-stop.
+        # Backtest: -$394 -> -$250 on 7d (+$144 saved on May-18 SC short cluster).
+        self.consec_stops_by_sd = {}      # "SetupName|dir" -> consec count
+        self.banned_setup_dirs = set()    # banned "SetupName|dir" combos
         self._load()
 
     def _load(self):
@@ -704,6 +713,9 @@ class ComplianceGate:
                 self.trade_days = set(s.get("trade_days", []))
                 self.last_reset_date = s.get("last_reset_date")
                 self.cfg["e2t_peak_balance"] = s.get("peak_balance", self.cfg["e2t_peak_balance"])
+                # S151 smart-ban state
+                self.consec_stops_by_sd = dict(s.get("consec_stops_by_sd", {}))
+                self.banned_setup_dirs = set(s.get("banned_setup_dirs", []))
                 comm_rate = self.cfg.get("commission_per_contract", 0)
                 log.info(f"State loaded: daily=${self.daily_pnl:+.0f} (comm=${self.daily_commissions:.0f}) "
                          f"total=${self.total_pnl:+.0f} "
@@ -722,6 +734,8 @@ class ComplianceGate:
             "trade_days": list(self.trade_days),
             "last_reset_date": self.last_reset_date,
             "peak_balance": self.cfg["e2t_peak_balance"],
+            "consec_stops_by_sd": self.consec_stops_by_sd,
+            "banned_setup_dirs": list(self.banned_setup_dirs),
         }
         STATE_FILE.write_text(json.dumps(s, indent=2))
 
@@ -744,6 +758,9 @@ class ComplianceGate:
         self.daily_commissions = 0.0
         self._first_spot_today = None
         self.tick_trade_done = False
+        # S151 smart-ban: reset per-day state
+        self.consec_stops_by_sd = {}
+        self.banned_setup_dirs = set()
         self.last_reset_date = today
         self.save()
         log.info(f"Daily reset: {today}")
@@ -761,6 +778,14 @@ class ComplianceGate:
         rules = cfg["setup_rules"].get(signal["setup_name"], {})
         if not rules.get("enabled", True):
             return False, f"{signal['setup_name']} disabled"
+
+        # S151 smart-ban: same (setup,direction) banned for the day after 2 consec stops
+        # (lifted automatically on any same-direction non-stop in update_streak)
+        _sname = signal.get("setup_name", "")
+        _dk = "long" if signal.get("direction") in ("long", "bullish") else "short"
+        _sdk = f"{_sname}|{_dk}"
+        if _sdk in self.banned_setup_dirs:
+            return False, f"S151 smart-ban: {_sname} {_dk} suspended (2 consec stops today)"
 
         # VIX Divergence: longs only, drop grade C (shipped 2026-05-03)
         if signal["setup_name"] == "VIX Divergence":
@@ -927,6 +952,42 @@ class ComplianceGate:
         log.info(f"  Daily: ${self.daily_pnl:+.0f} (comm=${self.daily_commissions:.0f}) | "
                  f"Total: ${self.total_pnl:+.0f} | Balance: ${current_bal:,.0f} | "
                  f"Losses today: {self.losses_today}")
+        self.save()
+
+    def update_streak(self, setup_name: str, direction: str, pnl_pts: float):
+        """S151 smart-ban: track consec same-(setup,dir) stops + lift on dir-win.
+
+        Rule:
+          - Stop (pnl_pts <= -5): increment consec for "Setup|dir". If >= 2, ban.
+          - Non-stop in direction X: reset that setup-dir counter; LIFT all bans
+            in same direction X (a win in same dir proves regime is workable).
+
+        Saves automatically. Safe to call with direction=None (no-op).
+        Skips when pnl_pts == 0 (treated as unknown/neutral, avoids false ban-lifts).
+        """
+        if not setup_name or not direction:
+            return
+        if pnl_pts == 0.0:
+            return  # unknown outcome — do not update streak state
+        dk = "long" if direction in ("long", "bullish") else "short"
+        sdk = f"{setup_name}|{dk}"
+        if pnl_pts <= -5:
+            # STOP outcome — increment consec, ban if threshold hit
+            cnt = self.consec_stops_by_sd.get(sdk, 0) + 1
+            self.consec_stops_by_sd[sdk] = cnt
+            if cnt >= 2 and sdk not in self.banned_setup_dirs:
+                self.banned_setup_dirs.add(sdk)
+                log.warning(f"  [S151 SMART-BAN] {sdk} suspended for the day "
+                            f"({cnt} consec stops). Lifts on any {dk} non-stop.")
+        else:
+            # Non-stop — reset same-setup-dir counter
+            self.consec_stops_by_sd[sdk] = 0
+            # Lift bans in same direction (any setup)
+            to_lift = [b for b in self.banned_setup_dirs if b.endswith(f"|{dk}")]
+            for b in to_lift:
+                self.banned_setup_dirs.discard(b)
+                self.consec_stops_by_sd[b] = 0
+                log.info(f"  [S151 SMART-BAN] Lifted: {b} (same-dir win on {sdk})")
         self.save()
 
 
@@ -1254,6 +1315,425 @@ def read_nt8_position(nt8_incoming_folder: str) -> dict | None:
 #  POSITION TRACKER
 # ═════════════════════════════════════════════════════════════════════════════
 
+class StackingTracker:
+    """Phase 2: multi-position tracker with same-direction stacking.
+
+    Used when cfg["stack_enabled"] is true (SIM account). Each open trade is an
+    independent 'slot' with its own entry, stop, qty, trail. Same-direction
+    signals stack up to stack_cap_contracts (subject to cluster_floor_dollars).
+    Opposite-direction signals close ALL slots and open ONE new opposite.
+
+    Backward-compat: exposes .position (returns first slot or None) and .is_open
+    properties so main-loop code that doesn't know about stacking still works.
+
+    Crash recovery is best-effort: slots are persisted to POSITION_FILE as a list.
+    Per-slot NT8 reconcile is NOT implemented in v1 — manual NT8 cleanup may be
+    needed after crashes during multi-slot states.
+    """
+
+    def __init__(self, nt8: NT8Bridge, compliance: ComplianceGate, cfg: dict,
+                 quote_poller: TSQuotePoller | None = None):
+        self.nt8 = nt8
+        self.compliance = compliance
+        self.cfg = cfg
+        self.quote_poller = quote_poller
+        self.slots: list[dict] = []
+        self.stack_cap = int(cfg.get("stack_cap_contracts", 12))
+        self.cluster_floor = float(cfg.get("cluster_floor_dollars", -200))
+        self._stale_flatten = False
+        self._stale_pending_cancel_oid = None
+        self._load()
+        log.info(f"[STACK] Initialized: cap={self.stack_cap} contracts, "
+                 f"cluster_floor=${self.cluster_floor:+.0f}, slots={len(self.slots)}")
+
+    # ── Backward-compat properties ───────────────────────────────────────
+    @property
+    def position(self):
+        return self.slots[0] if self.slots else None
+
+    @position.setter
+    def position(self, v):
+        # main.py occasionally sets tracker.position = {...} for the tick trade.
+        # Support that by replacing slot[0] or appending.
+        if v is None:
+            self.slots = []
+        elif self.slots:
+            self.slots[0] = v
+        else:
+            self.slots = [v]
+
+    @property
+    def is_open(self):
+        return len(self.slots) > 0
+
+    # ── State persistence ────────────────────────────────────────────────
+    def _load(self):
+        if not POSITION_FILE.exists():
+            return
+        try:
+            raw = POSITION_FILE.read_text().strip()
+            if not raw or raw == "{}":
+                return
+            data = json.loads(raw)
+            if isinstance(data, list):
+                self.slots = data
+            elif isinstance(data, dict) and data:
+                self.slots = [data]  # migrate single-position state
+        except Exception as e:
+            log.warning(f"[STACK] load error: {e}")
+            self.slots = []
+            return
+
+        today_et = datetime.now(ET).date()
+        for s in self.slots:
+            ts = s.get("ts", "")
+            if ts:
+                try:
+                    dt = datetime.fromisoformat(ts)
+                    if dt.date() < today_et:
+                        log.warning(f"[STACK] Stale slot from {dt.date()}: "
+                                    f"{s.get('setup_name')} {s.get('direction')} — will auto-flatten")
+                        self._stale_flatten = True
+                except Exception:
+                    pass
+        self.compliance.has_open_position = len(self.slots) > 0
+        if self.slots:
+            log.info(f"[STACK] Restored {len(self.slots)} slot(s): "
+                     f"{', '.join(s.get('setup_name', '?') + ' ' + s.get('direction', '?') for s in self.slots)}")
+
+    def _save(self):
+        if self.slots:
+            POSITION_FILE.write_text(json.dumps(self.slots, indent=2))
+        elif POSITION_FILE.exists():
+            POSITION_FILE.write_text("[]")
+        self.compliance.has_open_position = len(self.slots) > 0
+
+    # ── Helpers ──────────────────────────────────────────────────────────
+    def _total_contracts(self) -> int:
+        return sum(int(s.get("qty", 0)) for s in self.slots)
+
+    def _direction(self) -> str | None:
+        return self.slots[0]["direction"] if self.slots else None
+
+    def is_opposite(self, signal: dict) -> bool:
+        if not self.slots:
+            return False
+        pos_long = self._direction() in ("long", "bullish")
+        sig_long = signal["direction"] in ("long", "bullish")
+        return pos_long != sig_long
+
+    def _cluster_unrealized_dollars(self, es_price: float | None) -> float:
+        if not self.slots or not es_price:
+            return 0.0
+        total = 0.0
+        for s in self.slots:
+            entry = s.get("es_entry_price") or s.get("entry_price")
+            if not entry:
+                continue
+            qty = int(s.get("qty", 0))
+            is_long = s["direction"] in ("long", "bullish")
+            pnl_pts = (es_price - entry) if is_long else (entry - es_price)
+            total += pnl_pts * qty * MES_POINT_VALUE
+        return total
+
+    # ── Decision: open / stack / reverse / block ────────────────────────
+    def open_trade(self, signal: dict):
+        es_price = signal.get("es_price")
+        if es_price is not None:
+            try:
+                es_price = float(es_price)
+            except Exception:
+                es_price = None
+
+        # 1. No open slots → open fresh
+        if not self.slots:
+            return self._open_slot(signal)
+
+        # 2. Opposite direction → close all + open one new opposite
+        if self.is_opposite(signal):
+            log.info(f"[STACK] OPPOSITE — closing {len(self.slots)} slot(s) and opening new {signal['direction'].upper()}")
+            self._close_all("reversal", es_price)
+            return self._open_slot(signal)
+
+        # 3. Same direction → stack subject to caps
+        name = signal["setup_name"]
+        rules = self.cfg["setup_rules"].get(name)
+        if not rules:
+            log.error(f"[STACK] Unknown setup {name}")
+            return
+        stop_pts = rules["stop"]
+        max_sl = self.cfg.get("max_stop_loss_pts")
+        if max_sl and stop_pts > max_sl:
+            stop_pts = max_sl
+        new_qty = _calc_qty(self.cfg, stop_pts)
+
+        current = self._total_contracts()
+        if current + new_qty > self.stack_cap:
+            log.info(f"  [STACK] BLOCKED: would exceed cap (cap={self.stack_cap}, "
+                     f"current={current}, +{new_qty})")
+            return
+
+        unreal = self._cluster_unrealized_dollars(es_price)
+        if unreal < self.cluster_floor:
+            log.info(f"  [STACK] BLOCKED: cluster unrealized ${unreal:+.0f} below floor ${self.cluster_floor:+.0f}")
+            return
+
+        log.info(f"  [STACK] Adding slot #{len(self.slots)+1} same-dir "
+                 f"(unrealized ${unreal:+.0f}, contracts {current}→{current+new_qty})")
+        return self._open_slot(signal)
+
+    def _open_slot(self, signal: dict):
+        """Place market entry + stop (+ optional target) and append to slots."""
+        name = signal["setup_name"]
+        direction = signal["direction"]
+        spot = signal["spot"]
+        rules = self.cfg["setup_rules"][name]
+        is_long = direction in ("long", "bullish")
+
+        stop_pts = rules["stop"]
+        max_sl = self.cfg.get("max_stop_loss_pts")
+        if max_sl and stop_pts > max_sl:
+            stop_pts = max_sl
+        qty = _calc_qty(self.cfg, stop_pts)
+
+        cfg_target = rules.get("target")
+        trail_only = cfg_target is None
+        if cfg_target == "msg":
+            target_pts = signal.get("msg_target_pts") or 10
+        elif cfg_target is None:
+            target_pts = 0
+        else:
+            target_pts = float(cfg_target)
+
+        # Resolve order reference (ES or fallback to SPX)
+        _MAX_SPREAD = 75
+        es_price = signal.get("es_price")
+        if es_price is not None:
+            try:
+                es_price = float(es_price)
+            except Exception:
+                es_price = None
+        if es_price and abs(es_price - spot) <= _MAX_SPREAD:
+            order_ref = es_price
+        else:
+            order_ref = spot
+            es_price = None
+
+        stop_price = (order_ref - stop_pts) if is_long else (order_ref + stop_pts)
+        target_price = (order_ref + target_pts) if is_long else (order_ref - target_pts)
+
+        es_entry = es_price
+        if not es_entry and self.quote_poller and self.quote_poller.available:
+            es_entry = self.quote_poller.get_es_price()
+
+        # Place orders
+        if trail_only:
+            oids = self.nt8.place_entry_and_stop(direction, qty, stop_price)
+        else:
+            oids = self.nt8.place_bracket(direction, qty, stop_price, target_price)
+
+        slot = {
+            "setup_name": name,
+            "direction": direction,
+            "grade": signal.get("grade", "?"),
+            "entry_price": order_ref,
+            "spx_spot": spot,
+            "stop_price": stop_price,
+            "target_price": target_price if not trail_only else None,
+            "stop_pts": stop_pts,
+            "target_pts": target_pts if not trail_only else None,
+            "trail_only": trail_only,
+            "qty": qty,
+            "ts": datetime.now(ET).isoformat(),
+            "max_hold_min": rules.get("max_hold_min"),
+            "es_entry_price": es_entry,
+            "be_triggered": False,
+            "_max_fav": 0.0,
+            **oids,
+        }
+        self.slots.append(slot)
+        self._save()
+
+        slot_idx = len(self.slots)
+        risk = stop_pts * qty * MES_POINT_VALUE
+        log.info(f"[STACK] SLOT #{slot_idx} OPENED: {name} {direction.upper()} [{signal.get('grade')}]")
+        log.info(f"  Entry: {order_ref:.2f} | Stop: {stop_price:.2f} (-{stop_pts}pts / -${risk:.0f}) "
+                 f"| Qty: {qty} | Total contracts: {self._total_contracts()}/{self.stack_cap}")
+
+    # ── Close all (reversal / EOD / emergency) ──────────────────────────
+    def _close_all(self, reason: str, es_price: float | None):
+        if not self.slots:
+            return
+        log.info(f"[STACK] CLOSE ALL ({reason}): {len(self.slots)} slot(s), {self._total_contracts()} contracts")
+        for s in self.slots:
+            if s.get("stop_oid"):
+                self.nt8.cancel(s["stop_oid"])
+            if s.get("target_oid"):
+                time.sleep(0.2)
+                self.nt8.cancel(s["target_oid"])
+
+            qty = int(s.get("qty", 0))
+            is_long = s["direction"] in ("long", "bullish")
+            exit_side = "SELL" if is_long else "BUY"
+            close_oid = self.nt8._oid("c")
+            time.sleep(0.3)
+            self.nt8._write(
+                f"PLACE;{self.nt8.account};{self.nt8.symbol};{exit_side};{qty};"
+                f"MARKET;;;DAY;;{close_oid};;\n"
+            )
+
+            pnl_pts = 0.0
+            if es_price and s.get("es_entry_price"):
+                e = s["es_entry_price"]
+                pnl_pts = (es_price - e) if is_long else (e - es_price)
+            self.compliance.record_trade(pnl_pts, s["setup_name"], qty)
+            self.compliance.update_streak(s["setup_name"], s["direction"], pnl_pts)
+            log.info(f"  Closed slot: {s['setup_name']} {s['direction']} qty={qty} ~{pnl_pts:+.1f}pts")
+
+        self.slots = []
+        self.compliance.has_open_position = False
+        self._save()
+        self.compliance.save()
+
+    def flatten(self, reason: str = "EOD", es_price: float | None = None):
+        self._close_all(reason, es_price)
+
+    def reverse(self, signal: dict, es_price: float | None):
+        """Conviction-driven reversal — delegate to open_trade which handles it."""
+        self.open_trade(signal)
+
+    # ── Trail + fills ────────────────────────────────────────────────────
+    def check_trail(self, es_price: float | None):
+        if not es_price or not self.slots:
+            return
+        for s in self.slots:
+            self._trail_one(s, es_price)
+
+    def _trail_one(self, slot: dict, es_price: float):
+        es_entry = slot.get("es_entry_price")
+        if not es_entry:
+            return
+        is_long = slot["direction"] in ("long", "bullish")
+        profit = (es_price - es_entry) if is_long else (es_entry - es_price)
+        setup_name = slot["setup_name"]
+        qty = int(slot.get("qty", 0))
+
+        max_fav = slot.get("_max_fav", 0.0)
+        if profit > max_fav:
+            max_fav = profit
+            slot["_max_fav"] = max_fav
+
+        tp = PositionTracker._TRAIL_PARAMS.get(setup_name)
+        new_stop = None
+        if tp:
+            if tp["mode"] == "continuous":
+                if max_fav >= tp["activation"]:
+                    lock = max_fav - tp["gap"]
+                    new_stop = (es_entry + lock) if is_long else (es_entry - lock)
+            elif tp["mode"] == "hybrid":
+                if max_fav >= tp["activation"]:
+                    lock = max_fav - tp["gap"]
+                    new_stop = (es_entry + lock) if is_long else (es_entry - lock)
+                elif max_fav >= tp["be_trigger"]:
+                    new_stop = es_entry
+
+        if new_stop is not None:
+            current_stop = slot["stop_price"]
+            tighter = (new_stop > current_stop) if is_long else (new_stop < current_stop)
+            if tighter:
+                self.nt8.change_stop(slot["stop_oid"], new_stop, qty, slot["direction"])
+                old = slot["stop_price"]
+                slot["stop_price"] = new_stop
+                self._save()
+                log.info(f"  [STACK trail] {setup_name} stop {old:.2f} -> {new_stop:.2f} "
+                         f"(profit={profit:+.1f} max={max_fav:+.1f})")
+
+    def check_nt8_fills(self):
+        if not self.slots:
+            return
+        remaining = []
+        for s in self.slots:
+            filled = False
+            for oid_key in ("stop_oid", "target_oid"):
+                oid = s.get(oid_key)
+                if not oid:
+                    continue
+                state = self.nt8.check_order_state(oid)
+                if state and state.get("status") == "FILLED":
+                    fill_price = state.get("price", 0) or 0
+                    entry = s.get("es_entry_price") or s.get("entry_price", 0)
+                    is_long = s["direction"] in ("long", "bullish")
+                    pnl_pts = (fill_price - entry) if is_long else (entry - fill_price)
+                    qty = int(s.get("qty", 0))
+                    self.compliance.record_trade(pnl_pts, s["setup_name"], qty)
+                    self.compliance.update_streak(s["setup_name"], s["direction"], pnl_pts)
+                    other = "target_oid" if oid_key == "stop_oid" else "stop_oid"
+                    if s.get(other):
+                        self.nt8.cancel(s[other])
+                    label = oid_key.replace("_oid", "")
+                    log.info(f"  [STACK fill] {s['setup_name']} {label} FILLED @ {fill_price:.2f} "
+                             f"-> {pnl_pts:+.1f}pts (slot closed, {len(self.slots)-len(remaining)-1} remain)")
+                    filled = True
+                    break
+            if not filled:
+                remaining.append(s)
+        if len(remaining) != len(self.slots):
+            self.slots = remaining
+            self.compliance.has_open_position = len(self.slots) > 0
+            self._save()
+
+    def close_on_outcome(self, outcome: dict):
+        """Match outcome by setup_name and close first matching slot."""
+        if not self.slots:
+            return
+        for i, s in enumerate(self.slots):
+            if s["setup_name"] != outcome.get("setup_name"):
+                continue
+            qty = int(s.get("qty", 0))
+            if s.get("stop_oid"):
+                self.nt8.cancel(s["stop_oid"])
+            if s.get("target_oid"):
+                self.nt8.cancel(s["target_oid"])
+            if outcome.get("result") == "EXPIRED" or s.get("trail_only"):
+                self.nt8.close_position(s["direction"], qty)
+            pnl_pts = outcome.get("pnl_pts", 0.0)
+            self.compliance.record_trade(pnl_pts, s["setup_name"], qty)
+            self.compliance.update_streak(s["setup_name"], s["direction"], pnl_pts)
+            emoji = {"WIN": "V", "LOSS": "X", "EXPIRED": "~"}.get(outcome.get("result", "?"), "?")
+            log.info(f"  [STACK outcome] [{emoji}] {s['setup_name']} {outcome.get('result')} "
+                     f"{pnl_pts:+.1f}pts (slot #{i+1} closed)")
+            self.slots.pop(i)
+            self._save()
+            return
+
+    def tighten_stop(self, es_price: float, gap_pts: float = _TIGHTEN_GAP_PTS):
+        """Tighten stops on ALL slots — used on low-conviction opposing signals."""
+        for s in self.slots:
+            is_long = s["direction"] in ("long", "bullish")
+            raw_stop = (es_price - gap_pts) if is_long else (es_price + gap_pts)
+            new_stop = round(round(raw_stop / MES_TICK_SIZE) * MES_TICK_SIZE, 2)
+            qty = int(s.get("qty", 0))
+            self.nt8.change_stop(s["stop_oid"], new_stop, qty, s["direction"])
+            old = s["stop_price"]
+            s["stop_price"] = new_stop
+            log.info(f"  [STACK tighten] {s['setup_name']} stop {old} -> {new_stop:.2f}")
+        self._save()
+
+    def reconcile_with_nt8(self):
+        """Best-effort reconcile — v1 just logs. Manual NT8 cleanup may be needed."""
+        if not self.slots:
+            return
+        try:
+            oif = self.nt8.read_oif_position()
+            if oif == "FLAT" and self.slots:
+                log.warning(f"[STACK] RECONCILE: NT8 says FLAT but tracker has {len(self.slots)} slot(s) — clearing")
+                self.slots = []
+                self.compliance.has_open_position = False
+                self._save()
+        except Exception as e:
+            log.debug(f"[STACK] reconcile skipped: {e}")
+
+
 class PositionTracker:
     """Tracks open position state. Persists to disk for crash recovery."""
 
@@ -1524,6 +2004,7 @@ class PositionTracker:
             self.nt8.close_position(self.position["direction"], trade_qty)
 
         self.compliance.record_trade(pnl_pts, self.position["setup_name"], trade_qty)
+        self.compliance.update_streak(self.position["setup_name"], self.position["direction"], pnl_pts)
 
         emoji = {"WIN": "V", "LOSS": "X", "EXPIRED": "~"}.get(result, "?")
         log.info(f"[{emoji}] CLOSED: {self.position['setup_name']} | {result} | "
@@ -1617,6 +2098,7 @@ class PositionTracker:
             pnl_pts = (es_price - self.position["es_entry_price"]) if is_long else (self.position["es_entry_price"] - es_price)
 
         self.compliance.record_trade(pnl_pts, old_name, old_qty)
+        self.compliance.update_streak(old_name, old_dir, pnl_pts)
         log.info(f"  Closed {old_name}: ~{pnl_pts:+.1f} pts (estimated from ES price)")
 
         # Check if PNL cap reached after closing — if so, just close, don't reverse
@@ -1810,7 +2292,10 @@ class PositionTracker:
             log.info(f"FLATTENED ({reason}): {self.position['setup_name']} — "
                      f"{exit_side} {trade_qty} at market (PnL unknown, recording 0)")
 
-        self.compliance.record_trade(pnl_pts, self.position["setup_name"], trade_qty)
+        _sname = self.position["setup_name"]
+        _sdir = self.position["direction"]
+        self.compliance.record_trade(pnl_pts, _sname, trade_qty)
+        self.compliance.update_streak(_sname, _sdir, pnl_pts)
         self.position = None
         self._save()
 
@@ -1824,7 +2309,7 @@ class PositionTracker:
         "GEX Long":       {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
         "GEX Velocity":   {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
         "AG Short":       {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
-        "Skew Charm":     {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
+        "Skew Charm":     {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 3},  # S151: gap 5->3 (backtest +$260/7d)
         "VIX Divergence": {"mode": "continuous", "activation": 10, "gap": 8, "initial_sl": 8},
         "ES Absorption":  {"mode": "hybrid", "be_trigger": 5, "activation": 8, "gap": 3},
     }
@@ -2029,7 +2514,10 @@ class PositionTracker:
                 # Cancel target if it exists
                 if target_oid:
                     self.nt8.cancel(target_oid)
-                self.compliance.record_trade(pnl_pts, self.position["setup_name"], trade_qty)
+                _sname = self.position["setup_name"]
+                _sdir = self.position["direction"]
+                self.compliance.record_trade(pnl_pts, _sname, trade_qty)
+                self.compliance.update_streak(_sname, _sdir, pnl_pts)
                 self.position = None
                 self._save()
                 return
@@ -2045,7 +2533,10 @@ class PositionTracker:
                 # Cancel stop
                 if stop_oid:
                     self.nt8.cancel(stop_oid)
-                self.compliance.record_trade(pnl_pts, self.position["setup_name"], trade_qty)
+                _sname = self.position["setup_name"]
+                _sdir = self.position["direction"]
+                self.compliance.record_trade(pnl_pts, _sname, trade_qty)
+                self.compliance.update_streak(_sname, _sdir, pnl_pts)
                 self.position = None
                 self._save()
                 return
@@ -2277,7 +2768,12 @@ def main():
     quote_poller = TSQuotePoller()
     compliance = ComplianceGate(cfg)
     nt8 = NT8Bridge(cfg["nt8_incoming_folder"], cfg["nt8_account_id"], mes_symbol)
-    tracker = PositionTracker(nt8, compliance, cfg, quote_poller)
+    # Phase 2: pick StackingTracker for SIM (stack_enabled=true), PositionTracker for real account
+    if cfg.get("stack_enabled"):
+        log.info("=== STACKING MODE ENABLED (Phase 2) — multi-position tracker ===")
+        tracker = StackingTracker(nt8, compliance, cfg, quote_poller)
+    else:
+        tracker = PositionTracker(nt8, compliance, cfg, quote_poller)
 
     # Auto-flatten stale positions from previous day
     if getattr(tracker, '_stale_flatten', False):
@@ -2517,7 +3013,19 @@ def main():
                                  f"{now_ts - _trade_dedup[dedup_key]:.0f}s ago, skipping")
                         continue
 
-                    allowed, reason = compliance.check(signal)
+                    # Phase 2 stacking: bypass "already in position" compliance check
+                    # when same-direction signal arrives and stack_enabled. All OTHER
+                    # compliance rules (setup enabled, ES Abs PURE, V14 filter, daily floor)
+                    # still apply. The tracker decides stack/block based on cap+floor.
+                    _stack_bypass = (cfg.get("stack_enabled") and tracker.is_open
+                                     and not tracker.is_opposite(signal))
+                    if _stack_bypass:
+                        _had_pos = compliance.has_open_position
+                        compliance.has_open_position = False
+                        allowed, reason = compliance.check(signal)
+                        compliance.has_open_position = _had_pos
+                    else:
+                        allowed, reason = compliance.check(signal)
                     if not allowed:
                         log.info(f"  BLOCKED: {reason}")
                         continue

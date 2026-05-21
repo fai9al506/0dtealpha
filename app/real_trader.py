@@ -1556,7 +1556,36 @@ def _flatten_position(order):
                 time.sleep(1)
                 close_fp = _get_order_fill_price(close_oid, account_id)
                 if close_fp:
-                    order["close_fill_price"] = close_fp
+                    # S166 (2026-05-21): sanity-check captured close_fill_price.
+                    # Bug observed on lid=3033 (2026-05-20): TS API returned 7418.75
+                    # as close fill for a "loss" market-close on a LONG entered at
+                    # 7378.75 — i.e. broker fill +40 pts ABOVE entry, which is
+                    # physically impossible for the LOSS path (stop was 7370.75).
+                    # Root cause unverified but suspect TS API stale-read or
+                    # wrong-order fill on the close OID.
+                    # Guard: reject any close_fill_price whose distance from entry
+                    # exceeds MAX_SANE_CLOSE_DIST_PTS (30) — generous enough to
+                    # accept all real trail-giveback and target hits, tight enough
+                    # to catch +40 anomalies. Reject → leave close_fill_price unset
+                    # so _backfill_ghost_fill recovers via historicalorders scan.
+                    MAX_SANE_CLOSE_DIST_PTS = 30.0
+                    entry_fill = order.get("fill_price")
+                    sane = True
+                    if entry_fill and entry_fill > 0:
+                        diff = abs(close_fp - entry_fill)
+                        if diff > MAX_SANE_CLOSE_DIST_PTS:
+                            sane = False
+                            print(f"[real-trader] WARN close_fill_price SANITY FAIL "
+                                  f"lid={order.get('setup_log_id')}: entry={entry_fill} "
+                                  f"close_fp={close_fp} |diff|={diff:.2f} > "
+                                  f"max={MAX_SANE_CLOSE_DIST_PTS}. NOT storing — "
+                                  f"_backfill_ghost_fill will retry via historicalorders.",
+                                  flush=True)
+                            _alert(f"⚠️ Close fill sanity fail lid={order.get('setup_log_id')}\n"
+                                   f"Entry={entry_fill} Close_FP={close_fp} |diff|={diff:.2f}pt\n"
+                                   f"Skipping store — backfill will retry.")
+                    if sane:
+                        order["close_fill_price"] = close_fp
             print(f"[real-trader] flattened: {order['setup_name']} qty={close_qty} "
                   f"fill={order.get('close_fill_price')} acct={account_id}", flush=True)
         else:

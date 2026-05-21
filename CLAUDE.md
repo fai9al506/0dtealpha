@@ -118,14 +118,38 @@ railway variables --service 0dtealpha --set "ES_DATA_SOURCE=rithmic" --unset "RI
 
 **Phase 1 shadow path** (`setup_log_shadow` table + `_shadow_run_5pt`/`_shadow_run_10pt`) stays in place but only fires when `ES_DATA_SOURCE=rithmic` — gives free Sierra-vs-Rithmic comparison the day Rithmic is restored.
 
+## IMPORTANT: Volland hosted on VPS, not Railway (post-2026-05-21)
+
+**As of 2026-05-21, the Volland scraper runs on the USER'S VPS via VISIBLE Chrome, NOT on Railway.**
+
+Vol.land deployed JS-level workspace-page bot detection overnight 2026-05-20→2026-05-21. Headless Chromium on Railway can log in but the React widget tree refuses to mount → 0 exposure API calls fire. Direct API login from datacenter IPs returns 409 device challenge. Vol.land binds sessions IP-side, so even a JWT from user's browser can't be used from Railway.
+
+**Solution**: visible Chrome (`headless=False`) on user's VPS (Windows Server 2022 with RDP GUI, APNIC IP) bypasses all checks. Same VBS-launcher pattern as `eval_trader.py` + `vps_data_bridge.py`.
+
+**Active stack**:
+- VPS runs `_tmp_run_volland_local.py` which monkey-patches `BrowserType.launch` to force `headless=False` + auto-restart loop + anti-detection arg
+- That wrapper imports and runs `volland_worker_v2.py` (the existing worker code, unchanged)
+- Output writes to same Railway Postgres `volland_snapshots` + `volland_exposure_points` tables → portal + setup_detector code unchanged
+
+**Discipline rules**:
+- 🚨 NEVER sign into vol.land on PC while VPS worker is running (1-session-per-account). Kicks VPS off.
+- 🚨 NEVER redeploy Railway Volland service. It's `railway down`'d for a reason.
+- 🚨 NEVER set `VOLLAND_HTTP_MODE=true` on Railway. The HTTP worker exists for future use but vol.land 401s Railway's IP.
+
+**Daily action required**: NONE. VBS auto-start handles boot. Visible Chrome auto-relogs on session expiry. Same robustness as eval_trader.
+
+**Recovery procedures**: see `reference_volland_vps_architecture.md` in memory directory.
+
+---
+
 ## IMPORTANT: Volland Worker Versions (v1 vs v2)
 
 **`volland_worker_v2.py` is the ACTIVE production worker. `volland_worker.py` (v1) is SUSPENDED/legacy.**
 
-- **v2** (`volland_worker_v2.py`): Single all-in-one workspace, Playwright route-based capture. This is what runs in production.
+- **v2** (`volland_worker_v2.py`): Single all-in-one workspace, Playwright route-based capture. NOW HOSTED ON VPS (see section above).
 - **v1** (`volland_worker.py`): Old two-workspace approach with JS injection hooks. **DO NOT run v1.** It remains in the repo for reference only.
 
-When the user mentions "volland worker" or "volland not working", they mean **v2**.
+When the user mentions "volland worker" or "volland not working", they mean **v2 on VPS**.
 
 ### v2 Key Design
 
@@ -169,8 +193,10 @@ This file scrapes a third-party website using Playwright with carefully tuned:
 ## Repo Structure
 
 - `app/` — production code (main.py, setup_detector.py, auto_trader.py, stock_gex_scanner.py) — **this is the main codebase**
-- `eval_trader.py` — local E2T auto-trader (polls Railway API → OIF → NT8 → MES). Runs on user's PC, not Railway.
-- `volland_worker_v2.py` — **ACTIVE** Playwright scraper (see warning above)
+- `eval_trader.py` — local E2T auto-trader (polls Railway API → OIF → NT8 → MES). Runs on user's VPS, not Railway.
+- `volland_worker_v2.py` — **ACTIVE** Playwright scraper, **runs on VPS via `_tmp_run_volland_local.py` wrapper** (not Railway anymore — see section above)
+- `_tmp_run_volland_local.py` — VPS launcher; monkey-patches Playwright to force visible Chrome + auto-restart loop
+- `volland_http_worker.py` — pure-HTTP scraper (paused — vol.land IP-binds JWTs, can't run on Railway)
 - `volland_worker.py` — **LEGACY/SUSPENDED** v1 scraper (do NOT run)
 - `0dtealpha/` — git submodule (separate repo, NOT the main codebase)
 - `trade-analyses.md` — running log of trade performance analysis and tuning decisions

@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V16 Trade Log — 2026-05-21</title>
+<style>
+* { box-sizing: border-box; }
+body { margin:0; background:#1a1a2e; color:#ffffff; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+.toolbar { position:sticky; top:0; z-index:10; background:#16213e; border-bottom:2px solid #448aff; padding:12px 20px; display:flex; gap:12px; align-items:center; }
+.toolbar h1 { margin:0; font-size:18px; color:#ffffff; }
+.toolbar .summary { flex:1; color:#b0bec5; font-size:13px; }
+.toolbar button { padding:8px 16px; border:none; border-radius:4px; cursor:pointer; font-weight:600; }
+.btn-export { background:#00e676; color:#000; }
+.btn-copy { background:#448aff; color:#fff; }
+.btn-clear { background:#ff5252; color:#fff; }
+.toolbar button:hover { opacity:0.85; }
+.cards { padding: 16px 20px; max-width: 1100px; margin: 0 auto; }
+.card { background:#16213e; border-radius:8px; margin-bottom:16px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.3); }
+.card-hdr { background:#0f3460; padding:10px 16px; display:flex; justify-content:space-between; align-items:center; }
+.hdr-left { display:flex; gap:12px; align-items:center; }
+.lid { color:#607d8b; font-family:monospace; }
+.time { color:#b0bec5; font-family:monospace; }
+.setup { font-weight:600; }
+.dir { font-weight:600; }
+.grade { padding:2px 8px; border-radius:4px; font-weight:600; font-size:12px; }
+.outcome { font-weight:700; font-size:15px; padding:4px 12px; border-radius:4px; background:rgba(0,0,0,0.3); }
+.card-body { padding:14px 16px; }
+.kvs { display:grid; grid-template-columns: repeat(4, 1fr); gap:8px 16px; margin-bottom:12px; }
+.kvs > div { display:flex; justify-content:space-between; border-bottom:1px dashed #2a3554; padding:4px 0; font-size:13px; }
+.kvs .k { color:#b0bec5; }
+.kvs .v { color:#ffffff; font-weight:500; }
+.pnl-row { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-bottom:12px; }
+.pnl-box { background:#0f3460; padding:8px 12px; border-radius:4px; }
+.pnl-lbl { color:#607d8b; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; }
+.pnl-val { font-size:15px; font-weight:600; margin-top:2px; }
+.comment { width:100%; min-height:60px; background:#0a1024; color:#ffffff; border:1px solid #2a3554; border-radius:4px; padding:8px 10px; font-family:inherit; font-size:13px; resize:vertical; }
+.comment:focus { outline:none; border-color:#448aff; }
+.comment.has-content { border-color:#00e676; }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <h1>V16 Trade Log — 2026-05-21</h1>
+  <div class="summary">
+    <strong>19 trades</strong> · 13W / 5L / 1 EXP ·
+    Sim <span style="color:#00e676">+44.2pt</span> ·
+    Broker <span style="color:#00e676">+7.2pt ($+36.25)</span>
+    (16/19 computable)
+  </div>
+  <button class="btn-export" onclick="exportComments()">Export TXT</button>
+  <button class="btn-copy" onclick="copyToClipboard()">Copy</button>
+  <button class="btn-clear" onclick="clearAllComments()">Clear All</button>
+</div>
+<div class="cards">
+
+<div class="card" data-lid="3095">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3095</span>
+      <span class="time">10:08</span>
+      <span class="setup">Skew Charm</span>
+      <span class="dir" style="color:#ff5252">▼ short</span>
+      <span class="grade" style="background:#448aff;color:#000">A</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#00e676">WIN</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">GEX-TARGET</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.44</span></div>
+      <div><span class="k">Score</span><span class="v">78.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7417.01</span></div>
+      <div><span class="k">LIS</span><span class="v">—</span></div>
+      <div><span class="k">Target</span><span class="v">7407.01</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX91</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7436.75 → 7426.75</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#00e676">+9.6</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#00e676">+10.00pt $+50.00</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+14.6</span> / <span style="color:#ff5252">-4.8</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#00e676;font-size:13px">outcome_resolved_win</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#607d8b'>drift +0.4pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3095" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3100">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3100</span>
+      <span class="time">10:46</span>
+      <span class="setup">DD Exhaustion</span>
+      <span class="dir" style="color:#00e676">▲ long</span>
+      <span class="grade" style="background:#448aff;color:#000">A</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#ff5252">LOSS</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">SIDIAL-MESSY</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.56</span></div>
+      <div><span class="k">Score</span><span class="v">73.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7404.44</span></div>
+      <div><span class="k">LIS</span><span class="v">—</span></div>
+      <div><span class="k">Target</span><span class="v">—</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX65</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7424.5 → 7412.5</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#ff5252">-12.0</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#ff5252">-12.00pt $-60.00</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+5.1</span> / <span style="color:#ff5252">-14.2</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#ff5252;font-size:13px">stop_filled</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#607d8b'>drift +0.0pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3100" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3103">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3103</span>
+      <span class="time">10:57</span>
+      <span class="setup">Skew Charm</span>
+      <span class="dir" style="color:#00e676">▲ long</span>
+      <span class="grade" style="background:#00e676;color:#000">A+</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#ff5252">LOSS</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">SIDIAL-MESSY</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.57</span></div>
+      <div><span class="k">Score</span><span class="v">93.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7404.46</span></div>
+      <div><span class="k">LIS</span><span class="v">—</span></div>
+      <div><span class="k">Target</span><span class="v">7414.46</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX65</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7423.25 → 7408.5</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#ff5252">-14.0</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#ff5252">-14.75pt $-73.75</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+5.1</span> / <span style="color:#ff5252">-14.2</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#ff5252;font-size:13px">stop_filled</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#607d8b'>drift -0.8pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3103" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3104">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3104</span>
+      <span class="time">11:01</span>
+      <span class="setup">ES Absorption</span>
+      <span class="dir" style="color:#00e676">▲ bullish</span>
+      <span class="grade" style="background:#448aff;color:#000">A</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#00e676">WIN</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">SIDIAL-MESSY</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.52</span></div>
+      <div><span class="k">Score</span><span class="v">62.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7403.81</span></div>
+      <div><span class="k">LIS</span><span class="v">7361.0</span></div>
+      <div><span class="k">Target</span><span class="v">—</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX65</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7423.5 → 7413.75</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#00e676">+8.9</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#ff5252">-9.75pt $-48.75</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+10.8</span> / <span style="color:#ff5252">-0.8</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#00e676;font-size:13px">outcome_resolved_win</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#ff9800;font-weight:bold'>⚠️ drift -18.6pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3104" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3105">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3105</span>
+      <span class="time">11:05</span>
+      <span class="setup">ES Absorption</span>
+      <span class="dir" style="color:#ff5252">▼ bearish</span>
+      <span class="grade" style="background:#448aff;color:#000">A</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#00e676">WIN</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">SIDIAL-MESSY</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#ff5252">-1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.48</span></div>
+      <div><span class="k">Score</span><span class="v">65.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7402.93</span></div>
+      <div><span class="k">LIS</span><span class="v">7361.0</span></div>
+      <div><span class="k">Target</span><span class="v">—</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX91</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7422.0 → 7425.75</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#00e676">+9.1</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#ff5252">-3.75pt $-18.75</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+11.2</span> / <span style="color:#ff5252">-6.5</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#00e676;font-size:13px">outcome_resolved_win</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#ff9800;font-weight:bold'>⚠️ drift -12.8pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3105" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3106">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3106</span>
+      <span class="time">11:08</span>
+      <span class="setup">ES Absorption</span>
+      <span class="dir" style="color:#ff5252">▼ bearish</span>
+      <span class="grade" style="background:#448aff;color:#000">A</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#00e676">WIN</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">SIDIAL-MESSY</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#ff5252">-1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.62</span></div>
+      <div><span class="k">Score</span><span class="v">65.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7390.79</span></div>
+      <div><span class="k">LIS</span><span class="v">7361.0</span></div>
+      <div><span class="k">Target</span><span class="v">—</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX91</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7410.75 → 7418.0</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#b0bec5">+0.0</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#ff5252">-7.25pt $-36.25</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+5.0</span> / <span style="color:#ff5252">-3.2</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#00e676;font-size:13px">outcome_resolved_win</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#ffd740'>drift -7.2pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3106" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3109">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3109</span>
+      <span class="time">11:14</span>
+      <span class="setup">Skew Charm</span>
+      <span class="dir" style="color:#ff5252">▼ short</span>
+      <span class="grade" style="background:#00e676;color:#000">A+</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#ff5252">LOSS</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">AG-TARGET</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.36</span></div>
+      <div><span class="k">Score</span><span class="v">93.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7406.92</span></div>
+      <div><span class="k">LIS</span><span class="v">—</span></div>
+      <div><span class="k">Target</span><span class="v">7396.92</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX91</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7426.5 → —</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#ff5252">-14.0</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#b0bec5">n/a</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+5.8</span> / <span style="color:#ff5252">-17.2</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#ffd740;font-size:13px">ghost_reconcile</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val">n/a</div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3109" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3110">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3110</span>
+      <span class="time">11:16</span>
+      <span class="setup">DD Exhaustion</span>
+      <span class="dir" style="color:#00e676">▲ long</span>
+      <span class="grade" style="background:#448aff;color:#000">A</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#00e676">WIN</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">AG-TARGET</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.37</span></div>
+      <div><span class="k">Score</span><span class="v">73.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7405.95</span></div>
+      <div><span class="k">LIS</span><span class="v">—</span></div>
+      <div><span class="k">Target</span><span class="v">—</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX65</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7426.25 → —</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#00e676">+13.6</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#b0bec5">n/a</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+22.1</span> / <span style="color:#ff5252">-4.8</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#ffd740;font-size:13px">ghost_reconcile</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val">n/a</div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3110" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3112">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3112</span>
+      <span class="time">11:30</span>
+      <span class="setup">Skew Charm</span>
+      <span class="dir" style="color:#00e676">▲ long</span>
+      <span class="grade" style="background:#00e676;color:#000">A+</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#00e676">WIN</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">AG-TARGET</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.35</span></div>
+      <div><span class="k">Score</span><span class="v">93.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7406.16</span></div>
+      <div><span class="k">LIS</span><span class="v">—</span></div>
+      <div><span class="k">Target</span><span class="v">7416.16</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX65</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7426.0 → —</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#00e676">+5.8</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#b0bec5">n/a</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+10.8</span> / <span style="color:#ff5252">-5.0</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#ffd740;font-size:13px">ghost_reconcile</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val">n/a</div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3112" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3122">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3122</span>
+      <span class="time">13:17</span>
+      <span class="setup">Skew Charm</span>
+      <span class="dir" style="color:#00e676">▲ long</span>
+      <span class="grade" style="background:#448aff;color:#000">A</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#00e676">WIN</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">AG-TARGET</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">16.8</span></div>
+      <div><span class="k">Score</span><span class="v">78.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7439.57</span></div>
+      <div><span class="k">LIS</span><span class="v">—</span></div>
+      <div><span class="k">Target</span><span class="v">7449.57</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX65</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7458.0 → 7481.25</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#00e676">+21.4</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#00e676">+23.25pt $+116.25</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+26.4</span> / <span style="color:#ff5252">-7.4</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#00e676;font-size:13px">outcome_resolved_win</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#607d8b'>drift +1.9pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3122" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3127">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3127</span>
+      <span class="time">13:38</span>
+      <span class="setup">ES Absorption</span>
+      <span class="dir" style="color:#00e676">▲ bullish</span>
+      <span class="grade" style="background:#448aff;color:#000">A</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#00e676">WIN</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">SIDIAL-EXTREME</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.0</span></div>
+      <div><span class="k">Score</span><span class="v">62.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7443.70</span></div>
+      <div><span class="k">LIS</span><span class="v">7400.0</span></div>
+      <div><span class="k">Target</span><span class="v">—</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX65</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7462.5 → 7468.75</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#b0bec5">+0.0</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#00e676">+6.25pt $+31.25</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+5.0</span> / <span style="color:#ff5252">0.0</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#00e676;font-size:13px">outcome_resolved_win</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#ffd740'>drift +6.2pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3127" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3128">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3128</span>
+      <span class="time">13:43</span>
+      <span class="setup">ES Absorption</span>
+      <span class="dir" style="color:#00e676">▲ bullish</span>
+      <span class="grade" style="background:#448aff;color:#000">A</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#00e676">WIN</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">SIDIAL-EXTREME</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.02</span></div>
+      <div><span class="k">Score</span><span class="v">62.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7451.15</span></div>
+      <div><span class="k">LIS</span><span class="v">7397.0</span></div>
+      <div><span class="k">Target</span><span class="v">—</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX65</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7469.25 → 7477.5</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#00e676">+9.6</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#00e676">+8.25pt $+41.25</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+12.2</span> / <span style="color:#ff5252">-2.5</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#00e676;font-size:13px">outcome_resolved_win</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#607d8b'>drift -1.3pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3128" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3130">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3130</span>
+      <span class="time">13:49</span>
+      <span class="setup">AG Short</span>
+      <span class="dir" style="color:#ff5252">▼ short</span>
+      <span class="grade" style="background:#ffd740;color:#000">B</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#ff5252">LOSS</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">AG-PURE</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#ff5252">-1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.01</span></div>
+      <div><span class="k">Score</span><span class="v">45.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7454.10</span></div>
+      <div><span class="k">LIS</span><span class="v">7460.0</span></div>
+      <div><span class="k">Target</span><span class="v">7444.0</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX91</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7475.75 → 7486.75</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#ff5252">-10.9</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#ff5252">-11.00pt $-55.00</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+-0.4</span> / <span style="color:#ff5252">-11.9</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#ff5252;font-size:13px">stop_filled</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#607d8b'>drift -0.1pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3130" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3133">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3133</span>
+      <span class="time">14:16</span>
+      <span class="setup">ES Absorption</span>
+      <span class="dir" style="color:#00e676">▲ bullish</span>
+      <span class="grade" style="background:#448aff;color:#000">A</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#ff5252">LOSS</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">SIDIAL-EXTREME</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.02</span></div>
+      <div><span class="k">Score</span><span class="v">62.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7446.05</span></div>
+      <div><span class="k">LIS</span><span class="v">7451.0</span></div>
+      <div><span class="k">Target</span><span class="v">—</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX65</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7464.5 → 7457.0</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#ff5252">-8.0</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#ff5252">-7.50pt $-37.50</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+4.8</span> / <span style="color:#ff5252">-10.2</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#ff5252;font-size:13px">stop_filled</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#607d8b'>drift +0.5pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3133" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3135">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3135</span>
+      <span class="time">14:34</span>
+      <span class="setup">AG Short</span>
+      <span class="dir" style="color:#ff5252">▼ short</span>
+      <span class="grade" style="background:#ffd740;color:#000">B</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#00e676">WIN</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">AG-PURE</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#ff5252">-1</span></div>
+      <div><span class="k">VIX</span><span class="v">16.94</span></div>
+      <div><span class="k">Score</span><span class="v">50.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7450.35</span></div>
+      <div><span class="k">LIS</span><span class="v">7453.0</span></div>
+      <div><span class="k">Target</span><span class="v">7428.0</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX91</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7469.5 → 7446.5</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#00e676">+17.4</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#00e676">+23.00pt $+115.00</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+29.8</span> / <span style="color:#ff5252">-3.5</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#00e676;font-size:13px">outcome_resolved_win</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#ffd740'>drift +5.6pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3135" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3138">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3138</span>
+      <span class="time">15:00</span>
+      <span class="setup">ES Absorption</span>
+      <span class="dir" style="color:#00e676">▲ bullish</span>
+      <span class="grade" style="background:#448aff;color:#000">A</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#00e676">WIN</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">SIDIAL-EXTREME</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.14</span></div>
+      <div><span class="k">Score</span><span class="v">63.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7427.05</span></div>
+      <div><span class="k">LIS</span><span class="v">7405.0</span></div>
+      <div><span class="k">Target</span><span class="v">—</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX65</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7449.5 → 7448.0</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#b0bec5">+0.0</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#ff5252">-1.50pt $-7.50</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+6.2</span> / <span style="color:#ff5252">-3.2</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#ff5252;font-size:13px">stop_filled</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#607d8b'>drift -1.5pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3138" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3139">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3139</span>
+      <span class="time">15:03</span>
+      <span class="setup">ES Absorption</span>
+      <span class="dir" style="color:#00e676">▲ bullish</span>
+      <span class="grade" style="background:#448aff;color:#000">A</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#00e676">WIN</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">SIDIAL-EXTREME</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.07</span></div>
+      <div><span class="k">Score</span><span class="v">63.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7431.22</span></div>
+      <div><span class="k">LIS</span><span class="v">7405.0</span></div>
+      <div><span class="k">Target</span><span class="v">—</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX65</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7454.5 → 7456.5</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#b0bec5">+0.0</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#00e676">+2.00pt $+10.00</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+5.8</span> / <span style="color:#ff5252">-3.0</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#00e676;font-size:13px">outcome_resolved_win</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#607d8b'>drift +2.0pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3139" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3140">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3140</span>
+      <span class="time">15:05</span>
+      <span class="setup">ES Absorption</span>
+      <span class="dir" style="color:#00e676">▲ bullish</span>
+      <span class="grade" style="background:#448aff;color:#000">A</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#00e676">WIN</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">SIDIAL-EXTREME</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#00e676">+1</span></div>
+      <div><span class="k">VIX</span><span class="v">17.02</span></div>
+      <div><span class="k">Score</span><span class="v">63.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7434.55</span></div>
+      <div><span class="k">LIS</span><span class="v">7417.0</span></div>
+      <div><span class="k">Target</span><span class="v">—</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX65</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7454.25 → 7455.0</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#00e676">+5.2</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#00e676">+0.75pt $+3.75</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+8.2</span> / <span style="color:#ff5252">-6.0</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#00e676;font-size:13px">outcome_resolved_win</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#607d8b'>drift -4.5pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3140" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+
+<div class="card" data-lid="3144">
+  <div class="card-hdr">
+    <div class="hdr-left">
+      <span class="lid">#3144</span>
+      <span class="time">15:27</span>
+      <span class="setup">Skew Charm</span>
+      <span class="dir" style="color:#00e676">▲ long</span>
+      <span class="grade" style="background:#ffd740;color:#000">B</span>
+    </div>
+    <div class="hdr-right">
+      <span class="outcome" style="color:#ffd740">EXPIRED</span>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="kvs">
+      <div><span class="k">Paradigm</span><span class="v">BOFA-PURE</span></div>
+      <div><span class="k">Align</span><span class="v" style="color:#ff5252">-1</span></div>
+      <div><span class="k">VIX</span><span class="v">16.79</span></div>
+      <div><span class="k">Score</span><span class="v">53.0</span></div>
+      <div><span class="k">Spot</span><span class="v">7443.18</span></div>
+      <div><span class="k">LIS</span><span class="v">—</span></div>
+      <div><span class="k">Target</span><span class="v">7453.18</span></div>
+      <div><span class="k">Account</span><span class="v">210VYX65</span></div>
+    </div>
+    <div class="pnl-row">
+      <div class="pnl-box">
+        <div class="pnl-lbl">Entry → Exit (broker)</div>
+        <div class="pnl-val">7463.5 → 7464.75</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Sim P&amp;L (SPX pts)</div>
+        <div class="pnl-val" style="color:#00e676">+2.5</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Broker P&amp;L</div>
+        <div class="pnl-val" style="color:#00e676">+1.25pt $+6.25</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">MFE / MAE</div>
+        <div class="pnl-val"><span style="color:#00e676">+3.5</span> / <span style="color:#ff5252">-5.3</span></div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Close reason</div>
+        <div class="pnl-val" style="color:#ffd740;font-size:13px">eod_flatten</div>
+      </div>
+      <div class="pnl-box">
+        <div class="pnl-lbl">Drift</div>
+        <div class="pnl-val"><span style='color:#607d8b'>drift -1.2pt</span></div>
+      </div>
+    </div>
+    <textarea class="comment" data-lid="3144" placeholder="Your comment on this trade (saves automatically)..."></textarea>
+  </div>
+</div>
+
+</div>
+<script>
+const DATE = "2026-05-21";
+const STORAGE_KEY = `tradelog-comments-${DATE}`;
+
+function loadComments() {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+  document.querySelectorAll(".comment").forEach(ta => {
+    const lid = ta.dataset.lid;
+    if (saved[lid]) {
+      ta.value = saved[lid];
+      ta.classList.add("has-content");
+    }
+    ta.addEventListener("input", () => {
+      const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+      if (ta.value.trim()) { all[lid] = ta.value; ta.classList.add("has-content"); }
+      else { delete all[lid]; ta.classList.remove("has-content"); }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+    });
+  });
+}
+
+function buildExportText() {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+  let txt = `V16 Trade Log Comments — ${DATE}\n${"=".repeat(50)}\n\n`;
+  document.querySelectorAll(".card").forEach(card => {
+    const lid = card.dataset.lid;
+    const comment = saved[lid];
+    if (!comment || !comment.trim()) return;
+    const hdr = card.querySelector(".hdr-left").innerText.replace(/\n+/g, " ");
+    const outcome = card.querySelector(".outcome").innerText;
+    txt += `[${hdr}] ${outcome}\n${comment.trim()}\n\n`;
+  });
+  return txt;
+}
+
+function exportComments() {
+  const txt = buildExportText();
+  const blob = new Blob([txt], { type: "text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `v16-tradelog-comments-${DATE}.txt`;
+  a.click();
+}
+
+function copyToClipboard() {
+  const txt = buildExportText();
+  navigator.clipboard.writeText(txt).then(() => alert("Copied to clipboard."));
+}
+
+function clearAllComments() {
+  if (!confirm("Clear ALL comments for this date?")) return;
+  localStorage.removeItem(STORAGE_KEY);
+  document.querySelectorAll(".comment").forEach(ta => { ta.value = ""; ta.classList.remove("has-content"); });
+}
+
+loadComments();
+</script>
+</body>
+</html>

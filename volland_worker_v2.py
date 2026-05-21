@@ -1103,4 +1103,12 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    # S176 dispatcher (2026-05-21): VOLLAND_HTTP_MODE=true runs the pure-HTTP
+    # worker which is immune to vol.land's new headless detection. Keeps the
+    # Railway service start command untouched (still `python volland_worker_v2.py`).
+    if os.getenv("VOLLAND_HTTP_MODE", "false").lower() == "true":
+        print("[volland-v2] VOLLAND_HTTP_MODE=true → dispatching to volland_http_worker.main()", flush=True)
+        import volland_http_worker
+        volland_http_worker.main()
+    else:
+        run()

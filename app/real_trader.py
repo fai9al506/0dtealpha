@@ -467,6 +467,18 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         paradigm: Volland paradigm (passed from main.py dispatch for S149 bucket detection)
         greek_alignment: -3..+3 alignment (passed from main.py dispatch for S149)
     """
+    # ── S175 Master kill (2026-05-21 emergency) ──
+    # Volland deployed bot detection overnight → headless worker captures 0 widgets,
+    # paradigm/LIS/DD stale → real trades graded on cached Greeks. User halted TSRT
+    # 11:30 ET until Volland is migrated to pure-HTTP worker (post-market today).
+    # DEFAULT: disabled (true) — explicit re-enable required.
+    # To re-enable: railway variables --set REAL_TRADE_DISABLED=false --service 0dtealpha
+    if os.getenv("REAL_TRADE_DISABLED", "true").lower() != "false":
+        print(f"[real-trader] DISABLED (master kill): skip {setup_name} {direction}", flush=True)
+        _log_skip_reason(setup_log_id, "master_kill")
+        _alert(f"⏭ DISABLED: {setup_name} {direction} blocked (REAL_TRADE_DISABLED=true)")
+        return
+
     is_long = direction.lower() in ("long", "bullish")
 
     # S149: determine effective quantity (1 default, 2 for SC long BOFA-PURE align=+1).

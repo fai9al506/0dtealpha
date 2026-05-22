@@ -385,6 +385,11 @@ class RailwayPoster:
             return True
         return self._post("/api/vps/vx/dom", {"snaps": snaps})
 
+    def post_es_dom_batch(self, snaps: list):
+        if not snaps:
+            return True
+        return self._post("/api/vps/es/dom", {"snaps": snaps})
+
     def get_last_es_bar(self):
         """Query Railway for the last stored ES bar timestamp and bar_idx."""
         url = f"{self.base_url}/api/vps/es/last"
@@ -710,6 +715,14 @@ class VPSDataBridge:
         self._vx_dom_last_pos = 0
         self._vx_dom_snaps_posted = 0
 
+        # ES DOM snapshot tailer (mirrors VX DOM, for E-mini S&P depth)
+        self._es_dom_file = cfg.get("es_dom_file", "C:/SierraChart/Data/es_dom.jsonl")
+        self._es_dom_features_file = cfg.get("es_dom_features_file", "")
+        self._es_dom_poll = cfg.get("es_dom_poll_seconds", 5)
+        self._es_dom_batch_size = cfg.get("es_dom_batch_size", 50)
+        self._es_dom_last_pos = 0
+        self._es_dom_snaps_posted = 0
+
         # Stats
         self._es_tick_count = 0
         self._vx_tick_count = 0
@@ -913,6 +926,8 @@ class VPSDataBridge:
         last_vol_check = 0.0
         vx_dom_interval = self._vx_dom_poll
         last_vx_dom_check = 0.0
+        es_dom_interval = self._es_dom_poll
+        last_es_dom_check = 0.0
 
         while self._running:
             try:
@@ -936,6 +951,11 @@ class VPSDataBridge:
                 if now - last_vx_dom_check >= vx_dom_interval:
                     self._check_vx_dom()
                     last_vx_dom_check = now
+
+                # Tail ES DOM JSONL
+                if now - last_es_dom_check >= es_dom_interval:
+                    self._check_es_dom()
+                    last_es_dom_check = now
 
                 # Heartbeat + stale detection
                 if now - self._last_heartbeat >= hb_interval:
@@ -1088,6 +1108,64 @@ class VPSDataBridge:
         except Exception as e:
             log.warning(f"VX DOM tailer error: {e}")
 
+    def _check_es_dom(self):
+        """Tail es_dom.jsonl (append-mode). Parse new JSON lines, batch-POST to Railway."""
+        try:
+            if not self._es_dom_file:
+                return
+            fpath = Path(self._es_dom_file)
+            if not fpath.exists():
+                return
+
+            size = fpath.stat().st_size
+            if size < self._es_dom_last_pos:
+                self._es_dom_last_pos = 0  # file rotated/truncated
+            if size <= self._es_dom_last_pos:
+                return
+
+            with open(fpath, "rb") as f:
+                f.seek(self._es_dom_last_pos)
+                chunk = f.read(size - self._es_dom_last_pos)
+                new_pos = size
+
+            text_data = chunk.decode("utf-8", errors="ignore")
+            lines = [ln for ln in text_data.splitlines() if ln.strip()]
+            if not lines:
+                self._es_dom_last_pos = new_pos
+                return
+
+            batch = []
+            for ln in lines:
+                try:
+                    snap = json.loads(ln)
+                    if isinstance(snap, dict) and "ts" in snap:
+                        batch.append(snap)
+                except Exception:
+                    continue
+
+            if not batch:
+                self._es_dom_last_pos = new_pos
+                return
+
+            bs = max(1, self._es_dom_batch_size)
+            sent = 0
+            all_ok = True
+            for i in range(0, len(batch), bs):
+                ok = self.poster.post_es_dom_batch(batch[i:i+bs])
+                if ok:
+                    sent += len(batch[i:i+bs])
+                else:
+                    all_ok = False
+                    break
+
+            # Only advance file position if every chunk succeeded — else retry next cycle
+            if all_ok:
+                self._es_dom_last_pos = new_pos
+            self._es_dom_snaps_posted += sent
+
+        except Exception as e:
+            log.warning(f"ES DOM tailer error: {e}")
+
     def _send_heartbeat(self):
         forming = self.bar_builder.forming_bar
         es_size = self._es_tailer.file_size if self._es_tailer else 0
@@ -1111,6 +1189,7 @@ class VPSDataBridge:
             "es_scid_size_mb": round(es_size / 1024 / 1024, 1),
             "vol_signals_posted": self._vol_signals_posted,
             "vx_dom_snaps_posted": self._vx_dom_snaps_posted,
+            "es_dom_snaps_posted": self._es_dom_snaps_posted,
             "forming_bar": {
                 "open": forming["open"],
                 "high": forming["high"],

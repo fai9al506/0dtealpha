@@ -1164,6 +1164,20 @@ def db_init():
         CREATE INDEX IF NOT EXISTS idx_vps_vx_dom_received ON vps_vx_dom_snapshots(received_at DESC);
         """))
 
+        # ES DOM snapshots (mirrors VX DOM table — Apollo "queue laddering" alpha)
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS vps_es_dom_snapshots (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL,
+            symbol TEXT,
+            bid_levels JSONB NOT NULL,
+            ask_levels JSONB NOT NULL,
+            received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_vps_es_dom_ts ON vps_es_dom_snapshots(ts DESC);
+        CREATE INDEX IF NOT EXISTS idx_vps_es_dom_received ON vps_es_dom_snapshots(received_at DESC);
+        """))
+
         # Create default admin user if no users exist
         existing = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
         if existing == 0:
@@ -21492,6 +21506,56 @@ def vps_vx_dom_post(request: Request, payload: dict = Body(...)):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.post("/api/vps/es/dom")
+def vps_es_dom_post(request: Request, payload: dict = Body(...)):
+    """Receive batch of ES DOM snapshots from Sierra ESDomSnapshot study via VPS bridge.
+    Body: {"snaps": [{"ts": "...", "s": "ESM26-CME", "bid": [[px,qty,n],...], "ask": [[...]]}, ...]}
+    Mirrors /api/vps/vx/dom exactly — same auth, same schema, separate table.
+    """
+    if not _check_vps_auth(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if not engine:
+        return JSONResponse({"error": "no database"}, status_code=503)
+
+    snaps = payload.get("snaps") or []
+    if not isinstance(snaps, list) or not snaps:
+        return {"ok": True, "saved": 0, "total": 0}
+
+    saved = 0
+    rejected = 0
+    try:
+        with engine.begin() as conn:
+            for snap in snaps:
+                if not isinstance(snap, dict):
+                    rejected += 1
+                    continue
+                ts_str = snap.get("ts")
+                sym = (snap.get("s") or "")[:64]
+                bids = snap.get("bid") or []
+                asks = snap.get("ask") or []
+                if not ts_str or not isinstance(bids, list) or not isinstance(asks, list):
+                    rejected += 1
+                    continue
+                try:
+                    conn.execute(text("""
+                        INSERT INTO vps_es_dom_snapshots (ts, symbol, bid_levels, ask_levels)
+                        VALUES (:ts, :sym, CAST(:b AS JSONB), CAST(:a AS JSONB))
+                    """), {
+                        "ts": ts_str,
+                        "sym": sym,
+                        "b": json.dumps(bids),
+                        "a": json.dumps(asks),
+                    })
+                    saved += 1
+                except Exception as inner_e:
+                    rejected += 1
+                    print(f"[vps] es/dom insert reject: {inner_e}", flush=True)
+        return {"ok": True, "saved": saved, "rejected": rejected, "total": len(snaps)}
+    except Exception as e:
+        print(f"[vps] es/dom error: {e}", flush=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.post("/api/vps/heartbeat")
 def vps_heartbeat(request: Request, payload: dict = Body(...)):
     """Receive heartbeat from VPS data bridge."""
@@ -21661,6 +21725,42 @@ def vps_vx_dom_get(session: str = Cookie(default=None), hours: int = 1, limit: i
             rows = conn.execute(text("""
                 SELECT ts, symbol, bid_levels, ask_levels, received_at
                 FROM vps_vx_dom_snapshots
+                WHERE ts >= :cutoff
+                ORDER BY ts DESC
+                LIMIT :lim
+            """), {"cutoff": cutoff, "lim": limit}).mappings().all()
+        snaps = []
+        for r in rows:
+            snaps.append({
+                "ts": str(r["ts"]),
+                "symbol": r["symbol"],
+                "bid": r["bid_levels"],
+                "ask": r["ask_levels"],
+                "received_at": str(r["received_at"]),
+            })
+        return {"snapshots": snaps, "count": len(snaps)}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/vps/es/dom")
+def vps_es_dom_get(session: str = Cookie(default=None), hours: int = 1, limit: int = 500):
+    """Get recent ES DOM snapshots. Default last 1 hour, capped at 5000 rows."""
+    user = get_current_user(session)
+    if not user:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if not engine:
+        return JSONResponse({"error": "no database"}, status_code=503)
+
+    hours = max(1, min(24, hours))
+    limit = max(1, min(5000, limit))
+
+    try:
+        cutoff = datetime.now(NY) - timedelta(hours=hours)
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT ts, symbol, bid_levels, ask_levels, received_at
+                FROM vps_es_dom_snapshots
                 WHERE ts >= :cutoff
                 ORDER BY ts DESC
                 LIMIT :lim

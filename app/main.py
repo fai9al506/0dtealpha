@@ -7717,6 +7717,15 @@ def start_scheduler():
                     misfire_grace_time=300)
     except Exception as e:
         print(f"[reconcile] schedule error (non-fatal): {e}", flush=True)
+    # S179 — daily FIFO per-lid close attribution reconcile at 16:20 ET
+    # (5 min after S81 so its reads see post-close stable state)
+    try:
+        from app.fifo_reconcile import run_today as fifo_reconcile_run_today
+        sch.add_job(fifo_reconcile_run_today, "cron", hour=16, minute=20, timezone=NY,
+                    id="fifo_reconcile", coalesce=True, max_instances=1,
+                    misfire_grace_time=300)
+    except Exception as e:
+        print(f"[fifo-reconcile] schedule error (non-fatal): {e}", flush=True)
     # S28 — bot-down watchdog every 30 min during market hours
     try:
         from app.bot_health_watchdog import check as watchdog_check
@@ -7841,6 +7850,12 @@ def on_startup():
         reconcile_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[reconcile] init error (non-fatal): {e}", flush=True)
+    # Initialize FIFO reconcile (S179 — daily FIFO close-price reattribute at 16:20 ET)
+    try:
+        from app.fifo_reconcile import init as fifo_reconcile_init
+        fifo_reconcile_init(engine, ts_access_token, send_telegram_setups)
+    except Exception as e:
+        print(f"[fifo-reconcile] init error (non-fatal): {e}", flush=True)
     # Initialize bot-down watchdog (S28 — alerts when signals fire but no trades placed)
     try:
         from app.bot_health_watchdog import init as watchdog_init

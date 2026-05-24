@@ -43,6 +43,101 @@ def init(engine, send_telegram_fn=None) -> None:
     global _engine, _send_telegram
     _engine = engine
     _send_telegram = send_telegram_fn
+    _ensure_history_table()
+
+
+def _ensure_history_table() -> None:
+    """Create filter_validation_runs table if missing.
+    One row per (rule_id, run_ts) — full history for trend analysis."""
+    if _engine is None:
+        return
+    try:
+        with _engine.begin() as cx:
+            cx.execute(text("""
+                CREATE TABLE IF NOT EXISTS filter_validation_runs (
+                    id           BIGSERIAL PRIMARY KEY,
+                    run_ts       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    rule_id      TEXT NOT NULL,
+                    rule_name    TEXT NOT NULL,
+                    shipped_date TEXT,
+                    window_days  INT NOT NULL,
+                    n_blocked    INT NOT NULL,
+                    win_count    INT,
+                    wr_pct       NUMERIC,
+                    total_pnl_pt NUMERIC,
+                    total_pnl_usd NUMERIC,
+                    avg_pnl_pt   NUMERIC,
+                    verdict      TEXT NOT NULL,
+                    note         TEXT
+                )
+            """))
+            cx.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_fvr_rule_ts "
+                "ON filter_validation_runs (rule_id, run_ts DESC)"
+            ))
+    except Exception as e:
+        print(f"[filter-validation] table init error: {e}", flush=True)
+
+
+def _persist_results(results: list[dict]) -> int:
+    """Insert one row per rule into filter_validation_runs. Returns rows written."""
+    if _engine is None or not results:
+        return 0
+    written = 0
+    with _engine.begin() as cx:
+        for r in results:
+            if r.get("error"):
+                continue
+            try:
+                cx.execute(text("""
+                    INSERT INTO filter_validation_runs
+                      (rule_id, rule_name, shipped_date, window_days, n_blocked,
+                       win_count, wr_pct, total_pnl_pt, total_pnl_usd, avg_pnl_pt,
+                       verdict, note)
+                    VALUES
+                      (:rid, :rname, :ship, :wd, :nb, :wc, :wr, :pt, :usd, :avg, :v, :note)
+                """), {
+                    "rid": r["id"], "rname": r["name"],
+                    "ship": r.get("shipped"),
+                    "wd": r.get("window_days", 30),
+                    "nb": r.get("n_blocked", 0),
+                    "wc": r.get("win_count"),
+                    "wr": r.get("wr"),
+                    "pt": r.get("total_pnl_pt"),
+                    "usd": r.get("total_pnl_usd"),
+                    "avg": r.get("avg_pnl_pt"),
+                    "v": r["verdict"],
+                    "note": r.get("note"),
+                })
+                written += 1
+            except Exception as e:
+                print(f"[filter-validation] persist error for {r.get('id')}: {e}", flush=True)
+    return written
+
+
+def get_history(rule_id: str | None = None, limit: int = 20) -> list[dict]:
+    """Pull recent validation history. Used by future portal trend view."""
+    if _engine is None:
+        return []
+    with _engine.connect() as cx:
+        if rule_id:
+            rows = cx.execute(text("""
+                SELECT run_ts, rule_id, rule_name, n_blocked, wr_pct,
+                       total_pnl_pt, total_pnl_usd, verdict, note
+                FROM filter_validation_runs
+                WHERE rule_id = :rid
+                ORDER BY run_ts DESC
+                LIMIT :lim
+            """), {"rid": rule_id, "lim": limit}).fetchall()
+        else:
+            rows = cx.execute(text("""
+                SELECT run_ts, rule_id, rule_name, n_blocked, wr_pct,
+                       total_pnl_pt, total_pnl_usd, verdict, note
+                FROM filter_validation_runs
+                ORDER BY run_ts DESC
+                LIMIT :lim
+            """), {"lim": limit}).fetchall()
+    return [dict(r._mapping) for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -233,10 +328,13 @@ def run_today() -> None:
         return
     try:
         results = evaluate_rules(window_days=30)
-        msg = format_telegram_summary(results)
-        print(f"[filter-validation] weekly check ({len(results)} rules):", flush=True)
+        # Persist to filter_validation_runs for trend tracking across weeks
+        n_written = _persist_results(results)
+        print(f"[filter-validation] weekly check ({len(results)} rules, {n_written} persisted):",
+              flush=True)
         for r in results:
             print(f"  {r}", flush=True)
+        msg = format_telegram_summary(results)
         # Telegram alert
         if TG_TOKEN and TG_CHAT:
             r = requests.post(
@@ -257,14 +355,31 @@ if __name__ == "__main__":
     from sqlalchemy import create_engine
     parser = argparse.ArgumentParser()
     parser.add_argument("--days", type=int, default=30)
+    parser.add_argument("--persist", action="store_true",
+                        help="Insert results into filter_validation_runs (skip for dry preview)")
+    parser.add_argument("--history", type=str, default=None,
+                        help="Show last 20 runs for given rule_id (e.g. S180)")
     args = parser.parse_args()
     db = os.environ.get("DATABASE_URL")
     if not db:
         raise SystemExit("DATABASE_URL required")
     eng = create_engine(db)
     init(eng)
+    if args.history:
+        rows = get_history(rule_id=args.history, limit=20)
+        if not rows:
+            print(f"No history for rule_id={args.history}")
+        else:
+            print(f"History for {args.history} (newest first):")
+            for r in rows:
+                print(f"  {r['run_ts']}  n={r['n_blocked']}  wr={r['wr_pct']}  "
+                      f"pnl_pt={r['total_pnl_pt']}  verdict={r['verdict']}")
+        raise SystemExit(0)
     results = evaluate_rules(window_days=args.days)
     print(format_telegram_summary(results))
+    if args.persist:
+        n = _persist_results(results)
+        print(f"\n[persisted {n} rows to filter_validation_runs]")
     print()
     print("=== Full per-rule output ===")
     for r in results:

@@ -4687,9 +4687,12 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5},
-            # ES Absorption C6 (2026-05-06): hybrid BE@5 + trail act=8 gap=3, no fixed target.
-            # Backtest 489t / 176 PURE: 2.2x PnL, MaxDD halved 56→25pt.
-            "ES Absorption": {"mode": "hybrid", "be_trigger": 5, "activation": 8, "gap": 3},
+            # ES Absorption C6.1 (2026-05-24, S172): drop BE-trigger (was BE@5).
+            # BE@5 was structurally redundant — trail act=8 gap=3 already locks
+            # +5 once MFE hits +8, so BE@5 just stole the 0-8 MFE band on retracements.
+            # Backtest 2026-05-21 (197 PURE trades Feb-May): BE=5 +469pt → no-BE +541pt
+            # = +72pt / +15% lift. Win count monotonic in BE: 93 (BE=5) → 114 (no-BE).
+            "ES Absorption": {"mode": "hybrid", "be_trigger": None, "activation": 8, "gap": 3},
             "SB Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
             "SB10 Absorption": {"mode": "hybrid", "be_trigger": 10, "activation": 20, "gap": 10},
             # SB2 Absorption: NO trail — fixed SL=10/T=20 bracket (removed from trail_params Apr 13)
@@ -11403,8 +11406,9 @@ def _calculate_setup_outcome(entry: dict) -> dict:
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
             "Skew Charm": {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 5, "initial_sl": 14},
-            # ES Absorption C6 (2026-05-06): hybrid BE@5 + trail act=8 gap=3, no fixed target
-            "ES Absorption": {"mode": "hybrid", "be_trigger": 5, "activation": 8, "gap": 3, "initial_sl": 8},
+            # ES Absorption C6.1 (2026-05-24, S172): drop BE-trigger (was BE@5).
+            # +72pt / +15% lift in 197-trade backtest. Trail act=8/gap=3 already locks +5 at MFE=8.
+            "ES Absorption": {"mode": "hybrid", "be_trigger": None, "activation": 8, "gap": 3, "initial_sl": 8},
         }
         # VIX Divergence: optimized 2026-05-03 (longs continuous a=10 g=8 SL=8, no BE)
         if setup_name == "VIX Divergence":

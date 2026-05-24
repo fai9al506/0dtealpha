@@ -56,13 +56,13 @@ V14_WHITELIST = {
 #   - SC/AG/VPB use trail-only (no BE), per V14 live config.
 #   - VIX Divergence longs use hybrid BE@+6 + continuous trail (a=10 g=8 SL=8).
 #   - VIX Divergence shorts use continuous (a=15 g=5 SL=12) — kept for parity.
-#   - ES Absorption uses C6 (BE@5, a=8, g=3, SL=8) — shipped May 6.
+#   - ES Absorption uses C6.1 (no-BE, a=8, g=3, SL=8) — shipped May 24 (S172).
 _DEFAULT_PARAMS = {
     "Skew Charm":         {"sl": 14, "be_trigger": None, "be_lock": 0, "trail_act": 10, "trail_gap": 5},
     "AG Short":           {"sl": 12, "be_trigger": None, "be_lock": 0, "trail_act": 12, "trail_gap": 5},
     "Vanna Pivot Bounce": {"sl":  8, "be_trigger": None, "be_lock": 0, "trail_act": 10, "trail_gap": 5},
     "VIX Divergence":     {"sl":  8, "be_trigger": 6,    "be_lock": 1, "trail_act": 8,  "trail_gap": 8},
-    "ES Absorption":      {"sl":  8, "be_trigger": 5,    "be_lock": 0, "trail_act": 8,  "trail_gap": 3},
+    "ES Absorption":      {"sl":  8, "be_trigger": None, "be_lock": 0, "trail_act": 8,  "trail_gap": 3},
 }
 
 

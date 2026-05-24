@@ -6,7 +6,7 @@
   "telegram_chat_id": "-1003886332593",
   "telegram_poll_interval_s": 2,
   "nt8_incoming_folder": "C:\\Users\\Administrator\\Documents\\NinjaTrader 8\\incoming",
-  "nt8_account_id": "falde5482tcp25d170091",
+  "nt8_account_id": "falde5482tcp25d114592",
   "nt8_mes_symbol": "auto",
   "qty": 3,
   "max_trade_risk": 150,
@@ -38,7 +38,8 @@
     "AG Short": {
       "enabled": true,
       "stop": 12,
-      "target": null
+      "target": null,
+      "allowed_directions": ["short"]
     },
     "BofA Scalp": {
       "enabled": false,
@@ -49,7 +50,8 @@
     "ES Absorption": {
       "enabled": true,
       "stop": 8,
-      "target": null
+      "target": null,
+      "allowed_directions": ["long"]
     },
     "Paradigm Reversal": {
       "enabled": false,
@@ -57,22 +59,26 @@
       "target": 10
     },
     "DD Exhaustion": {
-      "enabled": false,
+      "enabled": true,
       "stop": 12,
-      "target": null
+      "target": null,
+      "qty": 2,
+      "max_risk": 120,
+      "allowed_directions": ["long"],
+      "allowed_paradigms": ["BOFA-PURE"]
     },
     "Skew Charm": {
-      "enabled": true,
+      "enabled": false,
       "stop": 14,
       "target": null
     },
     "Vanna Pivot Bounce": {
-      "enabled": true,
+      "enabled": false,
       "stop": 8,
       "target": 10
     },
     "VIX Divergence": {
-      "enabled": true,
+      "enabled": false,
       "stop": 8,
       "target": null
     }

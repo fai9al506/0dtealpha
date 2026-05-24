@@ -779,6 +779,20 @@ class ComplianceGate:
         if not rules.get("enabled", True):
             return False, f"{signal['setup_name']} disabled"
 
+        # S182 refined whitelist (2026-05-24 ship) — optional per-setup direction/paradigm gate.
+        # Missing fields = current behavior (V14 full). Set on REAL eval only; SIM stays full V14.
+        _s182_name = signal.get("setup_name", "")
+        _s182_dir_key = "long" if signal.get("direction") in ("long", "bullish") else "short"
+        _s182_para = signal.get("paradigm") or ""
+        _s182_allowed_dirs = rules.get("allowed_directions")
+        if _s182_allowed_dirs and _s182_dir_key not in _s182_allowed_dirs:
+            log.info(f"[refined] BLOCKED setup={_s182_name} direction={_s182_dir_key} paradigm={_s182_para} reason=direction_not_whitelisted")
+            return False, f"S182 refined: {_s182_name} {_s182_dir_key} not in whitelist"
+        _s182_allowed_pgms = rules.get("allowed_paradigms")
+        if _s182_allowed_pgms and _s182_para not in _s182_allowed_pgms:
+            log.info(f"[refined] BLOCKED setup={_s182_name} direction={_s182_dir_key} paradigm={_s182_para} reason=paradigm_not_whitelisted")
+            return False, f"S182 refined: {_s182_name} paradigm {_s182_para} not in whitelist"
+
         # S151 smart-ban: same (setup,direction) banned for the day after 2 consec stops
         # (lifted automatically on any same-direction non-stop in update_streak)
         _sname = signal.get("setup_name", "")

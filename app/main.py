@@ -4129,6 +4129,25 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     if setup_name in ("IV Momentum", "Vanna Butterfly"):
         return False
 
+    # ── S180 (2026-05-24): GEX-TARGET PM long block ──
+    # GEX-TARGET paradigm = spot AT a +GEX magnet (destination reached). AM phase
+    # = momentum-continuation pop (price gets pulled UP to target). PM phase =
+    # destination exhausted, mean-reversion expected.
+    # Backtest Feb 1 - May 22 2026 (V16-eligible SC/DD/ES Abs longs):
+    #   AM (hr<13): n=11, 73% WR, +6.88pt mean
+    #   PM (hr>=13): n=6, 0% WR, -8.33pt mean
+    # GEX-TARGET has biggest AM->PM swing of any paradigm (-15.22pt delta) — paradigm-
+    # specific, not general PM weakness (BOFA-PURE PM still +3.27pt, AG-TARGET PM +9.93).
+    # Block-rule sim: V16 baseline +1907pt -> +1957pt = +$250 / +50pt lift, WR +0.7pp.
+    # Triggered by 2026-05-22 incident: 3 longs in GEX-TARGET PM lost -$152.50 broker.
+    # Mechanism aligned with user observation; n=6 sample so re-validate periodically (S181).
+    from datetime import time as _dtime180
+    if (paradigm == "GEX-TARGET"
+        and direction in ("long", "bullish")
+        and now_et().time() >= _dtime180(13, 0)
+        and setup_name in ("Skew Charm", "DD Exhaustion", "ES Absorption")):
+        return False
+
     # ── GEX Long v3 (2026-05-18): PORTAL-ONLY by default ──
     # When GEX_LONG_V3_ENABLED=true, detector fires v3 signals to setup_log so
     # they appear in the portal. But Telegram + real trader stay silent unless
@@ -7541,6 +7560,35 @@ def _send_setup_eod_summary():
     except Exception as e:
         print(f"[eod-summary] PDF/chart report error: {e}", flush=True)
 
+    # S178 Phase 2 (2026-05-24): post V16 trade-log link to Setups Telegram channel
+    # so user can open and review per-trade cards with comment textareas right away.
+    try:
+        _tg_token = TELEGRAM_BOT_TOKEN
+        _tg_chat = TELEGRAM_CHAT_ID_SETUPS or TELEGRAM_CHAT_ID
+        if _tg_token and _tg_chat:
+            _date_iso = now.strftime("%Y-%m-%d")
+            _portal_base = os.getenv("RAILWAY_PUBLIC_DOMAIN", "0dtealpha.com")
+            if not _portal_base.startswith("http"):
+                _portal_base = f"https://{_portal_base}"
+            _link = f"{_portal_base}/v16-trade-log?date={_date_iso}"
+            _msg = (
+                f"📔 <b>V16 Trade Log — {_date_iso}</b>\n"
+                f"Per-trade review cards + comment textareas:\n"
+                f"<a href=\"{_link}\">{_link}</a>"
+            )
+            _resp = requests.post(
+                f"https://api.telegram.org/bot{_tg_token}/sendMessage",
+                data={"chat_id": _tg_chat, "text": _msg,
+                      "parse_mode": "HTML", "disable_web_page_preview": "true"},
+                timeout=10,
+            )
+            if _resp.status_code == 200:
+                print(f"[eod-summary] V16 trade-log link sent to Telegram", flush=True)
+            else:
+                print(f"[eod-summary] V16 trade-log link send failed: {_resp.status_code}", flush=True)
+    except Exception as e:
+        print(f"[eod-summary] V16 trade-log link error (non-fatal): {e}", flush=True)
+
 
 ECON_CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 
@@ -7734,11 +7782,25 @@ def start_scheduler():
                     misfire_grace_time=300)
     except Exception as e:
         print(f"[reconcile] schedule error (non-fatal): {e}", flush=True)
-    # S179 — daily FIFO per-lid close attribution reconcile at 16:20 ET
-    # (5 min after S81 so its reads see post-close stable state)
+    # S181 — weekly filter validation cron at Monday 17:00 ET
+    # Scans each active V16+S180 block rule against recent 30-day data,
+    # flags any rule that's blocking winners (regime shift / over-blocking).
+    # Telegram alert if any rule DEGRADING. User's standing principle:
+    # always block, then re-assess periodically rather than wait for more sample.
+    try:
+        from app.filter_validation import run_today as _filter_val_run
+        sch.add_job(_filter_val_run, "cron", day_of_week="mon", hour=17, minute=0,
+                    timezone=NY, id="filter_validation", coalesce=True, max_instances=1,
+                    misfire_grace_time=600)
+    except Exception as e:
+        print(f"[filter-validation] schedule error (non-fatal): {e}", flush=True)
+    # S179 — daily FIFO per-lid close attribution reconcile at 16:03 ET
+    # (positions flat by 15:58 post EOD-flatten; TS API registers fills within
+    # seconds; we read /orders + /historicalorders not BalanceDetail so no lag.
+    # Earlier slot lets user see correct portal numbers when checking EOD review.)
     try:
         from app.fifo_reconcile import run_today as fifo_reconcile_run_today
-        sch.add_job(fifo_reconcile_run_today, "cron", hour=16, minute=20, timezone=NY,
+        sch.add_job(fifo_reconcile_run_today, "cron", hour=16, minute=3, timezone=NY,
                     id="fifo_reconcile", coalesce=True, max_instances=1,
                     misfire_grace_time=300)
     except Exception as e:
@@ -7867,12 +7929,18 @@ def on_startup():
         reconcile_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[reconcile] init error (non-fatal): {e}", flush=True)
-    # Initialize FIFO reconcile (S179 — daily FIFO close-price reattribute at 16:20 ET)
+    # Initialize FIFO reconcile (S179 — daily FIFO close-price reattribute at 16:03 ET)
     try:
         from app.fifo_reconcile import init as fifo_reconcile_init
         fifo_reconcile_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[fifo-reconcile] init error (non-fatal): {e}", flush=True)
+    # Initialize filter validation (S181 — weekly cron Monday 17:00 ET)
+    try:
+        from app.filter_validation import init as filter_val_init
+        filter_val_init(engine, send_telegram_setups)
+    except Exception as e:
+        print(f"[filter-validation] init error (non-fatal): {e}", flush=True)
     # Initialize bot-down watchdog (S28 — alerts when signals fire but no trades placed)
     try:
         from app.bot_health_watchdog import init as watchdog_init
@@ -13542,6 +13610,12 @@ function passesStrategy(l, strat) {
     // which only blocked some shorts (grade A+/C or BOFA-PURE), letting grade-B DD shorts
     // on non-BOFA-PURE paradigms appear as "V16 passed" when TSRT was rejecting them.
     if (sn === 'DD Exhaustion' && !isLong) return false;
+    // S180 (2026-05-24): GEX-TARGET PM long block — mirror live filter.
+    // Block longs in GEX-TARGET when ET hour >= 13 (paradigm = destination reached).
+    if (isLong && l.paradigm === 'GEX-TARGET') {
+      const _m180 = etMins(l.ts);
+      if (_m180 != null && _m180 >= 13*60) return false;
+    }
     if (v16DDAdmit()) return true;  // DD long admit (new setup type)
     // V14 base filter:
     if (!gapFilter(l.ts)) return false;
@@ -18503,6 +18577,12 @@ DASH_HTML_TEMPLATE = """
         if (!_tlV16Allowed.has(sn)) return false;
         // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT — mirror it here.
         if (sn === 'DD Exhaustion' && !isLong) return false;
+        // S180 (2026-05-24): GEX-TARGET PM long block — mirror live filter.
+        if (isLong && l.paradigm === 'GEX-TARGET' && l.ts) {
+          const _d180 = new Date(l.ts);
+          const _et180 = new Date(_d180.toLocaleString('en-US',{timeZone:'America/New_York'}));
+          if (_et180.getHours() >= 13) return false;
+        }
         function _tlIsMonthlyOpex() {
           if (!l.ts) return false;
           const d = new Date(l.ts);
@@ -20734,6 +20814,28 @@ def eod_review_page(session: str = Cookie(default=None), date: str = Query(None)
     review_date = date or datetime.now(NY).strftime("%Y-%m-%d")
     html = EOD_REVIEW_TEMPLATE.replace("__DATE__", review_date)
     return HTMLResponse(html)
+
+
+# S178 Phase 2 (2026-05-24): V16 daily trade-log review portal route.
+# Replaces _tmp_daily_trade_log.py for daily workflow. User comments persist
+# in browser localStorage per date. EOD Telegram includes a clickable link.
+@app.get("/v16-trade-log", response_class=HTMLResponse)
+def v16_trade_log_page(session: str = Cookie(default=None), date: str = Query(None)):
+    user = get_current_user(session)
+    if not user:
+        return RedirectResponse(url="/", status_code=302)
+    try:
+        from app.daily_trade_log import build_html as _build_v16_trade_log
+        import html as _html
+        review_date = date or datetime.now(NY).strftime("%Y-%m-%d")
+        return HTMLResponse(_build_v16_trade_log(engine, review_date))
+    except Exception as e:
+        import html as _html
+        return HTMLResponse(
+            f"<pre style='color:#ff5252;background:#1a1a2e;padding:20px;font-family:monospace;'>"
+            f"V16 Trade Log error: {_html.escape(str(e))}</pre>",
+            status_code=500,
+        )
 
 
 # ====== VPS DATA BRIDGE ENDPOINTS ======

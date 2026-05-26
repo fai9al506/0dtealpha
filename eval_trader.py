@@ -68,6 +68,10 @@ CONFIG_FILE = SCRIPT_DIR / "eval_trader_config.json"
 STATE_FILE = SCRIPT_DIR / "eval_trader_state.json"
 POSITION_FILE = SCRIPT_DIR / "eval_trader_position.json"
 API_STATE_FILE = SCRIPT_DIR / "eval_trader_api_state.json"
+# S185 mitigation 2026-05-26: trusted-snapshot baseline for state integrity check.
+# Manually updated post-EOD when state values are confirmed clean. Missing file = skip check.
+TRUSTED_STATE_FILE = SCRIPT_DIR / "eval_trader_state.TRUSTED.json"
+S185_INTEGRITY_PEAK_TOLERANCE = 5000.0  # USD — peak_balance diff > this rejects startup
 LOG_FILE = "eval_trader.log"
 LOCK_FILE = SCRIPT_DIR / "eval_trader.lock"
 
@@ -721,6 +725,39 @@ class ComplianceGate:
                          f"total=${self.total_pnl:+.0f} "
                          f"peak=${self.cfg['e2t_peak_balance']:,.0f} losses={self.losses_today} "
                          f"days={len(self.trade_days)} comm/ct=${comm_rate:.2f}")
+                # S185 mitigation: validate loaded peak against trusted snapshot. If diff > $5K
+                # refuse to start + Telegram alert. Skip silently if no trusted file exists.
+                if TRUSTED_STATE_FILE.exists():
+                    try:
+                        trusted = json.loads(TRUSTED_STATE_FILE.read_text())
+                        trusted_peak = float(trusted.get("peak_balance", 0))
+                        loaded_peak = float(self.cfg["e2t_peak_balance"])
+                        diff = abs(loaded_peak - trusted_peak)
+                        if diff > S185_INTEGRITY_PEAK_TOLERANCE:
+                            err = (f"S185 STATE INTEGRITY FAIL: loaded peak ${loaded_peak:,.0f} vs "
+                                   f"trusted ${trusted_peak:,.0f} (diff ${diff:,.0f} > "
+                                   f"${S185_INTEGRITY_PEAK_TOLERANCE:,.0f}). REFUSING TO START.")
+                            log.error(f"[S185-integrity] {err}")
+                            try:
+                                bot = self.cfg.get("telegram_bot_token", "")
+                                chat = self.cfg.get("telegram_chat_id", "")
+                                if bot and chat:
+                                    requests.post(
+                                        f"https://api.telegram.org/bot{bot}/sendMessage",
+                                        json={"chat_id": chat,
+                                              "text": f"🚨 S185 INTEGRITY FAIL ({self.cfg.get('nt8_account_id','?')})\n{err}\nManual review required before restart."},
+                                        timeout=10)
+                            except Exception as te:
+                                log.error(f"[S185-integrity] Telegram alert failed: {te}")
+                            sys.exit(1)
+                        else:
+                            log.info(f"[S185-integrity] OK: peak ${loaded_peak:,.0f} vs trusted ${trusted_peak:,.0f} (diff ${diff:,.0f})")
+                    except SystemExit:
+                        raise
+                    except Exception as ve:
+                        log.warning(f"[S185-integrity] Validation error (continuing): {ve}")
+                else:
+                    log.info(f"[S185-integrity] No trusted snapshot at {TRUSTED_STATE_FILE.name}; skipping check.")
             except Exception as e:
                 log.warning(f"State load error: {e}")
 
@@ -2863,6 +2900,11 @@ def main():
     TRAIL_CHECK_INTERVAL = 5.0  # seconds between trail/fill checks
     RECONCILE_INTERVAL = 60.0   # seconds between Railway reconciliation checks
     latest_es_price = None  # updated from each API poll
+    # S185 mitigation 2026-05-26: heartbeat log every 5 min + daily 16:05 ET Telegram beacon
+    _last_heartbeat_log = 0.0
+    HEARTBEAT_INTERVAL = 300.0  # 5 min
+    _last_eod_beacon_date = None
+    EOD_BEACON_TIME = dtime(16, 5)
 
     try:
         while True:
@@ -2870,6 +2912,37 @@ def main():
 
             # Daily reset
             compliance.daily_reset()
+
+            # S185 heartbeat: log alive + state every 5 min (catches mid-day hangs)
+            _now_ts = time.time()
+            if _now_ts - _last_heartbeat_log >= HEARTBEAT_INTERVAL:
+                log.info(f"[heartbeat] alive daily=${compliance.daily_pnl:+.0f} "
+                         f"total=${compliance.total_pnl:+.0f} "
+                         f"peak=${compliance.cfg['e2t_peak_balance']:,.0f} "
+                         f"slots={len(tracker.slots) if hasattr(tracker, 'slots') else (1 if tracker.is_open else 0)}")
+                _last_heartbeat_log = _now_ts
+
+            # S185 daily Telegram beacon at 16:05 ET on weekdays — confirms state is alive at EOD
+            if (now_et.weekday() < 5
+                    and now_et.time() >= EOD_BEACON_TIME
+                    and _last_eod_beacon_date != now_et.date()):
+                try:
+                    bot = cfg.get("telegram_bot_token", "")
+                    chat = cfg.get("telegram_chat_id", "")
+                    if bot and chat:
+                        acct = cfg.get("nt8_account_id", "?")
+                        msg = (f"✅ Eval state OK ({acct})\n"
+                               f"daily=${compliance.daily_pnl:+.0f} "
+                               f"total=${compliance.total_pnl:+.0f} "
+                               f"peak=${compliance.cfg['e2t_peak_balance']:,.0f} "
+                               f"trades={compliance.trades_today} "
+                               f"losses={compliance.losses_today}")
+                        requests.post(f"https://api.telegram.org/bot{bot}/sendMessage",
+                                      json={"chat_id": chat, "text": msg}, timeout=10)
+                        log.info(f"[eod-beacon] sent: {msg}")
+                except Exception as be:
+                    log.warning(f"[eod-beacon] failed: {be}")
+                _last_eod_beacon_date = now_et.date()
 
             # ── E2T Tick Trade: count trading day even with no signals ──
             # At 15:30 ET, if no trades today and no position open, place 1 MES

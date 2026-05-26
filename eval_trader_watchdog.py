@@ -23,7 +23,10 @@ BOT_TOKEN = "8544971756:AAGsdiBWXCZtPtKiUfhPddsd3M93Vwv8Xuw"
 CHAT_ID = "-1003886332593"
 
 # Auto-restart: launches eval_trader hidden via VBS if dead
-AUTO_RESTART = True
+# S185 MITIGATION 2026-05-26: default disabled until state-corruption root cause found.
+# Re-enable by setting WATCHDOG_AUTO_RESTART_EVAL=true env var or flipping default to True.
+# Dead-process Telegram alerts still fire regardless of this flag.
+AUTO_RESTART = os.getenv("WATCHDOG_AUTO_RESTART_EVAL", "false").lower() == "true"
 VBS_PATH = r"C:\Users\Administrator\0dtealpha\run_eval_trader.vbs"
 
 # Persistent state to require 2 consecutive failed checks before alerting

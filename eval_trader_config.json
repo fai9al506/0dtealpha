@@ -23,7 +23,11 @@
   "no_new_trades_after_et": "15:30",
   "flatten_time_et": "15:50",
   "e2t_daily_pnl_cap": 525,
-  "daily_loss_floor": -400,
+  "daily_loss_floor": -200,
+  "stack_enabled": true,
+  "stack_cap_contracts": 4,
+  "cluster_floor_dollars": -200,
+  "_s183_trial_note": "5-day live trial 2026-05-27 → 2026-06-02 (Wed open). cap=2 concurrent (4 contracts via 2-MES default qty). Floor tightened -400→-200. End conditions: 5d total < -$200 OR any single day < -$200 → revert. 5d total > +$200 → keep. Between → extend 5d.",
   "setup_rules": {
     "GEX Long": {
       "enabled": false,

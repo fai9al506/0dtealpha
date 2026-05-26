@@ -1503,11 +1503,25 @@ def _flatten_position(order):
                             pass
                 return
 
-        # Check broker position first -- don't create ghost positions
-        broker_pos = _get_broker_position(account_id)
+        # Check broker position first -- don't create ghost positions.
+        # 2026-05-27 fix: opt into retry path. Bot expected a position here
+        # (status was filled/closed/pending_entry to reach this branch). False-
+        # flat reads from TS API hiccups were causing silent ORPHAN bugs
+        # (lid=3211 today: bot bailed, broker held position 5h29 until
+        # reconciler caught it). expect_position=True retries up to 3× / 1s gap.
+        broker_pos = _get_broker_position(account_id, expect_position=True)
         if not broker_pos:
-            print(f"[real-trader] flatten SKIPPED: broker already flat on {account_id} "
-                  f"(stop/target filled or entry cancelled). {order.get('setup_name')}", flush=True)
+            # 2026-05-27: alert on unexpected flat read so we have visibility on
+            # how often the retry path saves us vs how often broker truly was
+            # already flat (stop/target filled between our DELETEs and this check).
+            print(f"[real-trader] flatten SKIPPED: broker reads flat on {account_id} "
+                  f"after retries. {order.get('setup_name')} id={order.get('setup_log_id')} "
+                  f"status_was={order.get('status')}. Reconciler will catch if false-flat.",
+                  flush=True)
+            _alert(f"ℹ️ Flatten skipped: {account_id} reads flat\n"
+                   f"{order.get('setup_name')} id={order.get('setup_log_id')} "
+                   f"(status_was={order.get('status')})\n"
+                   f"If position actually exists, reconciler will catch within 30s.")
             return
 
         # Verify direction matches
@@ -2902,28 +2916,48 @@ def get_full_status() -> dict:
 
 # ====== BROKER QUERIES ======
 
-def _get_broker_position(account_id: str) -> dict | None:
+def _get_broker_position(account_id: str, expect_position: bool = False) -> dict | None:
     """Query broker for actual MES position on a specific account.
     Returns {'qty': int, 'long_short': str, 'symbol': str} or None if flat.
 
     NOTE: TS API returns Quantity as a SIGNED string for futures positions
     (e.g. "-1" for shorts). Use abs() so the filter doesn't drop shorts.
+
+    2026-05-27 fix (lid=3211 ORPHAN root cause): added expect_position retry path.
+    When the caller knows there SHOULD be a position (e.g. _flatten_position
+    entering with status in (filled, closed)), retry up to 3 times with 1s gap
+    on empty/None response. Single-shot was returning false-flat on transient
+    TS API hiccups → _flatten_position bailed → broker had position → ORPHAN
+    caught hours later by reconciler. Reconciler/other callers keep single-shot
+    semantics (expect_position=False) so they can detect genuine flat-broker
+    states without latency cost.
     """
     if account_id not in ACCOUNT_WHITELIST:
         return None
-    try:
-        pos_data = _ts_api("GET", f"/brokerage/accounts/{account_id}/positions", None, account_id)
-        for pos in (pos_data or {}).get("Positions", []):
-            symbol = pos.get("Symbol", "")
-            qty = abs(int(pos.get("Quantity", "0")))
-            if qty > 0 and "MES" in symbol.upper():
-                return {
-                    "qty": qty,
-                    "long_short": pos.get("LongShort", ""),
-                    "symbol": symbol,
-                }
-    except Exception as e:
-        print(f"[real-trader] broker position query error on {account_id}: {e}", flush=True)
+    attempts = 3 if expect_position else 1
+    for attempt in range(attempts):
+        try:
+            pos_data = _ts_api("GET", f"/brokerage/accounts/{account_id}/positions", None, account_id)
+            for pos in (pos_data or {}).get("Positions", []):
+                symbol = pos.get("Symbol", "")
+                qty = abs(int(pos.get("Quantity", "0")))
+                if qty > 0 and "MES" in symbol.upper():
+                    return {
+                        "qty": qty,
+                        "long_short": pos.get("LongShort", ""),
+                        "symbol": symbol,
+                    }
+            # No position found in this response — may be transient false-flat
+            if expect_position and attempt < attempts - 1:
+                time.sleep(1.0)
+                continue
+        except Exception as e:
+            if attempt == attempts - 1:
+                print(f"[real-trader] broker position query error on {account_id} "
+                      f"after {attempts} attempts: {e}", flush=True)
+            if attempt < attempts - 1:
+                time.sleep(1.0)
+                continue
     return None
 
 

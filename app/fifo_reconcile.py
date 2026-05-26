@@ -294,7 +294,9 @@ def run_today() -> None:
     now = datetime.now(NY)
     if now.weekday() >= 5:
         return
-    if not (dtime(16, 10) <= now.time() <= dtime(23, 59)):
+    # Guard adjusted 2026-05-27: was dtime(16,10) which silently rejected the
+    # 16:03 ET cron schedule (lid=3211 didn't auto-repair Tue). Match scheduler.
+    if not (dtime(16, 0) <= now.time() <= dtime(23, 59)):
         return  # only after market close
     # Env gate: ship behind FIFO_RECONCILE_ENABLED (default false for first day observation)
     import os

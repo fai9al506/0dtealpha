@@ -4767,7 +4767,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                     elif _tp_es["mode"] == "hybrid":
                         if _mf >= _tp_es["activation"]:
                             _tl = _mf - _tp_es["gap"]
-                        elif _mf >= _tp_es["be_trigger"]:
+                        elif _tp_es["be_trigger"] is not None and _mf >= _tp_es["be_trigger"]:
                             _tl = 0
                     if _tl is not None:
                         if is_long:
@@ -4847,7 +4847,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 elif _tp["mode"] == "hybrid":
                     if max_fav >= _tp["activation"]:
                         trail_lock = max_fav - _tp["gap"]
-                    elif max_fav >= _tp["be_trigger"]:
+                    elif _tp["be_trigger"] is not None and max_fav >= _tp["be_trigger"]:
                         trail_lock = 0  # breakeven
                 else:
                     rung = _tp["rung_start"]
@@ -11578,7 +11578,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     elif tp["mode"] == "hybrid":
                         if trail_max_fav >= tp["activation"]:
                             trail_lock = trail_max_fav - tp["gap"]
-                        elif trail_max_fav >= tp["be_trigger"]:
+                        elif tp["be_trigger"] is not None and trail_max_fav >= tp["be_trigger"]:
                             trail_lock = 0  # breakeven
                     else:
                         rung = tp["rung_start"]
@@ -11632,7 +11632,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     elif tp["mode"] == "hybrid":
                         if trail_max_fav >= tp["activation"]:
                             trail_lock = trail_max_fav - tp["gap"]
-                        elif trail_max_fav >= tp["be_trigger"]:
+                        elif tp["be_trigger"] is not None and trail_max_fav >= tp["be_trigger"]:
                             trail_lock = 0  # breakeven
                     else:
                         rung = tp["rung_start"]

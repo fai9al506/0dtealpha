@@ -1,0 +1,434 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>0DTE Alpha — GEX Long May 2026 Audit</title>
+<style>
+  body { background: #0a0e1a; color: #e5e7eb; font-family: 'Plus Jakarta Sans','Segoe UI',sans-serif;
+         margin: 0; padding: 20px; line-height: 1.55; }
+  .container { max-width: 1300px; margin: 0 auto; padding-bottom: 80px; }
+  h1 { color: #fff; margin-bottom: 4px; }
+  .subtitle { color: #94a3b8; margin-bottom: 25px; font-size: 14px; }
+  h2 { color: #fff; margin-top: 32px; padding-bottom: 6px; border-bottom: 2px solid #1e293b; }
+  h3 { color: #cbd5e1; margin-top: 22px; font-size: 16px; }
+  .headline {
+    background: #7f1d1d44; border-left: 4px solid #ef4444;
+    padding: 18px 22px; margin: 18px 0; border-radius: 4px;
+    font-size: 15px; font-weight: 500;
+  }
+  .recommend {
+    background: #064e3b44; border: 2px solid #22c55e;
+    padding: 18px 22px; margin: 22px 0; border-radius: 6px;
+  }
+  .recommend h3 { margin-top: 0; color: #4ade80; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+  th, td { padding: 8px 11px; text-align: left; border-bottom: 1px solid #1e293b; }
+  th { background: #1e293b; color: #e2e8f0; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  td.r, th.r { text-align: right; }
+  td.c, th.c { text-align: center; }
+  .good { color: #22c55e; font-weight: 600; }
+  .bad  { color: #ef4444; font-weight: 600; }
+  .warn { color: #fbbf24; }
+  .muted { color: #64748b; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 18px 0; }
+  .kpi { background: #111827; border-left: 4px solid #3b82f6;
+          padding: 12px 16px; border-radius: 4px; }
+  .kpi.bad { border-left-color: #ef4444; }
+  .kpi.good { border-left-color: #22c55e; }
+  .kpi.warn { border-left-color: #fbbf24; }
+  .kpi .label { font-size: 10px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
+  .kpi .value { font-size: 22px; font-weight: 700; margin-top: 4px; color: #fff; }
+  .kpi .sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+  code { background: #1e293b; padding: 2px 6px; border-radius: 3px;
+          font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #fbbf24; }
+
+  /* Trade cards */
+  .filter-bar { position: sticky; top: 0; background: #0a0e1a; padding: 12px 0; z-index: 10;
+                 border-bottom: 1px solid #1e293b; margin-bottom: 16px; }
+  .filter-bar select, .filter-bar input { background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
+    padding: 6px 10px; border-radius: 4px; margin-right: 8px; font-size: 13px; }
+  .filter-bar button { background: #1d4ed8; color: #fff; border: none; padding: 6px 14px;
+    border-radius: 4px; cursor: pointer; margin-left: 6px; font-size: 13px; }
+  .filter-bar button:hover { background: #1e40af; }
+  .filter-bar button.bad { background: #dc2626; }
+
+  .trade-card { background: #0f172a; border: 1px solid #1e293b; border-left: 4px solid #3b82f6;
+                 padding: 16px 20px; margin: 12px 0; border-radius: 4px; }
+  .trade-card.win { border-left-color: #22c55e; }
+  .trade-card.loss { border-left-color: #ef4444; }
+  .trade-card.exp { border-left-color: #64748b; }
+  .trade-card.aplus { background: #7f1d1d22; }
+  .trade-card.tsrt { box-shadow: 0 0 0 1px #fbbf24aa; }
+  .card-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .card-head h4 { margin: 0; font-size: 15px; color: #fff; }
+  .card-meta { font-size: 12px; color: #94a3b8; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+                gap: 10px 16px; margin: 12px 0; font-size: 12px; }
+  .card-grid .lbl { color: #64748b; font-size: 10px; text-transform: uppercase; }
+  .card-grid .val { color: #e2e8f0; font-weight: 600; font-size: 14px; }
+  .card-grid .val.good { color: #22c55e; }
+  .card-grid .val.bad { color: #ef4444; }
+  .card-grid .val.warn { color: #fbbf24; }
+  textarea.note { width: 100%; background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
+    padding: 8px 12px; border-radius: 4px; font-family: inherit; font-size: 12px;
+    min-height: 50px; margin-top: 8px; box-sizing: border-box; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px;
+          font-weight: 600; margin-right: 6px; }
+  .tag.win { background: #16a34a44; color: #4ade80; }
+  .tag.loss { background: #dc262644; color: #f87171; }
+  .tag.exp { background: #4b556344; color: #cbd5e1; }
+  .tag.aplus { background: #dc262666; color: #fecaca; }
+  .tag.tsrt { background: #ca8a0444; color: #fde68a; }
+
+  .toolbar { position: fixed; bottom: 16px; right: 16px; background: #1e293b;
+              padding: 12px 16px; border-radius: 8px; display: flex; gap: 8px;
+              box-shadow: 0 4px 12px #00000055; z-index: 100; }
+  .toolbar button { background: #1d4ed8; color: #fff; border: none; padding: 8px 14px;
+    border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .toolbar button.danger { background: #dc2626; }
+</style></head>
+<body><div class="container">
+
+<h1>GEX Long — May 2026 audit</h1>
+<div class="subtitle">59 trades · 2026-05-27 21:05 ET · Generated for manual cross-check</div>
+
+<div class="kpi-grid">
+  <div class="kpi"><div class="label">Total trades</div><div class="value">59</div></div>
+  <div class="kpi good"><div class="label">Win rate</div><div class="value">51%</div><div class="sub">30W / 29L / 0 EXP</div></div>
+  <div class="kpi good"><div class="label">Portal P&L</div><div class="value">+40.6pt</div><div class="sub">$+203 at 1 MES</div></div>
+  <div class="kpi"><div class="label">MFE sum (perfect)</div><div class="value">+715.1pt</div><div class="sub">$+3,575 at 1 MES</div></div>
+  <div class="kpi warn"><div class="label">Capture vs perfect</div><div class="value">6%</div></div>
+</div>
+
+<div class="headline">
+<strong>🚨 KEY FINDING:</strong> Grade A+ is anti-predictive. 20 trades, 20% WR, <strong>$-547</strong> portal at 1 MES.
+Compare Grade A: 13 trades, 77% WR, <strong>$+585</strong> portal.
+Model's "highest confidence" tier is the worst performer. Same pattern as DD short A+ from prior audits.
+</div>
+
+<div class="recommend">
+<h3>✅ Proposed action — SHIP GEX Long real-trading with grade != A+ filter</h3>
+<p><strong>Filter:</strong> in <code>_passes_live_filter()</code>, add for GEX Long: <code>if grade == "A+": return False</code></p>
+<p><strong>Env flip:</strong> <code>railway variables --set "GEX_LONG_V3_REAL_TRADE_ENABLED=true"</code></p>
+<p><strong>Expected lift:</strong> $+585 (Grade A only) + smaller B/A-Entry contribution. Estimated ~$300/mo at 1 MES.</p>
+<p><strong>Revert criteria:</strong> 3 consecutive losses OR net &lt; -$200 over any 5 trades → flip env back.</p>
+<p class="muted" style="margin-top: 8px;">Pending your approval after manual cross-check of the trades below.</p>
+</div>
+
+<h2>Aggregates</h2>
+<h3>BY GRADE</h3>
+<table><thead><tr>
+<th>GRADE</th><th class="r">n</th><th class="r">W</th><th class="r">L</th>
+<th class="r">EXP</th><th class="r">WR</th><th class="r">Portal pts</th>
+<th class="r">@ 1 MES</th><th class="r">avg/trade</th><th class="r muted">if perfect (MFE)</th>
+</tr></thead><tbody><tr><td><strong>A+</strong></td>
+        <td class="r">20</td><td class="r">4</td><td class="r">16</td><td class="r muted">0</td>
+        <td class="r bad">20%</td>
+        <td class="r bad">-109.4pt</td>
+        <td class="r bad">$-547</td>
+        <td class="r bad">$-27</td>
+        <td class="r muted">$+792</td>
+        </tr><tr><td><strong>B</strong></td>
+        <td class="r">18</td><td class="r">9</td><td class="r">9</td><td class="r muted">0</td>
+        <td class="r warn">50%</td>
+        <td class="r good">+0.3pt</td>
+        <td class="r good">$+2</td>
+        <td class="r good">$+0</td>
+        <td class="r muted">$+1,177</td>
+        </tr><tr><td><strong>A</strong></td>
+        <td class="r">13</td><td class="r">10</td><td class="r">3</td><td class="r muted">0</td>
+        <td class="r good">77%</td>
+        <td class="r good">+117.0pt</td>
+        <td class="r good">$+585</td>
+        <td class="r good">$+45</td>
+        <td class="r muted">$+1,223</td>
+        </tr><tr><td><strong>A-Entry</strong></td>
+        <td class="r">8</td><td class="r">7</td><td class="r">1</td><td class="r muted">0</td>
+        <td class="r good">88%</td>
+        <td class="r good">+32.7pt</td>
+        <td class="r good">$+164</td>
+        <td class="r good">$+20</td>
+        <td class="r muted">$+383</td>
+        </tr></tbody></table>
+<h3>BY PARADIGM</h3>
+<table><thead><tr>
+<th>PARADIGM</th><th class="r">n</th><th class="r">W</th><th class="r">L</th>
+<th class="r">EXP</th><th class="r">WR</th><th class="r">Portal pts</th>
+<th class="r">@ 1 MES</th><th class="r">avg/trade</th><th class="r muted">if perfect (MFE)</th>
+</tr></thead><tbody><tr><td><strong>GEX-LIS</strong></td>
+        <td class="r">20</td><td class="r">10</td><td class="r">10</td><td class="r muted">0</td>
+        <td class="r warn">50%</td>
+        <td class="r good">+31.6pt</td>
+        <td class="r good">$+158</td>
+        <td class="r good">$+8</td>
+        <td class="r muted">$+1,266</td>
+        </tr><tr><td><strong>GEX-PURE</strong></td>
+        <td class="r">18</td><td class="r">9</td><td class="r">9</td><td class="r muted">0</td>
+        <td class="r warn">50%</td>
+        <td class="r bad">-35.8pt</td>
+        <td class="r bad">$-179</td>
+        <td class="r bad">$-10</td>
+        <td class="r muted">$+792</td>
+        </tr><tr><td><strong>GEX-TARGET</strong></td>
+        <td class="r">17</td><td class="r">8</td><td class="r">9</td><td class="r muted">0</td>
+        <td class="r warn">47%</td>
+        <td class="r bad">-5.7pt</td>
+        <td class="r bad">$-28</td>
+        <td class="r bad">$-2</td>
+        <td class="r muted">$+1,120</td>
+        </tr><tr><td><strong>SIDIAL-MESSY</strong></td>
+        <td class="r">2</td><td class="r">2</td><td class="r">0</td><td class="r muted">0</td>
+        <td class="r good">100%</td>
+        <td class="r good">+58.5pt</td>
+        <td class="r good">$+292</td>
+        <td class="r good">$+146</td>
+        <td class="r muted">$+294</td>
+        </tr><tr><td><strong>GEX-MESSY</strong></td>
+        <td class="r">1</td><td class="r">1</td><td class="r">0</td><td class="r muted">0</td>
+        <td class="r good">100%</td>
+        <td class="r good">+6.0pt</td>
+        <td class="r good">$+30</td>
+        <td class="r good">$+30</td>
+        <td class="r muted">$+58</td>
+        </tr><tr><td><strong>AG-PURE</strong></td>
+        <td class="r">1</td><td class="r">0</td><td class="r">1</td><td class="r muted">0</td>
+        <td class="r bad">0%</td>
+        <td class="r bad">-14.0pt</td>
+        <td class="r bad">$-70</td>
+        <td class="r bad">$-70</td>
+        <td class="r muted">$+46</td>
+        </tr></tbody></table>
+<h3>BY DATE</h3>
+<table><thead><tr>
+<th>DATE</th><th class="r">n</th><th class="r">W</th><th class="r">L</th>
+<th class="r">EXP</th><th class="r">WR</th><th class="r">Portal pts</th>
+<th class="r">@ 1 MES</th><th class="r">avg/trade</th><th class="r muted">if perfect (MFE)</th>
+</tr></thead><tbody><tr><td><strong>05-18</strong></td>
+        <td class="r">22</td><td class="r">9</td><td class="r">13</td><td class="r muted">0</td>
+        <td class="r warn">41%</td>
+        <td class="r bad">-10.1pt</td>
+        <td class="r bad">$-50</td>
+        <td class="r bad">$-2</td>
+        <td class="r muted">$+1,412</td>
+        </tr><tr><td><strong>05-22</strong></td>
+        <td class="r">16</td><td class="r">8</td><td class="r">8</td><td class="r muted">0</td>
+        <td class="r warn">50%</td>
+        <td class="r good">+8.3pt</td>
+        <td class="r good">$+42</td>
+        <td class="r good">$+3</td>
+        <td class="r muted">$+1,096</td>
+        </tr><tr><td><strong>05-08</strong></td>
+        <td class="r">4</td><td class="r">4</td><td class="r">0</td><td class="r muted">0</td>
+        <td class="r good">100%</td>
+        <td class="r good">+15.5pt</td>
+        <td class="r good">$+78</td>
+        <td class="r good">$+19</td>
+        <td class="r muted">$+192</td>
+        </tr><tr><td><strong>05-07</strong></td>
+        <td class="r">4</td><td class="r">0</td><td class="r">4</td><td class="r muted">0</td>
+        <td class="r bad">0%</td>
+        <td class="r bad">-32.0pt</td>
+        <td class="r bad">$-160</td>
+        <td class="r bad">$-40</td>
+        <td class="r muted">$+77</td>
+        </tr><tr><td><strong>05-01</strong></td>
+        <td class="r">3</td><td class="r">2</td><td class="r">1</td><td class="r muted">0</td>
+        <td class="r good">67%</td>
+        <td class="r good">+9.7pt</td>
+        <td class="r good">$+48</td>
+        <td class="r good">$+16</td>
+        <td class="r muted">$+140</td>
+        </tr><tr><td><strong>05-14</strong></td>
+        <td class="r">2</td><td class="r">2</td><td class="r">0</td><td class="r muted">0</td>
+        <td class="r good">100%</td>
+        <td class="r good">+58.5pt</td>
+        <td class="r good">$+292</td>
+        <td class="r good">$+146</td>
+        <td class="r muted">$+294</td>
+        </tr><tr><td><strong>05-11</strong></td>
+        <td class="r">2</td><td class="r">2</td><td class="r">0</td><td class="r muted">0</td>
+        <td class="r good">100%</td>
+        <td class="r good">+19.2pt</td>
+        <td class="r good">$+96</td>
+        <td class="r good">$+48</td>
+        <td class="r muted">$+141</td>
+        </tr><tr><td><strong>05-04</strong></td>
+        <td class="r">2</td><td class="r">2</td><td class="r">0</td><td class="r muted">0</td>
+        <td class="r good">100%</td>
+        <td class="r good">+7.5pt</td>
+        <td class="r good">$+38</td>
+        <td class="r good">$+19</td>
+        <td class="r muted">$+90</td>
+        </tr><tr><td><strong>05-27</strong></td>
+        <td class="r">1</td><td class="r">1</td><td class="r">0</td><td class="r muted">0</td>
+        <td class="r good">100%</td>
+        <td class="r good">+6.0pt</td>
+        <td class="r good">$+30</td>
+        <td class="r good">$+30</td>
+        <td class="r muted">$+58</td>
+        </tr><tr><td><strong>05-21</strong></td>
+        <td class="r">1</td><td class="r">0</td><td class="r">1</td><td class="r muted">0</td>
+        <td class="r bad">0%</td>
+        <td class="r bad">-14.0pt</td>
+        <td class="r bad">$-70</td>
+        <td class="r bad">$-70</td>
+        <td class="r muted">$+24</td>
+        </tr><tr><td><strong>05-19</strong></td>
+        <td class="r">1</td><td class="r">0</td><td class="r">1</td><td class="r muted">0</td>
+        <td class="r bad">0%</td>
+        <td class="r bad">-14.0pt</td>
+        <td class="r bad">$-70</td>
+        <td class="r bad">$-70</td>
+        <td class="r muted">$+5</td>
+        </tr><tr><td><strong>05-15</strong></td>
+        <td class="r">1</td><td class="r">0</td><td class="r">1</td><td class="r muted">0</td>
+        <td class="r bad">0%</td>
+        <td class="r bad">-14.0pt</td>
+        <td class="r bad">$-70</td>
+        <td class="r bad">$-70</td>
+        <td class="r muted">$+46</td>
+        </tr></tbody></table>
+
+<h2>Per-trade details (59 trades)</h2>
+
+<div class="filter-bar">
+  <strong style="margin-right: 12px;">Filter:</strong>
+  Result: <select id="f-result" onchange="renderCards()">
+    <option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option>
+  </select>
+  Grade: <select id="f-grade" onchange="renderCards()">
+    <option value="">All</option><option value="A+">A+</option><option value="A">A</option><option value="A-Entry">A-Entry</option><option value="B">B</option>
+  </select>
+  TSRT: <select id="f-tsrt" onchange="renderCards()">
+    <option value="">All</option><option value="yes">YES (taken)</option><option value="no">NO (portal only)</option>
+  </select>
+  <button onclick="document.getElementById('f-result').value='';document.getElementById('f-grade').value='';document.getElementById('f-tsrt').value='';renderCards();">Clear</button>
+</div>
+
+<div id="cards-container"></div>
+
+<div class="toolbar">
+  <button onclick="exportTxt()">Export TXT (with comments)</button>
+  <button onclick="copyTxt()">Copy to clipboard</button>
+  <button class="danger" onclick="if(confirm('Clear ALL comments?')){Object.keys(localStorage).filter(k=>k.startsWith('gex_long_may_')).forEach(k=>localStorage.removeItem(k));renderCards();}">Clear comments</button>
+</div>
+
+<script>
+const TRADES = [{"lid": 3221, "when": "Wed May 27 10:08", "dir": "long", "is_long": true, "grade": "B", "score": 47.0, "paradigm": "GEX-MESSY", "align": -1, "vix": 16.93, "spot": 7519.2, "lis": 7502.0, "gap": 17.2, "rr": 0.63, "result": "WIN", "pnl": 6.0, "mfe": 11.52, "mae": -19.48, "elapsed": 351, "target": 7505.2, "stop": 7505.2, "exit": 7521.15, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3192, "when": "Fri May 22 14:29", "dir": "long", "is_long": true, "grade": "B", "score": 53.0, "paradigm": "GEX-TARGET", "align": 1, "vix": 16.61, "spot": 7490.47, "lis": 7477.0, "gap": 0.47, "rr": 11.77, "result": "LOSS", "pnl": -14.0, "mfe": 2.28, "mae": -16.78, "elapsed": 61, "target": 7500.0, "stop": 7475.97, "exit": 7473.19, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3191, "when": "Fri May 22 14:26", "dir": "long", "is_long": true, "grade": "B", "score": 33.0, "paradigm": "GEX-TARGET", "align": 1, "vix": 16.63, "spot": 7491.93, "lis": 7477.0, "gap": 14.93, "rr": 0.14, "result": "LOSS", "pnl": -14.0, "mfe": 1.79, "mae": -17.27, "elapsed": 62, "target": 7500.46, "stop": 7476.46, "exit": 7473.19, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3190, "when": "Fri May 22 14:24", "dir": "long", "is_long": true, "grade": "B", "score": 33.0, "paradigm": "GEX-TARGET", "align": 1, "vix": 16.65, "spot": 7492.26, "lis": 7477.0, "gap": 15.26, "rr": 0.11, "result": "LOSS", "pnl": -14.0, "mfe": 0.7, "mae": -14.87, "elapsed": 61, "target": 7502.28, "stop": 7478.28, "exit": 7477.41, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3188, "when": "Fri May 22 14:22", "dir": "long", "is_long": true, "grade": "B", "score": 33.0, "paradigm": "GEX-TARGET", "align": 1, "vix": 16.66, "spot": 7491.58, "lis": 7477.0, "gap": 14.58, "rr": 0.17, "result": "LOSS", "pnl": -14.0, "mfe": 1.85, "mae": -14.02, "elapsed": 64, "target": 7501.13, "stop": 7477.13, "exit": 7477.11, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3187, "when": "Fri May 22 14:16", "dir": "long", "is_long": true, "grade": "B", "score": 48.0, "paradigm": "GEX-TARGET", "align": 1, "vix": 16.64, "spot": 7487.78, "lis": 7475.0, "gap": 12.78, "rr": 0.41, "result": "LOSS", "pnl": -14.0, "mfe": 4.56, "mae": -15.23, "elapsed": 73, "target": 7500.0, "stop": 7474.42, "exit": 7473.19, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3186, "when": "Fri May 22 14:14", "dir": "long", "is_long": true, "grade": "B", "score": 48.0, "paradigm": "GEX-TARGET", "align": 1, "vix": 16.63, "spot": 7489.24, "lis": 7475.0, "gap": 14.24, "rr": 0.26, "result": "LOSS", "pnl": -14.0, "mfe": 3.37, "mae": -16.42, "elapsed": 73, "target": 7500.0, "stop": 7475.61, "exit": 7473.19, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3183, "when": "Fri May 22 13:54", "dir": "long", "is_long": true, "grade": "B", "score": 54.0, "paradigm": "GEX-TARGET", "align": 1, "vix": 16.56, "spot": 7492.04, "lis": 7493.0, "gap": 0.96, "rr": 8.29, "result": "LOSS", "pnl": -14.0, "mfe": 1.45, "mae": -14.63, "elapsed": 92, "target": 7502.04, "stop": 7478.04, "exit": 7477.41, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3160, "when": "Fri May 22 10:32", "dir": "long", "is_long": true, "grade": "B", "score": 34.0, "paradigm": "GEX-TARGET", "align": -1, "vix": 16.73, "spot": 7476.26, "lis": 7459.0, "gap": 17.26, "rr": -0.36, "result": "WIN", "pnl": 13.5, "mfe": 21.94, "mae": -0.09, "elapsed": 75, "target": 7492.47, "stop": 7461.53, "exit": 7492.47, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3158, "when": "Fri May 22 10:30", "dir": "long", "is_long": true, "grade": "B", "score": 34.0, "paradigm": "GEX-TARGET", "align": -1, "vix": 16.77, "spot": 7473.98, "lis": 7459.0, "gap": 14.98, "rr": -0.27, "result": "WIN", "pnl": 13.8, "mfe": 22.56, "mae": -1.03, "elapsed": 77, "target": 7492.47, "stop": 7460.91, "exit": 7492.47, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3157, "when": "Fri May 22 10:28", "dir": "long", "is_long": true, "grade": "B", "score": 36.0, "paradigm": "GEX-TARGET", "align": -1, "vix": 16.8, "spot": 7471.82, "lis": 7459.0, "gap": 12.82, "rr": -0.14, "result": "WIN", "pnl": 14.7, "mfe": 24.39, "mae": 0.39, "elapsed": 79, "target": 7492.47, "stop": 7459.08, "exit": 7492.47, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3156, "when": "Fri May 22 10:26", "dir": "long", "is_long": true, "grade": "B", "score": 39.0, "paradigm": "GEX-TARGET", "align": -1, "vix": 16.85, "spot": 7470.55, "lis": 7462.0, "gap": 8.55, "rr": 3.44, "result": "WIN", "pnl": 16.2, "mfe": 27.45, "mae": 1.1, "elapsed": 81, "target": 7492.47, "stop": 7456.02, "exit": 7492.47, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3154, "when": "Fri May 22 10:23", "dir": "long", "is_long": true, "grade": "B", "score": 49.0, "paradigm": "GEX-TARGET", "align": -1, "vix": 16.89, "spot": 7466.47, "lis": 7462.0, "gap": 4.47, "rr": 7.5, "result": "WIN", "pnl": 16.9, "mfe": 28.89, "mae": -5.29, "elapsed": 85, "target": 7492.47, "stop": 7454.58, "exit": 7492.47, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3152, "when": "Fri May 22 10:20", "dir": "long", "is_long": true, "grade": "B", "score": 39.0, "paradigm": "GEX-TARGET", "align": -1, "vix": 16.88, "spot": 7471.89, "lis": 7459.0, "gap": 12.89, "rr": 2.18, "result": "WIN", "pnl": 16.2, "mfe": 27.33, "mae": -6.85, "elapsed": 87, "target": 7492.47, "stop": 7456.14, "exit": 7492.47, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3151, "when": "Fri May 22 10:18", "dir": "long", "is_long": true, "grade": "B", "score": 39.0, "paradigm": "GEX-TARGET", "align": -1, "vix": 16.87, "spot": 7472.77, "lis": 7459.0, "gap": 13.77, "rr": 1.98, "result": "WIN", "pnl": 14.8, "mfe": 24.59, "mae": -9.59, "elapsed": 89, "target": 7492.47, "stop": 7458.88, "exit": 7492.47, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3150, "when": "Fri May 22 10:14", "dir": "long", "is_long": true, "grade": "B", "score": 43.0, "paradigm": "GEX-TARGET", "align": -1, "vix": 16.88, "spot": 7474.98, "lis": 7459.0, "gap": 15.98, "rr": 1.57, "result": "WIN", "pnl": 14.2, "mfe": 23.4, "mae": -10.78, "elapsed": 93, "target": 7492.47, "stop": 7460.07, "exit": 7492.47, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3148, "when": "Fri May 22 10:10", "dir": "long", "is_long": true, "grade": "B", "score": 43.0, "paradigm": "GEX-TARGET", "align": -1, "vix": 16.84, "spot": 7478.74, "lis": 7457.0, "gap": 21.74, "rr": 0.98, "result": "LOSS", "pnl": -14.0, "mfe": 2.63, "mae": -15.45, "elapsed": 14, "target": 7500.0, "stop": 7464.74, "exit": 7464.97, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 3094, "when": "Thu May 21 10:07", "dir": "long", "is_long": true, "grade": "B", "score": 46.0, "paradigm": "GEX-TARGET", "align": -1, "vix": 17.43, "spot": 7416.97, "lis": 7400.0, "gap": 16.97, "rr": 0.71, "result": "LOSS", "pnl": -14.0, "mfe": 4.79, "mae": -14.55, "elapsed": 9, "target": 7440.0, "stop": 7402.97, "exit": 7402.42, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2977, "when": "Tue May 19 09:39", "dir": "long", "is_long": true, "grade": "A+", "score": 36.0, "paradigm": "GEX-LIS", "align": -1, "vix": 17.91, "spot": 7375.08, "lis": 7348.0, "gap": 27.08, "rr": -0.19, "result": "LOSS", "pnl": -14.0, "mfe": 1.08, "mae": -14.29, "elapsed": 2, "target": 7410.0, "stop": 7361.08, "exit": 7360.79, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2922, "when": "Mon May 18 11:00", "dir": "long", "is_long": true, "grade": "A", "score": 46.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.43, "spot": 7405.92, "lis": 7388.0, "gap": 17.92, "rr": -0.05, "result": "LOSS", "pnl": -14.0, "mfe": -6.43, "mae": -14.35, "elapsed": 1, "target": 7450.0, "stop": 7391.92, "exit": 7391.57, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2920, "when": "Mon May 18 10:57", "dir": "long", "is_long": true, "grade": "A+", "score": 46.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.48, "spot": 7402.81, "lis": 7388.0, "gap": 14.81, "rr": 0.15, "result": "LOSS", "pnl": -14.0, "mfe": 5.63, "mae": -14.65, "elapsed": 10, "target": 7450.0, "stop": 7386.29, "exit": 7385.64, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2913, "when": "Mon May 18 10:28", "dir": "long", "is_long": true, "grade": "A+", "score": 68.0, "paradigm": "GEX-PURE", "align": -1, "vix": 18.35, "spot": 7417.69, "lis": 7417.0, "gap": 0.69, "rr": 32.33, "result": "LOSS", "pnl": -14.0, "mfe": -1.55, "mae": -17.5, "elapsed": 4, "target": 7460.0, "stop": 7403.69, "exit": 7400.19, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2906, "when": "Mon May 18 10:16", "dir": "long", "is_long": true, "grade": "A+", "score": 36.0, "paradigm": "GEX-PURE", "align": -1, "vix": 18.31, "spot": 7423.28, "lis": 7417.0, "gap": 6.28, "rr": 0.91, "result": "LOSS", "pnl": -14.0, "mfe": 3.68, "mae": -16.42, "elapsed": 15, "target": 7460.0, "stop": 7409.28, "exit": 7406.86, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2905, "when": "Mon May 18 10:14", "dir": "long", "is_long": true, "grade": "A+", "score": 71.0, "paradigm": "GEX-PURE", "align": -1, "vix": 18.41, "spot": 7417.89, "lis": 7298.0, "gap": 0.89, "rr": 12.48, "result": "LOSS", "pnl": -14.0, "mfe": 6.31, "mae": -20.46, "elapsed": 19, "target": 7460.0, "stop": 7406.65, "exit": 7400.19, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2904, "when": "Mon May 18 10:10", "dir": "long", "is_long": true, "grade": "A+", "score": 36.0, "paradigm": "GEX-PURE", "align": -1, "vix": 18.37, "spot": 7420.46, "lis": 7298.0, "gap": 122.46, "rr": -0.03, "result": "LOSS", "pnl": -14.0, "mfe": 6.5, "mae": -20.27, "elapsed": 23, "target": 7460.0, "stop": 7406.46, "exit": 7400.19, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2900, "when": "Mon May 18 10:01", "dir": "long", "is_long": true, "grade": "A+", "score": 68.0, "paradigm": "GEX-PURE", "align": -1, "vix": 18.51, "spot": 7416.95, "lis": 7416.0, "gap": 0.95, "rr": 24.26, "result": "LOSS", "pnl": -14.0, "mfe": -6.62, "mae": -16.78, "elapsed": 2, "target": 7460.0, "stop": 7413.43, "exit": 7410.65, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2899, "when": "Mon May 18 09:56", "dir": "long", "is_long": true, "grade": "A+", "score": 36.0, "paradigm": "GEX-PURE", "align": -1, "vix": 18.31, "spot": 7433.42, "lis": 7416.0, "gap": 17.42, "rr": 0.38, "result": "LOSS", "pnl": -14.0, "mfe": 1.26, "mae": -15.24, "elapsed": 4, "target": 7460.0, "stop": 7415.5, "exit": 7414.26, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2898, "when": "Mon May 18 09:54", "dir": "long", "is_long": true, "grade": "A+", "score": 36.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.41, "spot": 7428.8, "lis": 7298.0, "gap": 130.8, "rr": -0.09, "result": "LOSS", "pnl": -14.0, "mfe": 3.29, "mae": -16.51, "elapsed": 5, "target": 7460.0, "stop": 7416.77, "exit": 7414.26, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2897, "when": "Mon May 18 09:52", "dir": "long", "is_long": true, "grade": "A+", "score": 36.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.44, "spot": 7423.4, "lis": 7298.0, "gap": 125.4, "rr": -0.05, "result": "LOSS", "pnl": -2.0, "mfe": 11.59, "mae": -15.61, "elapsed": 38, "target": 7460.0, "stop": 7408.47, "exit": 7406.86, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2896, "when": "Mon May 18 09:51", "dir": "long", "is_long": true, "grade": "A+", "score": 41.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.52, "spot": 7418.88, "lis": 7298.0, "gap": 120.88, "rr": -0.02, "result": "LOSS", "pnl": -2.0, "mfe": 12.72, "mae": -14.48, "elapsed": 40, "target": 7460.0, "stop": 7407.34, "exit": 7406.86, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2895, "when": "Mon May 18 09:49", "dir": "long", "is_long": true, "grade": "A", "score": 48.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.62, "spot": 7409.29, "lis": 7298.0, "gap": 111.29, "rr": 0.07, "result": "WIN", "pnl": 12.4, "mfe": 19.7, "mae": 4.52, "elapsed": 7, "target": 7429.0601, "stop": 7400.36, "exit": 7425.7, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2893, "when": "Mon May 18 09:48", "dir": "long", "is_long": true, "grade": "A", "score": 48.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.69, "spot": 7409.0, "lis": 7298.0, "gap": 111.0, "rr": 0.07, "result": "WIN", "pnl": 14.2, "mfe": 23.36, "mae": -1.41, "elapsed": 9, "target": 7429.0601, "stop": 7396.7, "exit": 7425.7, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2892, "when": "Mon May 18 09:46", "dir": "long", "is_long": true, "grade": "A+", "score": 58.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.75, "spot": 7401.77, "lis": 7315.0, "gap": 86.77, "rr": 0.19, "result": "WIN", "pnl": 17.1, "mfe": 29.16, "mae": 4.1, "elapsed": 10, "target": 7429.0601, "stop": 7390.9, "exit": 7425.7, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2891, "when": "Mon May 18 09:44", "dir": "long", "is_long": true, "grade": "A", "score": 58.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.73, "spot": 7403.3, "lis": 7315.0, "gap": 88.3, "rr": 0.17, "result": "WIN", "pnl": 19.1, "mfe": 33.22, "mae": -6.73, "elapsed": 14, "target": 7429.0601, "stop": 7386.84, "exit": 7425.7, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2890, "when": "Mon May 18 09:42", "dir": "long", "is_long": true, "grade": "A", "score": 58.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.7, "spot": 7405.28, "lis": 7315.0, "gap": 90.28, "rr": 0.14, "result": "WIN", "pnl": 18.2, "mfe": 31.3, "mae": -8.65, "elapsed": 15, "target": 7429.0601, "stop": 7388.76, "exit": 7425.7, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2889, "when": "Mon May 18 09:40", "dir": "long", "is_long": true, "grade": "A", "score": 58.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.76, "spot": 7404.4, "lis": 7315.0, "gap": 89.4, "rr": 0.15, "result": "WIN", "pnl": 15.9, "mfe": 26.84, "mae": -13.11, "elapsed": 17, "target": 7429.0601, "stop": 7393.22, "exit": 7425.7, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2888, "when": "Mon May 18 09:38", "dir": "long", "is_long": true, "grade": "A", "score": 58.0, "paradigm": "GEX-PURE", "align": -1, "vix": 18.77, "spot": 7406.37, "lis": 7315.0, "gap": 91.37, "rr": 0.13, "result": "WIN", "pnl": 16.5, "mfe": 28.08, "mae": -11.87, "elapsed": 18, "target": 7429.0601, "stop": 7391.98, "exit": 7425.7, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2887, "when": "Mon May 18 09:36", "dir": "long", "is_long": true, "grade": "A+", "score": 58.0, "paradigm": "GEX-PURE", "align": -1, "vix": 18.74, "spot": 7402.09, "lis": 7315.0, "gap": 87.09, "rr": 0.18, "result": "WIN", "pnl": 16.4, "mfe": 27.72, "mae": -12.23, "elapsed": 20, "target": 7429.0601, "stop": 7392.34, "exit": 7425.7, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2886, "when": "Mon May 18 09:34", "dir": "long", "is_long": true, "grade": "A+", "score": 58.0, "paradigm": "GEX-PURE", "align": -1, "vix": 18.62, "spot": 7407.53, "lis": 7315.0, "gap": 92.53, "rr": 0.11, "result": "WIN", "pnl": 18.1, "mfe": 31.12, "mae": -8.83, "elapsed": 22, "target": 7429.0601, "stop": 7388.94, "exit": 7425.7, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2885, "when": "Mon May 18 09:32", "dir": "long", "is_long": true, "grade": "A+", "score": 51.0, "paradigm": "GEX-PURE", "align": 0, "vix": 18.5, "spot": 7413.15, "lis": 7317.0, "gap": 96.15, "rr": 0.12, "result": "LOSS", "pnl": -14.0, "mfe": -1.07, "mae": -14.72, "elapsed": 11, "target": 7450.0, "stop": 7395.6, "exit": 7394.88, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2884, "when": "Mon May 18 09:31", "dir": "long", "is_long": true, "grade": "A+", "score": 41.0, "paradigm": "GEX-PURE", "align": 0, "vix": 18.53, "spot": 7415.5, "lis": 7317.0, "gap": 98.5, "rr": 0.1, "result": "LOSS", "pnl": -14.0, "mfe": -3.49, "mae": -16.86, "elapsed": 4, "target": 7460.0, "stop": 7404.99, "exit": 7405.13, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2883, "when": "Fri May 15 10:18", "dir": "long", "is_long": true, "grade": "A", "score": 80.0, "paradigm": "AG-PURE", "align": 0, "vix": 18.47, "spot": 7437.0, "lis": null, "gap": null, "rr": null, "result": "LOSS", "pnl": -14.0, "mfe": 9.1, "mae": 0.0, "elapsed": null, "target": 7447.0, "stop": 7423.0, "exit": null, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2882, "when": "Thu May 14 10:46", "dir": "long", "is_long": true, "grade": "A+", "score": 90.0, "paradigm": "SIDIAL-MESSY", "align": 0, "vix": 17.95, "spot": 7494.0, "lis": null, "gap": null, "rr": null, "result": "WIN", "pnl": 21.0, "mfe": 21.2, "mae": 0.0, "elapsed": null, "target": 7515.0, "stop": 7480.0, "exit": null, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2881, "when": "Thu May 14 09:46", "dir": "long", "is_long": true, "grade": "A", "score": 80.0, "paradigm": "SIDIAL-MESSY", "align": 0, "vix": 17.98, "spot": 7477.0, "lis": null, "gap": null, "rr": null, "result": "WIN", "pnl": 37.5, "mfe": 37.7, "mae": 0.0, "elapsed": null, "target": 7515.0, "stop": 7463.0, "exit": null, "trail_sl": 14.0, "trail_act": 15.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2669, "when": "Mon May 11 13:11", "dir": "long", "is_long": true, "grade": "A", "score": 79.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.08, "spot": 7414.87, "lis": 7416.0, "gap": 1.13, "rr": 8.96, "result": "WIN", "pnl": 9.6, "mfe": 14.1, "mae": -4.0, "elapsed": 43, "target": 7423.9702, "stop": 7406.87, "exit": 7423.71, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2666, "when": "Mon May 11 12:55", "dir": "long", "is_long": true, "grade": "A", "score": 84.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.12, "spot": 7414.85, "lis": 7415.0, "gap": 0.15, "rr": 67.67, "result": "WIN", "pnl": 9.6, "mfe": 14.12, "mae": -3.98, "elapsed": 59, "target": 7423.9702, "stop": 7406.85, "exit": 7423.71, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2623, "when": "Fri May 08 11:19", "dir": "long", "is_long": true, "grade": "A-Entry", "score": 68.0, "paradigm": "GEX-PURE", "align": -1, "vix": 17.29, "spot": 7385.19, "lis": 7387.0, "gap": 1.81, "rr": 8.18, "result": "WIN", "pnl": 7.9, "mfe": 10.72, "mae": 0.73, "elapsed": 24, "target": 7390.91, "stop": 7377.19, "exit": 7390.21, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2618, "when": "Fri May 08 10:32", "dir": "long", "is_long": true, "grade": "A-Entry", "score": 72.0, "paradigm": "GEX-PURE", "align": -1, "vix": 17.36, "spot": 7389.98, "lis": 7389.0, "gap": 0.98, "rr": 10.22, "result": "WIN", "pnl": 7.6, "mfe": 10.11, "mae": -6.75, "elapsed": 123, "target": 7395.0898, "stop": 7381.98, "exit": 7394.8, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2615, "when": "Fri May 08 10:17", "dir": "long", "is_long": true, "grade": "A-Entry", "score": 61.0, "paradigm": "GEX-PURE", "align": -1, "vix": 17.25, "spot": 7388.57, "lis": 7384.0, "gap": 4.57, "rr": 2.5, "result": "WIN", "pnl": 0.0, "mfe": 8.99, "mae": -0.45, "elapsed": 12, "target": 7388.57, "stop": 7380.57, "exit": 7388.12, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2613, "when": "Fri May 08 10:10", "dir": "long", "is_long": true, "grade": "A-Entry", "score": 66.0, "paradigm": "GEX-PURE", "align": -1, "vix": 17.13, "spot": 7386.55, "lis": 7384.0, "gap": 2.55, "rr": 5.27, "result": "WIN", "pnl": 0.0, "mfe": 8.65, "mae": -4.13, "elapsed": 25, "target": 7388.91, "stop": 7380.91, "exit": 7388.12, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2604, "when": "Thu May 07 14:36", "dir": "long", "is_long": true, "grade": "A+", "score": 98.0, "paradigm": "GEX-LIS", "align": -1, "vix": 17.1, "spot": 7337.94, "lis": 7335.0, "gap": 0.06, "rr": 201.0, "result": "LOSS", "pnl": -8.0, "mfe": -0.85, "mae": -13.15, "elapsed": 8, "target": null, "stop": 7330.79, "exit": 7325.64, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2601, "when": "Thu May 07 14:25", "dir": "long", "is_long": true, "grade": "A+", "score": 90.0, "paradigm": "GEX-LIS", "align": -1, "vix": 17.15, "spot": 7336.42, "lis": 7333.0, "gap": 3.42, "rr": 3.97, "result": "LOSS", "pnl": -8.0, "mfe": 5.64, "mae": -10.78, "elapsed": 19, "target": null, "stop": 7328.42, "exit": 7325.64, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2599, "when": "Thu May 07 14:10", "dir": "long", "is_long": true, "grade": "A+", "score": 95.0, "paradigm": "GEX-LIS", "align": -1, "vix": 17.28, "spot": 7335.37, "lis": 7336.0, "gap": 0.63, "rr": 23.22, "result": "LOSS", "pnl": -8.0, "mfe": 5.01, "mae": -13.88, "elapsed": 35, "target": null, "stop": 7331.52, "exit": 7325.64, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2596, "when": "Thu May 07 14:03", "dir": "long", "is_long": true, "grade": "A", "score": 87.0, "paradigm": "GEX-LIS", "align": -1, "vix": 17.23, "spot": 7338.94, "lis": 7334.0, "gap": 4.94, "rr": 2.24, "result": "LOSS", "pnl": -8.0, "mfe": 5.59, "mae": -13.3, "elapsed": 41, "target": null, "stop": 7330.94, "exit": 7325.64, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2479, "when": "Mon May 04 14:43", "dir": "long", "is_long": true, "grade": "A", "score": 82.0, "paradigm": "GEX-LIS", "align": -1, "vix": 18.43, "spot": 7196.95, "lis": 7197.0, "gap": 0.05, "rr": 361.0, "result": "WIN", "pnl": 0.0, "mfe": 8.0, "mae": -5.69, "elapsed": 71, "target": 7196.95, "stop": 7188.95, "exit": 7196.86, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2432, "when": "Mon May 04 09:31", "dir": "long", "is_long": true, "grade": "A-Entry", "score": 66.0, "paradigm": "GEX-LIS", "align": 0, "vix": 17.73, "spot": 7221.66, "lis": 7220.0, "gap": 1.66, "rr": 8.04, "result": "WIN", "pnl": 7.5, "mfe": 10.04, "mae": -3.47, "elapsed": 32, "target": 7226.7002, "stop": 7213.66, "exit": 7226.64, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2410, "when": "Fri May 01 12:45", "dir": "long", "is_long": true, "grade": "A-Entry", "score": 69.0, "paradigm": "GEX-PURE", "align": -1, "vix": 16.9, "spot": 7239.48, "lis": 7239.0, "gap": 0.48, "rr": 21.92, "result": "WIN", "pnl": 9.7, "mfe": 14.39, "mae": -0.22, "elapsed": 77, "target": 7248.87, "stop": 7231.48, "exit": 7248.78, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2401, "when": "Fri May 01 11:35", "dir": "long", "is_long": true, "grade": "A-Entry", "score": 63.0, "paradigm": "GEX-PURE", "align": -1, "vix": 16.74, "spot": 7255.87, "lis": 7253.0, "gap": 2.87, "rr": 6.67, "result": "WIN", "pnl": 8.0, "mfe": 11.02, "mae": -0.39, "elapsed": 14, "target": 7261.89, "stop": 7247.87, "exit": 7255.48, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}, {"lid": 2393, "when": "Fri May 01 10:34", "dir": "long", "is_long": true, "grade": "A-Entry", "score": 61.0, "paradigm": "GEX-PURE", "align": -1, "vix": 16.66, "spot": 7254.4, "lis": 7254.0, "gap": 0.4, "rr": 56.5, "result": "LOSS", "pnl": -8.0, "mfe": 2.66, "mae": -9.85, "elapsed": 27, "target": null, "stop": 7246.4, "exit": 7244.55, "trail_sl": 8.0, "trail_act": 10.0, "trail_gap": 5.0, "mes_pnl": null, "in_tsrt": false, "fill": null, "close_p": null, "real_pnl": null, "close_reason": null}];
+const STORAGE_PREFIX = 'gex_long_may_';
+
+function fmt(v, dec=2) {
+  if (v === null || v === undefined) return '<span class="muted">—</span>';
+  return Number(v).toFixed(dec);
+}
+function fmtPnL(v) {
+  if (v === null || v === undefined) return '<span class="muted">—</span>';
+  const cls = v > 0 ? 'good' : (v < 0 ? 'bad' : '');
+  return `<span class="${cls}">${v >= 0 ? '+' : ''}${Number(v).toFixed(2)}</span>`;
+}
+
+function renderCards() {
+  const fRes = document.getElementById('f-result').value;
+  const fGrade = document.getElementById('f-grade').value;
+  const fTsrt = document.getElementById('f-tsrt').value;
+
+  const container = document.getElementById('cards-container');
+  container.innerHTML = '';
+
+  let count = 0;
+  TRADES.forEach(t => {
+    if (fRes && t.result !== fRes) return;
+    if (fGrade && t.grade !== fGrade) return;
+    if (fTsrt === 'yes' && !t.in_tsrt) return;
+    if (fTsrt === 'no' && t.in_tsrt) return;
+
+    count++;
+    const classes = ['trade-card'];
+    if (t.result === 'WIN') classes.push('win');
+    else if (t.result === 'LOSS') classes.push('loss');
+    else classes.push('exp');
+    if (t.grade === 'A+') classes.push('aplus');
+    if (t.in_tsrt) classes.push('tsrt');
+
+    const resTag = t.result === 'WIN' ? '<span class="tag win">WIN</span>' :
+                   t.result === 'LOSS' ? '<span class="tag loss">LOSS</span>' :
+                   `<span class="tag exp">${t.result}</span>`;
+    const aplusTag = t.grade === 'A+' ? '<span class="tag aplus">A+ (anti-predictive)</span>' : '';
+    const tsrtTag = t.in_tsrt ? `<span class="tag tsrt">TSRT-taken</span>` : '';
+
+    const stored = localStorage.getItem(STORAGE_PREFIX + t.lid) || '';
+
+    const realPnLLine = t.in_tsrt && t.real_pnl !== null ?
+      `<div><div class="lbl">Real (TSRT)</div><div class="val ${t.real_pnl >= 0 ? 'good' : 'bad'}">${t.real_pnl >= 0 ? '+' : ''}${Number(t.real_pnl).toFixed(2)}pt</div></div>` : '';
+
+    const closeReasonLine = t.in_tsrt && t.close_reason ?
+      `<div><div class="lbl">Close reason</div><div class="val muted" style="font-size:11px">${t.close_reason}</div></div>` : '';
+
+    const trailInfo = (t.trail_sl !== null && t.trail_act !== null) ?
+      `SL=${t.trail_sl} ACT=${t.trail_act} GAP=${t.trail_gap}` : '<span class="muted">—</span>';
+
+    container.insertAdjacentHTML('beforeend', `
+      <div class="${classes.join(' ')}">
+        <div class="card-head">
+          <h4>lid ${t.lid} · ${t.when} · ${t.dir.toUpperCase()}</h4>
+          <div class="card-meta">${resTag} ${aplusTag} ${tsrtTag}</div>
+        </div>
+        <div class="card-grid">
+          <div><div class="lbl">Grade</div><div class="val ${t.grade === 'A+' ? 'bad' : (t.grade === 'A' ? 'good' : '')}">${t.grade}</div></div>
+          <div><div class="lbl">Score</div><div class="val">${fmt(t.score, 0)}</div></div>
+          <div><div class="lbl">Paradigm</div><div class="val" style="font-size:12px">${t.paradigm}</div></div>
+          <div><div class="lbl">Align</div><div class="val">${t.align !== null ? (t.align > 0 ? '+' + t.align : t.align) : '—'}</div></div>
+          <div><div class="lbl">VIX</div><div class="val">${fmt(t.vix, 2)}</div></div>
+          <div><div class="lbl">Spot</div><div class="val">${fmt(t.spot, 2)}</div></div>
+          <div><div class="lbl">LIS</div><div class="val">${fmt(t.lis, 2)}</div></div>
+          <div><div class="lbl">Gap to LIS</div><div class="val">${fmt(t.gap, 2)}</div></div>
+          <div><div class="lbl">Target</div><div class="val">${fmt(t.target, 2)}</div></div>
+          <div><div class="lbl">Stop</div><div class="val">${fmt(t.stop, 2)}</div></div>
+          <div><div class="lbl">Exit</div><div class="val">${fmt(t.exit, 2)}</div></div>
+          <div><div class="lbl">Trail params</div><div class="val" style="font-size:11px">${trailInfo}</div></div>
+          <div><div class="lbl">Portal P&L</div><div class="val ${t.pnl >= 0 ? 'good' : 'bad'}">${t.pnl >= 0 ? '+' : ''}${Number(t.pnl).toFixed(2)}pt</div></div>
+          <div><div class="lbl">MFE</div><div class="val good">+${Number(t.mfe).toFixed(2)}pt</div></div>
+          <div><div class="lbl">MAE</div><div class="val bad">${Number(t.mae).toFixed(2)}pt</div></div>
+          ${t.elapsed !== null ? `<div><div class="lbl">Duration</div><div class="val">${t.elapsed}m</div></div>` : ''}
+          ${t.mes_pnl !== null ? `<div><div class="lbl">MES-sim P&L</div><div class="val">${t.mes_pnl >= 0 ? '+' : ''}${Number(t.mes_pnl).toFixed(2)}pt</div></div>` : ''}
+          ${realPnLLine}
+          ${closeReasonLine}
+        </div>
+        <textarea class="note" placeholder="Your notes for lid ${t.lid}..."
+                  oninput="localStorage.setItem('${STORAGE_PREFIX}${t.lid}', this.value)">${stored.replace(/"/g, '&quot;')}</textarea>
+      </div>
+    `);
+  });
+
+  if (count === 0) {
+    container.innerHTML = '<p class="muted">No trades match current filter.</p>';
+  }
+}
+
+function buildTxt() {
+  let txt = `GEX Long May 2026 — User notes export\n`;
+  txt += `Generated: ${new Date().toISOString()}\n\n`;
+  TRADES.forEach(t => {
+    const stored = localStorage.getItem(STORAGE_PREFIX + t.lid);
+    if (stored && stored.trim()) {
+      txt += `lid ${t.lid} · ${t.when} · ${t.dir} · ${t.grade} · ${t.result} ${t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}pt · ${t.paradigm}\n`;
+      txt += `  ${stored.trim()}\n\n`;
+    }
+  });
+  return txt;
+}
+
+function exportTxt() {
+  const txt = buildTxt();
+  const blob = new Blob([txt], {type: 'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'gex_long_may_notes.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function copyTxt() {
+  navigator.clipboard.writeText(buildTxt()).then(() => alert('Copied to clipboard!'));
+}
+
+renderCards();
+</script>
+</div></body></html>

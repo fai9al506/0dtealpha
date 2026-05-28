@@ -4157,21 +4157,28 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         if os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower() != "true":
             return False  # portal-only mode: signal logged but no live alerts/trades
 
-    # ── VIX Divergence (shipped 2026-05-03 longs-only, drop grade C) ──
-    # Backtest Feb-May 2026 (22 long trades after filter, drop C):
-    # 68% WR, +195 pts ($+975 MES, $+9750 ES), MaxDD 27.9, PF 3.97.
-    # Shorts dropped: Feb-Mar backtest 13t 40% WR -16pts; live 16t 54% WR
-    # weak — shorts have negative edge, longs dominate across both periods.
-    # Apr 15-17 5-loss cluster (low VIX + bullish trend) is structurally
-    # vulnerable to reversal-fights, but the longs-only rule already filters
-    # most exposure (3 of 5 toxic trades were longs that V14-style filtering
-    # could refine further once 30+ post-filter trades accumulate).
-    # Trail: continuous activation=10, gap=8 (drop BE@6 from current).
+    # ── VIX Divergence (re-enabled 2026-05-27 EOD with GEX-paradigm filter) ──
+    # History: shipped 2026-05-03 longs-only/drop-C. Disabled 2026-05-18 after
+    # 0/4 OOS WR live (4 losses: 3 BOFA-PURE + 1 AG-LIS). Backtest forensic
+    # 2026-05-27: ALL 4 disable-trigger losers were non-GEX paradigms. The
+    # GEX-* subset (LONGS only) shows 6 trades (Apr 2 - May 1), 5W + 1
+    # confirm-timeout, 0 LOSSES, +46.5pt portal = +$232 at 1 MES. Mechanism:
+    # VIX-momentum signal + GEX dealer structure (long-gamma above / short
+    # below) = directional follow-through. Other paradigms (BOFA-PURE,
+    # AG-LIS) = mixed dealer regimes that don't reinforce the vol move.
+    # Per-paradigm WR for VIX Div LONGS: GEX-PURE 100% (3t), GEX-LIS 100%
+    # (3t, 1 expired-flat), BOFA-PURE 50% (9t), AG-LIS 0% (2t).
+    # Risk: sample only 6 GEX-* trades. Cadence ~1/month. Re-evaluate after
+    # 12+ post-filter trades or 60 days, whichever first. Revert criteria:
+    # 2 consecutive losses OR net P&L < -$100 over any 4 trades (manual).
+    # Trail: continuous activation=10, gap=8 (unchanged).
     if setup_name == "VIX Divergence":
         if direction not in ("long", "bullish"):
             return False  # shorts have negative edge across both backtest and live
         if grade == "C":
             return False  # grade C contributed only 1.7% of PnL
+        if not paradigm or not paradigm.startswith("GEX-"):
+            return False  # GEX-paradigm only (PURE/LIS/MESSY/TARGET); blocks BOFA-PURE/AG-LIS losers
         return True
 
     # ── ES Absorption PURE (shipped 2026-05-03 to real-trader from shadow) ──

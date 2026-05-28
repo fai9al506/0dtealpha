@@ -493,9 +493,11 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     #   - GEX_LONG_V3_REAL_TRADE_ENABLED → real trader places live trades (default false = PORTAL-ONLY)
     # This lets us monitor v3 signals in portal without committing real money.
     _allowed = {"Skew Charm", "AG Short", "Vanna Pivot Bounce", "ES Absorption"}
-    # VIX Divergence: disabled 2026-05-18 after 0/4 OOS WR live since May 3 ship.
-    # Pre-ship "+195 pts/68% WR" claim was theoretical MFE, not realistic trail.
-    # Refining — keep portal-logging signals but no live execution.
+    # VIX Divergence: disabled 2026-05-18 after 0/4 OOS WR live since May 3 ship
+    # (3 BOFA-PURE + 1 AG-LIS — all non-GEX paradigms). Re-enabled 2026-05-27
+    # with GEX-paradigm filter in _passes_live_filter() (LONGS only, paradigm
+    # LIKE GEX-%). Backtest: 6 GEX-* longs Apr 2 - May 1, 5W + 1 confirm-
+    # timeout, 0 LOSSES, +$232 portal at 1 MES. Toggle live via env flag.
     if os.getenv("VIX_DIV_REAL_TRADE_ENABLED", "false").lower() == "true":
         _allowed.add("VIX Divergence")
     if os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower() == "true":

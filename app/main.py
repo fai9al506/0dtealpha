@@ -13610,7 +13610,7 @@ function passesStrategy(l, strat) {
     //   BofA Scalp, Paradigm Reversal, SB2 Absorption, etc: not in whitelist → BLOCK
     // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
     const _v16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
-                                  'ES Absorption', 'DD Exhaustion']);
+                                  'ES Absorption', 'DD Exhaustion', 'VIX Divergence']);
     if (!_v16Allowed.has(sn)) return false;
     // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT via main.py:5430
     // _dd_short_block. V16 portal must mirror — previously fell through v13DDQualityBlock
@@ -13628,10 +13628,15 @@ function passesStrategy(l, strat) {
     if (!gapFilter(l.ts)) return false;
     if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
     if (sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
-    // VIX Divergence block path removed (2026-05-19): real_trader has it disabled,
-    // so V16 view must not show as "passed".  When VIX_DIV_REAL_TRADE_ENABLED flips
-    // back to true, both this block (add VIX Div longs-only admit) AND the _v16Allowed
-    // set above need updating.
+    // VIX Divergence re-enabled 2026-05-27 (S189) with GEX-paradigm filter.
+    // real_trader._passes_live_filter: LONGS only + paradigm LIKE 'GEX-%' + drop grade C.
+    // Mirror that here so V16 portal view matches what TSRT actually places.
+    if (sn === 'VIX Divergence') {
+      if (!isLong) return false;
+      if (l.grade === 'C') return false;
+      if (!l.paradigm || !l.paradigm.startsWith('GEX-')) return false;
+      return true;
+    }
     if (!v11TimeGates(l.ts)) return false;
     if (v13BullishBlock()) return false;
     if (v13VannaBlock()) return false;

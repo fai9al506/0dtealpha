@@ -31,6 +31,7 @@ WHITELIST_SETUPS = (
     "Vanna Pivot Bounce",
     "VIX Divergence",
     "ES Absorption",
+    "DD Exhaustion",
 )
 ACCOUNTS = ("210VYX65", "210VYX91")
 REAL_BASE = "https://api.tradestation.com/v3"

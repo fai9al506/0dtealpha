@@ -1374,6 +1374,51 @@ def close_trade(setup_log_id: int, result_type: str):
         _persist_order(setup_log_id)
         print(f"[real-trader] broker cleanup done (slot already released): "
               f"{setup_name} id={setup_log_id} acct={account_id}", flush=True)
+        # 2026-05-28 fix: per-trade close Telegram for outcome-resolved trades.
+        # Pre-fix: force_release set status='closed' BEFORE close_trade, so this
+        # ELSE branch ran silently. Result: every outcome_close_win/loss/expired
+        # trade closed mid-day with NO Telegram (only EOD/stop-fill paths alerted).
+        # Send same polished alert as the !already_closed branch. Dedup: skip if
+        # close_reason indicates the broker-fill path already alerted (stop_filled,
+        # target_filled, eod_flatten, stop_filled_race_caught).
+        _existing_reason = order.get("close_reason") or ""
+        _already_alerted_paths = (
+            "stop_filled", "stop_filled_race_caught", "eod_flatten"
+        )
+        if _existing_reason in _already_alerted_paths or order.get("close_telegram_sent"):
+            pass
+        else:
+            is_long = order["direction"].lower() in ("long", "bullish")
+            dir_label = "Long" if is_long else "Short"
+            close_fp = order.get("close_fill_price") or order.get("stop_fill_price")
+            entry_fp = order.get("fill_price")
+            _qc = order.get("quantity") or QTY
+            pnl = None
+            if close_fp is not None and entry_fp is not None:
+                try:
+                    if is_long:
+                        pnl = (float(close_fp) - float(entry_fp)) * MES_POINT_VALUE * _qc
+                    else:
+                        pnl = (float(entry_fp) - float(close_fp)) * MES_POINT_VALUE * _qc
+                except (TypeError, ValueError):
+                    pnl = None
+            pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
+            # Derive result label from close_reason set by force_release
+            cr = order.get("close_reason", "") or ""
+            if cr.startswith("outcome_resolved_") or cr.startswith("outcome_close_"):
+                result_label = cr.split("_")[-1].upper()
+            else:
+                result_label = result_type
+            if close_fp is not None:
+                _alert(f"🏁 {setup_name} CLOSED: {result_label}\n"
+                       f"{dir_label} {_qc} MES @ {close_fp}\n"
+                       f"P&L: {pnl_str}"
+                       f"{_day_line(account_id)}")
+            else:
+                _alert(f"🏁 {setup_name} CLOSED: {result_label}{_day_line(account_id)}")
+            with _lock:
+                order["close_telegram_sent"] = True
+            _persist_order(setup_log_id)
 
 
 def force_release(setup_log_id: int, result_type: str):

@@ -1358,13 +1358,25 @@ def close_trade(setup_log_id: int, result_type: str):
             except (TypeError, ValueError):
                 pnl = None
         pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
+        # S193 (2026-05-29): derive label from broker P&L sign, not outcome tracker.
+        # lid 3388: outcome tracker said WIN (SPX hit target +6.28pt) but MES basis
+        # drifted -14.5pt during trade life, MES P&L was -$7.50 → "WIN P&L $-7.50"
+        # confused the user. Honest label = sign of actual broker P&L.
+        if pnl is not None and pnl > 0.5:
+            _hdr_label = "WIN"
+        elif pnl is not None and pnl < -0.5:
+            _hdr_label = "LOSS"
+        elif pnl is not None:
+            _hdr_label = "SCRATCH"
+        else:
+            _hdr_label = result_type  # fallback when pnl unavailable
         if close_fp is not None:
-            _alert(f"🏁 {setup_name} CLOSED: {result_type}\n"
+            _alert(f"🏁 {setup_name} CLOSED: {_hdr_label}\n"
                    f"{dir_label} {_qc} MES @ {close_fp}\n"
                    f"P&L: {pnl_str}"
                    f"{_day_line(account_id)}")
         else:
-            _alert(f"🏁 {setup_name} CLOSED: {result_type}{_day_line(account_id)}")
+            _alert(f"🏁 {setup_name} CLOSED: {_hdr_label}{_day_line(account_id)}")
     else:
         # 2026-05-14 fix: _flatten_position may have set close_fill_price in
         # memory (line ~1100). force_release already persisted with the older
@@ -1403,12 +1415,22 @@ def close_trade(setup_log_id: int, result_type: str):
                 except (TypeError, ValueError):
                     pnl = None
             pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
-            # Derive result label from close_reason set by force_release
-            cr = order.get("close_reason", "") or ""
-            if cr.startswith("outcome_resolved_") or cr.startswith("outcome_close_"):
-                result_label = cr.split("_")[-1].upper()
+            # S193 (2026-05-29): derive label from broker P&L sign, not from
+            # close_reason (which inherits outcome tracker's SPX-side verdict).
+            # See lid 3388 for the case: WIN tag + $-7.50 P&L = user confusion.
+            if pnl is not None and pnl > 0.5:
+                result_label = "WIN"
+            elif pnl is not None and pnl < -0.5:
+                result_label = "LOSS"
+            elif pnl is not None:
+                result_label = "SCRATCH"
             else:
-                result_label = result_type
+                # No fill prices — fall back to close_reason / result_type
+                cr = order.get("close_reason", "") or ""
+                if cr.startswith("outcome_resolved_") or cr.startswith("outcome_close_"):
+                    result_label = cr.split("_")[-1].upper()
+                else:
+                    result_label = result_type
             if close_fp is not None:
                 _alert(f"🏁 {setup_name} CLOSED: {result_label}\n"
                        f"{dir_label} {_qc} MES @ {close_fp}\n"

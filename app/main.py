@@ -4213,20 +4213,37 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
             return False
         return True
 
-    # ── VPB-Bull (Vanna Pivot Bounce V3) — Apr 22 2026 ──
-    # Only LONGS fire live, only when vanna regime is BULLISH (pos magnet above +
-    # neg repellent below = both forces pushing up). Backtest Mar 1-Apr 21 2026:
-    # 9 trades, 100% WR (8W/1EXPIRED/0L), +$420 at 1 MES, MaxDD=0. Matches Volland
-    # community research: GREEN vanna 72.7% WR as magnet, RED 18.8% WR (no edge as reversal).
-    # Master switch VPB_REAL_TRADE_ENABLED env var (default false = shadow mode).
+    # ── VPB-Bull (Vanna Pivot Bounce) — S192 refined filter shipped 2026-05-29 ──
+    # ZERO real trades fired April 27 → May 29 (32 days live) because the
+    # `vanna_regime='bullish'` gate excluded 85% of historical winners — the
+    # `_vp_classify_regime()` returns "mixed" or null for ~95% of snapshots,
+    # leaving the live filter unreachable.
+    #
+    # Audit 2026-05-29 (92 lifetime signals Mar 18 - May 29):
+    #   Baseline (all VPB):     90 trades, 51% WR, +97.6p
+    #   L1 longs only:          20 trades, 78% WR, +111.8p
+    #   L2 + grade B:           16 trades, 87% WR, +113.7p   ← S192 selected
+    #   L3 + drop hour 11 ET:   15 trades, 93% WR, +121.7p   ← S192 selected
+    #
+    # Grade B = sweet spot. Grade A: 1t/lost. Grade C: 3t (50% WR, small).
+    # Hour 11: single loser cluster among Grade B longs (1/16 losses).
+    #
+    # Concentration risk: ALL 20 historical longs from April 2026; May = 0 longs.
+    # Forward cadence uncertain (4-trades/mo at best, possibly zero).
+    # Revert if 3 consecutive losses OR net < -$80 over first 5 trades.
+    #
+    # SHORTS path NOT enabled — align=-3 sub-bucket shows 88% WR but only 8
+    # historical samples. Re-evaluate after 15 live longs validate Phase 1.
     if setup_name == "Vanna Pivot Bounce":
         if os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower() != "true":
-            return False  # shadow mode — filter logs fire but real trader skipped
+            return False  # master kill switch (default off = shadow)
         if direction not in ("long", "bullish"):
-            return False  # shorts disabled: negative vanna is repellent, not reversal
-        if vanna_regime != "bullish":
-            return False  # only fire in bullish regime (4-zone force classifier)
-        return True  # skip align/vix/paradigm gates — VPB has its own quality via regime
+            return False  # shorts disabled (Phase 1)
+        if grade != "B":
+            return False  # Grade B only (A=0/1 lost, C too thin)
+        if now_et().hour == 11:
+            return False  # hour 11 ET produced the single Grade B long loser cluster
+        return True
 
     # ── Grade gate: SC only — block C and LOG grades (v2 backtest: 220t, C=52% WR, LOG=24%) ──
     if setup_name == "Skew Charm" and grade and grade in ("C", "LOG"):
@@ -13748,10 +13765,18 @@ function passesStrategy(l, strat) {
       if (l.grade === 'C') return false;
       return true;
     }
-    // Vanna Pivot Bounce: longs only, only in bullish vanna regime (VPB-Bull V3, Apr 22 2026).
+    // Vanna Pivot Bounce: S192 refined filter (2026-05-29) — longs only, Grade B,
+    // drop hour 11 ET. Vanna regime gate REMOVED (was blocking 100% of historical
+    // winners). Audit 2026-05-29: 16t Grade B longs = 87% WR / +113.7p; +drop hr11 = 15t / 93% WR / +121.7p.
     if (sn === 'Vanna Pivot Bounce') {
       if (!isLong) return false;
-      if (l.vanna_regime !== 'bullish') return false;
+      if (l.grade !== 'B') return false;
+      if (l.ts) {
+        const _vd = new Date(l.ts);
+        const _vet = _vd.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
+        const _vhr = parseInt((_vet.split(', ')[1] || _vet).split(':')[0]);
+        if (_vhr === 11) return false;
+      }
       return true;
     }
     // ES Absorption PURE: grade A/A+, no AG-TARGET/AG-LIS paradigm, time<15:45 ET, direction-matched align.
@@ -18680,10 +18705,17 @@ DASH_HTML_TEMPLATE = """
           if (l.grade === 'C') return false;
           return true;
         }
-        // Vanna Pivot Bounce: longs only, only in bullish vanna regime (VPB-Bull V3, Apr 22 2026).
+        // Vanna Pivot Bounce: S192 refined filter (2026-05-29) — longs only, Grade B,
+        // drop hour 11 ET. Vanna regime gate REMOVED.
         if (sn === 'Vanna Pivot Bounce') {
           if (!isLong) return false;
-          if (l.vanna_regime !== 'bullish') return false;
+          if (l.grade !== 'B') return false;
+          if (l.ts) {
+            const _vd = new Date(l.ts);
+            const _vet = _vd.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
+            const _vhr = parseInt((_vet.split(', ')[1] || _vet).split(':')[0]);
+            if (_vhr === 11) return false;
+          }
           return true;
         }
         // ES Absorption PURE: grade A/A+, no AG-TARGET/AG-LIS paradigm, time<15:45 ET, direction-matched align.

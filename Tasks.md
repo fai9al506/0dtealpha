@@ -230,6 +230,7 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 | B8 | **SB10 Absorption recalibration** | LOW | Only 10 signals in 56 days — needs multiplier recalibration (1.3x-1.5x) for 10-pt range bars. | `project_sb_absorption.md` |
 | B9 | **FOMC Event Day Filter** | LOW | Known FOMC dates = no trading or reduced sizing. Low effort (date list check). | `research_discord_ideas_mar23.md` |
 | B10 | **SPX GEX Bounce — full study** | LOW | Complete SPY/QQQ/IWM downloads, run dip study on all 4, test 10:00-13:00 time filter, calculate actual options P&L (not just pts). | `project_spx_gex_bounce.md` |
+| B13 | **Dip-Buy Long — SHIPPED log-only 2026-05-30, OBSERVE** | OBSERVE | New PORTAL/LOG-ONLY setup (`app/dipbuy_detector.py`), Discord-pro momentum dip-buy. Trigger: 8pt dip off session high + 4pt bounce, 9:30-11:30 ET, one/day, T10/S8. Grades A+/A/B on prior_close_ok + VX-divergence (both logged as hypothesis — NEITHER proven robust out-of-sample, prior-close failed Nov-Jan & range days). NOT in TSRT/eval. Backtest: +57p/mo, 60% WR Mar-May (54.7% WR full 7mo). **Goal: collect 50+ forward signals, then validate which grade tier actually performs before considering real money.** Self-contained, never raises into main loop. Filter `Dip-Buy Long` in portal trade log. | `research_discord_svb_crossasset_refuted.md`, SESSION_LOG 2026-05-30 |
 
 ### Research (Study / Analyze)
 

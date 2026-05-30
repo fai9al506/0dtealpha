@@ -5165,6 +5165,13 @@ def _run_setup_check():
     _ts_outcomes = time.time()
     print(f"[timing-debug] outcomes done in {_ts_outcomes - _ts0:.1f}s", flush=True)
 
+    # Dip-Buy Long — PORTAL/LOG-ONLY detector (self-contained, never raises). Not TSRT/eval.
+    try:
+        from app import dipbuy_detector
+        dipbuy_detector.on_cycle(now_et(), spot, _vix_last)
+    except Exception as _dbe:
+        print(f"[dipbuy] cycle hook error: {_dbe}", flush=True)
+
     # ── Volland data from cache (refreshes every 90s, not every 30s cycle) ──
     vc = _refresh_volland_cache()
     _ts_volland = time.time()
@@ -8016,6 +8023,12 @@ def on_startup():
         stock_gex_live_init(engine, api_get, send_telegram_stock_gex)
     except Exception as e:
         print(f"[stock-gex-live] init error (non-fatal): {e}", flush=True)
+    # Dip-Buy Long — PORTAL/LOG-ONLY momentum dip-buy (2026-05-30). Not TSRT/eval.
+    try:
+        from app.dipbuy_detector import init as dipbuy_init
+        dipbuy_init(engine)
+    except Exception as e:
+        print(f"[dipbuy] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)
     try:
         from app.dashboard_v2 import init as dashboard_v2_init
@@ -15420,7 +15433,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="options">Options Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option value="GEX Long v3">GEX Long v3.1 ✦</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option value="ES Abs-Pure">ES Abs-Pure ✦</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Vanna Pivot Bounce</option><option>Delta Absorption</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option value="GEX Long v3">GEX Long v3.1 ✦</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option value="ES Abs-Pure">ES Abs-Pure ✦</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Vanna Pivot Bounce</option><option>Delta Absorption</option><option value="Dip-Buy Long">Dip-Buy Long ✦ (log-only)</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="pickday">Pick Day...</option><option value="week">This Week</option><option value="lastweek">Last Week</option><option value="month">This Month</option><option value="lastmonth">Last Month</option><option value="custom">Custom Range...</option></select>

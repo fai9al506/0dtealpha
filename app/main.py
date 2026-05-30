@@ -4275,9 +4275,26 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
             return False
 
     if is_long:
-        # Block longs on SIDIAL-EXTREME: 34t, 29% WR, -182.5 pts across 9 dates
-        # Mean-revert paradigm crushes longs; shorts on SIDIAL-EXT = 69% WR, +280 pts
-        if paradigm == "SIDIAL-EXTREME":
+        # ── SIDIAL-EXTREME longs block — V12 narrowed 2026-05-30 (S195) ──
+        # Original V12 (Apr 12 2026): blocked all longs on SIDIAL-EXTREME after
+        # 34t/29% WR/-182.5 pts study. Block was justified by paradigm-specific
+        # weakness, NOT generic regime (March BOFA-PURE longs were 68% WR/+328p).
+        #
+        # 2026-05-30 audit (62 lifetime SIDIAL-EXTREME longs):
+        #   Mar: 22t / 36% WR / -101p (-$505) <- block correct here
+        #   Apr: 15t / 47% WR / +41p  (+$206) <- borderline
+        #   May: 23t / 87% WR / +147p (+$734) <- paradigm flipped
+        #
+        # Within May (the recovery), ALL 3 losses occurred at HOUR 14 ET
+        # (ES Abs A -8p, SC B -14p, PR A -15p). Outside hour 14: 20W / 0L / 100% WR.
+        # Hour 14 narrowing isolates the lingering weakness; broad block over-blocks.
+        # Per-setup last 30d (outside-hr-14): DD 9t/100%/+177p, SC 10t/90%/+96p,
+        # ES Abs 7t/86%/+13p.
+        #
+        # Conservative narrow: block ONLY at hour 14 ET (the 100% loss window).
+        # Regime risk: if SIDIAL-EXTREME paradigm shifts back to Mar mode, revert
+        # by changing `t.hour == 14` to `paradigm == "SIDIAL-EXTREME"`.
+        if paradigm == "SIDIAL-EXTREME" and t.hour == 14:
             return False
         # ── V14 (Apr 29 2026): SC longs use paradigm-aware align rule, no align>=2 gate ──
         # Study Mar 1 - Apr 29 2026 (117 trades after non-align gates):
@@ -13564,9 +13581,12 @@ function passesStrategy(l, strat) {
   }
   function v10BaseV14() {
     // Same as v10Base() but SC longs use V14 paradigm-aware rule, no align gate
+    // S195 (2026-05-30): SIDIAL-EXTREME longs block narrowed to hr 14 ET only.
+    // Audit showed May 23t 87% WR +147p but all 3 losses at hr 14 ET. NOTE: V14
+    // historical view also affected (acceptable — V16 is the primary mirror).
     if (isLong) {
       if (sn === 'Skew Charm') {
-        if (l.paradigm === 'SIDIAL-EXTREME') return false;
+        if (l.paradigm === 'SIDIAL-EXTREME') { const _mS=etMins(l.ts); if (_mS!=null && _mS>=840 && _mS<900) return false; }
         if (v14ScLongAlignBlock()) return false;
         return true;  // SC longs exempt from align gate AND VIX gate
       }
@@ -13612,7 +13632,8 @@ function passesStrategy(l, strat) {
     // which over-counted by ~$170 pts in May (23 trades with align=+1 portal admitted but live
     // blocked at align<2 V13 gate). Live filter now also admits align in {0,1,2} for DD longs.
     if (sn !== 'DD Exhaustion' || !isLong) return false;
-    if (l.paradigm === 'SIDIAL-EXTREME') return false;
+    // S195 (2026-05-30): SIDIAL-EXTREME longs narrowed to hr 14 only.
+    if (l.paradigm === 'SIDIAL-EXTREME') { const _mS=etMins(l.ts); if (_mS!=null && _mS>=840 && _mS<900) return false; }
     if (align < 0) return false;  // V16.1: block negative alignment to match live filter
     if (align >= 3) return false;
     const vix = l.vix != null ? l.vix : 0;
@@ -18558,13 +18579,14 @@ DASH_HTML_TEMPLATE = """
         return align === 3 && ['GEX-LIS','AG-LIS','AG-PURE','BOFA-MESSY'].includes(l.paradigm);
       }
       function _tlV10BaseV14() {
+        // S195 (2026-05-30): SIDIAL-EXTREME longs narrowed to hr 14 ET only.
         if (isLong) {
           if (sn === 'Skew Charm') {
-            if (l.paradigm === 'SIDIAL-EXTREME') return false;
+            if (l.paradigm === 'SIDIAL-EXTREME') { const _mS=_tlEtMins(); if (_mS!=null && _mS>=840 && _mS<900) return false; }
             if (_tlV14ScLongAlignBlock()) return false;
             return true;
           }
-          if (l.paradigm === 'SIDIAL-EXTREME') return false;
+          if (l.paradigm === 'SIDIAL-EXTREME') { const _mS=_tlEtMins(); if (_mS!=null && _mS>=840 && _mS<900) return false; }
           if (align < 2) return false;
           const vix = l.vix != null ? l.vix : 0;
           const ov = l.overvix != null ? l.overvix : -99;
@@ -18639,7 +18661,8 @@ DASH_HTML_TEMPLATE = """
         // V16.1 (2026-05-18): added align >= 0 to MATCH live filter (live blocks negative
         // alignment via the V13 non-SC long gate at main.py:4253).
         if (sn === 'DD Exhaustion' && isLong) {
-          if (l.paradigm === 'SIDIAL-EXTREME') return false;
+          // S195 (2026-05-30): SIDIAL-EXTREME longs narrowed to hr 14 ET only.
+          if (l.paradigm === 'SIDIAL-EXTREME') { const _mS=_tlEtMins(); if (_mS!=null && _mS>=840 && _mS<900) return false; }
           if (align < 0) return false;
           if (align >= 3) return false;
           const vix = l.vix != null ? l.vix : 0;

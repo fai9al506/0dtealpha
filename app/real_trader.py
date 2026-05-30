@@ -124,6 +124,61 @@ def _round_mes(price: float) -> float:
     return round(round(price / MES_TICK_SIZE) * MES_TICK_SIZE, 2)
 
 
+def check_spx_trail_exit(setup_log_id: int, current_mes_price: float | None = None) -> bool:
+    """S194 (2026-05-30): S131 watchdog — fire market exit when price crosses internal trail.
+
+    Pre-S194 BUG (lid 3388 May 29): `update_stop()` tracked internal trail at
+    MES 7592.75 (locked +6.25 above entry), but NO PROCESS checked for price
+    crossings. SPX retrace -> outcome tracker fired WIN -> close_trade
+    market-sold at MES 7585.75 (below trail). Cost ~$37.50 vs proper trail exit.
+
+    Wire-up: called from main.py outcome tracker after update_stop(). Also
+    callable per-tick from ES quote stream for faster detection.
+
+    No-op if SPX_EXIT_ENABLED is false (env default = false; flip on Railway).
+    Fetches MES price via REST if not supplied (~100-200ms).
+    """
+    if not _spx_exit_enabled():
+        return False
+    with _lock:
+        order = _active_orders.get(setup_log_id)
+        if not order:
+            return False
+        if order["status"] != "filled":
+            return False
+        check_stop = order.get("current_stop")
+        if check_stop is None:
+            return False
+        # S131 only fires if trail has been moved into PROFIT (lock above entry
+        # for longs, below for shorts). Otherwise the broker safety stop suffices.
+        entry_fp = order.get("fill_price")
+        if not entry_fp:
+            return False
+        is_long = order["direction"].lower() in ("long", "bullish")
+        locked = (check_stop > entry_fp) if is_long else (check_stop < entry_fp)
+        if not locked:
+            return False  # not yet trail-locked, broker safety stop handles
+        setup_name = order.get("setup_name", "?")
+    # Get current MES price (cheap if quote stream alive, REST fallback otherwise)
+    if current_mes_price is None:
+        current_mes_price = _get_current_mes_price()
+    if current_mes_price is None:
+        return False
+    crossed = (is_long and current_mes_price <= check_stop) or \
+              (not is_long and current_mes_price >= check_stop)
+    if not crossed:
+        return False
+    print(f"[real-trader] [S131] watchdog FIRE: id={setup_log_id} "
+          f"price={current_mes_price:.2f} "
+          f"{'<=' if is_long else '>='} trail={check_stop:.2f}", flush=True)
+    _alert(f"🎯 {setup_name} S131 trail-exit\n"
+           f"MES {current_mes_price:.2f} {'<=' if is_long else '>='} "
+           f"locked trail {check_stop:.2f}\n"
+           f"Market-closing + cancelling broker SL...")
+    close_trade(setup_log_id, "spx_trail_exit")
+    return True
+
+
 def _get_current_mes_price() -> float | None:
     """Fetch current MES Last price via REST for side-of-market validation.
     Used by update_stop() to avoid submitting a stop that market has already
@@ -493,9 +548,11 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     #   - GEX_LONG_V3_REAL_TRADE_ENABLED → real trader places live trades (default false = PORTAL-ONLY)
     # This lets us monitor v3 signals in portal without committing real money.
     _allowed = {"Skew Charm", "AG Short", "Vanna Pivot Bounce", "ES Absorption"}
-    # VIX Divergence: disabled 2026-05-18 after 0/4 OOS WR live since May 3 ship.
-    # Pre-ship "+195 pts/68% WR" claim was theoretical MFE, not realistic trail.
-    # Refining — keep portal-logging signals but no live execution.
+    # VIX Divergence: disabled 2026-05-18 after 0/4 OOS WR live since May 3 ship
+    # (3 BOFA-PURE + 1 AG-LIS — all non-GEX paradigms). Re-enabled 2026-05-27
+    # with GEX-paradigm filter in _passes_live_filter() (LONGS only, paradigm
+    # LIKE GEX-%). Backtest: 6 GEX-* longs Apr 2 - May 1, 5W + 1 confirm-
+    # timeout, 0 LOSSES, +$232 portal at 1 MES. Toggle live via env flag.
     if os.getenv("VIX_DIV_REAL_TRADE_ENABLED", "false").lower() == "true":
         _allowed.add("VIX Divergence")
     if os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower() == "true":
@@ -1356,13 +1413,25 @@ def close_trade(setup_log_id: int, result_type: str):
             except (TypeError, ValueError):
                 pnl = None
         pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
+        # S193 (2026-05-29): derive label from broker P&L sign, not outcome tracker.
+        # lid 3388: outcome tracker said WIN (SPX hit target +6.28pt) but MES basis
+        # drifted -14.5pt during trade life, MES P&L was -$7.50 → "WIN P&L $-7.50"
+        # confused the user. Honest label = sign of actual broker P&L.
+        if pnl is not None and pnl > 0.5:
+            _hdr_label = "WIN"
+        elif pnl is not None and pnl < -0.5:
+            _hdr_label = "LOSS"
+        elif pnl is not None:
+            _hdr_label = "SCRATCH"
+        else:
+            _hdr_label = result_type  # fallback when pnl unavailable
         if close_fp is not None:
-            _alert(f"🏁 {setup_name} CLOSED: {result_type}\n"
+            _alert(f"🏁 {setup_name} CLOSED: {_hdr_label}\n"
                    f"{dir_label} {_qc} MES @ {close_fp}\n"
                    f"P&L: {pnl_str}"
                    f"{_day_line(account_id)}")
         else:
-            _alert(f"🏁 {setup_name} CLOSED: {result_type}{_day_line(account_id)}")
+            _alert(f"🏁 {setup_name} CLOSED: {_hdr_label}{_day_line(account_id)}")
     else:
         # 2026-05-14 fix: _flatten_position may have set close_fill_price in
         # memory (line ~1100). force_release already persisted with the older
@@ -1372,6 +1441,61 @@ def close_trade(setup_log_id: int, result_type: str):
         _persist_order(setup_log_id)
         print(f"[real-trader] broker cleanup done (slot already released): "
               f"{setup_name} id={setup_log_id} acct={account_id}", flush=True)
+        # 2026-05-28 fix: per-trade close Telegram for outcome-resolved trades.
+        # Pre-fix: force_release set status='closed' BEFORE close_trade, so this
+        # ELSE branch ran silently. Result: every outcome_close_win/loss/expired
+        # trade closed mid-day with NO Telegram (only EOD/stop-fill paths alerted).
+        # Send same polished alert as the !already_closed branch. Dedup: skip if
+        # close_reason indicates the broker-fill path already alerted (stop_filled,
+        # target_filled, eod_flatten, stop_filled_race_caught).
+        _existing_reason = order.get("close_reason") or ""
+        _already_alerted_paths = (
+            "stop_filled", "stop_filled_race_caught", "eod_flatten"
+        )
+        if _existing_reason in _already_alerted_paths or order.get("close_telegram_sent"):
+            pass
+        else:
+            is_long = order["direction"].lower() in ("long", "bullish")
+            dir_label = "Long" if is_long else "Short"
+            close_fp = order.get("close_fill_price") or order.get("stop_fill_price")
+            entry_fp = order.get("fill_price")
+            _qc = order.get("quantity") or QTY
+            pnl = None
+            if close_fp is not None and entry_fp is not None:
+                try:
+                    if is_long:
+                        pnl = (float(close_fp) - float(entry_fp)) * MES_POINT_VALUE * _qc
+                    else:
+                        pnl = (float(entry_fp) - float(close_fp)) * MES_POINT_VALUE * _qc
+                except (TypeError, ValueError):
+                    pnl = None
+            pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
+            # S193 (2026-05-29): derive label from broker P&L sign, not from
+            # close_reason (which inherits outcome tracker's SPX-side verdict).
+            # See lid 3388 for the case: WIN tag + $-7.50 P&L = user confusion.
+            if pnl is not None and pnl > 0.5:
+                result_label = "WIN"
+            elif pnl is not None and pnl < -0.5:
+                result_label = "LOSS"
+            elif pnl is not None:
+                result_label = "SCRATCH"
+            else:
+                # No fill prices — fall back to close_reason / result_type
+                cr = order.get("close_reason", "") or ""
+                if cr.startswith("outcome_resolved_") or cr.startswith("outcome_close_"):
+                    result_label = cr.split("_")[-1].upper()
+                else:
+                    result_label = result_type
+            if close_fp is not None:
+                _alert(f"🏁 {setup_name} CLOSED: {result_label}\n"
+                       f"{dir_label} {_qc} MES @ {close_fp}\n"
+                       f"P&L: {pnl_str}"
+                       f"{_day_line(account_id)}")
+            else:
+                _alert(f"🏁 {setup_name} CLOSED: {result_label}{_day_line(account_id)}")
+            with _lock:
+                order["close_telegram_sent"] = True
+            _persist_order(setup_log_id)
 
 
 def force_release(setup_log_id: int, result_type: str):

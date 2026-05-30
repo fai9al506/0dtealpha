@@ -4157,21 +4157,28 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         if os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower() != "true":
             return False  # portal-only mode: signal logged but no live alerts/trades
 
-    # ── VIX Divergence (shipped 2026-05-03 longs-only, drop grade C) ──
-    # Backtest Feb-May 2026 (22 long trades after filter, drop C):
-    # 68% WR, +195 pts ($+975 MES, $+9750 ES), MaxDD 27.9, PF 3.97.
-    # Shorts dropped: Feb-Mar backtest 13t 40% WR -16pts; live 16t 54% WR
-    # weak — shorts have negative edge, longs dominate across both periods.
-    # Apr 15-17 5-loss cluster (low VIX + bullish trend) is structurally
-    # vulnerable to reversal-fights, but the longs-only rule already filters
-    # most exposure (3 of 5 toxic trades were longs that V14-style filtering
-    # could refine further once 30+ post-filter trades accumulate).
-    # Trail: continuous activation=10, gap=8 (drop BE@6 from current).
+    # ── VIX Divergence (re-enabled 2026-05-27 EOD with GEX-paradigm filter) ──
+    # History: shipped 2026-05-03 longs-only/drop-C. Disabled 2026-05-18 after
+    # 0/4 OOS WR live (4 losses: 3 BOFA-PURE + 1 AG-LIS). Backtest forensic
+    # 2026-05-27: ALL 4 disable-trigger losers were non-GEX paradigms. The
+    # GEX-* subset (LONGS only) shows 6 trades (Apr 2 - May 1), 5W + 1
+    # confirm-timeout, 0 LOSSES, +46.5pt portal = +$232 at 1 MES. Mechanism:
+    # VIX-momentum signal + GEX dealer structure (long-gamma above / short
+    # below) = directional follow-through. Other paradigms (BOFA-PURE,
+    # AG-LIS) = mixed dealer regimes that don't reinforce the vol move.
+    # Per-paradigm WR for VIX Div LONGS: GEX-PURE 100% (3t), GEX-LIS 100%
+    # (3t, 1 expired-flat), BOFA-PURE 50% (9t), AG-LIS 0% (2t).
+    # Risk: sample only 6 GEX-* trades. Cadence ~1/month. Re-evaluate after
+    # 12+ post-filter trades or 60 days, whichever first. Revert criteria:
+    # 2 consecutive losses OR net P&L < -$100 over any 4 trades (manual).
+    # Trail: continuous activation=10, gap=8 (unchanged).
     if setup_name == "VIX Divergence":
         if direction not in ("long", "bullish"):
             return False  # shorts have negative edge across both backtest and live
         if grade == "C":
             return False  # grade C contributed only 1.7% of PnL
+        if not paradigm or not paradigm.startswith("GEX-"):
+            return False  # GEX-paradigm only (PURE/LIS/MESSY/TARGET); blocks BOFA-PURE/AG-LIS losers
         return True
 
     # ── ES Absorption PURE (shipped 2026-05-03 to real-trader from shadow) ──
@@ -4206,20 +4213,37 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
             return False
         return True
 
-    # ── VPB-Bull (Vanna Pivot Bounce V3) — Apr 22 2026 ──
-    # Only LONGS fire live, only when vanna regime is BULLISH (pos magnet above +
-    # neg repellent below = both forces pushing up). Backtest Mar 1-Apr 21 2026:
-    # 9 trades, 100% WR (8W/1EXPIRED/0L), +$420 at 1 MES, MaxDD=0. Matches Volland
-    # community research: GREEN vanna 72.7% WR as magnet, RED 18.8% WR (no edge as reversal).
-    # Master switch VPB_REAL_TRADE_ENABLED env var (default false = shadow mode).
+    # ── VPB-Bull (Vanna Pivot Bounce) — S192 refined filter shipped 2026-05-29 ──
+    # ZERO real trades fired April 27 → May 29 (32 days live) because the
+    # `vanna_regime='bullish'` gate excluded 85% of historical winners — the
+    # `_vp_classify_regime()` returns "mixed" or null for ~95% of snapshots,
+    # leaving the live filter unreachable.
+    #
+    # Audit 2026-05-29 (92 lifetime signals Mar 18 - May 29):
+    #   Baseline (all VPB):     90 trades, 51% WR, +97.6p
+    #   L1 longs only:          20 trades, 78% WR, +111.8p
+    #   L2 + grade B:           16 trades, 87% WR, +113.7p   ← S192 selected
+    #   L3 + drop hour 11 ET:   15 trades, 93% WR, +121.7p   ← S192 selected
+    #
+    # Grade B = sweet spot. Grade A: 1t/lost. Grade C: 3t (50% WR, small).
+    # Hour 11: single loser cluster among Grade B longs (1/16 losses).
+    #
+    # Concentration risk: ALL 20 historical longs from April 2026; May = 0 longs.
+    # Forward cadence uncertain (4-trades/mo at best, possibly zero).
+    # Revert if 3 consecutive losses OR net < -$80 over first 5 trades.
+    #
+    # SHORTS path NOT enabled — align=-3 sub-bucket shows 88% WR but only 8
+    # historical samples. Re-evaluate after 15 live longs validate Phase 1.
     if setup_name == "Vanna Pivot Bounce":
         if os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower() != "true":
-            return False  # shadow mode — filter logs fire but real trader skipped
+            return False  # master kill switch (default off = shadow)
         if direction not in ("long", "bullish"):
-            return False  # shorts disabled: negative vanna is repellent, not reversal
-        if vanna_regime != "bullish":
-            return False  # only fire in bullish regime (4-zone force classifier)
-        return True  # skip align/vix/paradigm gates — VPB has its own quality via regime
+            return False  # shorts disabled (Phase 1)
+        if grade != "B":
+            return False  # Grade B only (A=0/1 lost, C too thin)
+        if now_et().hour == 11:
+            return False  # hour 11 ET produced the single Grade B long loser cluster
+        return True
 
     # ── Grade gate: SC only — block C and LOG grades (v2 backtest: 220t, C=52% WR, LOG=24%) ──
     if setup_name == "Skew Charm" and grade and grade in ("C", "LOG"):
@@ -4251,9 +4275,26 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
             return False
 
     if is_long:
-        # Block longs on SIDIAL-EXTREME: 34t, 29% WR, -182.5 pts across 9 dates
-        # Mean-revert paradigm crushes longs; shorts on SIDIAL-EXT = 69% WR, +280 pts
-        if paradigm == "SIDIAL-EXTREME":
+        # ── SIDIAL-EXTREME longs block — V12 narrowed 2026-05-30 (S195) ──
+        # Original V12 (Apr 12 2026): blocked all longs on SIDIAL-EXTREME after
+        # 34t/29% WR/-182.5 pts study. Block was justified by paradigm-specific
+        # weakness, NOT generic regime (March BOFA-PURE longs were 68% WR/+328p).
+        #
+        # 2026-05-30 audit (62 lifetime SIDIAL-EXTREME longs):
+        #   Mar: 22t / 36% WR / -101p (-$505) <- block correct here
+        #   Apr: 15t / 47% WR / +41p  (+$206) <- borderline
+        #   May: 23t / 87% WR / +147p (+$734) <- paradigm flipped
+        #
+        # Within May (the recovery), ALL 3 losses occurred at HOUR 14 ET
+        # (ES Abs A -8p, SC B -14p, PR A -15p). Outside hour 14: 20W / 0L / 100% WR.
+        # Hour 14 narrowing isolates the lingering weakness; broad block over-blocks.
+        # Per-setup last 30d (outside-hr-14): DD 9t/100%/+177p, SC 10t/90%/+96p,
+        # ES Abs 7t/86%/+13p.
+        #
+        # Conservative narrow: block ONLY at hour 14 ET (the 100% loss window).
+        # Regime risk: if SIDIAL-EXTREME paradigm shifts back to Mar mode, revert
+        # by changing `t.hour == 14` to `paradigm == "SIDIAL-EXTREME"`.
+        if paradigm == "SIDIAL-EXTREME" and t.hour == 14:
             return False
         # ── V14 (Apr 29 2026): SC longs use paradigm-aware align rule, no align>=2 gate ──
         # Study Mar 1 - Apr 29 2026 (117 trades after non-align gates):
@@ -4767,7 +4808,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                     elif _tp_es["mode"] == "hybrid":
                         if _mf >= _tp_es["activation"]:
                             _tl = _mf - _tp_es["gap"]
-                        elif _mf >= _tp_es["be_trigger"]:
+                        elif _tp_es["be_trigger"] is not None and _mf >= _tp_es["be_trigger"]:
                             _tl = 0
                     if _tl is not None:
                         if is_long:
@@ -4847,7 +4888,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                 elif _tp["mode"] == "hybrid":
                     if max_fav >= _tp["activation"]:
                         trail_lock = max_fav - _tp["gap"]
-                    elif max_fav >= _tp["be_trigger"]:
+                    elif _tp["be_trigger"] is not None and max_fav >= _tp["be_trigger"]:
                         trail_lock = 0  # breakeven
                 else:
                     rung = _tp["rung_start"]
@@ -4888,6 +4929,14 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                         if rt_order and rt_order.get("fill_price"):
                             es_stop = rt_order["fill_price"] + (stop_lvl - entry_price)
                             real_trader.update_stop(log_id, round(es_stop, 2))
+                            # S194 (2026-05-30): wire S131 watchdog — fire market exit if
+                            # MES crosses internal trail (lid 3388 cost ~$37.50 because
+                            # internal trail was tracked but never checked for crossings).
+                            # No-op when SPX_EXIT_ENABLED=false. Self-fetches MES price.
+                            try:
+                                real_trader.check_spx_trail_exit(log_id)
+                            except Exception as _s131e:
+                                print(f"[s131] watchdog error lid={log_id}: {_s131e}", flush=True)
                 except Exception:
                     pass
             # Check trailing stop hit
@@ -11578,7 +11627,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     elif tp["mode"] == "hybrid":
                         if trail_max_fav >= tp["activation"]:
                             trail_lock = trail_max_fav - tp["gap"]
-                        elif trail_max_fav >= tp["be_trigger"]:
+                        elif tp["be_trigger"] is not None and trail_max_fav >= tp["be_trigger"]:
                             trail_lock = 0  # breakeven
                     else:
                         rung = tp["rung_start"]
@@ -11632,7 +11681,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                     elif tp["mode"] == "hybrid":
                         if trail_max_fav >= tp["activation"]:
                             trail_lock = trail_max_fav - tp["gap"]
-                        elif trail_max_fav >= tp["be_trigger"]:
+                        elif tp["be_trigger"] is not None and trail_max_fav >= tp["be_trigger"]:
                             trail_lock = 0  # breakeven
                     else:
                         rung = tp["rung_start"]
@@ -13532,9 +13581,12 @@ function passesStrategy(l, strat) {
   }
   function v10BaseV14() {
     // Same as v10Base() but SC longs use V14 paradigm-aware rule, no align gate
+    // S195 (2026-05-30): SIDIAL-EXTREME longs block narrowed to hr 14 ET only.
+    // Audit showed May 23t 87% WR +147p but all 3 losses at hr 14 ET. NOTE: V14
+    // historical view also affected (acceptable — V16 is the primary mirror).
     if (isLong) {
       if (sn === 'Skew Charm') {
-        if (l.paradigm === 'SIDIAL-EXTREME') return false;
+        if (l.paradigm === 'SIDIAL-EXTREME') { const _mS=etMins(l.ts); if (_mS!=null && _mS>=840 && _mS<900) return false; }
         if (v14ScLongAlignBlock()) return false;
         return true;  // SC longs exempt from align gate AND VIX gate
       }
@@ -13580,7 +13632,8 @@ function passesStrategy(l, strat) {
     // which over-counted by ~$170 pts in May (23 trades with align=+1 portal admitted but live
     // blocked at align<2 V13 gate). Live filter now also admits align in {0,1,2} for DD longs.
     if (sn !== 'DD Exhaustion' || !isLong) return false;
-    if (l.paradigm === 'SIDIAL-EXTREME') return false;
+    // S195 (2026-05-30): SIDIAL-EXTREME longs narrowed to hr 14 only.
+    if (l.paradigm === 'SIDIAL-EXTREME') { const _mS=etMins(l.ts); if (_mS!=null && _mS>=840 && _mS<900) return false; }
     if (align < 0) return false;  // V16.1: block negative alignment to match live filter
     if (align >= 3) return false;
     const vix = l.vix != null ? l.vix : 0;
@@ -13603,7 +13656,7 @@ function passesStrategy(l, strat) {
     //   BofA Scalp, Paradigm Reversal, SB2 Absorption, etc: not in whitelist → BLOCK
     // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
     const _v16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
-                                  'ES Absorption', 'DD Exhaustion']);
+                                  'ES Absorption', 'DD Exhaustion', 'VIX Divergence']);
     if (!_v16Allowed.has(sn)) return false;
     // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT via main.py:5430
     // _dd_short_block. V16 portal must mirror — previously fell through v13DDQualityBlock
@@ -13621,10 +13674,15 @@ function passesStrategy(l, strat) {
     if (!gapFilter(l.ts)) return false;
     if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
     if (sn==='IV Momentum'||sn==='Vanna Butterfly') return false;
-    // VIX Divergence block path removed (2026-05-19): real_trader has it disabled,
-    // so V16 view must not show as "passed".  When VIX_DIV_REAL_TRADE_ENABLED flips
-    // back to true, both this block (add VIX Div longs-only admit) AND the _v16Allowed
-    // set above need updating.
+    // VIX Divergence re-enabled 2026-05-27 (S189) with GEX-paradigm filter.
+    // real_trader._passes_live_filter: LONGS only + paradigm LIKE 'GEX-%' + drop grade C.
+    // Mirror that here so V16 portal view matches what TSRT actually places.
+    if (sn === 'VIX Divergence') {
+      if (!isLong) return false;
+      if (l.grade === 'C') return false;
+      if (!l.paradigm || !l.paradigm.startsWith('GEX-')) return false;
+      return true;
+    }
     if (!v11TimeGates(l.ts)) return false;
     if (v13BullishBlock()) return false;
     if (v13VannaBlock()) return false;
@@ -13736,10 +13794,18 @@ function passesStrategy(l, strat) {
       if (l.grade === 'C') return false;
       return true;
     }
-    // Vanna Pivot Bounce: longs only, only in bullish vanna regime (VPB-Bull V3, Apr 22 2026).
+    // Vanna Pivot Bounce: S192 refined filter (2026-05-29) — longs only, Grade B,
+    // drop hour 11 ET. Vanna regime gate REMOVED (was blocking 100% of historical
+    // winners). Audit 2026-05-29: 16t Grade B longs = 87% WR / +113.7p; +drop hr11 = 15t / 93% WR / +121.7p.
     if (sn === 'Vanna Pivot Bounce') {
       if (!isLong) return false;
-      if (l.vanna_regime !== 'bullish') return false;
+      if (l.grade !== 'B') return false;
+      if (l.ts) {
+        const _vd = new Date(l.ts);
+        const _vet = _vd.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
+        const _vhr = parseInt((_vet.split(', ')[1] || _vet).split(':')[0]);
+        if (_vhr === 11) return false;
+      }
       return true;
     }
     // ES Absorption PURE: grade A/A+, no AG-TARGET/AG-LIS paradigm, time<15:45 ET, direction-matched align.
@@ -18513,13 +18579,14 @@ DASH_HTML_TEMPLATE = """
         return align === 3 && ['GEX-LIS','AG-LIS','AG-PURE','BOFA-MESSY'].includes(l.paradigm);
       }
       function _tlV10BaseV14() {
+        // S195 (2026-05-30): SIDIAL-EXTREME longs narrowed to hr 14 ET only.
         if (isLong) {
           if (sn === 'Skew Charm') {
-            if (l.paradigm === 'SIDIAL-EXTREME') return false;
+            if (l.paradigm === 'SIDIAL-EXTREME') { const _mS=_tlEtMins(); if (_mS!=null && _mS>=840 && _mS<900) return false; }
             if (_tlV14ScLongAlignBlock()) return false;
             return true;
           }
-          if (l.paradigm === 'SIDIAL-EXTREME') return false;
+          if (l.paradigm === 'SIDIAL-EXTREME') { const _mS=_tlEtMins(); if (_mS!=null && _mS>=840 && _mS<900) return false; }
           if (align < 2) return false;
           const vix = l.vix != null ? l.vix : 0;
           const ov = l.overvix != null ? l.overvix : -99;
@@ -18594,7 +18661,8 @@ DASH_HTML_TEMPLATE = """
         // V16.1 (2026-05-18): added align >= 0 to MATCH live filter (live blocks negative
         // alignment via the V13 non-SC long gate at main.py:4253).
         if (sn === 'DD Exhaustion' && isLong) {
-          if (l.paradigm === 'SIDIAL-EXTREME') return false;
+          // S195 (2026-05-30): SIDIAL-EXTREME longs narrowed to hr 14 ET only.
+          if (l.paradigm === 'SIDIAL-EXTREME') { const _mS=_tlEtMins(); if (_mS!=null && _mS>=840 && _mS<900) return false; }
           if (align < 0) return false;
           if (align >= 3) return false;
           const vix = l.vix != null ? l.vix : 0;
@@ -18668,10 +18736,17 @@ DASH_HTML_TEMPLATE = """
           if (l.grade === 'C') return false;
           return true;
         }
-        // Vanna Pivot Bounce: longs only, only in bullish vanna regime (VPB-Bull V3, Apr 22 2026).
+        // Vanna Pivot Bounce: S192 refined filter (2026-05-29) — longs only, Grade B,
+        // drop hour 11 ET. Vanna regime gate REMOVED.
         if (sn === 'Vanna Pivot Bounce') {
           if (!isLong) return false;
-          if (l.vanna_regime !== 'bullish') return false;
+          if (l.grade !== 'B') return false;
+          if (l.ts) {
+            const _vd = new Date(l.ts);
+            const _vet = _vd.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
+            const _vhr = parseInt((_vet.split(', ')[1] || _vet).split(':')[0]);
+            if (_vhr === 11) return false;
+          }
           return true;
         }
         // ES Absorption PURE: grade A/A+, no AG-TARGET/AG-LIS paradigm, time<15:45 ET, direction-matched align.

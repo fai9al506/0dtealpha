@@ -52,7 +52,9 @@ _cooldown = {
     "setup_expired": False,
     "last_date": None,
     "_gone_count": 0,
+    "last_fire_time": None,       # 2026-05-29: 15-min time floor added (was firing 71x/day)
 }
+GEX_LONG_MIN_COOLDOWN_MINUTES = 15
 
 _cooldown_ag = {
     "last_grade": None,
@@ -676,9 +678,11 @@ def should_notify(result):
     """
     global _cooldown
 
-    today = datetime.now(NY).date()
+    now = datetime.now(NY)
+    today = now.date()
     if _cooldown["last_date"] != today:
-        _cooldown = {"last_grade": None, "last_gap_to_lis": None, "setup_expired": False, "last_date": today, "_gone_count": 0}
+        _cooldown = {"last_grade": None, "last_gap_to_lis": None, "setup_expired": False,
+                     "last_date": today, "_gone_count": 0, "last_fire_time": None}
 
     grade = result["grade"]
     gap = result["gap_to_lis"]
@@ -705,10 +709,19 @@ def should_notify(result):
         fire = True
         reason = "reformed"
 
+    # ── 15-min time floor (added 2026-05-29) ─────────────────────────────
+    # Without this, gap_improvement and reformed cycle every chain refresh
+    # (median 2-min gap, 71 fires today on a single day). Matches AG Short pattern.
+    if fire and _cooldown.get("last_fire_time") is not None:
+        elapsed = (now - _cooldown["last_fire_time"]).total_seconds() / 60
+        if elapsed < GEX_LONG_MIN_COOLDOWN_MINUTES:
+            return False, None
+
     if fire:
         _cooldown["last_grade"] = grade
         _cooldown["last_gap_to_lis"] = gap
         _cooldown["setup_expired"] = False
+        _cooldown["last_fire_time"] = now
 
     return fire, reason
 

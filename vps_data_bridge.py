@@ -769,6 +769,23 @@ class VPSDataBridge:
         if self._vx_tailer:
             self._vx_tailer.seek_to_end()
 
+        # Seek DOM jsonl tailers to end too. Otherwise a restart with a large
+        # pre-existing DOM file (e.g. 344MB after a Sierra crash leaves it frozen)
+        # makes _check_vx_dom/_check_es_dom re-read+re-POST the entire history,
+        # blocking the main loop so live ES/VX bars never post. We don't backfill
+        # DOM (non-trading research data); new lines are tailed once Sierra resumes.
+        for _domfile, _attr in (
+            (self._vx_dom_file, "_vx_dom_last_pos"),
+            (self._es_dom_file, "_es_dom_last_pos"),
+        ):
+            try:
+                if _domfile and Path(_domfile).exists():
+                    setattr(self, _attr, os.path.getsize(_domfile))
+                    log.info(f"DOM tailer: {Path(_domfile).name} -> end "
+                             f"(offset {getattr(self, _attr):,}, skipping existing)")
+            except Exception as _e:
+                log.warning(f"DOM tailer seek-to-end failed for {_domfile}: {_e}")
+
         self._running = True
         self._session_date = _es_session_date()
         self._last_es_tick_time = time.time()

@@ -124,6 +124,61 @@ def _round_mes(price: float) -> float:
     return round(round(price / MES_TICK_SIZE) * MES_TICK_SIZE, 2)
 
 
+def check_spx_trail_exit(setup_log_id: int, current_mes_price: float | None = None) -> bool:
+    """S194 (2026-05-30): S131 watchdog — fire market exit when price crosses internal trail.
+
+    Pre-S194 BUG (lid 3388 May 29): `update_stop()` tracked internal trail at
+    MES 7592.75 (locked +6.25 above entry), but NO PROCESS checked for price
+    crossings. SPX retrace -> outcome tracker fired WIN -> close_trade
+    market-sold at MES 7585.75 (below trail). Cost ~$37.50 vs proper trail exit.
+
+    Wire-up: called from main.py outcome tracker after update_stop(). Also
+    callable per-tick from ES quote stream for faster detection.
+
+    No-op if SPX_EXIT_ENABLED is false (env default = false; flip on Railway).
+    Fetches MES price via REST if not supplied (~100-200ms).
+    """
+    if not _spx_exit_enabled():
+        return False
+    with _lock:
+        order = _active_orders.get(setup_log_id)
+        if not order:
+            return False
+        if order["status"] != "filled":
+            return False
+        check_stop = order.get("current_stop")
+        if check_stop is None:
+            return False
+        # S131 only fires if trail has been moved into PROFIT (lock above entry
+        # for longs, below for shorts). Otherwise the broker safety stop suffices.
+        entry_fp = order.get("fill_price")
+        if not entry_fp:
+            return False
+        is_long = order["direction"].lower() in ("long", "bullish")
+        locked = (check_stop > entry_fp) if is_long else (check_stop < entry_fp)
+        if not locked:
+            return False  # not yet trail-locked, broker safety stop handles
+        setup_name = order.get("setup_name", "?")
+    # Get current MES price (cheap if quote stream alive, REST fallback otherwise)
+    if current_mes_price is None:
+        current_mes_price = _get_current_mes_price()
+    if current_mes_price is None:
+        return False
+    crossed = (is_long and current_mes_price <= check_stop) or \
+              (not is_long and current_mes_price >= check_stop)
+    if not crossed:
+        return False
+    print(f"[real-trader] [S131] watchdog FIRE: id={setup_log_id} "
+          f"price={current_mes_price:.2f} "
+          f"{'<=' if is_long else '>='} trail={check_stop:.2f}", flush=True)
+    _alert(f"🎯 {setup_name} S131 trail-exit\n"
+           f"MES {current_mes_price:.2f} {'<=' if is_long else '>='} "
+           f"locked trail {check_stop:.2f}\n"
+           f"Market-closing + cancelling broker SL...")
+    close_trade(setup_log_id, "spx_trail_exit")
+    return True
+
+
 def _get_current_mes_price() -> float | None:
     """Fetch current MES Last price via REST for side-of-market validation.
     Used by update_stop() to avoid submitting a stop that market has already

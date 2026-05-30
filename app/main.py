@@ -4912,6 +4912,14 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                         if rt_order and rt_order.get("fill_price"):
                             es_stop = rt_order["fill_price"] + (stop_lvl - entry_price)
                             real_trader.update_stop(log_id, round(es_stop, 2))
+                            # S194 (2026-05-30): wire S131 watchdog — fire market exit if
+                            # MES crosses internal trail (lid 3388 cost ~$37.50 because
+                            # internal trail was tracked but never checked for crossings).
+                            # No-op when SPX_EXIT_ENABLED=false. Self-fetches MES price.
+                            try:
+                                real_trader.check_spx_trail_exit(log_id)
+                            except Exception as _s131e:
+                                print(f"[s131] watchdog error lid={log_id}: {_s131e}", flush=True)
                 except Exception:
                     pass
             # Check trailing stop hit

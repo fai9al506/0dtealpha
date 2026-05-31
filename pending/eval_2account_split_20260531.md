@@ -5,6 +5,17 @@
 **Goal:** Split the eval into TWO direction-isolated accounts to (a) stop the
 reversal-whipsaw that loses winning trades, and (b) match TSRT's capture.
 
+## ‼️ PHASED ROLLOUT — start NOW
+
+- **PHASE 1 (DO NOW, before Mon 2026-06-01 open):** reconfigure the EXISTING account
+  `falde5482tcp25d114592` to **LONG-ONLY** (§3 LONG config). It keeps trading Monday
+  as the long account. Also **scaffold** the second (short) instance now — copy the
+  config, wire a separate state-file set and launcher — leave `nt8_account_id` blank.
+- **PHASE 2 (Mon, once user provides the correct SHORT account ID):** drop the ID into
+  the short config, set size-specific rules (§1), and start the second instance.
+  *(The short ID given earlier — `falde5482tcp50d180023` — was WRONG. Ignore it.
+  User will provide the correct one Monday; re-derive size from the `tcpNNd` code.)*
+
 ---
 
 ## 0. WHY (background — read first)
@@ -33,12 +44,12 @@ Fix = two accounts, each rides ONE direction, full capture, no reversal.
 
 | Account ID | Role | Size (from ID) | Status |
 |---|---|---|---|
-| `falde5482tcp25d114592` | **LONG** | **25K TCP** | existing eval, bal $25,334.93, ~10 cal-days to billing |
-| `falde5482tcp50d180023` | **SHORT** | **50K TCP** (`tcp50d`) | freshly purchased |
+| `falde5482tcp25d114592` | **LONG** | **25K TCP** | existing eval, bal $25,334.93, ~10 cal-days to billing — **CONFIGURE NOW** |
+| `TBD (provided Mon)` | **SHORT** | derive from `tcpNNd` code | **PHASE 2** — do not configure yet |
 
-**ACTION:** Verify both sizes in the E2T dashboard before configuring. The short
-account appears to be a **50K TCP — different rules**. Confirm the exact 50K TCP
-numbers (do NOT trust my estimates below — verify):
+**ACTION (Phase 2, Monday):** when the correct SHORT ID arrives, read its size from
+the `tcpNNd` code and verify in the E2T dashboard. If it's a **50K TCP**, use the 50K
+column (do NOT trust my estimates — verify with E2T):
 
 | Param | 25K TCP (confirmed by user) | 50K TCP (VERIFY) |
 |---|---|---|
@@ -59,8 +70,8 @@ Each instance = its own config + state files + NT8 account. Same Railway signal
 source (`/api/eval/signals`); each filters to its direction via `allowed_directions`.
 
 Create (copy from `eval_trader_config.json`):
-- `eval_trader_config_long.json`  → `nt8_account_id: "falde5482tcp25d114592"`
-- `eval_trader_config_short.json` → `nt8_account_id: "falde5482tcp50d180023"`
+- `eval_trader_config_long.json`  → `nt8_account_id: "falde5482tcp25d114592"`  ← **start now**
+- `eval_trader_config_short.json` → `nt8_account_id: ""` (scaffold now, **fill Monday**)
 
 Each instance needs distinct state files (so they don't clobber each other) — e.g.
 launch with a per-instance suffix, or run from two folders. State files to isolate:
@@ -98,14 +109,14 @@ same underlying signal independently (long instance takes the long leg, short th
 }
 ```
 
-### SHORT account (`eval_trader_config_short.json`, 50K — adjust to verified 50K rules)
+### SHORT account (`eval_trader_config_short.json`) — PHASE 2 (Monday), scaffold now
 ```jsonc
-"nt8_account_id": "falde5482tcp50d180023",
+"nt8_account_id": "",              // LEAVE BLANK until correct ID provided Monday
 "qty": 1,                          // START 1 MES
-"daily_loss_floor": -300,          // scale to 50K (still very safe vs ~$2000 DD); confirm
-"e2t_starting_balance": 50000,
-"e2t_eod_trailing_drawdown": 2000, // VERIFY
-"e2t_daily_loss_limit": 1100,      // VERIFY
+"daily_loss_floor": -200,          // if 25K; if 50K use ~ -300 (scale to ~$2000 DD)
+"e2t_starting_balance": 25000,     // set to 25000 or 50000 per verified size
+"e2t_eod_trailing_drawdown": 1500, // 1500 (25K) or ~2000 (50K) — VERIFY
+"e2t_daily_loss_limit": 550,       // 550 (25K) or ~1100 (50K) — VERIFY
 "setup_rules": {
    // SHORT legs:
    "AG Short":        {"enabled": true, "stop": 12, "allowed_directions": ["short"]},
@@ -153,8 +164,22 @@ Recommend the full split (matches TSRT). Monitor first week.
   purchased with a full billing cycle, so no rush. Expect ~2.5–3.5 weeks.
 
 **Honest answer to "pass both in 10 days":** LONG = possible-but-tight (depends on
-trading-days-already-logged; size up to 2 MES to help). SHORT = no (min-10-trading-days
-+ 50K's bigger goal). Plan for SHORT to finish ~1–2 weeks after LONG.
+trading-days-already-logged; size up to 2 MES to help). SHORT starts Phase 2 (Monday)
+fresh = needs 10 trading days from then (~2+ cal weeks) → cannot pass in 10 days.
+Plan for SHORT to finish ~1–2 weeks after LONG.
+
+### Does the eval run "same as TSRT" in daily P&L?
+- **Per-direction, per-contract: yes, it should track closely.** TSRT runs the same
+  V16 whitelist; the LONG eval account captures the same long legs TSRT takes.
+- **PHASE 1 (long-only) mirrors only TSRT's LONG leg.** On long-driven days (like last
+  Wed, +$83p longs / −$35p shorts) the long eval account ≈ TSRT's winning side and
+  SKIPS the short P&L (good and bad). On a short-dominant day the long account is flat
+  while TSRT's shorts work — so single-account ≠ TSRT total until SHORT is live.
+- **Magnitude will differ from TSRT** because eval uses (a) tighter per-setup stops,
+  (b) the −$200 daily floor (caps eval's down days more than TSRT), and (c) its own
+  qty (1 MES). Expect same SIGN/direction and similar per-contract shape, not identical
+  dollars. Once BOTH accounts run, combined daily P&L ≈ TSRT total direction, scaled by
+  contract size.
 
 ---
 

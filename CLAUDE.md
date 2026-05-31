@@ -435,6 +435,10 @@ Completely isolated from SPX — separate table, globals, scheduler job, lock.
 - **NOT used by:** setup detection, auto-trader, eval trader, pipeline health — analysis/portal only
 - **Rollback:** `stable-20260310-spy-before-push` tag
 
+### Dip-Buy Detector (`app/dipbuy_detector.py`) — added 2026-05-31 (S196, PORTAL/LOG-ONLY)
+
+Self-contained Discord-pro-inspired momentum dip-buy. **NOT in TSRT / eval / auto_trader — portal logging only.** Detects from live SPX spot in `_run_setup_check()` (called via `dipbuy_detector.on_cycle(now_et(), spot, _vix_last)` in a try/except so it never breaks the loop). Trigger: 8pt dip off session high + 4pt bounce confirm, 9:30–11:30 ET entry window, **one trade/day**, target +10 / stop −8, exit by 16:00. Logs to `setup_log` as `setup_name="Dip-Buy"`, tracks its own outcomes and UPDATEs the DB (zero coupling to live trading). Hydrates open trades on restart. Grades A+/A/B on `prior_close_ok` (entry ≥ prior-day close −2) + `vx_diverge_ok` (tick VX made no new high during the dip, from `vps_vix_ticks`) — **both logged as hypotheses in `abs_details` JSON; NEITHER proven robust out-of-sample** (prior-close failed full-history Nov–Jan & range days). Goal: collect 50+ forward signals, then validate which grade tier predicts before any real-money use. Init at startup; portal trade-log dropdown filter "Dip-Buy". No Telegram (silent collection).
+
 ### Stock GEX Scanner (`app/stock_gex_scanner.py`) — added 2026-03-21
 
 Completely independent from 0DTE SPX pipeline. **Data collection only** — no alerts, no signals, no Telegram. Scans ~23 stocks every 30 min during market hours, saves GEX + price to DB for future backtesting.

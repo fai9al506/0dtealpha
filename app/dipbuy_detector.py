@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 
 ET = ZoneInfo("America/New_York")
-SETUP_NAME = "Dip-Buy Long"
+SETUP_NAME = "Dip-Buy"
 
 # params (from 2026-05-30 backtest)
 WIN_START = dtime(9, 30)

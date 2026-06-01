@@ -6,7 +6,7 @@
   "telegram_chat_id": "-1003886332593",
   "telegram_poll_interval_s": 2,
   "nt8_incoming_folder": "C:\\Users\\Administrator\\Documents\\NinjaTrader 8\\incoming",
-  "nt8_account_id": "falde5482tcp25d114592",
+  "nt8_account_id": "falde5482tcp25d010624",
   "nt8_mes_symbol": "auto",
   "qty": 2,
   "max_trade_risk": 150,
@@ -28,7 +28,8 @@
   "stack_cap_contracts": 4,
   "cluster_floor_dollars": -200,
   "ignore_opposite_signals": true,
-  "_role": "LONG account (2-account direction split, 2026-06-01). This = existing eval falde5482tcp25d114592, reconfigured LONG-ONLY. SHORT leg = eval_trader_config_short.json. SIZING (backtested 2026-05-30, 30d Apr15-May29, mes-sim): 2 MES/setup, cap 2 concurrent (stack_cap_contracts=4 = 2 setups x 2 MES). Chose cap 2 over cap 3: cap 3 ran maxDD -$1,223 near the $1,500 bust wall for no reliable extra gain; cap 2 = +$1,998 / -$1,062 maxDD / 0 bust. daily_loss_floor=-200 + cluster_floor=-200 MANDATORY (the bust guards). Reversal path can't fire — longs only. Supersedes S183 stacking trial.",
+  "_role": "SHORT account (2-account direction split). LIVE Phase 2 from 2026-06-01. nt8_account_id = falde5482tcp25d010624 (tcp25d = 25K TCP, SAME size as long, so all E2T params match the long account). Sizing mirrors long: 2 MES/setup, cap 2 concurrent (stack_cap_contracts=4), cluster_floor=-200, daily_loss_floor=-200. Shorts only. State files isolated via _short suffix.",
+  "_tsrt_parity_note": "2026-06-01: aligned to TSRT's EXACT short whitelist (verified vs app/main.py _passes_live_filter + dispatch). TSRT shorts = AG Short + Skew Charm short + ES Absorption short. DD-short DISABLED (TSRT blocks at main.py:5522 S145 Apr -$1,096) and VPB-short DISABLED (TSRT trades VPB longs-only, main.py:4240). So this config = TSRT short side exactly. Note: short side is regime-dependent (strong in chop, marginal in Apr/May grind per spec) — long account is the near-term passer; short timeline pending a filter-accurate audit.",
   "setup_rules": {
     "GEX Long": {
       "enabled": false,
@@ -41,7 +42,7 @@
       "target": null
     },
     "AG Short": {
-      "enabled": false,
+      "enabled": true,
       "stop": 12,
       "target": null,
       "allowed_directions": ["short"]
@@ -56,7 +57,7 @@
       "enabled": true,
       "stop": 8,
       "target": null,
-      "allowed_directions": ["long"]
+      "allowed_directions": ["short"]
     },
     "Paradigm Reversal": {
       "enabled": false,
@@ -64,31 +65,27 @@
       "target": 10
     },
     "DD Exhaustion": {
-      "enabled": true,
+      "enabled": false,
       "stop": 12,
       "target": null,
-      "qty": 2,
-      "max_risk": 120,
-      "allowed_directions": ["long"],
-      "allowed_paradigms": ["BOFA-PURE"]
+      "allowed_directions": ["short"]
     },
     "Skew Charm": {
       "enabled": true,
       "stop": 14,
       "target": null,
-      "allowed_directions": ["long"]
+      "allowed_directions": ["short"]
     },
     "Vanna Pivot Bounce": {
-      "enabled": true,
+      "enabled": false,
       "stop": 8,
       "target": 10,
-      "allowed_directions": ["long"]
+      "allowed_directions": ["short"]
     },
     "VIX Divergence": {
-      "enabled": true,
+      "enabled": false,
       "stop": 8,
-      "target": null,
-      "allowed_directions": ["long"]
+      "target": null
     }
   },
   "enabled": true,

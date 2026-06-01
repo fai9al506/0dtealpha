@@ -3043,6 +3043,14 @@ def main():
                             pass
                     # Check for reversal: opposite-direction signal while in position
                     if tracker.is_open and tracker.is_opposite(signal):
+                        # Direction-isolated account (2-account split, 2026-06-01): opposite-
+                        # direction signals are handled by the OTHER account. Ignore them
+                        # entirely — never flatten/tighten our own position on them. Fixes the
+                        # env-override whipsaw that flattened SC Long B (cost ~$158 day 1).
+                        if cfg.get("ignore_opposite_signals"):
+                            log.info(f"  IGNORED opposite signal {signal['setup_name']} "
+                                     f"{signal['direction'].upper()} — direction-isolated account, holding position")
+                            continue
                         # Environment override: score conviction from multiple factors
                         conviction = 1  # the opposing signal itself
                         reasons = [f"{signal['setup_name']} {signal['direction'].upper()}"]

@@ -1660,9 +1660,44 @@ def _flatten_position(order):
                    f"MANUAL REVIEW NEEDED")
             return
 
-        # S149: respect tracked order qty (could be 2 for SC long BOFA-PURE align=+1)
-        _intended_qty = order.get("quantity") or QTY
-        close_qty = min(_intended_qty, broker_pos["qty"])
+        # S198 (2026-06-02) NETTING GUARD — keeps cap>1 safe on a netted futures
+        # account. Multiple concurrent same-direction lids share ONE broker position,
+        # so a close for THIS lid must never consume a still-open sibling's contract.
+        # Root incident: S131 trail-exit closed lid 3465 (Market Sell #1), then a later
+        # outcome-resolution cycle re-fired close_trade(3465) → a 2nd Market Sell that,
+        # because broker still showed a NET position (3468+3469), silently FIFO-closed
+        # lid 3468 (DD) → ghost + 30+ QTY-MISMATCH Telegrams.
+        # Cap the close at (broker_net − other_open_tracked_qty). If <= 0, this lid's
+        # contract was already FIFO-consumed by an earlier close → do NOT market-sell;
+        # recover our fill price from history instead.
+        _self_lid = order.get("setup_log_id")
+        _self_qty = order.get("quantity") or QTY  # S149
+        _dir_set = ("long", "bullish") if is_long else ("short", "bearish")
+        with _lock:
+            _other_open_qty = sum(
+                (o.get("quantity") or QTY)
+                for _lid, o in _active_orders.items()
+                if _lid != _self_lid
+                and o.get("account_id") == account_id
+                and (o.get("direction") or "").lower() in _dir_set
+                and o.get("status") in ("pending_entry", "filled")
+                and not o.get("closing_in_progress")
+            )
+        _max_closeable = broker_pos["qty"] - _other_open_qty
+        if _max_closeable <= 0:
+            print(f"[real-trader] flatten SKIPPED (netting guard): lid={_self_lid} "
+                  f"broker_net={broker_pos['qty']} other_open={_other_open_qty} "
+                  f"-> max_closeable={_max_closeable}. Contract already FIFO-closed by a "
+                  f"sibling close -- not eating another lid's position. acct={account_id}",
+                  flush=True)
+            bf = _backfill_ghost_fill(order)
+            if bf:
+                with _lock:
+                    order[bf[0]] = bf[1]
+            with _lock:
+                order["close_reason"] = order.get("close_reason") or "netting_already_closed"
+            return
+        close_qty = min(_self_qty, _max_closeable)
         close_payload = {
             "AccountID": account_id,
             "Symbol": MES_SYMBOL,

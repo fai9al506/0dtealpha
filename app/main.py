@@ -4934,7 +4934,14 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                             # internal trail was tracked but never checked for crossings).
                             # No-op when SPX_EXIT_ENABLED=false. Self-fetches MES price.
                             try:
-                                real_trader.check_spx_trail_exit(log_id)
+                                # S198 (2026-06-02): if S131 market-closes the position
+                                # here, flag it so the outcome-resolution block below does
+                                # NOT call real_trader.close_trade again. The redundant
+                                # close re-ran _flatten_position and (on a netted account)
+                                # FIFO-closed a *sibling* lid's contract — lid 3468 ghost +
+                                # the bogus 2nd "CLOSED WIN" Telegram on 2026-06-02.
+                                if real_trader.check_spx_trail_exit(log_id):
+                                    trade["_s131_closed"] = True
                             except Exception as _s131e:
                                 print(f"[s131] watchdog error lid={log_id}: {_s131e}", flush=True)
                 except Exception:
@@ -5121,12 +5128,20 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                     pass
                 # Real trader: SYNCHRONOUS (real money — must not silently fail)
                 # force_release frees concurrent slot, close_trade does broker cleanup
-                try:
-                    from app import real_trader
-                    real_trader.force_release(log_id, result_type)
-                    real_trader.close_trade(log_id, result_type)
-                except Exception as e:
-                    print(f"[real-trader] close error: {e}", flush=True)
+                # S198: skip if S131 watchdog already market-closed this lid this/earlier
+                # cycle — a second close_trade re-runs _flatten_position and (netting) can
+                # eat a sibling lid's contract. force_release is also a no-op (already
+                # closed), so skipping the whole block is safe.
+                if trade.get("_s131_closed"):
+                    print(f"[real-trader] skip outcome close: lid={log_id} already "
+                          f"closed by S131 trail-exit watchdog", flush=True)
+                else:
+                    try:
+                        from app import real_trader
+                        real_trader.force_release(log_id, result_type)
+                        real_trader.close_trade(log_id, result_type)
+                    except Exception as e:
+                        print(f"[real-trader] close error: {e}", flush=True)
 
             # Move to resolved list
             resolved = {**trade, "result_type": result_type, "pnl": pnl, "elapsed_min": elapsed_min,

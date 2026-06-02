@@ -51,6 +51,16 @@ TARGET_FLOOR = 20.0  # raised 10→20 on 2026-05-18 (v3.1.1) — prevented prema
 TRAIL_ACT = 15.0
 TRAIL_GAP = 5.0
 
+# v3.2 (2026-06-01, PORTAL-OBSERVATION ONLY): bullish-paradigm confluence override.
+# Study: trend signals fail standalone, but as a confluence gate on GEX Long (our only
+# directional setup) a bullish-drift paradigm can substitute for greek_alignment>=0.
+# v3.2 pass = verdict ABC AND hour<15 AND (align>=0 OR paradigm in BULL_PARADIGMS).
+# Backtest vs v3.1: 15->18 trades, +170.6->+192.2p, WR 80->78%, MaxDD UNCHANGED at -14
+# (bull-paradigms naturally avoid the May-18 cluster that broke the apos route on DD).
+# Paradigms chosen from H4 forward-drift study (bullish 60-min drift). Sim-only, never
+# broker-traded. See research_trend_setups_refuted.md. NOT a real-trade flag.
+BULL_PARADIGMS = {"BofA-LIS", "GEX-TARGET", "SIDIAL-MESSY", "BOFA-PURE"}
+
 
 def _features(cur, t_utc, spot: float) -> Optional[dict]:
     spot_f = float(spot) if spot else 0
@@ -181,16 +191,16 @@ def _build_cache(engine) -> dict[int, dict[str, Any]]:
     try:
         cur = raw.cursor()
         cur.execute("""SELECT id, ts, ts AT TIME ZONE 'America/New_York' as t_et,
-                              greek_alignment, spot
+                              greek_alignment, spot, paradigm
                        FROM setup_log
                        WHERE setup_name = 'GEX Long'
                          AND grade != 'LOG' AND grade IS NOT NULL
                        ORDER BY ts""")
         rows = cur.fetchall()
-        for lid, t_utc, t_et, al, spot in rows:
+        for lid, t_utc, t_et, al, spot, paradigm in rows:
             if not spot:
-                out[lid] = {"pass": False, "verdict": "NO_DATA", "reason": "no_spot",
-                            "result": None, "pnl": None, "max_fav": None}
+                out[lid] = {"pass": False, "pass_v32": False, "verdict": "NO_DATA",
+                            "reason": "no_spot", "result": None, "pnl": None, "max_fav": None}
                 continue
             try:
                 f = _features(cur, t_utc, spot)
@@ -199,11 +209,15 @@ def _build_cache(engine) -> dict[int, dict[str, Any]]:
             verdict = _classify(f)
             align = al if al is not None else 0
             hour = t_et.hour if t_et else 99
-            v3_pass = (verdict in ('A++', 'A', 'B')) and (align >= 0) and (hour < 15)
+            verdict_ok = verdict in ('A++', 'A', 'B')
+            v3_pass = verdict_ok and (align >= 0) and (hour < 15)
+            # v3.2: bullish-paradigm can substitute for align>=0 (portal observation)
+            v32_pass = verdict_ok and (hour < 15) and (
+                (align >= 0) or (paradigm in BULL_PARADIGMS))
 
-            if not v3_pass or f is None:
-                out[lid] = {"pass": v3_pass, "verdict": verdict, "reason": "filter_block",
-                            "result": None, "pnl": None, "max_fav": None}
+            if (not (v3_pass or v32_pass)) or f is None:
+                out[lid] = {"pass": v3_pass, "pass_v32": v32_pass, "verdict": verdict,
+                            "reason": "filter_block", "result": None, "pnl": None, "max_fav": None}
                 continue
 
             entry = float(spot)
@@ -212,12 +226,14 @@ def _build_cache(engine) -> dict[int, dict[str, Any]]:
             try:
                 result, pnl, max_fav, reason = _simulate_exit(cur, t_utc, entry, target)
             except Exception as exc:
-                out[lid] = {"pass": v3_pass, "verdict": verdict, "reason": f"sim_err:{exc}",
+                out[lid] = {"pass": v3_pass, "pass_v32": v32_pass, "verdict": verdict,
+                            "reason": f"sim_err:{exc}",
                             "result": None, "pnl": None, "max_fav": None}
                 continue
 
             out[lid] = {
-                "pass": True,
+                "pass": v3_pass,
+                "pass_v32": v32_pass,
                 "verdict": verdict,
                 "result": result,
                 "pnl": round(pnl, 2),

@@ -1660,7 +1660,7 @@ def _flatten_position(order):
                    f"MANUAL REVIEW NEEDED")
             return
 
-        # S198 (2026-06-02) NETTING GUARD — keeps cap>1 safe on a netted futures
+        # S200 (2026-06-02) NETTING GUARD — keeps cap>1 safe on a netted futures
         # account. Multiple concurrent same-direction lids share ONE broker position,
         # so a close for THIS lid must never consume a still-open sibling's contract.
         # Root incident: S131 trail-exit closed lid 3465 (Market Sell #1), then a later
@@ -1816,7 +1816,7 @@ def poll_order_status():
     # which runs regardless of tracked-order state.
 
 
-# 2026-06-02 S198: dedup state for reconcile mismatch alerts that we CAN'T auto-heal.
+# 2026-06-02 S200: dedup state for reconcile mismatch alerts that we CAN'T auto-heal.
 # Keyed by acct_id -> ((acct, expected, broker), last_alert_monotonic). Previously the
 # "QTY MISMATCH ... Check manually" branch fired on every 30s reconcile cycle with no
 # cooldown -> 30+ identical Telegrams during the 2026-06-02 3-concurrent-long netting
@@ -1911,7 +1911,7 @@ def _reconcile_positions():
                 # bot hasn't caught it yet. On a NETTED futures account the broker closes
                 # FIFO (oldest entry first), so we resolve oldest-first.
                 #
-                # 2026-06-02 S198 fix: previously this branch only fired a "QTY MISMATCH
+                # 2026-06-02 S200 fix: previously this branch only fired a "QTY MISMATCH
                 # ... Check manually" alert every 30s (no action, no cooldown). During the
                 # 3-concurrent-long netting incident that spammed 30+ Telegrams and left
                 # lid 3468 as an un-recovered ghost. Now it auto-heals: mark the oldest

@@ -4934,7 +4934,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                             # internal trail was tracked but never checked for crossings).
                             # No-op when SPX_EXIT_ENABLED=false. Self-fetches MES price.
                             try:
-                                # S198 (2026-06-02): if S131 market-closes the position
+                                # S200 (2026-06-02): if S131 market-closes the position
                                 # here, flag it so the outcome-resolution block below does
                                 # NOT call real_trader.close_trade again. The redundant
                                 # close re-ran _flatten_position and (on a netted account)
@@ -5128,7 +5128,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                     pass
                 # Real trader: SYNCHRONOUS (real money — must not silently fail)
                 # force_release frees concurrent slot, close_trade does broker cleanup
-                # S198: skip if S131 watchdog already market-closed this lid this/earlier
+                # S200: skip if S131 watchdog already market-closed this lid this/earlier
                 # cycle — a second close_trade re-runs _flatten_position and (netting) can
                 # eat a sibling lid's contract. force_release is also a no-op (already
                 # closed), so skipping the whole block is safe.

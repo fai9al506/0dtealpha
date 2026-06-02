@@ -893,6 +893,24 @@ class ComplianceGate:
                 elif sname == "ES Absorption":
                     # ES Abs PURE filter (already enforced above) is exclusive — skip V14 generic gate
                     pass
+                elif sname == "DD Exhaustion":
+                    # V16.1 DD-long carve-out (2026-06-02) — mirror app/main.py _passes_live_filter.
+                    # Prior eval routed DD longs through the generic align>=2 gate, blocking the
+                    # align 0/1 BOFA-PURE bucket and all non-BOFA paradigms. That cost ~+315pt/mo
+                    # (validated robust Mar/Apr/May: +24/+238/+315). DD admits align 0/1/2, blocks
+                    # align>=3 (-312pt hist), VIX>=22, bad paradigms, and grade C.
+                    _ddg = signal.get("grade")
+                    if alignment < 0:
+                        return False, f"DD long alignment {alignment:+d} < 0"
+                    if alignment >= 3:
+                        return False, "DD long align>=3 (hist -312pt)"
+                    _sig_vix = signal.get("vix")
+                    if _sig_vix is not None and _sig_vix >= 22:
+                        return False, f"DD long VIX={_sig_vix:.1f}>=22"
+                    if _para in ("GEX-LIS", "AG-LIS", "AG-PURE", "BofA-LIS", "BOFA-MESSY"):
+                        return False, f"DD long paradigm {_para} blocked"
+                    if _ddg == "C":
+                        return False, "DD long grade C blocked"
                 else:
                     if alignment < 2:
                         return False, f"Greek filter: long alignment {alignment:+d} < +2"

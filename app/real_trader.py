@@ -1660,36 +1660,46 @@ def _flatten_position(order):
                    f"MANUAL REVIEW NEEDED")
             return
 
-        # S200 (2026-06-02) NETTING GUARD — keeps cap>1 safe on a netted futures
-        # account. Multiple concurrent same-direction lids share ONE broker position,
-        # so a close for THIS lid must never consume a still-open sibling's contract.
-        # Root incident: S131 trail-exit closed lid 3465 (Market Sell #1), then a later
-        # outcome-resolution cycle re-fired close_trade(3465) → a 2nd Market Sell that,
-        # because broker still showed a NET position (3468+3469), silently FIFO-closed
-        # lid 3468 (DD) → ghost + 30+ QTY-MISMATCH Telegrams.
-        # Cap the close at (broker_net − other_open_tracked_qty). If <= 0, this lid's
-        # contract was already FIFO-consumed by an earlier close → do NOT market-sell;
-        # recover our fill price from history instead.
+        # S200 (2026-06-02) NETTING GUARD (FIFO-rank) — keeps cap>1 safe on a netted
+        # futures account where N concurrent same-direction lids share ONE broker
+        # position and closes are FIFO (oldest entry leaves first). The contracts
+        # still in the pile are therefore the NEWEST `broker_net` lots. THIS lid still
+        # owns a contract iff fewer than broker_net contracts were entered AFTER it.
+        #   - If it owns one  -> market-close it (prevents the over-close that, on
+        #     2026-06-02, let a redundant close_trade(3465) FIFO-eat sibling 3468).
+        #   - If it does NOT  -> its contract was already FIFO-consumed -> skip the
+        #     sell and recover our fill from history.
+        # Why FIFO-rank, not a plain (net - other_open) subtraction: that subtraction
+        # UNDER-closes when an OLDER sibling is stale (its stop filled but the bot
+        # hasn't polled it). Since this lid's stop was already cancelled above, an
+        # erroneous skip would leave a NAKED position. Ranking by entry time closes
+        # exactly the lid that actually holds the live contract.
         _self_lid = order.get("setup_log_id")
         _self_qty = order.get("quantity") or QTY  # S149
+        _self_ts = order.get("ts_placed") or ""
         _dir_set = ("long", "bullish") if is_long else ("short", "bearish")
-        with _lock:
-            _other_open_qty = sum(
-                (o.get("quantity") or QTY)
-                for _lid, o in _active_orders.items()
-                if _lid != _self_lid
-                and o.get("account_id") == account_id
-                and (o.get("direction") or "").lower() in _dir_set
-                and o.get("status") in ("pending_entry", "filled")
-                and not o.get("closing_in_progress")
-            )
-        _max_closeable = broker_pos["qty"] - _other_open_qty
+        if not _self_ts:
+            # No entry timestamp (should never happen on a real fill) — fail SAFE
+            # toward closing rather than risk a naked skip.
+            _newer_qty = 0
+        else:
+            with _lock:
+                _newer_qty = sum(
+                    (o.get("quantity") or QTY)
+                    for _lid, o in _active_orders.items()
+                    if _lid != _self_lid
+                    and o.get("account_id") == account_id
+                    and (o.get("direction") or "").lower() in _dir_set
+                    and o.get("status") in ("pending_entry", "filled")
+                    and not o.get("closing_in_progress")
+                    and (o.get("ts_placed") or "") > _self_ts  # entered AFTER self
+                )
+        _max_closeable = broker_pos["qty"] - _newer_qty
         if _max_closeable <= 0:
             print(f"[real-trader] flatten SKIPPED (netting guard): lid={_self_lid} "
-                  f"broker_net={broker_pos['qty']} other_open={_other_open_qty} "
-                  f"-> max_closeable={_max_closeable}. Contract already FIFO-closed by a "
-                  f"sibling close -- not eating another lid's position. acct={account_id}",
-                  flush=True)
+                  f"broker_net={broker_pos['qty']} newer_open={_newer_qty} "
+                  f"-> this lid already FIFO-closed (older than all surviving "
+                  f"contracts). Not eating a sibling. acct={account_id}", flush=True)
             bf = _backfill_ghost_fill(order)
             if bf:
                 with _lock:
@@ -1941,6 +1951,7 @@ def _reconcile_positions():
                 _closed_ids = []
                 _backfilled = []
                 _lost_price = []
+                _orphan_stops = []  # (lid, stop_oid) to cancel — their contract is gone
                 # Release lock while querying broker history (network call)
                 for lid, o in _to_process:
                     backfill = _backfill_ghost_fill(o)
@@ -1955,8 +1966,29 @@ def _reconcile_positions():
                         o["close_reason"] = ("ghost_reconcile" if broker_qty == 0
                                              else "fifo_reconcile_partial")
                         _closed_ids.append(o["setup_log_id"])
+                        _so = o.get("stop_order_id")
+                        if _so:
+                            _orphan_stops.append((o["setup_log_id"], _so))
+                        _to = o.get("target_order_id")
+                        if _to:
+                            _orphan_stops.append((o["setup_log_id"], _to))
                 for _gid in _closed_ids:
                     _persist_order(_gid)
+                # S200: cancel the healed lids' resting protective orders. Their
+                # contracts were FIFO-consumed, so these stops/targets are ORPHANS
+                # — if left working and the account later goes flat, an orphan stop
+                # firing would OPEN AN UNINTENDED OPPOSITE position (the exact
+                # "2 stops on 1 contract" hazard the user had to defuse manually on
+                # 2026-06-02). _cancel_order_verified is a no-op on already-filled/
+                # cancelled orders (it confirms the order is no longer active), so
+                # this is safe for stops that already terminated naturally.
+                for _olid, _ooid in _orphan_stops:
+                    try:
+                        _cancel_order_verified(_ooid, acct_id,
+                                               f"orphan stop/target lid={_olid}", retries=2)
+                    except Exception as _ce:
+                        print(f"[real-trader] orphan cancel error lid={_olid} "
+                              f"oid={_ooid}: {_ce}", flush=True)
                 # Alert with backfill detail — tells user if accounting is accurate.
                 _broker_lbl = "FLAT" if broker_qty == 0 else f"{broker_qty} MES"
                 _hdr = "GHOST POSITION" if broker_qty == 0 else "QTY MISMATCH auto-healed"

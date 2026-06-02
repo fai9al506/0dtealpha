@@ -1366,6 +1366,27 @@ def read_nt8_position(nt8_incoming_folder: str) -> dict | None:
 #  POSITION TRACKER
 # ═════════════════════════════════════════════════════════════════════════════
 
+def _tg_alert(cfg: dict, text: str):
+    """Fire-and-forget Telegram alert (best-effort, never raises)."""
+    try:
+        bot = cfg.get("telegram_bot_token", "")
+        chat = cfg.get("telegram_chat_id", "")
+        if bot and chat:
+            requests.post(f"https://api.telegram.org/bot{bot}/sendMessage",
+                          json={"chat_id": chat, "text": text}, timeout=10)
+    except Exception as e:
+        log.warning(f"[tg-alert] failed: {e}")
+
+
+# Software safety-close confirmation: a slot must be observed breaching its
+# intended stop on this many CONSECUTIVE checks before we market-close it.
+# Rationale (2026-06-02 incident): a HEALTHY resting stop fills at the exchange
+# and check_nt8_fills clears the slot within one cycle, so it never reaches the
+# 2nd confirmation — only a slot whose resting stop is STUCK (ATI CHANGE dropped)
+# persists long enough to fire. This eliminates the double-close/oversell race.
+_SYNTH_STOP_CONFIRM = 2
+
+
 class StackingTracker:
     """Phase 2: multi-position tracker with same-direction stacking.
 
@@ -1698,6 +1719,87 @@ class StackingTracker:
                 self._save()
                 log.info(f"  [STACK trail] {setup_name} stop {old:.2f} -> {new_stop:.2f} "
                          f"(profit={profit:+.1f} max={max_fav:+.1f})")
+
+    def check_synthetic_stops(self, es_price: float | None):
+        """Software safety-close — makes the tracker's INTENDED stop authoritative.
+
+        Added 2026-06-02 after a real-money incident: with two stop orders on one
+        netted MES position, NT8 silently dropped the ATI CHANGE for one of them
+        (slot s34142 stayed at its initial level while s34144 trailed correctly),
+        leaving a runner naked. NT8's file interface exposes no working-stop price,
+        so we can't verify a CHANGE landed. Instead we enforce the stop in software:
+        if live ES has breached a slot's intended stop_price on _SYNTH_STOP_CONFIRM
+        consecutive checks AND the broker hasn't already closed it, flatten that slot
+        at market, cancel its orphan resting stop, book the fill, and alert.
+
+        The broker resting stop stays in place as the crash-proof floor (protects
+        when this script is hung/down). The 2-check confirmation avoids a double
+        close: a healthy resting stop fills at the exchange and check_nt8_fills
+        clears the slot before the 2nd confirmation is ever reached.
+        """
+        if not es_price or not self.slots:
+            return
+        remaining = []
+        changed = False
+        for s in self.slots:
+            if s.get("pending_limit"):
+                remaining.append(s)
+                continue
+            stop_level = s.get("stop_price")
+            if stop_level is None:
+                remaining.append(s)
+                continue
+            is_long = s["direction"] in ("long", "bullish")
+            breached = (es_price <= stop_level) if is_long else (es_price >= stop_level)
+            if not breached:
+                if s.get("_breach_count"):
+                    s["_breach_count"] = 0
+                    changed = True
+                remaining.append(s)
+                continue
+
+            # Breach observed — confirm across consecutive checks before acting.
+            s["_breach_count"] = s.get("_breach_count", 0) + 1
+            changed = True
+            if s["_breach_count"] < _SYNTH_STOP_CONFIRM:
+                remaining.append(s)
+                continue
+
+            # Race guard 1: resting stop already filled → let check_nt8_fills book it.
+            st = self.nt8.check_order_state(s.get("stop_oid")) if s.get("stop_oid") else None
+            if st and st.get("status") == "FILLED":
+                remaining.append(s)
+                continue
+            # Race guard 2: broker already flat → let reconcile clear it.
+            if self.nt8.read_oif_position() == "FLAT":
+                remaining.append(s)
+                continue
+
+            qty = int(s.get("qty", 0))
+            # Cancel the orphan resting stop/target FIRST so a late exchange trigger
+            # can't open an accidental reverse position after we market-close.
+            if s.get("stop_oid"):
+                self.nt8.cancel(s["stop_oid"])
+            if s.get("target_oid"):
+                self.nt8.cancel(s["target_oid"])
+            self.nt8.close_position(s["direction"], qty)
+
+            entry = s.get("es_entry_price") or s.get("entry_price", 0)
+            pnl_pts = (es_price - entry) if is_long else (entry - es_price)
+            self.compliance.record_trade(pnl_pts, s["setup_name"], qty)
+            self.compliance.update_streak(s["setup_name"], s["direction"], pnl_pts)
+            log.warning(f"  [SYNTH STOP] {s['setup_name']} {s['direction']} breached intended "
+                        f"stop {stop_level:.2f} @ ES {es_price:.2f} — market-closed {qty} "
+                        f"({pnl_pts:+.1f}pts). Broker resting stop did NOT fire.")
+            _tg_alert(self.cfg,
+                      f"🚨 SYNTH STOP: {s['setup_name']} {s['direction'].upper()} closed "
+                      f"{qty} MES @ ~{es_price:.2f} ({pnl_pts:+.1f}pt). Broker resting stop "
+                      f"failed to trail (ATI CHANGE dropped) — position protected in software.")
+            changed = True
+        if changed:
+            self.slots = remaining
+            self.compliance.has_open_position = len(self.slots) > 0
+            self._save()
 
     def check_nt8_fills(self):
         if not self.slots:
@@ -2592,6 +2694,69 @@ class PositionTracker:
                 self._save()
                 return
 
+    def check_synthetic_stops(self, es_price: float | None):
+        """Software safety-close for the single-position path (see StackingTracker
+        version for full rationale — 2026-06-02 unprotected-stop incident).
+
+        If live ES breaches the position's intended stop_price on
+        _SYNTH_STOP_CONFIRM consecutive checks and the broker hasn't already
+        closed it, flatten at market, cancel the orphan resting stop, book the
+        fill, and alert. The resting stop remains as the crash-proof floor.
+        """
+        if not es_price or not self.position:
+            return
+        if self.position.get("pending_limit"):
+            return
+        stop_level = self.position.get("stop_price")
+        if stop_level is None:
+            return
+        is_long = self.position["direction"] in ("long", "bullish")
+        breached = (es_price <= stop_level) if is_long else (es_price >= stop_level)
+        if not breached:
+            if self.position.get("_breach_count"):
+                self.position["_breach_count"] = 0
+                self._save()
+            return
+
+        self.position["_breach_count"] = self.position.get("_breach_count", 0) + 1
+        if self.position["_breach_count"] < _SYNTH_STOP_CONFIRM:
+            self._save()
+            return
+
+        stop_oid = self.position.get("stop_oid")
+        target_oid = self.position.get("target_oid")
+        # Race guard 1: resting stop already filled → let check_nt8_fills book it.
+        st = self.nt8.check_order_state(stop_oid) if stop_oid else None
+        if st and st.get("status") == "FILLED":
+            return
+        # Race guard 2: broker already flat → let reconcile clear it.
+        if self.nt8.read_oif_position() == "FLAT":
+            return
+
+        qty = self.position.get("qty", self.cfg["qty"])
+        if stop_oid:
+            self.nt8.cancel(stop_oid)
+        if target_oid:
+            self.nt8.cancel(target_oid)
+        self.nt8.close_position(self.position["direction"], qty)
+
+        entry = self.position.get("entry_price") or self.position.get("es_entry_price", 0)
+        pnl_pts = (es_price - entry) if is_long else (entry - es_price)
+        _sname = self.position["setup_name"]
+        _sdir = self.position["direction"]
+        self.compliance.record_trade(pnl_pts, _sname, qty)
+        self.compliance.update_streak(_sname, _sdir, pnl_pts)
+        log.warning(f"  [SYNTH STOP] {_sname} {_sdir} breached intended stop "
+                    f"{stop_level:.2f} @ ES {es_price:.2f} — market-closed {qty} "
+                    f"({pnl_pts:+.1f}pts). Broker resting stop did NOT fire.")
+        _tg_alert(self.cfg,
+                  f"🚨 SYNTH STOP: {_sname} {_sdir.upper()} closed {qty} MES @ "
+                  f"~{es_price:.2f} ({pnl_pts:+.1f}pt). Broker resting stop failed to "
+                  f"trail (ATI CHANGE dropped) — position protected in software.")
+        self.position = None
+        self.compliance.has_open_position = False
+        self._save()
+
     _RECONCILE_GRACE_S = 30  # don't reconcile within 30s of opening a trade
 
     def reconcile_with_api(self, api_url: str, api_key: str):
@@ -2995,6 +3160,9 @@ def main():
             if tracker.is_open and time.time() - last_trail_check >= TRAIL_CHECK_INTERVAL:
                 tracker.check_nt8_fills()
                 tracker.check_trail(latest_es_price)
+                # Software safety-close: enforce the intended stop even if the
+                # broker resting stop's ATI CHANGE was silently dropped (2026-06-02).
+                tracker.check_synthetic_stops(latest_es_price)
                 last_trail_check = time.time()
 
             # Periodic reconciliation (every 60s when position open)

@@ -1781,6 +1781,28 @@ def poll_order_status():
     # which runs regardless of tracked-order state.
 
 
+# 2026-06-02 S198: dedup state for reconcile mismatch alerts that we CAN'T auto-heal.
+# Keyed by acct_id -> ((acct, expected, broker), last_alert_monotonic). Previously the
+# "QTY MISMATCH ... Check manually" branch fired on every 30s reconcile cycle with no
+# cooldown -> 30+ identical Telegrams during the 2026-06-02 3-concurrent-long netting
+# incident. Now repeat alerts for the SAME (expected, broker) state are suppressed for
+# the cooldown window; a new state (or cooldown expiry) re-alerts.
+_reconcile_alert_state: dict = {}
+_RECONCILE_ALERT_COOLDOWN_S = 600  # 10 min
+
+
+def _reconcile_alert_once(acct_id: str, expected: int, broker: int, msg: str):
+    """Fire a reconcile mismatch alert at most once per (acct, expected, broker) state
+    per cooldown window. Kills the every-30s spam for mismatches we don't auto-resolve."""
+    key = (acct_id, expected, broker)
+    last = _reconcile_alert_state.get(acct_id)
+    now = time.monotonic()
+    if last and last[0] == key and (now - last[1]) < _RECONCILE_ALERT_COOLDOWN_S:
+        return
+    _reconcile_alert_state[acct_id] = (key, now)
+    _alert(msg)
+
+
 def reconcile_positions():
     """Public entry point for the 30s reconcile scheduler.
 
@@ -1828,32 +1850,62 @@ def _reconcile_positions():
         if broker_qty != expected_qty:
             print(f"[real-trader] RECONCILE MISMATCH on {acct_id}: "
                   f"expected={expected_qty} broker={broker_qty}", flush=True)
-            if broker_qty > 0 and expected_qty == 0:
-                # Orphan: broker has position we don't track
-                _alert(f"⚠️ POSITION MISMATCH on {acct_id}\n"
-                       f"Expected: {expected_qty} MES\n"
-                       f"Broker: {broker_qty} MES\n"
-                       f"ORPHAN detected -- auto-closing")
-                _close_broker_orphans(acct_id, source="RECONCILE")
-            elif broker_qty == 0 and expected_qty > 0:
-                # Ghost: we think we have position but broker doesn't
-                # Before marking closed, try to recover the actual fill price
-                # from broker order history so P&L accounting stays accurate.
-                _ghost_ids = []
+            if broker_qty > expected_qty:
+                # Broker holds MORE contracts than we track.
+                if expected_qty == 0:
+                    # Pure orphan: a position we don't track at all -> auto-close.
+                    _alert(f"⚠️ POSITION MISMATCH on {acct_id}\n"
+                           f"Expected: {expected_qty} MES\n"
+                           f"Broker: {broker_qty} MES\n"
+                           f"ORPHAN detected -- auto-closing")
+                    _close_broker_orphans(acct_id, source="RECONCILE")
+                else:
+                    # Partial excess (broker > expected > 0): an untracked extra contract
+                    # sits alongside tracked ones. Auto-closing risks killing a legit
+                    # just-filled entry the fill-poll hasn't caught yet, so alert (deduped)
+                    # rather than act.
+                    _reconcile_alert_once(
+                        acct_id, expected_qty, broker_qty,
+                        f"⚠️ POSITION MISMATCH on {acct_id}\n"
+                        f"Expected: {expected_qty} MES · Broker: {broker_qty} MES\n"
+                        f"Broker holds more than tracked -- check manually")
+            else:
+                # broker_qty < expected_qty: the bot tracks more open contracts than the
+                # broker actually holds — one or more tracked lids already closed at the
+                # broker (stop fill, S131/trail-exit market sell, or manual flatten) but the
+                # bot hasn't caught it yet. On a NETTED futures account the broker closes
+                # FIFO (oldest entry first), so we resolve oldest-first.
+                #
+                # 2026-06-02 S198 fix: previously this branch only fired a "QTY MISMATCH
+                # ... Check manually" alert every 30s (no action, no cooldown). During the
+                # 3-concurrent-long netting incident that spammed 30+ Telegrams and left
+                # lid 3468 as an un-recovered ghost. Now it auto-heals: mark the oldest
+                # (expected - broker) contracts closed, backfilling each fill price from
+                # broker history. Generalizes the old full-flat ghost branch — when
+                # broker_qty == 0 the shortfall equals the full tracked set, so this closes
+                # everything exactly as before (backward compatible).
+                _qty_to_close = expected_qty - broker_qty
+                with _lock:
+                    # FIFO oldest-first candidates, same status/closing guards the ghost
+                    # path used. S99: include pending_entry. 2026-05-14: skip
+                    # closing_in_progress (an active close_trade will persist properly).
+                    _cands = sorted(
+                        [(lid, o) for lid, o in _active_orders.items()
+                         if o.get("account_id") == acct_id
+                         and o["status"] in ("pending_entry", "filled")
+                         and not o.get("closing_in_progress")],
+                        key=lambda x: x[1].get("ts_placed") or "")
+                # Take oldest lids until their cumulative qty covers the shortfall.
+                _to_process = []
+                _acc = 0
+                for lid, o in _cands:
+                    if _acc >= _qty_to_close:
+                        break
+                    _to_process.append((lid, o))
+                    _acc += int(o.get("quantity") or QTY)
+                _closed_ids = []
                 _backfilled = []
                 _lost_price = []
-                with _lock:
-                    # S99: include pending_entry (entry placed, broker may have rejected/expired
-                    # but bot hasn't polled yet — we count this as ghost candidate).
-                    # 2026-05-14 Bug 2 fix: skip closing_in_progress lids — the active
-                    # close_trade will persist close_fill_price and the proper close_reason
-                    # within seconds.
-                    _to_process = [
-                        (lid, o) for lid, o in _active_orders.items()
-                        if o.get("account_id") == acct_id
-                        and o["status"] in ("pending_entry", "filled")
-                        and not o.get("closing_in_progress")
-                    ]
                 # Release lock while querying broker history (network call)
                 for lid, o in _to_process:
                     backfill = _backfill_ghost_fill(o)
@@ -1865,27 +1917,25 @@ def _reconcile_positions():
                         else:
                             _lost_price.append(lid)
                         o["status"] = "closed"
-                        o["close_reason"] = "ghost_reconcile"
-                        _ghost_ids.append(o["setup_log_id"])
-                for _gid in _ghost_ids:
+                        o["close_reason"] = ("ghost_reconcile" if broker_qty == 0
+                                             else "fifo_reconcile_partial")
+                        _closed_ids.append(o["setup_log_id"])
+                for _gid in _closed_ids:
                     _persist_order(_gid)
-                # Alert with backfill detail — tells user if accounting is accurate or not
-                _msg = (f"⚠️ GHOST POSITION on {acct_id}\n"
-                        f"Expected: {expected_qty} MES · Broker: FLAT\n"
-                        f"Marked {len(_ghost_ids)} closed")
+                # Alert with backfill detail — tells user if accounting is accurate.
+                _broker_lbl = "FLAT" if broker_qty == 0 else f"{broker_qty} MES"
+                _hdr = "GHOST POSITION" if broker_qty == 0 else "QTY MISMATCH auto-healed"
+                _msg = (f"⚠️ {_hdr} on {acct_id}\n"
+                        f"Expected: {expected_qty} MES · Broker: {_broker_lbl}\n"
+                        f"Marked {len(_closed_ids)} closed (FIFO oldest-first)")
                 if _backfilled:
                     _msg += f"\n✅ Recovered {len(_backfilled)} fill price(s): "
                     _msg += ", ".join(f"lid={l} {f}={p}" for l, f, p in _backfilled)
                 if _lost_price:
                     _msg += f"\n🚨 Could not recover fill for {len(_lost_price)} trade(s): {_lost_price}"
                 _alert(_msg)
-                print(f"[real-trader] ghost_reconcile {acct_id}: backfilled={_backfilled} lost={_lost_price}", flush=True)
-            elif broker_qty != expected_qty:
-                # Qty mismatch
-                _alert(f"⚠️ QTY MISMATCH on {acct_id}\n"
-                       f"Expected: {expected_qty} MES\n"
-                       f"Broker: {broker_qty} MES\n"
-                       f"Check manually")
+                print(f"[real-trader] fifo_reconcile {acct_id}: closed={_closed_ids} "
+                      f"backfilled={_backfilled} lost={_lost_price}", flush=True)
 
 
 def _check_order_fills(lid, order, broker_orders):

@@ -15433,7 +15433,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="options">Options Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option value="GEX Long v3">GEX Long v3.1 ✦</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option value="ES Abs-Pure">ES Abs-Pure ✦</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Vanna Pivot Bounce</option><option>Delta Absorption</option><option>Dip-Buy</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option value="GEX Long v3">GEX Long v3.1 ✦</option><option value="GEX Long v3.2">GEX Long v3.2 ✦</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option value="ES Abs-Pure">ES Abs-Pure ✦</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Vanna Pivot Bounce</option><option>Delta Absorption</option><option>Dip-Buy</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="pickday">Pick Day...</option><option value="week">This Week</option><option value="lastweek">Last Week</option><option value="month">This Month</option><option value="lastmonth">Last Month</option><option value="custom">Custom Range...</option></select>
@@ -18435,8 +18435,13 @@ DASH_HTML_TEMPLATE = """
     function _tlV3Active() {
       const fSetup = document.getElementById('tlFilterSetup');
       const fStrat = document.getElementById('tlFilterStrategy');
-      return (fSetup && fSetup.value === 'GEX Long v3') ||
+      return (fSetup && (fSetup.value === 'GEX Long v3' || fSetup.value === 'GEX Long v3.2')) ||
              (fStrat && fStrat.value === 'gexlongv3');
+    }
+    // v3.2 selected? (bullish-paradigm confluence variant — uses ov.pass_v32)
+    function _tlV32Selected() {
+      const fSetup = document.getElementById('tlFilterSetup');
+      return fSetup && fSetup.value === 'GEX Long v3.2';
     }
     async function _tlLoadV3Overlay() {
       if (_tlV3Overlay || _tlV3OverlayLoading) return _tlV3Overlay;
@@ -18453,7 +18458,9 @@ DASH_HTML_TEMPLATE = """
     function _tlV3OutcomeFor(l) {
       if (!_tlV3Active() || !_tlV3Overlay) return null;
       const ov = _tlV3Overlay[String(l.id)];
-      if (!ov || !ov.pass) return null;
+      if (!ov) return null;
+      const passed = _tlV32Selected() ? ov.pass_v32 : ov.pass;
+      if (!passed) return null;
       return {result: ov.result, pnl: (ov.pnl != null ? ov.pnl : null)};
     }
     let _tlActiveSubTab = 'portal';
@@ -19079,6 +19086,12 @@ DASH_HTML_TEMPLATE = """
           } else if (!_tlPassesStrategy(l, 'gexlongv3')) {
             return false;
           }
+        } else if (fSetup === 'GEX Long v3.2') {
+          // v3.2 = v3.1 + bullish-paradigm confluence (align>=0 OR bull-paradigm).
+          // Server overlay only (pass_v32); no client-side fallback (needs paradigm+classifier).
+          if (!_tlV3Overlay) return false;
+          const ov = _tlV3Overlay[String(l.id)];
+          if (!ov || !ov.pass_v32) return false;
         } else if (fSetup === 'ES Abs-Pure') {
           if (!_tlPassesStrategy(l, 'esabspure')) return false;
         } else if (fSetup && l.setup_name !== fSetup) {

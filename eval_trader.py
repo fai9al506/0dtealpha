@@ -129,7 +129,7 @@ def _init_file_paths(config_path: str):
     eval_trader_config.json       → suffix ""      (backward compatible)
     eval_trader_config_real.json  → suffix "_real"
     """
-    global CONFIG_FILE, STATE_FILE, POSITION_FILE, API_STATE_FILE, LOG_FILE
+    global CONFIG_FILE, STATE_FILE, POSITION_FILE, API_STATE_FILE, LOG_FILE, TRUSTED_STATE_FILE
     config_name = Path(config_path).stem  # e.g. "eval_trader_config_real"
     # Extract suffix: strip "eval_trader_config" prefix
     prefix = "eval_trader_config"
@@ -140,6 +140,10 @@ def _init_file_paths(config_path: str):
     STATE_FILE = config_dir / f"eval_trader_state{suffix}.json"
     POSITION_FILE = config_dir / f"eval_trader_position{suffix}.json"
     API_STATE_FILE = config_dir / f"eval_trader_api_state{suffix}.json"
+    # S185 integrity snapshot — MUST be suffix-aware too, else the short/sim
+    # accounts compare their balance against the LONG account's trusted peak
+    # and false-trip (or silently pass) the >$5K divergence guard.
+    TRUSTED_STATE_FILE = config_dir / f"eval_trader_state{suffix}.TRUSTED.json"
     LOG_FILE = f"eval_trader{suffix}.log"
 
 # ─── MES Contract Auto-Rollover ───────────────────────────────────────────────

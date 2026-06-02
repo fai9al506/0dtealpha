@@ -3129,6 +3129,41 @@ def main():
                         log.info(f"[eod-beacon] sent: {msg}")
                 except Exception as be:
                     log.warning(f"[eod-beacon] failed: {be}")
+
+                # S185 (2026-06-02): auto-refresh the suffix-aware trusted snapshot at EOD,
+                # GUARDED so corruption is never baked in. Each account (long/short/sim) writes
+                # its OWN eval_trader_state{suffix}.TRUSTED.json — replaces the manual daily step
+                # and inherently covers both legs. Skip + alert if the live peak diverged
+                # > tolerance from the existing trusted peak (the same >$5K signal the startup
+                # integrity check uses): that means a hung-process corruption, which a human must
+                # review rather than have it blessed as the new baseline.
+                try:
+                    compliance.save()  # ensure STATE_FILE reflects current clean state
+                    _cur_peak = float(compliance.cfg["e2t_peak_balance"])
+                    _refresh_ok = True
+                    if TRUSTED_STATE_FILE.exists():
+                        _pt = json.loads(TRUSTED_STATE_FILE.read_text())
+                        _prev_peak = float(_pt.get("peak_balance", _cur_peak))
+                        if abs(_cur_peak - _prev_peak) > S185_INTEGRITY_PEAK_TOLERANCE:
+                            _refresh_ok = False
+                            log.warning(f"[trusted-refresh] SKIPPED ({TRUSTED_STATE_FILE.name}): "
+                                        f"peak ${_cur_peak:,.0f} vs trusted ${_prev_peak:,.0f} diverged "
+                                        f">${S185_INTEGRITY_PEAK_TOLERANCE:,.0f} — possible corruption, manual review.")
+                            try:
+                                _b = cfg.get("telegram_bot_token", ""); _c = cfg.get("telegram_chat_id", "")
+                                if _b and _c:
+                                    requests.post(f"https://api.telegram.org/bot{_b}/sendMessage",
+                                                  json={"chat_id": _c,
+                                                        "text": f"⚠️ Trusted snapshot NOT refreshed ({cfg.get('nt8_account_id','?')}): peak ${_cur_peak:,.0f} vs trusted ${_prev_peak:,.0f} diverged >${S185_INTEGRITY_PEAK_TOLERANCE:,.0f}. Manual review before next restart."},
+                                                  timeout=10)
+                            except Exception:
+                                pass
+                    if _refresh_ok:
+                        TRUSTED_STATE_FILE.write_text(STATE_FILE.read_text())
+                        log.info(f"[trusted-refresh] {TRUSTED_STATE_FILE.name} updated (peak ${_cur_peak:,.0f}).")
+                except Exception as _re:
+                    log.warning(f"[trusted-refresh] failed: {_re}")
+
                 _last_eod_beacon_date = now_et.date()
 
             # ── E2T Tick Trade: count trading day even with no signals ──

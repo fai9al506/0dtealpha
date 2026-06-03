@@ -474,6 +474,10 @@ def db_init():
         # Increase statement timeout for migrations — Railway default is too short
         # for ALTER TABLE on large tables (even no-op duplicate_column checks)
         conn.execute(text("SET LOCAL statement_timeout = '30s'"))
+        # Fail fast if another session holds a lock on a table we're ALTERing
+        # (idle-in-transaction analysis scripts) — the retry loop in on_startup
+        # handles it instead of burning the full statement_timeout.
+        conn.execute(text("SET LOCAL lock_timeout = '5s'"))
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS chain_snapshots (
             id BIGSERIAL PRIMARY KEY,
@@ -7949,7 +7953,27 @@ def on_startup():
     if miss:
         print("[env] missing:", miss, flush=True)
     if engine:
-        db_init()
+        # Retry db_init on lock contention — an idle-in-transaction analysis
+        # session holding AccessShareLock on chain_snapshots blocks the
+        # idempotent ALTERs and crash-looped the whole service (2026-06-03).
+        # In steady state all tables/columns already exist, so after retries
+        # we log loudly and continue rather than dying.
+        for _attempt in range(3):
+            try:
+                db_init()
+                break
+            except Exception as e:
+                print(f"[db] db_init attempt {_attempt+1}/3 failed: {e}", flush=True)
+                if _attempt < 2:
+                    time.sleep(10)
+        else:
+            print("[db] ⚠️ db_init failed after 3 attempts — continuing startup "
+                  "(migrations skipped; tables assumed to exist)", flush=True)
+            try:
+                send_telegram("⚠️ db_init failed 3x at startup (likely lock contention "
+                              "on chain_snapshots) — service started WITHOUT running migrations.")
+            except Exception:
+                pass
     else:
         print("[db] engine not created (no DATABASE_URL)", flush=True)
     global scheduler

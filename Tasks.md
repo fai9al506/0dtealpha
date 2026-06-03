@@ -273,7 +273,7 @@ These tasks are time-sensitive. Claude checks them at session start and alerts i
 
 | Date | Task | Result |
 |------|------|--------|
-| 2026-06-03 | Railway outage fix: db_init lock crash-loop | DONE — web service down ~17:20 ET: idle-in-transaction analysis session held AccessShareLock on chain_snapshots → startup ALTER (vix3m, already exists) blocked → statement_timeout → crash loop. Killed blocker pid + redeployed (service restored). Hardened: on_startup retries db_init 3x then continues with Telegram alert; db_init SET LOCAL lock_timeout=5s. Commit `f9dc812`. |
+| 2026-06-03 | Railway outage fix: db_init lock crash-loop | DONE — web service down ~17:20 ET. ROOT CAUSE (VPS Claude audit, confirmed in code): `gex_long_v3._build_cache()` used non-autocommit `raw_connection()` → entire portal overlay rebuild = ONE minutes-long txn holding AccessShareLock on chain_snapshots → old instance's rebuild blocked new instance's db_init ALTER during deploy → crash loop. SELF-INFLICTED, not a VPS script. Fixes: killed blocker pid + redeploy (restore); `f9dc812` on_startup retries db_init 3x + lock_timeout=5s; `d6fcdfa` per-iteration commit in _build_cache (releases locks in sub-seconds). |
 | 2026-03-29 | R2: Per-strike charm near spot filter | DONE — Redundant with V12 for both SC and ES Abs. No filter change. ES Abs short whitelist parked (58.3% WR, 48t too thin). |
 | 2026-03-27 | Data staleness protection | DONE — data_ts column + freshness gates on all 4 snapshot tables. Prevents saving stale data during API outages. |
 | 2026-03-27 | SB2 abs_details + cooldown fix | DONE — abs_details now saved for all absorption variants (was ES-only). Cooldown reads settings (20 bars, was hardcoded 10). |

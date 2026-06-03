@@ -23,12 +23,12 @@
   "no_new_trades_after_et": "15:30",
   "flatten_time_et": "15:50",
   "e2t_daily_pnl_cap": 525,
-  "daily_loss_floor": -200,
+  "daily_loss_floor": -350,
   "stack_enabled": true,
   "stack_cap_contracts": 4,
-  "cluster_floor_dollars": -200,
+  "cluster_floor_dollars": -350,
   "ignore_opposite_signals": true,
-  "_role": "LONG account (2-account direction split, 2026-06-01). This = existing eval falde5482tcp25d114592, reconfigured LONG-ONLY. SHORT leg = eval_trader_config_short.json. SIZING (backtested 2026-05-30, 30d Apr15-May29, mes-sim): 2 MES/setup, cap 2 concurrent (stack_cap_contracts=4 = 2 setups x 2 MES). Chose cap 2 over cap 3: cap 3 ran maxDD -$1,223 near the $1,500 bust wall for no reliable extra gain; cap 2 = +$1,998 / -$1,062 maxDD / 0 bust. daily_loss_floor=-200 + cluster_floor=-200 MANDATORY (the bust guards). Reversal path can't fire — longs only. Supersedes S183 stacking trial.",
+  "_role": "LONG account (2-account direction split). 2026-06-02 UPDATE (full-V16 alignment + floor recalibration): (1) DD Exhaustion allowed_paradigms restriction REMOVED — eval now trades the FULL portal V16 DD-long filter (align 0/1/2, paradigm blocklist via eval_trader.py:893 carve-out), capturing ~+315pt/mo that was being left on the table (validated robust Mar/Apr/May +24/+238/+315, no bust). (2) daily_loss_floor & cluster_floor -200 -> -350: the -200 floor was tripped by ONE qty2 trade (20pt*2*5=$200), killing recovery days (May 4: portal +$414 day became -$249). Mar-Jun chain-sim validation: floor must NOT be removed (no-floor BREACHES the -550 daily limit) but -350 protects AND stops throttling (qty2 long May +1581->+3163). qty=2 (longs only, qty2 long is DD-safe: maxDD -$902, passes ~12d). Supersedes the 2026-06-01 -200 config.",
   "setup_rules": {
     "GEX Long": {
       "enabled": false,
@@ -69,8 +69,7 @@
       "target": null,
       "qty": 2,
       "max_risk": 120,
-      "allowed_directions": ["long"],
-      "allowed_paradigms": ["BOFA-PURE"]
+      "allowed_directions": ["long"]
     },
     "Skew Charm": {
       "enabled": true,

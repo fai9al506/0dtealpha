@@ -129,7 +129,7 @@ def _init_file_paths(config_path: str):
     eval_trader_config.json       → suffix ""      (backward compatible)
     eval_trader_config_real.json  → suffix "_real"
     """
-    global CONFIG_FILE, STATE_FILE, POSITION_FILE, API_STATE_FILE, LOG_FILE
+    global CONFIG_FILE, STATE_FILE, POSITION_FILE, API_STATE_FILE, LOG_FILE, TRUSTED_STATE_FILE
     config_name = Path(config_path).stem  # e.g. "eval_trader_config_real"
     # Extract suffix: strip "eval_trader_config" prefix
     prefix = "eval_trader_config"
@@ -140,6 +140,10 @@ def _init_file_paths(config_path: str):
     STATE_FILE = config_dir / f"eval_trader_state{suffix}.json"
     POSITION_FILE = config_dir / f"eval_trader_position{suffix}.json"
     API_STATE_FILE = config_dir / f"eval_trader_api_state{suffix}.json"
+    # S185 integrity snapshot — MUST be suffix-aware too, else the short/sim
+    # accounts compare their balance against the LONG account's trusted peak
+    # and false-trip (or silently pass) the >$5K divergence guard.
+    TRUSTED_STATE_FILE = config_dir / f"eval_trader_state{suffix}.TRUSTED.json"
     LOG_FILE = f"eval_trader{suffix}.log"
 
 # ─── MES Contract Auto-Rollover ───────────────────────────────────────────────
@@ -893,6 +897,24 @@ class ComplianceGate:
                 elif sname == "ES Absorption":
                     # ES Abs PURE filter (already enforced above) is exclusive — skip V14 generic gate
                     pass
+                elif sname == "DD Exhaustion":
+                    # V16.1 DD-long carve-out (2026-06-02) — mirror app/main.py _passes_live_filter.
+                    # Prior eval routed DD longs through the generic align>=2 gate, blocking the
+                    # align 0/1 BOFA-PURE bucket and all non-BOFA paradigms. That cost ~+315pt/mo
+                    # (validated robust Mar/Apr/May: +24/+238/+315). DD admits align 0/1/2, blocks
+                    # align>=3 (-312pt hist), VIX>=22, bad paradigms, and grade C.
+                    _ddg = signal.get("grade")
+                    if alignment < 0:
+                        return False, f"DD long alignment {alignment:+d} < 0"
+                    if alignment >= 3:
+                        return False, "DD long align>=3 (hist -312pt)"
+                    _sig_vix = signal.get("vix")
+                    if _sig_vix is not None and _sig_vix >= 22:
+                        return False, f"DD long VIX={_sig_vix:.1f}>=22"
+                    if _para in ("GEX-LIS", "AG-LIS", "AG-PURE", "BofA-LIS", "BOFA-MESSY"):
+                        return False, f"DD long paradigm {_para} blocked"
+                    if _ddg == "C":
+                        return False, "DD long grade C blocked"
                 else:
                     if alignment < 2:
                         return False, f"Greek filter: long alignment {alignment:+d} < +2"
@@ -3107,6 +3129,41 @@ def main():
                         log.info(f"[eod-beacon] sent: {msg}")
                 except Exception as be:
                     log.warning(f"[eod-beacon] failed: {be}")
+
+                # S185 (2026-06-02): auto-refresh the suffix-aware trusted snapshot at EOD,
+                # GUARDED so corruption is never baked in. Each account (long/short/sim) writes
+                # its OWN eval_trader_state{suffix}.TRUSTED.json — replaces the manual daily step
+                # and inherently covers both legs. Skip + alert if the live peak diverged
+                # > tolerance from the existing trusted peak (the same >$5K signal the startup
+                # integrity check uses): that means a hung-process corruption, which a human must
+                # review rather than have it blessed as the new baseline.
+                try:
+                    compliance.save()  # ensure STATE_FILE reflects current clean state
+                    _cur_peak = float(compliance.cfg["e2t_peak_balance"])
+                    _refresh_ok = True
+                    if TRUSTED_STATE_FILE.exists():
+                        _pt = json.loads(TRUSTED_STATE_FILE.read_text())
+                        _prev_peak = float(_pt.get("peak_balance", _cur_peak))
+                        if abs(_cur_peak - _prev_peak) > S185_INTEGRITY_PEAK_TOLERANCE:
+                            _refresh_ok = False
+                            log.warning(f"[trusted-refresh] SKIPPED ({TRUSTED_STATE_FILE.name}): "
+                                        f"peak ${_cur_peak:,.0f} vs trusted ${_prev_peak:,.0f} diverged "
+                                        f">${S185_INTEGRITY_PEAK_TOLERANCE:,.0f} — possible corruption, manual review.")
+                            try:
+                                _b = cfg.get("telegram_bot_token", ""); _c = cfg.get("telegram_chat_id", "")
+                                if _b and _c:
+                                    requests.post(f"https://api.telegram.org/bot{_b}/sendMessage",
+                                                  json={"chat_id": _c,
+                                                        "text": f"⚠️ Trusted snapshot NOT refreshed ({cfg.get('nt8_account_id','?')}): peak ${_cur_peak:,.0f} vs trusted ${_prev_peak:,.0f} diverged >${S185_INTEGRITY_PEAK_TOLERANCE:,.0f}. Manual review before next restart."},
+                                                  timeout=10)
+                            except Exception:
+                                pass
+                    if _refresh_ok:
+                        TRUSTED_STATE_FILE.write_text(STATE_FILE.read_text())
+                        log.info(f"[trusted-refresh] {TRUSTED_STATE_FILE.name} updated (peak ${_cur_peak:,.0f}).")
+                except Exception as _re:
+                    log.warning(f"[trusted-refresh] failed: {_re}")
+
                 _last_eod_beacon_date = now_et.date()
 
             # ── E2T Tick Trade: count trading day even with no signals ──

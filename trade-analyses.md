@@ -2255,3 +2255,30 @@ New `app/dte0_gex_scanner.py` — 4 symbols (SPX/SPY/QQQ/IWM) every 30 min, data
 - **S106** Backside short — DROPPED; reverse filter queued for S102
 - **S84** 0DTE GEX scanner — DONE
 
+
+---
+
+## Analysis #17 — Dip-Buy deep backtest + v2 (held-confirm) ship (2026-06-03, S201)
+
+**Question:** Dip-Buy went 3/3 live (Jun 1-3). Is it really that good? Find higher-WR config.
+
+**Gate-2 incident:** original S196 backtest walked `chain_snapshots` — but that table persists every **2 min**, while the live detector samples SPX every 30s. Validation vs the 3 live trades failed (1/3 match: Jun 2 missed entirely between snapshots, Jun 1 entry 2 min late at a 5pt-worse price flipping WIN→LOSS). Rebuilt the sim on **ES 5pt range bars mirrored to SPX** (per-day stepwise basis from chain spot, resampled to a 30s grid) — `vps_es_range_bars` (Mar 23+) + `es_range_bars` source='rithmic' (Feb 18–Apr 30). Validation 2/3 (the miss, Jun 1, is a genuine coin-flip: live entry 7576.11 with stop 7568.11 untouched; entry 2 min later at 7581 stops out).
+
+**Honest WR of live S196 rules** (dip 8 / instant confirm 4 / T10 / S8): **38–42% WR, −30 to −76p over 68-69 days** (Feb 24–Jun 3). The 60%/+236p in the original study was an artifact — 2-min sampling accidentally required the bounce to persist ~2 min, which WAS the edge. The 3/3 live start is small-sample luck.
+
+**Search method:** ~1,300-combo grid (dip/conf/persist/T/S) with era-stability gate (Feb-Mar AND Apr-Jun both ≥55% WR + positive), then **walk-forward** (optimize Feb-Apr only, blind-test May-Jun), then structural variants (retrace limit entry, Nth-dip entry).
+
+**Winner — Dip-Buy v2: dip 8 / confirm 3 / bounce must hold 8×30s cycles (~4 min) / T+8 / S−12:**
+- 68 trades: **77.9% WR, +244p, maxDD −28, worst loss streak 2**
+- Monthly: Feb 75%, Mar 77%, Apr 70%, May 84%, Jun 3/3
+- Walk-forward blind test (May-Jun): **86.4% WR +116p**; all top-8 trained configs ≥68% blind
+- Broad plateau (292 era-stable configs in the T8/S10-12 + persist 8-10 neighborhood), not a knife-edge cell
+- Mechanism: persistence kills dead-cat first-tick entries (42%→57% alone); wide stop survives post-bounce wobble while +8 hits fast
+- Breakeven WR for T8/S12 = 60% → 18pt cushion. Risk: one loss eats 1.5 wins; trend-down-morning regime would bite at −12/hit
+- Run-rate ~+70p/mo (~$350/mo at 1 MES)
+
+**Refuted along the way:** prior_close_ok grading hypothesis (42.9% vs 41.2% — no edge, matches live where all 3 winners had it False), uptrend gate (hurts), entry on dip #2/#3 (negative), window narrowing to 9:45+/10:00+ (Apr-Jun only = regime fit), gap/dip-depth filters (noise). Retrace limit entry: small DD improvement, fewer trades, not worth complexity.
+
+**Shipped (S201):** `app/dipbuy_detector.py` logs v2 in parallel as `setup_name="Dip-Buy v2"` — v1 stays untouched as control. Portal dropdown "Dip-Buy v2 ✦". Replay test: module state machine fires == backtest engine 6/6 (identical timestamps + prices). Decision rule: after ~30 forward days compare live WR of both, promote the winner, delete the loser.
+
+**Confidence:** moderate (68 trades). Sim is a proxy (±1pt basis error, marginal trades flip). Multiple-comparison risk mitigated by era gate + walk-forward, not eliminated. Scripts: `_tmp_dipbuy_es_sim.py`, `_tmp_dipbuy_sweep.py`, `_tmp_dipbuy_search2.py`, `_tmp_dipbuy_winner_check.py`, `_tmp_dipbuy_v2_replay_test.py` (path cache `_tmp_dipbuy_paths.pkl`).

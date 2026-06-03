@@ -17,6 +17,12 @@ Grading (hypothesis to validate forward — NOT yet proven robust, see SESSION_L
   - prior_close_ok : entry >= prior-day close - 2pt  (in-sample edge, Mar-May)
   - vx_diverge_ok  : VX made no new high during the dip (tick VX, best-effort)
   A+ = both, A = one, B = neither.
+
+Dip-Buy v2 (2026-06-03 study, logged in parallel as setup_name "Dip-Buy v2"):
+Same dip trigger, but the bounce must HOLD: spot >= dip_low + 3 for 8 consecutive
+cycles (~4 min at 30s) before entry. Exit +8 / -12 / EOD. ES-mirrored 30s backtest
+Feb 24 - Jun 3 (68 trades): 77.9% WR, +244pt, maxDD -28, era-stable, walk-forward
+86% WR on blind May-Jun. v1 stays as control; compare forward WR after ~30 days.
 """
 import json
 import traceback
@@ -26,6 +32,7 @@ from sqlalchemy import text
 
 ET = ZoneInfo("America/New_York")
 SETUP_NAME = "Dip-Buy"
+V2_NAME = "Dip-Buy v2"
 
 # params (from 2026-05-30 backtest)
 WIN_START = dtime(9, 30)
@@ -35,6 +42,12 @@ DIP_PTS = 8.0
 CONFIRM_PTS = 4.0
 TARGET = 10.0
 STOP = 8.0
+
+# v2 params (from 2026-06-03 ES-mirrored study)
+V2_CONFIRM_PTS = 3.0
+V2_HOLD_CYCLES = 8     # consecutive ~30s cycles bounce must hold above dip_low+confirm
+V2_TARGET = 8.0
+V2_STOP = 12.0
 
 _engine = None
 # per-day intraday state
@@ -46,6 +59,11 @@ _state = {
     "local_low": None,
     "local_low_ts": None,
     "fired": False,
+    # v2 (held-confirm variant) — independent dip/confirm tracking
+    "v2_in_dip": False,
+    "v2_local_low": None,
+    "v2_hold": 0,
+    "v2_fired": False,
 }
 _open_trades = []   # list of dicts for outcome tracking
 _prev_close_cache = {}   # et_date -> prior-day close
@@ -67,7 +85,8 @@ def _today_et():
 
 def _reset_day(d):
     _state.update(date=d, sess_high=None, sess_high_ts=None,
-                  in_dip=False, local_low=None, local_low_ts=None, fired=False)
+                  in_dip=False, local_low=None, local_low_ts=None, fired=False,
+                  v2_in_dip=False, v2_local_low=None, v2_hold=0, v2_fired=False)
 
 
 def _prev_close(d):
@@ -109,19 +128,20 @@ def _vx_no_new_high(hi_ts, entry_ts):
 
 
 def _hydrate_open_trades():
-    """On restart: reload today's unresolved Dip-Buy rows + mark fired if any today."""
+    """On restart: reload today's unresolved Dip-Buy/v2 rows + mark fired if any today."""
     if not _engine:
         return
     d = _today_et()
     with _engine.begin() as conn:
         rows = conn.execute(text("""
-            SELECT id, ts, spot, outcome_target_level, outcome_stop_level
+            SELECT id, ts, spot, outcome_target_level, outcome_stop_level, setup_name
             FROM setup_log
-            WHERE setup_name = :n AND ts::date = :d
+            WHERE setup_name IN (:n, :n2) AND ts::date = :d
             ORDER BY ts
-        """), {"n": SETUP_NAME, "d": d.isoformat()}).fetchall()
+        """), {"n": SETUP_NAME, "n2": V2_NAME, "d": d.isoformat()}).fetchall()
         for r in rows:
-            _state["fired"] = True   # already fired today, don't re-enter
+            is_v2 = (r[5] == V2_NAME)
+            _state["v2_fired" if is_v2 else "fired"] = True   # already fired today
             unresolved = conn.execute(text(
                 "SELECT outcome_result FROM setup_log WHERE id=:i"), {"i": r[0]}).fetchone()
             if unresolved and unresolved[0]:
@@ -129,14 +149,18 @@ def _hydrate_open_trades():
             entry = float(r[2]) if r[2] is not None else None
             if entry is None:
                 continue
+            tgt_pts, stp_pts = (V2_TARGET, V2_STOP) if is_v2 else (TARGET, STOP)
+            target = float(r[3]) if r[3] is not None else entry + tgt_pts
+            stop = float(r[4]) if r[4] is not None else entry - stp_pts
             _open_trades.append({
                 "id": r[0], "entry": entry, "entry_ts": r[1],
-                "target": entry + TARGET, "stop": entry - STOP,
+                "target": target, "stop": stop,
                 "max_fav": 0.0, "max_adv": 0.0,
             })
-    if _state["fired"]:
+    if _state["fired"] or _state["v2_fired"]:
         _state["date"] = d
-        print(f"[dipbuy] hydrated: fired today + {len(_open_trades)} open trade(s)", flush=True)
+        print(f"[dipbuy] hydrated: fired={_state['fired']} v2_fired={_state['v2_fired']} "
+              f"+ {len(_open_trades)} open trade(s)", flush=True)
 
 
 def _grade(prior_close_ok, vx_div_ok):
@@ -166,34 +190,59 @@ def on_cycle(ts_utc, spot, vix=None):
 
 def _detect(et, spot, vix):
     t = et.time()
-    if t < WIN_START or t > WIN_END or _state["fired"]:
+    if t < WIN_START or t > WIN_END or (_state["fired"] and _state["v2_fired"]):
         return
-    # track session high
+    # track session high (shared by both variants)
     if _state["sess_high"] is None or spot > _state["sess_high"]:
         _state["sess_high"] = spot
         _state["sess_high_ts"] = et
-    if not _state["in_dip"]:
-        if spot <= _state["sess_high"] - DIP_PTS:
-            _state["in_dip"] = True
-            _state["local_low"] = spot
-            _state["local_low_ts"] = et
+    # --- v1: instant confirm (control) ---
+    if not _state["fired"]:
+        if not _state["in_dip"]:
+            if spot <= _state["sess_high"] - DIP_PTS:
+                _state["in_dip"] = True
+                _state["local_low"] = spot
+                _state["local_low_ts"] = et
+        else:
+            if spot < _state["local_low"]:
+                _state["local_low"] = spot
+                _state["local_low_ts"] = et
+            elif spot >= _state["local_low"] + CONFIRM_PTS:
+                _fire(et, spot, vix)
+    # --- v2: held confirm (bounce must hold V2_HOLD_CYCLES cycles) ---
+    if not _state["v2_fired"]:
+        if not _state["v2_in_dip"]:
+            if spot <= _state["sess_high"] - DIP_PTS:
+                _state["v2_in_dip"] = True
+                _state["v2_local_low"] = spot
+                _state["v2_hold"] = 0
+        else:
+            if spot < _state["v2_local_low"]:
+                _state["v2_local_low"] = spot
+            if spot >= _state["v2_local_low"] + V2_CONFIRM_PTS:
+                _state["v2_hold"] += 1
+                if _state["v2_hold"] > V2_HOLD_CYCLES:
+                    _fire(et, spot, vix, v2=True)
+            else:
+                _state["v2_hold"] = 0
+
+
+def _fire(et, entry, vix, v2=False):
+    if v2:
+        _state["v2_fired"] = True
+        name, tgt_pts, stp_pts = V2_NAME, V2_TARGET, V2_STOP
+        local_low = _state["v2_local_low"]
     else:
-        if spot < _state["local_low"]:
-            _state["local_low"] = spot
-            _state["local_low_ts"] = et
-        elif spot >= _state["local_low"] + CONFIRM_PTS:
-            _fire(et, spot, vix)
-
-
-def _fire(et, entry, vix):
-    _state["fired"] = True
+        _state["fired"] = True
+        name, tgt_pts, stp_pts = SETUP_NAME, TARGET, STOP
+        local_low = _state["local_low"]
     pc = _prev_close(et.date())
     prior_close_ok = (pc is not None) and (entry >= pc - 2.0)
     # VX divergence over the dip window [session-high time -> entry time]
     hi_ts = _state["sess_high_ts"]
     vx_div_ok = _vx_no_new_high(hi_ts.astimezone(ET) if hi_ts else None, et)
     grade, score = _grade(prior_close_ok, bool(vx_div_ok))
-    dip_depth = (_state["sess_high"] - _state["local_low"]) if _state["local_low"] else None
+    dip_depth = (_state["sess_high"] - local_low) if local_low else None
     mins = (et.hour * 60 + et.minute) - (9 * 60 + 30)
     factors = {
         "prior_close": round(pc, 1) if pc is not None else None,
@@ -202,9 +251,16 @@ def _fire(et, entry, vix):
         "vx_diverge_ok": vx_div_ok,
         "dip_depth": round(dip_depth, 1) if dip_depth else None,
         "mins_from_open": mins,
-        "dip_pts": DIP_PTS, "confirm_pts": CONFIRM_PTS,
+        "dip_pts": DIP_PTS,
+        "confirm_pts": V2_CONFIRM_PTS if v2 else CONFIRM_PTS,
     }
-    comments = (f"Dip-buy: entry {entry:.1f}, dip {dip_depth:.0f}pt, "
+    if v2:
+        factors["variant"] = "v2"
+        factors["hold_cycles"] = V2_HOLD_CYCLES
+        factors["target_pts"] = V2_TARGET
+        factors["stop_pts"] = V2_STOP
+    comments = (f"{'Dip-buy v2 (held confirm)' if v2 else 'Dip-buy'}: entry {entry:.1f}, "
+                f"dip {dip_depth:.0f}pt, "
                 f"{'>' if prior_close_ok else '<'}prevclose, "
                 f"VXdiv={vx_div_ok}, grade {grade}")
     try:
@@ -220,18 +276,18 @@ def _fire(et, entry, vix):
                      :tl, :sl)
                 RETURNING id
             """), {
-                "n": SETUP_NAME, "g": grade, "s": score, "spot": entry,
-                "tgt": entry + TARGET, "vix": vix, "fh": (mins < 30),
+                "n": name, "g": grade, "s": score, "spot": entry,
+                "tgt": entry + tgt_pts, "vix": vix, "fh": (mins < 30),
                 "c": comments, "ad": json.dumps(factors),
-                "tl": entry + TARGET, "sl": entry - STOP,
+                "tl": entry + tgt_pts, "sl": entry - stp_pts,
             })
             log_id = res.fetchone()[0]
         _open_trades.append({
             "id": log_id, "entry": entry, "entry_ts": et,
-            "target": entry + TARGET, "stop": entry - STOP,
+            "target": entry + tgt_pts, "stop": entry - stp_pts,
             "max_fav": 0.0, "max_adv": 0.0,
         })
-        print(f"[dipbuy] FIRED id={log_id} entry={entry:.1f} grade={grade} "
+        print(f"[dipbuy] FIRED {name} id={log_id} entry={entry:.1f} grade={grade} "
               f"prevclose_ok={prior_close_ok} vxdiv={vx_div_ok}", flush=True)
     except Exception:
         print(f"[dipbuy] insert failed: {traceback.format_exc()}", flush=True)
@@ -248,9 +304,9 @@ def _track_outcomes(et, spot):
         result = None
         pnl = None
         if spot <= tr["stop"]:
-            result, pnl, first_event = "LOSS", -STOP, "stop"
+            result, pnl, first_event = "LOSS", round(tr["stop"] - tr["entry"], 2), "stop"
         elif spot >= tr["target"]:
-            result, pnl, first_event = "WIN", TARGET, "target"
+            result, pnl, first_event = "WIN", round(tr["target"] - tr["entry"], 2), "target"
         elif et.time() >= EXIT_CUTOFF:
             result, pnl, first_event = ("EXPIRED", round(spot - tr["entry"], 2), "eod")
         if result is None:
@@ -278,4 +334,6 @@ def _track_outcomes(et, spot):
 def status():
     return {"date": str(_state["date"]), "fired_today": _state["fired"],
             "session_high": _state["sess_high"], "in_dip": _state["in_dip"],
+            "v2_fired_today": _state["v2_fired"], "v2_in_dip": _state["v2_in_dip"],
+            "v2_hold": _state["v2_hold"],
             "open_trades": len(_open_trades)}

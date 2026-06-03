@@ -198,6 +198,12 @@ def _build_cache(engine) -> dict[int, dict[str, Any]]:
                        ORDER BY ts""")
         rows = cur.fetchall()
         for lid, t_utc, t_et, al, spot, paradigm in rows:
+            # Commit per iteration: raw_connection() is non-autocommit, so without
+            # this the whole rebuild is ONE transaction holding AccessShareLock on
+            # chain_snapshots/volland_exposure_points for minutes — which blocked
+            # db_init's ALTER on deploy and crash-looped the service (2026-06-03).
+            # Reads only, so commit just ends the txn and releases locks.
+            raw.commit()
             if not spot:
                 out[lid] = {"pass": False, "pass_v32": False, "verdict": "NO_DATA",
                             "reason": "no_spot", "result": None, "pnl": None, "max_fav": None}

@@ -85,19 +85,23 @@ _pipeline_status = {
     "alert_threshold_minutes": 2,  # suppress alerts for outages < 2 min (silent recovery)
 }
 
-# Default alert settings (loaded from DB on startup)
+# Default alert settings (loaded from DB on startup).
+# Noisy per-level/volume alerts default OFF — they were disabled 2026-03-24
+# (alert_settings DB row is source of truth). 2026-06-04: db_init lock failure
+# skipped load_alert_settings() and the old all-True defaults spammed the
+# general channel, so defaults now mirror the quiet DB config.
 _alert_settings = {
     "enabled": True,
-    "lis_enabled": True,
-    "target_enabled": True,
-    "max_pos_gamma_enabled": True,
-    "max_neg_gamma_enabled": True,
-    "paradigm_change_enabled": True,
+    "lis_enabled": False,
+    "target_enabled": False,
+    "max_pos_gamma_enabled": False,
+    "max_neg_gamma_enabled": False,
+    "paradigm_change_enabled": False,
     "summary_10am_enabled": True,
     "summary_2pm_enabled": True,
-    "volume_spike_enabled": True,
+    "volume_spike_enabled": False,
     "threshold_points": 5,
-    "threshold_volume": 500,
+    "threshold_volume": 1000,
     "cooldown_enabled": True,
     "cooldown_minutes": 10,
 }
@@ -7974,6 +7978,17 @@ def on_startup():
                               "on chain_snapshots) — service started WITHOUT running migrations.")
             except Exception:
                 pass
+            # db_init died during DDL, so the post-init loaders at its tail never
+            # ran (alert/setup settings, cooldowns, open trades). They're plain
+            # SELECT/UPDATE work — no DDL locks — so run them here. Without this,
+            # the service ran on all-True alert defaults (2026-06-04 Telegram
+            # noise) and with no cooldowns/open-trade state after a lock outage.
+            for _loader in (load_alert_settings, load_setup_settings,
+                            _load_cooldowns, _backfill_outcomes, _restore_open_trades):
+                try:
+                    _loader()
+                except Exception as le:
+                    print(f"[db] post-init loader {_loader.__name__} failed: {le}", flush=True)
     else:
         print("[db] engine not created (no DATABASE_URL)", flush=True)
     global scheduler

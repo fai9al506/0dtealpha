@@ -659,7 +659,7 @@ See `Backup_tags.md` for the full list of backup tags.
   - TS API: ok < 2min, stale < 5min, error >= 5min
   - Volland: ok < 3min, stale < 10min, error >= 10min
 - 401 alert: `_alert_401()` with 5-min cooldown, wired into `api_get()`, ES delta stream, ES quote stream
-- **DB transaction discipline (2026-06-03 outage):** long read loops against prod Postgres MUST use autocommit or commit per chunk. A single long/idle transaction holds AccessShareLock that blocks `db_init()`'s startup ALTERs → crash-loops every deploy. `gex_long_v3._build_cache()` commits per iteration; `on_startup` retries db_init 3× with `lock_timeout=5s` then continues with a Telegram alert.
+- **DB transaction discipline (2026-06-03 outage):** long read loops against prod Postgres MUST use autocommit or commit per chunk. A single long/idle transaction holds AccessShareLock that blocks `db_init()`'s startup ALTERs → crash-loops every deploy. `gex_long_v3._build_cache()` commits per iteration; `on_startup` retries db_init 3× with `lock_timeout=5s` then continues with a Telegram alert. **S205 follow-up (2026-06-04):** when db_init fails 3×, `on_startup` now still runs the 5 post-init loaders (`load_alert_settings`, `load_setup_settings`, `_load_cooldowns`, `_backfill_outcomes`, `_restore_open_trades`) — before this fix a lock-contention start silently ran on in-code defaults (caused the Jun-4 general-channel alert spam) with no cooldowns/open-trade restore. In-code `_alert_settings` defaults also now mirror the quiet DB config. Live remediation without a deploy: POST correct values to `/api/alerts/settings` (session login required); `_tmp_pg_lock_check.py` shows current lock holders.
 
 ## Troubleshooting
 

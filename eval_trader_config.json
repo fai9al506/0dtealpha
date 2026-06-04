@@ -6,7 +6,7 @@
   "telegram_chat_id": "-1003886332593",
   "telegram_poll_interval_s": 2,
   "nt8_incoming_folder": "C:\\Users\\Administrator\\Documents\\NinjaTrader 8\\incoming",
-  "nt8_account_id": "falde5482tcp25d114592",
+  "nt8_account_id": "falde5482tcp25d030093",
   "nt8_mes_symbol": "auto",
   "qty": 2,
   "max_trade_risk": 150,
@@ -22,13 +22,13 @@
   "market_open_et": "09:30",
   "no_new_trades_after_et": "15:30",
   "flatten_time_et": "15:50",
-  "e2t_daily_pnl_cap": 525,
+  "e2t_daily_pnl_cap": 740,
   "daily_loss_floor": -350,
   "stack_enabled": true,
   "stack_cap_contracts": 4,
   "cluster_floor_dollars": -350,
   "ignore_opposite_signals": true,
-  "_role": "LONG account (2-account direction split). 2026-06-02 UPDATE (full-V16 alignment + floor recalibration): (1) DD Exhaustion allowed_paradigms restriction REMOVED — eval now trades the FULL portal V16 DD-long filter (align 0/1/2, paradigm blocklist via eval_trader.py:893 carve-out), capturing ~+315pt/mo that was being left on the table (validated robust Mar/Apr/May +24/+238/+315, no bust). (2) daily_loss_floor & cluster_floor -200 -> -350: the -200 floor was tripped by ONE qty2 trade (20pt*2*5=$200), killing recovery days (May 4: portal +$414 day became -$249). Mar-Jun chain-sim validation: floor must NOT be removed (no-floor BREACHES the -550 daily limit) but -350 protects AND stops throttling (qty2 long May +1581->+3163). qty=2 (longs only, qty2 long is DD-safe: maxDD -$902, passes ~12d). Supersedes the 2026-06-01 -200 config.",
+  "_role": "LONG account (2-account direction split). 2026-06-02 UPDATE (full-V16 alignment + floor recalibration): (1) DD Exhaustion allowed_paradigms restriction REMOVED \u00e2\u20ac\u201d eval now trades the FULL portal V16 DD-long filter (align 0/1/2, paradigm blocklist via eval_trader.py:893 carve-out), capturing ~+315pt/mo that was being left on the table (validated robust Mar/Apr/May +24/+238/+315, no bust). (2) daily_loss_floor & cluster_floor -200 -> -350: the -200 floor was tripped by ONE qty2 trade (20pt*2*5=$200), killing recovery days (May 4: portal +$414 day became -$249). Mar-Jun chain-sim validation: floor must NOT be removed (no-floor BREACHES the -550 daily limit) but -350 protects AND stops throttling (qty2 long May +1581->+3163). qty=2 (longs only, qty2 long is DD-safe: maxDD -$902, passes ~12d). Supersedes the 2026-06-01 -200 config.",
   "setup_rules": {
     "GEX Long": {
       "enabled": false,
@@ -44,7 +44,9 @@
       "enabled": false,
       "stop": 12,
       "target": null,
-      "allowed_directions": ["short"]
+      "allowed_directions": [
+        "short"
+      ]
     },
     "BofA Scalp": {
       "enabled": false,
@@ -56,7 +58,9 @@
       "enabled": true,
       "stop": 8,
       "target": null,
-      "allowed_directions": ["long"]
+      "allowed_directions": [
+        "long"
+      ]
     },
     "Paradigm Reversal": {
       "enabled": false,
@@ -69,25 +73,33 @@
       "target": null,
       "qty": 2,
       "max_risk": 120,
-      "allowed_directions": ["long"]
+      "allowed_directions": [
+        "long"
+      ]
     },
     "Skew Charm": {
       "enabled": true,
       "stop": 14,
       "target": null,
-      "allowed_directions": ["long"]
+      "allowed_directions": [
+        "long"
+      ]
     },
     "Vanna Pivot Bounce": {
       "enabled": true,
       "stop": 8,
       "target": 10,
-      "allowed_directions": ["long"]
+      "allowed_directions": [
+        "long"
+      ]
     },
     "VIX Divergence": {
       "enabled": true,
       "stop": 8,
       "target": null,
-      "allowed_directions": ["long"]
+      "allowed_directions": [
+        "long"
+      ]
     }
   },
   "enabled": true,

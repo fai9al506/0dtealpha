@@ -2322,3 +2322,13 @@ Defensible tighter alternative if variance comfort ever dominates: a15g5 keeps ~
 - P1 n=12 = directional only; P2 = signal-level (overlapping clusters amplify totals symmetrically across params; ranking unaffected).
 - Bookkeeping flag: JSONB per-lid DD P&L May 18-31 sums ~+$244 vs MCHK per-setup split "DD +$98" — FIFO attribution difference, worth a separate look; does not affect this ranking.
 - `app/mes_sim_backfill.py` V14_WHITELIST still excludes "DD Exhaustion" (real-traded since May 18) — S55 portal badges never populate for DD. Same class of gap as the S190 reconcile bug. Candidate small fix.
+
+### Analysis #18 ADDENDUM (same day) — full-history V16-pass test REVERSES the BE@12 lean
+
+User correctly demanded the pre-May-18 history screened through the CURRENT V16 filter (skip_reason only exists post-May-18). Replicated `_passes_live_filter()` DD-LONG path exactly (R1-R10, incl. daily gap from chain_snapshots); replication validated 96% (47/49) against post-V16 skip_reason ground truth — both "mismatches" are S180 (shipped May 24) applied retroactively to May 22 lids, i.e. correct under current rules. Script: `_tmp_dd_trail_sweep_historical.py`.
+
+V16-pass results: pre-V16 era Apr18-May17 n=54: a20g5 +528.5/78%/DD-24 vs BE@12 +483.2/80%/DD-35 vs BE@10 +467/DD-47.5. Mar23-Apr17 n=7: tie. Combined n=82: a20g5 +677 vs BE@12 +635 vs BE@10 +586.
+
+**BE@12's win was a post-V16 12-day-window artifact.** In the larger era it costs -8.6% PnL AND worsens maxDD (BE scratches dip-then-rip winners at +1; clustered scratches deepen equity DD). Era-unstable — DO NOT ship.
+
+**FINAL: KEEP a20/g5/SL12. No code change.** a25 wins totals every era (+750 combined) but not recommended (monotonic curve, churn, variance). Do not re-run BE-hybrid hunts on DD without a new mechanism hypothesis.

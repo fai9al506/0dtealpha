@@ -7861,6 +7861,16 @@ def start_scheduler():
                     misfire_grace_time=300)
     except Exception as e:
         print(f"[reconcile] schedule error (non-fatal): {e}", flush=True)
+    # S204 — weekly TSRT statement to Tel Res channel, Friday 16:20 ET
+    # (post-market; broker truth from /historicalorders; persists daily rows to
+    # tsrt_daily_stmt so history survives TS's 90-day lookback)
+    try:
+        from app.tsrt_weekly_report import run_weekly as _tsrt_weekly_run
+        sch.add_job(_tsrt_weekly_run, "cron", day_of_week="fri", hour=16, minute=20,
+                    timezone=NY, id="tsrt_weekly_stmt", coalesce=True, max_instances=1,
+                    misfire_grace_time=3600)
+    except Exception as e:
+        print(f"[tsrt-weekly] schedule error (non-fatal): {e}", flush=True)
     # S181 — weekly filter validation cron at Monday 17:00 ET
     # Scans each active V16+S180 block rule against recent 30-day data,
     # flags any rule that's blocking winners (regime shift / over-blocking).
@@ -8045,6 +8055,12 @@ def on_startup():
         fifo_reconcile_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[fifo-reconcile] init error (non-fatal): {e}", flush=True)
+    # Initialize TSRT weekly statement (S204 — Friday 16:20 ET → Tel Res channel)
+    try:
+        from app.tsrt_weekly_report import init as tsrt_weekly_init
+        tsrt_weekly_init(engine, ts_access_token)
+    except Exception as e:
+        print(f"[tsrt-weekly] init error (non-fatal): {e}", flush=True)
     # Initialize filter validation (S181 — weekly cron Monday 17:00 ET)
     try:
         from app.filter_validation import init as filter_val_init

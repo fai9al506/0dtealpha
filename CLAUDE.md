@@ -545,6 +545,19 @@ finding).
 - `auto_trade_orders` - MES SIM auto-trade order state (setup_log_id PK, JSONB state with split-target tracking, crash recovery)
 - `stock_gex_scans` - Stock GEX data every 30 min (symbol, scan_date, spot, expiration, exp_label weekly/opex, key_levels JSONB, gex_data JSONB)
 - `setup_log.mes_sim_outcome_pnl / mes_sim_outcome_result / mes_sim_max_fav` (S55, 2026-05-13) - MES-driven trail simulation outcomes (portal realism, not new alpha; populated for V14 whitelist setups only)
+- `tsrt_daily_stmt` (S204, 2026-06-04) - TSRT per-day broker-truth statement rows (day PK, gross/comm/net, n_trades, n_wins, trades JSONB) — persisted so weekly report history survives TS's 90-day lookback
+
+### TSRT Weekly Statement (`app/tsrt_weekly_report.py`) — added 2026-06-04 (S204)
+
+Fully-automatic weekly capital statement → Telegram "0DTE Alpha Researchs" channel (`-1003792574755`). Cron **Friday 16:20 ET** in main.py scheduler. Self-contained module, `init(engine, ts_access_token)`.
+
+- **Broker truth:** pulls `/historicalorders` **+ `/orders` merged with OrderID dedup** — CRITICAL: `/historicalorders` excludes same-day fills, and the cron runs same-day, so both endpoints are required
+- FIFO round-trip matching per account per ET day (accounts flat overnight → per-day matching is safe); upserts to `tsrt_daily_stmt`
+- Era anchored: start 2026-05-19 (post-V16.1), starting capital $4,896.99 (verified vs live equity 2026-06-04)
+- Report: dark-themed HTML (Inter font), $ + SAR (×3.75 peg), equity-curve + daily-PnL charts (matplotlib base64), per-day comments (curated early-era dict + auto-generated), statistics, projection, drift check vs live equity **net of unrealized P&L**
+- Fail-soft: never raises; on error sends a failure ping to the same channel
+- Local test harness: `_tmp_s204_local_test.py` (intercepts the Telegram send, writes HTML to disk)
+- Manual fallback scripts: `_tmp_tsrt_daily_statement.py` + `_tmp_tsrt_weekly_report.py`; if local ISP blocks api.telegram.org, relay via DB + `railway ssh` (see `reference_telegram_isp_block_relay.md` in memory dir)
 
 ## Railway Deployment
 

@@ -3275,19 +3275,10 @@ def main():
                         compliance.cap_hit_today = True
                         compliance.save()
                         _cap_flatten_strikes = 0
-                        try:
-                            _b = cfg.get("telegram_bot_token", "")
-                            _c = cfg.get("telegram_chat_id", "")
-                            if _b and _c:
-                                requests.post(f"https://api.telegram.org/bot{_b}/sendMessage",
-                                              json={"chat_id": _c,
-                                                    "text": (f"🎯 PNL CAP FLATTEN ({cfg.get('nt8_account_id', '?')})\n"
-                                                             f"Day capped at ~${_daily_cap:.0f} "
-                                                             f"(realized ${compliance.daily_pnl:+.0f}). "
-                                                             f"No more trades today — E2T 30% consistency rule.")},
-                                              timeout=10)
-                        except Exception as _te:
-                            log.warning(f"[cap-flatten] Telegram failed: {_te}")
+                        # No Telegram: eval is silent by user policy (2026-06-04) —
+                        # Trade-alert channel is TSRT-only; eval pings the alerts
+                        # channel only for real ISSUES (integrity fail, synth-stop,
+                        # dead process), not normal operation like a cap-flatten.
                 last_trail_check = time.time()
 
             # Periodic reconciliation (every 60s when position open)

@@ -395,6 +395,47 @@ def _count_active_for_direction(is_long: bool) -> int:
     return count
 
 
+def _underwater_stack_check(setup_name: str, is_long: bool, es_price: float):
+    """S203 (2026-06-04): underwater-stack guard — "don't average down across signals".
+
+    Jun 3 forensic: 4 SC longs stacked 9:45→11:20 while open siblings were losing
+    → −$280 of the −$293 day. Backtest (Apr 1–Jun 3 placed trades, realistic
+    close-time replay): post-V16 blocks 3 trades — ALL losers, 0 winners (+$184);
+    full era 5 trades (+$110). Threshold-insensitive (0 to −8 pts identical
+    result). Adding to WINNERS stays allowed (May 12 kept +$141 of +$190).
+
+    Returns (n_open, net_unreal_pts, ids_str) when the new entry must be BLOCKED:
+    >= 2 FILLED same-setup same-direction positions whose NET unrealized P&L
+    (current es_price vs their fills) is negative. Returns None to allow.
+
+    Fail-OPEN: any unexpected error returns None (a guard must never break
+    trading). Revert: UNDERWATER_STACK_BLOCK_ENABLED=false on Railway.
+    """
+    try:
+        if os.getenv("UNDERWATER_STACK_BLOCK_ENABLED", "true").lower() != "true":
+            return None
+        if not es_price:
+            return None
+        with _lock:
+            stack = [(lid, float(o["fill_price"]))
+                     for lid, o in _active_orders.items()
+                     if o.get("setup_name") == setup_name
+                     and (o.get("direction", "").lower() in ("long", "bullish")) == is_long
+                     and o.get("status") == "filled"
+                     and o.get("fill_price") is not None]
+        if len(stack) < 2:
+            return None
+        sgn = 1.0 if is_long else -1.0
+        unreal = sum((float(es_price) - fp) * sgn for _, fp in stack)
+        if unreal >= 0:
+            return None
+        ids_str = ", ".join(f"#{lid}@{fp:.2f}" for lid, fp in stack)
+        return (len(stack), unreal, ids_str)
+    except Exception as e:
+        print(f"[real-trader] underwater_stack_check error (fail-open): {e}", flush=True)
+        return None
+
+
 # ====== SKIP-REASON TELEMETRY (S114) ======
 # When real_trader rejects a signal (cap, dedup, margin, whitelist, etc.) we
 # record the reason on setup_log so post-hoc audits can attribute every V14-pass
@@ -665,6 +706,19 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         _alert(f"🚨 CIRCUIT BREAKER HIT\n"
                f"Daily loss: ${daily_loss:,.0f} >= ${DAILY_LOSS_LIMIT:,.0f}\n"
                f"No more trades today.")
+        return
+
+    # S203: underwater-stack guard — block 3rd same-setup same-direction entry
+    # while the 2+ open ones are net losing (full rationale in helper docstring).
+    _uw = _underwater_stack_check(setup_name, is_long, es_price)
+    if _uw is not None:
+        _n, _unreal, _ids = _uw
+        print(f"[real-trader] UNDERWATER-STACK BLOCK {setup_name} {direction} "
+              f"id={setup_log_id}: {_n} open net {_unreal:+.1f}pts ({_ids})", flush=True)
+        _log_skip_reason(setup_log_id, "underwater_stack_block")
+        _alert(f"🛡️ BLOCKED: {setup_name} {direction} (id={setup_log_id})\n"
+               f"{_n} open {setup_name} positions net {_unreal:+.1f} pts underwater ({_ids})\n"
+               f"S203 rule: never add a 3rd position to a losing stack")
         return
 
     # Charm S/R limit entry for shorts ONLY (safety: ignore for longs)

@@ -659,6 +659,7 @@ See `Backup_tags.md` for the full list of backup tags.
   - TS API: ok < 2min, stale < 5min, error >= 5min
   - Volland: ok < 3min, stale < 10min, error >= 10min
 - 401 alert: `_alert_401()` with 5-min cooldown, wired into `api_get()`, ES delta stream, ES quote stream
+- **DB transaction discipline (2026-06-03 outage):** long read loops against prod Postgres MUST use autocommit or commit per chunk. A single long/idle transaction holds AccessShareLock that blocks `db_init()`'s startup ALTERs → crash-loops every deploy. `gex_long_v3._build_cache()` commits per iteration; `on_startup` retries db_init 3× with `lock_timeout=5s` then continues with a Telegram alert.
 
 ## Troubleshooting
 

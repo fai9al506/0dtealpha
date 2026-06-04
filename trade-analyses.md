@@ -2282,3 +2282,43 @@ New `app/dte0_gex_scanner.py` — 4 symbols (SPX/SPY/QQQ/IWM) every 30 min, data
 **Shipped (S201):** `app/dipbuy_detector.py` logs v2 in parallel as `setup_name="Dip-Buy v2"` — v1 stays untouched as control. Portal dropdown "Dip-Buy v2 ✦". Replay test: module state machine fires == backtest engine 6/6 (identical timestamps + prices). Decision rule: after ~30 forward days compare live WR of both, promote the winner, delete the loser.
 
 **Confidence:** moderate (68 trades). Sim is a proxy (±1pt basis error, marginal trades flip). Multiple-comparison risk mitigated by era gate + walk-forward, not eliminated. Scripts: `_tmp_dipbuy_es_sim.py`, `_tmp_dipbuy_sweep.py`, `_tmp_dipbuy_search2.py`, `_tmp_dipbuy_winner_check.py`, `_tmp_dipbuy_v2_replay_test.py` (path cache `_tmp_dipbuy_paths.pkl`).
+
+## Analysis #18 — DD Exhaustion trail-activation sweep (2026-06-04)
+
+**Question:** Is the continuous trail activation=20/gap=5 (set Feb 19 2026 on n=8) still right on the full sample? Triggered by live discomfort: 3 open longs at ~+16 MFE with floor still at -12 (DD trails not yet engaged).
+
+**Method:** S55 `mes_walk()` (validated MES walker, conservative adverse-first) on `vps_es_range_bars` 5pt, SL=12 fixed, walk to 15:55 ET. Grid: activation {8,10,12,15,20,25} x gap {3,5,8} + BE hybrids + fixed-target variants. Script: `_tmp_dd_trail_sweep.py`.
+
+**Populations:**
+- P1 (broker truth): 12 closed placed real DD trades May 19 - Jun 2, entries = actual MES fills. 3 of 12 have ghost_reconcile-polluted broker P&L (May 21/22 + Jun 2 S200 FIFO mess).
+- P2 (ranking robustness): 150 graded non-LOG DD LONG signals Apr 18 (V13 DD gates ship) - Jun 3, entry = abs_es_price. Signal-level, overlapping clusters — used for parameter RANKING only, never $ projection.
+
+**Gate 2 cross-check (live params a20g5 sim vs broker):** all 12: mean |diff| 9.44pt, 75% agreement. Excluding 3 ghost-polluted lids: mean |diff| 7.8pt, 8/9 (89%) agreement. One genuine outlier (lid 3038: broker -1.75 via SPX-space trail exit vs MES-sim +29.5 — SPX-vs-MES trail-space divergence, real exits are SPX-driven). Verdict: magnitudes approximate, rankings trustworthy.
+
+**Results (total pts / WR / maxDD):**
+
+| params | P1 n=12 | P2 all n=150 | P2 pre-V16 n=96 | P2 post-V16 n=54 |
+|---|---|---|---|---|
+| a10 g5 | +60.8 / 67% / -16 | +516 / 72% / -54 | +358 | +157.5 |
+| a12 g5 | +73.5 / 67% / -16 | +688 / 70% / -65 | +463 | +225 |
+| a15 g5 | +77.5 / 67% / -12 | +769 / 67% / -82 | +503 | +265.5 |
+| **a20 g5 (LIVE)** | **+85.8 / 58% / -24** | **+922 / 64% / -104.5** | **+602** | **+320** |
+| a25 g5 | +98.8 / 58% / -24 | +1022 / 63% / -116.5 | +688 | +334 |
+| a20g5+BE@10lock1 | +58.8 | +807 | +607 | +199.8 |
+| T10/S12 fixed | +28.5 | +519 | +326 | +193 |
+
+**Findings:**
+1. Total PnL increases MONOTONICALLY with activation in EVERY slice (P1, P2, pre-era, post-era). The Feb n=8 decision is CONFIRMED on n=150+12. activation=20 is not a fluke.
+2. The cost is real: WR falls 74%->63% and maxDD grows -54 -> -104.5 as activation loosens. 20/5 sits on the efficient frontier, paying variance for total.
+3. BE hybrids ("secure it sooner") are strictly worse: post-era a20g5+BE@10 = +199.8 vs +320 pure (-38%). The instinct to lock early converts DD winners into scratches.
+4. Fixed targets worse still (T10/S12 = +193 post-era).
+5. Gap ranking era-UNSTABLE (pre likes 8, post likes 3, 5 is a wash) — no gap change.
+6. a25 beats a20 on totals but +11% DD for +4% PnL post-era — not worth it.
+
+**Decision: KEEP activation=20 / gap=5 / SL=12. No code change.**
+Defensible tighter alternative if variance comfort ever dominates: a15g5 keeps ~83% of post-era PnL with ~22% less maxDD — documented, not adopted.
+
+**Caveats / follow-ups:**
+- P1 n=12 = directional only; P2 = signal-level (overlapping clusters amplify totals symmetrically across params; ranking unaffected).
+- Bookkeeping flag: JSONB per-lid DD P&L May 18-31 sums ~+$244 vs MCHK per-setup split "DD +$98" — FIFO attribution difference, worth a separate look; does not affect this ranking.
+- `app/mes_sim_backfill.py` V14_WHITELIST still excludes "DD Exhaustion" (real-traded since May 18) — S55 portal badges never populate for DD. Same class of gap as the S190 reconcile bug. Candidate small fix.

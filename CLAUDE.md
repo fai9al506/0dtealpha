@@ -404,6 +404,7 @@ Standalone local script that polls Railway for setup signals and places MES orde
 - `APIPoller` — polls `/api/eval/signals` every 2s with Bearer token auth. Returns `(signals, outcomes, es_price)`. Tracks `_seen_signals` set to prevent re-emitting. Daily reset. State in `eval_trader_api_state.json`.
 - `NT8Bridge` — writes OIF files (`oif{timestamp}.txt`) to NT8 incoming folder. Reads fill/reject from outgoing folder (`{account}_{orderID}.txt`).
 - `ComplianceGate` — E2T 50K TCP rules: daily loss limit, max contracts, max losses/day, market hours, daily P&L cap.
+- **Daily P&L cap incl. unrealized + cap-flatten (S204, 2026-06-04):** the cap (`e2t_daily_pnl_cap`) gates new entries on realized + open unrealized, AND when realized+unrealized ≥ cap on 2 consecutive 5s checks the main loop flattens all slots, sets persisted `cap_hit_today` (blocks rest of day). NO Telegram — eval is silent (trade channel = TSRT only; alerts channel = issues only). Kill switch `cap_flatten_enabled` (default true). Cap policy: cap = account's best day − ~$25 buffer (E2T 30% consistency rule — profit over cap raises required total $3.33:1). LONG $740 / SHORT $525.
 - `PositionTracker` — open position state, trailing stop, NT8 fill detection, reversal, stale overnight auto-flatten. State in `eval_trader_position.json`.
 
 **Critical design points:**

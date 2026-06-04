@@ -222,6 +222,9 @@ DEFAULT_CONFIG = {
 
     # ── Daily P&L cap (E2T consistency rule: no single day > 30% of target) ──
     "e2t_daily_pnl_cap": 525,      # $525 = 30% of $1,750 target; stop taking new trades
+    "cap_flatten_enabled": True,   # also FLATTEN open positions when realized+unrealized
+                                   # hits the cap (2026-06-04) — eval profit over the cap
+                                   # costs $3.33 of required total per $1 banked
 
     # ── Per-setup stop/target (points) ──
     # target = fixed take-profit distance; null/"msg" = use Volland target from Telegram
@@ -702,6 +705,9 @@ class ComplianceGate:
         self.last_reset_date = None
         self._first_spot_today = None  # Track first spot for momentum filter
         self.tick_trade_done = False    # E2T day-count tick trade placed today
+        # Cap-flatten (2026-06-04): once the day is force-flattened at the P&L cap,
+        # no more trades today regardless of where realized lands after slippage.
+        self.cap_hit_today = False
         # S151 smart-ban: after 2 consecutive stops on same (setup,direction),
         # ban that combo for the day. Lifted on any same-direction non-stop.
         # Backtest: -$394 -> -$250 on 7d (+$144 saved on May-18 SC short cluster).
@@ -724,6 +730,7 @@ class ComplianceGate:
                 # S151 smart-ban state
                 self.consec_stops_by_sd = dict(s.get("consec_stops_by_sd", {}))
                 self.banned_setup_dirs = set(s.get("banned_setup_dirs", []))
+                self.cap_hit_today = bool(s.get("cap_hit_today", False))
                 comm_rate = self.cfg.get("commission_per_contract", 0)
                 log.info(f"State loaded: daily=${self.daily_pnl:+.0f} (comm=${self.daily_commissions:.0f}) "
                          f"total=${self.total_pnl:+.0f} "
@@ -777,6 +784,7 @@ class ComplianceGate:
             "peak_balance": self.cfg["e2t_peak_balance"],
             "consec_stops_by_sd": self.consec_stops_by_sd,
             "banned_setup_dirs": list(self.banned_setup_dirs),
+            "cap_hit_today": self.cap_hit_today,
         }
         STATE_FILE.write_text(json.dumps(s, indent=2))
 
@@ -799,6 +807,7 @@ class ComplianceGate:
         self.daily_commissions = 0.0
         self._first_spot_today = None
         self.tick_trade_done = False
+        self.cap_hit_today = False
         # S151 smart-ban: reset per-day state
         self.consec_stops_by_sd = {}
         self.banned_setup_dirs = set()
@@ -956,8 +965,12 @@ class ComplianceGate:
         if self.daily_pnl <= daily_loss_floor:
             return False, f"daily loss floor reached (${self.daily_pnl:+.0f} <= ${daily_loss_floor})"
 
-        # Daily P&L cap (E2T consistency rule: no single day > 30% of target)
+        # Daily P&L cap (E2T consistency rule: best day must stay <= 30% of total
+        # profit at completion — every $1 over the cap raises the required total
+        # by $3.33, so eval profit above the cap is worthless and harmful)
         daily_cap = cfg.get("e2t_daily_pnl_cap", 0)
+        if daily_cap > 0 and self.cap_hit_today:
+            return False, "daily P&L cap reached (cap-flatten fired — done for today)"
         if daily_cap > 0 and self.daily_pnl >= daily_cap:
             return False, f"daily P&L cap reached (${self.daily_pnl:+.0f} >= ${daily_cap:.0f})"
 
@@ -2901,6 +2914,22 @@ class PositionTracker:
 #  MAIN LOOP
 # ═════════════════════════════════════════════════════════════════════════════
 
+def _open_unrealized_dollars(tracker, es_price: float | None) -> float:
+    """Net open unrealized P&L ($) across all open slots/position.
+    Works for both StackingTracker (slots) and PositionTracker (single dict)."""
+    if not es_price or not tracker.is_open:
+        return 0.0
+    if hasattr(tracker, "_cluster_unrealized_dollars"):
+        return tracker._cluster_unrealized_dollars(es_price)
+    p = tracker.position or {}
+    entry = p.get("es_entry_price") or p.get("entry_price")
+    if not entry:
+        return 0.0
+    is_long = p["direction"] in ("long", "bullish")
+    pnl_pts = (es_price - entry) if is_long else (entry - es_price)
+    return pnl_pts * int(p.get("qty", 0)) * MES_POINT_VALUE
+
+
 def _banner(cfg: dict):
     """Print startup banner with current config summary."""
     dynamic = cfg.get("dynamic_sizing", False)
@@ -3083,6 +3112,7 @@ def main():
     poll_interval = cfg.get("telegram_poll_interval_s", 2)
     log.info(f"Polling every {poll_interval}s...")
     last_trail_check = 0.0
+    _cap_flatten_strikes = 0  # consecutive checks with realized+unrealized >= cap
     last_reconcile = time.time()  # don't reconcile immediately on startup
     TRAIL_CHECK_INTERVAL = 5.0  # seconds between trail/fill checks
     RECONCILE_INTERVAL = 60.0   # seconds between Railway reconciliation checks
@@ -3220,6 +3250,35 @@ def main():
                 # Software safety-close: enforce the intended stop even if the
                 # broker resting stop's ATI CHANGE was silently dropped (2026-06-02).
                 tracker.check_synthetic_stops(latest_es_price)
+
+                # Cap-flatten (2026-06-04): the realized-only cap check can't see
+                # open trail profit, so the day could close way over the $525 cap
+                # (06-04: $446 realized + ~$287 open while new entries were still
+                # admitted). E2T consistency rule makes every $1 over the cap cost
+                # $3.33 in extra required total — so when realized + unrealized
+                # reaches the cap, flatten everything and end the day at ~cap.
+                # 2-consecutive-check confirm (same pattern as synthetic stops)
+                # avoids acting on a single bad quote.
+                _daily_cap = cfg.get("e2t_daily_pnl_cap", 0)
+                if (_daily_cap > 0 and cfg.get("cap_flatten_enabled", True)
+                        and tracker.is_open and not compliance.cap_hit_today):
+                    _unreal = _open_unrealized_dollars(tracker, latest_es_price)
+                    if compliance.daily_pnl + _unreal >= _daily_cap:
+                        _cap_flatten_strikes += 1
+                    else:
+                        _cap_flatten_strikes = 0
+                    if _cap_flatten_strikes >= 2:
+                        log.info(f"PNL CAP FLATTEN: realized ${compliance.daily_pnl:+.0f} "
+                                 f"+ unrealized ${_unreal:+.0f} >= ${_daily_cap:.0f} cap — "
+                                 f"flattening all, done for today")
+                        tracker.flatten(reason="PNL_CAP", es_price=latest_es_price)
+                        compliance.cap_hit_today = True
+                        compliance.save()
+                        _cap_flatten_strikes = 0
+                        # No Telegram: eval is silent by user policy (2026-06-04) —
+                        # Trade-alert channel is TSRT-only; eval pings the alerts
+                        # channel only for real ISSUES (integrity fail, synth-stop,
+                        # dead process), not normal operation like a cap-flatten.
                 last_trail_check = time.time()
 
             # Periodic reconciliation (every 60s when position open)
@@ -3332,6 +3391,20 @@ def main():
                         log.info(f"  DEDUP: {signal['setup_name']} {signal['direction']} already traded "
                                  f"{now_ts - _trade_dedup[dedup_key]:.0f}s ago, skipping")
                         continue
+
+                    # Daily cap incl. open unrealized (2026-06-04): compliance.check()
+                    # only sees realized P&L, so a same-direction stack could be
+                    # admitted while open trail profit already has the day at/over
+                    # the cap (06-04: SC long admitted at $446 realized with +20pt
+                    # locked on the DD slot).
+                    _daily_cap = cfg.get("e2t_daily_pnl_cap", 0)
+                    if _daily_cap > 0 and tracker.is_open and latest_es_price:
+                        _unreal = _open_unrealized_dollars(tracker, latest_es_price)
+                        if compliance.daily_pnl + _unreal >= _daily_cap:
+                            log.info(f"  BLOCKED: daily cap incl. unrealized "
+                                     f"(${compliance.daily_pnl:+.0f} realized + ${_unreal:+.0f} open "
+                                     f">= ${_daily_cap:.0f})")
+                            continue
 
                     # Phase 2 stacking: bypass "already in position" compliance check
                     # when same-direction signal arrives and stack_enabled. All OTHER

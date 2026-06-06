@@ -29,7 +29,10 @@ MES_PT = 5.0
 SAR = 3.75  # USD/SAR peg
 ACCOUNTS = ("210VYX65", "210VYX91")
 REAL_BASE = "https://api.tradestation.com/v3"
-TEL_RES_CHAT = "-1003792574755"
+# Destination: "0DTE Alpha Trades" channel (TELEGRAM_CHAT_ID_SETUPS env var on
+# Railway). Hardcoded fallback = the Trades channel ID, per user 2026-06-06
+# (originally went to Researchs -1003792574755 — wrong channel).
+TEL_RES_CHAT = os.getenv("TELEGRAM_CHAT_ID_SETUPS", "-1003886332593")
 
 # Era anchor: first session after V16.1 deploy. Starting capital verified
 # 2026-06-04 against live equity $5,974.24 minus era net P&L (broker truth).
@@ -461,9 +464,11 @@ def run_weekly() -> None:
         # best-effort failure ping so a silent Friday doesn't go unnoticed
         try:
             token = os.getenv("TELEGRAM_BOT_TOKEN")
+            # failure ping → general alerts channel (issues only), not Trades
+            alert_chat = os.getenv("TELEGRAM_CHAT_ID", TEL_RES_CHAT)
             if token:
                 requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
-                              data={"chat_id": TEL_RES_CHAT,
+                              data={"chat_id": alert_chat,
                                     "text": f"⚠️ TSRT weekly statement failed: {e}"},
                               timeout=30)
         except Exception:

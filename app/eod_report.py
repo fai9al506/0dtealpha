@@ -415,7 +415,7 @@ def send_telegram_pdf(pdf_path, caption, bot_token, chat_id):
 _SETUP_ABBREV = {
     "DD Exhaustion": "DD", "ES Absorption": "CVD", "GEX Long": "GEX",
     "AG Short": "AG", "BofA Scalp": "BOFA", "Paradigm Reversal": "PAR",
-    "Skew Charm": "SKW",
+    "Skew Charm": "SKW", "Vanna Pivot Bounce": "VPB", "VIX Divergence": "VIX",
 }
 
 # Setup name → marker symbol (so you can tell them apart even in grayscale)
@@ -512,13 +512,78 @@ def _find_nearest_bar(bars, bar_idx_to_x, trade_ts):
     return best_x
 
 
+def _query_tsrt_trades(engine, trade_date):
+    """Query TSRT-PLACED trades (V16 real trades) for a date — broker truth.
+
+    Joins setup_log to real_trade_orders so only trades the real trader
+    actually placed appear (portal-only detectors like Dip-Buy / GEX Long
+    logs are excluded). Entry/exit prices come from broker MES fills in the
+    state JSONB; exit TIME is approximated as entry + outcome_elapsed_min
+    (state has no close timestamp).
+    """
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT sl.id, sl.ts, sl.setup_name, sl.direction,
+                   sl.outcome_result, sl.outcome_pnl, sl.outcome_elapsed_min,
+                   rto.state
+            FROM setup_log sl
+            JOIN real_trade_orders rto ON rto.setup_log_id = sl.id
+            WHERE (sl.ts AT TIME ZONE 'America/New_York')::date = :d
+            ORDER BY sl.ts ASC
+        """), {"d": trade_date.isoformat()}).fetchall()
+
+    trades = []
+    for r in rows:
+        state = r[7] or {}
+        if isinstance(state, str):
+            try:
+                import json
+                state = json.loads(state)
+            except Exception:
+                state = {}
+        fill = state.get("fill_price")
+        if fill is None:
+            continue  # never entered (e.g. charm-limit timeout / cancelled)
+        exit_p = state.get("stop_fill_price") or state.get("close_fill_price")
+        direction = (r[3] or "").lower()
+        is_long = direction in ("long", "bullish")
+        qty = int(state.get("quantity") or 1)
+        pts = None
+        if exit_p is not None:
+            pts = (float(exit_p) - float(fill)) if is_long else (float(fill) - float(exit_p))
+        # Result label from broker P&L sign (S193 convention)
+        if pts is None:
+            result = "OPEN"
+        elif pts > 0.1:
+            result = "WIN"
+        elif pts < -0.1:
+            result = "LOSS"
+        else:
+            result = "SCRATCH"
+        elapsed = float(r[6]) if r[6] is not None else None
+        exit_ts = None
+        if exit_p is not None and elapsed is not None:
+            exit_ts = r[1] + timedelta(minutes=elapsed)
+        trades.append({
+            "id": r[0], "ts": r[1], "setup_name": r[2], "direction": r[3],
+            "is_long": is_long, "qty": qty,
+            "entry": float(fill), "exit": float(exit_p) if exit_p is not None else None,
+            "exit_ts": exit_ts, "close_reason": state.get("close_reason", ""),
+            "pts": pts, "dollars": (pts * 5.0 * qty) if pts is not None else None,
+            "result": result,
+            "portal_pnl": float(r[5]) if r[5] is not None else None,
+        })
+    return trades
+
+
 def generate_trades_chart(engine, trade_date):
-    """Generate ES range bar chart with ALL setup entries marked. Returns PNG path or None."""
-    trades = _query_trades(engine, trade_date)
+    """Generate ES range bar chart with TSRT (V16 real-traded) trades only.
+    Entry + exit marked per trade with broker P&L. Returns PNG path or None."""
+    trades = _query_tsrt_trades(engine, trade_date)
     bars = _query_range_bars(engine, trade_date)
 
     if not trades:
-        print(f"[eod-chart] no trades for {trade_date}, skipping chart", flush=True)
+        print(f"[eod-chart] no TSRT trades for {trade_date}, skipping chart", flush=True)
         return None
     if not bars:
         print(f"[eod-chart] no range bars for {trade_date}, skipping chart", flush=True)
@@ -526,23 +591,25 @@ def generate_trades_chart(engine, trade_date):
 
     bar_idx_to_x = {b["idx"]: i for i, b in enumerate(bars)}
 
-    # ── pre-compute stats ──
-    wins = sum(1 for t in trades if t["outcome_result"] == "WIN")
-    losses = sum(1 for t in trades if t["outcome_result"] == "LOSS")
-    expired = len(trades) - wins - losses
-    net = sum(t["outcome_pnl"] for t in trades)
-    wr = f"{wins / len(trades) * 100:.0f}" if trades else "0"
+    # ── pre-compute stats (broker truth, closed trades) ──
+    closed = [t for t in trades if t["pts"] is not None]
+    wins = sum(1 for t in closed if t["result"] == "WIN")
+    losses = sum(1 for t in closed if t["result"] == "LOSS")
+    scratch = len(closed) - wins - losses
+    net_pts = sum(t["pts"] for t in closed)
+    net_usd = sum(t["dollars"] for t in closed)
+    wr = f"{wins / len(closed) * 100:.0f}" if closed else "0"
 
     setup_stats = {}
-    for t in trades:
+    for t in closed:
         n = t["setup_name"]
         if n not in setup_stats:
             setup_stats[n] = {"w": 0, "l": 0, "e": 0, "pnl": 0.0}
         s = setup_stats[n]
-        s["pnl"] += t["outcome_pnl"]
-        if t["outcome_result"] == "WIN":
+        s["pnl"] += t["dollars"]
+        if t["result"] == "WIN":
             s["w"] += 1
-        elif t["outcome_result"] == "LOSS":
+        elif t["result"] == "LOSS":
             s["l"] += 1
         else:
             s["e"] += 1
@@ -569,9 +636,9 @@ def generate_trades_chart(engine, trade_date):
     ax3.axis("off")
 
     # ── TITLE ──
-    pnl_color = "#00e676" if net >= 0 else "#ff1744"
-    fig.suptitle(f"0DTE ALPHA  |  {trade_date.strftime('%B %d, %Y')}  |  "
-                 f"{len(trades)} Trades  |  {wr}% WR  |  Net: {net:+.1f} pts",
+    pnl_color = "#00e676" if net_usd >= 0 else "#ff1744"
+    fig.suptitle(f"0DTE ALPHA  |  TSRT (V16) REAL TRADES  |  {trade_date.strftime('%B %d, %Y')}  |  "
+                 f"{len(trades)} Trades  |  {wr}% WR  |  Net: {net_usd:+.0f} USD ({net_pts:+.1f} pts)",
                  fontsize=16, fontweight="bold", color="#e8e8f0", y=0.97)
 
     # ── PRICE PANEL (candlesticks) ──
@@ -583,68 +650,82 @@ def generate_trades_chart(engine, trade_date):
         ax1.plot([i, i], [b["low"], b["high"]], color=color, linewidth=0.6, alpha=0.7)
         ax1.bar(i, body_height, bottom=body_bottom, width=0.55, color=color, alpha=0.8, edgecolor=color)
 
-    # ── MARK ALL TRADES ──
+    # ── MARK TSRT TRADES: entry + exit + connecting line + P&L label ──
     price_range = max(b["high"] for b in bars) - min(b["low"] for b in bars)
-    offset = price_range * 0.025  # 2.5% of price range for arrow offset
-    label_offset = price_range * 0.045
+    label_offset = price_range * 0.030
 
     for t in trades:
-        name = t["setup_name"]
-        abbrev = _SETUP_ABBREV.get(name, name[:3].upper())
-        direction = t["direction"]
-        result = t["outcome_result"]
-        pnl = t["outcome_pnl"]
+        abbrev = _SETUP_ABBREV.get(t["setup_name"], t["setup_name"][:3].upper())
+        result = t["result"]
+        is_long = t["is_long"]
 
-        xi = _find_nearest_bar(bars, bar_idx_to_x, t["ts"])
-        if xi is None:
+        xi_in = _find_nearest_bar(bars, bar_idx_to_x, t["ts"])
+        if xi_in is None:
             continue
+        xi_out = None
+        if t["exit"] is not None:
+            if t["exit_ts"] is not None:
+                xi_out = _find_nearest_bar(bars, bar_idx_to_x, t["exit_ts"])
+            if xi_out is None and t["close_reason"] == "eod_flatten":
+                xi_out = len(bars) - 1
+            if xi_out is None:
+                xi_out = xi_in
+            if xi_out < xi_in:
+                xi_out = xi_in
 
-        bar = bars[xi]
-        is_long = direction.lower() in ("long", "bullish")
-
-        # Color by result
+        # Color by broker result
         if result == "WIN":
             color, edge = "#00e676", "#00c853"
         elif result == "LOSS":
             color, edge = "#ff5252", "#d50000"
+        elif result == "OPEN":
+            color, edge = "#64b5f6", "#1e88e5"
         else:
             color, edge = "#ffa726", "#ff8f00"
 
-        # Arrow marker: triangle up for LONG, down for SHORT
-        if is_long:
-            marker = "^"
-            arrow_y = bar["low"] - offset
-            label_y = arrow_y - label_offset
-            va = "top"
+        # ENTRY: triangle AT the broker fill price (up=long, down=short)
+        entry_marker = "^" if is_long else "v"
+        ax1.scatter(xi_in, t["entry"], marker=entry_marker, s=170, color=color,
+                    edgecolors="white", linewidths=1.0, zorder=11)
+
+        if t["exit"] is not None and xi_out is not None:
+            # EXIT: X at the broker exit fill price
+            ax1.scatter(xi_out, t["exit"], marker="X", s=130, color=color,
+                        edgecolors=edge, linewidths=1.0, zorder=11)
+            # Connecting line entry → exit (the trade's path)
+            ax1.plot([xi_in, xi_out], [t["entry"], t["exit"]],
+                     color=color, linewidth=1.4, linestyle="--", alpha=0.85, zorder=10)
+            # P&L label near the exit: "SKW -14.0p -$70"
+            label = f"{abbrev} {t['pts']:+.1f}p ${t['dollars']:+.0f}"
+            lbl_y = t["exit"] + (label_offset if not is_long else -label_offset)
+            va = "bottom" if not is_long else "top"
+            ax1.annotate(label, (xi_out, lbl_y), fontsize=6.5, fontweight="bold",
+                         color=color, ha="center", va=va, zorder=12,
+                         bbox=dict(boxstyle="round,pad=0.2", facecolor="#0f0f1a",
+                                   edgecolor=color, alpha=0.9, linewidth=0.5))
         else:
-            marker = "v"
-            arrow_y = bar["high"] + offset
-            label_y = arrow_y + label_offset
-            va = "bottom"
-
-        ax1.scatter(xi, arrow_y, marker=marker, s=150, color=color,
-                    edgecolors=edge, linewidths=1.2, zorder=10)
-
-        # Compact label: "DD +16.1" or "ABS -12.0"
-        label = f"{abbrev} {pnl:+.1f}"
-        ax1.annotate(label, (xi, label_y), fontsize=5.5, fontweight="bold",
-                     color=color, ha="center", va=va, zorder=11,
-                     bbox=dict(boxstyle="round,pad=0.15", facecolor="#0f0f1a",
-                               edgecolor=color, alpha=0.88, linewidth=0.4))
+            # Still open / no exit recorded — label at entry
+            label = f"{abbrev} OPEN"
+            lbl_y = t["entry"] + (label_offset if not is_long else -label_offset)
+            va = "bottom" if not is_long else "top"
+            ax1.annotate(label, (xi_in, lbl_y), fontsize=6.5, fontweight="bold",
+                         color=color, ha="center", va=va, zorder=12,
+                         bbox=dict(boxstyle="round,pad=0.2", facecolor="#0f0f1a",
+                                   edgecolor=color, alpha=0.9, linewidth=0.5))
 
     ax1.set_ylabel("ES Price", color="#b0b0c0", fontsize=10, fontweight="bold")
     plt.setp(ax1.get_xticklabels(), visible=False)
 
-    # ── CUMULATIVE PnL PANEL ──
+    # ── CUMULATIVE PnL PANEL (broker $, realized at exit time) ──
     cum = 0.0
     pnl_xs, pnl_ys, pnl_colors = [], [], []
-    for t in trades:
-        cum += t["outcome_pnl"]
-        xi = _find_nearest_bar(bars, bar_idx_to_x, t["ts"])
+    for t in sorted(closed, key=lambda x: x["exit_ts"] or x["ts"]):
+        cum += t["dollars"]
+        xi = _find_nearest_bar(bars, bar_idx_to_x, t["exit_ts"] or t["ts"])
         if xi is not None:
             pnl_xs.append(xi)
             pnl_ys.append(cum)
-            res = t["outcome_result"]
+            res = t["result"]
             pnl_colors.append("#00e676" if res == "WIN" else "#ff5252" if res == "LOSS" else "#ffa726")
 
     if pnl_xs:
@@ -658,10 +739,10 @@ def generate_trades_chart(engine, trade_date):
         ax2.fill_between(xs_arr, pnl_arr, where=pnl_arr >= 0, alpha=0.15, color="#00e676", interpolate=True)
         ax2.fill_between(xs_arr, pnl_arr, where=pnl_arr < 0, alpha=0.15, color="#ff5252", interpolate=True)
         # End label
-        ax2.annotate(f"{cum:+.1f}", (pnl_xs[-1], pnl_ys[-1]),
+        ax2.annotate(f"${cum:+.0f}", (pnl_xs[-1], pnl_ys[-1]),
                      fontsize=9, fontweight="bold", color=pnl_color,
                      xytext=(8, 0), textcoords="offset points", va="center")
-    ax2.set_ylabel("Cum. P&L", color="#b0b0c0", fontsize=10, fontweight="bold")
+    ax2.set_ylabel("Cum. P&L ($)", color="#b0b0c0", fontsize=10, fontweight="bold")
 
     # ── X-axis time labels ──
     tick_positions, tick_labels_list = [], []
@@ -678,20 +759,23 @@ def generate_trades_chart(engine, trade_date):
     line_h = 0.035
 
     # Title
-    ax3.text(0.5, y, "DAILY SUMMARY", fontsize=13, fontweight="bold",
+    ax3.text(0.5, y, "TSRT DAILY SUMMARY", fontsize=13, fontweight="bold",
              color="#e8e8f0", ha="center", va="top", transform=ax3.transAxes)
     y -= 0.06
 
-    # Headline stats
+    # Headline stats (broker truth)
     ax3.text(0.5, y, f"{len(trades)} trades", fontsize=18, fontweight="bold",
              color="#e8e8f0", ha="center", va="top", transform=ax3.transAxes)
     y -= 0.055
-    ax3.text(0.5, y, f"{net:+.1f} pts", fontsize=22, fontweight="bold",
+    ax3.text(0.5, y, f"${net_usd:+.0f}", fontsize=22, fontweight="bold",
              color=pnl_color, ha="center", va="top", transform=ax3.transAxes)
-    y -= 0.06
+    y -= 0.05
+    ax3.text(0.5, y, f"({net_pts:+.1f} pts)", fontsize=11,
+             color=pnl_color, ha="center", va="top", transform=ax3.transAxes)
+    y -= 0.045
 
     y -= 0.01
-    ax3.text(0.5, y, f"{wins}W  /  {losses}L  /  {expired}E   ({wr}%)",
+    ax3.text(0.5, y, f"{wins}W  /  {losses}L  /  {scratch}S   ({wr}%)",
              fontsize=10, color="#b0b0c0", ha="center", va="top", transform=ax3.transAxes)
     y -= 0.065
 
@@ -720,7 +804,7 @@ def generate_trades_chart(engine, trade_date):
                  color="#888", ha="left", va="top", transform=ax3.transAxes)
         ax3.text(0.48, y, wle, fontsize=9,
                  color="#b0b0c0", ha="left", va="top", transform=ax3.transAxes)
-        ax3.text(0.95, y, f"{spnl:+.1f}", fontsize=9, fontweight="bold",
+        ax3.text(0.95, y, f"${spnl:+.0f}", fontsize=9, fontweight="bold",
                  color=spnl_color, ha="right", va="top", transform=ax3.transAxes)
         y -= line_h
 
@@ -732,8 +816,10 @@ def generate_trades_chart(engine, trade_date):
              color="#e8e8f0", ha="center", va="top", transform=ax3.transAxes)
     y -= 0.035
     legend_items = [
-        ("\u25b2  Long entry", "#b0b0c0"), ("\u25bc  Short entry", "#b0b0c0"),
-        ("\u25cf  WIN", "#00e676"), ("\u25cf  LOSS", "#ff5252"), ("\u25cf  EXPIRED", "#ffa726"),
+        ("\u25b2  Long entry (fill)", "#b0b0c0"), ("\u25bc  Short entry (fill)", "#b0b0c0"),
+        ("\u2716  Exit (fill)", "#b0b0c0"), ("--  Entry\u2192Exit path", "#b0b0c0"),
+        ("\u25cf  WIN", "#00e676"), ("\u25cf  LOSS", "#ff5252"),
+        ("\u25cf  SCRATCH", "#ffa726"), ("\u25cf  OPEN", "#64b5f6"),
     ]
     for txt, c in legend_items:
         ax3.text(0.08, y, txt, fontsize=8, color=c, ha="left", va="top",

@@ -7617,10 +7617,10 @@ def _send_setup_eod_summary():
         chat_id = TELEGRAM_CHAT_ID_SETUPS or TELEGRAM_CHAT_ID
         date_str = now.strftime('%B %d, %Y')
 
-        # 1. Trades-on-chart picture
+        # 1. Trades-on-chart picture (TSRT/V16 placed trades only — broker fills)
         chart_path = generate_trades_chart(engine, now.date())
         if chart_path:
-            send_telegram_photo(chart_path, f"0DTE Alpha — {date_str}", TELEGRAM_BOT_TOKEN, chat_id)
+            send_telegram_photo(chart_path, f"0DTE Alpha — TSRT Trades — {date_str}", TELEGRAM_BOT_TOKEN, chat_id)
             print(f"[eod-summary] trades chart sent", flush=True)
             try:
                 os.unlink(chart_path)

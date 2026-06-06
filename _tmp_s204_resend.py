@@ -19,7 +19,8 @@ def get_token():
 
 
 print(f"target chat: {wr.TEL_RES_CHAT}")
-engine = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
+db_url = os.environ['DATABASE_URL'].replace("postgresql://", "postgresql+psycopg://", 1)
+engine = create_engine(db_url, pool_pre_ping=True)
 wr.init(engine, get_token)
 wr.run_weekly()
 print('resend done')

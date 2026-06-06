@@ -2323,6 +2323,48 @@ Defensible tighter alternative if variance comfort ever dominates: a15g5 keeps ~
 - Bookkeeping flag: JSONB per-lid DD P&L May 18-31 sums ~+$244 vs MCHK per-setup split "DD +$98" — FIFO attribution difference, worth a separate look; does not affect this ranking.
 - `app/mes_sim_backfill.py` V14_WHITELIST still excludes "DD Exhaustion" (real-traded since May 18) — S55 portal badges never populate for DD. Same class of gap as the S190 reconcile bug. Candidate small fix.
 
+---
+
+## Analysis #19 — Weekly Discord-vs-System review, week of Jun 1-5 2026 (2026-06-06)
+
+**Sources:** full Volland daytrading-central Discord export (3,535 msgs Jun 1-5, per-day extracts `_tmp_discord_2026-06-0*.txt`), TSRT broker fills (`real_trade_orders` per-lid JSONB, MCHK-validated method), `chain_snapshots`, `economic_events`. Week context: NFP week; PDT rule dropped $25k→$2k effective Jun 4; June opex Jun 18-19 ahead; FOMC next week.
+
+### Week scoreboard (broker truth, 1 MES)
+
+| Day | SPX | Range | TSRT | Top contributors | Regime |
+|---|---|---|---|---|---|
+| Mon Jun 1 | +29 | 46 | **+$38** (3t) | SC L +$101, AG S −$64 | grind-up, "buy the dip" |
+| Tue Jun 2 | +20 | 34 | **+$172** (7t) | DD L +$121, SC L +$52 | BofA pin 7600-7615, grind-up |
+| Wed Jun 3 | −47 | 51 | **−$268** (9t) | SC L −$262/7t | ADP day, AG-side, dip-buyers punished |
+| Thu Jun 4 | +54 | 65 | **+$470** (10t) — best day | SC L +$212, DD L +$209, ESAbs L +$160 | ovn-low sweep → squeeze, VIX crush |
+| Fri Jun 5 | −147 | **168** (98th pct) | **−$378** (21t, cap hit 15:00) | SC L −$266, DD L −$240; shorts +$182 | NFP 172K vs 85K + AVGO miss, vol event |
+| **Week** | −44 | | **+$35** (50t) | 3 green +$680 / 2 macro red −$646 | |
+
+### Core finding: our system IS the Discord room's dip-buy consensus, mechanized
+
+The week's defining Discord mantra was disciple3's "buy the dip, all day, every day." Our SC/DD/ESAbs longs are the mechanical equivalent. Both made money the same 3 days and bled the same 2 days. The 2 red days were the week's only tier-1 macro-release days (ADP Wed, NFP Fri) — consistent with the S208 macro-day study (7 macro days: longs −$844, shorts +$134; parked for n≥12).
+
+### Day-by-day Discord vs us
+
+- **Mon:** Room's shorts bled (m's "fullport swing short @ 7650" wrong, yahyaz "short side is a disease"); our lone AG short also lost (−$64), our SC longs won. ALIGNED with regime. Insight: "AG day with zero put notionals" — put desert = no fuel for downside.
+- **Tue:** Dealer pin warfare at 7604/7627 ES; "negative vanna overhead" capped upside; chop. Our +$172 from longs. m's 23:33 post-mortem monologue: dealers "warehoused a fuck ton of charm" and avoided forced 4pm buys — first heavyweight warning that **charm flow ≠ obligatory dealer hedging in this regime**.
+- **Wed (ADP, we −$268):** Discord read the turn in REAL TIME, we didn't: dauma 10:01 "Is today the day we punish bulls who bought the dip?"; yahyaz 10:49 "first time in WEEKS net sweeper flow is bearish on momentum names"; AG target hit 12:42 (first since Mar 30). Our 7 SC longs were exactly the punished dip-buys (covered in S203 post-mortem). The flow-flip signal (options sweep flow) is data we don't have; our nearest proxy is ES Abs CVD which did not block.
+- **Thu (we +$470, best day):** Textbook our-regime day — overnight low swept on volume spike → all-day squeeze. disciple3: "clean as it gets." Dealers warehoused +60B 0DTE delta and did NOT hedge (apollobix quoting CBOE: dealers warehouse when they know structural buyers are coming). Every long setup printed. **But the room flagged fragility that evening:** NQ retraced the entire move in globex; yahyaz 07:32 "this week and next week vanna support almost gone"; disciple3 "8 weeks straight... need a high-volume sell day"; dauma "show us a negative NFP tomorrow."
+- **Fri (NFP, we −$378):** Full forensic in S208/session notes. Discord dip-buyers got run over identically (disciple3 blew a prop account at 13:23 and quit; apollobix "ES closes over 7530" failed by 140 pts). Winners were positioned BEFORE the day: yahyaz's swing short (+$19k), wizardofops long-gamma fund ("today's price action was very welcome"). Apollo 11:50 "DD fell off a cliff" — same data our DD Exhaustion reads as contrarian LONG; on a trend-shock day that inversion cost us −$240/4t. Post-close: official Volland **vol event** (spot-vol 2σ) → Wiz's stat: 93% revert to prior close (7584) within 3 weeks, he says by Wed; but his own scenario tree has 35% "down to 7275-7300 first" and FOMC + June-opex negative vanna ahead.
+
+### Mechanisms worth keeping (not tradeable claims yet)
+
+1. **Dealer warehousing breaks charm-based prediction in strong bull regimes.** Three independent voices (m Tue night, apollobix-via-CBOE Thu, disciple3 Thu 14:46 "Volland has periods where it dominates... right now is not one of those times"). Our SC entries lean on charm structure — expect SC edge to be regime-dependent, weakest when dealers warehouse.
+2. **DD Exhaustion direction-inversion on shock days.** DD-bearish-shift→contrarian-long works in grind regime (Tue +$121, Thu +$209) and inverts on macro trend days (Fri −$240, all 4 stopped). Same family as the S208 longs-bleed finding. Watch, don't ship.
+3. **Options sweep-flow flip as the earliest regime tell** (yahyaz Wed 10:49 called it ~2h before the AG target hit). We have no sweep-flow feed; closest available: per-strike volume deltas in `chain_snapshots`. Possible future study, parked.
+4. **Vol-event mean-reversion marker:** Friday closed as an official vol event. Wiz stat: 93% revisit of 7584 within 3 weeks. Checkable forward observation for Mon-Wed — if a strong bounce materializes, our long setups should be back in-regime; the 2 mechanical risks ahead are FOMC week + June opex negative vanna.
+5. **One-off context for Friday's tape:** PDT rule change Jun 4 brought new retail in; room consensus was retail dip-buyers amplified the one-way afternoon ("cooking retail the day after PDT change").
+
+### Verdict
+
+No code changes from this review. The week validates V16's shape (+$680 on its 3 regime days, week still green despite two 98th-pct-class shocks, every risk control fired correctly Friday) and adds independent confirmation to the parked S208 macro-day thesis from the best discretionary traders in the room losing the same way we did on the same two days. Re-study S208 at n≥12 macro days (~mid-July).
+
+
 ### Analysis #18 ADDENDUM (same day) — full-history V16-pass test REVERSES the BE@12 lean
 
 User correctly demanded the pre-May-18 history screened through the CURRENT V16 filter (skip_reason only exists post-May-18). Replicated `_passes_live_filter()` DD-LONG path exactly (R1-R10, incl. daily gap from chain_snapshots); replication validated 96% (47/49) against post-V16 skip_reason ground truth — both "mismatches" are S180 (shipped May 24) applied retroactively to May 22 lids, i.e. correct under current rules. Script: `_tmp_dd_trail_sweep_historical.py`.

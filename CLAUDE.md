@@ -546,11 +546,12 @@ finding).
 - `auto_trade_orders` - MES SIM auto-trade order state (setup_log_id PK, JSONB state with split-target tracking, crash recovery)
 - `stock_gex_scans` - Stock GEX data every 30 min (symbol, scan_date, spot, expiration, exp_label weekly/opex, key_levels JSONB, gex_data JSONB)
 - `setup_log.mes_sim_outcome_pnl / mes_sim_outcome_result / mes_sim_max_fav` (S55, 2026-05-13) - MES-driven trail simulation outcomes (portal realism, not new alpha; populated for V14 whitelist setups only)
-- `tsrt_daily_stmt` (S204, 2026-06-04) - TSRT per-day broker-truth statement rows (day PK, gross/comm/net, n_trades, n_wins, trades JSONB) — persisted so weekly report history survives TS's 90-day lookback
+- `tsrt_daily_stmt` (S204, 2026-06-04) - TSRT per-day broker-truth statement rows (day PK, gross/comm/net, n_trades, n_wins, trades JSONB) — persisted so weekly report history survives TS's 90-day lookback. **THE source of truth for day-$** — never sum `real_trade_orders.state` per-lid on multi-concurrent days (S210)
+- `vol_event_alerts` (S209, 2026-06-07) - dedup keys for vol-event Telegram alerts (key PK: `intraday-<date>` / `confirmed-<trigger date>`)
 
 ### TSRT Weekly Statement (`app/tsrt_weekly_report.py`) — added 2026-06-04 (S204)
 
-Fully-automatic weekly capital statement → Telegram "0DTE Alpha Researchs" channel (`-1003792574755`). Cron **Friday 16:20 ET** in main.py scheduler. Self-contained module, `init(engine, ts_access_token)`.
+Fully-automatic weekly capital statement → Telegram **"0DTE Alpha Trades" channel** (`TELEGRAM_CHAT_ID_SETUPS` env; changed from Researchs 2026-06-06 per user). Failure ping → general alerts channel (`TELEGRAM_CHAT_ID`). Cron **Friday 16:20 ET** in main.py scheduler. Self-contained module, `init(engine, ts_access_token)`.
 
 - **Broker truth:** pulls `/historicalorders` **+ `/orders` merged with OrderID dedup** — CRITICAL: `/historicalorders` excludes same-day fills, and the cron runs same-day, so both endpoints are required
 - FIFO round-trip matching per account per ET day (accounts flat overnight → per-day matching is safe); upserts to `tsrt_daily_stmt`
@@ -559,6 +560,18 @@ Fully-automatic weekly capital statement → Telegram "0DTE Alpha Researchs" cha
 - Fail-soft: never raises; on error sends a failure ping to the same channel
 - Local test harness: `_tmp_s204_local_test.py` (intercepts the Telegram send, writes HTML to disk)
 - Manual fallback scripts: `_tmp_tsrt_daily_statement.py` + `_tmp_tsrt_weekly_report.py`; if local ISP blocks api.telegram.org, relay via DB + `railway ssh` (see `reference_telegram_isp_block_relay.md` in memory dir)
+
+### Vol-Event Detector (`app/vol_event_alert.py`) — added 2026-06-07 (S209)
+
+Wizard of Ops spot-vol framework: a "vol event" = spot-vol deviation closes ≥2σ on a down day (panic vol overpricing) → ~93% revisit of prior close within 3 weeks (his stat; our DB n=1: Mar 6 2026 hit target in 4 days then fell 480pts more — bounce ≠ bottom). **Pure alerting, zero trading logic.** Reads `volland_snapshots.payload->statistics->spot_vol_beta` (scraper already captures it every ~2 min). Cron every 5 min, 9-16 ET weekdays. Two alerts → MAIN alerts channel (`TELEGRAM_CHAT_ID`): (1) intraday "LIKELY" when deviation ≥2.0 on a down day (fresh snapshot ≤10 min required); (2) "CONFIRMED" when Volland's `vixEvents` array populates (after 16:15 VIX settle — usually visible next session's snapshots) with target price + 3-week deadline. Dedup persisted in `vol_event_alerts` table. Fail-soft. NOTE: SVB as a *trade filter* was REFUTED 2026-05-30 — this is context only.
+
+### EOD Daily Chart (in `app/eod_report.py`) — rebuilt 2026-06-07
+
+`generate_trades_chart()` shows **TSRT-placed trades only** (`setup_log JOIN real_trade_orders`) — portal-only detectors excluded. Entry ▲/▼ at broker fill, exit ✕ at exit fill, dashed entry→exit path, per-trade label `SKW -14.0p -$70`, broker-$ stats/cum-curve. Uses the **bot's-own-fills view** (pre-FIFO-reconcile precedence) — totals sum exactly to broker gross. PDF report path unchanged (still all resolved setups).
+
+### FIFO reconcile S210 invariants (2026-06-07)
+
+`app/fifo_reconcile.py` rewrites BOTH `close_fill_price` AND `stop_fill_price` (audit in `*_pre_fifo_reconcile`) — consumers read stop first, so both must carry FIFO truth. Conservation guard: bot-exit multiset must equal broker-exit multiset, else refuse + Telegram (FIFO pairing is a permutation of the same fills; a partial/visible-mix rewrite once made Jun 5 look −$378 vs true −$292.5).
 
 ## Railway Deployment
 

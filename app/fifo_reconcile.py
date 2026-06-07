@@ -13,8 +13,21 @@ untouched. Idempotent: re-running yields the same result.
 Audit fields added to state on first reconcile:
   - close_fill_price                    (overwritten with FIFO truth)
   - close_fill_price_pre_fifo_reconcile (preserves bot's per-OID value)
+  - stop_fill_price                     (ALSO overwritten when present — S210)
+  - stop_fill_price_pre_fifo_reconcile  (preserves bot's stop fill — S210)
   - fifo_close_oid                      (broker order ID FIFO-paired to lid)
   - fifo_reconciled_at                  (ISO timestamp)
+
+S210 (2026-06-07): two hardening fixes after the Jun 5 incident.
+1. Consumers read `stop_fill_price or close_fill_price` — rewriting only
+   close_fill_price left stop-filled lids showing the STALE bot value, so a
+   day with mixed stop/market closes displayed a non-conserving blend
+   (Jun 5: per-lid sum said -$378 vs broker truth -$292.5). Both fields are
+   now rewritten together.
+2. Conservation guard: the FIFO pairing is a permutation of the SAME fill
+   set the bot recorded, so the bot-exit multiset must equal the broker-exit
+   multiset. If they differ (ghost lid, manual order in the account), we
+   refuse to pair and alert instead of writing a corrupted attribution.
 
 Self-contained. No imports from main.py. Receives engine, get_token_fn,
 send_telegram_fn via init(). Mirrors trade_reconcile.py module style.
@@ -195,18 +208,62 @@ def reconcile_account_date(acct: str, date_et: str, dry_run: bool = False) -> di
         )
         return summary
 
+    # ── S210 conservation guard ──
+    # FIFO pairing is a PERMUTATION of the same fills the bot recorded, so the
+    # bot's effective-exit multiset must equal the broker exit multiset. If it
+    # doesn't (ghost lid / manual order / missed fill), pairing would write a
+    # corrupted attribution — refuse and alert.
+    def _bot_effective_exit(st: dict):
+        # bot's own view before any FIFO rewrite (pre-fields when present)
+        for k in ("stop_fill_price_pre_fifo_reconcile", "close_fill_price_pre_fifo_reconcile"):
+            if k in st and st[k] is not None:
+                try:
+                    return float(st[k])
+                except (TypeError, ValueError):
+                    pass
+        v = st.get("stop_fill_price") or st.get("close_fill_price")
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    bot_exits = [_bot_effective_exit(st) for _, st in lids]
+    if any(v is None for v in bot_exits):
+        summary["warnings"].append(
+            "CONSERVATION CHECK SKIPPED: a lid has no recorded exit (ghost?) — "
+            "refusing to FIFO-pair. Investigate manually."
+        )
+        return summary
+    broker_exits = sorted(e["execution_price"] for e in exits)
+    mism = [(b, f) for b, f in zip(sorted(bot_exits), broker_exits) if abs(b - f) > 0.011]
+    if mism:
+        summary["warnings"].append(
+            f"FILL-SET MISMATCH: bot exits != broker exits at {len(mism)} position(s) "
+            f"(e.g. bot {mism[0][0]} vs broker {mism[0][1]}) — refusing to FIFO-pair. "
+            f"Possible ghost/manual order on the account."
+        )
+        return summary
+
     # FIFO pairing: lids[i] (oldest entry) <-- exits[i] (earliest close)
     pairs = list(zip(lids, exits))
     for (lid, state), exit_o in pairs:
         fifo_price = exit_o["execution_price"]
         fifo_oid = exit_o["oid"]
         current = state.get("close_fill_price")
+        current_stop = state.get("stop_fill_price")
         try:
             current_f = float(current) if current is not None else None
         except (TypeError, ValueError):
             current_f = None
+        try:
+            current_stop_f = float(current_stop) if current_stop is not None else None
+        except (TypeError, ValueError):
+            current_stop_f = None
 
-        if current_f is not None and abs(current_f - fifo_price) < 0.001:
+        close_ok = current_f is not None and abs(current_f - fifo_price) < 0.001
+        # S210: stop_fill_price must ALSO match (consumers read stop first)
+        stop_ok = current_stop_f is None or abs(current_stop_f - fifo_price) < 0.001
+        if close_ok and stop_ok:
             continue  # already correct — idempotent skip
 
         change = {
@@ -215,6 +272,7 @@ def reconcile_account_date(acct: str, date_et: str, dry_run: bool = False) -> di
             "direction": state.get("direction"),
             "fill_price": state.get("fill_price"),
             "old_close": current,
+            "old_stop": current_stop,
             "new_close": fifo_price,
             "old_oid": state.get("close_order_id") or state.get("stop_order_id"),
             "new_oid": fifo_oid,
@@ -224,10 +282,15 @@ def reconcile_account_date(acct: str, date_et: str, dry_run: bool = False) -> di
 
         if not dry_run:
             try:
-                # Preserve original (only on first reconcile — don't overwrite audit trail)
+                # Preserve originals (only on first reconcile — don't overwrite audit trail)
                 if "close_fill_price_pre_fifo_reconcile" not in state:
                     state["close_fill_price_pre_fifo_reconcile"] = current
                 state["close_fill_price"] = fifo_price
+                # S210: keep stop_fill_price consistent — consumers read it first
+                if current_stop_f is not None:
+                    if "stop_fill_price_pre_fifo_reconcile" not in state:
+                        state["stop_fill_price_pre_fifo_reconcile"] = current_stop
+                    state["stop_fill_price"] = fifo_price
                 state["fifo_close_oid"] = fifo_oid
                 state["fifo_reconciled_at"] = datetime.now(NY).isoformat()
                 with _engine.begin() as cx:

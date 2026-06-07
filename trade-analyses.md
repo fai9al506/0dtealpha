@@ -2372,6 +2372,22 @@ Root cause for Jun 5's $85.5 error: **S179 fifo_reconcile PARTIAL-rewrite bug** 
 
 lid 3629 itself executed PERFECTLY: tracker WIN at 13:38:56, market close filled seconds later at 7472.25 = +11.5 real vs +9.9 sim. The "execution gap" was an attribution artifact. Portal Friday (−63.6p ≈ −$318) ≈ broker net (−$313.5) — capture was ~100%, NOT degraded; the "macro days cost 2× execution friction" claim in this analysis is RETRACTED. EOD chart fixed to prefer pre-FIFO fills (conserves totals). Fix task: S210. S208 backtests used the same per-lid sums — directionally intact (Jun 5 still the worst day; longs still the bleed) but magnitudes must be re-derived from broker FIFO at re-study.
 
+---
+
+## Analysis #20 — Concurrency cap replay: keep cap_long/short = 3 (2026-06-07)
+
+**Trigger:** Jun 1-5 week showed +68.7p sim skipped via `cap_long_full` (mostly Jun 4 squeeze, 6 skips +58.7p); user asked whether to raise the cap (recalled "cap 3 keeps ~95%").
+
+**Method:** chronological replay (`_tmp_cap_replay.py`), candidates = all placed trades + cap_{long,short}_full skips (sim outcomes for BOTH, apples-to-apples), per-direction cap N, daily −$300 breaker at CLOSE-time realization (S203 lesson), $1/RT comm. Window: 2026-05-14 (first cap-skip log) → 2026-06-05. **n = 306 candidates but only 22 cap-skips — directional only.**
+
+**Results ($ sim, full window / post-V16):** cap1 +662/+694 · cap2 +1130/+1196 · **cap3 +1266/+1299 (live)** · cap4 +1236/+1340 · cap5 +1360/+1464 · ∞ +1463/+1566. Worst day deepens −325 (cap3) → −396 (cap4+, Jun 3 — breaker can't stop already-open positions). Best day (Jun 4) +450 → +737.
+
+**Gate 2:** cap3 replay vs actually-placed-sim = 112% ($1,266 vs $1,136); excess is almost entirely May 14 (live cap was lower then) — post-cap3-era match ≈ 3%. Model sound.
+
+**Findings:** (1) cap 3→4 is FLAT (+41 post-V16) — 4th slot adds nothing. (2) cap 5/∞ adds +165/+267 post-V16 (~$300-500/mo at 1 MES implied) BUT the entire gain is 1-2 squeeze days — Jun 4 alone is most of it, and Jun 4 is the week that motivated the question (post-hoc trap). (3) Tail cost real: worst day +22% deeper, and 5 correlated longs on a reversal day = −$350 in minutes before close-time realization lets the breaker react. (4) **Engineering precondition (S200 residual): >3 concurrent same-direction requires the pooled-position rewrite** — the FIFO-rank netting guard is tested at ≤3; the Jun-2 netting incident class (ghost + QTY-MISMATCH spam) is what >3 without the rewrite risks.
+
+**Decision: KEEP cap=3.** Re-run when cap-skip sample reaches ~50 (with S208 mid-July re-study). If cap5 still shows +$250+/mo at that n, schedule the pooled-position rewrite FIRST, then raise. The user's recalled "95%" matches: cap3 captures $1,299 of $1,566 uncapped post-V16 = 83% with materially better tail (the prior study's 95% was a different window).
+
 
 ### Analysis #18 ADDENDUM (same day) — full-history V16-pass test REVERSES the BE@12 lean
 

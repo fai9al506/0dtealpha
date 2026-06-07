@@ -2388,6 +2388,8 @@ lid 3629 itself executed PERFECTLY: tracker WIN at 13:38:56, market close filled
 
 **Decision: KEEP cap=3.** Re-run when cap-skip sample reaches ~50 (with S208 mid-July re-study). If cap5 still shows +$250+/mo at that n, schedule the pooled-position rewrite FIRST, then raise. The user's recalled "95%" matches: cap3 captures $1,299 of $1,566 uncapped post-V16 = 83% with materially better tail (the prior study's 95% was a different window).
 
+**Addendum (2026-06-07) — realized+UNREALIZED entry gate backtested (`_tmp_unrl_gate_backtest.py`):** replayed all 277 placed trades (Mar 24-Jun 5, bot-own fills, ES-bar mark-to-market for open positions at each entry). At −$300 the gate **never fired once in 48 days** ($0 delta) — at cap=3, max open exposure is ~$210/direction, so the realized-only breaker always trips first or the condition never reaches −300. Tighter thresholds LOSE money (−$250: −$8..−$16; −$200: −$74 full / −$186 post-V16 — scratches recovery entries, blocked W/L ≈ 50/50). **Verdict: redundant at cap=3 — do NOT ship. The unrealized gate only becomes necessary as part of a future cap-raise project (cap 8 → $560 open exposure makes it bind).** The loser-strike fear is structurally contained by the cap itself.
+
 
 ### Analysis #18 ADDENDUM (same day) — full-history V16-pass test REVERSES the BE@12 lean
 

@@ -2364,6 +2364,14 @@ The week's defining Discord mantra was disciple3's "buy the dip, all day, every 
 
 No code changes from this review. The week validates V16's shape (+$680 on its 3 regime days, week still green despite two 98th-pct-class shocks, every risk control fired correctly Friday) and adds independent confirmation to the parked S208 macro-day thesis from the best discretionary traders in the room losing the same way we did on the same two days. Re-study S208 at n≥12 macro days (~mid-July).
 
+#### CORRECTION (2026-06-07) — per-lid sums overstated the losses; broker truth from tsrt_daily_stmt
+
+User challenged lid 3629's "-15.4pt execution gap" → forensic found the per-lid `real_trade_orders.state` sums used in the table above DRIFT from broker truth. True week per `tsrt_daily_stmt` (S204, raw /historicalorders+/orders FIFO): **Jun 1 +$37.5 / Jun 2 +$120 / Jun 3 −$280 / Jun 4 +$470 / Jun 5 −$292.5 gross — week +$55 gross, +$3 net after $52 commissions** (vs the table's +$35 from state sums; Jun 5 was −$292.5/−$313.5 net, NOT −$378; Jun 2 was +$120/8t not +$172/7t).
+
+Root cause for Jun 5's $85.5 error: **S179 fifo_reconcile PARTIAL-rewrite bug** — at 16:03 it rewrote lid 3629's exit (7472.25 → 7455.25, correct per exchange FIFO) but did NOT rewrite the offsetting chain lids (3626 should get the +15pt 13:39 exit; 3633 → −15.5; 3635 → −20.5) → per-lid sum no longer conserves (full-chain rewrite nets to 0 by construction). Verified: pre-FIFO (bot's own fills) sum = −58.5pt = broker gross −$292.5 EXACTLY.
+
+lid 3629 itself executed PERFECTLY: tracker WIN at 13:38:56, market close filled seconds later at 7472.25 = +11.5 real vs +9.9 sim. The "execution gap" was an attribution artifact. Portal Friday (−63.6p ≈ −$318) ≈ broker net (−$313.5) — capture was ~100%, NOT degraded; the "macro days cost 2× execution friction" claim in this analysis is RETRACTED. EOD chart fixed to prefer pre-FIFO fills (conserves totals). Fix task: S210. S208 backtests used the same per-lid sums — directionally intact (Jun 5 still the worst day; longs still the bleed) but magnitudes must be re-derived from broker FIFO at re-study.
+
 
 ### Analysis #18 ADDENDUM (same day) — full-history V16-pass test REVERSES the BE@12 lean
 

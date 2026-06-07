@@ -544,7 +544,13 @@ def _query_tsrt_trades(engine, trade_date):
         fill = state.get("fill_price")
         if fill is None:
             continue  # never entered (e.g. charm-limit timeout / cancelled)
-        exit_p = state.get("stop_fill_price") or state.get("close_fill_price")
+        # Use the bot's OWN close fill (pre-FIFO-reconcile) when the S179 FIFO
+        # module rewrote it: partial FIFO rewrites break per-lid sum conservation
+        # (Jun 5 2026: lid 3629 rewrite alone shifted the day total by $85.50 vs
+        # broker truth). Pre-FIFO fills sum exactly to broker gross.
+        exit_p = (state.get("stop_fill_price")
+                  or state.get("close_fill_price_pre_fifo_reconcile")
+                  or state.get("close_fill_price"))
         direction = (r[3] or "").lower()
         is_long = direction in ("long", "bullish")
         qty = int(state.get("quantity") or 1)

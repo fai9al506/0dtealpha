@@ -1,0 +1,757 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>GEX Long v3.2 — Trade Log</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#1a1a2e;color:#fff;font-family:Inter,Segoe UI,sans-serif;padding:24px;max-width:1300px;margin:0 auto}
+h1{color:#ffd740;border-bottom:2px solid #ffd740;padding-bottom:8px;margin-bottom:8px}
+.sub{color:#b0bec5;font-size:13px;margin-bottom:20px}
+.panel{background:#16213e;border:1px solid #607d8b;border-radius:8px;padding:16px;margin-bottom:20px}
+.big{font-size:26px;color:#ffd740;font-weight:bold}
+.tc{background:#16213e;border:1px solid #607d8b;border-radius:8px;padding:12px 16px;margin-bottom:16px}
+.th{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding-bottom:6px;border-bottom:1px solid #607d8b}
+.th .id{color:#ffd740;font-weight:bold}.th .ts{color:#b0bec5;font-size:13px}
+.th .gr{background:#0f3460;padding:2px 8px;border-radius:3px;font-size:12px}
+.tm{display:flex;gap:16px;font-size:12px;color:#b0bec5;margin-top:8px;flex-wrap:wrap}.tm b{color:#fff}
+.tr{font-size:13px;color:#fff;margin-top:8px;padding:8px 12px;background:rgba(255,215,64,.08);border-left:3px solid #ffd740;border-radius:3px}
+.tr .rl{color:#ffd740;font-weight:bold;margin-right:6px}.tr b{color:#ffd740}
+.ch{margin-top:10px}
+table{width:100%;border-collapse:collapse;margin:10px 0}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid #607d8b;font-size:13px}
+th{background:#0f3460;color:#ffd740}td{color:#b0bec5}
+.g{color:#00e676}.r{color:#ff5252}
+</style></head><body>
+<h1>GEX Long v3.2 — Trade Log (one-by-one review)</h1>
+<div class="sub">0DTE Alpha · generated 2026-06-08 · 18 clean v3.2 signals · re-simulated with NEW exit (SL −14 / target = magnet / trail +15/5)</div>
+<div class="panel">
+ <span class="big">18</span> trades &nbsp;·&nbsp; <span class="big g">78%</span> WR &nbsp;·&nbsp;
+ <span class="big g">+196.6p</span> ($+983 @1MES) &nbsp;·&nbsp; 4 losses to study
+ <p style="color:#b0bec5;margin-top:10px;font-size:13px">Look for what the <span class="r">LOSSES</span> share: align, paradigm, hour, VIX, gap-to-magnet, support-below present? Each chart shows TS GEX (bars, green=+ red=−), charm (gold line), and ENTRY/magnet/SL/MFE/MAE markers.</p>
+</div>
+<div class="panel"><h3 style="color:#ffd740;margin-bottom:8px">Losses at a glance</h3>
+<table><thead><tr><th>#</th><th>date</th><th>hr</th><th>verdict</th><th>align</th><th>paradigm</th><th>VIX</th><th>magnet gap</th><th>support below?</th><th>MFE</th><th>pnl</th></tr></thead><tbody>
+<tr><td>#123</td><td>2026-02-18</td><td>13</td><td>A++</td><td>-1</td><td>GEX-TARGET</td><td>n/a</td><td>+12</td><td>yes</td><td>+5</td><td class='r'>-14</td></tr><tr><td>#263</td><td>2026-02-26</td><td>11</td><td>A++</td><td>+1</td><td>GEX-PURE</td><td>19.4</td><td>+32</td><td>yes</td><td>+0</td><td class='r'>-14</td></tr><tr><td>#1504</td><td>2026-04-02</td><td>12</td><td>A++</td><td>+1</td><td>GEX-LIS</td><td>25.6</td><td>+32</td><td>yes</td><td>+0</td><td class='r'>-14</td></tr><tr><td>#2884</td><td>2026-05-18</td><td>9</td><td>A++</td><td>+0</td><td>GEX-PURE</td><td>18.5</td><td>+34</td><td>yes</td><td>+0</td><td class='r'>-14</td></tr>
+</tbody></table></div>
+<h2 style="color:#ffd740;margin:20px 0 12px">All 18 signals (chronological)</h2>
+
+<div class="tc">
+ <div class="th"><span class="id">#123</span><span class="ts">2026-02-18 13:00 (hr 13)</span>
+  <span class="gr">[A++/A-Entry]</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS</span>
+  <span style="color:#ff5252;font-weight:bold">-14.0pt · $-70</span></div>
+ <div class="tm"><span>spot <b>6902.9</b></span>
+  <span style="color:#00e676">TP/magnet <b>6915</b></span>
+  <span style="color:#ff5252">SL <b>6888.9</b> (−14)</span>
+  <span>MFE <b>+5.1</b></span><span>MAE <b>-17.3</b></span>
+  <span>align <b>-1</b></span><span>GEX-TARGET</span>
+  <span>VIX <b>n/a</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>6915</b> (target, +12pt). −GEX support at <b>6865</b> below. verdict <b>A++</b>, align <b>-1</b>, GEX-TARGET. Stopped (stop, -14). MFE only +5, MAE -17 → magnet never pulled.</div>
+ <div id="c123" class="ch"></div>
+ <script>
+ Plotly.newPlot('c123',[
+  {x:[6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0],y:[0.00022279999999999945, 0.0037497999999999967, 0.0115343, 0.008001000000000001, 0.0105519, 0.011129, 0.017616999999999997, 0.048444499999999995, 0.04802440000000001, 0.0326001, 0.058767299999999995, 0.038286200000000006, 0.0414742, 0.011273400000000003, 0.0061409, 0.006999999999999998],type:'bar',name:'TS GEX',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0],y:[14.061969880000001, 24.518747519999998, -17.476496469999997, -12.48218218, -4.43181667, -14.08745109, 0.70054574, -4.4323379, 0.56769698, -1.16276188, -13.91997625, -6.5377398200000005, -35.09498464, -8.5503563, -0.45673976, 6.27377357],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:6902.95,x1:6902.95,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:6915.0,x1:6915.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6888.95,x1:6888.95,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6908.05,x1:6908.05,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:6885.65,x1:6885.65,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:6902.95,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:6915.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:6888.95,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#227</span><span class="ts">2026-02-25 10:06 (hr 10)</span>
+  <span class="gr">[A/A-Entry]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+20.5pt · $+102</span></div>
+ <div class="tm"><span>spot <b>6924.1</b></span>
+  <span style="color:#00e676">TP/magnet <b>6950</b></span>
+  <span style="color:#ff5252">SL <b>6910.1</b> (−14)</span>
+  <span>MFE <b>+25.5</b></span><span>MAE <b>-5.1</b></span>
+  <span>align <b>+1</b></span><span>GEX-MESSY</span>
+  <span>VIX <b>18.7</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>6950</b> (target, +26pt). −GEX support at <b>6890</b> below. verdict <b>A</b>, align <b>+1</b>, GEX-MESSY. Rode to trail (+20, MFE +26).</div>
+ <div id="c227" class="ch"></div>
+ <script>
+ Plotly.newPlot('c227',[
+  {x:[6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0, 6945.0, 6950.0, 6955.0, 6960.0],y:[0.0005494000000000003, 0.00035639999999999896, 0.0032305000000000003, 0.0199927, 0.010972200000000001, 0.017772399999999997, 0.0067005, 0.031247200000000003, 0.042671999999999995, 0.043751, 0.033886, 0.0377044, 0.03373059999999999, 0.0500406, 0.021281799999999997, 0.0119809],type:'bar',name:'TS GEX',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0, 6945.0, 6950.0, 6955.0, 6960.0],y:[-1.42951641, -8.34601436, -0.35378132, -8.921336310000001, -4.2091015700000005, -0.31344911, -2.15843737, 0.11245480000000001, 1.33576295, -0.02324738, -0.8091000300000001, -4.83184375, -2.68188439, -4.09322635, -9.565763310000001, -5.6551079500000005],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:6924.06,x1:6924.06,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:6950.0,x1:6950.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6910.06,x1:6910.06,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6949.56,x1:6949.56,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:6918.96,x1:6918.96,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:6924.06,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:6950.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:6910.06,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#263</span><span class="ts">2026-02-26 11:38 (hr 11)</span>
+  <span class="gr">[A++/A]</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS</span>
+  <span style="color:#ff5252;font-weight:bold">-14.0pt · $-70</span></div>
+ <div class="tm"><span>spot <b>6892.6</b></span>
+  <span style="color:#00e676">TP/magnet <b>6925</b></span>
+  <span style="color:#ff5252">SL <b>6878.6</b> (−14)</span>
+  <span>MFE <b>+0.0</b></span><span>MAE <b>-14.6</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span>
+  <span>VIX <b>19.4</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>6925</b> (target, +32pt). −GEX support at <b>6880</b> below. verdict <b>A++</b>, align <b>+1</b>, GEX-PURE. Stopped (stop, -14). MFE only +0, MAE -15 → magnet never pulled.</div>
+ <div id="c263" class="ch"></div>
+ <script>
+ Plotly.newPlot('c263',[
+  {x:[6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0],y:[-0.003213, -0.004027200000000001, -0.004805500000000001, -0.001649000000000001, -0.021501599999999996, -0.024537299999999998, -0.015964500000000003, -0.0087777, -0.0015626000000000006, -0.019883199999999997, -0.0036819999999999995, -0.0054437, -0.0004399000000000006, -0.0025436000000000005, 0.002205, -0.0015520000000000013],type:'bar',name:'TS GEX',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0],y:[-5.19183965, 7.17429642, -5.74774469, -1.67296918, -15.79699658, -6.530275110000001, -3.4263718599999997, -12.85599117, 0.17320882999999998, -1.05239738, -0.00915041, -2.26499104, -2.69383966, -11.15548186, -6.7624942400000005, -18.95087556],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:6892.64,x1:6892.64,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:6925.0,x1:6925.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6878.64,x1:6878.64,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6892.64,x1:6892.64,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:6878.04,x1:6878.04,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:6892.64,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:6925.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:6878.64,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#340</span><span class="ts">2026-03-02 12:10 (hr 12)</span>
+  <span class="gr">[A++/A-Entry]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+25.5pt · $+128</span></div>
+ <div class="tm"><span>spot <b>6874.5</b></span>
+  <span style="color:#00e676">TP/magnet <b>6900</b></span>
+  <span style="color:#ff5252">SL <b>6860.5</b> (−14)</span>
+  <span>MFE <b>+26.0</b></span><span>MAE <b>-5.0</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span>
+  <span>VIX <b>21.1</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>6900</b> (target, +26pt). −GEX support at <b>6850</b> below. verdict <b>A++</b>, align <b>+1</b>, GEX-PURE. Rode to target (+26, MFE +26).</div>
+ <div id="c340" class="ch"></div>
+ <script>
+ Plotly.newPlot('c340',[
+  {x:[6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0],y:[-0.0029364, -0.004704000000000001, -0.0013603, -0.016290199999999998, 0.0010538000000000008, -0.004965799999999999, -0.0038239999999999997, -0.002017199999999999, -0.011334700000000001, -0.0018899000000000008, 0.0016596999999999998, -0.0017816000000000002, 0.0008920000000000003, 0.017226999999999996, -0.00025229999999999995, 0.0042761],type:'bar',name:'TS GEX',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0],y:[-3.8252290099999997, -3.29499942, 3.6637464700000004, -7.02506183, -6.471021309999999, 3.89087958, -0.94625893, -4.86118773, 0.07475682, 1.38243099, 0.5212879, 2.57873232, 2.30783198, -8.27011353, -27.325034300000002, 6.45718557],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:6874.47,x1:6874.47,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6860.47,x1:6860.47,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6900.47,x1:6900.47,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:6869.47,x1:6869.47,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:6874.47,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:6900.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:6860.47,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#439</span><span class="ts">2026-03-04 10:39 (hr 10)</span>
+  <span class="gr">[B/A]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+11.4pt · $+57</span></div>
+ <div class="tm"><span>spot <b>6862.8</b></span>
+  <span style="color:#00e676">TP/magnet <b>6900</b></span>
+  <span style="color:#ff5252">SL <b>6848.8</b> (−14)</span>
+  <span>MFE <b>+16.4</b></span><span>MAE <b>-8.1</b></span>
+  <span>align <b>+1</b></span><span>GEX-TARGET</span>
+  <span>VIX <b>20.9</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>6900</b> (target, +37pt). −GEX support at <b>6825</b> below. verdict <b>B</b>, align <b>+1</b>, GEX-TARGET. Rode to trail (+11, MFE +16).</div>
+ <div id="c439" class="ch"></div>
+ <script>
+ Plotly.newPlot('c439',[
+  {x:[6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0],y:[-0.0029798000000000008, 0.0033392, 0.0021359000000000005, 0.0063063, -0.0011211000000000003, 0.006683999999999997, 0.0053624, 0.005628599999999998, 0.005568900000000001, 0.004690499999999999, 0.012632, 0.0164874, 0.013521299999999998, 0.0041716999999999995, 0.0070272, 0.018184400000000003],type:'bar',name:'TS GEX',marker:{color:["#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0],y:[8.36724304, 7.7189342199999995, 4.631678089999999, -4.65409209, -2.71880534, -0.39226719, -1.61274033, 1.1020081000000002, 0.19055272, 0.22392144, -0.22568975, 2.98510384, -5.05701394, -6.94022603, -11.31772089, -0.26743188],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:6862.77,x1:6862.77,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6848.77,x1:6848.77,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6879.17,x1:6879.17,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:6854.67,x1:6854.67,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:6862.77,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:6900.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:6848.77,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#445</span><span class="ts">2026-03-04 11:13 (hr 11)</span>
+  <span class="gr">[B/A]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+13.6pt · $+68</span></div>
+ <div class="tm"><span>spot <b>6858.8</b></span>
+  <span style="color:#00e676">TP/magnet <b>6880</b></span>
+  <span style="color:#ff5252">SL <b>6844.8</b> (−14)</span>
+  <span>MFE <b>+18.6</b></span><span>MAE <b>-0.4</b></span>
+  <span>align <b>+1</b></span><span>GEX-TARGET</span>
+  <span>VIX <b>21.2</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>6880</b> (target, +21pt). −GEX support at <b>6825</b> below. verdict <b>B</b>, align <b>+1</b>, GEX-TARGET. Rode to trail (+14, MFE +19).</div>
+ <div id="c445" class="ch"></div>
+ <script>
+ Plotly.newPlot('c445',[
+  {x:[6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0],y:[0.0017759, -0.0030284999999999995, 0.0032756, 0.0020453000000000003, 0.006292200000000001, -0.0013122999999999995, 0.0068748, 0.00538, 0.0056115, 0.0056149, 0.0047405999999999985, 0.012601600000000001, 0.0163137, 0.013462199999999999, 0.004047800000000001, 0.006814199999999999],type:'bar',name:'TS GEX',marker:{color:["#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0],y:[9.19307564, 9.210697960000001, 11.956482560000001, 7.9798288600000005, -6.18373131, -3.40674434, -2.3908383399999997, -2.01123569, 2.25373705, 0.29468455, 0.13445693, -1.00461826, 2.13749594, -7.3095178899999995, -7.61200759, -14.52527323],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:6858.75,x1:6858.75,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:6880.0,x1:6880.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6844.75,x1:6844.75,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6877.35,x1:6877.35,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:6858.35,x1:6858.35,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:6858.75,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:6880.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:6844.75,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#456</span><span class="ts">2026-03-04 12:23 (hr 12)</span>
+  <span class="gr">[A++/A]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+9.1pt · $+46</span></div>
+ <div class="tm"><span>spot <b>6870.9</b></span>
+  <span style="color:#00e676">TP/magnet <b>6880</b></span>
+  <span style="color:#ff5252">SL <b>6856.9</b> (−14)</span>
+  <span>MFE <b>+10.2</b></span><span>MAE <b>-5.9</b></span>
+  <span>align <b>+1</b></span><span>GEX-TARGET</span>
+  <span>VIX <b>21.1</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>6880</b> (target, +9pt). −GEX support at <b>6845</b> below. verdict <b>A++</b>, align <b>+1</b>, GEX-TARGET. Rode to target (+9, MFE +10).</div>
+ <div id="c456" class="ch"></div>
+ <script>
+ Plotly.newPlot('c456',[
+  {x:[6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0],y:[0.0016296999999999998, 0.005582100000000001, -0.0012012000000000001, 0.007557199999999998, 0.0063776, 0.007286699999999999, 0.007566500000000001, 0.006870000000000001, 0.018987200000000003, 0.0246276, 0.0203312, 0.0061584000000000005, 0.009680200000000002, 0.022373100000000003, 0.0086844, 0.0057982],type:'bar',name:'TS GEX',marker:{color:["#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0],y:[4.6057192, -14.25334031, -6.445538099999999, -5.399907740000001, -2.8974412999999997, 1.7691626200000001, 0.1923675, -1.01113103, -0.23233874, 4.4044086799999995, -9.98273607, -10.834717679999999, -18.227111309999998, 14.62205367, -42.915263700000004, 6.640972980000001],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:6870.94,x1:6870.94,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:6880.0,x1:6880.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6856.94,x1:6856.94,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6881.139999999999,x1:6881.139999999999,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:6865.04,x1:6865.04,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:6870.94,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:6880.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:6856.94,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#630</span><span class="ts">2026-03-10 11:05 (hr 11)</span>
+  <span class="gr">[B/A-Entry]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+15.3pt · $+76</span></div>
+ <div class="tm"><span>spot <b>6823.8</b></span>
+  <span style="color:#00e676">TP/magnet <b>6850</b></span>
+  <span style="color:#ff5252">SL <b>6809.8</b> (−14)</span>
+  <span>MFE <b>+20.3</b></span><span>MAE <b>-12.7</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span>
+  <span>VIX <b>22.7</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>6850</b> (target, +26pt). −GEX support at <b>6790</b> below. verdict <b>B</b>, align <b>+1</b>, GEX-PURE. Rode to trail (+15, MFE +20).</div>
+ <div id="c630" class="ch"></div>
+ <script>
+ Plotly.newPlot('c630',[
+  {x:[6785.0, 6790.0, 6795.0, 6800.0, 6805.0, 6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0],y:[0.0027267000000000003, 0.0016281, 0.0022469, 0.011992, 0.008144499999999999, 0.009280199999999999, 0.009307000000000001, 0.0135971, 0.0058039, 0.014681999999999999, 0.0244781, 0.0100444, 0.0065702, 0.0292048, 0.0059493, 0.00726],type:'bar',name:'TS GEX',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[6785.0, 6790.0, 6795.0, 6800.0, 6805.0, 6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0],y:[-4.77067888, -1.96834354, -4.7070411, -2.61618043, -3.04589215, 3.29710013, 2.14606159, -0.28490121, 0.11429568, -1.00117315, -2.27238388, -5.582879070000001, 1.59975501, 7.38710032, -2.9287761800000003, 10.58806836],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:6823.82,x1:6823.82,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:6850.0,x1:6850.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6809.82,x1:6809.82,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6844.12,x1:6844.12,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:6811.12,x1:6811.12,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:6823.82,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:6850.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:6809.82,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#640</span><span class="ts">2026-03-10 12:16 (hr 12)</span>
+  <span class="gr">[A++/A-Entry]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+13.3pt · $+66</span></div>
+ <div class="tm"><span>spot <b>6816.0</b></span>
+  <span style="color:#00e676">TP/magnet <b>6835</b></span>
+  <span style="color:#ff5252">SL <b>6802.0</b> (−14)</span>
+  <span>MFE <b>+18.3</b></span><span>MAE <b>+0.0</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span>
+  <span>VIX <b>23.1</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>6835</b> (target, +19pt). −GEX support at <b>6790</b> below. verdict <b>A++</b>, align <b>+1</b>, GEX-PURE. Rode to trail (+13, MFE +18).</div>
+ <div id="c640" class="ch"></div>
+ <script>
+ Plotly.newPlot('c640',[
+  {x:[6780.0, 6785.0, 6790.0, 6795.0, 6800.0, 6805.0, 6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0],y:[0.0049028, 0.0034884000000000004, 0.0022588999999999977, 0.0028621999999999996, 0.016213099999999998, 0.010745499999999998, 0.011838600000000001, 0.012131699999999997, 0.0167609, 0.006979400000000001, 0.016428799999999997, 0.025979, 0.009767800000000002, 0.005848300000000001, 0.0239568, 0.004407299999999999],type:'bar',name:'TS GEX',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[6780.0, 6785.0, 6790.0, 6795.0, 6800.0, 6805.0, 6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0],y:[-2.45464472, -8.75985131, -3.63231403, -6.67538143, -6.07155046, -3.9143855, 1.43601946, -0.04249108, 1.26227874, -0.34774358, -3.26383196, -10.06417011, -15.912142939999999, 3.48370024, 13.19611436, -8.70587015],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:6816.03,x1:6816.03,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:6835.0,x1:6835.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6802.03,x1:6802.03,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6834.33,x1:6834.33,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:6816.03,x1:6816.03,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:6816.03,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:6835.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:6802.03,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#798</span><span class="ts">2026-03-13 13:48 (hr 13)</span>
+  <span class="gr">[B/A]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+10.3pt · $+52</span></div>
+ <div class="tm"><span>spot <b>6641.3</b></span>
+  <span style="color:#00e676">TP/magnet <b>6715</b></span>
+  <span style="color:#ff5252">SL <b>6627.3</b> (−14)</span>
+  <span>MFE <b>+15.3</b></span><span>MAE <b>-6.6</b></span>
+  <span>align <b>+3</b></span><span>GEX-LIS</span>
+  <span>VIX <b>27.4</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>6715</b> (target, +74pt). −GEX support at <b>6640</b> below. verdict <b>B</b>, align <b>+3</b>, GEX-LIS. Rode to trail (+10, MFE +15).</div>
+ <div id="c798" class="ch"></div>
+ <script>
+ Plotly.newPlot('c798',[
+  {x:[6605.0, 6610.0, 6615.0, 6620.0, 6625.0, 6630.0, 6635.0, 6640.0, 6645.0, 6650.0, 6655.0, 6660.0, 6665.0, 6670.0, 6675.0, 6680.0],y:[-0.0096945, -0.015526800000000002, -0.0185266, -0.027594099999999996, -0.0176224, -0.018691600000000003, -0.0131209, -0.03102, -0.015445800000000003, -0.0693762, -0.0123062, -0.0114255, -0.013546700000000002, -0.0178163, -0.014972999999999998, -0.0120608],type:'bar',name:'TS GEX',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[6605.0, 6610.0, 6615.0, 6620.0, 6625.0, 6630.0, 6635.0, 6640.0, 6645.0, 6650.0, 6655.0, 6660.0, 6665.0, 6670.0, 6675.0, 6680.0],y:[4.868990940000001, 16.962880719999998, 28.039549559999998, -36.61210752, 6.35044046, -12.974920990000001, 3.3206548, -1.42765828, 1.54906654, -7.30124427, -9.23627226, 9.2502034, 4.882596599999999, 19.96001625, -9.26270248, 2.45280461],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:6641.29,x1:6641.29,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:6715.0,x1:6715.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6627.29,x1:6627.29,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6656.59,x1:6656.59,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:6634.69,x1:6634.69,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:6641.29,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:6715.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:6627.29,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#1504</span><span class="ts">2026-04-02 12:02 (hr 12)</span>
+  <span class="gr">[A++/A+]</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS</span>
+  <span style="color:#ff5252;font-weight:bold">-14.0pt · $-70</span></div>
+ <div class="tm"><span>spot <b>6568.2</b></span>
+  <span style="color:#00e676">TP/magnet <b>6600</b></span>
+  <span style="color:#ff5252">SL <b>6554.2</b> (−14)</span>
+  <span>MFE <b>+0.0</b></span><span>MAE <b>-18.1</b></span>
+  <span>align <b>+1</b></span><span>GEX-LIS</span>
+  <span>VIX <b>25.6</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>6600</b> (target, +32pt). −GEX support at <b>6545</b> below. verdict <b>A++</b>, align <b>+1</b>, GEX-LIS. Stopped (stop, -14). MFE only +0, MAE -18 → magnet never pulled.</div>
+ <div id="c1504" class="ch"></div>
+ <script>
+ Plotly.newPlot('c1504',[
+  {x:[6530.0, 6535.0, 6540.0, 6545.0, 6550.0, 6555.0, 6560.0, 6565.0, 6570.0, 6575.0, 6580.0, 6585.0, 6590.0, 6595.0, 6600.0, 6605.0],y:[-0.004989290210000002, 0.0008745442199999998, -0.009658861909999998, -0.01283287237, -0.007364005530000007, 0.003986374350000001, 0.010040579159999998, 0.00126019535, 0.013181297709999996, -0.024644031719999997, 0.00560464758, 0.004202749409999998, 0.011330744420000002, -0.003291211080000002, 0.017064524150000003, 0.008396108979999999],type:'bar',name:'TS GEX',marker:{color:["#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[6530.0, 6535.0, 6540.0, 6545.0, 6550.0, 6555.0, 6560.0, 6565.0, 6570.0, 6575.0, 6580.0, 6585.0, 6590.0, 6595.0, 6600.0, 6605.0],y:[4.53999626, 1.05047402, 1.42346873, -27.26811305, 1.91952724, 3.2166922999999996, 0.406449, 1.12962482, -1.8970236699999998, -0.31954975, -26.34858785, -9.223129570000001, 9.97027057, -6.95189584, 5.993189559999999, -2.09888459],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:6568.18,x1:6568.18,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:6600.0,x1:6600.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6554.18,x1:6554.18,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6568.18,x1:6568.18,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:6550.08,x1:6550.08,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:6568.18,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:6600.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:6554.18,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#1642</span><span class="ts">2026-04-07 14:54 (hr 14)</span>
+  <span class="gr">[A++/A-Entry]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+25.3pt · $+126</span></div>
+ <div class="tm"><span>spot <b>6566.6</b></span>
+  <span style="color:#00e676">TP/magnet <b>6605</b></span>
+  <span style="color:#ff5252">SL <b>6552.6</b> (−14)</span>
+  <span>MFE <b>+30.3</b></span><span>MAE <b>-7.7</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span>
+  <span>VIX <b>27.6</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>6605</b> (target, +38pt). −GEX support at <b>6550</b> below. verdict <b>A++</b>, align <b>+1</b>, GEX-PURE. Rode to trail (+25, MFE +30).</div>
+ <div id="c1642" class="ch"></div>
+ <script>
+ Plotly.newPlot('c1642',[
+  {x:[6530.0, 6535.0, 6540.0, 6545.0, 6550.0, 6555.0, 6560.0, 6565.0, 6570.0, 6575.0, 6580.0, 6585.0, 6590.0, 6595.0, 6600.0, 6605.0],y:[-0.0025699724799999996, -0.00149494943, -0.006836771319999999, -0.0070575399, -0.020353122940000003, -0.00818918326, -0.010159686700000002, -0.001074476220000001, -0.0088925467, -0.009940866769999999, -0.0059904406400000006, -0.0016772687200000008, -0.0006019661800000016, 4.654219000000115e-05, 0.005595748919999998, 0.009708788379999998],type:'bar',name:'TS GEX',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[6530.0, 6535.0, 6540.0, 6545.0, 6550.0, 6555.0, 6560.0, 6565.0, 6570.0, 6575.0, 6580.0, 6585.0, 6590.0, 6595.0, 6600.0, 6605.0],y:[-91.62497332, -87.24899078, -133.47277942, -147.57097661, -318.15052567000004, -88.33140513, -131.40441256, -86.27959446, -30.168283690000003, 8.35467151, 24.69587234, -23.21141736, -132.28171229, -166.11118163999998, -370.87842547, -129.83648657],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:6566.56,x1:6566.56,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:6605.0,x1:6605.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6552.56,x1:6552.56,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:6596.860000000001,x1:6596.860000000001,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:6558.860000000001,x1:6558.860000000001,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:6566.56,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:6605.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:6552.56,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#2432</span><span class="ts">2026-05-04 09:31 (hr 9)</span>
+  <span class="gr">[A/A-Entry]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+17.5pt · $+88</span></div>
+ <div class="tm"><span>spot <b>7221.7</b></span>
+  <span style="color:#00e676">TP/magnet <b>7250</b></span>
+  <span style="color:#ff5252">SL <b>7207.7</b> (−14)</span>
+  <span>MFE <b>+22.5</b></span><span>MAE <b>-1.3</b></span>
+  <span>align <b>+0</b></span><span>GEX-LIS</span>
+  <span>VIX <b>17.7</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>7250</b> (target, +28pt). −GEX support at <b>7190</b> below. verdict <b>A</b>, align <b>+0</b>, GEX-LIS. Rode to trail (+18, MFE +22).</div>
+ <div id="c2432" class="ch"></div>
+ <script>
+ Plotly.newPlot('c2432',[
+  {x:[7185.0, 7190.0, 7195.0, 7200.0, 7205.0, 7210.0, 7215.0, 7220.0, 7225.0, 7230.0, 7235.0, 7240.0, 7245.0, 7250.0, 7255.0, 7260.0],y:[-0.0052483604599999996, -0.013828565270000003, -0.00642309541, -0.00548957137, -0.0038019914300000002, -0.0017820299100000003, 0.007034054840000001, -0.001325077630000001, -0.0015470524099999992, -0.0010544423099999988, 0.00207495851, 0.0018693474199999987, -0.00039555390000000035, 0.0067463479199999996, 0.0033269577599999997, 0.00283783333],type:'bar',name:'TS GEX',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[7185.0, 7190.0, 7195.0, 7200.0, 7205.0, 7210.0, 7215.0, 7220.0, 7225.0, 7230.0, 7235.0, 7240.0, 7245.0, 7250.0, 7255.0, 7260.0],y:[0.63484914, 3.3227303900000003, 1.35078776, -2.4142147400000002, 0.21331363, -0.60249827, -0.28309169, -0.12250813, -0.15346331, 1.2528546999999999, 0.31175717, 1.53782959, 0.51119847, -7.17537133, 4.877807809999999, 1.72955797],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:7221.66,x1:7221.66,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:7250.0,x1:7250.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:7207.66,x1:7207.66,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:7244.16,x1:7244.16,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:7220.36,x1:7220.36,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:7221.66,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:7250.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:7207.66,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#2881</span><span class="ts">2026-05-14 09:46 (hr 9)</span>
+  <span class="gr">[A/A]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+38.0pt · $+190</span></div>
+ <div class="tm"><span>spot <b>7477.0</b></span>
+  <span style="color:#00e676">TP/magnet <b>7515</b></span>
+  <span style="color:#ff5252">SL <b>7463.0</b> (−14)</span>
+  <span>MFE <b>+38.2</b></span><span>MAE <b>-10.8</b></span>
+  <span>align <b>+0</b></span><span>SIDIAL-MESSY</span>
+  <span>VIX <b>18.0</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>7515</b> (target, +38pt). −GEX support at <b>7440</b> below. verdict <b>A</b>, align <b>+0</b>, SIDIAL-MESSY. Rode to target (+38, MFE +38).</div>
+ <div id="c2881" class="ch"></div>
+ <script>
+ Plotly.newPlot('c2881',[
+  {x:[7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0],y:[-0.00409210592, 0.0015078028799999999, 0.013910559690000003, 0.014109362470000001, 0.009785352540000002, 0.012272564049999999, 0.01949286195, 0.0069993933299999965, 0.01914626833, 0.03561232068, 0.03352006004000001, 0.004666439499999999, 0.0381732934, 0.0214867283, 0.012508752599999999, 0.08490542328],type:'bar',name:'TS GEX',marker:{color:["#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0],y:[1.48243933, 1.4765651100000001, 7.4023698399999995, 4.13529665, 1.6736794, -2.0111757, -2.8563684300000003, -0.25948346, 1.09409379, -2.00264386, 2.83309683, -1.0902867299999999, 6.9140280700000005, 0.64655774, 2.41114745, -29.10881316],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:7477.0,x1:7477.0,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:7515.0,x1:7515.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:7463.0,x1:7463.0,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:7515.2,x1:7515.2,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:7466.2,x1:7466.2,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:7477.0,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:7515.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:7463.0,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#2882</span><span class="ts">2026-05-14 10:46 (hr 10)</span>
+  <span class="gr">[A++/A+]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+17.2pt · $+86</span></div>
+ <div class="tm"><span>spot <b>7494.0</b></span>
+  <span style="color:#00e676">TP/magnet <b>7525</b></span>
+  <span style="color:#ff5252">SL <b>7480.0</b> (−14)</span>
+  <span>MFE <b>+22.2</b></span><span>MAE <b>-0.3</b></span>
+  <span>align <b>+0</b></span><span>SIDIAL-MESSY</span>
+  <span>VIX <b>17.9</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>7525</b> (target, +31pt). −GEX support at <b>7475</b> below. verdict <b>A++</b>, align <b>+0</b>, SIDIAL-MESSY. Rode to trail (+17, MFE +22).</div>
+ <div id="c2882" class="ch"></div>
+ <script>
+ Plotly.newPlot('c2882',[
+  {x:[7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0],y:[0.0092692639, 0.007208871460000001, 0.01012652692, 0.018070906749999997, 0.00719257576, 0.021896310169999995, 0.04524085703999999, 0.04677230754, 0.007686437460000001, 0.06118226158, 0.0360002383, 0.021501320399999996, 0.14554297452, 0.05645593838000001, 0.20647495073000002, 0.0429513238],type:'bar',name:'TS GEX',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0],y:[9.75998203, 0.65687603, -3.67118722, -7.9102476, -1.18662997, -1.05171586, 0.58484653, 0.6309756999999999, -2.1735163199999996, 8.14073579, -1.01610254, 3.25812411, -30.208102, -5.2805824900000005, 17.90453717, -19.87710464],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:7494.0,x1:7494.0,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:7525.0,x1:7525.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:7480.0,x1:7480.0,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:7516.2,x1:7516.2,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:7493.7,x1:7493.7,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:7494.0,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:7525.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:7480.0,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#2884</span><span class="ts">2026-05-18 09:31 (hr 9)</span>
+  <span class="gr">[A++/A+]</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS</span>
+  <span style="color:#ff5252;font-weight:bold">-14.0pt · $-70</span></div>
+ <div class="tm"><span>spot <b>7415.5</b></span>
+  <span style="color:#00e676">TP/magnet <b>7450</b></span>
+  <span style="color:#ff5252">SL <b>7401.5</b> (−14)</span>
+  <span>MFE <b>+0.0</b></span><span>MAE <b>-15.9</b></span>
+  <span>align <b>+0</b></span><span>GEX-PURE</span>
+  <span>VIX <b>18.5</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>7450</b> (target, +34pt). −GEX support at <b>7400</b> below. verdict <b>A++</b>, align <b>+0</b>, GEX-PURE. Stopped (stop, -14). MFE only +0, MAE -16 → magnet never pulled.</div>
+ <div id="c2884" class="ch"></div>
+ <script>
+ Plotly.newPlot('c2884',[
+  {x:[7380.0, 7385.0, 7390.0, 7395.0, 7400.0, 7405.0, 7410.0, 7415.0, 7420.0, 7425.0, 7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0],y:[-0.008702683920000003, -0.0020631938299999998, -0.014833449320000002, -0.005979740999999999, -0.029275767269999996, -0.006787412719999999, -0.0026921250500000003, -0.0100125037, 0.010662756069999998, 0.004377661279999998, 0.0018537407600000009, -0.0003966130799999998, 0.0024533769400000007, 0.00331525588, 0.01764611008, 0.00330959742],type:'bar',name:'TS GEX',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[7380.0, 7385.0, 7390.0, 7395.0, 7400.0, 7405.0, 7410.0, 7415.0, 7420.0, 7425.0, 7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0],y:[-3.76783301, 0.30493112, -0.30864754, -3.3776353599999998, -4.11460912, -0.33562777, -2.03220251, -0.4123794, 0.26211842, 1.41883771, 3.1567685099999996, 3.72869965, 3.9693554, 2.27172073, -15.62133559, 0.54791825],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:7415.5,x1:7415.5,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:7450.0,x1:7450.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:7401.5,x1:7401.5,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:7415.5,x1:7415.5,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:7399.6,x1:7399.6,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:7415.5,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:7450.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:7401.5,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#3148</span><span class="ts">2026-05-22 10:10 (hr 10)</span>
+  <span class="gr">[B/B]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+13.7pt · $+68</span></div>
+ <div class="tm"><span>spot <b>7478.7</b></span>
+  <span style="color:#00e676">TP/magnet <b>7500</b></span>
+  <span style="color:#ff5252">SL <b>7464.7</b> (−14)</span>
+  <span>MFE <b>+18.7</b></span><span>MAE <b>-13.6</b></span>
+  <span>align <b>-1</b></span><span>GEX-TARGET</span>
+  <span>VIX <b>16.8</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>7500</b> (target, +21pt). −GEX support at <b>7445</b> below. verdict <b>B</b>, align <b>-1</b>, GEX-TARGET. Rode to trail (+14, MFE +19).</div>
+ <div id="c3148" class="ch"></div>
+ <script>
+ Plotly.newPlot('c3148',[
+  {x:[7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0],y:[0.01910894275, 0.002077216240000001, 0.013869027620000002, 0.003026098000000001, 0.01780103654, 0.01242503889, 0.024785713840000004, 0.011340694190000002, 0.0130502685, 0.015569154269999998, 0.0207102766, 0.011615298890000002, 0.08256690900000001, 0.023718594560000004, 0.010584430709999999, 0.00872827262],type:'bar',name:'TS GEX',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0],y:[3.5648492099999998, 4.5386795499999995, 1.36909716, -0.83268602, 3.62919364, 0.9059224300000001, -0.7683991600000001, 0.11996759, 0.60357872, 1.8370442, 0.01021731, -0.13991602, -14.28384477, -10.785193470000001, -2.18704739, -0.57874563],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:7478.74,x1:7478.74,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:7464.74,x1:7464.74,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:7497.44,x1:7497.44,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:7465.139999999999,x1:7465.139999999999,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:7478.74,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:7500.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:7464.74,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+
+<div class="tc">
+ <div class="th"><span class="id">#3156</span><span class="ts">2026-05-22 10:26 (hr 10)</span>
+  <span class="gr">[B/B]</span>
+  <span style="color:#00e676;font-weight:bold">WIN</span>
+  <span style="color:#00e676;font-weight:bold">+21.9pt · $+110</span></div>
+ <div class="tm"><span>spot <b>7470.6</b></span>
+  <span style="color:#00e676">TP/magnet <b>7500</b></span>
+  <span style="color:#ff5252">SL <b>7456.6</b> (−14)</span>
+  <span>MFE <b>+26.9</b></span><span>MAE <b>+0.0</b></span>
+  <span>align <b>-1</b></span><span>GEX-TARGET</span>
+  <span>VIX <b>16.9</b></span></div>
+ <div class="tr"><span class="rl">WHY:</span> +GEX magnet at <b>7500</b> (target, +29pt). −GEX support at <b>7445</b> below. verdict <b>B</b>, align <b>-1</b>, GEX-TARGET. Rode to trail (+22, MFE +27).</div>
+ <div id="c3156" class="ch"></div>
+ <script>
+ Plotly.newPlot('c3156',[
+  {x:[7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0],y:[0.02214402118, 0.02199103712, 0.0020568110200000003, 0.01465592368, 0.0029388067499999996, 0.019026151399999996, 0.01319167733, 0.02568367204, 0.010604231849999998, 0.01295740108, 0.015006335310000002, 0.019601792079999996, 0.010685929599999998, 0.07385758673, 0.0207203346, 0.008983117920000002],type:'bar',name:'TS GEX',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},opacity:.8,
+    hovertemplate:'strike %{x}<br>GEX %{y:.0f}k<extra></extra>'},
+  {x:[7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0],y:[11.7687449, 3.14599172, 4.34850341, 0.96775177, -0.51674388, 2.38094164, 0.26279748999999997, 0.43557614, 0.5217122399999999, 2.1432461800000002, 3.7500643, 0.8046313199999999, 0.8404774899999999, -14.436303619999999, -11.26901289, -1.0674348999999999],type:'scatter',mode:'lines',name:'charm',yaxis:'y2',
+    line:{color:'#ffd740',width:1.5},hovertemplate:'strike %{x}<br>charm %{y:.0f}M<extra></extra>'}
+ ],{barmode:'relative',paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',
+   font:{color:'#b0bec5',size:11},height:300,
+   title:{text:'TS GEX (bars) + charm (line) at entry',font:{color:'#ffd740',size:12}},
+   xaxis:{title:'Strike',gridcolor:'#2a3a5a'},
+   yaxis:{title:'TS GEX (k)',gridcolor:'#2a3a5a',zerolinecolor:'#fff'},
+   yaxis2:{title:'charm (M$)',overlaying:'y',side:'right',showgrid:false},
+   margin:{l:55,r:55,t:46,b:42},showlegend:true,legend:{x:.02,y:.98,bgcolor:'rgba(15,52,96,.6)'},
+   shapes:[
+    {type:'line',xref:'x',yref:'paper',x0:7470.55,x1:7470.55,y0:0,y1:1,line:{color:'#448aff',width:2}},
+    {type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:7456.55,x1:7456.55,y0:0,y1:1,line:{color:'#ff5252',width:1.5,dash:'dash'}},
+    {type:'line',xref:'x',yref:'paper',x0:7497.45,x1:7497.45,y0:0,y1:1,line:{color:'#00e676',width:1,dash:'dot'}},
+    {type:'line',xref:'x',yref:'paper',x0:7470.55,x1:7470.55,y0:0,y1:1,line:{color:'#ff5252',width:1,dash:'dot'}}],
+   annotations:[
+    {x:7470.55,y:1.02,xref:'x',yref:'paper',text:'ENTRY',showarrow:false,font:{color:'#448aff',size:9}},
+    {x:7500.0,y:.96,xref:'x',yref:'paper',text:'magnet/TP',showarrow:false,font:{color:'#00e676',size:9}},
+    {x:7456.55,y:.92,xref:'x',yref:'paper',text:'SL',showarrow:false,font:{color:'#ff5252',size:9}}]
+  },{displayModeBar:false,responsive:true});
+ </script>
+</div>
+<p style="color:#607d8b;font-size:11px;margin-top:30px;text-align:center">0DTE Alpha · GEX Long v3.2 trade log · for setup-config review</p>
+</body></html>

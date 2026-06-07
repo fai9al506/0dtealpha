@@ -4507,13 +4507,17 @@ def _compute_setup_levels(r: dict):
         # below as fixed target_lvl for outcome tracking.
         from app.setup_detector import is_gex_long_v3_enabled
         if setup_name == "GEX Long" and is_gex_long_v3_enabled():
+            # SL/TP sweep 2026-06-07 (18 clean v3.2 signals): target = the +GEX magnet
+            # beat the old +10 floor (+181p vs +162p, same -14p maxDD, 78% WR). The
+            # +10 floor capped winners early when the magnet sat just above entry.
+            # Use the magnet directly with only a small +5 degenerate-guard floor.
             sl_pts = 14
             magnet = r.get("v3_gex_magnet_strike")
-            target_floor = spot + 10 if is_long else spot - 10
+            target_floor = spot + 5 if is_long else spot - 5
             if magnet is not None and is_long:
                 target_lvl = max(float(magnet), target_floor)
             else:
-                target_lvl = target_floor
+                target_lvl = spot + 10 if is_long else spot - 10  # fallback when no magnet
             stop_lvl = spot - sl_pts if is_long else spot + sl_pts
             return round(target_lvl, 2), round(stop_lvl, 2)
         stop_lvl = spot - 8 if is_long else spot + 8

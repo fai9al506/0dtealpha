@@ -7871,6 +7871,16 @@ def start_scheduler():
                     misfire_grace_time=3600)
     except Exception as e:
         print(f"[tsrt-weekly] schedule error (non-fatal): {e}", flush=True)
+    # S209 — vol-event detector (Wiz spot-vol framework), every 5 min 9-16 ET
+    # weekdays. Pure alerting to main channel — reads volland_snapshots
+    # spot_vol_beta, no trading logic touched.
+    try:
+        from app.vol_event_alert import check as _vol_event_check
+        sch.add_job(_vol_event_check, "cron", day_of_week="mon-fri", hour="9-16",
+                    minute="*/5", timezone=NY, id="vol_event_check", coalesce=True,
+                    max_instances=1, misfire_grace_time=120)
+    except Exception as e:
+        print(f"[vol-event] schedule error (non-fatal): {e}", flush=True)
     # S181 — weekly filter validation cron at Monday 17:00 ET
     # Scans each active V16+S180 block rule against recent 30-day data,
     # flags any rule that's blocking winners (regime shift / over-blocking).
@@ -8061,6 +8071,12 @@ def on_startup():
         tsrt_weekly_init(engine, ts_access_token)
     except Exception as e:
         print(f"[tsrt-weekly] init error (non-fatal): {e}", flush=True)
+    # Initialize vol-event detector (S209 — alerting only, main channel)
+    try:
+        from app.vol_event_alert import init as vol_event_init
+        vol_event_init(engine)
+    except Exception as e:
+        print(f"[vol-event] init error (non-fatal): {e}", flush=True)
     # Initialize filter validation (S181 — weekly cron Monday 17:00 ET)
     try:
         from app.filter_validation import init as filter_val_init

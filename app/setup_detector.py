@@ -131,6 +131,8 @@ def _gex_long_v3_classify(features):
         return 'BAD'
     if features.get('R_VETO'):
         return 'BAD'
+    if features.get('R_BURIED_MAGNET'):
+        return 'BAD'  # negligible +GEX magnet in net-negative regime (no charm rescue)
     if features.get('CORE_R2') and features.get('R5_align') and \
        (features.get('R_charm_bullish') or features.get('R_gex_regime_pos')):
         return 'A++'

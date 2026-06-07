@@ -4080,6 +4080,26 @@ def _gex_long_v3_features() -> dict | None:
 
         R5_align = (bullish_charm_magnet is not None and sg_above[0] is not None
                     and sg_above[1] > 0 and abs(bullish_charm_magnet - sg_above[0]) <= 10)
+
+        # ── R_BURIED_MAGNET veto (user 2026-06-08 trade review) ──────────────
+        # Skip a GEX Long when the +GEX magnet we target is NEGLIGIBLE: net-negative
+        # GEX regime AND the magnet sits BELOW the top-3 strikes by |GEX| (a tiny bar
+        # buried under big -GEX, e.g. lid 263 rank 12 — no pull, MFE~0, loss).
+        # EXCEPTION (charm rescue): a STRONG charm magnet (|charm| >= 50 M$) sitting AT
+        # the GEX magnet rescues it — charm confluence carries price (e.g. lid 1642
+        # +25pt, charm -371M at 6600 == GEX magnet 6605). Verified full history (93
+        # signals, TS GEX): vetoes 14 (8L/6W, net -33p) → WR 55->57%, +201.9->+234.9p.
+        magnet_strike = sg_above[0]
+        ranked = sorted(gex, key=lambda x: -abs(x[1]))
+        magnet_rank = ([s for s, _ in ranked].index(magnet_strike) + 1
+                       if magnet_strike is not None else 99)
+        charm_rescue = False
+        if charm_above and magnet_strike is not None:
+            cs, cv = max(charm_above, key=lambda x: abs(x[1]))  # strongest charm above spot
+            if abs(cs - magnet_strike) <= 10 and abs(cv) >= 50e6:
+                charm_rescue = True
+        R_BURIED_MAGNET = (total_gex < 0) and (magnet_rank > 3) and (not charm_rescue)
+
         features = {
             'gex_magnet_strike': sg_above[0],
             'CORE_R3': sg_above[1] > 0,
@@ -4088,6 +4108,7 @@ def _gex_long_v3_features() -> dict | None:
             'R_charm_bullish': total_charm < 0,
             'R_gex_regime_pos': total_gex >= 0,
             'R_VETO': (above_charm_pos_pct >= 80) and (not R5_align),
+            'R_BURIED_MAGNET': R_BURIED_MAGNET,
         }
         _gex_long_v3_cache.update({"ts": now_ts, "spot": float(spot), "features": features})
         return features

@@ -114,6 +114,19 @@ def _features(cur, t_utc, spot: float) -> Optional[dict]:
         and strongest_pos_charm_above[1] > 0
         and abs(bullish_charm_magnet[1]) >= 0.5 * strongest_pos_charm_above[1]
     )
+    # R_BURIED_MAGNET veto (user 2026-06-08): negligible +GEX magnet in net-negative
+    # regime (magnet below top-3 by |GEX|), unless a strong charm magnet (>=50 M$) sits
+    # at the GEX magnet. Mirrors main._gex_long_v3_features. See that docstring.
+    magnet_strike = sg_above[0]
+    ranked = sorted(gex, key=lambda x: -abs(x[1]))
+    magnet_rank = ([s for s, _ in ranked].index(magnet_strike) + 1
+                   if magnet_strike is not None else 99)
+    charm_rescue = False
+    if charm_above and magnet_strike is not None:
+        cs, cv = max(charm_above, key=lambda x: abs(x[1]))
+        if abs(cs - magnet_strike) <= 10 and abs(cv) >= 50e6:
+            charm_rescue = True
+    R_BURIED_MAGNET = (total_gex < 0) and (magnet_rank > 3) and (not charm_rescue)
     return {
         'gex_magnet_strike': sg_above[0],
         'CORE_R3': sg_above[1] > 0,
@@ -123,6 +136,7 @@ def _features(cur, t_utc, spot: float) -> Optional[dict]:
         'R_gex_regime_pos': total_gex >= 0,
         # v3.1: carveout requires STRONG R5_align (neg_charm >= 50% of dominant +charm wall)
         'R_VETO': (above_charm_pos_pct >= 80) and (not R5_align_strong),
+        'R_BURIED_MAGNET': R_BURIED_MAGNET,
     }
 
 
@@ -133,6 +147,8 @@ def _classify(f: Optional[dict]) -> str:
         return 'BAD'
     if f['R_VETO']:
         return 'BAD'
+    if f.get('R_BURIED_MAGNET'):
+        return 'BAD'  # negligible +GEX magnet in net-negative regime (no charm rescue)
     if f['CORE_R2'] and f['R5_align'] and (f['R_charm_bullish'] or f['R_gex_regime_pos']):
         return 'A++'
     if f['CORE_R2'] and (f['R5_align'] or f['R_charm_bullish']):

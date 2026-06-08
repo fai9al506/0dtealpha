@@ -906,6 +906,13 @@ class ComplianceGate:
                 elif sname == "ES Absorption":
                     # ES Abs PURE filter (already enforced above) is exclusive — skip V14 generic gate
                     pass
+                elif sname == "GEX Long":
+                    # GEX Long v4 (2026-06-08): the server _passes_live_filter already
+                    # applied the full v4 gate (verdict A++/A/B + align>=0-or-bull-paradigm
+                    # + hour<15 + R_BURIED_MAGNET veto). Do NOT re-apply the generic
+                    # long align>=2 gate here — v4 admits align 0/1, which this would
+                    # wrongly block. Trust the server-side carve-out.
+                    pass
                 elif sname == "DD Exhaustion":
                     # V16.1 DD-long carve-out (2026-06-02) — mirror app/main.py _passes_live_filter.
                     # Prior eval routed DD longs through the generic align>=2 gate, blocking the
@@ -2489,12 +2496,12 @@ class PositionTracker:
 
     # Trail params — mirrors Railway's _trail_params in main.py
     # DD Exhaustion: continuous trail (activation=20, gap=5)
-    # GEX Long: hybrid trail (BE at +8, continuous trail activation=10 gap=5)
+    # GEX Long: v4 (2026-06-08) continuous trail (activation=15 gap=5, no BE, no fixed target, SL=14)
     # AG Short: hybrid trail (BE at +10, continuous trail activation=12 gap=5)
     # ES Absorption: hybrid trail (BE at +5, continuous trail activation=8 gap=3) — TSRT C6 ship 2026-05-06
     _TRAIL_PARAMS = {
         "DD Exhaustion":  {"mode": "continuous", "activation": 20, "gap": 5},
-        "GEX Long":       {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
+        "GEX Long":       {"mode": "continuous", "activation": 15, "gap": 5},  # v4 2026-06-08: trail-only, SL=14
         "GEX Velocity":   {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
         "AG Short":       {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
         "Skew Charm":     {"mode": "hybrid", "be_trigger": 10, "activation": 10, "gap": 3},  # S151: gap 5->3 (backtest +$260/7d)
@@ -2509,7 +2516,8 @@ class PositionTracker:
           - DD Exhaustion: continuous — no BE, trail engages at +20, locks max-5
           - Skew Charm:    hybrid — BE @ +10, then continuous trail (gap 5)
           - AG Short:      hybrid — BE @ +10, then continuous trail (gap 5)
-          - GEX Long/Vel:  hybrid — BE @ +8,  then continuous trail (gap 5)
+          - GEX Long:      v4 continuous — no BE, trail engages at +15, locks max-5 (SL 14, no target)
+          - GEX Velocity:  hybrid — BE @ +8,  then continuous trail (gap 5)
           - ES Absorption: hybrid — BE @ +5,  then continuous trail (gap 3)
           - Setups not in _TRAIL_PARAMS (Paradigm, BofA): no trail,
             ride the original fixed SL/target.
@@ -2988,6 +2996,122 @@ def _banner(cfg: dict):
     log.info("=" * 60)
 
 
+# ─── Combined EOD Beacon (single-emitter across long/short/sim) ─────────────────
+# Replaces the old per-process "✅ Eval state OK" beacon (3 noisy messages) with
+# ONE combined message. All 3 eval_trader processes share SCRIPT_DIR; the first to
+# atomically create the dated claim flag at 16:05 ET becomes the emitter, reads
+# every account's state+config, and sends a single message. Fully best-effort.
+
+_ROLE_LABELS = {"": "LONG", "_short": "SHORT", "_sim": "SIM"}
+_ROLE_ORDER = {"LONG": 0, "SHORT": 1, "SIM": 2}
+
+
+def _cleanup_old_beacon_flags():
+    """Remove stale dated beacon-claim flags from previous days (best-effort)."""
+    try:
+        today = datetime.now(ET).strftime("%Y-%m-%d")
+        keep = f"eval_beacon_sent_{today}.flag"
+        for f in SCRIPT_DIR.glob("eval_beacon_sent_*.flag"):
+            if f.name != keep:
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+def _fmt_signed_usd(v: float) -> str:
+    """+$128 / -$50 / $0 — clean signed dollar string."""
+    if v > 0:
+        return f"+${v:,.0f}"
+    if v < 0:
+        return f"-${abs(v):,.0f}"
+    return "$0"
+
+
+def _emit_combined_eod_beacon(cfg) -> bool:
+    """Single-emitter combined EOD beacon. Returns True if this process is the emitter.
+
+    The first process to create the dated claim flag wins the send; the others
+    return False and just skip (they still run their own trusted-refresh after).
+    Any failure is swallowed — this is informational and must never affect trading.
+    """
+    today = datetime.now(ET).strftime("%Y-%m-%d")
+    claim = SCRIPT_DIR / f"eval_beacon_sent_{today}.flag"
+    try:
+        fd = os.open(str(claim), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return False  # a sibling already claimed today's send
+    except Exception as e:
+        log.warning(f"[eod-beacon] claim failed: {e}")
+        return False
+    try:
+        os.write(fd, str(os.getpid()).encode())
+    except Exception:
+        pass
+    finally:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+
+    # We are the emitter. Give siblings a moment to flush their compliance.save().
+    time.sleep(3)
+
+    bot = cfg.get("telegram_bot_token", "")
+    chat = cfg.get("telegram_chat_id", "")
+    if not (bot and chat):
+        return True
+
+    rows = []  # (order, label, day_pnl, balance, trades, losses)
+    day_total = 0.0
+    for cfg_path in sorted(SCRIPT_DIR.glob("eval_trader_config*.json")):
+        suffix = cfg_path.stem[len("eval_trader_config"):]
+        state_path = SCRIPT_DIR / f"eval_trader_state{suffix}.json"
+        if not state_path.exists():
+            continue
+        try:
+            c = json.loads(cfg_path.read_text())
+            s = json.loads(state_path.read_text())
+        except Exception:
+            continue
+        label = _ROLE_LABELS.get(suffix, (suffix.strip("_").upper() or "?"))
+        if label not in ("LONG", "SHORT"):
+            continue  # user wants only LONG + SHORT in the beacon (SIM excluded)
+        day_pnl = float(s.get("daily_pnl", 0.0))
+        total_pnl = float(s.get("total_pnl", 0.0))
+        # Current balance (user wants current, not peak): starting balance + cumulative P&L.
+        balance = float(c.get("e2t_starting_balance", 0.0)) + total_pnl
+        trades = int(s.get("trades_today", 0))
+        losses = int(s.get("losses_today", 0))
+        day_total += day_pnl
+        rows.append((_ROLE_ORDER.get(label, 9), label, day_pnl, balance, trades, losses))
+
+    if not rows:
+        return True
+    rows.sort(key=lambda r: r[0])
+
+    def _emoji(v):
+        return "🟢" if v > 0 else ("🔴" if v < 0 else "⚪")
+
+    lines = [f"📊 Eval EOD — {today}", "───────────────"]
+    for _, label, day_pnl, balance, trades, losses in rows:
+        lines.append(f"{_emoji(day_pnl)} {label:<5}  day {_fmt_signed_usd(day_pnl):<8} "
+                     f"bal ${balance:,.0f}   {trades}t / {losses}L")
+    lines.append("───────────────")
+    lines.append(f"Day total: {_fmt_signed_usd(day_total)}")
+    msg = "\n".join(lines)
+
+    try:
+        requests.post(f"https://api.telegram.org/bot{bot}/sendMessage",
+                      json={"chat_id": chat, "text": msg}, timeout=10)
+        log.info(f"[eod-beacon] combined sent ({len(rows)} accts, day_total=${day_total:+.0f})")
+    except Exception as e:
+        log.warning(f"[eod-beacon] send failed: {e}")
+    return True
+
+
 def main():
     cfg = load_config()
     use_api = cfg.get("signal_source", "api") == "api"
@@ -3017,6 +3141,9 @@ def main():
         sys.exit(1)
 
     _banner(cfg)
+
+    # Clean up stale dated beacon-claim flags from previous days (best-effort).
+    _cleanup_old_beacon_flags()
 
     # Resolve MES symbol (auto-rollover or manual)
     mes_symbol = cfg["nt8_mes_symbol"]
@@ -3143,20 +3270,15 @@ def main():
             if (now_et.weekday() < 5
                     and now_et.time() >= EOD_BEACON_TIME
                     and _last_eod_beacon_date != now_et.date()):
+                # Combined single-emitter beacon: ensure our own state file is current
+                # first (so whichever process becomes the emitter reads fresh sibling
+                # values), then attempt to claim+send the one combined message.
                 try:
-                    bot = cfg.get("telegram_bot_token", "")
-                    chat = cfg.get("telegram_chat_id", "")
-                    if bot and chat:
-                        acct = cfg.get("nt8_account_id", "?")
-                        msg = (f"✅ Eval state OK ({acct})\n"
-                               f"daily=${compliance.daily_pnl:+.0f} "
-                               f"total=${compliance.total_pnl:+.0f} "
-                               f"peak=${compliance.cfg['e2t_peak_balance']:,.0f} "
-                               f"trades={compliance.trades_today} "
-                               f"losses={compliance.losses_today}")
-                        requests.post(f"https://api.telegram.org/bot{bot}/sendMessage",
-                                      json={"chat_id": chat, "text": msg}, timeout=10)
-                        log.info(f"[eod-beacon] sent: {msg}")
+                    compliance.save()
+                except Exception:
+                    pass
+                try:
+                    _emit_combined_eod_beacon(cfg)
                 except Exception as be:
                     log.warning(f"[eod-beacon] failed: {be}")
 

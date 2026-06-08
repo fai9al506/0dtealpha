@@ -4325,6 +4325,17 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         # by changing `t.hour == 14` to `paradigm == "SIDIAL-EXTREME"`.
         if paradigm == "SIDIAL-EXTREME" and t.hour == 14:
             return False
+        # ── GEX Long v4 carve-out (2026-06-08 go-live) — owns its alignment ──
+        # v4 = v3.2 classifier + R_BURIED_MAGNET veto + trail-only exit (the shipped
+        # real-traded config). The detector already enforced verdict ABC + hour<15 +
+        # R_BURIED_MAGNET veto before logging. The live gate is align>=0 OR bull-paradigm.
+        # GEX Long is EXEMPT from the generic non-SC-long align>=2 gate below (each
+        # setup owns its alignment, like SC/DD). Real-trade env still gated at top
+        # (GEX_LONG_V3_REAL_TRADE_ENABLED). Validated 18t v3.2 sim 72% WR (trail-only)
+        # / +180p / maxDD -14. Real-trade dispatch = trail-only (SL14, no fixed target).
+        if setup_name == "GEX Long":
+            _GL_BULL = {"BofA-LIS", "GEX-TARGET", "SIDIAL-MESSY", "BOFA-PURE"}
+            return (align >= 0) or (paradigm in _GL_BULL)
         # ── V14 (Apr 29 2026): SC longs use paradigm-aware align rule, no align>=2 gate ──
         # Study Mar 1 - Apr 29 2026 (117 trades after non-align gates):
         #   V13 (align>=2): 70.0% WR, +$1,436
@@ -4528,19 +4539,13 @@ def _compute_setup_levels(r: dict):
         # below as fixed target_lvl for outcome tracking.
         from app.setup_detector import is_gex_long_v3_enabled
         if setup_name == "GEX Long" and is_gex_long_v3_enabled():
-            # SL/TP sweep 2026-06-07 (18 clean v3.2 signals): target = the +GEX magnet
-            # beat the old +10 floor (+181p vs +162p, same -14p maxDD, 78% WR). The
-            # +10 floor capped winners early when the magnet sat just above entry.
-            # Use the magnet directly with only a small +5 degenerate-guard floor.
-            sl_pts = 14
-            magnet = r.get("v3_gex_magnet_strike")
-            target_floor = spot + 5 if is_long else spot - 5
-            if magnet is not None and is_long:
-                target_lvl = max(float(magnet), target_floor)
-            else:
-                target_lvl = spot + 10 if is_long else spot - 10  # fallback when no magnet
-            stop_lvl = spot - sl_pts if is_long else spot + sl_pts
-            return round(target_lvl, 2), round(stop_lvl, 2)
+            # TRAIL-ONLY (user choice A, 2026-06-08 go-live): SL=14, continuous trail
+            # activation=15 gap=5, NO fixed target — matches the proven SC/AG/DD trailing
+            # path (zero new order logic on the real-money money path). Sweep on 18 clean
+            # v3.2 signals: trail-only 72% WR / +180p ~= magnet-target 78% / +181p; trail-
+            # only chosen for execution safety. Portal sim + real trade now consistent.
+            stop_lvl = spot - 14 if is_long else spot + 14
+            return None, round(stop_lvl, 2)
         stop_lvl = spot - 8 if is_long else spot + 8
         return None, round(stop_lvl, 2)
 
@@ -5577,7 +5582,7 @@ def _run_setup_check():
                             _rt_skip._log_skip_reason(_current_setup_log.get(setup_name), "dd_short_block")
                         except Exception:
                             pass
-                    if not _skip_auto_trade and not _dd_short_block and setup_name in ("Skew Charm", "AG Short", "Vanna Pivot Bounce", "VIX Divergence", "DD Exhaustion"):
+                    if not _skip_auto_trade and not _dd_short_block and setup_name in ("Skew Charm", "AG Short", "Vanna Pivot Bounce", "VIX Divergence", "DD Exhaustion", "GEX Long"):
                         try:
                             from app import real_trader
                             es_px = None
@@ -13780,13 +13785,23 @@ function passesStrategy(l, strat) {
     //   BofA Scalp, Paradigm Reversal, SB2 Absorption, etc: not in whitelist → BLOCK
     // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
     const _v16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
-                                  'ES Absorption', 'DD Exhaustion', 'VIX Divergence']);
+                                  'ES Absorption', 'DD Exhaustion', 'VIX Divergence', 'GEX Long']);
     if (!_v16Allowed.has(sn)) return false;
     // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT via main.py:5430
     // _dd_short_block. V16 portal must mirror — previously fell through v13DDQualityBlock
     // which only blocked some shorts (grade A+/C or BOFA-PURE), letting grade-B DD shorts
     // on non-BOFA-PURE paradigms appear as "V16 passed" when TSRT was rejecting them.
     if (sn === 'DD Exhaustion' && !isLong) return false;
+    // GEX Long v4 (2026-06-08 go-live): mirror real_trader carve-out. Detector already
+    // enforced verdict ABC + hour<15 + R_BURIED_MAGNET veto. Live gate = gap filter +
+    // SIDIAL-EXTREME hr14 block + (align>=0 OR bull-paradigm). Exempt from S180/align>=2.
+    if (sn === 'GEX Long') {
+      if (!gapFilter(l.ts)) return false;
+      const _glM = etMins(l.ts);
+      if (l.paradigm === 'SIDIAL-EXTREME' && _glM != null && Math.floor(_glM/60) === 14) return false;
+      const _glBull = ['BofA-LIS','GEX-TARGET','SIDIAL-MESSY','BOFA-PURE'];
+      return isLong && (align >= 0 || _glBull.includes(l.paradigm));
+    }
     // S180 (2026-05-24): GEX-TARGET PM long block — mirror live filter.
     // Block longs in GEX-TARGET when ET hour >= 13 (paradigm = destination reached).
     if (isLong && l.paradigm === 'GEX-TARGET') {
@@ -18767,14 +18782,25 @@ DASH_HTML_TEMPLATE = """
         // Real_trader whitelist (real_trader.py:385 + env gates as of 2026-05-19):
         //   Skew Charm, AG Short, Vanna Pivot Bounce, ES Absorption, DD Exhaustion (env true)
         //   VIX Divergence: VIX_DIV_REAL_TRADE_ENABLED=false → BLOCK
-        //   GEX Long:      GEX_LONG_V3_REAL_TRADE_ENABLED=false → BLOCK
+        //   GEX Long v4:   GEX_LONG_V3_REAL_TRADE_ENABLED=true → ALLOW (2026-06-08, align>=0/bull carve-out)
         //   BofA, Paradigm Reversal, SB2 Absorption, others: not in whitelist → BLOCK
         // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
+        // GEX Long v4 added 2026-06-08 (env GEX_LONG_V3_REAL_TRADE_ENABLED=true).
         const _tlV16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
-                                        'ES Absorption', 'DD Exhaustion']);
+                                        'ES Absorption', 'DD Exhaustion', 'GEX Long']);
         if (!_tlV16Allowed.has(sn)) return false;
         // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT — mirror it here.
         if (sn === 'DD Exhaustion' && !isLong) return false;
+        // GEX Long v4 (2026-06-08): mirror real_trader carve-out — gap filter + SIDIAL
+        // hr14 block + (align>=0 OR bull-paradigm). Detector enforced verdict ABC/hour<15/
+        // R_BURIED_MAGNET. Exempt from S180/align>=2.
+        if (sn === 'GEX Long') {
+          if (!_tlGapFilter()) return false;
+          const _glm = _tlEtMins();
+          if (l.paradigm === 'SIDIAL-EXTREME' && _glm != null && _glm >= 840 && _glm < 900) return false;
+          const _glBull = ['BofA-LIS','GEX-TARGET','SIDIAL-MESSY','BOFA-PURE'];
+          return isLong && (align >= 0 || _glBull.includes(l.paradigm));
+        }
         // S180 (2026-05-24): GEX-TARGET PM long block — mirror live filter.
         if (isLong && l.paradigm === 'GEX-TARGET' && l.ts) {
           const _d180 = new Date(l.ts);

@@ -4183,8 +4183,18 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     # GEX_LONG_V3_REAL_TRADE_ENABLED=true (separate explicit opt-in). This
     # provides observation-only mode for evaluating v3 in production.
     if setup_name == "GEX Long":
-        if os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower() != "true":
-            return False  # portal-only mode: signal logged but no live alerts/trades
+        # Real-money safety guard (2026-06-08): GEX Long real-trades ONLY when BOTH
+        # flags are true. GEX_LONG_V3_ENABLED makes the DETECTOR apply the v4
+        # classifier (verdict ABC + R_VETO + R_BURIED_MAGNET + hour<15) at firing
+        # time — the strict gate that keeps bad-structure signals out of setup_log.
+        # This filter's own GEX Long gate below (align>=0/bull) is LOOSE and assumes
+        # that classifier already ran. If REAL_TRADE were true while ENABLED were
+        # false, the detector would fire un-classified v1 signals straight onto real
+        # money. Require both so a future misconfig can never expose real $.
+        _gl_real = os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower() == "true"
+        _gl_classifier = os.getenv("GEX_LONG_V3_ENABLED", "false").lower() == "true"
+        if not (_gl_real and _gl_classifier):
+            return False  # portal-only unless BOTH classifier + real-trade opt-in are on
 
     # ── VIX Divergence (re-enabled 2026-05-27 EOD with GEX-paradigm filter) ──
     # History: shipped 2026-05-03 longs-only/drop-C. Disabled 2026-05-18 after

@@ -7967,31 +7967,45 @@ def start_scheduler():
     # left intact to avoid 500s but return empty data. If reactivated,
     # diagnose run_weekly_scan/run_spot_monitor before re-enabling cron jobs.
     # Stock GEX live — spot monitor (exit checks) + EOD summaries
+    # 2026-06-08: DISABLED by default (STOCK_GEX_LIVE_ENABLED). The heavy
+    # 52-stock chain scan that feeds it was turned off in late March (it took
+    # the TS API down), so the monitor/entry/EOD jobs have been firing paper
+    # trades off STALE Mar-26 GEX levels ever since — meaningless data + noisy
+    # Telegram, and now we trade real money. Flag off = jobs don't register =
+    # zero TS API footprint. Set STOCK_GEX_LIVE_ENABLED=true to revive (only
+    # after a rate-limited rebuild of run_weekly_scan that won't endanger the
+    # core pipeline). NOTE: the SEPARATE 0DTE GEX *data* scanner
+    # (dte0_gex_scanner.py → /dte0-gex, SPX/SPY/QQQ/IWM) is untouched by this.
+    _stock_gex_live_enabled = os.getenv("STOCK_GEX_LIVE_ENABLED", "false").lower() == "true"
     try:
-        from app import stock_gex_live
-        # Spot monitor: check active trades for exits every 2 min during market hours
-        def _stock_gex_live_monitor():
-            t = now_et().time()
-            if not (dtime(9, 30) <= t <= dtime(16, 0)):
-                return
-            stock_gex_live.run_spot_monitor()
-        sch.add_job(_stock_gex_live_monitor, "interval", minutes=2,
-                    id="stock_gex_live_monitor", coalesce=True, max_instances=1)
-        # 0DTE monitor: same interval
-        def _0dte_gex_monitor():
-            t = now_et().time()
-            if not (dtime(9, 30) <= t <= dtime(16, 0)):
-                return
-            stock_gex_live.run_0dte_monitor()
-        sch.add_job(_0dte_gex_monitor, "interval", minutes=2,
-                    id="0dte_gex_monitor", coalesce=True, max_instances=1)
-        # EOD summaries: close remaining trades + send summary (trading days only)
-        sch.add_job(stock_gex_live.run_eod_summary, "cron", day_of_week="mon-fri",
-                    hour=16, minute=5,
-                    timezone=NY, id="stock_gex_live_eod", coalesce=True, max_instances=1)
-        sch.add_job(stock_gex_live.run_0dte_eod_summary, "cron", day_of_week="mon-fri",
-                    hour=16, minute=5,
-                    timezone=NY, id="0dte_gex_eod", coalesce=True, max_instances=1)
+        if not _stock_gex_live_enabled:
+            print("[stock-gex-live] DISABLED (STOCK_GEX_LIVE_ENABLED=false) — "
+                  "trading jobs not scheduled. 0DTE GEX data scanner unaffected.", flush=True)
+        else:
+            from app import stock_gex_live
+            # Spot monitor: check active trades for exits every 2 min during market hours
+            def _stock_gex_live_monitor():
+                t = now_et().time()
+                if not (dtime(9, 30) <= t <= dtime(16, 0)):
+                    return
+                stock_gex_live.run_spot_monitor()
+            sch.add_job(_stock_gex_live_monitor, "interval", minutes=2,
+                        id="stock_gex_live_monitor", coalesce=True, max_instances=1)
+            # 0DTE monitor: same interval
+            def _0dte_gex_monitor():
+                t = now_et().time()
+                if not (dtime(9, 30) <= t <= dtime(16, 0)):
+                    return
+                stock_gex_live.run_0dte_monitor()
+            sch.add_job(_0dte_gex_monitor, "interval", minutes=2,
+                        id="0dte_gex_monitor", coalesce=True, max_instances=1)
+            # EOD summaries: close remaining trades + send summary (trading days only)
+            sch.add_job(stock_gex_live.run_eod_summary, "cron", day_of_week="mon-fri",
+                        hour=16, minute=5,
+                        timezone=NY, id="stock_gex_live_eod", coalesce=True, max_instances=1)
+            sch.add_job(stock_gex_live.run_0dte_eod_summary, "cron", day_of_week="mon-fri",
+                        hour=16, minute=5,
+                        timezone=NY, id="0dte_gex_eod", coalesce=True, max_instances=1)
     except Exception as _gex_live_err:
         print(f"[stock-gex-live] scheduler error (non-fatal): {_gex_live_err}", flush=True)
     sch.start()

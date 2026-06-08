@@ -7671,10 +7671,11 @@ def _send_setup_eod_summary():
 
     # S178 Phase 2 (2026-05-24): post V16 trade-log link to Setups Telegram channel
     # so user can open and review per-trade cards with comment textareas right away.
+    # 2026-06-08: only on trading days (Mon-Fri) — was firing on weekends.
     try:
         _tg_token = TELEGRAM_BOT_TOKEN
         _tg_chat = TELEGRAM_CHAT_ID_SETUPS or TELEGRAM_CHAT_ID
-        if _tg_token and _tg_chat:
+        if _tg_token and _tg_chat and now.weekday() < 5:
             _date_iso = now.strftime("%Y-%m-%d")
             _portal_base = os.getenv("RAILWAY_PUBLIC_DOMAIN", "0dtealpha.com")
             if not _portal_base.startswith("http"):
@@ -7984,10 +7985,12 @@ def start_scheduler():
             stock_gex_live.run_0dte_monitor()
         sch.add_job(_0dte_gex_monitor, "interval", minutes=2,
                     id="0dte_gex_monitor", coalesce=True, max_instances=1)
-        # EOD summaries: close remaining trades + send summary
-        sch.add_job(stock_gex_live.run_eod_summary, "cron", hour=16, minute=5,
+        # EOD summaries: close remaining trades + send summary (trading days only)
+        sch.add_job(stock_gex_live.run_eod_summary, "cron", day_of_week="mon-fri",
+                    hour=16, minute=5,
                     timezone=NY, id="stock_gex_live_eod", coalesce=True, max_instances=1)
-        sch.add_job(stock_gex_live.run_0dte_eod_summary, "cron", hour=16, minute=5,
+        sch.add_job(stock_gex_live.run_0dte_eod_summary, "cron", day_of_week="mon-fri",
+                    hour=16, minute=5,
                     timezone=NY, id="0dte_gex_eod", coalesce=True, max_instances=1)
     except Exception as _gex_live_err:
         print(f"[stock-gex-live] scheduler error (non-fatal): {_gex_live_err}", flush=True)

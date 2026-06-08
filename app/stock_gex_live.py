@@ -1030,6 +1030,14 @@ def _run_spot_monitor_inner(now):
         call_iv = opt_quote.get("iv") if opt_quote else None
         call_mid = (call_bid + call_ask) / 2 if call_bid and call_ask else None
 
+        # Skip entry if the option quote is missing. Without a valid entry mid
+        # the trade's option P&L is unmeasurable — 87% of historical rows had
+        # NULL entry quotes and got forced to 0% / garbage. No quote = no trade.
+        if not call_bid or not call_ask or not call_mid:
+            print(f"[stock-gex-live] SKIP {sym}: no option quote at entry "
+                  f"(bid={call_bid} ask={call_ask}) — unmeasurable", flush=True)
+            continue
+
         trade = {
             "symbol": sym,
             "tier": levels.get("tier", "B"),
@@ -1289,10 +1297,56 @@ def init(engine, api_get_fn, send_telegram_fn=None):
     _0dte_db_init()
     _load_latest_0dte_levels()
     _close_stale_trades()
+    _hydrate_open_trades()
 
     print(f"[stock-gex-live] initialized. {len(STOCKS)} stocks, "
           f"ratio>{MIN_GEX_RATIO}, entry=-GEX-{ENTRY_OFFSET_PCT}%", flush=True)
     print(f"[0dte-gex] initialized. {len(_0DTE_CONFIG)} symbols: {list(_0DTE_CONFIG.keys())}", flush=True)
+
+
+def _hydrate_open_trades():
+    """Restore TODAY's still-open trades into memory after a restart so the
+    monitor/EOD can close them normally. Pure DB read — NO TradeStation API
+    calls. Without this, a mid-day process restart strands today's positions
+    (they'd be force-closed STALE the next day instead of exiting at target)."""
+    global _active_trades
+    if not _engine:
+        return
+    today = date.today()
+    try:
+        with _engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            rows = conn.execute(text("""
+                SELECT symbol, tier, grade, trade_date, entry_ts, entry_price,
+                       entry_spot, strike, expiration, call_bid, call_ask,
+                       call_delta, call_iv, gex_ratio, zone_width, highest_neg,
+                       lowest_pos, t1_price, t2_price
+                FROM stock_gex_live_trades
+                WHERE status = 'open' AND trade_date = :today
+            """), {"today": today}).mappings().fetchall()
+        if not rows:
+            return
+        with _lock:
+            have = {t["symbol"] for t in _active_trades}
+            restored = []
+            for r in rows:
+                if r["symbol"] in have:
+                    continue
+                _active_trades.append({
+                    "symbol": r["symbol"], "tier": r["tier"], "grade": r["grade"],
+                    "trade_date": r["trade_date"], "entry_ts": r["entry_ts"],
+                    "entry_price": r["entry_price"], "entry_spot": r["entry_spot"],
+                    "strike": r["strike"], "expiration": r["expiration"],
+                    "call_bid": r["call_bid"], "call_ask": r["call_ask"],
+                    "call_delta": r["call_delta"], "call_iv": r["call_iv"],
+                    "ratio": r["gex_ratio"], "zone_width": r["zone_width"],
+                    "highest_neg": r["highest_neg"], "lowest_pos": r["lowest_pos"],
+                    "t1_price": r["t1_price"], "t2_price": r["t2_price"],
+                })
+                restored.append(r["symbol"])
+        if restored:
+            print(f"[stock-gex-live] hydrated {len(restored)} open trades: {restored}", flush=True)
+    except Exception as e:
+        print(f"[stock-gex-live] hydrate open trades error (non-fatal): {e}", flush=True)
 
 
 def _close_stale_trades():
@@ -1302,11 +1356,15 @@ def _close_stale_trades():
     today = date.today()
     try:
         with _engine.begin() as conn:
-            # Stock GEX trades
+            # Stock GEX trades. These are intraday bounce plays meant to close
+            # same day; a prior-day open row means the monitor/EOD never closed
+            # it (mid-day restart strand), NOT that the option went to zero.
+            # Mark UNMEASURED (NULL pnl), not a fake -100% total loss — the old
+            # behavior polluted 59% of the dataset with phantom -100% rows.
             result = conn.execute(text("""
                 UPDATE stock_gex_live_trades
-                SET exit_reason = 'EXPIRED', option_pnl_pct = -100.0,
-                    stock_pnl_pct = 0, hold_minutes = 0,
+                SET exit_reason = 'STALE', option_pnl_pct = NULL,
+                    stock_pnl_pct = NULL, hold_minutes = 0,
                     status = 'closed', exit_ts = NOW(), exit_spot = entry_spot
                 WHERE status = 'open' AND trade_date < :today
                 RETURNING id, symbol
@@ -1316,11 +1374,11 @@ def _close_stale_trades():
                 print(f"[stock-gex-live] closed {len(closed)} stale trades: "
                       f"{[(r[0], r[1]) for r in closed]}", flush=True)
 
-            # 0DTE trades
+            # 0DTE trades — same rationale: unmeasured strand, not a -100% loss.
             result2 = conn.execute(text("""
                 UPDATE dte0_gex_trades
-                SET exit_reason = 'EXPIRED', option_pnl_pct = -100.0,
-                    stock_pnl_pct = 0, hold_minutes = 0,
+                SET exit_reason = 'STALE', option_pnl_pct = NULL,
+                    stock_pnl_pct = NULL, hold_minutes = 0,
                     status = 'closed', exit_ts = NOW(), exit_spot = entry_spot
                 WHERE status = 'open' AND trade_date < :today
                 RETURNING id, symbol
@@ -1804,6 +1862,12 @@ def _run_0dte_monitor_inner(now):
         call_delta = opt_quote.get("delta") if opt_quote else None
         call_iv = opt_quote.get("iv") if opt_quote else None
         call_mid = (call_bid + call_ask) / 2 if call_bid and call_ask else None
+
+        # Skip entry if the option quote is missing (unmeasurable P&L).
+        if not call_bid or not call_ask or not call_mid:
+            print(f"[0dte-gex] SKIP {sym}: no option quote at entry "
+                  f"(bid={call_bid} ask={call_ask}) — unmeasurable", flush=True)
+            continue
 
         trade = {
             "symbol": sym,

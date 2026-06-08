@@ -958,7 +958,7 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
               f"acct={account_id} ids=entry:{entry_oid}/stop:{stop_oid}/tgt:{t1_oid}",
               flush=True)
         dir_label = "Long" if is_long else "Short"
-        _alert(f"🟢 {setup_name} PLACED [ATOMIC]{_q_tag}\n"
+        _alert(f"🟢 {setup_name} PLACED #{setup_log_id}{_q_tag}\n"
                f"{dir_label} {qty} MES @ ~{es_price:.2f}\n"
                f"Target: {tgt_str} | Stop: {es_stop:.2f}")
         return
@@ -1081,7 +1081,7 @@ def _place_market_entry(setup_log_id, setup_name, direction, is_long,
           f"acct={account_id} ids=entry:{entry_oid}/stop:{stop_oid}/tgt:{t1_oid}",
           flush=True)
     dir_label = "Long" if is_long else "Short"
-    _alert(f"🟢 {setup_name} PLACED{_q_tag}\n"
+    _alert(f"🟢 {setup_name} PLACED #{setup_log_id}{_q_tag}\n"
            f"{dir_label} {qty} MES @ ~{es_price:.2f}\n"
            f"Target: {tgt_str} | Stop: {es_stop:.2f}")
 

@@ -4100,6 +4100,17 @@ def _gex_long_v3_features() -> dict | None:
                 charm_rescue = True
         R_BURIED_MAGNET = (total_gex < 0) and (magnet_rank > 3) and (not charm_rescue)
 
+        # ── v6 features (2026-06-08, the candidate) ──────────────────────────
+        # v6 magnet = strongest POSITIVE GEX strike above spot (NOT max-abs sg_above,
+        # which can be a negative bar). Dominance = that magnet's GEX / strongest
+        # negative wall in-band; a magnet dwarfed by the negative GEX is "fake" (user
+        # #762 insight). Backtest 21t/86% WR/+270p trail-only, OOS-stable. MUST mirror
+        # app/gex_long_v3.py::_features exactly (parallel impl). 99 = no negative bar.
+        pos_gex_above = [(s, v) for s, v in gex_above if v > 0]
+        v6_magnet = max(pos_gex_above, key=lambda x: x[1]) if pos_gex_above else (None, 0.0)
+        v6_maxneg = abs(min((v for _, v in gex if v < 0), default=0.0))
+        v6_dominance = (v6_magnet[1] / v6_maxneg) if v6_maxneg > 0 else 99.0
+
         features = {
             'gex_magnet_strike': sg_above[0],
             'CORE_R3': sg_above[1] > 0,
@@ -4109,6 +4120,9 @@ def _gex_long_v3_features() -> dict | None:
             'R_gex_regime_pos': total_gex >= 0,
             'R_VETO': (above_charm_pos_pct >= 80) and (not R5_align),
             'R_BURIED_MAGNET': R_BURIED_MAGNET,
+            'v6_has_pos_magnet': v6_magnet[0] is not None,
+            'v6_magnet_strike': v6_magnet[0],
+            'v6_dominance': v6_dominance,
         }
         _gex_long_v3_cache.update({"ts": now_ts, "spot": float(spot), "features": features})
         return features
@@ -4193,8 +4207,13 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         # money. Require both so a future misconfig can never expose real $.
         _gl_real = os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower() == "true"
         _gl_classifier = os.getenv("GEX_LONG_V3_ENABLED", "false").lower() == "true"
-        if not (_gl_real and _gl_classifier):
-            return False  # portal-only unless BOTH classifier + real-trade opt-in are on
+        # 2026-06-08: GEX Long real-trades ONLY in v6 mode. v4 (the verdict-ABC config)
+        # was paused after the Volland-selected study overstated it (TS-correct ~60% WR);
+        # we never want to accidentally real-trade v4. Requiring GEX_LONG_V6_MODE means a
+        # REAL_TRADE flip alone (without v6 mode) stays portal-only.
+        _gl_v6 = os.getenv("GEX_LONG_V6_MODE", "false").lower() == "true"
+        if not (_gl_real and _gl_classifier and _gl_v6):
+            return False  # portal-only unless classifier + real-trade + v6-mode all on
 
     # ── VIX Divergence (re-enabled 2026-05-27 EOD with GEX-paradigm filter) ──
     # History: shipped 2026-05-03 longs-only/drop-C. Disabled 2026-05-18 after

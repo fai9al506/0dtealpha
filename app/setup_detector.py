@@ -148,6 +148,13 @@ def is_gex_long_v3_enabled():
     return os.getenv("GEX_LONG_V3_ENABLED", "false").lower() == "true"
 
 
+def is_gex_long_v6_enabled():
+    """v6 mode (2026-06-08): when ON, the GEX Long entry gate is TS GEX + real positive
+    magnet + magnet-dominance>=1.0 + drop GEX-TARGET-afternoon (replaces the v4 verdict-ABC
+    gate). Default OFF. Requires GEX_LONG_V3_ENABLED=true too (features come from there)."""
+    return os.getenv("GEX_LONG_V6_MODE", "false").lower() == "true"
+
+
 # ── Main evaluation ────────────────────────────────────────────────────────
 
 def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, settings,
@@ -176,6 +183,7 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
         return None
 
     v3_on = is_gex_long_v3_enabled()
+    v6_on = is_gex_long_v6_enabled()
 
     # Base conditions
     if not paradigm or "GEX" not in str(paradigm).upper():
@@ -201,11 +209,33 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
         v3_verdict = _gex_long_v3_classify(v3_features)
         if v3_features is not None:
             v3_magnet_strike = v3_features.get('gex_magnet_strike')
-        if v3_verdict not in ('A++', 'A', 'B'):
-            return None  # v3 entry filter fails (BAD/C/NO_DATA)
-        # Hour gate: t_et.hour < 15 (per app/gex_long_v3.py line 186)
-        if datetime.now(NY).hour >= 15:
-            return None
+        if v6_on:
+            # ── v6 entry gate (2026-06-08): TS GEX + a REAL positive magnet above spot
+            # + magnet-dominance >= 1.0 (not dwarfed by the negative wall) + drop
+            # GEX-TARGET afternoon (hour>=13) + hour<15. Replaces the v4 verdict-ABC gate.
+            # align>=0/bull is applied downstream in main._passes_live_filter (alignment
+            # is computed after check_setups). Backtest 21t/86% WR/+270p trail-only,
+            # OOS-stable (monotonic dominance sweep; every month >=80%). Mirrors
+            # app/gex_long_v3.py pass_v6 exactly.
+            _hr = datetime.now(NY).hour
+            if v3_features is None:
+                return None
+            if not v3_features.get('v6_has_pos_magnet'):
+                return None
+            if v3_features.get('v6_dominance', 0.0) < 1.0:
+                return None
+            if paradigm_upper == 'GEX-TARGET' and _hr >= 13:
+                return None
+            if _hr >= 15:
+                return None
+            v3_verdict = 'V6'
+            v3_magnet_strike = v3_features.get('v6_magnet_strike')
+        else:
+            if v3_verdict not in ('A++', 'A', 'B'):
+                return None  # v3 entry filter fails (BAD/C/NO_DATA)
+            # Hour gate: t_et.hour < 15 (per app/gex_long_v3.py line 186)
+            if datetime.now(NY).hour >= 15:
+                return None
 
     max_gap = settings.get("gex_max_gap", 5)
     min_upside = settings.get("gex_min_upside", 10)
@@ -304,7 +334,7 @@ def evaluate_gex_long(spot, paradigm, lis, target, max_plus_gex, max_minus_gex, 
     # v3 mode: use visual classifier verdict directly (A++/A/B map to A+/A/B grades).
     # v1 mode: use force-scoring composite vs thresholds.
     if v3_on:
-        _v3_to_grade = {"A++": "A+", "A": "A", "B": "B"}
+        _v3_to_grade = {"A++": "A+", "A": "A", "B": "B", "V6": "A"}
         grade = _v3_to_grade.get(v3_verdict, "B")
     else:
         thresholds = settings.get("grade_thresholds", DEFAULT_SETUP_SETTINGS["grade_thresholds"])

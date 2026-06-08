@@ -15586,7 +15586,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="options">Options Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option value="GEX Long v3">GEX Long v3.1 ✦</option><option value="GEX Long v3.2">GEX Long v3.2 ✦</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option value="ES Abs-Pure">ES Abs-Pure ✦</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Vanna Pivot Bounce</option><option>Delta Absorption</option><option>Dip-Buy</option><option value="Dip-Buy v2">Dip-Buy v2 ✦</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option value="GEX Long v3">GEX Long v3.1 ✦</option><option value="GEX Long v3.2">GEX Long v3.2 ✦</option><option value="GEX Long v4">GEX Long v4 ✦</option><option value="GEX Long v6">GEX Long v6 ✦</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option value="ES Abs-Pure">ES Abs-Pure ✦</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Vanna Pivot Bounce</option><option>Delta Absorption</option><option>Dip-Buy</option><option value="Dip-Buy v2">Dip-Buy v2 ✦</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="pickday">Pick Day...</option><option value="week">This Week</option><option value="lastweek">Last Week</option><option value="month">This Month</option><option value="lastmonth">Last Month</option><option value="custom">Custom Range...</option></select>
@@ -18585,16 +18585,32 @@ DASH_HTML_TEMPLATE = """
     // Replaces approximate JS filter + old DB outcomes when v3 dropdown selected.
     let _tlV3Overlay = null;        // {lid_str: {pass, result, pnl, ...}}
     let _tlV3OverlayLoading = false;
-    function _tlV3Active() {
-      const fSetup = document.getElementById('tlFilterSetup');
-      const fStrat = document.getElementById('tlFilterStrategy');
-      return (fSetup && (fSetup.value === 'GEX Long v3' || fSetup.value === 'GEX Long v3.2')) ||
-             (fStrat && fStrat.value === 'gexlongv3');
+    // Active GEX Long overlay mode for the current filter context, or null.
+    // Maps the dropdown / strategy selection to the overlay fields to use.
+    // CRITICAL: strategy 'v16' = the LIVE view = EXACTLY what TSRT places, which for
+    // GEX Long is v4 (v3.2 classifier + R_BURIED_MAGNET veto + trail-only). So under
+    // V16, GEX Long rows resolve to pass_v4 / result_v4 / pnl_v4 — never the loose set.
+    function _tlGexMode() {
+      const s = document.getElementById('tlFilterSetup');
+      const st = document.getElementById('tlFilterStrategy');
+      const fSetup = s ? s.value : '';
+      const fStrat = st ? st.value : '';
+      if (fSetup === 'GEX Long v6')   return {pass:'pass_v6',  res:'result_v6', pnl:'pnl_v6'};
+      if (fSetup === 'GEX Long v4')   return {pass:'pass_v4',  res:'result_v4', pnl:'pnl_v4'};
+      if (fSetup === 'GEX Long v3.2') return {pass:'pass_v32', res:'result',    pnl:'pnl'};
+      if (fSetup === 'GEX Long v3')   return {pass:'pass',     res:'result',    pnl:'pnl'};
+      if (fStrat === 'gexlongv3')     return {pass:'pass',     res:'result',    pnl:'pnl'};
+      if (fStrat === 'v16')           return {pass:'pass_v4',  res:'result_v4', pnl:'pnl_v4'};
+      return null;
     }
-    // v3.2 selected? (bullish-paradigm confluence variant — uses ov.pass_v32)
-    function _tlV32Selected() {
-      const fSetup = document.getElementById('tlFilterSetup');
-      return fSetup && fSetup.value === 'GEX Long v3.2';
+    function _tlV3Active() { return _tlGexMode() !== null; }
+    // Resolve overlay outcome for a row under the active mode, or null (→ DB fallback).
+    function _tlGexOv(l) {
+      const m = _tlGexMode();
+      if (!m || !_tlV3Overlay) return null;
+      const ov = _tlV3Overlay[String(l.id)];
+      if (!ov || !ov[m.pass]) return null;
+      return {result: ov[m.res] || '', pnl: (ov[m.pnl] != null ? ov[m.pnl] : null)};
     }
     async function _tlLoadV3Overlay() {
       if (_tlV3Overlay || _tlV3OverlayLoading) return _tlV3Overlay;
@@ -18607,15 +18623,8 @@ DASH_HTML_TEMPLATE = """
       finally { _tlV3OverlayLoading = false; }
       return _tlV3Overlay;
     }
-    // Returns overlay-aware {result, pnl} if v3 active, else null (use original l fields).
-    function _tlV3OutcomeFor(l) {
-      if (!_tlV3Active() || !_tlV3Overlay) return null;
-      const ov = _tlV3Overlay[String(l.id)];
-      if (!ov) return null;
-      const passed = _tlV32Selected() ? ov.pass_v32 : ov.pass;
-      if (!passed) return null;
-      return {result: ov.result, pnl: (ov.pnl != null ? ov.pnl : null)};
-    }
+    // Returns overlay-aware {result, pnl} for the active mode, else null (use l fields).
+    function _tlV3OutcomeFor(l) { return _tlGexOv(l); }
     let _tlActiveSubTab = 'portal';
     let _tsSimData = [];
     let _evalLogData = [];
@@ -18822,11 +18831,13 @@ DASH_HTML_TEMPLATE = """
         // hr14 block + (align>=0 OR bull-paradigm). Detector enforced verdict ABC/hour<15/
         // R_BURIED_MAGNET. Exempt from S180/align>=2.
         if (sn === 'GEX Long') {
-          if (!_tlGapFilter()) return false;
-          const _glm = _tlEtMins();
-          if (l.paradigm === 'SIDIAL-EXTREME' && _glm != null && _glm >= 840 && _glm < 900) return false;
-          const _glBull = ['BofA-LIS','GEX-TARGET','SIDIAL-MESSY','BOFA-PURE'];
-          return isLong && (align >= 0 || _glBull.includes(l.paradigm));
+          // GEX Long real-trading is PAUSED (env GEX_LONG_V3_REAL_TRADE_ENABLED=false,
+          // 2026-06-08): v4 was overstated by the Volland-selected study (TS-correct only
+          // ~60% WR). Nothing is placed on TSRT/eval, so the V16 (live) view must show
+          // ZERO GEX Long. The v6 candidate (21t/86% backtest) is collecting forward
+          // signals as a portal dropdown; when it validates and we re-enable, point this
+          // branch at the overlay's pass_v6.
+          return false;
         }
         // S180 (2026-05-24): GEX-TARGET PM long block — mirror live filter.
         if (isLong && l.paradigm === 'GEX-TARGET' && l.ts) {
@@ -19256,6 +19267,19 @@ DASH_HTML_TEMPLATE = """
           if (!_tlV3Overlay) return false;
           const ov = _tlV3Overlay[String(l.id)];
           if (!ov || !ov.pass_v32) return false;
+        } else if (fSetup === 'GEX Long v4') {
+          // v4 = v3.2 + R_BURIED_MAGNET veto + trail-only. PAUSED 2026-06-08 (overstated
+          // by the Volland-selected study; TS-correct = 60% WR). Server overlay (pass_v4).
+          if (!_tlV3Overlay) return false;
+          const ov = _tlV3Overlay[String(l.id)];
+          if (!ov || !ov.pass_v4) return false;
+        } else if (fSetup === 'GEX Long v6') {
+          // v6 (2026-06-08, PORTAL OBSERVATION): TS GEX + real positive magnet +
+          // dominance>=1.0 + drop GEX-TARGET-PM. Backtest 21t/86% WR/+270p trail-only,
+          // OOS-stable. NOT real-traded — collecting forward signals before any go-live.
+          if (!_tlV3Overlay) return false;
+          const ov = _tlV3Overlay[String(l.id)];
+          if (!ov || !ov.pass_v6) return false;
         } else if (fSetup === 'ES Abs-Pure') {
           if (!_tlPassesStrategy(l, 'esabspure')) return false;
         } else if (fSetup && l.setup_name !== fSetup) {
@@ -19270,8 +19294,8 @@ DASH_HTML_TEMPLATE = """
         if (fResult) {
           const o = l.outcome || {};
           let res = '';
-          const _ov = (_tlV3Active() && _tlV3Overlay) ? _tlV3Overlay[String(l.id)] : null;
-          if (_ov && _ov.pass) res = _ov.result || '';
+          const _ovo = _tlGexOv(l);
+          if (_ovo) res = _ovo.result || '';
           else if (l.outcome_result) res = l.outcome_result;
           else if (o.first_event === 'pending') res = 'PENDING';
           else if (o.first_event === '10pt' || o.first_event === 'target' || o.first_event === '15pt') res = 'WIN';
@@ -19331,6 +19355,12 @@ DASH_HTML_TEMPLATE = """
     }
 
     function renderTradeLog() {
+      // Lazy-load the GEX Long overlay if the active mode needs it (incl. V16 = live).
+      // Without it, the V16 GEX Long branch blocks all rows until loaded — so kick the
+      // fetch and re-render when ready, guaranteeing the live view shows the placed set.
+      if (_tlV3Active() && !_tlV3Overlay && !_tlV3OverlayLoading) {
+        _tlLoadV3Overlay().then(() => renderTradeLog());
+      }
       // Restore portal header/grid
       const hdr = document.getElementById('tlHeaderRow');
       hdr.className = 'tl-header';
@@ -19339,12 +19369,8 @@ DASH_HTML_TEMPLATE = """
 
       // v3 overlay helpers — override result/pnl with re-simulated exit when v3 dropdown active.
       // (10p/Tgt/Stp column still reflects original SL/target — those are not re-simulated.)
-      const _v3On = _tlV3Active() && _tlV3Overlay;
-      function _v3OutOf(l) {
-        if (!_v3On) return null;
-        const ov = _tlV3Overlay[String(l.id)];
-        return (ov && ov.pass) ? ov : null;
-      }
+      // Mode-aware overlay outcome (v3.1 / v3.2 / v4 / v16→v4). Re-simulated exit.
+      function _v3OutOf(l) { return _tlGexOv(l); }
       function _resOf(l) { const o = _v3OutOf(l); return o ? (o.result || '') : (l.outcome_result || ''); }
       function _pnlOf(l) { const o = _v3OutOf(l); return o ? o.pnl : l.outcome_pnl; }
 
@@ -19939,6 +19965,12 @@ DASH_HTML_TEMPLATE = """
 
     // Wire up filter changes
     function _tlRerender() {
+      // Lazy-load the GEX Long overlay whenever the active mode needs it (v3/v3.2/v4
+      // dropdowns OR the V16 strategy view). Guarantees the V16 (live) view shows the
+      // true TSRT-placed set even on first render with a persisted filter.
+      if (_tlV3Active() && !_tlV3Overlay && !_tlV3OverlayLoading) {
+        _tlLoadV3Overlay().then(() => _tlRerender());
+      }
       if (_tlActiveSubTab === 'portal') renderTradeLog();
       else if (_tlActiveSubTab === 'tssim') renderTsSimLog();
       else if (_tlActiveSubTab === 'eval') renderEvalLog();

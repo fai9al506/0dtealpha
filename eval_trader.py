@@ -1428,6 +1428,71 @@ def _tg_alert(cfg: dict, text: str):
 # persists long enough to fire. This eliminates the double-close/oversell race.
 _SYNTH_STOP_CONFIRM = 2
 
+# ── Orphan-cancel verification (2026-06-08 SHORT eval failure) ────────────────
+# E2T fails the evaluation if ANY working order rests on the book past 3:50pm CT.
+# When the synthetic-stop closes a position it sends a CANCEL for the now-orphan
+# resting stop, but NT8's ATI can silently DROP that CANCEL (same fault that made
+# the broker stop fail to begin with). Because the slot is untracked immediately
+# after, nothing ever rechecked it — the order lingered and E2T killed it 3 min
+# past the cutoff → instant fail. A surviving working order can ALSO fill into an
+# accidental reverse position. So every orphan cancel is now verified-and-retried,
+# and escalated to a full CANCELALLORDERS sweep once the account is broker-flat.
+_CANCEL_VERIFY_GRACE_S = 8     # wait this long for a CANCEL to land before re-sending
+_CANCEL_MAX_RETRIES = 4        # re-send CANCEL up to this many times, then escalate
+
+
+def _register_orphan_cancel(tracker, *oids):
+    """Record order IDs whose CANCEL must be confirmed by the broker."""
+    for oid in oids:
+        if oid:
+            tracker._pending_cancels.append(
+                {"oid": oid, "ts": time.time(), "retries": 0})
+
+
+def _verify_pending_cancels(tracker):
+    """Re-cancel any orphan order whose CANCEL didn't land; escalate to a full
+    CANCELALLORDERS sweep once the account is broker-flat (nothing to protect).
+
+    Runs every loop, even when the tracker shows flat — the whole point is that
+    the orphan persists AFTER the position/slot is untracked. Cheap no-op when
+    there are no pending cancels.
+    """
+    if not tracker._pending_cancels:
+        return
+    still = []
+    for rec in tracker._pending_cancels:
+        oid = rec["oid"]
+        st = tracker.nt8.check_order_state(oid)
+        if st and st.get("status") in ("CANCELLED", "FILLED", "REJECTED"):
+            continue  # broker confirmed it's gone
+        if time.time() - rec["ts"] < _CANCEL_VERIFY_GRACE_S:
+            still.append(rec)  # give the first CANCEL time to land
+            continue
+        rec["retries"] += 1
+        if rec["retries"] <= _CANCEL_MAX_RETRIES:
+            tracker.nt8.cancel(oid)
+            rec["ts"] = time.time()
+            log.warning(f"  [CANCEL-VERIFY] orphan {oid} not confirmed cancelled "
+                        f"— re-sent CANCEL (retry {rec['retries']})")
+            still.append(rec)
+        elif tracker.nt8.read_oif_position() == "FLAT":
+            # Retries exhausted and no live position to protect → nuke everything.
+            tracker.nt8.cancel_all()
+            log.warning(f"  [CANCEL-VERIFY] orphan {oid} survived {rec['retries']} "
+                        f"retries — account FLAT, sent CANCELALLORDERS sweep")
+            _tg_alert(tracker.cfg,
+                      f"⚠️ Orphan order {oid} would not cancel — swept via "
+                      f"CANCELALLORDERS (account flat). Prevented a lingering "
+                      f"working order / accidental fill.")
+        else:
+            # Can't nuke-all (other live positions) — keep retrying past the cap.
+            tracker.nt8.cancel(oid)
+            rec["ts"] = time.time()
+            log.warning(f"  [CANCEL-VERIFY] orphan {oid} still unconfirmed and "
+                        f"account NOT flat — re-sent CANCEL, will keep trying")
+            still.append(rec)
+    tracker._pending_cancels = still
+
 
 class StackingTracker:
     """Phase 2: multi-position tracker with same-direction stacking.
@@ -1456,6 +1521,7 @@ class StackingTracker:
         self.cluster_floor = float(cfg.get("cluster_floor_dollars", -200))
         self._stale_flatten = False
         self._stale_pending_cancel_oid = None
+        self._pending_cancels = []  # orphan cancels awaiting broker confirmation
         self._load()
         log.info(f"[STACK] Initialized: cap={self.stack_cap} contracts, "
                  f"cluster_floor=${self.cluster_floor:+.0f}, slots={len(self.slots)}")
@@ -1824,6 +1890,10 @@ class StackingTracker:
                 self.nt8.cancel(s["stop_oid"])
             if s.get("target_oid"):
                 self.nt8.cancel(s["target_oid"])
+            # Verify these cancels actually land (NT8 ATI can drop them — see
+            # _verify_pending_cancels). Prevents a lingering working order past
+            # E2T's 3:50pm CT cutoff and any accidental reverse fill.
+            _register_orphan_cancel(self, s.get("stop_oid"), s.get("target_oid"))
             self.nt8.close_position(s["direction"], qty)
 
             entry = s.get("es_entry_price") or s.get("entry_price", 0)
@@ -1939,6 +2009,7 @@ class PositionTracker:
         self.cfg = cfg
         self.quote_poller = quote_poller
         self.position = None
+        self._pending_cancels = []  # orphan cancels awaiting broker confirmation
         self._load()
 
     def _load(self):
@@ -2781,6 +2852,10 @@ class PositionTracker:
             self.nt8.cancel(stop_oid)
         if target_oid:
             self.nt8.cancel(target_oid)
+        # Verify these cancels actually land (NT8 ATI can drop them — see
+        # _verify_pending_cancels). Prevents a lingering working order past
+        # E2T's 3:50pm CT cutoff and any accidental reverse fill.
+        _register_orphan_cancel(self, stop_oid, target_oid)
         self.nt8.close_position(self.position["direction"], qty)
 
         entry = self.position.get("entry_price") or self.position.get("es_entry_price", 0)
@@ -3249,6 +3324,11 @@ def main():
     HEARTBEAT_INTERVAL = 300.0  # 5 min
     _last_eod_beacon_date = None
     EOD_BEACON_TIME = dtime(16, 5)
+    # EOD orphan-order sweep (2026-06-08): nuke any working order before E2T's
+    # 3:50pm CT (= 16:50 ET) cutoff. Re-armed each day after the daily reset.
+    _eod_swept_date = None
+    _last_eod_sweep = 0.0
+    EOD_SWEEP_END = dtime(16, 55)  # keep sweeping a bit past the 16:50 ET cutoff
 
     try:
         while True:
@@ -3364,6 +3444,27 @@ def main():
             flatten_time = datetime.strptime(cfg["flatten_time_et"], "%H:%M").time()
             if now_et.time() >= flatten_time and tracker.is_open:
                 tracker.flatten("EOD_FLATTEN", es_price=latest_es_price)
+
+            # EOD orphan-order sweep (2026-06-08 SHORT eval failure): the flatten
+            # above is gated on is_open, so an orphan stop left by the synth-stop
+            # path (slot already untracked) is invisible to it and lingers on the
+            # book past E2T's 3:50pm CT cutoff → eval fail (and risks a stray fill).
+            # Sweep ALL working orders unconditionally once the flatten window is
+            # open. Safe: no new entries are admitted after the cutoff and any real
+            # position was just flattened. Re-fires every 60s through 16:55 ET so a
+            # dropped CANCELALLORDERS still gets resent well before the CT cutoff.
+            if flatten_time <= now_et.time() <= EOD_SWEEP_END:
+                if _eod_swept_date != now_et.date() or _now_ts - _last_eod_sweep >= 60:
+                    tracker.nt8.cancel_all()
+                    if _eod_swept_date != now_et.date():
+                        log.info("[EOD SWEEP] CANCELALLORDERS — clearing any orphan "
+                                 "working orders before the 3:50pm CT cutoff")
+                    _eod_swept_date = now_et.date()
+                    _last_eod_sweep = _now_ts
+
+            # Verify every orphan cancel actually landed (NT8 ATI can drop them).
+            # Runs even when flat — the orphan persists after the slot is untracked.
+            _verify_pending_cancels(tracker)
 
             # Check NT8 fills + trailing stop (every 5s when position open)
             if tracker.is_open and time.time() - last_trail_check >= TRAIL_CHECK_INTERVAL:

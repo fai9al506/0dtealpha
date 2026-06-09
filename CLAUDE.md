@@ -414,6 +414,7 @@ Standalone local script that polls Railway for setup signals and places MES orde
 - **Trailing stop**: DD Exhaustion=continuous trail (activation=20, gap=5). GEX Long=rung-based (start=12, step=5, lock=rung-2). Others=breakeven at `+be_trigger_pts`.
 - **Reversal**: Opposite-direction signal closes current position, opens new one. Checks compliance for new position first.
 - **Stale overnight**: On startup, if position date < today → auto-flatten.
+- **Orphan working-order guard (2026-06-08, commit `4d90ee7`)**: E2T FAILS the eval if ANY position OR working order rests on the book past **3:50pm CT** (a SHORT eval was failed this way — a synth-stop's CANCEL was dropped by NT8 ATI and the slot was untracked, leaving an orphan stop that E2T killed at 15:53 CT). Two layers: (1) `_register_orphan_cancel()`/`_verify_pending_cancels()` verify every synth-stop orphan CANCEL vs broker and re-send up to 4× (8s grace), escalating to `cancel_all()` once broker-flat — runs every loop even when the tracker is flat; (2) main loop fires an unconditional `nt8.cancel_all()` (CANCELALLORDERS) every 60s from `flatten_time`→16:55 ET regardless of `is_open`. Both StackingTracker + PositionTracker. Constants `_CANCEL_VERIFY_GRACE_S=8` / `_CANCEL_MAX_RETRIES=4`.
 - **Test mode**: `python eval_trader.py --test buy` or `--test sell` for manual testing.
 
 **Config files (local, gitignored state files):**

@@ -443,6 +443,16 @@ Self-contained Discord-pro-inspired momentum dip-buy. **NOT in TSRT / eval / aut
 
 **Dip-Buy v2 (S201, 2026-06-03):** parallel held-confirm variant logged as `setup_name="Dip-Buy v2"` in the same module. Same 8pt dip trigger/window/one-per-day, but bounce must hold ≥3pt off dip low for **8 consecutive ~30s cycles (~4 min)** before entry; exit **T+8 / S−12** / EOD. From ES-mirrored 30s backtest (Feb 24–Jun 3, 68t): 77.9% WR / +244p / maxDD −28, era-stable, walk-forward 86% WR blind May–Jun (the live v1 rules graded only 38–42% WR on the same path — the original 60% backtest was a 2-min-sampling artifact). v1 stays as control; after ~30 forward days promote whichever holds live WR. Portal dropdown "Dip-Buy v2 ✦". See trade-analyses.md Analysis #17.
 
+### Dark Mate Framework (`app/darkmate.py` + `app/live_filter.py`) — added 2026-06-11 (MONITORING-ONLY)
+
+Self-contained, fail-soft, **zero touch to the trade loop**. Productionizes the validated semi-confirmation sizing study + the Dark Mate gamma/vanna framework map. Three parts:
+
+- **(A) Tech-basket capture:** `darkmate.capture()` runs every **1 min** during market hours (scheduler job `darkmate_capture`). Fetches TradeStation quotes for NVDA/AMD/AVGO/META/MSFT/GOOGL, computes basket %-from-session-open, upserts into **`semi_basket`** table (`et` PK, `basket_pct`, `n_names`, `details` jsonb per-symbol). On Railway (not VPS/Yahoo). Session opens tracked in-memory, daily reset.
+- **(B) Sizing results — page `/darkmate`** (`app/darkmate_page.py`, API `/api/darkmate/results?date=` + `/results-history?days=`): per-trade & daily **Baseline · Semi · Gamma · Semi+Gamma · Real-TSRT** on the V16 set. Semi mult 2×/1×/0.5× by basket-vs-direction; gamma favorability = multi-expiry `gamma_below − gamma_above`. **Validated finding: semi-only = 1.38× + halves drawdown ($775→$415); gamma adds nothing (+$105, DD worse) — kept visible for monitoring only.** Real-TSRT col from `real_trade_orders` fills.
+- **(C) Framework map — page `/darkmate-fw`** (`app/darkmate_fw_page.py`, API `/api/darkmate/levels?at=&greek=`): live multi-expiry **gamma + vanna** per-strike near spot. **+G = barrier (support below / resist above), −G = accelerator.** ✦ cluster markers where expiries agree. Key levels labeled. Live auto-refresh (60s) + history time-picker. Manual-trade aid.
+
+**`app/live_filter.py` = CANONICAL live-filter (V16):** `passes_v16(row, gaps)` exactly mirrors `main.py:_tlPassesStrategy(l,'v16')` (~line 18833), validated **920 trades / +3408.1 pts** (all-time). `backfill_live_pass(engine)` stamps `setup_log.live_pass` + `live_filter_ver` so recall is `WHERE live_pass=true`. Daily re-stamp job `live_pass_restamp` (16:25 ET). `live_filter_recall.py` (root) = manual backfill runner. **On a filter change (V17): edit `app/live_filter.py` + re-run.** See memory `reference_live_filter_recall.md`.
+
 ### Stock GEX Scanner (`app/stock_gex_scanner.py`) — added 2026-03-21
 
 Completely independent from 0DTE SPX pipeline. **Data collection only** — no alerts, no signals, no Telegram. Scans ~23 stocks every 30 min during market hours, saves GEX + price to DB for future backtesting.

@@ -7989,6 +7989,31 @@ def start_scheduler():
                     misfire_grace_time=120)
     except Exception as e:
         print(f"[dte0-gex] schedule error (non-fatal): {e}", flush=True)
+    # Dark Mate tech-basket capture — every 1 min during market hours (fail-soft, monitoring-only)
+    try:
+        from app import darkmate as _darkmate
+        def _darkmate_capture_job():
+            t = now_et().time()
+            if now_et().weekday() >= 5:
+                return
+            if not (dtime(9, 30) <= t <= dtime(16, 0)):
+                return
+            _darkmate.capture()
+        sch.add_job(_darkmate_capture_job, "interval", minutes=1,
+                    id="darkmate_capture", coalesce=True, max_instances=1,
+                    misfire_grace_time=30)
+        # Daily EOD re-stamp of setup_log.live_pass so recent days are recallable (history view).
+        def _live_pass_restamp():
+            try:
+                from app.live_filter import backfill_live_pass
+                n = backfill_live_pass(engine)
+                print(f"[live_pass] re-stamped {n} V16 trades", flush=True)
+            except Exception as e:
+                print(f"[live_pass] restamp error (non-fatal): {e}", flush=True)
+        sch.add_job(_live_pass_restamp, "cron", day_of_week="mon-fri", hour=16, minute=25,
+                    id="live_pass_restamp", coalesce=True, max_instances=1, misfire_grace_time=600)
+    except Exception as e:
+        print(f"[darkmate] schedule error (non-fatal): {e}", flush=True)
     # Stock GEX scanner — reduced schedule (protects core 0DTE pipeline)
     # 2026-05-04 (S22): scheduled scans DISABLED — 0 rows ever written despite
     # init firing daily. Module is dead; the working stock GEX system is
@@ -8191,6 +8216,13 @@ def on_startup():
         dipbuy_init(engine)
     except Exception as e:
         print(f"[dipbuy] init error (non-fatal): {e}", flush=True)
+    # Dark Mate framework — 1-min tech-basket capture + sizing-results view + gamma/vanna levels.
+    # Self-contained, fail-soft, MONITORING-ONLY (zero touch to the trade loop). 2026-06-11.
+    try:
+        from app.darkmate import init as darkmate_init
+        darkmate_init(engine, api_get)
+    except Exception as e:
+        print(f"[darkmate] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)
     try:
         from app.dashboard_v2 import init as dashboard_v2_init
@@ -8424,6 +8456,40 @@ def real_trade_page(session: str = Cookie(None)):
         return RedirectResponse("/login")
     from app.real_trade_page import REAL_TRADE_HTML
     return HTMLResponse(REAL_TRADE_HTML)
+
+# ── Dark Mate framework (monitoring-only) ──────────────────────────
+@app.get("/darkmate")
+def darkmate_page(session: str = Cookie(None)):
+    """Dark Mate sizing results — semi/gamma/2-factor vs baseline vs real-TSRT on the V16 set."""
+    user = get_current_user(session)
+    if not user:
+        return RedirectResponse("/login")
+    from app.darkmate_page import DARKMATE_HTML
+    return HTMLResponse(DARKMATE_HTML)
+
+@app.get("/darkmate-fw")
+def darkmate_fw_page(session: str = Cookie(None)):
+    """Dark Mate FW — live multi-expiry gamma/vanna cluster levels (manual-trade map)."""
+    user = get_current_user(session)
+    if not user:
+        return RedirectResponse("/login")
+    from app.darkmate_fw_page import DARKMATE_FW_HTML
+    return HTMLResponse(DARKMATE_FW_HTML)
+
+@app.get("/api/darkmate/results")
+def api_darkmate_results(date: str = None):
+    from app import darkmate
+    return darkmate.results(date)
+
+@app.get("/api/darkmate/results-history")
+def api_darkmate_results_history(days: int = 20):
+    from app import darkmate
+    return darkmate.results_history(days)
+
+@app.get("/api/darkmate/levels")
+def api_darkmate_levels(at: str = None, greek: str = "gamma"):
+    from app import darkmate
+    return darkmate.levels(at, greek)
 
 # ── Stock GEX Scanner API (independent from 0DTE) ──────────────────
 @app.get("/api/stock-gex/levels")

@@ -110,18 +110,18 @@ def _semi_at(series, et_naive):
 
 
 def _gamma_fav(conn, ts_utc, spot, isLong):
-    """Multi-expiry gamma favorability = gamma_below - gamma_above (mirror short). As-of ts_utc."""
+    """Gamma favorability = gamma_below - gamma_above (mirror short). As-of ts_utc.
+    Uses the ALL bucket = the true total exposure. (The TODAY/WEEK/30DAYS buckets are
+    CUMULATIVE/nested — summing them double-counts; ALL is the correct full total.)"""
     rows = conn.execute(text("""
-        SELECT DISTINCT ON (expiration_option, strike) strike, value
+        SELECT DISTINCT ON (strike) strike, value
         FROM volland_exposure_points
-        WHERE greek='gamma' AND expiration_option=ANY(:e) AND ts_utc<=:t
+        WHERE greek='gamma' AND expiration_option='ALL' AND ts_utc<=:t
           AND ts_utc >= :t0 AND strike BETWEEN :lo AND :hi
-        ORDER BY expiration_option, strike, ts_utc DESC"""),
-        {"e": list(EXPS), "t": ts_utc, "t0": ts_utc - timedelta(hours=8),
+        ORDER BY strike, ts_utc DESC"""),
+        {"t": ts_utc, "t0": ts_utc - timedelta(hours=8),
          "lo": spot - 200, "hi": spot + 200}).fetchall()
-    prof = defaultdict(float)
-    for k, v in rows:
-        prof[float(k)] += float(v) / 1e6
+    prof = {float(k): float(v) / 1e6 for k, v in rows}
     if not prof:
         return None
     above = sum(v for k, v in prof.items() if spot < k <= spot + PATH)
@@ -251,10 +251,11 @@ def levels(at_iso=None, greek='gamma', rng=150):
                 tcut = text("TRUE")
                 params = {}
             # latest snapshot ts per expiration <= cut
+            EXPS4 = ['TODAY', 'THIS_WEEK', 'THIRTY_NEXT_DAYS', 'ALL']
             base = conn.execute(text(f"""
                 SELECT expiration_option, MAX(ts_utc) mt FROM volland_exposure_points
                 WHERE greek=:g AND expiration_option=ANY(:e) AND {tcut.text}
-                GROUP BY expiration_option"""), {"g": greek, "e": list(EXPS), **params}).fetchall()
+                GROUP BY expiration_option"""), {"g": greek, "e": EXPS4, **params}).fetchall()
             if not base:
                 return {"error": "no data"}
             spot = None
@@ -267,11 +268,13 @@ def levels(at_iso=None, greek='gamma', rng=150):
                 d = {}
                 for k, v, cp in rows:
                     d[float(k)] = float(v) / 1e6
-                    if cp and exp == 'TODAY':
+                    if cp and spot is None:
                         spot = float(cp)
-                if exp == 'TODAY':
+                if exp == 'ALL':
                     snap_ts = mt.isoformat()
                 per_exp[exp] = d
+            if snap_ts is None and base:
+                snap_ts = max(mt for _, mt in base).isoformat()
             volland_spot = spot
             # LIVE mode: use the freshest chain spot (30s) for the marker + window centering,
             # NOT the ~2-min Volland snapshot spot. History mode keeps the snapshot's own spot.
@@ -283,15 +286,18 @@ def levels(at_iso=None, greek='gamma', rng=150):
                 sp = conn.execute(text("SELECT spot FROM chain_snapshots WHERE spot IS NOT NULL ORDER BY ts DESC LIMIT 1")).scalar()
                 spot = float(sp) if sp else (volland_spot or 0.0)
             strikes = sorted({k for d in per_exp.values() for k in d if spot - rng <= k <= spot + rng})
+            def gv(e, k): return per_exp.get(e, {}).get(k, 0.0)
             prof = []
             for k in strikes:
-                vals = {e: round(per_exp[e].get(k, 0.0), 1) for e in EXPS}
-                tot = round(sum(vals.values()), 1)
-                # agreement: how many expiries share the sign of the total (confluence)
-                sign = (1 if tot > 0 else (-1 if tot < 0 else 0))
-                agree = sum(1 for e in EXPS if (vals[e] > 0) == (tot > 0) and abs(vals[e]) > 1) if sign else 0
-                prof.append({"strike": k, "total": tot, "agree": agree, **vals})
-            # key levels: nearest +G barrier above/below, strongest -G accel zone (gamma); walls (vanna)
+                t = gv('TODAY', k); w = gv('THIS_WEEK', k); m = gv('THIRTY_NEXT_DAYS', k); a = gv('ALL', k)
+                # buckets are CUMULATIVE/nested -> show INCREMENTAL slices that sum to ALL (true total)
+                prof.append({"strike": k,
+                             "dte0": round(t, 1),
+                             "weekly": round(w - t, 1),
+                             "monthly": round(m - w, 1),
+                             "far": round(a - m, 1),
+                             "total": round(a, 1)})
+            # key levels from the true total (ALL)
             above = [p for p in prof if p['strike'] > spot]
             below = [p for p in prof if p['strike'] < spot]
             def nearest(lst, pos):
@@ -305,6 +311,7 @@ def levels(at_iso=None, greek='gamma', rng=150):
             return {"greek": greek, "spot": round(spot, 1), "snap_ts": snap_ts,
                     "volland_spot": (round(volland_spot, 1) if volland_spot else None),
                     "spot_live": (not at_iso),
-                    "profile": prof, "key": key, "expirations": list(EXPS)}
+                    "profile": prof, "key": key,
+                    "slices": [["dte0", "0DTE"], ["weekly", "Weekly"], ["monthly", "Monthly"], ["far", "Far"]]}
     except Exception:
         return {"error": traceback.format_exc()}

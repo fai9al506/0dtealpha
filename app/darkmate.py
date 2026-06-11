@@ -7,7 +7,7 @@
 
 Init from main.py: darkmate.init(engine, api_get). Scheduler calls darkmate.capture() every 1 min.
 """
-import json, traceback
+import json, traceback, time as _time
 from datetime import datetime, timedelta, time as dtime
 from collections import defaultdict
 from zoneinfo import ZoneInfo
@@ -54,9 +54,19 @@ def capture():
     if not _engine or not _api_get:
         return
     try:
-        r = _api_get(f"/marketdata/quotes/{','.join(SEMI_TK)}", timeout=10)
+        # retry the quote fetch — TS resets connections under load at the open (transient)
+        qlist = None
+        for attempt in range(3):
+            try:
+                r = _api_get(f"/marketdata/quotes/{','.join(SEMI_TK)}", timeout=10)
+                qlist = r.json().get("Quotes", [])
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                _time.sleep(1.5)
         quotes = {}
-        for q in r.json().get("Quotes", []):
+        for q in (qlist or []):
             s = q.get("Symbol", "")
             last = q.get("Last") or q.get("Close")
             if s and last:

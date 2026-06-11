@@ -812,6 +812,7 @@ class ComplianceGate:
         self.consec_stops_by_sd = {}
         self.banned_setup_dirs = set()
         self.last_reset_date = today
+        _reject_reset_daily()  # S215: re-arm reject alert for the new day
         self.save()
         log.info(f"Daily reset: {today}")
 
@@ -1367,6 +1368,7 @@ class NT8Bridge:
             status = parts[0]
             qty = int(parts[1]) if len(parts) > 1 else 0
             price = float(parts[2]) if len(parts) > 2 else 0.0
+            _note_order_status(order_id, status, self.account)
             return {"status": status, "qty": qty, "price": price}
         except Exception:
             return None
@@ -1418,6 +1420,60 @@ def _tg_alert(cfg: dict, text: str):
                           json={"chat_id": chat, "text": text}, timeout=10)
     except Exception as e:
         log.warning(f"[tg-alert] failed: {e}")
+
+
+# ── Consecutive order-reject alerting (S215, 2026-06-11) ─────────────────────
+# NT8 writes 'REJECTED;0;0' to the outgoing folder when the broker refuses an
+# order. On 2026-06-10 both E2T accounts went "User not enabled" overnight →
+# 100% of the day's orders were rejected, yet the eval silently treated each as
+# "NT8 flat — clearing" with NO Telegram. The whole trading day was lost and the
+# issue was only noticed the next day. This detector counts a run of DISTINCT
+# rejected orders (a fill resets it) and pings the alerts channel ONCE per day.
+_REJECT_ALERT_THRESHOLD = 3          # consecutive distinct rejected orders → alert
+_reject_alert_cfg: dict | None = None  # set in main() so the helper can reach Telegram
+_reject_streak = 0
+_reject_alerted = False
+_reject_seen_oids: set[str] = set()
+
+
+def _reject_reset_daily():
+    """Clear the reject latch at daily reset so a still-broken day re-alerts once."""
+    global _reject_streak, _reject_alerted, _reject_seen_oids
+    _reject_streak = 0
+    _reject_alerted = False
+    _reject_seen_oids = set()
+
+
+def _note_order_status(order_id: str, status: str, account: str):
+    """Track consecutive broker rejects; alert once at threshold. A FILL resets.
+
+    Called from the single chokepoint NT8Bridge.check_order_state() so it sees
+    every entry/stop/target/tick status read for both trackers. Distinct-order
+    dedup (via _reject_seen_oids) keeps repeated polls of the same rejected
+    order from inflating the streak.
+    """
+    global _reject_streak, _reject_alerted
+    if status == "FILLED":
+        _reject_streak = 0
+        _reject_alerted = False
+        _reject_seen_oids.clear()
+    elif status == "REJECTED":
+        if order_id in _reject_seen_oids:
+            return
+        _reject_seen_oids.add(order_id)
+        _reject_streak += 1
+        if _reject_streak >= _REJECT_ALERT_THRESHOLD and not _reject_alerted:
+            _reject_alerted = True
+            log.error(f"[reject-alert] {_reject_streak} consecutive orders REJECTED "
+                      f"by NT8/broker on {account} — firing Telegram")
+            if _reject_alert_cfg:
+                _tg_alert(_reject_alert_cfg,
+                          f"🚨 Eval [{account}]: {_reject_streak} consecutive orders "
+                          f"REJECTED by NT8/broker — nothing is filling. Most likely the "
+                          f"E2T account is 'User not enabled' (disabled / reset / billing) "
+                          f"or NinjaTrader lost its broker connection. Check the E2T "
+                          f"dashboard + NinjaTrader Connections. No trades will place "
+                          f"until this is fixed.")
 
 
 # Software safety-close confirmation: a slot must be observed breaching its
@@ -3189,6 +3245,8 @@ def _emit_combined_eod_beacon(cfg) -> bool:
 
 def main():
     cfg = load_config()
+    global _reject_alert_cfg
+    _reject_alert_cfg = cfg  # S215: let the reject detector reach Telegram
     use_api = cfg.get("signal_source", "api") == "api"
 
     # Validate required fields based on signal source

@@ -750,12 +750,11 @@ def run():
                             time.sleep(30)
                             continue
                         else:
+                            # Re-login on an expired session at pre-market is the NORMAL path
+                            # (worker closes Chrome at 16:10 ET and relaunches fresh each morning).
+                            # Per user policy 2026-06-11: Telegram only on ISSUES, not on the
+                            # healthy expected case. Keep the log line; drop the success ping.
                             print("[volland-v2] Pre-market: re-login successful!", flush=True)
-                            send_telegram(
-                                "✅ <b>Volland Pre-Market OK</b>\n\n"
-                                f"Session was expired, re-login successful at {datetime.now(NY).strftime('%H:%M ET')}.\n"
-                                "Ready for market open."
-                            )
                             _premarket_ready = True
                     else:
                         print("[volland-v2] Pre-market: session is alive!", flush=True)

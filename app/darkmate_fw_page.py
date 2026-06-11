@@ -48,7 +48,7 @@ async function load(){
   Plotly.newPlot('chart',[{x,y,type:'bar',marker:{color:colors},text:txt,textposition:'outside',
      hovertext:p.map(s=>`${s.strike}: tot ${s.total}M (T${s.TODAY}/W${s.THIS_WEEK}/M${s.THIRTY_NEXT_DAYS}) agree=${s.agree}`),hoverinfo:'text'}],
     {paper_bgcolor:'#0e1117',plot_bgcolor:'#161b22',font:{color:'#e6edf3'},
-     title:`${g} near spot ${spot}  (${j.snap_ts?j.snap_ts.slice(11,16)+'Z':''})`,
+     title:`${g} · spot ${spot}${j.spot_live?' (live)':''} · levels @ ${j.snap_ts?j.snap_ts.slice(11,16)+'Z (~2min Volland)':''}`,
      xaxis:{title:'strike',gridcolor:'#30363d'},yaxis:{title:g+' sum ($M, all expiries)',gridcolor:'#30363d'},
      shapes:[{type:'line',x0:spot,x1:spot,yref:'paper',y0:0,y1:1,line:{color:'#d29922',width:2,dash:'dot'}}],height:460},{responsive:true});
   const k=j.key;
@@ -57,7 +57,7 @@ async function load(){
     `<div class="kb">+G barrier above: <b>${k.barrier_above||'—'}</b></div>`+
     `<div class="kb">+G support below: <b>${k.barrier_below||'—'}</b></div>`+
     `<div class="kb">−G accelerator above: <b>${k.accel_above||'—'}</b></div>`;
-  document.getElementById('status').textContent='spot '+spot+' · '+p.length+' strikes';
+  document.getElementById('status').textContent='spot '+spot+(j.spot_live?' (live 30s)':'')+' · '+p.length+' strikes · levels '+(j.snap_ts?j.snap_ts.slice(11,16)+'Z (Volland ~2min)':'');
   // cluster table (agree>=2)
   let h='<table><tr><th>Strike</th><th>Total$M</th><th>TODAY</th><th>WEEK</th><th>MONTH</th><th>cluster</th></tr>';
   p.filter(s=>Math.abs(s.total)>=15).sort((a,b)=>Math.abs(b.total)-Math.abs(a.total)).slice(0,12).forEach(s=>{

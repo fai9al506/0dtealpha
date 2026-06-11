@@ -272,10 +272,16 @@ def levels(at_iso=None, greek='gamma', rng=150):
                 if exp == 'TODAY':
                     snap_ts = mt.isoformat()
                 per_exp[exp] = d
-            if spot is None:
-                # fallback: chain spot
+            volland_spot = spot
+            # LIVE mode: use the freshest chain spot (30s) for the marker + window centering,
+            # NOT the ~2-min Volland snapshot spot. History mode keeps the snapshot's own spot.
+            if not at_iso:
                 sp = conn.execute(text("SELECT spot FROM chain_snapshots WHERE spot IS NOT NULL ORDER BY ts DESC LIMIT 1")).scalar()
-                spot = float(sp) if sp else 0.0
+                if sp:
+                    spot = float(sp)
+            if spot is None:
+                sp = conn.execute(text("SELECT spot FROM chain_snapshots WHERE spot IS NOT NULL ORDER BY ts DESC LIMIT 1")).scalar()
+                spot = float(sp) if sp else (volland_spot or 0.0)
             strikes = sorted({k for d in per_exp.values() for k in d if spot - rng <= k <= spot + rng})
             prof = []
             for k in strikes:
@@ -297,6 +303,8 @@ def levels(at_iso=None, greek='gamma', rng=150):
                 "accel_above": next((p['strike'] for p in above if p['total'] < -8), None),
             }
             return {"greek": greek, "spot": round(spot, 1), "snap_ts": snap_ts,
+                    "volland_spot": (round(volland_spot, 1) if volland_spot else None),
+                    "spot_live": (not at_iso),
                     "profile": prof, "key": key, "expirations": list(EXPS)}
     except Exception:
         return {"error": traceback.format_exc()}

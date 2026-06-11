@@ -18,8 +18,7 @@ th{background:#1c2230;color:#8b949e} td:first-child,td:nth-child(2){text-align:l
 .win{color:#3fb950}.loss{color:#f85149}.mut{color:#8b949e;font-size:12px}
 .tag{font-size:10px;padding:1px 5px;border-radius:4px;background:#1c2230;color:#8b949e}
 </style></head><body>
-<h1>⚛️ Dark Mate — Sizing Results <span class="mut">(live V16 set · semi/gamma/2-factor vs baseline vs real TSRT)</span></h1>
-<div class="mut">Monitoring only — tracks what each sizing scheme WOULD do on the live-filter trades, saved for the go-live decision. <a href="/darkmate-fw">→ Framework map (gamma/vanna levels)</a></div>
+<h1>⚛️ Dark Mate — Sizing Results</h1>
 <div class="bar">
   <label>Date <input type="date" id="dt"></label>
   <button onclick="load()">Load</button>

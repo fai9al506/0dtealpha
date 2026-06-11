@@ -29,7 +29,7 @@ th{background:#1c2230;color:#8b949e}
 </div>
 <div class="key" id="key"></div>
 <div id="chart" style="height:460px"></div>
-<div class="legend">Green bar = +G (barrier) · Red bar = −G (accelerator) · gold dotted = spot · ✦ = multi-expiry cluster</div>
+<div class="legend">Stacked by expiry — <span style="color:#3fb950">0DTE</span> + <span style="color:#58a6ff">Weekly</span> + <span style="color:#bc8cff">Monthly</span>. Above 0 = positive, below = negative (Gamma: +G barrier / −G accelerator). Gold dotted = spot. The bar's color mix shows which expiry drives each level.</div>
 <div id="tbl"></div>
 <script>
 let timer=null;
@@ -42,15 +42,16 @@ async function load(){
   const r=await fetch(u,{cache:'no-store'}); const j=await r.json();
   if(j.error){document.getElementById('status').textContent='err: '+(j.error||'').slice(0,100);return;}
   const p=j.profile, spot=j.spot;
-  const x=p.map(s=>s.strike), y=p.map(s=>s.total);
-  const colors=p.map(s=>s.total>=0?'#3fb950':'#f85149');
-  const txt=p.map(s=>s.agree>=2?'✦':'');
-  Plotly.newPlot('chart',[{x,y,type:'bar',marker:{color:colors},text:txt,textposition:'outside',
-     hovertext:p.map(s=>`${s.strike}: tot ${s.total}M (T${s.TODAY}/W${s.THIS_WEEK}/M${s.THIRTY_NEXT_DAYS}) agree=${s.agree}`),hoverinfo:'text'}],
-    {paper_bgcolor:'#0e1117',plot_bgcolor:'#161b22',font:{color:'#e6edf3'},
-     title:`${g} · spot ${spot}${j.spot_live?' (live)':''} · levels @ ${j.snap_ts?j.snap_ts.slice(11,16)+'Z (~2min Volland)':''}`,
-     xaxis:{title:'strike',gridcolor:'#30363d'},yaxis:{title:g+' sum ($M, all expiries)',gridcolor:'#30363d'},
-     shapes:[{type:'line',x0:spot,x1:spot,yref:'paper',y0:0,y1:1,line:{color:'#d29922',width:2,dash:'dot'}}],height:460},{responsive:true});
+  // stacked by expiry so you see WHO drives each level (0DTE / Weekly / Monthly)
+  const EXP=[['TODAY','0DTE','#3fb950'],['THIS_WEEK','Weekly','#58a6ff'],['THIRTY_NEXT_DAYS','Monthly','#bc8cff']];
+  const traces=EXP.map(([k,nm,c])=>({x:p.map(s=>s.strike),y:p.map(s=>s[k]),type:'bar',name:nm,marker:{color:c},
+     hovertemplate:'%{x} · '+nm+': %{y}M<extra></extra>'}));
+  Plotly.newPlot('chart',traces,
+    {paper_bgcolor:'#0e1117',plot_bgcolor:'#161b22',font:{color:'#e6edf3'},barmode:'relative',hovermode:'x unified',
+     title:`${g} by expiry · spot ${spot}${j.spot_live?' (live)':''} · levels @ ${j.snap_ts?j.snap_ts.slice(11,16)+'Z (~2min Volland)':''}`,
+     xaxis:{title:'strike',gridcolor:'#30363d'},yaxis:{title:g+' ($M) — stacked by expiry',gridcolor:'#30363d'},
+     legend:{orientation:'h',y:1.08},
+     shapes:[{type:'line',x0:spot,x1:spot,yref:'paper',y0:0,y1:1,line:{color:'#d29922',width:2,dash:'dot'}}],height:480},{responsive:true});
   const k=j.key;
   document.getElementById('key').innerHTML=
     `<div class="kb">spot <b>${spot}</b></div>`+
@@ -59,10 +60,13 @@ async function load(){
     `<div class="kb">−G accelerator above: <b>${k.accel_above||'—'}</b></div>`;
   document.getElementById('status').textContent='spot '+spot+(j.spot_live?' (live 30s)':'')+' · '+p.length+' strikes · levels '+(j.snap_ts?j.snap_ts.slice(11,16)+'Z (Volland ~2min)':'');
   // cluster table (agree>=2)
-  let h='<table><tr><th>Strike</th><th>Total$M</th><th>TODAY</th><th>WEEK</th><th>MONTH</th><th>cluster</th></tr>';
-  p.filter(s=>Math.abs(s.total)>=15).sort((a,b)=>Math.abs(b.total)-Math.abs(a.total)).slice(0,12).forEach(s=>{
+  let h='<table><tr><th>Strike</th><th>Total$M</th><th>0DTE</th><th>Weekly</th><th>Monthly</th><th>Driven by</th></tr>';
+  p.filter(s=>Math.abs(s.total)>=15).sort((a,b)=>Math.abs(b.total)-Math.abs(a.total)).slice(0,14).forEach(s=>{
+    const parts=[['0DTE',s.TODAY],['Weekly',s.THIS_WEEK],['Monthly',s.THIRTY_NEXT_DAYS]];
+    const dom=parts.reduce((a,b)=>Math.abs(b[1])>Math.abs(a[1])?b:a);
+    const domShare=s.total!==0?Math.round(100*Math.abs(dom[1])/(Math.abs(s.TODAY)+Math.abs(s.THIS_WEEK)+Math.abs(s.THIRTY_NEXT_DAYS)||1)):0;
     h+=`<tr><td>${s.strike}</td><td style="color:${s.total>=0?'#3fb950':'#f85149'}">${s.total}</td>`+
-    `<td>${s.TODAY}</td><td>${s.THIS_WEEK}</td><td>${s.THIRTY_NEXT_DAYS}</td><td>${s.agree>=2?'✦ '+s.agree:''}</td></tr>`;});
+    `<td>${s.TODAY}</td><td>${s.THIS_WEEK}</td><td>${s.THIRTY_NEXT_DAYS}</td><td><b>${dom[0]}</b> ${domShare}%</td></tr>`;});
   h+='</table>'; document.getElementById('tbl').innerHTML=h;
 }
 function tick(){ if(document.getElementById('live').checked && !document.getElementById('at').value) load(); }

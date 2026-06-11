@@ -13838,6 +13838,10 @@ function passesStrategy(l, strat) {
     // which only blocked some shorts (grade A+/C or BOFA-PURE), letting grade-B DD shorts
     // on non-BOFA-PURE paradigms appear as "V16 passed" when TSRT was rejecting them.
     if (sn === 'DD Exhaustion' && !isLong) return false;
+    // 2026-06-10: AG Short + AG-TARGET unconditionally blocked by TSRT (main.py:4451 —
+    // AG-TARGET cohort flat: 23t/57%/-2.5pt). Mirror it so AG-TARGET signals stop
+    // appearing as "V16 placed" phantom trades (Jun-10 showed 3 such).
+    if (sn === 'AG Short' && l.paradigm === 'AG-TARGET') return false;
     // GEX Long v4 (2026-06-08 go-live): mirror real_trader carve-out. Detector already
     // enforced verdict ABC + hour<15 + R_BURIED_MAGNET veto. Live gate = gap filter +
     // SIDIAL-EXTREME hr14 block + (align>=0 OR bull-paradigm). Exempt from S180/align>=2.
@@ -18846,6 +18850,9 @@ DASH_HTML_TEMPLATE = """
         if (!_tlV16Allowed.has(sn)) return false;
         // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT — mirror it here.
         if (sn === 'DD Exhaustion' && !isLong) return false;
+        // 2026-06-10: AG Short + AG-TARGET hard-blocked by TSRT (main.py:4451). Mirror it
+        // so AG-TARGET signals stop showing as V16 phantom trades (Jun-10: 3 over-admitted).
+        if (sn === 'AG Short' && l.paradigm === 'AG-TARGET') return false;
         // GEX Long v4 (2026-06-08): mirror real_trader carve-out — gap filter + SIDIAL
         // hr14 block + (align>=0 OR bull-paradigm). Detector enforced verdict ABC/hour<15/
         // R_BURIED_MAGNET. Exempt from S180/align>=2.

@@ -233,9 +233,13 @@ def results_history(days=20):
 
 
 # ====================== (C) LEVELS (framework map) ======================
-def levels(at_iso=None, greek='gamma'):
+def levels(at_iso=None, greek='gamma', rng=150):
     """Multi-expiry per-strike profile near spot with cluster/confluence detection.
-    at_iso = ISO ts (history) or None (latest). greek = gamma or vanna."""
+    at_iso = ISO ts (history) or None (latest). greek = gamma or vanna. rng = +/- pts window."""
+    try:
+        rng = max(40, min(400, int(rng)))
+    except Exception:
+        rng = 150
     if not _engine:
         return {"error": "no engine"}
     try:
@@ -272,7 +276,7 @@ def levels(at_iso=None, greek='gamma'):
                 # fallback: chain spot
                 sp = conn.execute(text("SELECT spot FROM chain_snapshots WHERE spot IS NOT NULL ORDER BY ts DESC LIMIT 1")).scalar()
                 spot = float(sp) if sp else 0.0
-            strikes = sorted({k for d in per_exp.values() for k in d if spot - 80 <= k <= spot + 80})
+            strikes = sorted({k for d in per_exp.values() for k in d if spot - rng <= k <= spot + rng})
             prof = []
             for k in strikes:
                 vals = {e: round(per_exp[e].get(k, 0.0), 1) for e in EXPS}

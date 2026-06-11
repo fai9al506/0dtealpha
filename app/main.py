@@ -8487,9 +8487,9 @@ def api_darkmate_results_history(days: int = 20):
     return darkmate.results_history(days)
 
 @app.get("/api/darkmate/levels")
-def api_darkmate_levels(at: str = None, greek: str = "gamma"):
+def api_darkmate_levels(at: str = None, greek: str = "gamma", rng: int = 150):
     from app import darkmate
-    return darkmate.levels(at, greek)
+    return darkmate.levels(at, greek, rng)
 
 # ── Stock GEX Scanner API (independent from 0DTE) ──────────────────
 @app.get("/api/stock-gex/levels")

@@ -21,6 +21,7 @@ th{background:#1c2230;color:#8b949e}
 <div class="mut"><b>+Gamma = barrier</b> (support below spot / resistance above) · <b>−Gamma = accelerator</b> (price runs through). Vanna walls = where dealers defend. <b>Cluster ✦</b> = expiries agree (high-conviction). <a href="/darkmate">→ Sizing results</a></div>
 <div class="bar">
   <label>Greek <select id="greek"><option value="gamma">Gamma</option><option value="vanna">Vanna</option></select></label>
+  <label>Range <select id="rng"><option value="100">±100</option><option value="150" selected>±150</option><option value="200">±200</option><option value="250">±250</option></select></label>
   <label><input type="checkbox" id="live" checked> Live (auto-refresh 60s)</label>
   <label>History <input type="datetime-local" id="at"></label>
   <button onclick="load()">Load</button>
@@ -35,8 +36,9 @@ let timer=null;
 async function load(){
   const g=document.getElementById('greek').value;
   const at=document.getElementById('at').value;
+  const rng=document.getElementById('rng').value;
   document.getElementById('status').textContent='loading...';
-  const u='/api/darkmate/levels?greek='+g+(at?('&at='+encodeURIComponent(new Date(at).toISOString())):'');
+  const u='/api/darkmate/levels?greek='+g+'&rng='+rng+(at?('&at='+encodeURIComponent(new Date(at).toISOString())):'');
   const r=await fetch(u,{cache:'no-store'}); const j=await r.json();
   if(j.error){document.getElementById('status').textContent='err: '+(j.error||'').slice(0,100);return;}
   const p=j.profile, spot=j.spot;
@@ -65,5 +67,6 @@ async function load(){
 }
 function tick(){ if(document.getElementById('live').checked && !document.getElementById('at').value) load(); }
 document.getElementById('greek').addEventListener('change',load);
+document.getElementById('rng').addEventListener('change',load);
 load(); timer=setInterval(tick,60000);
 </script></body></html>"""

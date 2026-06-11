@@ -43,17 +43,22 @@ async function load(){
   document.getElementById('status').textContent=j.date+' · '+j.n+' V16 trades';
   const t=j.totals;
   document.getElementById('cards').innerHTML=
-    card('Baseline','$'+F(t.base))+
-    card('Semi','$'+F(t.semi),cls(t.semi-t.base))+
-    card('Gamma','$'+F(t.gamma))+
+    card('Baseline (1×)','$'+F(t.base))+
+    card('Semi-sized','$'+F(t.semi),cls(t.semi-t.base))+
     card('Semi+Gamma','$'+F(t.two),cls(t.two-t.base))+
-    card('Real TSRT','$'+F(t.real),cls(t.real));
-  let h='<table><tr><th>Time</th><th>Setup</th><th>Dir</th><th>Base$</th><th>Semi$</th><th>Gamma$</th><th>2-Fac$</th><th>Real$</th><th>semi%</th><th>g-fav</th><th></th></tr>';
+    card('REAL TSRT','$'+F(t.real),cls(t.real));
+  // layout: trade | signals (why) | outcomes (what each made -> truth)
+  let h='<table><tr><th>Time</th><th>Setup</th><th>Dir</th>'+
+    '<th>Tech %</th><th>Semi×</th><th>Gamma-fav</th>'+
+    '<th>Base$</th><th>Semi$</th><th>Semi+Gamma$</th><th>REAL$</th><th></th></tr>';
   j.trades.forEach(x=>{h+=`<tr><td>${x.time}</td><td>${x.setup}</td><td>${x.dir}</td>`+
-    `<td class="${cls(x.base)}">${F(x.base)}</td><td class="${cls(x.semi)}">${F(x.semi)}</td>`+
-    `<td class="${cls(x.gamma)}">${F(x.gamma)}</td><td class="${cls(x.two)}">${F(x.two)}</td>`+
-    `<td class="${cls(x.real)}">${x.real==null?'-':F(x.real)}</td>`+
-    `<td>${x.basket==null?'-':x.basket} (${x.semi_mult}x)</td><td>${x.gamma_fav==null?'-':x.gamma_fav}</td>`+
+    `<td>${x.basket==null?'-':(x.basket>=0?'+':'')+x.basket+'%'}</td>`+
+    `<td>${x.semi_mult}×</td>`+
+    `<td>${x.gamma_fav==null?'-':x.gamma_fav}</td>`+
+    `<td class="${cls(x.base)}">${F(x.base)}</td>`+
+    `<td class="${cls(x.semi)}">${F(x.semi)}</td>`+
+    `<td class="${cls(x.two)}">${F(x.two)}</td>`+
+    `<td class="${cls(x.real)}"><b>${x.real==null?'-':F(x.real)}</b></td>`+
     `<td>${x.placed?'<span class="tag">TSRT</span>':''}</td></tr>`;});
   h+='</table>'; document.getElementById('tbl').innerHTML=h;
   Plotly.purge('chart');
@@ -73,7 +78,7 @@ async function loadHist(){
   ],{paper_bgcolor:'#0e1117',plot_bgcolor:'#161b22',font:{color:'#e6edf3'},title:'Cumulative $ — last 20 V16 days',
      xaxis:{gridcolor:'#30363d'},yaxis:{gridcolor:'#30363d'},height:340},{responsive:true});
   document.getElementById('status').textContent=j.days.length+' days';
-  let h='<table><tr><th>Day</th><th>Base$</th><th>Semi$</th><th>2-Fac$</th><th>Real$</th><th>n</th></tr>';
+  let h='<table><tr><th>Day</th><th>Base$</th><th>Semi$</th><th>Semi+Gamma$</th><th>REAL$</th><th>n</th></tr>';
   d.slice().reverse().forEach(r=>{h+=`<tr><td>${r.date}</td><td class="${cls(r.base)}">${F(r.base)}</td>`+
     `<td class="${cls(r.semi)}">${F(r.semi)}</td><td class="${cls(r.two)}">${F(r.two)}</td>`+
     `<td class="${cls(r.real)}">${F(r.real)}</td><td>${r.n}</td></tr>`;});

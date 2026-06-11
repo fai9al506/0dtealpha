@@ -15097,6 +15097,7 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabSpot">Spot</button>
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabEsDelta">ES Delta</button>
+        <button class="btn" id="tabDarkmate">Dark Mate</button>
         <button class="btn" id="tabHistorical">Historical</button>
         <button class="btn" id="tabTradeLog">Trade Log</button>
         <a href="/stock-gex-live" class="btn" style="display:block;text-decoration:none;color:var(--muted)">Stock GEX <span style="font-size:9px;opacity:0.5">&#8599;</span></a>
@@ -15665,6 +15666,16 @@ DASH_HTML_TEMPLATE = """
         <div id="esDeltaPlot" style="height:calc(100vh - 80px)"></div>
       </div>
 
+      <!-- Dark Mate View (embeds /darkmate + /darkmate-fw via iframe, lazy-loaded) -->
+      <div id="viewDarkmate" class="panel" style="display:none;flex-direction:column">
+        <div class="subtabs" id="dmSubtabs" style="margin-bottom:6px">
+          <button class="subtab-btn active" data-dm="results">Sizing Results</button>
+          <button class="subtab-btn" data-dm="fw">Framework Map</button>
+        </div>
+        <iframe id="dmFrame" src="about:blank" title="Dark Mate"
+                style="width:100%;height:calc(100vh - 120px);min-height:580px;border:1px solid var(--border);border-radius:8px;background:#0e1117"></iframe>
+      </div>
+
       <!-- Trade Log View -->
       <div id="viewTradeLog" class="panel" style="display:none;flex-direction:column;overflow:auto">
         <div class="header"><div><strong>Trade Log</strong></div><span id="tlStatus" style="font-size:11px;color:var(--muted)"></span></div>
@@ -15933,6 +15944,7 @@ DASH_HTML_TEMPLATE = """
           tabSpot=document.getElementById('tabSpot'),
           tabCharts=document.getElementById('tabCharts'),
           tabEsDelta=document.getElementById('tabEsDelta'),
+          tabDarkmate=document.getElementById('tabDarkmate'),
           tabHistorical=document.getElementById('tabHistorical'),
           tabTradeLog=document.getElementById('tabTradeLog');
 
@@ -15940,6 +15952,7 @@ DASH_HTML_TEMPLATE = """
           viewSpot=document.getElementById('viewSpot'),
           viewCharts=document.getElementById('viewCharts'),
           viewEsDelta=document.getElementById('viewEsDelta'),
+          viewDarkmate=document.getElementById('viewDarkmate'),
           viewHistorical=document.getElementById('viewHistorical'),
           viewTradeLog=document.getElementById('viewTradeLog');
 
@@ -15957,10 +15970,10 @@ DASH_HTML_TEMPLATE = """
     function stopTradeLog() { if(tradeLogTimer){clearInterval(tradeLogTimer);tradeLogTimer=null;} }
 
     function setActive(btn){
-      [tabTable,tabSpot,tabCharts,tabEsDelta,tabHistorical,tabTradeLog].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabSpot,tabCharts,tabEsDelta,tabDarkmate,tabHistorical,tabTradeLog].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewHistorical.style.display='none'; viewEsDelta.style.display='none'; viewTradeLog.style.display='none'; }
+    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewHistorical.style.display='none'; viewEsDelta.style.display='none'; viewDarkmate.style.display='none'; viewTradeLog.style.display='none'; }
     function stopAllPolling(){ stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); }
     function saveTab(name){ try{sessionStorage.setItem('activeTab',name);}catch(e){} }
 
@@ -15994,12 +16007,24 @@ DASH_HTML_TEMPLATE = """
     function showSpot(){ setActive(tabSpot); hideAllViews(); viewSpot.style.display=''; stopAllPolling(); startSpot(); startStatistics(); saveTab('spot'); }
     function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; stopAllPolling(); _chartsShowSubTab(_chartsActiveSubTab); saveTab('charts'); }
     function showEsDelta(){ setActive(tabEsDelta); hideAllViews(); viewEsDelta.style.display=''; stopAllPolling(); startEsDelta(); saveTab('esDelta'); }
+    // Dark Mate tab: lazy-load the embedded page (iframe) only when shown
+    let _dmSub='results';
+    function _dmLoad(){
+      const f=document.getElementById('dmFrame');
+      const url = _dmSub==='fw' ? '/darkmate-fw' : '/darkmate';
+      if(f.getAttribute('data-cur')!==url){ f.src=url; f.setAttribute('data-cur',url); }
+    }
+    function showDarkmate(){ setActive(tabDarkmate); hideAllViews(); viewDarkmate.style.display='flex'; stopAllPolling(); _dmLoad(); saveTab('darkmate'); }
+    document.querySelectorAll('#dmSubtabs .subtab-btn').forEach(b=>{
+      b.addEventListener('click',()=>{ _dmSub=b.dataset.dm; document.querySelectorAll('#dmSubtabs .subtab-btn').forEach(x=>x.classList.toggle('active',x.dataset.dm===_dmSub)); _dmLoad(); });
+    });
     function showHistorical(){ setActive(tabHistorical); hideAllViews(); viewHistorical.style.display=''; stopAllPolling(); _histShowSubTab(_histActiveSubTab); saveTab('historical'); }
     function showTradeLog(){ setActive(tabTradeLog); hideAllViews(); viewTradeLog.style.display='flex'; stopAllPolling(); _tlLoadActiveSubTab(); tradeLogTimer=setInterval(_tlLoadActiveSubTab,30000); saveTab('tradeLog'); }
     tabTable.addEventListener('click', showTable);
     tabSpot.addEventListener('click', showSpot);
     tabCharts.addEventListener('click', showCharts);
     tabEsDelta.addEventListener('click', showEsDelta);
+    tabDarkmate.addEventListener('click', showDarkmate);
     tabHistorical.addEventListener('click', showHistorical);
     tabTradeLog.addEventListener('click', showTradeLog);
 
@@ -16013,7 +16038,7 @@ DASH_HTML_TEMPLATE = """
       // Restore sub-tab memory
       const cSub = sessionStorage.getItem('chartsSubTab'); if(cSub) _chartsActiveSubTab = cSub;
       const hSub = sessionStorage.getItem('histSubTab'); if(hSub) _histActiveSubTab = hSub;
-      const tabMap = {spot:showSpot, charts:showCharts, esDelta:showEsDelta, historical:showHistorical, tradeLog:showTradeLog};
+      const tabMap = {spot:showSpot, charts:showCharts, esDelta:showEsDelta, darkmate:showDarkmate, historical:showHistorical, tradeLog:showTradeLog};
       if(saved && tabMap[saved]) tabMap[saved]();
     } catch(e){}
 

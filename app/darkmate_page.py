@@ -16,6 +16,7 @@ button{cursor:pointer} .cards{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0
 table{width:100%;border-collapse:collapse;font-size:12.5px;margin:8px 0} td,th{border:1px solid #30363d;padding:5px 8px;text-align:right}
 th{background:#1c2230;color:#8b949e} td:first-child,td:nth-child(2){text-align:left}
 .win{color:#3fb950}.loss{color:#f85149}.mut{color:#8b949e;font-size:12px}
+.sum{max-width:480px;font-size:13.5px} .sum td,.sum th{padding:7px 14px} .sum td:nth-child(2),.sum td:nth-child(3){text-align:right}
 .tag{font-size:10px;padding:1px 5px;border-radius:4px;background:#1c2230;color:#8b949e}
 </style></head><body>
 <h1>⚛️ Dark Mate — Sizing Results</h1>
@@ -43,13 +44,21 @@ async function load(){
   if(j.error){document.getElementById('status').textContent='err: '+j.error.slice(0,120);return;}
   document.getElementById('status').textContent=j.date+' · '+j.n+' V16 trades · breaker $'+cap;
   const t=j.totals;
+  const Dol=v=>(v>=0?'+$':'-$')+Math.abs(Math.round(v));
+  function srow(lab,v,isBase){
+    const d=(v==null||isBase)?'—':Dol(v-t.base);
+    const dc=(v==null||isBase)?'mut':cls(v-t.base);
+    return `<tr><td>${lab}</td><td class="${cls(v)}">$${F(v)}</td><td class="${dc}"><b>${d}</b></td></tr>`;
+  }
   document.getElementById('cards').innerHTML=
-    card('Baseline (1×)','$'+F(t.base))+
-    card('Semi-sized','$'+F(t.semi),cls(t.semi-t.base))+
-    card('Semi (cap)','$'+F(t.semi_cap),cls(t.semi_cap-t.base))+
-    card('Semi+Gamma','$'+F(t.two),cls(t.two-t.base))+
-    card('Semi+G (cap)','$'+F(t.two_cap),cls(t.two_cap-t.base))+
-    card('REAL TSRT','$'+F(t.real),cls(t.real));
+    '<table class="sum"><tr><th>Scheme</th><th>Total</th><th>Δ vs Baseline</th></tr>'+
+    srow('Baseline (1×)',t.base,true)+
+    srow('Semi',t.semi)+
+    srow('Semi (capped)',t.semi_cap)+
+    srow('Semi+Gamma',t.two)+
+    srow('Semi+G (capped)',t.two_cap)+
+    srow('REAL TSRT',t.real)+
+    '</table>';
   // layout: trade | signals (why) | outcomes (what each made -> truth)
   let h='<table><tr><th>Time</th><th>Setup</th><th>Dir</th>'+
     '<th>Tech %</th><th>Semi×</th><th>Gamma-fav</th>'+
@@ -64,15 +73,15 @@ async function load(){
     `<td class="${cls(x.real)}"><b>${x.real==null?'-':F(x.real)}</b></td>`+
     `<td>${x.placed?'<span class="tag">TSRT</span>':''}</td></tr>`;});
   h+='</table>'; document.getElementById('tbl').innerHTML=h;
-  // daily scheme comparison bar chart (fills the panel; was empty on daily view)
-  const labels=['Baseline','Semi','Semi (cap)','Semi+Gamma','Semi+G (cap)','REAL TSRT'];
-  const vals=[t.base,t.semi,t.semi_cap,t.two,t.two_cap,t.real];
-  Plotly.newPlot('chart',[{x:labels,y:vals,type:'bar',
-     marker:{color:vals.map(v=>(v==null?'#30363d':(v>=0?'#3fb950':'#f85149')))},
-     text:vals.map(v=>(v==null?'':'$'+F(v))),textposition:'outside',cliponaxis:false}],
+  // delta vs baseline (above 0 = sizing helped, below = hurt)
+  const labels=['Semi','Semi (cap)','Semi+Gamma','Semi+G (cap)','REAL'];
+  const dv=[t.semi,t.semi_cap,t.two,t.two_cap,t.real].map(v=>v==null?null:v-t.base);
+  Plotly.newPlot('chart',[{x:labels,y:dv,type:'bar',
+     marker:{color:dv.map(v=>(v==null?'#30363d':(v>=0?'#3fb950':'#f85149')))},
+     text:dv.map(v=>(v==null?'':Dol(v))),textposition:'outside',cliponaxis:false}],
     {paper_bgcolor:'#0e1117',plot_bgcolor:'#161b22',font:{color:'#e6edf3'},
-     margin:{t:14,b:40,l:50,r:10},title:{text:j.date+' — sizing vs baseline vs real (breaker $'+cap+')',font:{size:13}},
-     xaxis:{gridcolor:'#30363d'},yaxis:{title:'$',gridcolor:'#30363d',zeroline:true,zerolinecolor:'#555'}},{responsive:true});
+     margin:{t:24,b:34,l:50,r:10},title:{text:j.date+' — Δ vs baseline (breaker $'+cap+') · above 0 = sizing helped',font:{size:13}},
+     xaxis:{gridcolor:'#30363d'},yaxis:{title:'Δ $ vs baseline',gridcolor:'#30363d',zeroline:true,zerolinecolor:'#555'}},{responsive:true});
 }
 async function loadHist(){
   document.getElementById('status').textContent='loading history...';

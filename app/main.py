@@ -8477,9 +8477,9 @@ def darkmate_fw_page(session: str = Cookie(None)):
     return HTMLResponse(DARKMATE_FW_HTML)
 
 @app.get("/api/darkmate/results")
-def api_darkmate_results(date: str = None):
+def api_darkmate_results(date: str = None, cap: float = 300.0):
     from app import darkmate
-    return darkmate.results(date)
+    return darkmate.results(date, cap)
 
 @app.get("/api/darkmate/results-history")
 def api_darkmate_results_history(days: int = 20):

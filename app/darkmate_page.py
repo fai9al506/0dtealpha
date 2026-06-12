@@ -21,6 +21,7 @@ th{background:#1c2230;color:#8b949e} td:first-child,td:nth-child(2){text-align:l
 <h1>⚛️ Dark Mate — Sizing Results</h1>
 <div class="bar">
   <label>Date <input type="date" id="dt"></label>
+  <label>Breaker $<input type="number" id="cap" value="300" step="25" style="width:72px"></label>
   <button onclick="load()">Load</button>
   <button onclick="loadHist()">History (20d)</button>
   <span id="status" class="mut"></span>
@@ -35,16 +36,19 @@ const cls=x=>x==null?'mut':(x>=0?'win':'loss');
 function card(l,v,c){return `<div class="card"><div class="lbl">${l}</div><div class="val ${c||''}">${v}</div></div>`;}
 async function load(){
   const d=document.getElementById('dt').value;
+  const cap=document.getElementById('cap').value||300;
   document.getElementById('status').textContent='loading...';
-  const r=await fetch('/api/darkmate/results'+(d?('?date='+d):''),{cache:'no-store'});
+  const r=await fetch('/api/darkmate/results?cap='+cap+(d?('&date='+d):''),{cache:'no-store'});
   const j=await r.json();
   if(j.error){document.getElementById('status').textContent='err: '+j.error.slice(0,120);return;}
-  document.getElementById('status').textContent=j.date+' · '+j.n+' V16 trades';
+  document.getElementById('status').textContent=j.date+' · '+j.n+' V16 trades · breaker $'+cap;
   const t=j.totals;
   document.getElementById('cards').innerHTML=
     card('Baseline (1×)','$'+F(t.base))+
     card('Semi-sized','$'+F(t.semi),cls(t.semi-t.base))+
+    card('Semi (cap)','$'+F(t.semi_cap),cls(t.semi_cap-t.base))+
     card('Semi+Gamma','$'+F(t.two),cls(t.two-t.base))+
+    card('Semi+G (cap)','$'+F(t.two_cap),cls(t.two_cap-t.base))+
     card('REAL TSRT','$'+F(t.real),cls(t.real));
   // layout: trade | signals (why) | outcomes (what each made -> truth)
   let h='<table><tr><th>Time</th><th>Setup</th><th>Dir</th>'+

@@ -148,9 +148,11 @@ def _gamma_adj(f):
 
 
 # ====================== (B) RESULTS ======================
-def results(date_iso=None):
+def results(date_iso=None, cap=300.0):
     """Per-trade sizing comparison on the V16 set for a date (default today, ET).
-    Returns baseline/semi/gamma/2factor (portal pnl x$5) + real-TSRT broker $ + daily totals."""
+    Returns baseline/semi/gamma/2factor (portal pnl x$5) + real-TSRT broker $ + daily totals.
+    Also returns CAPPED totals: the $cap daily-loss breaker applied chronologically to each
+    sized scheme (it trips earlier under bigger size). cap configurable to assess levels."""
     if not _engine:
         return {"error": "no engine"}
     if not date_iso:
@@ -159,7 +161,7 @@ def results(date_iso=None):
         with _engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             gaps = load_gaps(conn)
             rows = conn.execute(text(f"""
-                SELECT {COLS}, spot, outcome_pnl, outcome_result
+                SELECT {COLS}, spot, outcome_pnl, outcome_result, outcome_elapsed_min
                 FROM setup_log
                 WHERE (ts AT TIME ZONE 'America/New_York')::date = :d
                 ORDER BY ts"""), {"d": date_iso}).mappings().all()
@@ -177,6 +179,7 @@ def results(date_iso=None):
                         except: st = {}
                     real[lid] = st or {}
             out = []
+            flow = []  # chronological {en, cl, base, semi, two} for the breaker sim
             tot = {"base": 0.0, "semi": 0.0, "gamma": 0.0, "two": 0.0, "real": 0.0}
             for r in v16:
                 if r['outcome_pnl'] is None or r['spot'] is None:
@@ -189,6 +192,9 @@ def results(date_iso=None):
                 sm = _semi_mult(isLong, sb)
                 two = max(0.375, min(2.5, sm * _gamma_adj(f)))
                 gm = _gamma_mult(f)
+                elapsed = r['outcome_elapsed_min']
+                cl = etn + timedelta(minutes=float(elapsed) if elapsed is not None else 30)
+                flow.append({"en": etn, "cl": cl, "base": usd, "semi": usd * sm, "two": usd * two})
                 st = real.get(r['id'], {})
                 rpnl = None
                 en, ex = st.get('fill_price'), st.get('close_fill_price')
@@ -208,8 +214,20 @@ def results(date_iso=None):
                 tot["base"] += usd; tot["semi"] += usd * sm; tot["gamma"] += usd * gm; tot["two"] += usd * two
                 if rpnl is not None:
                     tot["real"] += rpnl
+            # breaker sim: stop placing once realized (closed) sized loss <= -cap (trips earlier under bigger size)
+            def cap_sim(key):
+                taken = []; tripped = False
+                for t in sorted(flow, key=lambda x: x["en"]):
+                    if tripped:
+                        continue
+                    realized = sum(x[key] for x in taken if x["cl"] <= t["en"])
+                    if realized <= -cap:
+                        tripped = True; continue
+                    taken.append(t)
+                return sum(x[key] for x in taken)
+            tot["base_cap"] = cap_sim("base"); tot["semi_cap"] = cap_sim("semi"); tot["two_cap"] = cap_sim("two")
             tot = {k: round(v, 0) for k, v in tot.items()}
-            return {"date": date_iso, "n": len(out), "trades": out, "totals": tot}
+            return {"date": date_iso, "n": len(out), "trades": out, "totals": tot, "cap": cap}
     except Exception:
         return {"error": traceback.format_exc()}
 

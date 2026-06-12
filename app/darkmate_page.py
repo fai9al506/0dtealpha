@@ -74,8 +74,8 @@ async function load(){
     `<td>${x.placed?'<span class="tag">TSRT</span>':''}</td></tr>`;});
   h+='</table>'; document.getElementById('tbl').innerHTML=h;
   // delta vs baseline (above 0 = sizing helped, below = hurt)
-  const labels=['Semi','Semi (cap)','Semi+Gamma','Semi+G (cap)','REAL'];
-  const dv=[t.semi,t.semi_cap,t.two,t.two_cap,t.real].map(v=>v==null?null:v-t.base);
+  const labels=['REAL TSRT','Semi','Semi (cap)','Semi+Gamma','Semi+G (cap)'];
+  const dv=[t.real,t.semi,t.semi_cap,t.two,t.two_cap].map(v=>v==null?null:v-t.base);
   Plotly.newPlot('chart',[{x:labels,y:dv,type:'bar',
      marker:{color:dv.map(v=>(v==null?'#30363d':(v>=0?'#3fb950':'#f85149')))},
      text:dv.map(v=>(v==null?'':Dol(v))),textposition:'outside',cliponaxis:false}],

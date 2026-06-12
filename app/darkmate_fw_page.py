@@ -24,13 +24,13 @@ button{cursor:pointer} .mut{color:#8b949e;font-size:12px}
   <span id="status" class="mut"></span>
 </div>
 
-<div class="lab">GAMMA</div>
-<div class="key" id="keyG"></div>
-<div id="chartG" style="height:360px"></div>
-
 <div class="lab">VANNA</div>
 <div class="key" id="keyV"></div>
 <div id="chartV" style="height:360px"></div>
+
+<div class="lab">GAMMA</div>
+<div class="key" id="keyG"></div>
+<div id="chartG" style="height:360px"></div>
 
 <script>
 const EXP=[['dte0','0DTE','#3fb950'],['weekly','Weekly','#58a6ff'],['monthly','Monthly','#bc8cff'],['far','Far (>30d)','#8b949e']];
@@ -63,8 +63,8 @@ async function load(){
       fetch('/api/darkmate/levels?greek=vanna'+q,{cache:'no-store'}).then(r=>r.json())
     ]);
     if(gr.error||vr.error){document.getElementById('status').textContent='err';return;}
-    renderOne('chartG',gr,true); keyChips('keyG',gr);
-    renderOne('chartV',vr,false); keyChips('keyV',vr);
+    renderOne('chartV',vr,true); keyChips('keyV',vr);
+    renderOne('chartG',gr,false); keyChips('keyG',gr);
     document.getElementById('status').textContent='spot '+gr.spot+(gr.spot_live?' (live)':'')+' · '+(gr.snap_ts?gr.snap_ts.slice(11,16)+'Z':'');
   }catch(e){document.getElementById('status').textContent='err: '+e;}
 }

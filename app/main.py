@@ -15669,8 +15669,8 @@ DASH_HTML_TEMPLATE = """
       <!-- Dark Mate View (embeds /darkmate + /darkmate-fw via iframe, lazy-loaded) -->
       <div id="viewDarkmate" class="panel" style="display:none;flex-direction:column">
         <div class="subtabs" id="dmSubtabs" style="margin-bottom:6px">
-          <button class="subtab-btn active" data-dm="results">Sizing Results</button>
-          <button class="subtab-btn" data-dm="fw">Framework Map</button>
+          <button class="subtab-btn active" data-dm="fw">Framework Map</button>
+          <button class="subtab-btn" data-dm="results">Sizing Results</button>
         </div>
         <iframe id="dmFrame" src="about:blank" title="Dark Mate"
                 style="width:100%;height:calc(100vh - 120px);min-height:580px;border:1px solid var(--border);border-radius:8px;background:#0e1117"></iframe>
@@ -16008,7 +16008,7 @@ DASH_HTML_TEMPLATE = """
     function showCharts(){ setActive(tabCharts); hideAllViews(); viewCharts.style.display=''; stopAllPolling(); _chartsShowSubTab(_chartsActiveSubTab); saveTab('charts'); }
     function showEsDelta(){ setActive(tabEsDelta); hideAllViews(); viewEsDelta.style.display=''; stopAllPolling(); startEsDelta(); saveTab('esDelta'); }
     // Dark Mate tab: lazy-load the embedded page (iframe) only when shown
-    let _dmSub='results';
+    let _dmSub='fw';
     function _dmLoad(){
       const f=document.getElementById('dmFrame');
       const url = _dmSub==='fw' ? '/darkmate-fw' : '/darkmate';

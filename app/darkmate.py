@@ -22,13 +22,15 @@ TH = 20.0      # gamma favorability threshold ($M)
 
 _engine = None
 _api_get = None
+_get_spot = None   # callable -> live SPX spot (30s, fresher than 2-min chain_snapshots save)
 _opens = {}    # {date_iso: {sym: open_price}} session opens, daily reset
 
 
-def init(engine, api_get_fn):
-    global _engine, _api_get
+def init(engine, api_get_fn, get_spot_fn=None):
+    global _engine, _api_get, _get_spot
     _engine = engine
     _api_get = api_get_fn
+    _get_spot = get_spot_fn
     try:
         _db_init()
     except Exception:
@@ -301,10 +303,16 @@ def levels(at_iso=None, greek='gamma', rng=150):
             if snap_ts is None and base:
                 snap_ts = max(mt for _, mt in base).isoformat()
             volland_spot = spot
-            # LIVE mode: use the freshest chain spot (30s) for the marker + window centering,
-            # NOT the ~2-min Volland snapshot spot. History mode keeps the snapshot's own spot.
+            # LIVE mode: use the freshest spot for the marker — the in-memory live spot (30s)
+            # when available, else the chain_snapshots DB (which only saves every ~2 min).
+            # History mode keeps the Volland snapshot's own spot.
             if not at_iso:
-                sp = conn.execute(text("SELECT spot FROM chain_snapshots WHERE spot IS NOT NULL ORDER BY ts DESC LIMIT 1")).scalar()
+                sp = None
+                if _get_spot:
+                    try: sp = _get_spot()
+                    except Exception: sp = None
+                if not sp:
+                    sp = conn.execute(text("SELECT spot FROM chain_snapshots WHERE spot IS NOT NULL ORDER BY ts DESC LIMIT 1")).scalar()
                 if sp:
                     spot = float(sp)
             if spot is None:

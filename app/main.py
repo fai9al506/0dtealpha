@@ -378,6 +378,7 @@ _last_saved_at = 0.0
 _spx_data_ts = 0.0  # time.time() when latest_df was last refreshed with fresh API data
 _df_lock = Lock()
 _vix_last: float | None = None  # latest VIX value from TS quotes
+_spot_last: float | None = None  # latest SPX spot (30s pull, fresher than 2-min chain_snapshots save)
 _vix3m_last: float | None = None  # latest VIX3M value from TS quotes
 _overvix: float | None = None  # VIX - VIX3M (overvix indicator)
 
@@ -3288,7 +3289,7 @@ _MARKET_JOB_TIMEOUT = 90  # seconds — relaxed after Volland cache optimization
 
 def _run_market_job_inner():
     """Actual market job logic. Called from run_market_job with timeout wrapper."""
-    global latest_df, last_run_status, _spx_session, _spx_cycle_high, _spx_cycle_low, _vix_last, _vix3m_last, _overvix, _spx_data_ts
+    global latest_df, last_run_status, _spx_session, _spx_cycle_high, _spx_cycle_low, _vix_last, _vix3m_last, _overvix, _spx_data_ts, _spot_last
     try:
         if not market_open_now():
             last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": "outside market hours"}
@@ -3382,6 +3383,8 @@ def _run_market_job_inner():
         with _df_lock:
             latest_df = df.copy()
         _spx_data_ts = time.time()
+        if spot:
+            _spot_last = float(spot)  # live spot for fresh consumers (e.g. Dark Mate FW)
         last_run_status = {"ts": fmt_et(now_et()), "ok": True, "msg": f"exp={exp} spot={round(spot or 0,2)} rows={final_count}"}
         print("[pull] OK", last_run_status["msg"], flush=True)
 
@@ -8220,7 +8223,7 @@ def on_startup():
     # Self-contained, fail-soft, MONITORING-ONLY (zero touch to the trade loop). 2026-06-11.
     try:
         from app.darkmate import init as darkmate_init
-        darkmate_init(engine, api_get)
+        darkmate_init(engine, api_get, lambda: _spot_last)
     except Exception as e:
         print(f"[darkmate] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)

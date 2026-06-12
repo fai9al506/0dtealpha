@@ -53,11 +53,11 @@ async function load(){
   document.getElementById('cards').innerHTML=
     '<table class="sum"><tr><th>Scheme</th><th>Total</th><th>Δ vs Baseline</th></tr>'+
     srow('Baseline (1×)',t.base,true)+
+    srow('REAL TSRT',t.real)+
     srow('Semi',t.semi)+
     srow('Semi (capped)',t.semi_cap)+
     srow('Semi+Gamma',t.two)+
     srow('Semi+G (capped)',t.two_cap)+
-    srow('REAL TSRT',t.real)+
     '</table>';
   // layout: trade | signals (why) | outcomes (what each made -> truth)
   let h='<table><tr><th>Time</th><th>Setup</th><th>Dir</th>'+

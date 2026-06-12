@@ -64,7 +64,15 @@ async function load(){
     `<td class="${cls(x.real)}"><b>${x.real==null?'-':F(x.real)}</b></td>`+
     `<td>${x.placed?'<span class="tag">TSRT</span>':''}</td></tr>`;});
   h+='</table>'; document.getElementById('tbl').innerHTML=h;
-  Plotly.purge('chart');
+  // daily scheme comparison bar chart (fills the panel; was empty on daily view)
+  const labels=['Baseline','Semi','Semi (cap)','Semi+Gamma','Semi+G (cap)','REAL TSRT'];
+  const vals=[t.base,t.semi,t.semi_cap,t.two,t.two_cap,t.real];
+  Plotly.newPlot('chart',[{x:labels,y:vals,type:'bar',
+     marker:{color:vals.map(v=>(v==null?'#30363d':(v>=0?'#3fb950':'#f85149')))},
+     text:vals.map(v=>(v==null?'':'$'+F(v))),textposition:'outside',cliponaxis:false}],
+    {paper_bgcolor:'#0e1117',plot_bgcolor:'#161b22',font:{color:'#e6edf3'},
+     margin:{t:14,b:40,l:50,r:10},title:{text:j.date+' — sizing vs baseline vs real (breaker $'+cap+')',font:{size:13}},
+     xaxis:{gridcolor:'#30363d'},yaxis:{title:'$',gridcolor:'#30363d',zeroline:true,zerolinecolor:'#555'}},{responsive:true});
 }
 async function loadHist(){
   document.getElementById('status').textContent='loading history...';

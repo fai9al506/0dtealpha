@@ -104,10 +104,29 @@ def passes_v16(l, gaps):
     def isOpex():
         return bool(et) and et.weekday() == 4 and 15 <= et.day <= 21
 
-    if sn not in ('Skew Charm', 'AG Short', 'Vanna Pivot Bounce', 'ES Absorption', 'DD Exhaustion'): return False
+    if sn not in ('Skew Charm', 'AG Short', 'Vanna Pivot Bounce', 'ES Absorption',
+                  'DD Exhaustion', 'GEX Long', 'VIX Divergence'): return False
     if sn == 'DD Exhaustion' and not isLong: return False
     if sn == 'AG Short' and para == 'AG-TARGET': return False
-    if isLong and para == 'GEX-TARGET' and et and et.hour >= 13: return False
+    # S180 GEX-TARGET PM block — runtime scopes it to SC/DD/ES Abs (main.py:4191), mirror that.
+    if isLong and para == 'GEX-TARGET' and et and et.hour >= 13 and sn in ('Skew Charm', 'DD Exhaustion', 'ES Absorption'): return False
+    # ── Carve-outs added 2026-06-11 to re-sync with runtime _passes_live_filter ──
+    # These three setups went live AFTER the original mirror and were silently
+    # dropped from the V16 dropdown (VPB fell through to v10BaseV14's align>=2 gate;
+    # GEX Long / VIX Divergence weren't even in the allowed-setup list above).
+    # VIX Divergence (main.py:4233): long + grade!=C + GEX-* paradigm.
+    if sn == 'VIX Divergence':
+        return isLong and grade != 'C' and bool(para) and para.startswith('GEX-')
+    # Vanna Pivot Bounce (main.py:4295, S192): long + grade B + hour != 11 ET.
+    if sn == 'Vanna Pivot Bounce':
+        return isLong and grade == 'B' and not (et and et.hour == 11)
+    # GEX Long v6 (main.py:4365): long + (gap filter) + not SIDIAL-EXTREME@hr14 + (align>=0 OR bull paradigm).
+    # Detector already enforced the v6 classifier (verdict/magnet-dominance) before logging.
+    if sn == 'GEX Long':
+        if not isLong: return False
+        if not gapFilter(): return False
+        if para == 'SIDIAL-EXTREME' and et and et.hour == 14: return False
+        return (align >= 0) or (para in ('BofA-LIS', 'GEX-TARGET', 'SIDIAL-MESSY', 'BOFA-PURE'))
     if sn == 'DD Exhaustion' and isLong:
         if para == 'SIDIAL-EXTREME' and mins is not None and 840 <= mins < 900: return False
         if align < 0 or align >= 3 or (l['vix'] or 0) >= 22: return False

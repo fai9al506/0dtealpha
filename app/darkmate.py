@@ -226,8 +226,15 @@ def results(date_iso=None, cap=300.0):
                     taken.append(t)
                 return sum(x[key] for x in taken)
             tot["base_cap"] = cap_sim("base"); tot["semi_cap"] = cap_sim("semi"); tot["two_cap"] = cap_sim("two")
+            # REAL total = broker truth (tsrt_daily_stmt gross) when the day is in the statement;
+            # per-lid real_trade_orders undercounts EXPIRED + multi-concurrent (S210), so prefer stmt.
+            real_src = "per-lid (stmt pending)"
+            stmt_gross = conn.execute(text("SELECT gross FROM tsrt_daily_stmt WHERE day = :d"),
+                                      {"d": date_iso}).scalar()
+            if stmt_gross is not None:
+                tot["real"] = float(stmt_gross); real_src = "broker truth (tsrt_daily_stmt)"
             tot = {k: round(v, 0) for k, v in tot.items()}
-            return {"date": date_iso, "n": len(out), "trades": out, "totals": tot, "cap": cap}
+            return {"date": date_iso, "n": len(out), "trades": out, "totals": tot, "cap": cap, "real_src": real_src}
     except Exception:
         return {"error": traceback.format_exc()}
 

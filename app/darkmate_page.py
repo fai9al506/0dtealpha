@@ -42,7 +42,7 @@ async function load(){
   const r=await fetch('/api/darkmate/results?cap='+cap+(d?('&date='+d):''),{cache:'no-store'});
   const j=await r.json();
   if(j.error){document.getElementById('status').textContent='err: '+j.error.slice(0,120);return;}
-  document.getElementById('status').textContent=j.date+' · '+j.n+' V16 trades · breaker $'+cap;
+  document.getElementById('status').textContent=j.date+' · '+j.n+' V16 trades · breaker $'+cap+(j.real_src?' · real: '+j.real_src:'');
   const t=j.totals;
   const Dol=v=>(v>=0?'+$':'-$')+Math.abs(Math.round(v));
   function srow(lab,v,isBase){

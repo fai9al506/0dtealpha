@@ -1,0 +1,105 @@
+<!DOCTYPE html><html><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>S217 — June Drawdown Fixes (2026-06-13)</title>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<style>
+:root{--bg:#0b0f14;--panel:#11161d;--fg:#e8edf4;--grid:#1d242e;--green:#2dd4a7;--red:#ff5d5d;--accent:#5ea2ff;--amber:#f5b942;--muted:#8b97a6;}
+*{box-sizing:border-box;}
+body{background:var(--bg);color:var(--fg);font-family:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.55;max-width:1000px;margin:0 auto;padding:32px 24px;-webkit-font-smoothing:antialiased;}
+h1{font-size:26px;font-weight:800;margin:0 0 4px;}
+h2{font-size:19px;font-weight:700;margin:34px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--grid);}
+.sub{color:var(--muted);font-size:13.5px;margin-bottom:6px;}
+.cards{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0;}
+.card{background:var(--panel);border:1px solid var(--grid);border-radius:12px;padding:14px 16px;flex:1;min-width:150px;}
+.card .l{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px;}
+.card .v{font-size:24px;font-weight:800;margin-top:4px;font-family:'JetBrains Mono',monospace;}
+.pos{color:var(--green);} .neg{color:var(--red);} .amb{color:var(--amber);} .acc{color:var(--accent);}
+table{border-collapse:collapse;width:100%;margin:10px 0 6px;font-size:14px;}
+th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--grid);}
+th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.4px;}
+td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
+.fix{background:var(--panel);border:1px solid var(--grid);border-left:3px solid var(--accent);border-radius:10px;padding:16px 18px;margin:14px 0;}
+.fix.green{border-left-color:var(--green);}
+.fix h3{margin:0 0 6px;font-size:17px;}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;margin-left:8px;vertical-align:middle;}
+.tag.live{background:rgba(45,212,167,.15);color:var(--green);}
+.tag.dormant{background:rgba(245,185,66,.15);color:var(--amber);}
+.note{background:rgba(94,162,255,.08);border:1px solid rgba(94,162,255,.25);border-radius:10px;padding:12px 15px;margin:14px 0;font-size:13.5px;}
+code{background:#0c1118;border:1px solid var(--grid);border-radius:5px;padding:1px 6px;font-family:'JetBrains Mono',monospace;font-size:12.5px;color:var(--accent);}
+ul{margin:6px 0;padding-left:20px;} li{margin:3px 0;}
+.src{color:var(--muted);font-size:12px;margin-top:30px;border-top:1px solid var(--grid);padding-top:12px;}
+.conf{font-size:11px;font-weight:700;padding:1px 7px;border-radius:5px;}
+.conf.hi{background:rgba(45,212,167,.15);color:var(--green);}
+.conf.med{background:rgba(245,185,66,.15);color:var(--amber);}
+</style></head><body>
+
+<h1>S217 — June Drawdown Fixes</h1>
+<div class='sub'>Shipped 2026-06-13 (Sat) &middot; commit <code>3064bfb</code> &middot; backup/rollback tag <code>stable-20260613-140610</code></div>
+
+<h2>Why — the root cause</h2>
+<p>The last 6 trading days (Jun 5–12) lost <b class='neg'>−$1,338</b>, wiping the post-V16 gains. The diagnosis (full-day analysis): <b>it was NOT a win-rate collapse</b> (WR held at 54% every month Mar/Apr/May/Jun) and <b>NOT signal decay</b>. It was <b>execution / capture in a high-volatility reversal regime</b>:</p>
+<div class='cards'>
+<div class='card'><div class='l'>V16 portal (paper), June</div><div class='v neg'>−$12</div></div>
+<div class='card'><div class='l'>Real broker, June</div><div class='v neg'>−$1,338</div></div>
+<div class='card'><div class='l'>The gap = capture/exec</div><div class='v amb'>~−$1,300</div></div>
+</div>
+<ul>
+<li><b>Stops blew out 3×</b> (−4pt avg in May → −13pt in June): the breakeven-trail never armed in fast tape.</li>
+<li><b>11 winners flipped to losses</b> (−$768): SPX said win, an MES wick stopped us out.</li>
+<li><b>70% of June trades were on the wrong side</b> of the day's eventual direction (fades into reversal days, vs 43% in May).</li>
+</ul>
+
+<h2>What shipped today (2 fixes)</h2>
+
+<div class='fix green'>
+<h3>#1 — Basket Gate / "Scheme B" <span class='tag dormant'>DORMANT — arm Monday</span> <span class='conf hi'>validated 3 months</span></h3>
+<p><b>What it does:</b> before placing a real TSRT trade, it checks whether the big tech names (NVDA, AMD, AVGO, META, MSFT, GOOGL) are moving the <b>same direction</b> as the trade. If the basket <b>contradicts</b> (or is neutral), the trade is <b>skipped</b>. Only basket-<b>confirmed</b> trades are placed ("0/0/1").</p>
+<p><b>Why it fixes the bleed:</b> trades the basket confirms win <b class='pos'>72%</b>; trades it contradicts win only <b class='neg'>54%</b> — and that split held <b>every month Mar→Jun</b>. Skipping the contradicted trades removes most of the bad-week losses. On June, it skips the ~65% of trades that were fighting the tape.</p>
+<p><b>Safety:</b> single choke point in <code>real_trader.place_trade()</code> &middot; <b>fail-soft</b> — any missing/stale data or error means the trade is <b>taken</b> (it can only skip, never add a loss) &middot; env switch <code>BASKET_GATE_ENABLED</code> (default OFF — ships dormant) &middot; new module <code>app/basket_gate.py</code>.</p>
+</div>
+
+<div class='fix'>
+<h3>#2 — S131 Trail-Bug Fix <span class='tag live'>LIVE on deploy</span> <span class='conf med'>post-V16 tested</span></h3>
+<p><b>What it does:</b> in "ride-the-portal" (S131) mode, the trailing exit no longer fires on a jumpy MES tick — the smooth SPX path (<code>check_spx_trail_exit</code>) owns the exit, with the broker stop as the safety net.</p>
+<p><b>Why it fixes the bleed:</b> a known bug was kicking us out of <b>winning</b> trades early on an MES wiggle — e.g. trade #3905 booked <b class='neg'>+$6.8</b> on the broker vs <b class='pos'>+$25.3</b> in the portal. Fixing it lets winners run to the real (SPX) exit.</p>
+<p><b>Safety:</b> scoped to S131 internal-trail mode only (first-realign &amp; non-S131 behavior unchanged) &middot; broker disaster-stop always present &middot; revert via <code>SPX_EXIT_ENABLED=false</code> &middot; <code>real_trader.update_stop()</code>.</p>
+</div>
+
+<h2>Expected results — delta vs post-V16 baseline (+$415)</h2>
+<table>
+<thead><tr><th>Scenario</th><th class='num'>Good days (May19–Jun4)</th><th class='num'>6 bad days (Jun5–12)</th><th class='num'>Total</th><th class='num'>Δ</th></tr></thead>
+<tbody>
+<tr><td>Baseline (what actually happened)</td><td class='num pos'>+1,708</td><td class='num neg'>−1,292</td><td class='num'>+415</td><td class='num'>—</td></tr>
+<tr><td><b>#1 Basket gate (0/0/1)</b></td><td class='num'>≈+1,700</td><td class='num amb'>≈−100</td><td class='num pos'>≈+1,400</td><td class='num pos'>+~1,000</td></tr>
+<tr><td><b>#2 Trail-bug fix (within exit capture)</b></td><td class='num'>—</td><td class='num'>—</td><td class='num'>+639</td><td class='num pos'>+224</td></tr>
+<tr><td><b>Combined (realistic, conservative)</b></td><td class='num'>—</td><td class='num amb'>~breakeven to −200</td><td class='num pos'>~+1,100 to +1,600</td><td class='num pos'>+700 to +1,200</td></tr>
+</tbody></table>
+<div class='note'><b>Honest caveats:</b> all figures are per-lid gross and in-sample. <b>#1 is validated 3 months</b> (trust higher); <b>#2 is post-V16 only (~3.5 weeks)</b>. Numbers are <b>targets to confirm live</b>, not promises. The one to stake the most on is the basket gate (#1). The live <code>semi_basket</code> capture is only days old — verify the pipeline before fully trusting #1.</div>
+
+<h2>Status &amp; controls</h2>
+<table>
+<thead><tr><th>Fix</th><th>State on deploy</th><th>Arm / revert</th></tr></thead>
+<tbody>
+<tr><td>#2 Trail-bug fix</td><td class='pos'>ACTIVE (SPX_EXIT_ENABLED already on)</td><td>revert: <code>SPX_EXIT_ENABLED=false</code></td></tr>
+<tr><td>#1 Basket gate</td><td class='amb'>DORMANT (env off)</td><td>arm: <code>BASKET_GATE_ENABLED=true</code> &middot; revert: <code>=false</code></td></tr>
+<tr><td>Full rollback</td><td>—</td><td><code>git checkout stable-20260613-140610</code></td></tr>
+</tbody></table>
+
+<h2>Tested before ship</h2>
+<ul>
+<li>Classifier == validated backtest logic: <b>0 mismatches across 173 trades</b>.</li>
+<li>Fail-open verified (no DB / stale &gt;10min / &lt;4 of 6 names → trade taken).</li>
+<li>Trail-fix correctly scoped: <b>3/3</b> behavior tests (suppresses MES exit only in S131 mode).</li>
+<li>Both files compile clean; full backup tagged &amp; pushed first.</li>
+</ul>
+
+<h2>Not shipped today (next phases)</h2>
+<ul>
+<li><b>#3 Surgical exit fix</b> (~+$435) — track live first (post-V16-only tested).</li>
+<li><b>#4 2pt MES ride</b> (+$276 floor → +$667 ceiling) — needs tick data to pin the upside.</li>
+<li><b>#5 Semi sizing</b> (~1.4–1.5× amplifier) — deferred to scale-up (MES is whole-contract, can't do 0.5×).</li>
+</ul>
+
+<div class='src'>Source: trade-analyses.md Analysis #21 (+CORRECTION +FINAL) &middot; Tasks.md S217 / S218 &middot; commit 3064bfb &middot; generated 2026-06-13.</div>
+</body></html>

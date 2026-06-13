@@ -453,6 +453,19 @@ Self-contained, fail-soft, **zero touch to the trade loop**. Productionizes the 
 
 **`app/live_filter.py` = CANONICAL live-filter (V16):** `passes_v16(row, gaps)` exactly mirrors `main.py:_tlPassesStrategy(l,'v16')` (~line 18833), validated **920 trades / +3408.1 pts** (all-time). `backfill_live_pass(engine)` stamps `setup_log.live_pass` + `live_filter_ver` so recall is `WHERE live_pass=true`. Daily re-stamp job `live_pass_restamp` (16:25 ET). `live_filter_recall.py` (root) = manual backfill runner. **On a filter change (V17): edit `app/live_filter.py` + re-run.** See memory `reference_live_filter_recall.md`.
 
+### Basket Gate / Scheme B (`app/basket_gate.py`) — added 2026-06-13 (S217)
+
+**Real-money trade gate** that skips TSRT trades the tech basket CONTRADICTS. Root cause of the June drawdown was execution/capture in a high-vol reversal regime; this is the highest-confidence fix (signal-side, validated 3 months Mar–Jun: basket-confirm 72% WR vs contradict 54%).
+
+- **Policy "0/0/1":** take only basket-CONFIRMED trades (+ fail-open on missing/stale data). Neutral + contradicted are SKIPPED. (0.5× soft sizing is impossible — MES is whole-contract; that's deferred to scale-up with integer multiples = future `#5`.)
+- **Single choke point:** `basket_gate.evaluate(direction)` is called inside `real_trader.place_trade()` (after the `setup_log_id` check, before dedup) — covers ALL real setups (SC/AG/VPB/VIX/DD/ES Abs) via the one function both dispatch sites call. Skip → `real_trade_skip_reason='basket_gate_block'` + Telegram.
+- **Reads** latest `semi_basket` row (the Dark Mate 1-min capture). `classify(basket_pct, direction)`: deadband |%|<0.15 → neutral; sign-match → confirm; else contradict.
+- **FAIL-SOFT (can never add a loss — only skips):** any error / no row / stale (>10 min) / <4 of 6 names → `no_data` → trade is TAKEN. Self-contained psycopg2 read, never raises into the dispatch.
+- **Env switch `BASKET_GATE_ENABLED` (default `false`).** Ships dormant — flip true to arm. Instant revert by flipping false.
+- Backtest impact: cuts ~65% of trades (takes confirmed only); turns the 6 bad June days (−$1,292) → ~−$100, post-V16 total +$415 → ~+$1,400. **Forward-validate the live `semi_basket` capture (only days old) before fully trusting.** Tasks S217.
+
+**S217 trail-bug fix (`real_trader.update_stop`, same ship):** in S131 internal-trail mode, the Layer-1 MES "wrong-side" check no longer fires `close_trade("trail_market_exit")` on an MES wick — `check_spx_trail_exit()` (SPX-based) owns the exit, the broker stop is the safety net. Fixes winners getting wicked out early (lid 3905: broker +6.8 vs portal +25.3). Scoped to `_spx_exit_enabled() AND initial_realign_done` (first realign + non-S131 unchanged). Active on deploy (`SPX_EXIT_ENABLED` already true).
+
 ### Stock GEX Scanner (`app/stock_gex_scanner.py`) — added 2026-03-21
 
 Completely independent from 0DTE SPX pipeline. **Data collection only** — no alerts, no signals, no Telegram. Scans ~23 stocks every 30 min during market hours, saves GEX + price to DB for future backtesting.

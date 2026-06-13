@@ -721,6 +721,27 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         _alert(f"⏭ SKIPPED {setup_name} {direction}: missing setup_log_id (race or detector bug)")
         return
 
+    # ── S217 Basket gate (Scheme B, 2026-06-13) ──
+    # Skip real trades the tech basket (NVDA/AMD/AVGO/META/MSFT/GOOGL) CONTRADICTS.
+    # "0/0/1": take only basket-CONFIRMED (+ fail-open when basket data missing/stale).
+    # Edge: confirm 72% WR vs contradict 54% (validated Mar–Jun). Env BASKET_GATE_ENABLED
+    # (default off). FAIL-SOFT: any error inside evaluate() returns block=False (trade taken).
+    try:
+        from app import basket_gate
+        _bg = basket_gate.evaluate(direction)
+        if _bg.get("block"):
+            _bp = _bg.get("basket_pct")
+            _bp_str = f"{_bp:+.2f}%" if _bp is not None else "n/a"
+            print(f"[real-trader] skip {setup_name} {direction}: basket_gate "
+                  f"{_bg.get('state')} (basket={_bp_str})", flush=True)
+            _log_skip_reason(setup_log_id, "basket_gate_block")
+            _alert(f"⏭ BASKET GATE: {setup_name} {direction} blocked — "
+                   f"tech basket {_bg.get('state')} ({_bp_str})")
+            return
+    except Exception as _bge:
+        # Never let the gate break the dispatch — fail-open (continue to place).
+        print(f"[real-trader] basket_gate error (fail-open): {_bge}", flush=True)
+
     # Dedup: already tracking this setup_log_id
     with _lock:
         if setup_log_id in _active_orders:
@@ -1399,6 +1420,23 @@ def update_stop(setup_log_id: int, new_stop_price: float):
             # (fallback to fill_price) the trail is just trying to place a
             # bad initial realign → REJECT the modify, keep current stop alive.
             if current_mes is not None:
+                # ── S217 (2026-06-13) trail-bug fix ──
+                # In S131 internal-trail mode (already past the first realign), do NOT
+                # market-exit on an MES wick. The broker stop is the safety net and
+                # check_spx_trail_exit() (SPX-based) owns the real exit — that is the whole
+                # point of S131: pre-empt MES tick wicks. Pre-fix this Layer-1 check fired
+                # close_trade("trail_market_exit") on MES BEFORE the S131 gate below,
+                # defeating S131 (lid 3905: broker +6.8 vs portal +25.3). Skip this update;
+                # the next valid trail cycle / the SPX watchdog handles the exit.
+                _s131_internal = False
+                if _spx_exit_enabled():
+                    with _lock:
+                        _s131_internal = bool(order.get("initial_realign_done"))
+                if _s131_internal:
+                    print(f"[real-trader] [S217] skip MES wrong-side exit (S131 mode) "
+                          f"id={setup_log_id}: {side_reason} — SPX watchdog owns exit",
+                          flush=True)
+                    return
                 _alert(f"⚠️ {setup_name} TRAIL-EXIT via market\n"
                        f"{side_reason}\n"
                        f"Closing at ~{current_mes:.2f}")

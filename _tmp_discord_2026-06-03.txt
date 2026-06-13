@@ -1,0 +1,855 @@
+[03:42] yahyaz: GM
+[03:49] johannes3041: maybe another push for the ag target
+[04:00] johannes3041: 19.5 iceberg says no
+[04:19] windsurfer78: What’s 19.5?
+[04:44] johannes3041: 7619.75 ES
+[04:44] windsurfer78: Ah..
+[04:45] windsurfer78: Got a feeling the market wants to turn down… 🧐
+[04:45] johannes3041: yeah I like AG target
+[04:57] yahyaz: It’s a trap
+[04:57] yahyaz: The bid is lurking
+[04:58] yahyaz: Uhhh
+[04:58] yahyaz: https://tenor.com/view/guy-with-a-plan-joker-gif-4859983
+[04:59] zackhoski: Trade plan is to make a bajillion dollars obviously, isnt that everyones?
+[05:19] yahyaz: Sqzme has 7690 PT for today if we can cross 7650
+[05:19] yahyaz: Oh boy
+[05:34] wizardofops: So what I would do is treat that put as a primary position or hedge and execute smaller positions using it as downside protection.
+[05:40] jk232323: Quite the divergence on ES/NQ here
+[06:07] zackhoski: Like clockwork
+[06:17] windsurfer78: Any chance of a trade plan update today? 😀 @Dark Matter
+[06:33] bigbill8887: What are we doing?  Selling 1% OTM puts?
+[06:33] bigbill8887: 😉
+[06:35] wizardofops: If I have a primary trade that is losing but the thesis is still active, I normally use it to apply hedges on shorter timeframes.
+[06:37] wizardofops: I guess Yahya has long puts, why not have a BWB leaning bullish and use those puts to protect? Or use those puts to protect a butterfly or calendar? Maybe use those puts as leverage to sell closer expiry options? I mean, the possibilities to hedge are numerous.
+[06:43] yahyaz: I guess my hedges have been to scalp the long side on single names with momentum
+[06:43] yahyaz: aka Memory or Software or Semis depending on the flavour of the day
+[06:54] bigbill8887: lol, I think my hedge is the “close all positions” button.
+[07:41] jk232323: Well I made a stupid mistake this morning. Went short oil but CL instead of MCL. Loss was 4k instead of 400 💀😅
+[07:43] yahyaz: oof
+[07:43] yahyaz: Happens
+[07:43] yahyaz: Bought 100 contracts once instead of 10 SPX
+[07:43] jk232323: Also could have done with Trumps tweet a bit earlier lol
+[07:46] jk232323: Long Nasdaq saving me as per of late
+[07:51] yahyaz: Wiz thesis is no long the negative Vanna. Now looking for oil prices and/or Hawkish Fed
+[07:51] yahyaz: aie aie aie
+[07:52] bigbill8887: Question for the room @Wizard of Ops and anyone else who wants to chime in.  This is something I am messing around with (I don't know if this works but Codex is upping my analytics game).  In theory the table above represents a projection of the distribution of the forward 5D SPY returns (e.g. through next Tuesday close).  How would you trade this and why?
+[07:58] bigbill8887: So far all I've done with this is broadly short SPXS (when the projected average return is bullish) and write well OTM put spreads.  I don't think either of these trades are optimal so I am starting to look at the distribution of the projected return to see if I can improve my approach.  My thinking is to look for aggressive trades but keep the overall sizing small to minimize the risk of loses so overbetting on the trade but underbetting on posi
+[08:01] wizardofops: Given those are somewhat correct, you plot that as an overlay against market deltas 5Days out, buy the cheap, sell the expensive.
+[08:13] darkmattertrade: almost there - updated brief - https://discord.com/channels/1356329071230980188/1510718491349750061/1511704207701442690
+[08:18] m______m______m: Delete all tenors past 0dte and setup volland 0dte decay widget 100 tickers deep, 0d delta decay loaded, run it thru claude with a criteria of what is considered significant/unusual for that asset while also being a pure charm paradigm and fullport target watching its relevant correlated assets/orderflow alongside index drift if its a bigger name and taking risk off table if index’s are weak when youre up 400% after a couple minutes
+[08:19] m______m______m: Binary stop fill at lis with dca’s ready
+[08:21] m______m______m: Tsla -700M today that should be interesting, perhaps it will prove the fun of my dopaminergic suggestion
+[08:21] bigbill8887: lol you tolenmaxxxing.
+[08:21] m______m______m: Nvda -300m
+[08:22] m______m______m: Its a really good time to be using monthlys off 0d flow if reasonable imo
+[08:22] m______m______m: Long gamma
+[08:23] m______m______m: Tsla is turning over 2B on the dollar
+[08:26] m______m______m: Verticals diagonals using call flys nuetral theta big tent shorter tenor for upside rizk
+[08:27] m______m______m: If you get trapped on binary side of kens wrath from drag but that would probably mean bad selection or poor paradigm read
+[08:32] l0rd.helmet: ken is a fickle mistress
+[08:38] johannes3041: still offering here
+[08:55] dragonboys.6655: Good morning
+[08:56] dragonboys.6655: Will we finally get a red day today?
+[08:58] ingram142: i dont think so
+[08:58] l0rd.helmet: me neither
+[08:58] m______m______m: Grand opening, grand closing. Ga dam ya man dun cracked th can open again
+[09:01] m______m______m: Who you gon find doper than him with no pen? Just draw off inspira SHUNSHUN
+[09:01] dragonboys.6655: Huh
+[09:02] dauma8500: If we do can it atleast be -100bps. This choppy / grind up doesn’t get your heart beating fast enough.
+[09:02] dragonboys.6655: Am I the only one that got lost reading it? Can you explain I like I am one year old pls 🙂
+[09:03] dragonboys.6655: lol as long as it doesn’t break 7500
+[09:03] m______m______m: What doesnt make sense
+[09:04] dragonboys.6655: That’s what I think too insta pump after few red candles
+[09:04] m______m______m: Delta decay statistics on equities mon wens fro
+[09:04] m______m______m: Fri*
+[09:04] m______m______m: Run it thru claude to see what decay profile is most statistically extreme and likely to do x
+[09:04] m______m______m: For that asset relative to the hedging notional
+[09:05] m______m______m: If there’s a clean paradigm the preference can be as clean as the charm for dealers
+[09:05] m______m______m: So its a win win for everyone
+[09:05] m______m______m: Directional paradigms gex or ag sidal even
+[09:05] dragonboys.6655: I read it again and got the gist what you are saying… my bad just woke up and stilll rolling around 🙂
+[09:06] otc4313: nice sell off
+[09:06] otc4313: confirms what I saw on the tape yesterday
+[09:07] m______m______m: Im stimming out on preworkout so let me add that I think since you can really narrow down the drag its like playing the index’s with less noise, just more honed in which is different discussion
+[09:07] otc4313: It was evident that a seller was on the tape but as Apollo stated, COMMs sell on upticks
+[09:07] m______m______m: Big tech very tiled bearish today
+[09:09] m______m______m: Binary*
+[09:10] m______m______m: Im calling shots on tsla straddle being a multibagger
+[09:32] ingram142: okay I am ready for that axios article
+[09:35] ingram142: my technical analysis of trump tweets, he will tweet before 10:30. 🙂
+[09:37] yahyaz: lol
+[09:38] yahyaz: I shorted MRVL at 312 because fuck the bs
+[09:38] johannes3041: very nice sellers
+[09:38] yahyaz: sick of this shit
+[09:38] jk232323: 10pts for ES and nq got 140 😅
+[09:39] yahyaz: buyers already here
+[09:39] yahyaz: demonic
+[09:41] johannes3041: yeah stronk bid
+[09:41] johannes3041: sekkers need to work hard
+[09:41] gammahivey: well that buy was the first gift of the day, thanks sellers!
+[09:41] toto2229: NQ huge buy right off yesterday's poc
+[09:41] toto2229: wat r u doing ES
+[09:41] disciple3: just another buy
+[09:42] dragonboys.6655: AG now
+[09:44] johannes3041: 2000k iceberg at 6000 lol
+[09:45] disciple3: about time to buy
+[09:45] gammahivey: 2nd gift
+[09:46] disciple3: high volume spike, 600nq gotta wake up
+[09:46] yahyaz: Trim MRVL puts
+[09:48] apollobix: spicy
+[09:48] m______m______m: 5 micros this is boring
+[09:49] disciple3: already lets bottom wick and take it to 31k
+[09:49] gammahivey: avg price 512 NQ, now go up
+[09:50] nicowilliamsrw: make bears great again
+[09:50] yahyaz: trim more MRVL
+[09:50] apollobix: key level right here to bounce higher
+[09:50] toto2229: wen Axios
+[09:51] m______m______m: 530 target on widget
+[09:52] m______m______m: Q drag possible
+[09:53] disciple3: https://www.youtube.com/watch?v=y2ak_oBeC-I [EMBED: Fat Joe, Remy Ma - All The Way Up ft. French Montana, Infared Get the album, "Plata O Plomo". | iTunes: https://itunes.apple.com/us/album/plata-o-plomo/id1188936586?uo=4&at=1001l3Iq&ct=888915319420&app=itunes | Spotify: https://play.spotify.com/album/7vzvohRzBtrnr3miUJrpAk?play=true&utm_source=open.spotify.com&utm_medium=open | Google Play: https:/]
+[09:53] disciple3: buy the dip
+[09:53] disciple3: 15m candle is thors hammer
+[09:56] dauma8500: 7560 Spx key level?
+[09:56] apollobix: 7576 ES
+[09:57] disciple3: lets see if we get one more dip with divergence
+[09:58] disciple3: would buy again
+[10:00] disciple3: oh baby
+[10:01] dauma8500: Is today the day we punish bulls who bought the dip? Give us that -1%, rally. Then break 7500.
+[10:02] disciple3: nq clears 600 area and free skies to 680
+[10:02] disciple3: here we go
+[10:02] toto2229: maybe, NQ not even below yesterday's low though
+[10:02] disciple3: all day, every day
+[10:02] disciple3: up up and away
+[10:03] toto2229: until tech gets real selling this is all just a facade
+[10:03] m______m______m: Short
+[10:03] aurmeilius: bulls would then be 12/13 instead of 13/13, tragic
+[10:03] m______m______m: Yolo
+[10:03] disciple3: 140pt bounce still going
+[10:05] m______m______m: Relentless bid
+[10:06] m______m______m: Q’s gonna f the clean short or absolutely dump
+[10:06] yahyaz: VIX complete retrace
+[10:06] disciple3: https://tenor.com/view/the-water-boy-comedy-adam-sandler-captain-insano-no-mercy-gif-3484856 [EMBED: Captain Insano]
+[10:07] disciple3: i was out at 600, would like 1 more dip for other account then time for squats
+[10:07] m______m______m: Spx pulling a yesterday
+[10:07] disciple3: all day, every day
+[10:07] m______m______m: Doesnt want it so quick
+[10:07] m______m______m: Not that great for ken
+[10:09] disciple3: dang buyers locked in 600 now
+[10:09] disciple3: straight up
+[10:09] disciple3: gonna make me chase soon
+[10:09] disciple3: typical
+[10:09] dauma8500: The rush to sell vol is strong.
+[10:10] m______m______m: This tops out really fast big bro
+[10:10] disciple3: yeah it tops out at 31k ath
+[10:10] m______m______m: Click softly big bro
+[10:10] l0rd.helmet: smash that offer
+[10:11] disciple3: right about there
+[10:11] m______m______m: + 2B from tsla
+[10:11] disciple3: 1 axios tweet, and some call smashing and we all the way up
+[10:11] m______m______m: Makes perfect sense
+[10:11] apollobix: Big level overhead to trade
+[10:12] m______m______m: Practically ag lis
+[10:12] disciple3: here comes 700
+[10:12] m______m______m: Gammascalp.exe ig
+[10:13] calling.margin: Approaching AG LIS
+[10:14] m______m______m: Shorttttt
+[10:14] dauma8500: Don’t know if that was ugly enough to get bears to reload on puts lol.
+[10:14] disciple3: there is no resistance
+[10:14] m______m______m: Scary offer
+[10:14] disciple3: its all in your head
+[10:14] apollobix: prob 7625 area spx
+[10:15] yahyaz: lmaoooooooooooooooooo
+[10:15] l0rd.helmet: how is anyone surprised
+[10:15] disciple3: taps sign
+[10:15] disciple3: all day, every day
+[10:16] ingram142: wow no tweet yet, maybe the report is bearish oil? 🙂
+[10:16] nicowilliamsrw: will AG finally anti gex today..that is the question
+[10:16] disciple3: the only resistance is you not buying the dip
+[10:17] bigbill8887: Grandpa stocks getting wrecked....
+[10:17] toto2229: if there's any day to maybe scalp shorts, today looks like it though, just wouldn't expect huge continuation beyond what happened this morning
+[10:17] toto2229: weakness all over the market
+[10:18] disciple3: 700 was last chance for sellers before getting rekt aain
+[10:18] disciple3: looks like panic and cover
+[10:19] disciple3: same thing every day.  sell the open, buy the dip.  no shorting
+[10:19] m______m______m: Thank you
+[10:19] m______m______m: Hold it
+[10:19] m______m______m: Sorry d3 i only saw red buttins
+[10:20] toto2229: hovering around monday's poc, think we poke lower again
+[10:20] disciple3: honestly i was rooting for them too i wanted 500 swept so i couild long 100+pts again
+[10:20] toto2229: ES^
+[10:20] disciple3: but no
+[10:20] m______m______m: Books spikes as u say this
+[10:20] disciple3: instawick
+[10:21] yahyaz: customer shorting 10,000 put spreads 7550/7545
+[10:21] nicowilliamsrw: TSLA starting to breakout
+[10:21] yahyaz: oh. boy
+[10:22] toto2229: dow, russell, es, all look decent for some continuation downside, NQ is the crazed one
+[10:22] m______m______m: -1.6 B
+[10:22] m______m______m: Dd
+[10:22] disciple3: about time for 31knq
+[10:22] disciple3: 1 candle
+[10:22] disciple3: prepare to hoist the tweets
+[10:23] l0rd.helmet: hoisting tweets, aye
+[10:23] disciple3: hammer
+[10:23] dauma8500: For the sake of humanity this person should be taught a lesson.
+[10:23] disciple3: jeeze
+[10:23] yahyaz: double hammer
+[10:23] yahyaz: prob goes up 300 pts
+[10:24] disciple3: come on bro i need a dip to buy
+[10:25] yahyaz: Do I open 0dte volland or nah
+[10:25] m______m______m: Just change the color of the selll button dude
+[10:25] m______m______m: Yes
+[10:25] disciple3: delete your sell button
+[10:25] m______m______m: Im on the potty so im not sure if i got stoped out
+[10:25] disciple3: youll be better off
+[10:26] disciple3: what we have here is a failure to communicate
+[10:26] disciple3: straight up
+[10:27] dragonboys.6655: why not given the trend
+[10:27] toto2229: it was a pretty big rejection of yesterday and overnight bulk of volume into Monday's poc, can't imagine this just gets bid back up instantly unless there's some news
+[10:27] yahyaz: has down trend ever mattered ?
+[10:27] yahyaz: literally hasnt since March 30th
+[10:27] disciple3: imagine harder
+[10:27] dragonboys.6655: not with current conditions at least
+[10:28] dragonboys.6655: everyday... I basically talk myself out of selling puts
+[10:28] dragonboys.6655: in the fear of news dumbs
+[10:28] disciple3: 0dte volland qqq is kinda gex to 754 tbh
+[10:29] toto2229: two very different messages being telegraphed from Israel vs Trump
+[10:29] jk232323: Dealers long a ton of itm puts on spy
+[10:30] disciple3: guess were mooning and i get no more dip
+[10:30] dragonboys.6655: they are neutral from what I saw at least spx side
+[10:30] disciple3: panic cover bears you had 10minutes of glory
+[10:30] dragonboys.6655: long 50s and short 45s
+[10:30] dragonboys.6655: that should be cap downside
+[10:30] dragonboys.6655: if ever get there that is 🙂
+[10:31] m______m______m: Spy pivot immediately defended
+[10:31] m______m______m: Aggressively shorting this
+[10:32] disciple3: 😵‍💫
+[10:32] m______m______m: Run me my mofoing bag
+[10:32] m______m______m: Run my fade
+[10:32] disciple3: nq is going to hod
+[10:32] yahyaz: Ladies and gentlemen, the VIX is gapping down intraday, I repeat its gapping down intraday
+[10:32] disciple3: god speed
+[10:32] l0rd.helmet: /vx at LOD, below yesterdays low
+[10:33] yahyaz: Vol crush, portfolio cooked, short side is a disease
+[10:33] m______m______m: Trading against d3 is considered extremely low probability but my hand is already cupped where it needs to be
+[10:34] m______m______m: RUN MY FADE THO
+[10:34] disciple3: no reason to short rn
+[10:34] m______m______m: Seems ur not kidding tdy, why long this
+[10:34] disciple3: or ever let me correct that
+[10:35] disciple3: i actually havent taken a short on a funded in weeks
+[10:35] m______m______m: Im genuinely curious tho
+[10:35] disciple3: guess, what.  back to daily payouts
+[10:35] m______m______m: Are u tryna play a vol crush pop
+[10:35] apollobix: ES seller trying to press right here
+[10:35] apollobix: T10 is weak
+[10:36] m______m______m: As he should
+[10:36] m______m______m: They strongly held spy’s flip
+[10:36] m______m______m: The preference for lows shouldnt change unless spx builds at lod put bagholdarz
+[10:37] apollobix: 52 ES is the next significant level underneath is 76 doesnt hold
+[10:37] gammahivey: Same on Q's
+[10:38] disciple3: balanced box lbaf setup can roll right to top of box if we get threough vpoc
+[10:38] disciple3: pretty bullish setup
+[10:38] yahyaz: Nasdaq green
+[10:38] yahyaz: lmao
+[10:39] yahyaz: too bearish
+[10:39] m______m______m: How
+[10:40] m______m______m: Vol respect protec thy nec
+[10:40] disciple3: vix piped
+[10:40] disciple3: here we go
+[10:41] disciple3: new ath nq
+[10:41] m______m______m: Hard to deny its a bit early if anything
+[10:41] disciple3: all day, every day
+[10:41] m______m______m: Clearly not that line in sandy
+[10:41] m______m______m: Spy flip not that relevant rn
+[10:41] m______m______m: Spx wants to fiddle in this grelta plecay
+[10:42] m______m______m: Nah so bs
+[10:42] m______m______m: Its one short put ken just annuhlate it
+[10:44] disciple3: es box
+[10:44] disciple3: nq is all the way up no balance
+[10:49] yahyaz: for the first time in weeks, the net sweeper flow is bearish on momentum names
+[10:49] yahyaz: If this is not enough
+[10:49] yahyaz: i dont know anymore
+[10:49] gammahivey: I joined the NQ seller.... sorry
+[10:49] disciple3: get ready o buy
+[10:49] disciple3: https://tenor.com/view/lizard-gif-3550997427709209319
+[10:49] nicowilliamsrw: MTUM new highs...unreal
+[10:50] disciple3: if we could even get to 640/600 thatd be a dip
+[10:50] m______m______m: Tsla still green comical
+[10:50] m______m______m: Must be shorts
+[10:50] yahyaz: Puts down 47%
+[10:50] yahyaz: cooked
+[10:51] disciple3: just another buyt
+[10:51] disciple3: all day, every day
+[10:52] yahyaz: lol
+[10:52] m______m______m: Two sides of the same coin
+[10:52] toto2229: if you pretend NQ doesn't exist, pretty good day so far for bears
+[10:52] m______m______m: Lets play vwap tennis then
+[10:52] disciple3: im making 3k daily payouts by 11 with 2 pro accounts using literally 1 NQ.  buy the dip
+[10:52] m______m______m: Just keep selling back to me at vwap
+[10:52] disciple3: free money
+[10:53] m______m______m: Q book just changed significantly
+[10:53] m______m______m: I think its long puts just added
+[10:53] otc4313: SPX will now stay pinned b/n 7568 and 7588
+[10:53] jrestrepo: how soon do you get out? like, how long a scalp?
+[10:54] bigbill8887: I track this name as an input w/r/t market strength.
+[10:54] m______m______m: We’re all just calling our shots now fighting for auraking of the disc
+[10:54] disciple3: depends on entry, location of price, volume spikes, profit level
+[10:54] disciple3: if i hit goal i just close
+[10:54] disciple3: no need for more risk
+[10:54] disciple3: all day, every day
+[10:54] m______m______m: Gammagoy behavior
+[10:56] yahyaz: QUANTINUUM IPO IS SAID TO BE MORE THAN 20 TIMES OVERSUBSCRIBED
+[10:56] disciple3: only 756k a year doing that consistently.  guess i should need more
+[10:57] disciple3: if i can spend 700k on resets then my taxable will only be 56k tho
+[10:57] disciple3: follow me for more tax advice
+[10:57] m______m______m: Scroll down and set tp to 7300 ish
+[10:57] yahyaz: make 765k taking 10 dip buys per day, loose 700k on 1 short
+[10:58] disciple3: ive done some damage resetting and rage shorting before
+[10:58] disciple3: no shorting
+[10:59] disciple3: i mean, 1k a day without resetting ever on micros and you still getting 252k lol
+[10:59] disciple3: just noone is patient
+[10:59] disciple3: need that 20k payout today
+[10:59] m______m______m: Vanquish crazy discount
+[10:59] m______m______m: If its a boring day just lotto a condor
+[10:59] disciple3: degeneracy
+[11:00] m______m______m: Options props are good dopamine
+[11:00] disciple3: give yourself a dopamine detox
+[11:01] m______m______m: I couldnt hear this i had preworkout bottles around my ears
+[11:01] disciple3: buy the dip, make trading boring, withdraw 3k all day every day, go get huge at gym by 11am
+[11:01] m______m______m: 30g of creatine in my machine
+[11:01] disciple3: what more do you need.  no shorting
+[11:01] m______m______m: Ag target death to all megacap
+[11:02] m______m______m: D.T.
+[11:02] m______m______m: They should legitimately do everything in their power to completely flip q over unless im missing weekly inventory
+[11:03] m______m______m: Which i definitely am and do not care
+[11:03] disciple3: all the way up no shorting
+[11:09] m______m______m: Yeah fair angle
+[11:09] m______m______m: Its possible
+[11:09] m______m______m: Definitely not like its a sidal
+[11:10] m______m______m: But lower edge ken like
+[11:10] disciple3: short the shit out of ym
+[11:10] disciple3: es will chop, nq rip
+[11:10] toto2229: been saying this for a while, take all your bear rage out on the dow lol, dont even bother looking at NQ for shorts
+[11:11] disciple3: delete nq sell button
+[11:11] disciple3: works on rty and ym
+[11:11] disciple3: days like today why i hate trading es
+[11:11] disciple3: when ken disperses you and wastes your day
+[11:15] m______m______m: Logistical warehousebehavyur.exe
+[11:16] apollobix: its a fight
+[11:16] yahyaz: unfair fight
+[11:16] yahyaz: 1 buyer and 5 sellers
+[11:16] yahyaz: buyer is Bessent and sellers are 5 jabronis
+[11:16] disciple3: all day, every day
+[11:17] m______m______m: Fairly comical for them to actually rip this from here
+[11:17] m______m______m: Fake charm alarm
+[11:18] m______m______m: Yesterday repeated flipped upside down
+[11:18] m______m______m: Spx higher weighting
+[11:18] m______m______m: Theyre warehousing the etfs zero hedging
+[11:19] l0rd.helmet: what's London going to do here
+[11:20] disciple3: someone tell me whats going on here
+[11:23] disciple3: oh finallly a dip
+[11:23] nicowilliamsrw: cmon lets take it to AG target
+[11:24] disciple3: sir im gonna need you to calm down and btd
+[11:25] yahyaz: now SPY too
+[11:25] m______m______m: Bro
+[11:25] m______m______m: Bro
+[11:25] yahyaz: and QQQ
+[11:25] yahyaz: Seriously
+[11:25] yahyaz: if this flips
+[11:25] disciple3: 600-617 lets see it
+[11:26] yahyaz: and we go vertical up
+[11:26] yahyaz: I might go on a meditation vacation
+[11:26] yahyaz: Somewhere in Tibet
+[11:26] m______m______m: Spx and q have to pull off a miracle for the continuation to happpen rn
+[11:27] disciple3: https://tenor.com/view/miracle-on-ice-again-gif-7906728 [EMBED: Miracle On Ice]
+[11:27] m______m______m: Bot dip
+[11:27] disciple3: all day, every day
+[11:27] m______m______m: Wick vwap
+[11:29] disciple3: https://tenor.com/view/olan-rogers-olanrogers-adieu-gif-8144593
+[11:29] disciple3: see if we can hit 335 for 5s today on squats
+[11:29] disciple3: oh look straight up
+[11:29] disciple3: all day, every day
+[11:36] m______m______m: Probably pin till 3
+[11:36] m______m______m: Fun is over
+[11:40] calling.margin: Need spoos down 5% to be break even on the month
+[11:48] gammahivey: bought 570 NQ back up now
+[11:48] dauma8500: Let’s see if we can’t break this key Apollo level.
+[11:50] yahyaz: illegal
+[11:50] yahyaz: too bearish
+[11:50] yahyaz: double bottom to new highs ?
+[11:52] disciple3: dang missed another great buy
+[11:53] m______m______m: Would be surprised if they dont chew clock at this pevot
+[11:54] ingram142: so this is what the day looks like without any trump tweets
+[11:54] l0rd.helmet: dont jinx it
+[11:55] apollobix: Dont jinx it...
+[11:55] apollobix: Helmet beat me to it lol
+[11:55] l0rd.helmet: i was using the schwartz
+[11:55] m______m______m: Whatchu thinking bods
+[11:55] m______m______m: Bos
+[11:55] m______m______m: Do u think we turnover spy and go for it 🫣🫣
+[11:55] m______m______m: Weekly inventory shouldn’t mind not even just tdy
+[11:56] m______m______m: With no news seems like a stretch tho
+[11:56] apollobix: im on the same plan as before sir
+[11:56] apollobix: ^
+[11:56] apollobix: Watching 76's right now
+[11:56] apollobix: IF this breaks then 52
+[11:57] apollobix: high probability 40's ES trades if 52's trade though
+[11:57] m______m______m: I think we get it but im thinking we get a yesterday
+[11:57] m______m______m: Doesnt seem that great to have it now
+[11:57] apollobix: No buyer has stepped in though besides that one this morning
+[11:57] m______m______m: Seems like its gonna take awhile
+[11:57] apollobix: Offer is supplied very good on this down tape
+[11:57] m______m______m: We’re just gonna keep rejecting off spx 70 flip
+[11:58] apollobix: im in the puke category unless a buyer steps in to hold the bid
+[11:59] m______m______m: Agreed, d3 was jestermaxxing all morning
+[11:59] m______m______m: No reason to keep the spy pivot
+[11:59] m______m______m: Brutal actually
+[12:00] m______m______m: Yeah good D ken good D
+[12:06] yahyaz: BESSENT: 'HAVE ALL THE MAKINGS FOR A VERY STRONG ECONOMY'
+[12:07] yahyaz: Best I can do is a Bessent tweet today
+[12:10] l0rd.helmet: we have everything we need to make a plan on how to proceed with actions to have a great economy
+[12:12] dragonboys.6655: vwap trade I guess
+[12:12] dragonboys.6655: to 83
+[12:12] l0rd.helmet: they pulled it
+[12:13] l0rd.helmet: and restacked higher
+[12:13] dragonboys.6655: yep and also added 200 at 80
+[12:13] l0rd.helmet: need oil to drift down
+[12:13] l0rd.helmet: spoofy
+[12:13] dragonboys.6655: I think 90/95 in play right now
+[12:14] l0rd.helmet: wen avgo pump?
+[12:14] l0rd.helmet: need axios article about how awesome tech is
+[12:14] dragonboys.6655: ken says when ever you are ready 🙂
+[12:15] l0rd.helmet: tell ken he's got to keep his dog from barking at night...
+[12:15] l0rd.helmet: terrible neighbor
+[12:15] dragonboys.6655: Aye aye sir.... I miss these chats... unfortunately
+[12:15] l0rd.helmet: ive been swamped at work also
+[12:16] dragonboys.6655: me too... got to get going soon..
+[12:16] toto2229: tough spot for ES to crack
+[12:16] l0rd.helmet: noticed same channel
+[12:17] l0rd.helmet: heretical art, i know
+[12:24] nicowilliamsrw: lets finally go fill those singles @A p o l l o
+[12:26] yahyaz: All we needed for a downtrend was full board put dominated on net sweeper flow
+[12:26] apollobix: well this is fun
+[12:26] yahyaz: enjoy while it lasts lol
+[12:26] gammahivey: finally making money both ways
+[12:26] yahyaz: hope you are 100x lev short
+[12:26] yahyaz: and covered
+[12:31] nicowilliamsrw: 7550 spx was the weekly support from the monday show correct?
+[12:31] m______m______m: 🍻
+[12:32] yahyaz: SPX opex puts back from hell
+[12:33] nicowilliamsrw: let it be known that yahya almost throwing in the towel of his shorts marked the local top
+[12:33] myancestors.: i caught the move down from 7580 on 4 mes contracts 😄
+[12:33] nicowilliamsrw: 😆
+[12:33] yahyaz: shorting makes me miserable lol
+[12:34] yahyaz: even the way i sit on the chair changes
+[12:39] apollobix: shorting gives me more adrenaline than an epipen
+[12:40] yahyaz: disagree, and I've used an epipen 3 times
+[12:40] m______m______m: Dude im so fried i was up all night dry scooping preworkout, whats a fairly conservative tp i should hold out for on es
+[12:40] m______m______m: I need some vidamun D
+[12:40] yahyaz: the epipen fixes the problem, shorting makes it worse
+[12:40] apollobix: sorry, NQ was the underlying asset to short
+[12:41] apollobix: ES is boring compared to NQ leverage lol
+[12:41] nicowilliamsrw: here comes AG target
+[12:42] yahyaz: Write it down
+[12:42] yahyaz: Hitting the AG PT for the first time since March 30
+[12:42] yahyaz: change in sentiment or bear trap ?
+[12:43] ingram142: no trump tweets or axios
+[12:43] yahyaz: I think at ES -1% he gets a message from Bessent
+[12:43] m______m______m: @A p o l l o bay?
+[12:47] apollobix: ??
+[12:47] apollobix: Be back at desk in 10
+[12:47] yahyaz: lmaooooooooo
+[12:48] yahyaz: wtf is that spy volume
+[12:56] apollobix: actually I see the case for longs right now
+[12:56] apollobix: Nice flip at the lows
+[12:56] apollobix: missed the new low when I left the desk
+[12:57] otc4313: how clean is that?
+[12:57] disciple3: Cause I left and went outside for the cigar.  Might come back to desk later
+[12:58] disciple3: We have to blow through the morning low and hold under it on the daily for me to even consider putting the sign down
+[12:58] disciple3: Until then, buy the dip
+[13:00] m______m______m: Nice, im puffing loud
+[13:00] m______m______m: Two sides of the same coin
+[13:00] disciple3: 4hr nq ribbon isn't even close to being tested.  Can dump another 300 pts and its still a long
+[13:01] m______m______m: Young & old, short & long
+[13:01] m______m______m: D3 tends to be statistically less well rested and jester on Wednesday’s so it was merely only one side of his dual lightsaber he calls fingers
+[13:02] disciple3: Daily payout by 11,davidoff yamasa and espresso martini for lunch
+[13:02] m______m______m: Glazing? Double top.
+[13:03] m______m______m: Whats david yamaka
+[13:04] disciple3: Best paired with espresso martini
+[13:04] yahyaz: Does Whop tell me when to BTD
+[13:04] disciple3: Whoop tells you when you start shorting.  High stress alert
+[13:05] dauma8500: Don’t make me close my shorts yet. I want that 52 you promised 🤣
+[13:05] disciple3: "You have spent 1 hrs in high stress outside of workout activity today" = you tried shorting and blew your account
+[13:06] nicowilliamsrw: another poor hi here
+[13:08] apollobix: I blame 7565 ES lol
+[13:08] apollobix: that was a big flip area
+[13:09] l0rd.helmet: loool
+[13:09] gammahivey: another gift
+[13:10] dauma8500: Was hoping to hand in my two weeks at Wendy’s today but looks like I’ll hold off.
+[13:10] m______m______m: Buetyful day in nyc
+[13:10] l0rd.helmet: free busses!
+[13:13] disciple3: Sweep nq ib low ill run to desk for the market buy
+[13:13] disciple3: Bet
+[13:15] disciple3: Maybe 448-469
+[13:15] disciple3: How much is 7600c....
+[13:16] disciple3: .35 huh
+[13:20] disciple3: Dang did ken just dill my limit at .25
+[13:20] disciple3: 0 or hero kinda stuff
+[13:22] yahyaz: What do Koreans do tonight
+[13:22] yahyaz: Where is @Simple Jack ??!!
+[13:22] disciple3: cash out life insurance to BTD
+[13:23] yahyaz: Did his self made roof fall on him? I hope not
+[13:23] l0rd.helmet: buying keyboards wholesale
+[13:23] phoenix0088020: I am bias bearish on Avgo, not what I like but it is what it is, can’t get myself to buy it here lol but won’t short either
+[13:24] disciple3: cant short, ever.  1 tweet and youre cooked
+[13:24] phoenix0088020: Yes
+[13:24] phoenix0088020: Haha
+[13:24] disciple3: not worth it
+[13:26] disciple3: dang didnt notice es is already on lbaf of ib low, nq prob wont get it then
+[13:26] disciple3: back into box and ripper
+[13:27] disciple3: ib low bottom of box, random
+[13:27] disciple3: we need steve pat back
+[13:30] disciple3: i wanna buy 450 and ride to 31k nq, is that too much to ask?
+[13:44] m______m______m: Can someone send the 0d dd curves
+[13:44] m______m______m: Perchance
+[13:44] m______m______m: /aggregate
+[13:45] m______m______m: Wow how exciting
+[13:45] m______m______m: Thank you LH
+[13:46] dauma8500: do you know if wiz was bearish/bullish on this one?
+[13:46] phoenix0088020: No
+[13:47] phoenix0088020: I am bearish because I can’t accept that company makes 100 B a year max and valued at 2 T
+[13:48] phoenix0088020: Avgo need to show me 30 B today and I will accept it
+[13:51] otc4313: why do you prefer cum view ? | and | how do you cahnge the date erange from all expirations to today?
+[13:53] l0rd.helmet: not sure how yours says all expirations...I dont have an option to have this widget on another timeframe...
+[13:53] otc4313: exactly, me either
+[13:54] l0rd.helmet: i have by strike and cumulative...
+[13:54] otc4313: whats your personal reassoning for cum view
+[13:56] l0rd.helmet: I like to see how price reacts at the knots...also, since the bar chart by strike is not discrete, it seems like seeing the aggregate view would have more context vice strike by strike
+[13:56] otc4313: copy that, thanks
+[13:57] disciple3: all day. every day
+[13:57] l0rd.helmet: as an example, theres little +DD here, so I can see how it affects the whole....
+[13:58] disciple3: .25 to .6 on 7600c i guess, never got the nq buy
+[13:58] disciple3: hodl for ath or sell like a pansy
+[13:58] disciple3: decisions decisions
+[13:59] disciple3: https://tenor.com/view/miracle-on-ice-again-gif-7906728 [EMBED: Miracle On Ice]
+[14:01] disciple3: i want little green dots
+[14:01] otc4313: diamonds. not dots, 😜
+[14:02] disciple3: just me out here raw dogging TV chart making art
+[14:02] disciple3: youll notice how i dont have red candles, because there is only green and waiting to BTD
+[14:03] disciple3: all day, every day
+[14:04] otc4313: raw dog it
+[14:04] disciple3: https://tenor.com/view/evil-shrek-shrek-sus-shrek-shrek-meme-shrek-behind-wall-gif-8338248162453168087
+[14:04] otc4313: i am long 30537.50, first tgt was 100 pts
+[14:04] disciple3: 750 if i had to guess
+[14:05] apollobix: you saw the flip at 65 ES as well?
+[14:05] otc4313: i missed ES as I was watching SPX500 and CGI very closely
+[14:06] otc4313: close meaning order flow closed above the 2/8 level
+[14:08] m______m______m: The forced bid from spy is brutal
+[14:08] m______m______m: This is a E- setup to touch
+[14:09] m______m______m: Q flips on the dolar 2
+[14:09] m______m______m: Need miracle here ken
+[14:09] m______m______m: Dump it
+[14:09] m______m______m: Hold 75 and go crazy
+[14:10] disciple3: https://tenor.com/view/jon-hamm-dance-gif-5098290674016424011
+[14:11] m______m______m: E-
+[14:12] disciple3: wut mean, get out sign and tap?
+[14:15] dauma8500: had a client go into his account and buy outright calls on AVGO today - usually a bad sign for bulls
+[14:17] disciple3: its a buy the dip scheme, savvy?
+[14:24] phoenix0088020: lol good luck to him , avgo currently value more than Amazon
+[14:25] phoenix0088020: No way I would FOMO
+[14:25] phoenix0088020: Sit it is lol
+[14:26] disciple3: ripper has come
+[14:26] disciple3: all day, every day
+[14:26] l0rd.helmet: insane
+[14:26] l0rd.helmet: all those ded bears
+[14:26] disciple3: time to get body bagged again
+[14:27] disciple3: it appears we arent gonna close under ib low
+[14:28] yahyaz: How does that impact the performance?
+[14:29] yahyaz: Do you track decisions and trades made by the owner vs PM
+[14:29] disciple3: well, when you think its a short.  that means buy calls.  so
+[14:29] disciple3: unable to argue with this logic right now
+[14:30] yahyaz: I think they sell korea tonight but i’m 99% sure i’m wrong
+[14:30] disciple3: 99.9
+[14:30] l0rd.helmet: korea is not for sale, sir
+[14:30] dauma8500: We have the ability to exlcude tickers.  So as long as we arent trading the same ticker its super clean.  We can also recreate performance with an exclusion of a trade if necessary...but doesnt happen often.
+[14:30] disciple3: korea is 1000x long leverage sir
+[14:31] l0rd.helmet: why not 10k leverage?
+[14:31] disciple3: dont see why not
+[14:31] dauma8500: But anytime we have clients who start to do it too often we just open up another account for them and shift funds over so they can trade / etc.
+[14:31] l0rd.helmet: if 1k is good, 10k would be more gooder
+[14:31] disciple3: 100k best gooder
+[14:31] yahyaz: Its like giving a syringe to a junkie
+[14:31] disciple3: if i bought the dip everyday with 100x leverage id be retired now
+[14:33] l0rd.helmet: anyone thinking we see IBH today?
+[14:33] l0rd.helmet: I tend to be a pessemist, but...
+[14:33] m______m______m: IBL
+[14:33] disciple3: nq 750 is next on deck
+[14:33] m______m______m: IBL
+[14:33] disciple3: then after that put these 7600c itm
+[14:33] l0rd.helmet: booo
+[14:33] disciple3: .25 to 10
+[14:33] disciple3: lets go
+[14:35] dauma8500: we do all our core perf tracking through Orion.  But Koyfin is great as well - we can literally type in a client or client account and run it in-line with any ticker to see performance / etc.
+[14:36] yahyaz: Client #1 did not short
+[14:36] yahyaz: Congrats
+[14:36] yahyaz: Role model
+[14:36] dauma8500: lol f
+[14:36] yahyaz: He probably doesnt know what Agg Vanna is
+[14:36] dauma8500: didnt think name would pop uphahaha
+[14:37] dauma8500: lol thank you
+[14:37] dauma8500: black box did not work properly
+[14:37] l0rd.helmet: old Jason, lol
+[14:37] l0rd.helmet: what a gentleman
+[14:37] dauma8500: good guy
+[14:38] l0rd.helmet: I'll let him date my sister
+[14:38] yahyaz: Pros : Tall, Kind, did not short the mother of all bull markets in 2026
+[14:39] l0rd.helmet: has some sense...
+[14:39] dauma8500: how do you guys track performance
+[14:40] l0rd.helmet: vibes man...
+[14:42] yahyaz: Equity curve and drawdown curve vs S&P and vs Nasdaq
+[14:42] yahyaz: Simple
+[14:43] yahyaz: I make it complicated by shorting
+[14:44] toto2229: equity curve, trading stats over the last day/week/month, MAE/MFE, avg win/avg loss, time in winners, time in losers, typical daytrading/scalping metrics
+[14:44] disciple3: its honestly pretty simple, how many electronics replaced per week
+[14:46] disciple3: DJT about to hit that market buy
+[14:50] disciple3: spacex ipo today?
+[14:50] toto2229: 12th
+[14:51] disciple3: https://x.com/Vivek4real_/status/2062217481792754171?s=20 [EMBED: BREAKING: CNBC JUST ANNOUNCED ELON MUSK'S $1,750,000,000,000 SPACEX IPO FILING IS EXPECTED TODAY |  | THEY WILL GO PUBLIC WITH 18,000 BTC ON THE BALANCE SHEET |  | THE 1st TRILLION DOLLAR BITCOIN COMPANY IS COMING  |  | IT'S HAPPENING]
+[14:54] toto2229: filing was today, actual listing date is 12th, crazy valuation
+[14:59] yahyaz: Gonna roll my profits from MRVL puts into weekly EWY puts
+[14:59] yahyaz: Vibes
+[15:00] yahyaz: Still got the opex exposure too
+[15:00] yahyaz: Sized for 0
+[15:00] disciple3: oh my
+[15:01] disciple3: just get ready to full port buy space x
+[15:06] phoenix0088020: Because market is crazy , avgo will probably rally , but the day will come
+[15:06] l0rd.helmet: they're the only game in town if you dont want your stuff blown up
+[15:11] dauma8500: Apollo key level. Breakkkkk it
+[15:15] m______m______m: This.
+[15:16] disciple3: gonna make me minimize civ and buy arent you
+[15:17] disciple3: all day, every day
+[15:24] m______m______m: Wick the target then skyrocket post 4
+[15:24] disciple3: just skyrocket once ken runs dry
+[15:25] m______m______m: Fake spy charm
+[15:28] m______m______m: Q ruining the short
+[15:28] disciple3: any further dipping must be met with infinite bessent bid.  it has been decreed
+[15:28] m______m______m: Lis shift new range new lows
+[15:28] disciple3: communism will not be tolerated
+[15:29] disciple3: democracy is non-negotiable
+[15:29] ingram142: buy the dip retail is coming tmr. no more pdt rule
+[15:36] l0rd.helmet: brokers' profits going to go up
+[15:38] disciple3: one day the strength of the dip buy may fail, but not this day
+[15:44] gammahivey: Lol VIX
+[15:45] disciple3: again
+[15:47] disciple3: 1 candle to 750 at close
+[15:51] jrestrepo: Thata effective tomorrow?
+[15:51] ingram142: for my broker tradier yes.  I think each broker has different dates
+[15:52] jrestrepo: I have mixed feelings. I like it but thre will b more speculation. Lots of ppl will lose more and more often.
+[15:53] disciple3: guess ill buy?
+[15:53] disciple3: ok ken
+[15:54] toto2229: definitely, most people need to trade less, not more
+[15:54] toto2229: people are gonna get bodybagged
+[15:55] jrestrepo: Yep
+[15:55] ingram142: tastyworks is also tomorrow.  I guess the futures brokers might be later
+[15:55] yahyaz: White House Press pool was just called into the Oval Office.
+[15:55] yahyaz: here we go
+[15:55] disciple3: oh baby
+[15:55] disciple3: this long gonna go to valhalla
+[15:56] jrestrepo: No bad news pls, i am long broadcom
+[15:56] jrestrepo: Pray for me
+[15:56] disciple3: quick 200$ scalp for the oysters later
+[15:56] disciple3: all day, every day
+[15:58] disciple3: stack a buy at 600 if it get spikes down i guess
+[16:00] disciple3: weak
+[16:01] bigbill8887: Lol UVXY was down on the day?
+[16:05] disciple3: fine fill me
+[16:09] yahyaz: First close at lows in how many days ?
+[16:10] disciple3: nq in balance sir
+[16:10] disciple3: say buyer exhaustion and we go to 8k
+[16:10] disciple3: 600 long good for 20 ill take it
+[16:10] yahyaz: actually irrelevant data, everytime we closed at or nears lows, we got a mega gap up next day lol
+[16:10] yahyaz: comedy
+[16:15] disciple3: ?
+[16:15] yahyaz: Miss on Revenue
+[16:15] disciple3: get rady to buy i guess
+[16:16] apollobix: Bears alive!
+[16:16] disciple3: give it 2 more minutes
+[16:17] disciple3: bang bang
+[16:17] disciple3: another easy dip buy
+[16:17] disciple3: 1nq, buy the dip
+[16:18] dauma8500: I told you what was gonna happen on avgo once we had the client put it in.
+[16:18] toto2229: It looks like a beat?
+[16:18] yahyaz: Rev miss
+[16:18] toto2229: am I looking at the wrong numbers
+[16:19] disciple3: dw itll all gap up by tomorrow
+[16:19] yahyaz: TRUMP SAYS US HAS BEEN STRIKING IRAN HARD, WHILE NOTING NEGOTIATIONS ARE PROGRESSING WELL WITH A POTENTIAL DEAL POSSIBLE THIS WEEKEND.
+[16:19] yahyaz: lol
+[16:19] yahyaz: make it make sense
+[16:20] yahyaz: just buy i guess
+[16:20] disciple3: hype loop continues
+[16:20] disciple3: as does buy the dip
+[16:20] ingram142: lol trump also says it can go on for 2-3 weeks
+[16:22] dauma8500: he also said blockade should be lifted by labor day lol
+[16:25] ingram142: lol trump - a ceasefire is when you're shooting in a more moderate manner
+[16:30] disciple3: theory
+[16:31] disciple3: there is a deal in theory
+[16:31] ingram142: there is a ceasefire...in theory 🙂
+[16:33] disciple3: they wouldnt give us 500 to buy right now would they?
+[16:35] dauma8500: There is a concept of a theory
+[16:38] disciple3: yessss come on down to 500 and we buy again
+[16:39] m______m______m: Shall i pull up my bet?
+[16:40] m______m______m: Something along the lines of lod
+[16:40] disciple3: day ended at 4
+[16:40] disciple3: and we buy it again too
+[16:40] m______m______m: Etf charm is fake
+[16:40] m______m______m: Latent var annihlation
+[16:41] disciple3: getting very excited to buy again
+[16:41] disciple3: cmon baby
+[16:42] disciple3: come on down
+[16:43] disciple3: oh god here it comes
+[16:43] disciple3: sweep that lod and buy again
+[16:44] disciple3: unhinged
+[16:45] disciple3: at prices not seen since this morning
+[16:46] disciple3: go baby go
+[16:47] phoenix0088020: So my new thinking about Avgo, by next Q it will be worth closer to 2 T but not deserving yet
+[16:47] phoenix0088020: and it is selling off , that is good
+[16:49] disciple3: theres the low
+[16:59] jackedtothetatas: https://tenor.com/view/a23-gif-10433102321146277054
+[16:59] disciple3: chill here then gap up at 6 i guess
+[16:59] disciple3: ill be at dinner thats fine
+[17:00] jackedtothetatas: Steak 🥩 and lobster 🦞?
+[17:00] disciple3: the nice seafood place today.  get some nice wellfleet oysters
+[17:00] disciple3: crab cakes
+[17:05] jackedtothetatas: This president enjoys golf and squeezing shorts. 🇺🇸
+[17:39] yahyaz: Let's see if Koreans buy it all back
+[17:59] phoenix0088020: Love avgo sell off
+[17:59] phoenix0088020: Give me 300 by next Friday
+[18:13] phoenix0088020: But once avgo bottom it is a buy
+[18:13] phoenix0088020: Because it will be worth 2 T by next year
+[18:32] yahyaz: They’re already bidding AAPL to keep the rotation going
+[18:32] phoenix0088020: Of course rotation
+[18:33] phoenix0088020: But I need at least 350 avgo by next Friday
+[18:37] dauma8500: Question is if they let some bulls feel some pain for a few days. Or bail them out and see ATHs again shortly.
+[18:39] phoenix0088020: Rotation but we need to keep 735 qqq
+[18:39] phoenix0088020: If not , we are going lower slowly
+[18:42] l0rd.helmet: Is Vanna showing us the bottom?
+[18:42] phoenix0088020: I can’t buy it unless in 200s
+[18:42] phoenix0088020: It doesn’t pay off for me
+[18:43] l0rd.helmet: I think those single prints filled @A p o l l o
+[18:43] phoenix0088020: 197 would be ideal
+[18:43] l0rd.helmet: You drive a hard bargain, but I approve
+[18:43] phoenix0088020: if not I am staying away from it
+[18:43] phoenix0088020: It isn’t on level with NVDA
+[18:43] phoenix0088020: How can it be worth more
+[18:45] phoenix0088020: SMH watching 610, below 550, worse case 475
+[18:45] jackedtothetatas: Just got off the phone with Schwab trading desk to clarify Pattern Day Trade rules that go away tomorrow. In his words “it’s going to be a big day.”
+[18:46] phoenix0088020: I think it is on 8th for them
+[18:46] phoenix0088020: At least that is what my email says
+[18:46] phoenix0088020: Robinhood tomorrow
+[18:47] jackedtothetatas: He said tomorrow but the trading platform will still show you have no day trades left until Monday June 8th when update think of swims
+[18:47] phoenix0088020: Ah
+[18:47] phoenix0088020: Now it makes sense
+[18:47] l0rd.helmet: I'll bet
+[18:47] jackedtothetatas: I use Schwab
+[18:48] phoenix0088020: Same , I get all notifications in email
+[18:48] jackedtothetatas: I don’t know about Robbin hood or other brokers.
+[18:49] jackedtothetatas: I might call in a trade to the desk cause I’m just like the real day traders. No handicap
+[18:57] l0rd.helmet: Neverunder engaged
+[19:04] phoenix0088020: Funny is I said all this year that avgo will bring semis down
+[20:05] yahyaz: Koreans trying to bid futures
+[20:06] phoenix0088020: EWY down
+[20:06] phoenix0088020: BTC 64 K
+[20:07] phoenix0088020: I am waiting 45 k for long time now
+[20:07] phoenix0088020: lol
+[20:08] phoenix0088020: Their margin is just waiting for disaster
+[20:33] yahyaz: Koreans buying the semis dip
+[20:34] phoenix0088020: Dangerous and tomorrow no PDT
+[20:34] phoenix0088020: Welcome to new liquidity
+[20:34] dauma8500: Damn BTC can’t catch a bid to save its life.
+[20:34] phoenix0088020: new gamblers joining market
+[20:35] yahyaz: KOSPI from -2.4% to -0.8% in 30min
+[20:35] phoenix0088020: I can see on EWY
+[20:35] phoenix0088020: They are buying
+[20:36] phoenix0088020: Crazy Koreans
+[20:36] phoenix0088020: Tomorrow I don’t know what will happen without PDT
+[20:37] phoenix0088020: they need to keep 2000$ balance
+[20:37] phoenix0088020: If I understand correctly
+[20:41] dauma8500: I think that’s a non event.
+[20:44] phoenix0088020: I don’t know , because more liquidity into market can prolong my swing trading targets or they can get to it faster
+[20:44] phoenix0088020: that is why I have issue with timing
+[20:44] phoenix0088020: Because of options each week
+[20:45] phoenix0088020: 3 times
+[20:51] windsurfer78: Hi 👋 @Phoenix
+[20:51] windsurfer78: AVGO crashed ..
+[20:51] windsurfer78: As you predicted
+[20:52] phoenix0088020: It will crash more but I can’t predict tine , it doesn’t have institution support
+[20:52] phoenix0088020: When it was 300, not many buyers
+[20:53] windsurfer78: Long way to 300 😂
+[20:54] phoenix0088020: That isn’t where I would buy , even there let me see
+[20:54] phoenix0088020: Nop, not a buy
+[20:55] windsurfer78: The PDT you mentioned above
+[20:56] phoenix0088020: Yes, it used to be 25,000 for day trading
+[20:56] phoenix0088020: Now it is 2000$
+[20:56] phoenix0088020: from tomorrow
+[20:56] windsurfer78: Ah, like margin maintenance?
+[20:56] phoenix0088020: yes
+[20:56] windsurfer78: For day trading ?
+[20:56] phoenix0088020: So you can day trade with margin if you have more than 2000$
+[20:57] windsurfer78: Oh.. I didn’t know you need to maintain an amount for day trading
+[20:57] windsurfer78: I see
+[20:57] phoenix0088020: well cash account no need 25,000$ but margin yes
+[20:57] windsurfer78: So no more this rule, in theory will bring in more retail I suppose
+[20:57] phoenix0088020: And that change tomorrow
+[20:58] phoenix0088020: More degen gamblers I expect lol
+[20:58] windsurfer78: Or bring in more trades 🤣
+[20:58] phoenix0088020: before it was only 3 trade per week
+[20:58] windsurfer78: Oh..
+[20:59] phoenix0088020: Now as many as you want as long as you maintain 2000$ balance
+[20:59] phoenix0088020: you need margin for verticals , butterflies and so on
+[21:00] windsurfer78: Pretty big change..
+[21:00] phoenix0088020: I think it is
+[21:00] phoenix0088020: Because now they can trade and scalp 100 times a day
+[21:00] phoenix0088020: with small money
+[21:00] phoenix0088020: lol
+[21:00] otc4313: can yall tell me price of NQ right now
+[21:01] phoenix0088020: 30505
+[21:01] phoenix0088020: NQM
+[21:05] windsurfer78: That’s a pretty big red candle on the indexes today 🤣
+[21:06] windsurfer78: Pretty rare recently
+[21:06] phoenix0088020: Yes but qqq didn’t break down , so I didn’t short qqq
+[21:09] windsurfer78: So this week breaks the 9 consecutive up weeks for S&P..
+[21:09] otc4313: thanks
+[21:12] phoenix0088020: Something important , Avgo earnings show that software companies are spending money on infrastructure and not on disposable chips as much as market thought
+[21:12] phoenix0088020: But market is always stupid lol
+[21:16] phoenix0088020: New IPOs will take all liquidity from BTC
+[21:31] windsurfer78: You mean the SW company investing in data centers ?
+[21:32] phoenix0088020: Yes and other thing , development of their own chips , meta has lots of things , even robotics
+[21:33] phoenix0088020: they are investing in them self and their future
+[21:34] phoenix0088020: Not to fill someone else pockets
+[21:34] windsurfer78: Interesting..
+[21:35] windsurfer78: What about SW firms like NOW
+[21:35] phoenix0088020: It is good company but how long time it will take for it to raise to 200$ I don’t know
+[21:35] windsurfer78: Are they building AI infra as well ?
+[21:35] phoenix0088020: it has gap at 110
+[21:35] phoenix0088020: I am thinking it will fill it
+[21:36] windsurfer78: I sold at 125
+[21:36] windsurfer78: Maybe I’ll consider re-entering 😆
+[21:38] phoenix0088020: Amazon trading in range 250-270
+[21:38] phoenix0088020: Need to break 3 T valuation
+[21:38] phoenix0088020: To start rally on upside
+[21:39] windsurfer78: It just touch 50MA
+[21:39] windsurfer78: You’re bullish on AMZN ?
+[21:40] phoenix0088020: Until 270
+[21:40] phoenix0088020: Than I need to see if breaks out or not , if not , another pickup again at lows
+[21:40] phoenix0088020: Range trading until it isn’t
+[21:42] phoenix0088020: Some stocks trade in range lomgtime
+[22:08] windsurfer78: Futures don’t look so hot..
+[22:13] nicowilliamsrw: btc not happy, almost at ytd lows
+[22:31] windsurfer78: All exit liquidity for SpaceX I suppose
+[22:31] phoenix0088020: Haha
+[22:31] windsurfer78: How does it work actually?
+[22:32] windsurfer78: I mean by when those who want to buy need to put in the order ?
+[22:32] phoenix0088020: It is on June 12th but you can buy it through some broker before open , Elon left 30% to retail
+[22:32] windsurfer78: The price is set at $135 right ?
+[22:33] phoenix0088020: I didn’t check in Schwab if they are giving form yet
+[22:33] phoenix0088020: Will do it tomorrow

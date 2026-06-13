@@ -1,0 +1,91 @@
+
+========== WEEK 4-13 ==========
+  [SETUP] Setup A — SHORT the Fade at Weekly High [Grade: B] Entry: 6887 ES / 6850 SPX (weekly high rejection zone, on a 5-minute rejecti
+  [SETUP] Setup B — LONG the Bounce at Gamma Wall [Grade: A — PRIMARY] Entry: 6840 ES / 6803 SPX (gamma wall zone, on a 5-minute reversal
+  [SETUP] Setup C — LONG the Breakout Above 6888 [Grade: C — SCOUT] Entry: 6900 ES / 6863 SPX (break above 6888 + retest holds, on volume
+  [SETUP] Setup D — SHORT the Cascade Below Gamma Wall [Grade: B] Entry: 6820 ES / 6783 SPX (break below gamma wall, two-candle close bel
+  [SETUP] Setup D (cascade short) goes live on 2-candle break below 6837 ES.
+  [SETUP] Setup B — the bounce off the 6800 SPX gamma wall (6840 ES entry). This is the most structurally confirmed level on the board —
+  [LVL]   long as this holds, the rally structure is intact. 6750–6770 SPX / 6787–6807 ES — The "gamma flip" zone. Below here
+  [LVL]   SHORT the Fade at Weekly High [Grade: B] Entry: 6887 ES / 6850 SPX (weekly high rejection zone, on a 5-minute reject
+  [LVL]   LONG the Bounce at Gamma Wall [Grade: A — PRIMARY] Entry: 6840 ES / 6803 SPX (gamma wall zone, on a 5-minute revers
+  [LVL]   fade stopped just 9 points above it (6809 SPX) — the cushion effect is real. Dealers are mechanically forced to buy
+  [LVL]   LONG the Breakout Above 6888 [Grade: C — SCOUT] Entry: 6900 ES / 6863 SPX (break above 6888 + retest holds, on volu
+  [LVL]   SHORT the Cascade Below Gamma Wall [Grade: B] Entry: 6820 ES / 6783 SPX (break below gamma wall, two-candle close be
+  [LVL]   pin (30%): Mixed earnings, Iran noise but no escalation. Range 6770–6900. No clean direction.
+  [LVL]   pin around this level before breaking through. A hold above 6900 after Tuesday's data releases signals continuatio
+  [LVL]   buy — supporting price. This positive zone runs from 6890 to ~6925 SPX.
+  [LVL]   LONG When: After 8:30 AM PPI — if price holds above 6900 SPX (6937 ES) on the first 15-minute pullback
+  [LVL]   Entry: 6927–6940 ES
+  [LVL]   LONG When: IF PPI comes in hot or banks disappoint, driving a sell-off to the 6850 SPX zone
+  [LVL]   Entry: 6870–6887 ES
+  [LVL]   SHORT When: IF price spikes to 6910+ SPX on data euphoria and shows clear rejection at the ceiling
+  [LVL]   Entry: 6940–6950 ES
+  [LVL]   Buy first 15-min pullback that holds 6937.
+  [LVL]   buy support. The 6850 zone on any dip is the highest-conviction buy. Above 6900, the grind toward 7000 is the prim
+  [LVL]   Buy the dips. Target 7000.
+  [LVL]   long with META. Let's jump into the trade plan for tomorrow. We are shy of our 7000 spx level with futures testing
+  [LVL]   Long — AT THE DOORSTEP. Two and a half of three confirmation criteria have been met: (1) 6800 SPX held — price is n
+  [LVL]   LONG When: After ASML/BAC data clears — if price holds above 6987 ES (6950 SPX) on the first pullback
+  [LVL]   Entry: Buy the first 15-minute pullback that holds 6987 ES or above
+  [LVL]   LONG When: IF ASML disappoints or BAC misses, driving a sell-off toward the 6950 SPX zone
+  [LVL]   Entry: 6950-6970 ES
+  [LVL]   LONG When: IF price breaks and holds above 7037 ES (7000 SPX) on a 15-minute closing basis
+  [LVL]   Entry: 7040-7050 ES
+  [LVL]   fade back to 7005 (pin reasserts).
+  [LVL]   Buy first dip to 6987+ → Idea 1.
+  [LVL]   magnet on the board sits at 7000 SPX (just 33 points above spot), volatility is compressing toward the critical thres
+  [LVL]   Buy the dips above 6950. Target 7000. If 7000 breaks, the runway to 7100 is clear.
+  [LVL]   pin held perfectly. Price oscillated in a tight band around 7000 SPX (7037 ES), doing exactly what the structure p
+  [LVL]   LONG When: IF price pulls back to 7037–7047 ES (7000–7010 SPX) — on TSM miss, morning volatility, or natural pullba
+  [LVL]   Entry: Buy 7037–7047 ES on confirmed hold (5-min close above 7037)
+  [LVL]   SHORT When: IF price rallies into 7085–7095 ES (7048–7058 SPX) and shows rejection — a wick above 7087 that fails to
+  [LVL]   Entry: Sell 7085–7095 ES on confirmed rejection
+  [LVL]   Long entry: Buy 7047–7057 ES (7010–7020 SPX) on pullback into charm positive pocket
+  [LVL]   Short entry: Sell 7077–7087 ES (7040–7050 SPX) on push into Extremes resistance
+  [LVL]   LONG When: IF TSM beats AND ES gaps above 7087 AND holds above 7087
+  [LVL]   Entry: Buy 7087–7097 ES (7050–7060 SPX) on confirmed hold above the ceiling
+  [LVL]   magnet (+$86–146M) pulls price through the uncovered zone above 7050.
+  [LVL]   Buy dips toward 7047, sell rips toward 7087.
+  [LVL]   Buy (Idea 1) activates on approach to 7037 ES.
+  [LVL]   buy 7087–7097, target 7137
+  [LVL]   fade back toward 7067
+  [LVL]   Buy dips to 7047–7057, sell rips to 7077–7087
+  [LVL]   Buy for bounce to 7067+
+  [LVL]   entry zone if 7037–7047 holds
+  [LVL]   buy dips toward it with conviction. The 7050 ceiling is real — respect it unless TSM provides a catalyst to break
+
+========== WEEK 4-20 ==========
+
+========== WEEK 4-27 ==========
+
+========== WEEK 5-11 ==========
+  [SETUP] setup carries. If price loses SPX 7300 / ES 7323 → the next magnetic target is SPX 7000 / ES 7023 (a roughly 300-point move), n
+  [SETUP] Setup D is asymmetric — once the corridor breaks down, there's no structural stopping point until 7000. If price breaks SPX 747
+  [SETUP] Setup C's extension target shifts from SPX 7500 to SPX 7575. The charm pin at SPX 7400 / ES 7423 is a Wednesday-only effect. On
+  [SETUP] Setup A long SPX 7375-7350 / ES 7398-7373 — Grade A, three-quarter size, MULTI-SESSION Secondary setup: Setup B short SPX 7425-
+  [SETUP] Setup C above SPX 7450 / ES 7473 — Grade B, quarter size, INTRADAY-ONLY Tail-hedge short: Setup D on SPX 7287 / ES 7310 break —
+  [SETUP] Setup A) — that's the corridor-floor approach. Secondary play is fading SPX 7425-7450 / ES 7448-7473 (Setup B) — the corridor-c
+  [LVL]   buy 7350 SPX / 7373 ES ▓▓▓▓▓▓▓▓▓▓▓▓▓▓ Chart anchor · 5/4 POC + gamma
+  [LVL]   magnet and at the cushion levels (SPX 7375 / ES 7398, 7350, 7295). Dips get cushioned. Above spot: resistive stack at
+  [LVL]   magnet is for the next three trading days. Monthly (June expiration): concentration shifts to SPX 7000 / ES 7023 — th
+  [LVL]   magnet sits. All-expirations: two extreme magnet bookends at SPX 7000 / ES 7023 and SPX 8000-8125 / ES 8023-8148.
+  [LVL]   buy setup carries. If price loses SPX 7300 / ES 7323 → the next magnetic target is SPX 7000 / ES 7023 (a roughly 3
+  [LVL]   pin at SPX 7400 / ES 7423 is a Wednesday-only effect. Once Wednesday's close prints, that time-decay magnetism eva
+  [LVL]   long inside the SPX 7300-7475 / ES 7323-7498 structural corridor. The corridor is set by dealer positioning — SPX 7
+  [LVL]   magnet floor) on one side, SPX 7425-7475 (the resistance stack ceiling) on the other. Wednesday's catalysts (PPI + th
+  [LVL]   long SPX 7375-7350 / ES 7398-7373 — Grade A, three-quarter size, MULTI-SESSION Secondary setup: Setup B short SPX 7
+  [LVL]   long: Setup C above SPX 7450 / ES 7473 — Grade B, quarter size, INTRADAY-ONLY Tail-hedge short: Setup D on SPX 7287
+  [LVL]   magnet is the floor; the SPX 7425-7475 / ES 7448-7498 resistance stack is the ceiling. The structural floor below the
+  [LVL]   short 7450 SPX / 7473 ES ████████████ Local pivot — fragile
+
+========== WEEK 5-18 ==========
+  [LVL]   fade the SPX 7,500–7,575 / ES 7,520–7,595 magnets back to the pin - SPX 7440-7460, buy dips into the SPX 7,400–7,44
+
+========== WEEK 5-25 ==========
+
+========== WEEK 5-4 ==========
+
+========== WEEK 6-1 ==========
+
+========== WEEK 6-8 ==========

@@ -1,0 +1,7 @@
+﻿node.exe : Unauthorized. Please run `railway login` again.
+At C:\Users\Faisa\AppData\Roaming\npm\railway.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/@railway/cli/bin/railway.js" ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Unauthorized. P...y login` again.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

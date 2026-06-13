@@ -1,0 +1,261 @@
+"""Tel Res msg 90 — Regime / Loss audit report.
+Counter-intuitive finding: signals (V16.1 sim) are fine. Execution is the leak.
+"""
+import os, requests
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+ET = ZoneInfo("America/New_York")
+TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TEL_RES_CHAT_ID = "-1003792574755"
+
+# Findings from _tmp_regime_loss_audit_v2.py
+DAILY = [
+    ("2026-05-01", "Fri", 294.50, 12), ("2026-05-04", "Mon", 112.00, 16),
+    ("2026-05-05", "Tue", -44.50, 14), ("2026-05-06", "Wed", 293.00, 19),
+    ("2026-05-07", "Thu", 480.00, 9),  ("2026-05-08", "Fri", 42.00, 13),
+    ("2026-05-11", "Mon", 271.00, 9),  ("2026-05-12", "Tue", 395.00, 16),
+    ("2026-05-13", "Wed", 12.80, 12),  ("2026-05-14", "Thu", 230.80, 31),
+    ("2026-05-15", "Fri", 61.00, 8),   ("2026-05-18", "Mon", 150.00, 18),
+    ("2026-05-19", "Tue", 371.50, 16), ("2026-05-20", "Wed", 431.00, 28),
+]
+
+# Broker resolved subset
+BROKER_DAILY = [
+    ("2026-05-04", "Mon", -1.25, 1), ("2026-05-13", "Wed", -23.75, 4),
+    ("2026-05-15", "Fri", -81.25, 2), ("2026-05-18", "Mon", -65.00, 6),
+    ("2026-05-19", "Tue", 230.00, 7), ("2026-05-20", "Wed", 408.75, 17),
+]
+broker_total_resolved = sum(p for _,_,p,_ in BROKER_DAILY)
+
+V161_TOTAL = sum(p for _,_,p,_ in DAILY)
+
+now_et = datetime.now(ET)
+
+html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>0DTE Alpha — Regime/Loss Audit 2026-05-20</title>
+<style>
+  body {{ background: #0a0e1a; color: #e5e7eb; font-family: 'Plus Jakarta Sans','Segoe UI',sans-serif;
+         margin: 0; padding: 20px; line-height: 1.55; }}
+  .container {{ max-width: 1100px; margin: 0 auto; }}
+  h1 {{ color: #fff; margin-bottom: 4px; }}
+  .subtitle {{ color: #94a3b8; margin-bottom: 25px; font-size: 14px; }}
+  h2 {{ color: #fff; margin-top: 32px; padding-bottom: 6px; border-bottom: 2px solid #1e293b; }}
+  h3 {{ color: #cbd5e1; margin-top: 20px; font-size: 16px; }}
+  .headline {{
+    background: #064e3b33; border-left: 4px solid #22c55e;
+    padding: 18px 22px; margin: 18px 0; border-radius: 4px;
+    font-size: 16px; font-weight: 500;
+  }}
+  .surprise {{
+    background: #7c2d1233; border-left: 4px solid #fbbf24;
+    padding: 14px 18px; margin: 14px 0; border-radius: 4px;
+  }}
+  .note {{
+    background: #1e3a8a22; border-left: 4px solid #3b82f6;
+    padding: 12px 16px; margin: 14px 0; border-radius: 4px; font-size: 13px;
+  }}
+  table {{ border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }}
+  th, td {{ padding: 8px 11px; text-align: left; border-bottom: 1px solid #1e293b; }}
+  th {{ background: #1e293b; color: #e2e8f0; font-weight: 600; font-size: 11px; text-transform: uppercase; }}
+  td.r, th.r {{ text-align: right; }}
+  td.c, th.c {{ text-align: center; }}
+  .good {{ color: #22c55e; font-weight: 600; }}
+  .bad  {{ color: #ef4444; font-weight: 600; }}
+  .warn {{ color: #fbbf24; }}
+  .verdict {{ background: #064e3b33; border-left: 4px solid #22c55e;
+              padding: 14px 18px; margin: 14px 0; border-radius: 4px; }}
+  .kpi-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 18px 0; }}
+  .kpi {{ background: #111827; border-left: 4px solid #3b82f6;
+          padding: 12px 16px; border-radius: 4px; }}
+  .kpi .label {{ font-size: 10px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }}
+  .kpi .value {{ font-size: 22px; font-weight: 700; margin-top: 4px; color: #fff; }}
+  .kpi .sub {{ font-size: 11px; color: #94a3b8; margin-top: 2px; }}
+</style></head><body>
+<div class="container">
+
+<h1>Regime / Loss Audit — counter-intuitive finding</h1>
+<div class="subtitle">{now_et.strftime('%A %Y-%m-%d %H:%M ET')} · Deep dig requested by user · V16.1 sim basis</div>
+
+<div class="headline">
+  <b>The signals are NOT the problem. The execution is.</b><br><br>
+  V16.1 portal sim for May 1-20 = <b>+$3,100 across 14 trading days</b>, with <b>13 of 14 days positive</b>
+  (only May 5 slightly red at −$44). Broker reality over the same period: <b>−$400 capital damage</b>.
+  <br><br>
+  The <b>~$3,500 gap between sim and broker</b> is execution leak — exactly what tonight's fixes
+  (S161 breaker, S148 DD dispatch, S147 V16.1 admit, S55 partial via S131) target. There is no
+  "bad regime" or "bad setup" to block; there is a broken execution layer being progressively repaired.
+</div>
+
+<h2>1. Daily V16.1 portal P&amp;L — May 1-20</h2>
+<div class="kpi-grid">
+  <div class="kpi"><div class="label">V16.1 sim total</div><div class="value good">+${V161_TOTAL:,.2f}</div><div class="sub">14 trading days</div></div>
+  <div class="kpi"><div class="label">Days positive</div><div class="value good">13 / 14</div><div class="sub">93%</div></div>
+  <div class="kpi"><div class="label">Broker reality (resolved)</div><div class="value bad">+${broker_total_resolved:,.2f}</div><div class="sub">only 36 of ~100 trades resolved (S130 ghost bug)</div></div>
+  <div class="kpi"><div class="label">Capital damage</div><div class="value bad">−$400</div><div class="sub">$6,000 → $5,600 since May 1</div></div>
+</div>
+
+<table>
+  <tr><th>Date</th><th>Day</th><th class="r">V16.1 sim P&amp;L</th><th class="r">Trades</th><th class="r">Broker resolved</th></tr>
+"""
+
+bd_map = {d: p for d,_,p,_ in BROKER_DAILY}
+for d, dow, p, n in DAILY:
+    cls = "good" if p >= 0 else "bad"
+    bp = bd_map.get(d)
+    bp_str = f'<span class="{"good" if (bp or 0) >= 0 else "bad"}">${bp:+.2f}</span>' if bp is not None else '<span style="color:#64748b">ghost only</span>'
+    html += f'<tr><td>{d}</td><td>{dow}</td><td class="r {cls}">${p:+.2f}</td><td class="r">{n}</td><td class="r">{bp_str}</td></tr>\n'
+
+html += f"""
+</table>
+
+<div class="surprise">
+  <b>The "$200-300/day loss" perception</b> you remember from "last week" comes from BROKER reality
+  (not portal sim). Portal sim for the worst week (May 11-15) was <b>+$970</b>. If broker had matched
+  even 30% of that, you'd have made +$300 that week instead of losing ~$1,000+. The week wasn't a
+  signal problem — it was a capture-rate problem.
+</div>
+
+<h2>2. Weekly breakdown — every week positive in sim</h2>
+<table>
+  <tr><th>Week</th><th>Dates</th><th class="r">V16.1 sim total</th><th class="r">Trades</th></tr>
+  <tr><td>W18</td><td>May 1 (Fri)</td><td class="r good">+$294.50</td><td class="r">12</td></tr>
+  <tr><td>W19</td><td>May 4-8</td><td class="r good">+$882.50</td><td class="r">71</td></tr>
+  <tr><td>W20</td><td>May 11-15 <span class="warn">(your "bad week")</span></td><td class="r good">+$970.60</td><td class="r">76</td></tr>
+  <tr><td>W21</td><td>May 18-20 (partial)</td><td class="r good">+$952.50</td><td class="r">62</td></tr>
+</table>
+
+<h2>3. Per-setup contribution by week (V16.1 sim)</h2>
+<table>
+  <tr><th>Week</th><th>Setup × Direction</th><th class="r">n</th><th class="r">WR</th><th class="r">P&amp;L</th></tr>
+  <tr style="background:#0f172a"><td colspan=5><b>W19 May 4-8</b> total +$882.50</td></tr>
+  <tr><td></td><td>Vanna Pivot Bounce short</td><td class="r">5</td><td class="r">0%</td><td class="r bad">−$186.00</td></tr>
+  <tr><td></td><td>AG Short</td><td class="r">8</td><td class="r">62%</td><td class="r">+$50.50</td></tr>
+  <tr><td></td><td>Skew Charm long</td><td class="r">16</td><td class="r">62%</td><td class="r">+$156.50</td></tr>
+  <tr><td></td><td>Skew Charm short</td><td class="r">35</td><td class="r">54%</td><td class="r good">+$416.00</td></tr>
+  <tr><td></td><td>DD Exhaustion long</td><td class="r">7</td><td class="r">86%</td><td class="r good">+$445.50</td></tr>
+  <tr style="background:#0f172a"><td colspan=5><b>W20 May 11-15 (the "bad week")</b> total +$970.60</td></tr>
+  <tr><td></td><td>ES Absorption bearish</td><td class="r">2</td><td class="r">0%</td><td class="r bad">−$80.00</td></tr>
+  <tr><td></td><td>Skew Charm short</td><td class="r">15</td><td class="r">67%</td><td class="r">+$20.00</td></tr>
+  <tr><td></td><td>Vanna Pivot Bounce short</td><td class="r">15</td><td class="r">60%</td><td class="r">+$92.50</td></tr>
+  <tr><td></td><td>AG Short</td><td class="r">11</td><td class="r">70%</td><td class="r">+$122.10</td></tr>
+  <tr><td></td><td>DD Exhaustion long</td><td class="r">14</td><td class="r">50%</td><td class="r good">+$351.50</td></tr>
+  <tr><td></td><td>Skew Charm long</td><td class="r">19</td><td class="r">68%</td><td class="r good">+$464.50</td></tr>
+  <tr style="background:#0f172a"><td colspan=5><b>W21 May 18-20</b> total +$952.50</td></tr>
+  <tr><td></td><td>ES Absorption bearish</td><td class="r">3</td><td class="r">0%</td><td class="r bad">−$80.00</td></tr>
+  <tr><td></td><td>AG Short</td><td class="r">4</td><td class="r">50%</td><td class="r">−$0.50</td></tr>
+  <tr><td></td><td>Skew Charm short</td><td class="r">26</td><td class="r">54%</td><td class="r good">+$220.00</td></tr>
+  <tr><td></td><td>Skew Charm long</td><td class="r">18</td><td class="r">72%</td><td class="r good">+$362.50</td></tr>
+  <tr><td></td><td>DD Exhaustion long</td><td class="r">11</td><td class="r">73%</td><td class="r good">+$450.50</td></tr>
+</table>
+
+<h2>4. Bleeder patterns — where the small losses are</h2>
+<p>Patterns with ≥3 trades and net loss in V16.1 sim May 1-20:</p>
+<table>
+  <tr><th>Pattern</th><th class="r">n</th><th class="r">WR</th><th class="r">P&amp;L</th><th>Verdict</th></tr>
+  <tr><td>ES Absorption bearish · align=−1</td><td class="r">5</td><td class="r">0%</td><td class="r bad">−$160</td><td>Bot caught wrong-direction shorts. Already covered by V14 align rule but slipping through. <b>V17 candidate.</b></td></tr>
+  <tr><td>Skew Charm short · SIDIAL-MESSY</td><td class="r">5</td><td class="r">40%</td><td class="r bad">−$141</td><td>Headline-driven days. Small sample, mixed direction. <b>Watch list.</b></td></tr>
+  <tr><td>Skew Charm long · align=−1</td><td class="r">3</td><td class="r">33%</td><td class="r bad">−$110</td><td>Contrarian longs without Greek support. <b>V17 candidate.</b></td></tr>
+  <tr><td>Vanna Pivot Bounce short · align=+3</td><td class="r">3</td><td class="r">0%</td><td class="r bad">−$106</td><td>Tiny sample. Wait for more data.</td></tr>
+  <tr><td>AG Short · AG-PURE paradigm</td><td class="r">7</td><td class="r">57%</td><td class="r bad">−$52</td><td>Surprising — AG paradigm should favor AG short. <b>Investigate.</b></td></tr>
+</table>
+
+<div class="note">
+  Total bleeder $ in V16.1 May 1-20: ~$570 across all small loss patterns. Even if we blocked ALL of them
+  cleanly (impossible — we'd over-block winners too), we'd add ~$570 to the $3,100 sim = 18% improvement.
+  <b>That's marginal compared to the $3,500 execution gap.</b>
+</div>
+
+<h2>5. V17 candidate rules — backtested on May data</h2>
+<table>
+  <tr><th>Rule</th><th class="r">Blocks</th><th class="r">Block WR</th><th class="r">Block P&amp;L</th><th class="r">Net delta</th></tr>
+  <tr><td>R17-8: SC long align=−1</td><td class="r">3</td><td class="r">33%</td><td class="r">−$110</td><td class="r good">+$110</td></tr>
+  <tr><td>R17-10: All longs when VIX &lt; 17</td><td class="r">2</td><td class="r">0%</td><td class="r">−$97</td><td class="r good">+$97</td></tr>
+  <tr><td>R17-2: SC long AG-LIS</td><td class="r">8</td><td class="r">62%</td><td class="r">+$19</td><td class="r bad">−$19</td></tr>
+  <tr><td>R17-12: SC long hour=15</td><td class="r">8</td><td class="r">50%</td><td class="r">+$48</td><td class="r bad">−$48</td></tr>
+  <tr><td>R17-1: SC long AG-PURE</td><td class="r">5</td><td class="r">80%</td><td class="r">+$69</td><td class="r bad">−$69</td></tr>
+</table>
+
+<div class="surprise">
+  <b>Most V17 candidates HURT performance (block winners) or barely help.</b> The top realistic
+  rule (SC long align=−1) saves only $110/month at 1 MES. Combined "V17" blocks 15 trades but
+  net delta is <b>−$48</b> — over-blocking. The signals don't have a clean regime-block pattern
+  because the system is already well-filtered (V14 → V16 → V16.1 each cut more cleanly).
+</div>
+
+<h2>6. Where the $3,500 May execution gap actually went</h2>
+<table>
+  <tr><th>Leak</th><th class="r">Est. cost</th><th>Status</th></tr>
+  <tr><td>Circuit breaker false-trip (S161)</td><td class="r">−$600/mo</td><td class="good">FIXED tonight (commit e7dd004)</td></tr>
+  <tr><td>DD dispatch never fired DD longs (S148)</td><td class="r">−$554 May estimated</td><td class="good">FIXED 2026-05-18</td></tr>
+  <tr><td>DD long V16.1 align&ge;0 admit gap (S147)</td><td class="r">−$268 May (23 NULL_skip)</td><td class="good">FIXED 2026-05-18</td></tr>
+  <tr><td>5 critical bugs (filter race, fill recovery, race close, S131 realign) (S144)</td><td class="r">−$170/day on bad days</td><td class="good">FIXED 2026-05-18</td></tr>
+  <tr><td>Trail-tag-early MES wicks vs SPX path (S132 audit, S55 study)</td><td class="r">−$702 V14-era (107% of V14 gap!)</td><td class="warn">PARTIAL — S131 SPX-driven exit live since 2026-05-17</td></tr>
+  <tr><td>Wrong-side stop bug (lid 2447 era)</td><td class="r">−$155 historical</td><td class="good">FIXED S80 (May 5)</td></tr>
+  <tr><td>Bot pre-check blocking valid orders (S156)</td><td class="r">−$110-200/mo</td><td class="good">FIXED 2026-05-19</td></tr>
+  <tr><td>Ghost reconcile close_fill NULL (S130/S159)</td><td class="r">portal attribution only, no $ leak</td><td class="warn">63/100 May trades still NULL — tonight backfilled 5 of today's</td></tr>
+</table>
+
+<h2>7. The V17 question — answered</h2>
+<div class="verdict">
+  <b>Should we ship V17?</b> Based on the data: <b>NO, not as a regime-filter set.</b>
+  <br><br>
+  Two narrow exceptions worth ship-after-validation:
+  <br><br>
+  1. <b>R17-8 SC long align=−1 block</b> — 3 trades May, all losses, contrarian setup without Greek support. Save ~$110/mo at 1 MES. Low risk because: contrarian alignment is a known-bad signal; sample matches mechanism. <b>Validate over Jun/Jul before shipping.</b>
+  <br><br>
+  2. <b>R17-10 longs when VIX &lt; 17 block</b> — 2 trades May, both losses. Same mechanism: low-VIX calm regime makes contrarian longs weak. Save ~$97/mo. <b>Watch with more data — sample too small.</b>
+  <br><br>
+  <b>Everything else either over-blocks or is too small-sample.</b> The system is already well-filtered.
+  The right "V17" is NOT a filter — it's <b>execution discipline</b> via the fixes shipping tonight + S55 trail-realism + ongoing capture-rate measurement.
+</div>
+
+<h2>8. Forward expectation — what tonight's fixes should change</h2>
+<table>
+  <tr><th>Metric</th><th class="r">Apr-May (pre-fixes)</th><th class="r">Forward (post-fixes)</th></tr>
+  <tr><td>Capture rate</td><td class="r bad">~−18% (broker -$208 vs portal +$1,168)</td><td class="r warn">target ≥ 50-65%</td></tr>
+  <tr><td>Placement rate (V16.1 → real)</td><td class="r warn">45%</td><td class="r warn">target ≥ 60-70%</td></tr>
+  <tr><td>Daily $/day expectation at 1 MES</td><td class="r bad">−$30/day actual</td><td class="r good">+$60-125/day (matches sim × placement × capture)</td></tr>
+  <tr><td>Monthly P&amp;L at 1 MES</td><td class="r bad">−$400/mo recent</td><td class="r good">$1,200-$2,500/mo realistic</td></tr>
+</table>
+
+<h2>9. Conclusion</h2>
+<div class="verdict">
+  <b>Today's +$388 broker = the system working with bugs fixed.</b><br>
+  <b>Last week's −$200/300/day = the system working with bugs leaking.</b><br>
+  Same V16.1 filter. Different execution health.<br><br>
+  The path forward isn't V17 — it's measuring rolling 30-day broker P&amp;L starting tomorrow,
+  confirming the fixes hold, then scaling. The V17 candidate rules (align=−1 longs, VIX&lt;17 longs)
+  are watch-list, not ship-list. Sample sizes too small, save mechanism more than money.<br><br>
+  <b>The big leverage is no longer in finding better signals. It's in capturing the ones we already have.</b>
+</div>
+
+<div style="margin-top:35px;padding:14px;background:#0f172a;border-radius:6px;font-size:11px;color:#64748b">
+  Generated {now_et.strftime('%Y-%m-%d %H:%M ET')} · V16.1 (live since commit 8d868c6) ·
+  221 signals over 14 trading days (Mar/Apr/May regime spread: prior reports cover full 3mo) ·
+  Data source: setup_log.outcome_pnl (chain-sim labels) + real_trade_orders broker fills subset
+</div>
+
+</div></body></html>
+"""
+
+# Send
+path = "_tmp_telres_regime_audit_msg90.html"
+with open(path, "w", encoding="utf-8") as f:
+    f.write(html)
+print(f"Report written: {path} ({len(html):,} chars)")
+
+url = f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument"
+caption = (
+    "DEEP REGIME / LOSS AUDIT — counter-intuitive finding\n\n"
+    "The signals are NOT broken. V16.1 sim = +$3,100 May 1-20, 13/14 days positive.\n"
+    "Broker reality: -$400 capital damage. Gap is ~$3,500 of EXECUTION leak.\n\n"
+    "V17 'block bad regimes' doesn't materially help — most candidates over-block winners.\n"
+    "Real fix = the execution-layer work shipping tonight + S55 trail realism.\n\n"
+    "Net leverage going forward = capture rate, not new filter rules."
+)
+with open(path, "rb") as f:
+    files = {"document": ("regime_audit_msg90.html", f, "text/html")}
+    data = {"chat_id": TEL_RES_CHAT_ID, "caption": caption}
+    r = requests.post(url, files=files, data=data, timeout=30)
+print(f"Telegram response: {r.status_code} {r.text[:200]}")

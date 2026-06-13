@@ -1,0 +1,1554 @@
+Authors with 'darkmatter' in name: ['darkmattertrade']
+
+Total Dark Matter authored messages found across ALL exports: 1416
+
+[2025-09-02 20:35] Hey there. So higher timeframe support always wins but notional size matters on that higher timeframe. If you saw gamma this week vs all expiration we had support at 6425 gamma on weekly but not higher timeframe. Ripped right through that support. So yes higher timeframes I always give it more weight than smaller timeframes.
+[2025-09-02 20:36] Yes to your last paragraph. Which is why I have multiple timeframes in my workspaces so I can compare and contrast
+[2025-10-29 09:44] you nailed it man - great job!
+[2025-11-04 20:44] my style is i am looking across different time expirations and give a weight. see the size of that positive gamma decrease and that support goes away breaking us lower then
+[2025-11-04 20:44] you have the theory right. where i get the positive gamma is looking at tomorrow's expiration. i consider this as a level to level trade for me doing intraday.
+[2025-11-04 20:49] gamma is not the only greek at that level. consider it this way. there is positive vanna sitting at that level as well.
+[2025-11-04 20:56] yea the whole complex between all the greeks can get gnarly. its good feedback i will take it back to incorporate it with my analysis
+[2025-11-04 21:04] missing your weekly expiration with vanna - it is dwindling majorly now
+[2025-11-18 09:28] Today in RTH I did have a failed trade, shook out and entered back in. followed by taking a third trade. so 2 for 3
+[2025-11-29 20:10] Negative vanna doesn’t change the SPX–VIX inverse correlation. It amplifies it. SPX up → IV down (spot-vol correlation) IV down → dealer deltas increase (negative vanna) Dealers buy → SPX up more (hedging feedback loop) This is why negative vanna = upside fuel in low-volatility regimes. When I identified negative vanna at 6840–6860 SPX, what I additionally identified was: * A region where falling IV → aggressive dealer buying * A zone that naturally acts as upside accelerant * A feedback loop that activates precisely when volatility compresses Volland confirms this interpretation: negative vanna above spot acts as a repellent when IV rises, but a magnet when IV falls. Think of it this way.... Spot-Vol Correlation: SPX up → IV down Negative Vanna: IV down → dealers buy delta So the loop looks like this: * SPX up → IV down → dealers buy → SPX up more This is why negative vanna is such a powerful form of upside continuation fuel when volatility is falling. This is also why the Volland fra
+[2025-11-30 21:28] Brand new #12/1 ES/SPX Overview is now available.
+[2025-12-01 02:42] yes — “increase” here refers to absolute delta magnitude, not “delta becoming more positive.” “dealer deltas increase” means the absolute delta exposure grows. For puts, that means delta becomes more negative; for calls, delta becomes more positive. In SPX, where negative vanna is dominated by puts, IV down → put deltas relax → dealers buy → upside fuel.
+[2025-12-09 02:36] I shared a few notes here if you want to take a look. * https://discord.com/channels/1356329071230980188/1362821077922742334/1425726819402776606 * https://discord.com/channels/1356329071230980188/1362819762333286441/1409774297479778375
+[2025-12-30 22:52] When volatility is greater than it has been during the holiday volume the moves overnight are great to @Sparks-Flying point. They behave even better to dealer positions than RTH IMO. Take a look at some of my past trade plans in #⚛️┃dark-matter-trade you can see how these translate nicely into overnight futures action.
+[2026-01-15 20:59] i am cleaning this up as we use the widgets. so keep sharing suggestions/feedback and i will update once done.
+[2026-01-15 20:59] keep in mind i use non-0dte to formulate structure and charm and 0dte give me the momentum within those structures to trade
+[2026-01-19 06:31] New #1/19 ES/SPX Weekly & Daily Overview is now available. 6900spx is a critical pivot and will be an important pivot with 6850spx our big support level to hold to the downside before 6800spx. In between lots of chop with 6875spx holding ground in futures thus far.
+[2026-01-20 05:47] New update for 1/20's session.
+[2026-02-03 05:01] what charting tool do you use?
+[2026-02-03 05:03] the TLDR IMO: 1. Watch for key intraday volume nodes, value areas and lay your volland levels over them. 2. Do the same thing with a weekly volume profile on the 4hr chart you will see critical levels like 6850 which was a key gamma level in volland is also where the previous week low resided, you had the 1/19 weekly VAL sitting there and so forth.
+[2026-02-03 05:04] Check out - https://www.darkmattertrade.com/p/my-trading-rules - if you have questions on setting up the volume profile - there is a video @Captain Wick provided on setting up the volume profile on TradingView || T:My Trading Rules | These are the rules I live by and how I trade on a daily or even swing basis regardless of what ticker
+[2026-02-08 17:51] That’s correct. I use ToS and on the option chain you will see the expected move is about 120 pts. It’s a good barometer of what the week’s expected move will be. When you start to poke past that expected move it warrants caution that going directionally that way more has less of a chance. BY NO MEANS WOULD I USE IT TO ENTER A TRADE.
+[2026-02-26 06:16] checkout section 5 here - https://www.darkmattertrade.com/p/my-trading-rules || T:My Trading Rules | These are the rules I live by and how I trade on a daily or even swing basis regardless of what ticker
+[2026-03-03 08:12] yea looks like that us embassy drone hit in saudi arabia tipped it but big resistance this 6900 level
+[2026-03-03 11:44] be careful here they want extremes
+[2026-03-03 11:46] 23vx will bring more selling too
+[2026-03-09 01:01] Crazy
+[2026-03-09 01:01] Oh my
+[2026-03-09 01:01] World’s slowest selloff lol.
+[2026-03-09 01:02] https://tenor.com/view/family-guy-peter-griffin-excited-happy-jumping-gif-4775034 || T:when your friend goes on a date
+[2026-03-09 01:03] Off to a juicy start
+[2026-03-09 01:29] Oh my haha
+[2026-03-09 05:19] 6550spx looks like they want it to happen
+[2026-03-09 05:19] rejected 6600spx retake here overnight after breaking it down.
+[2026-03-09 05:29] haha freaking golden lol
+[2026-03-09 05:29] hold 6575spx and 6600spx - that's where you are choppy but if we overtake 6600spx watch it could be a sizeable push back towards 6830es/6825 spx
+[2026-03-09 14:28] I waited paytiently for the es long. Finally over with it. Took all night haha
+[2026-03-09 14:29] 6600spx retake was a nice treat
+[2026-03-09 15:00] I am on travel this morning - I yield to you haha
+[2026-03-09 15:00] lol I know. Sadly I will miss the rest of the fun. I leave the rest to you lol
+[2026-03-09 22:48] @A p o l l o good times as always my friend 😉 The data was there if you were curious if this was foreseeable with Volland or not.
+[2026-03-09 22:51] We deserved that 😎
+[2026-03-09 22:51] https://tenor.com/view/nba-jam-gif-4159082 || T:Boom Shaka Laka
+[2026-03-10 00:56] I was up a while last night. Was hoping for a break tonight lol.
+[2026-03-10 00:56] I was up a while last night. Was hoping for a break tonight lol.
+[2026-03-16 01:25] We have some huge range for this week. Back in town working on the trade plan - 200pt range this week in options
+[2026-03-16 01:26] opex week
+[2026-03-16 01:26] still sell rips IMO with 6650-and 6700spx levels of interest
+[2026-03-16 17:41] yes paytience... 🙂
+[2026-03-17 06:05] IMO yes - opex week on top of it - mean reversions into key levels IMO - wait for key catalyst movements this week such as FOMC and MU ER and VolEx, OPEX, its hard to hold with swings and still see rips being faded
+[2026-03-17 06:05] IMO yes - opex week on top of it - mean reversions into key levels IMO - wait for key catalyst movements this week such as FOMC and MU ER and VolEx, OPEX, its hard to hold with swings and still see rips being faded
+[2026-03-18 15:36] Yea moves coming in overnight. That short overnight at 6750 was money. At support now let’s see how market reacts to higher wholesale prices
+[2026-03-18 15:49] There she goes too
+[2026-03-18 21:03] https://x.com/DeItaone/status/2034329265425072638?s=20 || \*FED SAYS GOVERNOR STEPHEN MIRAN DISSENTS IN FAVOR OF RATE CUT
+[2026-03-18 21:03] looks like Miran is only dissent https://x.com/DeItaone/status/2034329317107241279?s=20 || \*FED SAYS IMPLICATIONS OF MIDDLE EAST DEVELOPMENTS ARE UNCERTAIN
+[2026-03-18 23:30] Got to 6600 just like we drew up. Two key levels today. 6750 and 6700spx.
+[2026-03-18 23:34] I need to dig in but MU not doing well post ER won’t help bull case let’s see how that conference call goes
+[2026-03-18 23:36] Everyone wants their returns now lol
+[2026-03-18 23:37] And we got sec pushing for 2 times a year earnings. Can you imagine the vol around those earnings lol
+[2026-03-18 23:45] I saw that was it guidance or something else worrying the market? Or simply just sell take profits?
+[2026-03-19 05:46] that vx 25 is the flood gate IMO
+[2026-03-19 05:46] that vx 25 is the flood gate IMO
+[2026-03-19 17:14] and we are hitting 6600 spx too - important levels here. vx is building above 24.75 so need to shift our vol regime up higher from 23.
+[2026-03-19 17:14] and we are hitting 6600 spx too - important levels here. vx is building above 24.75 so need to shift our vol regime up higher from 23.
+[2026-03-19 17:15] i have my eyes on META as well. been trading that ticker all week too
+[2026-03-19 17:15] i have my eyes on META as well. been trading that ticker all week too
+[2026-03-19 17:15] spot vol pretty tame right now too
+[2026-03-19 17:15] spot vol pretty tame right now too
+[2026-03-19 17:16] not at the levels VX is at and how the data has shifted here from the open
+[2026-03-19 17:16] not at the levels VX is at and how the data has shifted here from the open
+[2026-03-19 17:17] consider C out of scope now. i am pulling an update in
+[2026-03-19 17:17] consider C out of scope now. i am pulling an update in
+[2026-03-19 17:19] below 608 hold will go towards 600 on meta
+[2026-03-19 17:19] below 608 hold will go towards 600 on meta
+[2026-03-19 17:19] meta is getting hit hard
+[2026-03-19 17:19] meta is getting hit hard
+[2026-03-19 17:19] which helped us with this bounce from the lows but it only put in a 40pt bounce. i am sus to this bounce - the only thing i don't like seeing is the semis are semi holding - if those go this will go straight down then
+[2026-03-19 17:19] which helped us with this bounce from the lows but it only put in a 40pt bounce. i am sus to this bounce - the only thing i don't like seeing is the semis are semi holding - if those go this will go straight down then
+[2026-03-19 22:08] thats what i thought and look at the sellers at 6650 lol
+[2026-03-19 22:08] thats what i thought and look at the sellers at 6650 lol
+[2026-03-19 22:12] feels more opex related. lets take over some critical levels in tickers then maybe we can get some moves. meta for example 608-600 was wide open gap on meta. it takes and holds 608-610, 180 on nvda and the vx to break 23 could get the bull party going again
+[2026-03-19 22:12] feels more opex related. lets take over some critical levels in tickers then maybe we can get some moves. meta for example 608-600 was wide open gap on meta. it takes and holds 608-610, 180 on nvda and the vx to break 23 could get the bull party going again
+[2026-03-20 21:48] Thank you sir. We have had a good week. Domination city. # paytience
+[2026-03-23 01:14] we bounced off 6500spx - negative charm intraday
+[2026-03-23 01:14] wouldn't be shocked this closes gap by tomorrow lol
+[2026-03-23 01:24] there is a bounce coming here IMO its testing 6500spx now
+[2026-03-23 01:24] yes sorry that's what i meant 50pt
+[2026-03-23 01:28] lol this candle what a bounce haha
+[2026-03-23 01:39] mean reversion like trades - i am down for that lol
+[2026-03-23 01:43] https://x.com/Polymarket/status/2035816565900251197?s=20 quite interesting... || BREAKING: U\.S\. officials reportedly “no longer enthusiastic” about a Kurdish rebellion in Iran\.
+[2026-03-23 02:07] i dig most of that but think they are building positions at 6600spx too. sell the rip zone none the less
+[2026-03-23 10:47] 6500spx couldn't hold
+[2026-03-23 10:47] Some wild moves here overnight we bounced so fast and then slow death from there again
+[2026-03-23 10:47] meta is in same zone too - critical level
+[2026-03-23 11:14] give me lower lol
+[2026-03-23 11:15] what do you have there?
+[2026-03-23 14:05] gotta be news
+[2026-03-23 14:06] has to be iran related
+[2026-03-23 14:06] look at oil
+[2026-03-23 14:06] massive drop in volatility
+[2026-03-23 14:06] wow
+[2026-03-23 14:07] https://x.com/DeItaone/status/2036036945353011487?s=20 || \*TRUMP: HAVE HAD TALKS WITH IRAN REGARDING END TO HOSTILIES
+[2026-03-23 14:07] https://x.com/DeItaone/status/2036037011086221819?s=20 || \*TRUMP: INSTRUCTED TO POSTPONE ALL STRIKES AGAINST IRAN
+[2026-03-23 14:07] not seeing anything yet
+[2026-03-23 14:08] i wanted to buy calls down here too but just didn't trigger it.
+[2026-03-23 14:08] look at NQ lol
+[2026-03-23 14:09] 220pt move just like that haha
+[2026-03-23 14:09] shouldn't have done school dropoff today lol
+[2026-03-23 14:11] ES 6500 puts for tomorrow were at 70 a few mins ago, barely at 10 now haha
+[2026-03-23 14:11] impossible to know what trump or admin is up to lol
+[2026-03-23 14:17] haha where do we go now. need to update my trade plan haha
+[2026-03-23 14:19] lol this was at +2.3 a bit ago.
+[2026-03-23 14:23] iranians haven't confirmed anything yet
+[2026-03-23 14:23] would love a retest of 6600spx - add 50 for es
+[2026-03-23 14:24] just a casual 100pt selloff here lol
+[2026-03-23 14:26] paused strikes for 5 days only
+[2026-03-23 14:33] nice retest here so far. break of 6700spx gets us towards 6775spx IMO.
+[2026-03-23 14:50] they are not backing down. https://x.com/financialjuice/status/2036047303048413503?s=20 || Iran's Fars, citing source: Trump retreated after hearing that Iran would target all power plants in West Asia
+[2026-03-23 14:51] https://x.com/DeItaone/status/2036047522607530301?s=20 || \*IRAN'S FARS: THERE'S NO DIRECT, INDIRECT CONTACT WITH TRUMP
+[2026-03-23 20:45] MU has been a fun trade today
+[2026-03-23 20:45] pure negative
+[2026-03-24 16:28] lol this is why i stopped sleeping since trump admin took office with futures haha
+[2026-03-24 16:28] yes agreed
+[2026-03-24 16:36] if this level goes i have 365 next 😮
+[2026-03-25 15:30] who is iran - first squawk lol
+[2026-03-25 15:30] who is iran - first squawk lol
+[2026-03-25 15:31] watch semis and financial still - they will tell it all
+[2026-03-25 15:31] watch semis and financial still - they will tell it all
+[2026-03-25 15:31] what's interesting with this rally you can't find a buyer in MU besides that initial ramp from the news last night. Ran right into greek wall hell and sold back - @Phoenix interesting no...
+[2026-03-25 15:31] what's interesting with this rally you can't find a buyer in MU besides that initial ramp from the news last night. Ran right into greek wall hell and sold back - @Phoenix interesting no...
+[2026-03-25 19:16] anyone know?
+[2026-03-25 19:16] anyone know?
+[2026-03-25 19:16] what is trump speaking on? saw that on the economic calendars tonight
+[2026-03-25 19:16] what is trump speaking on? saw that on the economic calendars tonight
+[2026-03-26 15:45] good to know thanks for the share
+[2026-03-26 15:50] came in at 210k vs 211k. now focus back on trump/iran/dealers lol
+[2026-03-26 19:33] big level here at 6500
+[2026-03-26 23:15] lol that headline with this: https://x.com/financialjuice/status/2037259899910881552?s=20 || Russian Foreign Minister: We have a military\-technical cooperation agreement with Iran and have provided military products to Tehran\.
+[2026-03-27 02:16] are we in a simulation? is this a test lol
+[2026-03-27 02:51] friday vol crush is a common theme too these days lol
+[2026-03-27 03:00] ES is trying above 6500. let's see if it can go but look at META and MU after hours too. rejecting 555 and 360 respectively - lets see how it does in 24 hour trading.
+[2026-03-27 03:01] 6510spx has a bunch of charm for tomorrow - interesting.
+[2026-03-27 03:14] wow nothing....
+[2026-03-27 15:25] I had it last night and fell asleep posting it now
+[2026-03-27 15:36] I will update it here now with new 0DTE that i didn't have last night
+[2026-03-27 15:39] I think we have more down and the greeks highlight that IMO
+[2026-03-27 16:15] here is the updated levels
+[2026-03-27 16:16] `Session Summary (Updated with overnight trading)` Bias: BEARISH — sell bounces into resistance. The overnight drop shifted the entire structure lower. What was support yesterday is resistance today. Dealers are massively short and forced to sell into weakness. The VIX at 29.23 amplifies every Greek force on the bearish side. The session comes down to one level: 6,423 SPX / 6,473 ES (the Line in the Sand). Above it, we range-trade between 6,423 and 6,460. Below it, the waterfall begins — targeting the gamma buy wall at 6,390 and the structural floor at 6,370. The highest-probability trade is Setup A (fade bounces to 6,505-6,510 ES). The highest reward-to-risk is Setup B (cascade short if LIS breaks — 3:1). Keep size small given the DADS at 35.16 and wild execution conditions. The afternoon resolution will be telling — 0DTE time-decay forces accelerate after 2PM ET. If we're still on this knife-edge at the charm zero-crossing (6,445 SPX) by then, the resolution will be sharp and directi
+[2026-03-27 19:38] yea lets just get there and be done
+[2026-03-27 19:41] i would like to see a bounce, @Phoenix is calling for this area, i personally think there is more but not before some kind of bounce. after this it's a bit back to trade level to level again.
+[2026-03-27 19:41] wait wait wait wait lol
+[2026-03-27 19:45] https://x.com/DeItaone/status/2037571178672320600?s=20 || GERMAN CHANCELLOR MERZ ON IRAN: WHAT TRUMP IS CURRENTLY DOING IS A MASSIVE ESCALATION WITH OPEN CONSEQUENCES
+[2026-03-27 19:46] https://x.com/WhiteHouse/status/2037570634717315530?s=20 || President Trump Delivers Remarks to Farmers https://t.co/I3euJiUrqt
+[2026-03-27 19:58] https://x.com/financialjuice/status/2037573084165669107?s=20 || US Secretary of State Rubio: sanctions relief on Russian crude is not a permanent policy for United States\.
+[2026-03-27 19:58] oof ouch this - https://x.com/DeItaone/status/2037572924769468816?s=20 || GERMAN CHANCELLOR MERZ: US AND ISRAEL HAVE NO STRATEGY ON WHAT THEY WANT
+[2026-03-27 19:58] print money - https://x.com/financialjuice/status/2037573929280184457?s=20 || Trump: I am requesting additional farm relief for farmers\.
+[2026-03-27 19:59] seems interesting...https://x.com/financialjuice/status/2037574882913853923?s=20 || Trump: We're announcing new guidelines on diesel\.
+[2026-03-27 22:51] what an a - hole that guy is. can't replace the original lol
+[2026-03-28 02:48] Here we go
+[2026-03-28 02:48] Oh man
+[2026-03-28 02:48] https://x.com/financialjuice/status/2037678129104167057?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || US Official: Iran missile strike on base in Saudi Arabia injures 12 US troops, two seriously\.
+[2026-03-28 04:15] Oh damn is that true? That’s wild - was this just baiting Israel and US the first few weeks?
+[2026-03-30 01:28] 41 pts. #3/30 ES/SPX Weekly & Daily Overview shared here
+[2026-03-30 01:53] Need to over take 6350spx now
+[2026-03-30 01:53] Otherwise chop and lower targets imo.
+[2026-03-30 01:54] 6250 for example 😲
+[2026-03-30 03:15] Lots of time between now and open. Thank you es options for all hours of trading ha
+[2026-03-30 03:15] MU puts liking it so far too
+[2026-03-30 03:26] lol
+[2026-03-30 03:27] So much back and forth ha
+[2026-03-30 03:27] https://x.com/financialjuice/status/2038411002769772755?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || Trump: I think we will make a deal with them pretty soon\. It is possible that we will not\.
+[2026-03-30 04:54] I have been trading the zone we are in. Gonna wait for tomorrow for anymore as well.
+[2026-03-30 05:11] believeable news lol
+[2026-03-30 05:11] especially any good news in iran front
+[2026-03-30 05:45] 6420es should come
+[2026-03-30 05:45] vol is dwindling here overnight
+[2026-03-30 05:46] 6411es is a greek and volume profile level too
+[2026-03-30 05:46] see you in the mornign
+[2026-03-30 05:46] whether we get to 6400spx/6411es is a bit harder IMO.
+[2026-03-30 20:22] 6355-50spx and below that the lows of session and then 6300spx
+[2026-03-30 20:25] i am still of the opinion though 6250 spx needs to be dealt with as you know @nicowilliamsRW ha
+[2026-03-30 20:39] press sec is speaking so FYI
+[2026-03-30 20:40] saying arab states will help pay for cost of war
+[2026-03-30 20:48] all day. option A but option B. you pick....
+[2026-03-30 20:50] that 559 on QQQ straight down to 555 and 553 - I see you @Captain Wick with your #3/30 QQQ Weekly Overview plan...
+[2026-03-30 21:06] you short on it?
+[2026-03-30 21:07] lol no i missed out on that ha
+[2026-03-30 21:08] lol haha omg wow - was this recent buy or back when it sold after an earnings?
+[2026-03-30 21:09] i hope he gives some of those billions back to some lucky and happy NFLX seller ha
+[2026-03-30 21:11] i seen you juggle with more come on man lol
+[2026-03-30 21:11] just a casual $1b lol
+[2026-03-30 21:12] ahh out of the B's at least lol
+[2026-03-30 21:13] ahh great many will find their heads and eyes out of that then lol
+[2026-03-30 21:13] is that when he went anti-woke? lol
+[2026-03-30 21:14] only reason why it hasn't sold off today. held its gap nicely
+[2026-03-31 02:15] MU selling off here aggressively overnight too quite interesting
+[2026-03-31 02:15] MU selling off here aggressively overnight too quite interesting
+[2026-03-31 02:15] SMH is testing 360
+[2026-03-31 02:15] SMH is testing 360
+[2026-03-31 02:16] yea 300 seems to be coming. i have some support at 310 but it feels like a bounce to sell again
+[2026-03-31 02:16] yea 300 seems to be coming. i have some support at 310 but it feels like a bounce to sell again
+[2026-03-31 04:09] every outlet was covering it too
+[2026-03-31 04:09] every outlet was covering it too
+[2026-03-31 04:11] ain't no volume like that coming in then haha
+[2026-03-31 04:11] ain't no volume like that coming in then haha
+[2026-03-31 04:11] especially for that early in the day too lol
+[2026-03-31 04:11] especially for that early in the day too lol
+[2026-03-31 04:11] i was shocked they covered it lol
+[2026-03-31 04:11] i was shocked they covered it lol
+[2026-03-31 04:35] nice rally here - 3 legit candles - lots of open space
+[2026-03-31 04:35] nice rally here - 3 legit candles - lots of open space
+[2026-03-31 04:41] 6480es is within sight
+[2026-03-31 04:41] 6480es is within sight
+[2026-03-31 04:41] there is NO vanna in this zone and with vol vx below 26.5 can spark his higher towards 6525es, 6550-60es
+[2026-03-31 04:41] there is NO vanna in this zone and with vol vx below 26.5 can spark his higher towards 6525es, 6550-60es
+[2026-03-31 04:42] you also have a lot of negative gamma so moves will ACCELERATE very quickly
+[2026-03-31 04:42] you also have a lot of negative gamma so moves will ACCELERATE very quickly
+[2026-03-31 04:43] watch that vol and 4hr candle on ES - big level here.
+[2026-03-31 04:43] watch that vol and 4hr candle on ES - big level here.
+[2026-03-31 05:17] even sky news talked about it lol https://youtu.be/cNcEQGrEva0?si=jBWdWsQrq2iwV5Y4 || T:Did someone know what Trump was going to say? | Ed Conway analysis | There are growing concerns that insiders are profiting from the war in Iran after a number of well-timed bets online. Our economics and data editor Ed Conway has been taking a look. Live updates: https://news.sky.com/story/iran-war-latest-trump-tehran-israel-strikes-us-drone-live-sky-news-13509565 #skynews #uknews #iran #middleeast #trump ...
+[2026-03-31 05:17] even sky news talked about it lol https://youtu.be/cNcEQGrEva0?si=jBWdWsQrq2iwV5Y4 || T:Did someone know what Trump was going to say? | Ed Conway analysis | There are growing concerns that insiders are profiting from the war in Iran after a number of well-timed bets online. Our economics and data editor Ed Conway has been taking a look. Live updates: https://news.sky.com/story/iran-war-latest-trump-tehran-israel-strikes-us-drone-live-sky-news-13509565 #skynews #uknews #iran #middleeast #trump ...
+[2026-03-31 16:04] done - https://discord.com/channels/1356329071230980188/1487923409181479123/1488524061184102453
+[2026-03-31 16:04] done - https://discord.com/channels/1356329071230980188/1487923409181479123/1488524061184102453
+[2026-03-31 16:04] lol regime change has occurred - i guess technically new leader but regime changed there lol
+[2026-03-31 16:04] lol regime change has occurred - i guess technically new leader but regime changed there lol
+[2026-03-31 22:47] i have one agent doing all 30000 people's job come on man get with the AI times lol
+[2026-04-01 09:33] Did we have a quad vol seller today too? Or no?
+[2026-04-01 09:33] Did we have a quad vol seller today too? Or no?
+[2026-04-01 09:48] Nice movement and breakout here on a retest of a key support level.
+[2026-04-01 09:48] Nice movement and breakout here on a retest of a key support level.
+[2026-04-02 04:19] lol only trump haha
+[2026-04-02 06:40] about to post my trade plan in #3/30 ES/SPX Weekly & Daily Overview
+[2026-04-02 06:40] yea could get to 6450spx IMO
+[2026-04-02 07:08] oh my just accelerating
+[2026-04-02 07:12] trade plan for 4/2 now available
+[2026-04-02 07:18] you seen this? https://x.com/Mayhem4Markets/status/2039549612856430623?s=20 || A record short bet against oil\. Just before Trump sent oil prices surging higher\. The loss this trade will take is no April Fool's joke\.
+[2026-04-02 08:40] yea i am watching MU - curious to see if it holds 350 before market open
+[2026-04-02 08:47] MU testing 350
+[2026-04-02 08:47] would be great to get there BEFORE earnings though. great opportunity to take a swing there
+[2026-04-02 16:24] Where the quad vol buyer at??? lol
+[2026-04-02 16:34] Dang lol
+[2026-04-02 17:37] more fun lol
+[2026-04-06 03:01] That 6525spx level off gamma held. Bounced right off it.
+[2026-04-06 05:05] Yea that's a target for sure. this damn VOL needs to die ha
+[2026-04-06 05:22] https://x.com/financialjuice/status/2040976703007117333?s=20 || 🔴 US and Iran and a group of regional mediators are discussing the terms for a potential 45\-day ceasefire that could lead to a permanent end to the war, according to four US, Israeli and regional sources with knowledge of the talks\. https://t.co/tVdS7iZIAz
+[2026-04-06 05:22] https://x.com/financialjuice/status/2040977268080574651?s=20 || 🔴 Sources said the chances for reaching a partial deal over the next 48 hours are slim \- Axios
+[2026-04-06 05:22] mixed emotions here overnight
+[2026-04-06 05:22] nice rally and vol crush here
+[2026-04-06 05:24] https://x.com/financialjuice/status/2040978314823602559?s=20 || Negotiations taking place via Pakistani, Egyptian and Turkish mediators and via text messages sent between Trump's envoy Witkoff and Iran's Foreign Minister Araghchi \- 4 sources cited by Axios
+[2026-04-06 05:27] good enough for vol crush - i will take it. My MU calls are liking this overnight too
+[2026-04-06 05:27] lots of time between now and the open ha
+[2026-04-06 05:29] lol i have - i am trying to test some strategies for random tickers and so far its paying off with MU and META. Need more time before I release it out to the wild...
+[2026-04-06 05:29] worked for those two, want to see mid caps now, movers and gainers which are trading with momentum
+[2026-04-06 05:31] about to review it i will let you know in the #⭐│volland-subscribers-only channel
+[2026-04-06 15:38] Set the Expiration window to 12-day (e.g., 04/06–04/17 in the current data) — that's the timeframe that produced the -$37.7B figure in the data I reviewed.
+[2026-04-06 17:21] when is trump speaking again?
+[2026-04-06 17:22] no care in the world
+[2026-04-06 17:24] lets get below 23.5 on vx more fun times
+[2026-04-06 17:25] he is planned to speak at 1 PM to discuss Iran
+[2026-04-06 17:39] https://x.com/DeItaone/status/2041163578514792748?s=20 || IRANIAN TV IRNA SAYS IRAN'S REPLY CONSISTS OF TEN CLAUSES
+[2026-04-06 17:39] https://x.com/DeItaone/status/2041163803782472065?s=20 || 🚨IRAN REJECTS A CEAESFIRE IN REPLY TO US VIA PAKISTAN: IRNA
+[2026-04-06 17:40] they can reject the ceasefire but have a different proposal
+[2026-04-06 17:41] balls in trump's corner now and 1 pm presser will be important
+[2026-04-06 18:08] london market is closed today too right?
+[2026-04-06 18:09] yea i was wondering why futures were so little too when london normally opens
+[2026-04-06 18:14] https://x.com/financialjuice/status/2041172331393867778?s=20 || Trump on Iran: War could end quickly if they do certain things\.
+[2026-04-06 18:14] trump is speaking somewhere
+[2026-04-06 18:14] yea
+[2026-04-06 18:14] yea was just going to say that - protection before 1 pm
+[2026-04-06 18:15] hassett speaking too
+[2026-04-06 18:15] https://x.com/DeItaone/status/2041172319536636010?s=20 || HASSETT: EXPECT FED TO LOWER RATES ONCE WARSH GETS THERE
+[2026-04-06 18:15] https://x.com/DeItaone/status/2041172460360396950?s=20 || TRUMP ON IRAN: WAR IS ABOUT ONE THING\-\-IRAN CANNOT HAVE NUCLEAR WEAPONS
+[2026-04-06 18:15] https://x.com/DeItaone/status/2041172675951829164?s=20 || 🚨 TRUMP ON IRAN: IF I HAD MY CHOICE I WOULD TAKE THE OIL
+[2026-04-06 18:15] https://x.com/DeItaone/status/2041172884203147580?s=20 || 🚨 TRUMP: IF IRAN DOESN'T YIELD, WON'T HAVE BRIDGES, POWER PLANTS
+[2026-04-06 18:15] https://x.com/financialjuice/status/2041172547337609612?s=20 || Trump on Iran: People US is negotiating with are reasonable and not as radicalised\.
+[2026-04-06 18:16] and whose bingo card had a president saying "uncle" this year???
+[2026-04-06 18:16] https://x.com/DeItaone/status/2041172829173878926?s=20 || TRUMP ON IRAN: UNFORTUNATELY AMERICAN PEOPLE WANT TO SEE US COME HOME
+[2026-04-06 18:16] https://x.com/financialjuice/status/2041172853186342943?s=20 || Trump on Iran: They just don't want to say uncle\.
+[2026-04-06 18:19] https://x.com/DeItaone/status/2041173243575292161?s=20 || TRUMP ON IRAN: I'D LIKE TO SEE US WIN AND COME HOME
+[2026-04-06 18:19] https://x.com/DeItaone/status/2041173599634043276?s=20 || TRUMP ON IRAN: GUNS WERE SUPPOSED TO GO TO PROTESTERS BUT A CERTAIN GROUP OF PEOPLE KEPT THEM TRUMP ON IRAN: AM VERY UPSET, THEY ARE GOING TO PAY A BIG PRICE FOR THAT
+[2026-04-06 18:19] these statements are all over the place
+[2026-04-06 18:20] https://x.com/DeItaone/status/2041173697034109092?s=20 || TRUMP ON IRAN: THEY HAVE SOME MISSILES, DRONES LEFT
+[2026-04-06 18:45] many tickers are at key levels of infliction too - mu was at 375. GS at 865.
+[2026-04-06 20:23] lol hearing trump say leaker constantly is hilarious - https://x.com/DeItaone/status/2041205051176173951?s=20 || TRUMP: SOMEBODY LEAKED SOMETHING, WE'RE LOOKING TO FIND THE LEAKER TRUMP: WE'RE GOING TO GO TO THE MEDIA COMPANY THAT RELEASED IT
+[2026-04-06 20:27] CIA Director now about to speak
+[2026-04-06 20:40] just tell us what you doing lol
+[2026-04-07 04:01] lol stone age, palaeolithic age. are we in a simulation haha - are we in a simulation? https://x.com/financialjuice/status/2041302435835125952?s=20 || Advisor to Iran's Parliament Speaker Ghalibaf: Trump has about 20 hours to either surrender to Iran, or his allies will return to the Palaeolithic Age\. We will not back down\.
+[2026-04-07 18:15] paytience
+[2026-04-07 18:17] https://x.com/financialjuice/status/2041534716944269818?s=20 || \(More colour from Fox post Trump's Truth post from the morning\) Trump: 8 PM is happening\. Unprecedented attack on Iran could still unfold, but that could change if talks improve today \- Fox News https://t.co/9wkAckRZZY
+[2026-04-07 18:17] we all do these statements, feelings are tough to deal with
+[2026-04-07 18:20] its impossible to dissect this in any kind of meaningful way - fake news all over on top
+[2026-04-07 18:20] ken being ken... https://x.com/DeItaone/status/2041534098930278413?s=20 || RETAIL INVESTORS TURN SELLERS AMID MARKET VOLATILITY Citadel Securities reports retail investors sold U\.S\. stocks and options last week, a rare shift from years of persistent buying\. Net spending fell 55% in March from February and 70% from January’s peak\. Options activity
+[2026-04-07 18:49] What happened to aapl today - complete opposite of yesterday
+[2026-04-07 18:52] https://tenor.com/view/jack-nicholson-yes-nod-agree-gif-21960775
+[2026-04-07 18:56] https://x.com/DeItaone/status/2041543213933031622?s=20 || AIR DEFENSES ACTIVATED OVER TEHRAN, FIGHTER PLANES FLYING ON LOW ALTITUDE OVER THE CITY, BORNA NEWS AGENCY SAYS
+[2026-04-07 18:56] semi's getting a bit of a push here
+[2026-04-07 18:57] https://x.com/Polymarket/status/2041545550076547581?s=20 || BREAKING: Trump confirms to Bret Baier, "8 PM is happening"
+[2026-04-07 18:58] so far holding but shocked how it is with all of these statements ha
+[2026-04-07 18:59] i don't know anything anymore lol
+[2026-04-07 19:01] i would watch semis and aapl for now - if they hold these lows we will hold in ES/SPX - the rejection at 375 for MU will be important to watch if it accepts above or not
+[2026-04-07 19:06] 6600 be like
+[2026-04-07 19:06] https://tenor.com/view/no-no-no-sports-fingerwag-dekembe-mutombo-basketball-gif-17938994
+[2026-04-07 19:08] my long criteria is 6600spx, MU above 375 and holding, NVDA above 175 and holding. I don't like how they are building positions above those levels in these tickers.
+[2026-04-07 19:09] very nice snipe
+[2026-04-07 23:00] lol never under
+[2026-04-07 23:00] what a rally to end the day - look at how much meta squeezed - 10pts from the lows
+[2026-04-07 23:05] basically 6700 or more 6500 spx fun lol
+[2026-04-07 23:05] https://x.com/financialjuice/status/2041606584581640669?s=20 || Trump to Fox News on negotiations: I can't comment, because right now we're in heated negotiations\.
+[2026-04-07 23:05] https://x.com/financialjuice/status/2041606795802607960?s=20 || Trump declined to weigh in on Pakistan’s 2\-week deadline \- Fox News
+[2026-04-07 23:05] waiting on trump now
+[2026-04-07 23:06] you mean this that i saw on X
+[2026-04-07 23:07] oh my that's juicy - if the market doesn't hear ceaserfire watch out
+[2026-04-08 00:50] AI is going to just get more and more insane, but can it be trusted and do the things it says it can. Lots of AI slop code out there but its catching up so fast
+[2026-04-08 00:50] did you hear how Mythos figured out how to get out of its "secure box" and started to brag about it in tests they were doing?
+[2026-04-08 00:52] good read if you didn't get to it yet - https://www-cdn.anthropic.com/79c2d46d997783b9d2fb3241de43218158e5f25c.pdf
+[2026-04-08 01:01] well there is 6690spx we discussed
+[2026-04-08 01:06] Comes down on the strait if the ceasefire is accepted IMO
+[2026-04-08 01:06] the strait needs to open as well - bit of a juggle for next move until that is determined
+[2026-04-08 01:08] 6810spx huh
+[2026-04-08 01:09] its impressive but just as dangerous in the wrong hands. companies not adopting AI will want their security doing so at minimum as soon as that thing is out.
+[2026-04-08 01:19] yes did see that. just imagine if you are not one of those companies though ha- how do i get on the list lol
+[2026-04-08 01:20] yea bulls be bulling at that point. What is interesting in the new vanna are the towers at 6740 and 6750 now!
+[2026-04-08 01:23] yes SPX
+[2026-04-08 01:24] 6650spx retest here is basically a favor being asked for bulls to retrace towards
+[2026-04-08 01:28] we are still news first for direction but i wouldn't be shocked if you get a retest near 6650spx here before this 8pm deadline or the next news. if that news trends positive and you are sitting around 6650-60spx it will skyrocket towards those towers and you have dealers who will help accelerate/not get in the way until at least 6725spx
+[2026-04-08 01:29] the rest of that up move towards 6740-50 will come thanks to vol and what it does...
+[2026-04-08 01:31] 22.50 is a critical pivot. we hit one already on this news which was below 23.5
+[2026-04-08 01:32] 22.25 below 23.5 then you have 21
+[2026-04-08 01:32] doesn't seem good
+[2026-04-08 01:32] jeez
+[2026-04-08 01:32] oh here we go
+[2026-04-08 01:32] wow
+[2026-04-08 01:33] gap closed
+[2026-04-08 01:33] https://x.com/financialjuice/status/2041645323387302065?s=20 || Report of attack on Arak aluminium plant in central Iran is incorrect : Mehr News Agency citing local official
+[2026-04-08 01:33] lol fake out haha
+[2026-04-08 01:33] wth is going on lol
+[2026-04-08 01:34] https://x.com/financialjuice/status/2041645603566842250?s=20 || ⚠ BREAKING: Trump: I agree to suspend bombing and attack of Iran for a period of two weeks \- Truth Social
+[2026-04-08 01:34] tickers moving like they are all on earnings moves
+[2026-04-08 01:35] https://x.com/DeItaone/status/2041645609271099550?s=20 || \*TRUMP: AGREED TO SUSPEND IRAN BOMBING FOR TWO WEEKS
+[2026-04-08 01:38] super nasty but it took out the gap freaking wild as hell
+[2026-04-08 01:39] options chains are going bonkers on ES lol
+[2026-04-08 01:40] 6727spx
+[2026-04-08 01:40] we going here IMO
+[2026-04-08 01:41] for those learning you see how 6725 is the first true resistance in this cluster - all comes down to VOL and look at where it is at...you break that 22.5 on VIX and you will get those extra 20pts if not consolidation time.
+[2026-04-08 01:44] we are hitting walls on META and MU so it feels like it could be
+[2026-04-08 01:46] QQQ high in after hours was 599.96 lol
+[2026-04-08 01:48] at 301 now too
+[2026-04-08 01:48] https://x.com/financialjuice/status/2041648686812274732?s=20 || Trump: 2\-week period will permit agreement to be finalized and consummated\.
+[2026-04-08 01:49] Iran needs to agree to open the Strait. If they do not it could be game on again
+[2026-04-08 01:49] Ok one important item on this news
+[2026-04-08 01:49] right at that 100 level too
+[2026-04-08 01:49] they have yet to say they are or aren't yet
+[2026-04-08 01:50] seems like israel has agreed to the ceasefire too
+[2026-04-08 01:51] can you imagine if you had an ES stop loss at 6655es - lol damn
+[2026-04-08 01:52] that was classic stop loss hunt lol
+[2026-04-08 01:52] they did those folks dirty
+[2026-04-08 01:53] back to our regular scheduled calendar of bullish moves in the market in april that's the best you get haha
+[2026-04-08 01:54] just have 200 pt stop losses
+[2026-04-08 01:58] https://x.com/financialjuice/status/2041651531703878073?s=20 || Israel doesn't like this plan—to say the least—but Trump calls the shots \- Israel Channel 12 News Reporter\.
+[2026-04-08 01:59] https://x.com/Polymarket/status/2041650228021833829?s=20 || JUST IN: Despite conflicting media reports, traders still assign a >60% chance a ceasefire agreement will be mutually announced tonight\.
+[2026-04-08 01:59] this is interesting
+[2026-04-08 02:00] 6800spx is where this can go IMO
+[2026-04-08 02:00] lets see 6740-50
+[2026-04-08 02:00] which we are at ha
+[2026-04-08 02:01] NVDA got over the 180 hump too
+[2026-04-08 02:03] for ES or what greeks I have?
+[2026-04-08 02:04] 6840es
+[2026-04-08 02:04] but i think it goes to 6825spx or 6865es looking at the vanna chart
+[2026-04-08 02:05] 6825spx vanna and then you have 6800spx gamma. similar to 6725spx and 6740-50spx we just saw. that last 25pt move will come depending on vol
+[2026-04-08 02:06] I cut some MU calls before the bell thinking i was happy buying the end of day rally but boy i should have held more. wasn't worth the risk though IMO. more trades will come
+[2026-04-08 02:07] @Phoenix GS wanting to hit that 900 target too
+[2026-04-08 02:07] got to 886
+[2026-04-08 02:10] i cut out early from the call is that what we had as well?
+[2026-04-08 02:50] everyone is taking lessons - trump university makes a comeback lol
+[2026-04-08 02:51] wild moves here - 30pts in META, MU. we are talking about earnings like moves. what happens in 2 weeks if we go no where????
+[2026-04-08 02:51] yes this too
+[2026-04-08 02:53] everything will rally now on earnings feelings then reality. CPI should be fun later this week ha
+[2026-04-08 02:54] i had 7500 as a potential for this year but i like how bullish you are getting ha
+[2026-04-08 02:55] 6315spx becomes buy of the year haha - insane if that happens
+[2026-04-08 02:57] last year april was the turning point exact same day - 4/7/2025
+[2026-04-08 02:58] the closest dip we had was the week of 4/21 to backtest tariffs lol
+[2026-04-08 04:08] Lots of profit taking tomorrow ha
+[2026-04-08 04:08] We did our part. Incredible moves here. Power of Volland too. Good learnings in real time too
+[2026-04-08 17:53] 👀
+[2026-04-08 17:54] all of this is unfolding so fast
+[2026-04-08 17:54] https://x.com/financialjuice/status/2041891485864308819?s=20 || Pakistan's Minister of Planning & Development: Israel began this conflict and has started other conflicts \- Al Jazeera\.
+[2026-04-08 17:54] its kind of incredible...
+[2026-04-08 19:00] https://x.com/financialjuice/status/2041908728987783277?s=20 || Iran’s Foreign Minister Araghchi in call with Turkish counterpart: Iran agreed to the ceasefire based on its 10\-point plan as basis for talks with the US\.
+[2026-04-08 19:00] if this ceasefire talk breaks this could get wild lol but looking across a few tickers like meta and nvda they are starting to form a base here.
+[2026-04-08 19:01] this ceasefire is really fragile right now
+[2026-04-08 19:12] gonna take out its high here
+[2026-04-08 19:12] look at that 14pt rally jeez
+[2026-04-08 19:12] many bears F'd...
+[2026-04-08 19:12] nothing like AI and Unity to rally it lol
+[2026-04-08 19:14] yes indeed 100% haha. New bears i should say lol
+[2026-04-08 19:15] i wanted a 590 test to long it and missed that unfortunately. got to 592
+[2026-04-08 21:23] news driven day tomorrow as well
+[2026-04-08 21:24] economic calendar that is
+[2026-04-08 23:11] BTD - never/under lol
+[2026-04-09 04:20] There is a 130 pts of thin thin price action lol
+[2026-04-09 04:21] 2 big Econ days too
+[2026-04-09 04:40] Haha or get it done with as fast as last night was
+[2026-04-09 04:42] Dealers won’t do it for us. Need a vol catalyst.
+[2026-04-12 04:42] Oh my…look at btc
+[2026-04-12 04:42] Oh my…look at btc
+[2026-04-12 04:44] Could be a good bounce to buy…
+[2026-04-12 04:44] Could be a good bounce to buy…
+[2026-04-12 04:44] Spy futures didn’t like that either.
+[2026-04-12 04:44] Spy futures didn’t like that either.
+[2026-04-12 04:47] More dropping.
+[2026-04-12 04:47] More dropping.
+[2026-04-12 04:48] Crypto futures lol. They now have etfs and options and other mag 7’s lol
+[2026-04-12 04:48] Crypto futures lol. They now have etfs and options and other mag 7’s lol
+[2026-04-12 04:48] Xlf has taken a draw down for siren
+[2026-04-12 04:48] Xlf has taken a draw down for siren
+[2026-04-12 04:49] We are below Fridays lows
+[2026-04-12 04:49] We are below Fridays lows
+[2026-04-12 04:55] Software companies have a lot to prove. Let me share a good read as an example
+[2026-04-12 04:55] Software companies have a lot to prove. Let me share a good read as an example
+[2026-04-12 04:55] https://x.com/bgurley/status/2042993889825501262?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || The SaaS Reckoning: Stock\-Based Compensation Was Never Free
+[2026-04-12 04:55] https://x.com/bgurley/status/2042993889825501262?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || The SaaS Reckoning: Stock\-Based Compensation Was Never Free
+[2026-04-12 04:56] AI is real on software. They will have to prove their worth again. Which means a now if they retain customers is a great buy at these lows if they prove it
+[2026-04-12 04:56] AI is real on software. They will have to prove their worth again. Which means a now if they retain customers is a great buy at these lows if they prove it
+[2026-04-13 15:25] SPYUSDC or SPYUSDT
+[2026-04-13 16:50] USO dying
+[2026-04-13 16:52] yea unless they got something really good in return but i don't see what that is.
+[2026-04-13 19:48] https://x.com/DeItaone/status/2043732797039239601?s=20 || TRUMP: I WANT TO SEE WAR IN IRAN ENDED
+[2026-04-13 19:48] https://x.com/financialjuice/status/2043732335321866662?s=20 || Trump: Could resolve Iran before tankers get to the US\.
+[2026-04-13 19:48] https://x.com/financialjuice/status/2043732405983285495?s=20 || Trump: We were called this morning by Iran, they want a deal\.
+[2026-04-13 19:52] This can be tough but we also need to keep our bias check. Ride the levels up and enter on key critical retests. ie 6775 and 6800spx levels today were given and so forth
+[2026-04-13 19:52] i wish we could have bought futures options on some tickers last night. massive opportunities last night. SMH near 425. MU at 401. Meta at 620. this market wants things up for now, not down
+[2026-04-13 19:52] shorts are going to be quick scalps in and out until ER is done IMO
+[2026-04-13 19:54] as long as Trump and Iran keep that side show in check and make progress we go up until ERs in tech play out. there will be vol shocks with iran indeed. risk management will be best to handle those shocks.
+[2026-04-13 19:54] it definitely could
+[2026-04-13 20:04] when SMH is not attempting to make new ATH's everyday lol
+[2026-04-13 22:57] We did talk about this today gang didn't we... The move in how fast it came today was a bit of a surprise.
+[2026-04-13 22:59] 6800 to 6900 had 2 non-greek obstacles and we consolidated at both instead of retreating. otherwise greeks were above 6800 gets you to 6900.
+[2026-04-13 23:01] friday's high and weekly close lol
+[2026-04-14 01:22] https://x.com/DeItaone/status/2043816435307233740?s=20 || VANCE TELLS FOX NEWS:MADE A LOT OF PROGRESS IN TALKS WITH IRAN
+[2026-04-14 01:23] SNDK helped the AI space today as well with its inclusion to NQ
+[2026-04-14 01:25] yea ER rally like we talked about this morning. last week's dip was the recent swing buy and today was opportunity 2
+[2026-04-14 01:26] 7000 spx is starting to show up on weekly vanna which is interesting, but want to believe that as we see opex play out
+[2026-04-14 01:26] we are negative vanna on the week which it wasn't today
+[2026-04-14 01:28] yea semis and like tickers - MU - are semi-swing scalps I call them. Trade them level to level and seize the greater moves. for example MU holding 410 gave entry today multiple times. a close above 425 opens door to 440
+[2026-04-14 01:30] you break 6900spx we have gamma that can "slowly" take us to 6950 and once that breaks you are at 7000 in no time...
+[2026-04-14 01:31] curious how ASML and TSM ER turns out. is that your 7k catalyst basically. we have some data tomorrow morning but feels like a nothing burger based on CPI last week
+[2026-04-14 01:32] 20pt move in MSFT is wild in one day lol
+[2026-04-14 01:32] yea i don't know how to look at that one. most times around ER Dimon comes out saying how overpriced JPM stock is, this problem or that problem. it sells and then they buy the heck out of it and we have an insane market rally lol
+[2026-04-14 01:33] GS recovered half of its selloff too lol
+[2026-04-14 01:33] yea it held onto 900 for dear life too
+[2026-04-14 01:34] for the time being if you get anything back in 6850 consider it lucky for this week ha
+[2026-04-14 01:51] looking at the two tails of the cumulative exposure chart here. take the left and right end points you are negative vanna so we could see a market that turns into vol up spot up cause of it until it neutralizes itself. so our typical "bullish" signal won't be there.
+[2026-04-14 01:52] the other angle is an increase in vol is coming - could be Iran, could be ER - that the market is reading itself for
+[2026-04-14 01:53] that cliff is 6850spx where we flip from positive vanna back into negative vanna and can see ourselves cascade down towards 6805-6800
+[2026-04-14 01:56] here is how your respective calls and puts from a dealer standpoint look like
+[2026-04-14 02:20] The red (negative) bars on the put vanna chart represent puts that dealers are short — meaning customers bought those puts from dealers. Volland charts show the dealer's exposure, not the customer's. So negative (red) vanna exposure on puts means dealers sold those puts and are now carrying the hedging obligation. On the right chart (call vanna), that big green bar around 7000 means dealers are long calls at that strike. Customers sold those calls to dealers. Since dealers own them, the vanna exposure is positive and stabilizing — as spot rises toward 7000 with falling vol, the delta on those calls decays and dealers' hedging flows act as a natural dampener rather than an accelerant. So to summarize: * Put Vanna chart (left): Red = dealers short puts (customers bought them). Green = dealers long puts (customers sold them). * Call Vanna chart (right): Green = dealers long calls (customers sold them). Red = dealers short calls (customers bought them). * That green bar at 7000 on the call
+[2026-04-14 03:33] #4/13 ES/SPX Weekly & Daily Overview
+[2026-04-14 03:33] Nice bounce here in futures from intraday/overnight levels.
+[2026-04-14 04:43] Yea MU had squeeze above 425. Should see 440 if not 450 on it - barring any surprise news 📰 lol
+[2026-04-14 19:24] :neverunder:
+[2026-04-14 19:24] remember CTA's were buyers effective last week and this week if i remember right
+[2026-04-14 19:24] what's going on with AAPL?
+[2026-04-14 19:26] nice bounce spot from our levels overnight team. don't fight the tape sometimes. just join it - we are remora
+[2026-04-15 02:24] Anytime - teamwork in here! It has been a great week for us!
+[2026-04-15 02:37] Let's see how ASML earnings go tonight
+[2026-04-15 02:42] It feels/looks like qqq really wants 640
+[2026-04-15 02:43] yea higher timeframes i see 660 as target
+[2026-04-15 02:44] i can't predict earnings or iran but until those decisions this week they really want to go after 640
+[2026-04-15 02:44] looking at spx and now qqq - they both lean higher up
+[2026-04-15 02:45] stay above 627-625 basically
+[2026-04-15 19:53] Look at SMH they crushed it on this news
+[2026-04-15 19:55] Iran news
+[2026-04-15 19:55] https://x.com/financialjuice/status/2044456865388515746?s=20 || The Kremlin: Washington rejected our initiative to transfer Iranian enriched uranium to Russia \- Al Arabiya\.
+[2026-04-15 19:57] its hard to have a thesis when you have ZERO clue what is happening with Iran.
+[2026-04-15 21:02] https://x.com/Polymarket/status/2044476158964572309?s=20 || JUST IN: White House rejects reports that the U\.S\. has requested a ceasefire extension\.
+[2026-04-15 21:02] more news
+[2026-04-15 21:03] not sure why that spiked it lol
+[2026-04-15 21:03] some algo misread the "rejects" part of that statement lol
+[2026-04-15 21:35] 7020 get there baby
+[2026-04-15 21:35] 7093es is the ATH on it
+[2026-04-15 21:35] its chasing that IMO
+[2026-04-15 21:37] take it and run away - too much friction up here with the greeks still. better off trading level-to-level again
+[2026-04-15 21:38] i closed all of my swings today and have runners for 7020 or close before EOD. i don't want to wake up to a 100pt drop cause of Iran lol
+[2026-04-15 21:40] i am with you - i feel like we are destined to 7100 with a close above 7000, but i need to see 2 days of closes above 7000. otherwise i will just ride level-to-level looking for dips to buy at this point
+[2026-04-15 21:41] hope they have cat lives
+[2026-04-15 21:42] good thing you still have ES highs so there is "some" kind of volume/target, but with you. it is why i love volland - helps navigate that uncertainty in new zones of volume. i typically HATE trading tickers at ATH's. you lose edge as you mentioned
+[2026-04-15 21:43] easiest trick to pull in new bears lol
+[2026-04-15 22:01] lets goo fully out
+[2026-04-15 22:02] can enjoy the rest of this week and wait for the trades to come to us now
+[2026-04-15 22:04] could see a squeeze above 7025 to 7050 - need to see some other tickers participate like SMH, MU, META
+[2026-04-15 22:05] 30min chart
+[2026-04-15 22:05] look at MSFT lol
+[2026-04-15 22:05] poor bears on that one lol
+[2026-04-15 22:57] ES and NQ have NOT made new highs. 7093es is es. 26864 is nq
+[2026-04-15 23:00] every new ATH over the past year with SPX always chased the latest contract ES high
+[2026-04-15 23:00] spx has made its new high - the contract changes for ES cause this but in my past experiences they always target the ES highs on the latest contract
+[2026-04-15 23:08] hope he has been. hedging haha - wth???
+[2026-04-15 23:09] lol is he banking on hitting that GFC or Covid drop? lol
+[2026-04-15 23:16] no way anyone could have called last week. i am sorry - that was all Iran feelings. Wiz and I had a target but it exceeded ven that target. even this move to 7k - probably not a lot of people calling for 7020 lol
+[2026-04-15 23:24] just read those. i agree with those. i cut longs. level to level trading for me until we get some clarity
+[2026-04-15 23:49] we get it back tomorrow. i assume you were shorting today?
+[2026-04-15 23:57] oh really? I thought this week was much more clearer than last week - at least for me. mind me asking what caused that?
+[2026-04-16 00:24] yea the volatility is real in this market. even a vx in the 20's with vol basically compressed is still a bit high
+[2026-04-16 00:24] yea the volatility is real in this market. even a vx in the 20's with vol basically compressed is still a bit high
+[2026-04-16 00:26] let me see if i have som time today, but for this week take a look at the marketmoves show and the short we put out. that squeeze above 6800 reclaim monday to 6900 it was there in volland for sure. that day only got more and more bullish especially when i did the trade plan for tuesday that evening
+[2026-04-16 00:26] let me see if i have som time today, but for this week take a look at the marketmoves show and the short we put out. that squeeze above 6800 reclaim monday to 6900 it was there in volland for sure. that day only got more and more bullish especially when i did the trade plan for tuesday that evening
+[2026-04-16 00:27] kid has a basketball game so for now check ^^^ the above and trade plan in #4/13 ES/SPX Weekly & Daily Overview - will try to fill in after her game if i get the time for it and a trade plan
+[2026-04-16 00:27] kid has a basketball game so for now check ^^^ the above and trade plan in #4/13 ES/SPX Weekly & Daily Overview - will try to fill in after her game if i get the time for it and a trade plan
+[2026-04-16 05:05] that vanna complex with positive vanna above spot goes into next week. As @Johannes mentioned 7050 is the key level that pushes price up towards those green bars. Looking at gamma in your second screenshot is a massive 7000 positive gamma.. Two things there need to occur - you can't lose 7k and you can't have vx get above 21 and vol increasing. otherwise vol compresses or goes sideways you will float up that way.
+[2026-04-16 05:05] that vanna complex with positive vanna above spot goes into next week. As @Johannes mentioned 7050 is the key level that pushes price up towards those green bars. Looking at gamma in your second screenshot is a massive 7000 positive gamma.. Two things there need to occur - you can't lose 7k and you can't have vx get above 21 and vol increasing. otherwise vol compresses or goes sideways you will float up that way.
+[2026-04-16 05:06] add to my other thesis that ER is going to be good generally around i would not be shocked if ER continues to push us up that way...
+[2026-04-16 05:06] add to my other thesis that ER is going to be good generally around i would not be shocked if ER continues to push us up that way...
+[2026-04-16 05:06] https://tenor.com/view/now-you-know-the-more-you-know-no-kidding-no-shit-obviously-gif-1342210079425559607
+[2026-04-16 05:06] https://tenor.com/view/now-you-know-the-more-you-know-no-kidding-no-shit-obviously-gif-1342210079425559607
+[2026-04-16 05:08] ASML wasn't bad, they got beat down cause of China worries and growth stagnation cause of it. but i do agree with you there is a moment coming, but i don't think that's now. could even be next year for all i know but based on what i am reading and hearing the market is doing what it is doing cause earnings is basically blockbuster across the board
+[2026-04-16 05:08] ASML wasn't bad, they got beat down cause of China worries and growth stagnation cause of it. but i do agree with you there is a moment coming, but i don't think that's now. could even be next year for all i know but based on what i am reading and hearing the market is doing what it is doing cause earnings is basically blockbuster across the board
+[2026-04-16 05:10] allbirds lol
+[2026-04-16 05:10] allbirds lol
+[2026-04-16 05:10] don't disagree there. i think this earnings though what is getting priced into this rally when you add the lower inflation numbers across the board companies could be double dipping. charging consumers/clients more - costs lower - higher margins. i am watching margins in a lot of these ERs
+[2026-04-16 05:10] don't disagree there. i think this earnings though what is getting priced into this rally when you add the lower inflation numbers across the board companies could be double dipping. charging consumers/clients more - costs lower - higher margins. i am watching margins in a lot of these ERs
+[2026-04-16 05:12] yea eventually everything can dump - why i don't marry any kind of stock trade lol
+[2026-04-16 05:12] yea eventually everything can dump - why i don't marry any kind of stock trade lol
+[2026-04-16 05:13] as i type that look at my X feed what showed up haha
+[2026-04-16 05:13] as i type that look at my X feed what showed up haha
+[2026-04-16 05:18] lets see what TSM does tonight
+[2026-04-16 05:18] lets see what TSM does tonight
+[2026-04-16 06:00] they have taken a massive beatdown
+[2026-04-16 06:00] they have taken a massive beatdown
+[2026-04-16 09:08] good bounce here near 7015spx overnight and break of intraday resistance at 7035spx
+[2026-04-16 09:08] good bounce here near 7015spx overnight and break of intraday resistance at 7035spx
+[2026-04-16 09:08] likely target 7050spx with the TSM ER happening as well
+[2026-04-16 09:08] likely target 7050spx with the TSM ER happening as well
+[2026-04-16 16:08] Good morning
+[2026-04-16 16:08] Good morning
+[2026-04-16 16:09] Oh wow went to sleep and tsm was up 4pts what happened lol. 390 resistance came into play i see
+[2026-04-16 16:09] Oh wow went to sleep and tsm was up 4pts what happened lol. 390 resistance came into play i see
+[2026-04-16 16:15] yea news on MU about fabrication limits i see huh?
+[2026-04-16 16:15] yea news on MU about fabrication limits i see huh?
+[2026-04-16 16:17] i was wondering why it was retesting lol
+[2026-04-16 16:17] i was wondering why it was retesting lol
+[2026-04-16 16:17] lol it makes the move. that 460 was a massive wall
+[2026-04-16 16:17] lol it makes the move. that 460 was a massive wall
+[2026-04-16 17:37] that's my expectation. gonna be hard to get a wide range. pretty compacted between 7000, 7035, and 7050 IMO
+[2026-04-16 17:37] that's my expectation. gonna be hard to get a wide range. pretty compacted between 7000, 7035, and 7050 IMO
+[2026-04-16 17:38] haha its hard to be a short that's for sure
+[2026-04-16 17:38] haha its hard to be a short that's for sure
+[2026-04-16 21:01] weekly affair this iran thing on weekends lol.
+[2026-04-16 21:01] weekly affair this iran thing on weekends lol.
+[2026-04-16 21:02] at this point my goal is just to avoid a reckoning with a statement/post/etc lol
+[2026-04-16 21:02] at this point my goal is just to avoid a reckoning with a statement/post/etc lol
+[2026-04-17 15:59] Every major resistance level finally broke haha
+[2026-04-17 16:19] 7150 could even trade
+[2026-04-17 16:23] this is what we do 🙂 Working on an update here but I am sticking to this as a swing even until I proven wrong > Our 7000 and 7050 boundaries we discussed held and provdided some great two way trading intraday. While I think the market could have a "tight" and similar range like today until dealer o clock post 2 pm est the higher timeframes show 7000 growing in support by dealers and wanting to push price higher. > > There is a retracement and if we can see some volatility into next early next week around 6980 on an overshoot of 7000. Otherwise over the next month 7250 and 7300 could be targets in bound. https://discord.com/channels/1356329071230980188/1493004037313003551/1494563075343515791
+[2026-04-17 16:36] I don't think some of the big players got in as low as they wanted and there will be some catch up to this
+[2026-04-17 18:16] 7125spx if we can't break it down IMO you see 7175spx today then.
+[2026-04-17 18:17] MSFT can go up to 435 today. If MU breaks this 460 level on it could squeeze as well
+[2026-04-17 18:17] meta is consolidating too
+[2026-04-17 18:18] 100% and vx below 20 is really bullish. major infliction point here
+[2026-04-17 18:26] that ES/SPX short thesis needs help. it will be hard if you don't get tickers like the below down: * meta needs to break 680 * msft needs to break 430 * mu needs to break 450 and IF it breaks 460 will get squeezy then * qqq needs to break 647 and then 645 is even massive
+[2026-04-17 18:33] why i am a 1dte trader lol
+[2026-04-17 18:35] chillin and relaxin as we see that push up with no sweating i prefer lol
+[2026-04-17 18:36] totally with you and i laid the why above too. been saying this since monday LOTS of sellers out there and they keeping adding too. look at $CAR
+[2026-04-17 18:37] help me understand what you see as bearish there?
+[2026-04-17 18:40] right now every 0DTE mechanism in volland is pointing up
+[2026-04-17 18:40] yea 100% exactly this. are we getting froathy? yes 100% but it doesn't mean we can't keep going up until we get a retracement
+[2026-04-17 18:42] calling tops is the hardest thing to do in trading
+[2026-04-17 18:42] let the sell come to us
+[2026-04-17 18:45] a lot of that flipped and changed IMO through opex this week and the shift in tone with Iran and the volatility there. plus earnings are seen as positive thus far too
+[2026-04-17 18:56] 100% you nailed this one. which is why we gotta keep our bias checked at the door...
+[2026-04-17 18:57] intraday there is like 20 different emotions haha
+[2026-04-17 22:44] look at meta
+[2026-04-17 22:44] new HOD
+[2026-04-17 22:50] we still have 10 mins lol
+[2026-04-20 01:14] haha right off the support level too
+[2026-04-20 01:14] haha right off the support level too
+[2026-04-20 01:14] massive bouncy
+[2026-04-20 01:14] massive bouncy
+[2026-04-20 01:47] good chance this gap closes and then some 😮
+[2026-04-20 01:47] good chance this gap closes and then some 😮
+[2026-04-20 01:50] i was hoping to get some tech stocks on the cheap tomorrow lol
+[2026-04-20 01:50] i was hoping to get some tech stocks on the cheap tomorrow lol
+[2026-04-20 01:57] i am with you the pullback comes overnight on it before it charges higher above friday's session
+[2026-04-20 01:57] i am with you the pullback comes overnight on it before it charges higher above friday's session
+[2026-04-20 03:35] i may need to increase my 7500 target lol
+[2026-04-20 03:35] i may need to increase my 7500 target lol
+[2026-04-20 03:36] its crazy to think of 8000 but its very possible
+[2026-04-20 03:36] its crazy to think of 8000 but its very possible
+[2026-04-20 16:38] https://x.com/Polymarket/status/2046221589188886871?s=20 || JUST IN: Trump says he is open to meeting with Iranian leaders directly if a breakthrough is reached\.
+[2026-04-20 16:38] https://x.com/Polymarket/status/2046221589188886871?s=20 || JUST IN: Trump says he is open to meeting with Iranian leaders directly if a breakthrough is reached\.
+[2026-04-20 17:51] lol
+[2026-04-20 17:51] lol
+[2026-04-20 17:51] trump news?
+[2026-04-20 17:51] trump news?
+[2026-04-20 21:06] I started to stack at 415 some options with may opex for 430. what's throwing me off is the support at 400 and 405. They are trying to build a position here at 415 on the volume profile and some vanna is comiing in. I have room if we go down or will add on break of 425
+[2026-04-20 21:06] I started to stack at 415 some options with may opex for 430. what's throwing me off is the support at 400 and 405. They are trying to build a position here at 415 on the volume profile and some vanna is comiing in. I have room if we go down or will add on break of 425
+[2026-04-20 21:07] 416-418 is where i got my entries to be more specific
+[2026-04-20 21:07] 416-418 is where i got my entries to be more specific
+[2026-04-20 21:08] it hits earnings that thing is going to go flying lol
+[2026-04-20 21:08] it hits earnings that thing is going to go flying lol
+[2026-04-20 21:12] it does - that is why i didn't go as heavy. could be a shake out AND consolidation for next move. market is a bit weird today
+[2026-04-20 21:12] it does - that is why i didn't go as heavy. could be a shake out AND consolidation for next move. market is a bit weird today
+[2026-04-20 21:14] I missed its interesting we have MU getting a bid, JPM and GS almost nothing happened last week lol
+[2026-04-20 21:14] I missed its interesting we have MU getting a bid, JPM and GS almost nothing happened last week lol
+[2026-04-20 21:18] lets go up higher so we can fall farther down... 😉
+[2026-04-20 21:18] lets go up higher so we can fall farther down... 😉
+[2026-04-20 21:21] https://tenor.com/view/more-cowbell-dance-dancing-funny-gif-19483045
+[2026-04-20 21:21] https://tenor.com/view/more-cowbell-dance-dancing-funny-gif-19483045
+[2026-04-20 23:38] news?
+[2026-04-20 23:38] news?
+[2026-04-20 23:39] ssaw apple news
+[2026-04-20 23:39] ssaw apple news
+[2026-04-20 23:41] Always say it. Core tenant for me -->
+[2026-04-20 23:41] Always say it. Core tenant for me -->
+[2026-04-20 23:41] https://www.darkmattertrade.com/p/my-trading-rules || T:My Trading Rules | These are the rules I live by and how I trade on a daily or even swing basis regardless of what ticker
+[2026-04-20 23:41] https://www.darkmattertrade.com/p/my-trading-rules || T:My Trading Rules | These are the rules I live by and how I trade on a daily or even swing basis regardless of what ticker
+[2026-04-20 23:49] I know I have been meaning to update this for a long time. I have done some minor updates but due for a major overhaul
+[2026-04-20 23:49] I know I have been meaning to update this for a long time. I have done some minor updates but due for a major overhaul
+[2026-04-20 23:50] added to my to do list
+[2026-04-20 23:50] added to my to do list
+[2026-04-20 23:59] I gotcha - i can break down some volland in there. will work on it little by little this week.
+[2026-04-20 23:59] I gotcha - i can break down some volland in there. will work on it little by little this week.
+[2026-04-21 20:48] they did it enough to sell it right into dealer support near 7050spx and then ripped it. volland levels don't lie 🙂 politicans do lie 🙂
+[2026-04-21 20:48] they did it enough to sell it right into dealer support near 7050spx and then ripped it. volland levels don't lie 🙂 politicans do lie 🙂
+[2026-04-21 20:49] MU clearly didn't get the memo to sell lol
+[2026-04-21 20:49] MU clearly didn't get the memo to sell lol
+[2026-04-21 20:49] all it gave was a falling wedge in MU and META to long at key levels and MSFT is just bull flagging now
+[2026-04-21 20:49] all it gave was a falling wedge in MU and META to long at key levels and MSFT is just bull flagging now
+[2026-04-21 20:49] look at the likes of META, MSFT, MU during said sell on ES/SPX
+[2026-04-21 20:49] look at the likes of META, MSFT, MU during said sell on ES/SPX
+[2026-04-21 20:50] that fakeout to open the session was classic. beautiful way of getting people to bear bait
+[2026-04-21 20:50] that fakeout to open the session was classic. beautiful way of getting people to bear bait
+[2026-04-21 20:51] NVDA is tough here at its spot. everyone in the world wants to short 200 but also a critical bull breakout
+[2026-04-21 20:51] NVDA is tough here at its spot. everyone in the world wants to short 200 but also a critical bull breakout
+[2026-04-21 20:52] i am just saying sentiment online. i wouldn't short any semis. just watch, fall, pick it up where it falls IF it does that. was hoping for a pullback in AMD this week but didn't get enough of one
+[2026-04-21 20:52] i am just saying sentiment online. i wouldn't short any semis. just watch, fall, pick it up where it falls IF it does that. was hoping for a pullback in AMD this week but didn't get enough of one
+[2026-04-21 20:53] i am hoping for a short squeeze in that space with earnings. we will majorly rally in ES then if that happens
+[2026-04-21 20:53] i am hoping for a short squeeze in that space with earnings. we will majorly rally in ES then if that happens
+[2026-04-21 21:21] haha i love this
+[2026-04-21 21:21] haha i love this
+[2026-04-21 21:37] when it doesn't have a daily close at the top of its daily candle lol
+[2026-04-21 21:37] when it doesn't have a daily close at the top of its daily candle lol
+[2026-04-21 21:40] haha i feel ya. after yesterday's marketmoves show with wiz i was highly considering taking that trade to long it but i just couldn't after what it has done. not worth the risk at this point. 200-300pts ago maybe different story lol
+[2026-04-21 21:40] haha i feel ya. after yesterday's marketmoves show with wiz i was highly considering taking that trade to long it but i just couldn't after what it has done. not worth the risk at this point. 200-300pts ago maybe different story lol
+[2026-04-21 21:41] sometimes you miss the boat and its ok. next time awaits lol
+[2026-04-21 21:41] sometimes you miss the boat and its ok. next time awaits lol
+[2026-04-21 21:46] but then i can't feel this...what a rush moment
+[2026-04-21 21:46] but then i can't feel this...what a rush moment
+[2026-04-21 21:46] https://tenor.com/view/la-liga-what-a-rush-wrestling-rush-gif-16123195
+[2026-04-21 21:46] https://tenor.com/view/la-liga-what-a-rush-wrestling-rush-gif-16123195
+[2026-04-22 16:33] haha lol so true
+[2026-04-22 16:33] haha lol so true
+[2026-04-22 17:38] goggins treating us well @LordHelmet 🙂
+[2026-04-22 17:38] goggins treating us well @LordHelmet 🙂
+[2026-04-22 17:40] lets gooo we have a nice MSFT fanbase here going
+[2026-04-22 17:40] lets gooo we have a nice MSFT fanbase here going
+[2026-04-22 18:03] 7050 all week long magnet. has not changed a single bit lol
+[2026-04-22 18:03] 7050 all week long magnet. has not changed a single bit lol
+[2026-04-22 18:03] entry has and continue to be 7050spx for the best R/R for a long
+[2026-04-22 18:03] entry has and continue to be 7050spx for the best R/R for a long
+[2026-04-22 18:03] feels like a pinned week based on what i am seeing
+[2026-04-22 18:03] feels like a pinned week based on what i am seeing
+[2026-04-22 18:03] we also can't get any major positive vanna's above 7125 and 7150
+[2026-04-22 18:03] we also can't get any major positive vanna's above 7125 and 7150
+[2026-04-22 18:04] we should start daytrading the mag 7's with 0DTE lol
+[2026-04-22 18:04] we should start daytrading the mag 7's with 0DTE lol
+[2026-04-22 18:15] i just don't know if we are going to get that kind of bad headline. it feels to me no one wants this war anymore besides Israel. Trump is over it, he is ready to move on to the next thing which is China IMO and the elections.
+[2026-04-22 18:15] i just don't know if we are going to get that kind of bad headline. it feels to me no one wants this war anymore besides Israel. Trump is over it, he is ready to move on to the next thing which is China IMO and the elections.
+[2026-04-22 18:17] i don't think i have formulated that answer quite well. my initial response is that it feels closer to a venzeula than an iran - does that make it a non-mover then?
+[2026-04-22 18:17] i don't think i have formulated that answer quite well. my initial response is that it feels closer to a venzeula than an iran - does that make it a non-mover then?
+[2026-04-22 18:19] i am aligned with this thinking all of it. the other thing i would add is the impact to jet fuel. lufthansa already announced like 20k flight cancellations for this summer. i think this impact from the Iran war is really understated at this point.
+[2026-04-22 18:19] i am aligned with this thinking all of it. the other thing i would add is the impact to jet fuel. lufthansa already announced like 20k flight cancellations for this summer. i think this impact from the Iran war is really understated at this point.
+[2026-04-22 18:21] that's what i thought as well. which that headline overnight when it came out felt so out of place unless they are guiding future sales
+[2026-04-22 18:21] that's what i thought as well. which that headline overnight when it came out felt so out of place unless they are guiding future sales
+[2026-04-22 18:22] airports have definitely gotten less busy in my month of traveling in march. each airport i went to had fewer people than my last trip to those cities
+[2026-04-22 18:22] airports have definitely gotten less busy in my month of traveling in march. each airport i went to had fewer people than my last trip to those cities
+[2026-04-22 18:23] majorly. hold abov 430 comes that 445 level then. speed bumps at 432.5 and 435
+[2026-04-22 18:23] majorly. hold abov 430 comes that 445 level then. speed bumps at 432.5 and 435
+[2026-04-22 18:23] we also start to creep into the earnings gap down from last quarter too
+[2026-04-22 18:23] we also start to creep into the earnings gap down from last quarter too
+[2026-04-22 18:25] so i will argue the lines. i am tsa precheck, face and everything so leave it at that, but the airports like Nashville, NYC ones, DC, etc i have been too. those lines were no where near the size of what some of the media reported. i had zero issues coming out of that TSA shutdown last month.
+[2026-04-22 18:25] so i will argue the lines. i am tsa precheck, face and everything so leave it at that, but the airports like Nashville, NYC ones, DC, etc i have been too. those lines were no where near the size of what some of the media reported. i had zero issues coming out of that TSA shutdown last month.
+[2026-04-22 18:27] similar or equal to past experiences i have seen. i did NOT see anyone wait hours or even an hour in lines.
+[2026-04-22 18:27] similar or equal to past experiences i have seen. i did NOT see anyone wait hours or even an hour in lines.
+[2026-04-22 18:28] atlanta could very well be different. that airport is a you know what even when tsa is full lol
+[2026-04-22 18:28] atlanta could very well be different. that airport is a you know what even when tsa is full lol
+[2026-04-22 18:28] but newark for example which gets pretty damn busy had no issues.
+[2026-04-22 18:28] but newark for example which gets pretty damn busy had no issues.
+[2026-04-22 18:28] it got me too. i showed up so early for my flights had no clue what to do with the time haha
+[2026-04-22 18:28] it got me too. i showed up so early for my flights had no clue what to do with the time haha
+[2026-04-22 18:29] MU traded new ATH's
+[2026-04-22 18:29] MU traded new ATH's
+[2026-04-22 18:30] CAR might put in its first red day since end of march lol
+[2026-04-22 18:30] CAR might put in its first red day since end of march lol
+[2026-04-22 18:30] is the fuel over - says me after it ran up almost another 100pts today before they sold it lol
+[2026-04-22 18:30] is the fuel over - says me after it ran up almost another 100pts today before they sold it lol
+[2026-04-22 18:31] oh shoot i missed this. did you take it?
+[2026-04-22 18:31] oh shoot i missed this. did you take it?
+[2026-04-22 18:31] yea he is a part of the cool kids table now
+[2026-04-22 18:31] yea he is a part of the cool kids table now
+[2026-04-22 18:31] you are ken so not shocked here lol
+[2026-04-22 18:31] you are ken so not shocked here lol
+[2026-04-22 18:32] i thought he only talks to those who can afford dinosaur bones? lol
+[2026-04-22 18:32] i thought he only talks to those who can afford dinosaur bones? lol
+[2026-04-22 18:33] do you think he drinks his coffee or tea with pinky pointing up?
+[2026-04-22 18:33] do you think he drinks his coffee or tea with pinky pointing up?
+[2026-04-22 18:57] 500x leverage!!!
+[2026-04-22 18:57] 500x leverage!!!
+[2026-04-22 21:48] holy crap i wanted to short this stinker man. what a miss
+[2026-04-22 21:48] holy crap i wanted to short this stinker man. what a miss
+[2026-04-22 21:48] massive level it is coming into
+[2026-04-22 21:48] massive level it is coming into
+[2026-04-22 21:48] that's interesting
+[2026-04-22 21:48] that's interesting
+[2026-04-22 21:50] wtf
+[2026-04-22 21:50] wtf
+[2026-04-22 21:57] MU is a beast today
+[2026-04-22 21:57] MU is a beast today
+[2026-04-23 00:55] won't stop until 400. that was an easy short i wish i followed it after monday's show lol
+[2026-04-23 00:55] won't stop until 400. that was an easy short i wish i followed it after monday's show lol
+[2026-04-23 01:21] when we saw it on monday's show it was clearly heading to 600. i just can't go long on a chart that looks like that, ath's, straight up moon rocket. no red day for like 2 weeks. hard to long. just a matter of waiting for the first sign of some dealer build up and it came yesterday and added today. have you seen the IV on that ticker in VOL? 223.54 lol
+[2026-04-23 01:21] when we saw it on monday's show it was clearly heading to 600. i just can't go long on a chart that looks like that, ath's, straight up moon rocket. no red day for like 2 weeks. hard to long. just a matter of waiting for the first sign of some dealer build up and it came yesterday and added today. have you seen the IV on that ticker in VOL? 223.54 lol
+[2026-04-23 01:26] ES moved no where as well lol
+[2026-04-23 01:26] ES moved no where as well lol
+[2026-04-23 01:26] so you are buying us dinner then huh 😉 lol
+[2026-04-23 01:26] so you are buying us dinner then huh 😉 lol
+[2026-04-23 01:29] what did they change on QQQ?
+[2026-04-23 01:29] what did they change on QQQ?
+[2026-04-23 01:30] oh man - i actually have to go to quebec city again soon. may do a stop over in montreal then
+[2026-04-23 01:30] oh man - i actually have to go to quebec city again soon. may do a stop over in montreal then
+[2026-04-23 01:31] like how much weight they hold of an individual ticker? i wonder how much of that change will also come with the new tech ETF - fidelity or blackrock is doing if i remember right
+[2026-04-23 01:31] like how much weight they hold of an individual ticker? i wonder how much of that change will also come with the new tech ETF - fidelity or blackrock is doing if i remember right
+[2026-04-23 05:36] algos trained on the word ceasefire lol
+[2026-04-23 05:36] algos trained on the word ceasefire lol
+[2026-04-23 15:51] That should be es
+[2026-04-23 15:51] That should be es
+[2026-04-23 17:51] 12pt wick on MSFT lol
+[2026-04-23 17:51] 12pt wick on MSFT lol
+[2026-04-23 17:51] to the upside
+[2026-04-23 17:51] to the upside
+[2026-04-23 17:51] what's up with that wick on MSFT, nvda and a few others?
+[2026-04-23 17:51] what's up with that wick on MSFT, nvda and a few others?
+[2026-04-23 21:33] 7050spx....
+[2026-04-23 21:33] 7050spx....
+[2026-04-23 21:33] in all its glory lol
+[2026-04-23 21:33] in all its glory lol
+[2026-04-23 21:33] what a beautiful level 😉
+[2026-04-23 21:33] what a beautiful level 😉
+[2026-04-23 21:35] 7050 is making the market great again . seriously though that vanna has not changed and next week it doesn't want to either
+[2026-04-23 21:35] 7050 is making the market great again . seriously though that vanna has not changed and next week it doesn't want to either
+[2026-04-23 21:42] lol at this
+[2026-04-23 21:42] lol at this
+[2026-04-23 21:53] Gamma one hell of a drug.
+[2026-04-23 21:53] Gamma one hell of a drug.
+[2026-04-23 21:54] otherwise you are just caught dead in the middle with all this negative gamma
+[2026-04-23 21:54] otherwise you are just caught dead in the middle with all this negative gamma
+[2026-04-23 21:54] you have to trade the extremes
+[2026-04-23 21:54] you have to trade the extremes
+[2026-04-23 21:58] haha i forgot he used to say that. oh man lol
+[2026-04-23 21:58] haha i forgot he used to say that. oh man lol
+[2026-04-23 22:26] may opex shows 6800 possible but until we see 7050, 7000 run over we chop sideways and up
+[2026-04-23 22:26] may opex shows 6800 possible but until we see 7050, 7000 run over we chop sideways and up
+[2026-04-23 23:04] look at INTC
+[2026-04-23 23:04] look at INTC
+[2026-04-23 23:04] semi's gonna rock lol
+[2026-04-23 23:04] semi's gonna rock lol
+[2026-04-23 23:06] MU flying too
+[2026-04-23 23:06] MU flying too
+[2026-04-23 23:07] SMH was the trade to take
+[2026-04-23 23:07] SMH was the trade to take
+[2026-04-23 23:07] look at ADI and TXN
+[2026-04-23 23:07] look at ADI and TXN
+[2026-04-23 23:07] one day one semi is weak another pulls it up
+[2026-04-23 23:07] one day one semi is weak another pulls it up
+[2026-04-23 23:08] MU gonna test 500 it seems like
+[2026-04-23 23:08] MU gonna test 500 it seems like
+[2026-04-23 23:09] its not dragging ES as high with it - interesting....
+[2026-04-23 23:09] its not dragging ES as high with it - interesting....
+[2026-04-23 23:18] nvda sold all of that INTC push
+[2026-04-23 23:18] nvda sold all of that INTC push
+[2026-04-24 03:16] I took it from 420 to 445 and thought that was it and wait for it to retrace. Nope…
+[2026-04-24 03:16] I took it from 420 to 445 and thought that was it and wait for it to retrace. Nope…
+[2026-04-24 16:07] Just like regular trading hours ha 😎 Ask away.
+[2026-04-24 16:07] Just like regular trading hours ha 😎 Ask away.
+[2026-04-24 16:35] held all night that's the level that needs to go kaboom
+[2026-04-24 16:35] held all night that's the level that needs to go kaboom
+[2026-04-24 16:35] watch 7100spx first
+[2026-04-24 16:35] watch 7100spx first
+[2026-04-24 16:47] oh wow how did i miss that? its tiny but its there
+[2026-04-24 16:47] oh wow how did i miss that? its tiny but its there
+[2026-04-24 16:49] we also hit the extreme of this range at 7185es - they grabbed liquidity from the 23 near the highs and from the 21st as well
+[2026-04-24 16:49] we also hit the extreme of this range at 7185es - they grabbed liquidity from the 23 near the highs and from the 21st as well
+[2026-04-24 16:54] just be paytient - these semi's and memory stocks need to breakdown. INTC is hitting a wall around 85. MU at 500. AMD at 350
+[2026-04-24 16:54] just be paytient - these semi's and memory stocks need to breakdown. INTC is hitting a wall around 85. MU at 500. AMD at 350
+[2026-04-24 16:55] there is your first crack of 7150es
+[2026-04-24 16:55] there is your first crack of 7150es
+[2026-04-24 16:56] i will explain in a bit - trading.
+[2026-04-24 16:56] i will explain in a bit - trading.
+[2026-04-24 16:57] at this point yes nothing has changed with that level but need to look at how 7100spx reacts first.
+[2026-04-24 16:57] at this point yes nothing has changed with that level but need to look at how 7100spx reacts first.
+[2026-04-24 17:03] https://x.com/financialjuice/status/2047677517759234511?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || Iran’s Foreign Minister Araghchi will discuss his side of the proposal for talks with US, which will be conveyed to the US \- 2 Pakistani sources
+[2026-04-24 17:03] https://x.com/financialjuice/status/2047677517759234511?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || Iran’s Foreign Minister Araghchi will discuss his side of the proposal for talks with US, which will be conveyed to the US \- 2 Pakistani sources
+[2026-04-24 17:03] lets goooo man
+[2026-04-24 17:03] lets goooo man
+[2026-04-24 17:03] some headlines coming out
+[2026-04-24 17:03] some headlines coming out
+[2026-04-24 17:03] you buying steaks tonight huh...
+[2026-04-24 17:03] you buying steaks tonight huh...
+[2026-04-24 17:04] yea lets not do that today lol
+[2026-04-24 17:04] yea lets not do that today lol
+[2026-04-24 17:07] this is what we do in here. early congrats on the kid too!
+[2026-04-24 17:07] this is what we do in here. early congrats on the kid too!
+[2026-04-24 17:08] lol taco city baby
+[2026-04-24 17:08] lol taco city baby
+[2026-04-24 18:46] oh nice you make this?
+[2026-04-24 18:46] oh nice you make this?
+[2026-04-24 19:19] amzn is a beast today
+[2026-04-24 19:19] amzn is a beast today
+[2026-04-24 19:32] nvda made a NHOD
+[2026-04-24 19:32] nvda made a NHOD
+[2026-04-24 21:18] i saw your other chat i will respond with details in that chat room after market close
+[2026-04-24 21:18] i saw your other chat i will respond with details in that chat room after market close
+[2026-04-26 23:31] we should find balance this week in that 7130-7150spx corridor - posted some initial thoughts in #4/27 ES/SPX Weekly & Daily Overviews - full trade plan out soon
+[2026-04-26 23:31] we should find balance this week in that 7130-7150spx corridor - posted some initial thoughts in #4/27 ES/SPX Weekly & Daily Overviews - full trade plan out soon
+[2026-04-27 00:10] which ticker is that? is that using ES or SPX levels?
+[2026-04-27 00:10] which ticker is that? is that using ES or SPX levels?
+[2026-04-27 00:10] which ticker is that? is that using ES or SPX levels?
+[2026-04-27 00:55] Trade Plan is now fully out.
+[2026-04-27 00:55] Trade Plan is now fully out.
+[2026-04-27 00:55] Trade Plan is now fully out.
+[2026-04-27 07:52] which ticker - SMH?
+[2026-04-27 07:52] which ticker - SMH?
+[2026-04-27 07:52] which ticker - SMH?
+[2026-04-27 18:05] oil is going up we avoided that touch in futures
+[2026-04-27 18:05] oil is going up we avoided that touch in futures
+[2026-04-27 18:09] its oil, semis everything else
+[2026-04-27 18:09] its oil, semis everything else
+[2026-04-27 18:09] the problem you have as a bear is the semi industry - MU, SMH, NVDA, ARM even, nothing is folding at their critical supports
+[2026-04-27 18:09] the problem you have as a bear is the semi industry - MU, SMH, NVDA, ARM even, nothing is folding at their critical supports
+[2026-04-27 19:36] NVDA NHOD - MU made NHOD. ARM, SMH, AMD nicely consolidating. tough with semis to get a sell here and 7150 starting to become like 7050spx of last week.
+[2026-04-27 19:36] NVDA NHOD - MU made NHOD. ARM, SMH, AMD nicely consolidating. tough with semis to get a sell here and 7150 starting to become like 7050spx of last week.
+[2026-04-28 03:26] too early still. I need to see the 7200-7260 zone tested. I know it is large zone but I expect volatility thru that space and I don't care to be early in any shorts. paytience 🙂
+[2026-04-28 03:26] too early still. I need to see the 7200-7260 zone tested. I know it is large zone but I expect volatility thru that space and I don't care to be early in any shorts. paytience 🙂
+[2026-04-28 03:27] sell in may and go away - don't forget that...
+[2026-04-28 03:27] sell in may and go away - don't forget that...
+[2026-04-28 03:28] you don't fight semis - i said the same thing today in the show. this is a semi's show lol
+[2026-04-28 03:28] you don't fight semis - i said the same thing today in the show. this is a semi's show lol
+[2026-04-28 03:30] wonder how far in the hole he is
+[2026-04-28 03:30] wonder how far in the hole he is
+[2026-04-28 03:30] yea no one wants to get in front of a freight train. lol i forgot he was short. When did he enter short again?
+[2026-04-28 03:30] yea no one wants to get in front of a freight train. lol i forgot he was short. When did he enter short again?
+[2026-04-28 03:31] might be one of the worst entries ever lol
+[2026-04-28 03:31] might be one of the worst entries ever lol
+[2026-04-28 03:32] that wasn't a fluke today
+[2026-04-28 03:32] that wasn't a fluke today
+[2026-04-28 03:32] their earnings must be crushing it
+[2026-04-28 03:32] their earnings must be crushing it
+[2026-04-28 03:33] same - the way other companies are spending too
+[2026-04-28 03:33] same - the way other companies are spending too
+[2026-04-28 03:35] @Phoenix have you looked into CRDO - might be the next ARM like 52 week high breakout. Got so close, they gave it a nice sell today right into major gamma and vanna support.
+[2026-04-28 03:35] @Phoenix have you looked into CRDO - might be the next ARM like 52 week high breakout. Got so close, they gave it a nice sell today right into major gamma and vanna support.
+[2026-04-28 03:37] lol also wednesday haha
+[2026-04-28 03:37] lol also wednesday haha
+[2026-04-28 03:38] wednesday will either be the biggest bang or the most dullest moment in the market this year for what it should be haha
+[2026-04-28 03:38] wednesday will either be the biggest bang or the most dullest moment in the market this year for what it should be haha
+[2026-04-28 05:07] most of the 24hr market went red
+[2026-04-28 05:07] most of the 24hr market went red
+[2026-04-28 05:07] was there news there?
+[2026-04-28 05:07] was there news there?
+[2026-04-28 05:40] that was weird - arm dropped overnight. MU did too. nvda did as well
+[2026-04-28 05:40] that was weird - arm dropped overnight. MU did too. nvda did as well
+[2026-04-28 08:51] it's like last week - trade the extremes - has another 10pts in it here - starting to come into some gamma/vanna/delta levels
+[2026-04-28 08:51] it's like last week - trade the extremes - has another 10pts in it here - starting to come into some gamma/vanna/delta levels
+[2026-04-29 23:16] Staying short on runners from the other night 😎 Your vol signals have kept me sane and the triple whammy sitting at 7200 now shifting lower is whoa…
+[2026-04-29 23:17] Let’s see if we can crack 7100 with this
+[2026-04-29 23:27] Was wondering if you were still around. It’s gotten quiet at nights haha
+[2026-04-30 00:43] yes not even close to compare. at this point i have discounted access of gemini i use for day to day, but anything intensive, research, work wise claude wins day and night. remember back in the day when it was this new thing called iphone and blackberry. guess who the two are in the AI space lol
+[2026-04-30 00:48] don't give 2 you know what's lol
+[2026-04-30 01:04] its level to level at this point, up and down. not fun for multi-leg or momentum traders
+[2026-04-30 01:32] Haha hilarious.
+[2026-04-30 01:32] Yes it’s getting a bit frothy
+[2026-04-30 01:40] I just closed my long from the initial drop after hours. Curious how much they drop this now from 7170. higher timeframes paint similar ping pong sideways action
+[2026-04-30 01:41] i really wish they would extend ticker options outside of indices for after hour options lol
+[2026-04-30 01:42] 7150 feels like first target here and then 7130spx
+[2026-04-30 01:42] vx futures holding above 19.50 too.
+[2026-04-30 02:06] msft and amzn came back from the dead
+[2026-04-30 07:20] https://x.com/KobeissiLetter/status/2049696326921650644?s=20 || BREAKING: US oil prices surge above $109/barrel, now up \+28% in 8 trading days\. We expect to see US gas prices above $4\.50/gallon in the coming weeks\.
+[2026-04-30 07:20] https://x.com/financialjuice/status/2049678428501143810?s=20 || Centcom readies plan for brief, intense strikes on Iran, likely hitting infrastructure \- Axios
+[2026-04-30 07:21] https://x.com/biancoresearch/status/2049697034165227924?s=20 || Screaming Red Headline on Bloomberg \*OIL HITS WARTIME HIGH ON REPORT US EYING IRAN MILITARY OPTIONS June Brent futures \(green\) have doubled since the beginning of the year December Brent Futures \(blue\) set a new all\-time high\.
+[2026-04-30 07:22] nvda went red in futures too
+[2026-04-30 07:27] The Wall of 7200
+[2026-04-30 07:27] worst cards in a game 😉
+[2026-04-30 07:28] 30min candle about to close too
+[2026-04-30 07:28] @nicowilliamsRW that bear flag came out nicely. I am taking profit here at round two - coming into yesterday's session val
+[2026-04-30 07:28] should retrace a bit
+[2026-04-30 07:29] at least chop though will be wide ranges
+[2026-04-30 07:29] gonna be choppy and sideways until 1. Iran resolution 2. NVDA ER
+[2026-04-30 07:29] like we have seen the past couple of weeks
+[2026-04-30 07:47] trump posted that so his goons could short it lol
+[2026-04-30 09:01] 7110 i mean
+[2026-04-30 09:01] about to crack 7100spx here
+[2026-04-30 16:47] there now. too much trading overnight lol
+[2026-04-30 22:29] Let’s gooo
+[2026-05-01 16:15] looks like we are after 7275-7280 if not 7300spx
+[2026-05-01 16:25] not as of yet. i will take a look at it today
+[2026-05-01 16:53] I have some runners on ES, but i am calling it an early day/week here. stop loss on those runners. another great week team. we all dominatd in here. great analysis. In other news someone has been partaking in random tickers. Future coming with random ticker trade plans. See what we did with MU today 🙂
+[2026-05-01 16:58] let's goooooo - world domination!!! I only want a lego version of Ken's dino's lol
+[2026-05-01 16:59] its a beautiful day today. let's go enjoy it ha
+[2026-05-01 17:00] fully out on runners
+[2026-05-01 17:00] we are 55 but sunny as heck. its the perfect hot/cool mix IMO. in the DMV area
+[2026-05-01 17:01] i have a lawn to mow. a couple of beers. don't overtrade gang. CPF rest of the day be smart out there
+[2026-05-04 00:56] Looks like test higher this week #5/4 ES/SPX Weekly & Daily Overview
+[2026-05-04 00:56] Looks like test higher this week #5/4 ES/SPX Weekly & Daily Overview
+[2026-05-04 01:10] Nice gap up
+[2026-05-04 01:10] Nice gap up
+[2026-05-04 17:10] missed this but yes nothing has changed so far
+[2026-05-04 17:10] missed this but yes nothing has changed so far
+[2026-05-04 17:14] yea on top of it we did get our short to 7200spx in futures on that fake Iran headline
+[2026-05-04 17:14] yea on top of it we did get our short to 7200spx in futures on that fake Iran headline
+[2026-05-04 18:19] iran and uae going at it
+[2026-05-04 18:19] some news on headlines too
+[2026-05-04 19:03] might need to trademark chop pocket lol
+[2026-05-04 19:09] lets get that 7150spx test
+[2026-05-05 14:15] Good morning everyone
+[2026-05-05 17:14] been one of my fav tickers to trade besides ES
+[2026-05-05 17:22] yea i didn't put the 7200spx long in the plan as i assumed it would be only tradeable overnight and that is clearly the case. too much strength in memories right now but not enough in the semis. big night tonight could be a short out of AMD results...
+[2026-05-05 21:19] go test that 7300spx already
+[2026-05-05 21:19] more inbound
+[2026-05-05 21:24] yea that 7275spx level
+[2026-05-06 01:41] cements 700 IMO for tomorrow
+[2026-05-06 02:19] My weekly target on it. I can then reassess on how to trade it again.
+[2026-05-06 02:20] How’s the updated data looking lol
+[2026-05-06 02:21] Ok good to know. I had 650 from earlier today.
+[2026-05-06 02:22] Finishing some lawn work let’s see how we look for tomorrow and into next week now. I wouldn’t be trying to call a top here for anyone. Just let it do its thing we can short when the wave starts. It won’t be just a 100 pt move.
+[2026-05-06 02:23] Ok will review it tonight when I am back at the desk. It’s become my daily secondary ticker to trade alongside ES.
+[2026-05-06 03:21] There was your quick scalp short
+[2026-05-06 06:39] getting to the charts looks like we are breaking out and we have 7350spx staring on the weekly now
+[2026-05-06 06:47] there is more pain as i have been saying. not only do you have semis moving, but memory is proving its worth. SNDK is not even at an "over value" level too - insane times
+[2026-05-06 06:47] they are so desperate to get into anything that touches semis or memories even EWY is catching bids
+[2026-05-06 13:34] that 70's is right near that 7350spx level...
+[2026-05-06 14:46] https://x.com/DeItaone/status/2051991445024788772?s=20 || TRUMP ON IRAN: IF IRAN AGREES, EPIC FURY WILL BE AT AN END, AND HIGHLY EFFECTIVE BLOCKADE WILL ALLOW HORMUZ STRAIT TO BE OPEN TO ALL, INCLUDING IRAN\.
+[2026-05-06 14:46] https://x.com/KobeissiLetter/status/2051991665859006830?s=20 || BREAKING: President Trump releases a statement amid reports that a deal to end the Iran War is imminent\. "Assuming Iran agrees to give what has been agreed to\.\.\. Epic Fury will be at an end\."
+[2026-05-06 14:46] you have trump posting
+[2026-05-06 14:50] hold 7300spx intraday can stay bullish
+[2026-05-06 14:54] lol yup and look at next week expiry too
+[2026-05-06 15:16] so much two way back and forth here from trump lol. https://x.com/financialjuice/status/2051999404391862407?s=20 || Trump tells NY Post: It is ‘too soon’ to prep for Iran peace signing\.
+[2026-05-06 15:17] ADP numbers came in lower than expected
+[2026-05-07 15:02] ha yea i didn't have much time last night. just posted the full plan. you pay attention clearly ha. 🙂 #5/4 ES/SPX Weekly & Daily Overview
+[2026-05-07 15:52] lol i did - they keep popping levels up higher and higher lol. looks like that 7000 is going to be the critical retest for the year unless we get a larger drawdown like Tom Lee expects
+[2026-05-07 15:54] yea he called for this 7300 rally and expects a drawdown. last night he said he was even shocked with this push above 7300 which could go a bit more but he expects a 10% drawdown and then a massive rally to new ATHs coming out of that
+[2026-05-07 15:55] the way that 8000 stike is coming up is how 7300 and 7400 started to creep up a month or two ago. whatever major sell we have you buy it unless it is WW3
+[2026-05-07 15:58] makes sense. it would be ideal to have whatever draw down between now and mid terms. i feel like we are going to kangaroo with a draw down and then as midterms get locked in we start to rally out of that
+[2026-05-07 15:59] the only thing i don't like is a 10% drawdown has occurred with 10 of the last 13 new fed presidents. when warsh coming???
+[2026-05-07 16:01] can we have 6k first please lol
+[2026-05-07 16:01] would align with tom lee's expected drawdown of up to 20%
+[2026-05-07 19:59] lets get to that 7300spx retest
+[2026-05-07 20:01] yea i am also looking at vanna now that 7320spx could be where it stops as well
+[2026-05-07 20:03] https://tenor.com/view/forrest-gump-ping-pong-gif-27597407
+[2026-05-07 20:03] we are on opposite schedules/trades. playing swing the pendulum with you lol - let me rise it and you crush it lol
+[2026-05-07 20:04] couple ticks can we please get like a 3-5% pullback. i would be down for that
+[2026-05-07 20:05] lol qqq is finally below its previous close. first time all month lol
+[2026-05-07 20:08] yea that's right and they bought it right up too
+[2026-05-07 23:03] net have earnings is that why?
+[2026-05-07 23:09] here is the short we needed lol
+[2026-05-07 23:09] https://x.com/Polymarket/status/2052479273965944986?s=20 || NEW: Shake Shack extends losses to \-30% after CEO claims “winter storms” contributed to poor earnings\.
+[2026-05-07 23:12] let it fall or short the extremes imo - feels like more up still. gonna need a nasty NFP report tomorrow
+[2026-05-08 05:35] lol never under. That 7300 level is no joke. Nicely held. Round trip back
+[2026-05-08 06:06] I do not like how breadth is forming - when that sell comes it will be quick and fast. Be ready.
+[2026-05-08 06:08] Just overall market. Various tickers. I will share a view of it in my trade plan tonight. Seeing more and more stocks selling from their 20day moving avg
+[2026-05-08 06:20] There is a few factors here. You nailed this 0DTE dynamic that has been happening for a couple years imo when we get around a major event. Aside from that even I would say we did have a mega sell yet earnings was so dang good across the board you had this weird dynamic where it just built up and up and exceeded many boundaries. Once you had one companies earnings it was a trickle effect for the companies that were similar or touched that one. I said a few weeks ago I am bullish and it was due to semis and memory and nothing else really mattered Without that earnings and where oil is at no way we would be this high which had a lot of people offsides.
+[2026-05-08 08:55] shoot away trying to finish the trade plan now
+[2026-05-08 15:59] Maybe stickers too
+[2026-05-08 15:59] We need t shirts
+[2026-05-08 16:01] I wanna see how 7400 reaches. It’s still shortable unless we see positioning change here and vol compress
+[2026-05-08 16:15] 7360spx could find support here its a pivot level
+[2026-05-08 17:12] https://x.com/DeItaone/status/2052752919930216639?s=20 || 🚨 IRAN'S FARS NEWS REPORTS SPORADIC CLASHES BETWEEN IRANIAN ARMED FORCES AND U\.S\. VESSELS IN THE STRAIT OF HORMUZ SINCE ABOUT AN HOUR AGO
+[2026-05-08 17:12] vx is popping like no other
+[2026-05-08 17:13] es giving no f's
+[2026-05-08 17:13] https://tenor.com/view/america-hurricane-happy4th-of-july-america-flag-independence-day-gif-21259025
+[2026-05-08 17:27] best art goes to you sir! i love the drawings ha
+[2026-05-08 17:27] oil too lol.
+[2026-05-08 17:53] BTD
+[2026-05-09 00:29] At least he is saying which one lol
+[2026-05-11 02:06] New Weekly ES/SPX Overview is now available.
+[2026-05-11 02:06] New Weekly ES/SPX Overview is now available.
+[2026-05-11 20:22] CRWD has been a fun one today
+[2026-05-11 20:22] CRWD has been a fun one today
+[2026-05-11 20:23] lol
+[2026-05-11 20:23] lol
+[2026-05-11 20:23] need to find those momentum stocks and ride those as well. some good opportunities out there
+[2026-05-11 20:23] need to find those momentum stocks and ride those as well. some good opportunities out there
+[2026-05-11 20:23] or just long MU. let's go Korean's - strike away baby
+[2026-05-11 20:23] or just long MU. let's go Korean's - strike away baby
+[2026-05-11 20:37] this one has the major catalyst with the strike and samsung. thesis being higher DRAM prices which helps MU. interim they have a bottleneck but the short term thinking is IF strike goes through MU can charge higher prices for existing deals/contracts that haven't shipped So consider it this way IMO: IF strike - MU = 1000 IF no strike - MU = 620-650
+[2026-05-11 20:37] this one has the major catalyst with the strike and samsung. thesis being higher DRAM prices which helps MU. interim they have a bottleneck but the short term thinking is IF strike goes through MU can charge higher prices for existing deals/contracts that haven't shipped So consider it this way IMO: IF strike - MU = 1000 IF no strike - MU = 620-650
+[2026-05-11 20:51] yea indeed. its been a favorite of mine to even trade options on as well. good mover
+[2026-05-11 20:51] yea indeed. its been a favorite of mine to even trade options on as well. good mover
+[2026-05-11 21:17] add RKLB too lol
+[2026-05-11 21:17] add RKLB too lol
+[2026-05-11 21:39] no stop on that one. should be a fun stock to trade. watch ASTS overnight for its earnings - will be fuel for RKLB
+[2026-05-11 21:39] no stop on that one. should be a fun stock to trade. watch ASTS overnight for its earnings - will be fuel for RKLB
+[2026-05-11 21:40] oh man what a trade lol even more so what it could have been ha
+[2026-05-11 21:40] oh man what a trade lol even more so what it could have been ha
+[2026-05-11 21:40] on RKLB? or ASTS?
+[2026-05-11 21:40] on RKLB? or ASTS?
+[2026-05-11 21:42] yea so hard especially with the companies profits/contracts changing so much along with spaceX
+[2026-05-11 21:42] yea so hard especially with the companies profits/contracts changing so much along with spaceX
+[2026-05-12 04:24] broke 7400spx
+[2026-05-12 04:24] some juicy selling here overnight finally
+[2026-05-12 04:34] can we get at least 5-7% - not even 10 lol
+[2026-05-12 04:35] selling fast here
+[2026-05-12 04:35] yea just give us generational dip buy like moment ha
+[2026-05-12 04:38] 7250 is our overshoot
+[2026-05-12 04:38] get to 600-650 lets talk
+[2026-05-12 04:38] if we crap through that something bigger happened, buckle up
+[2026-05-12 04:38] yes sir until CPI at least
+[2026-05-12 04:39] 7410es and 7395-7390es will find some bounce just FYI
+[2026-05-12 04:39] in case you are scalping pts or wanting profits in between
+[2026-05-12 04:40] at least you are "working out"
+[2026-05-12 04:42] IMO i think it is vol expanding, see VX futures. it is also dealers. look at all of this expansion with vol going up
+[2026-05-12 04:43] i wanna know when did this happen. is this new?
+[2026-05-12 04:43] there is NOTHING to stop vol expansion with put supports until 7300 with that one test at 7375spx as a "speed bump" unless they wanna save it there
+[2026-05-12 04:44] it is morning there
+[2026-05-12 04:44] lets see
+[2026-05-12 04:44] samsung news? south korea strikes?
+[2026-05-12 04:45] this was rumored last week as well. so still important but not this one
+[2026-05-12 04:45] until i see the samsung news hit anywhere going with dealers and vol expansion for CPI today
+[2026-05-12 04:46] which can you imagine it come in as forecasted what kind of bounce we get and then if wednesday if PPI is bad how fast it sells again? lol
+[2026-05-12 04:54] that's what i was hoping for today - i was itching to short it there
+[2026-05-12 04:55] first target and bounce
+[2026-05-12 04:57] wait a few hours - if that samsung strike ends you will see how fast your puts come back to life and add a hot CPI and PPI oh man...
+[2026-05-12 04:58] these happen bias kicks in. we all been there
+[2026-05-12 04:59] i clinch with every long still lol
+[2026-05-12 05:00] that's a pretty good return considering the risk
+[2026-05-12 05:01] yup - the tough part is if this thing overshoots towards 7250 spx on a bad bad cpi
+[2026-05-12 05:02] i am a bit shocked with the forecast considering how high oil has gone up, but then again is that not going to show in CPI but shows in PPI tomorrow (aka Wednesday)
+[2026-05-12 05:02] i like any kind of profit lol
+[2026-05-12 05:11] oh this is intresting let me see what MU is now doing
+[2026-05-12 05:12] MU is rallying
+[2026-05-12 05:12] carrying the market with it back above 7400 spx
+[2026-05-12 05:13] was just at 750 before that news now at 782
+[2026-05-12 05:15] intc hit a low of 119 lol
+[2026-05-12 05:15] intc is getting crushed tonight as well
+[2026-05-12 05:15] they all rallied though at the same time as this
+[2026-05-12 17:00] 7400 rejected again and again
+[2026-05-12 17:00] go lower to test 7300spx at least. plan still very much valid
+[2026-05-12 17:00] we go lower
+[2026-05-12 17:11] lol never/under huh
+[2026-05-13 03:35] Hot cpi and we couldn’t even muster a 7300spx retest. What was interesting today was the 10 year auction went well which pulled equities up today. Tomorrow we have a 30 year auction keep an eye there. But bond markets are not scared either
+[2026-05-13 03:37] Was just going to find your message to see how your trade did
+[2026-05-13 03:55] scalp it in this market. Look at MU - 100 pt days are the norm in it now lol
+[2026-05-13 03:59] https://tenor.com/view/wow-meme-gif-16600799326842403384
+[2026-05-13 03:59] let's goooo - great to hear! you executed my friend so pat on the back to you too!
+[2026-05-13 04:08] lol at this point shouldn't shock us at all. let's get past PPI if we can't sell on that and it goes higher that is most likely destination then
+[2026-05-13 04:10] lots of people would die for 200%. congrats sir
+[2026-05-13 04:15] Not as much. I partaked with earnings but after the mag 7's reported i have been trading less frequently overnight. maybe 1-2 times a week. between my kids and life sleep is more required lol
+[2026-05-13 04:16] I usually almost always try to trade the sunday futures open - always a good one even if scalping. that trade going into Monday's sessions have been some of my more lucrative trades overnight
+[2026-05-13 05:14] :neverunder:
+[2026-05-13 05:14] that dude lives like a rock star haha
+[2026-05-13 05:16] that's wild to see 6xx on SMH lol
+[2026-05-13 05:16] the entire global economy is in it lol
+[2026-05-13 05:24] if we couldn't sell on CPI today and PPI tomorrow market is just waiting thn
+[2026-05-13 05:24] market feels like it wants to stay up until at least that ER.
+[2026-05-13 05:24] still negative vanna on the week
+[2026-05-13 05:25] agg negative
+[2026-05-13 05:25] but tech
+[2026-05-13 05:25] hey now. this is what you get with celebrity/rock star like status haha
+[2026-05-13 05:27] monthly opex or 0-30dte?
+[2026-05-13 05:28] june opex on left
+[2026-05-13 05:28] may opex this week has 7300 support
+[2026-05-13 05:28] that is the one on the right
+[2026-05-13 05:30] i think i understood lol
+[2026-05-13 05:30] was just going to ask do you mean 7000?
+[2026-05-13 05:31] keep in mind june also has quarterly opex
+[2026-05-13 05:36] no its going to court - why MU took off again. it was down to 743ish overnight now at 778 lol
+[2026-05-13 05:38] i wish they would allow us to trade tickers options overnight
+[2026-05-13 05:38] my gosh lol
+[2026-05-13 05:40] but options at like 7am?
+[2026-05-13 05:40] that's only shares though right? or options too?
+[2026-05-13 05:45] i am waiting for options lol - give me that time reward lol
+[2026-05-13 05:45] ok yea so its futures leveraged like ES lots - got it
+[2026-05-13 08:12] some nice moves here overnight in ES
+[2026-05-13 08:13] MU moving and hit 800 again lol
+[2026-05-13 08:13] what a market
+[2026-05-13 10:36] good shout missed that. thx
+[2026-05-13 19:39] bad cpi, bad ppi, new ATH's lol
+[2026-05-13 19:39] lol they gotta make it look "somewhat" normal right ha
+[2026-05-13 19:39] we are a bond auction away from that potential 7500 level lol.
+[2026-05-14 04:01] If you want to be a bull without a retracement it’s best you find selective tickers to trade. I am actively in on CRWD and RKLB for example. Their vanna and gamma look much better. With ES/SPX I am cautious and simply scalping overnight or intraday. I am leaving zero trades on at this point and locking level to level as I said. Even today’s trade plan we had 7350 support to push back up to 7475. Don’t fight it enjoy the nice intraday range.
+[2026-05-14 04:01] If you want to be a bull without a retracement it’s best you find selective tickers to trade. I am actively in on CRWD and RKLB for example. Their vanna and gamma look much better. With ES/SPX I am cautious and simply scalping overnight or intraday. I am leaving zero trades on at this point and locking level to level as I said. Even today’s trade plan we had 7350 support to push back up to 7475. Don’t fight it enjoy the nice intraday range.
+[2026-05-14 04:22] RKLB has room to 140-150. Crwd is towards 580, 600. I took on crwd for momentum into its earnings and money moving into cyber companies. RKLB had amazing earnings and crushing ASTS so that space money moving into it. had a breakout of ath and a multi week consolidation
+[2026-05-14 04:22] RKLB has room to 140-150. Crwd is towards 580, 600. I took on crwd for momentum into its earnings and money moving into cyber companies. RKLB had amazing earnings and crushing ASTS so that space money moving into it. had a breakout of ath and a multi week consolidation
+[2026-05-14 14:56] good timing - now up. #5/11 ES/SPX Weekly & Daily Overview
+[2026-05-14 14:56] good timing - now up. #5/11 ES/SPX Weekly & Daily Overview
+[2026-05-14 18:16] I wouldn’t be shorting yet
+[2026-05-14 18:16] I wouldn’t be shorting yet
+[2026-05-14 18:16] Swings that is
+[2026-05-14 18:16] Swings that is
+[2026-05-14 18:17] I wanna see that gateway above 7500spx strengthen otherwise this can go up to 7650spx based on how positioning adjusted overnight
+[2026-05-14 18:17] I wanna see that gateway above 7500spx strengthen otherwise this can go up to 7650spx based on how positioning adjusted overnight
+[2026-05-14 18:17] They are rotating into cyber stocks too
+[2026-05-14 18:17] They are rotating into cyber stocks too
+[2026-05-14 18:19] Next week and next 2 weeks.
+[2026-05-14 18:19] Next week and next 2 weeks.
+[2026-05-14 18:21] My personal thesis team. Swing shorts too soon especially before nvda earnings and no resolution in memory stocks going down yet. Need to wait until after nvda imo. Don’t need to catch the top just need to catch the ride down.
+[2026-05-14 18:21] My personal thesis team. Swing shorts too soon especially before nvda earnings and no resolution in memory stocks going down yet. Need to wait until after nvda imo. Don’t need to catch the top just need to catch the ride down.
+[2026-05-14 18:22] As trump said Americans financial needs don’t matter. We are all sheep’s. Follow AI rocket. 🚀 it’s greater than all
+[2026-05-14 18:22] As trump said Americans financial needs don’t matter. We are all sheep’s. Follow AI rocket. 🚀 it’s greater than all
+[2026-05-14 18:22] Trump even want on a shopping spree of stocks lol
+[2026-05-14 18:22] Trump even want on a shopping spree of stocks lol
+[2026-05-14 18:26] Yea and that’s softened too overnight.
+[2026-05-14 18:26] Yea and that’s softened too overnight.
+[2026-05-14 18:26] lol. The problem is too many outs. Put to call ration was still almost 3-1. Too many customers bearish or hedging with puts which just pushes us higher.
+[2026-05-14 18:26] lol. The problem is too many outs. Put to call ration was still almost 3-1. Too many customers bearish or hedging with puts which just pushes us higher.
+[2026-05-14 18:49] and its also happening on shorter timeframes too. its an interesting dynamic how they are hedging these days IMO. shorted dated expiry's than longer term ones.
+[2026-05-14 18:49] and its also happening on shorter timeframes too. its an interesting dynamic how they are hedging these days IMO. shorted dated expiry's than longer term ones.
+[2026-05-14 18:49] shorted dated much more. Lots of buying for this past weeks CPI and PPI
+[2026-05-14 18:49] shorted dated much more. Lots of buying for this past weeks CPI and PPI
+[2026-05-14 18:50] yuo know what is wild - mag 7's are cheap compared to other parts of market. on avg about a 5% return this year lol
+[2026-05-14 18:50] yuo know what is wild - mag 7's are cheap compared to other parts of market. on avg about a 5% return this year lol
+[2026-05-14 19:26] MOARRRRR
+[2026-05-14 19:26] MOARRRRR
+[2026-05-14 19:27] good scalp here at the highs
+[2026-05-14 19:27] good scalp here at the highs
+[2026-05-14 19:28] dude is making a killing on NVDA today lol
+[2026-05-14 19:28] dude is making a killing on NVDA today lol
+[2026-05-14 19:28] this dude is worst than most furu's - go long shoot i mean go short we bombing iran - bombing done go long
+[2026-05-14 19:28] this dude is worst than most furu's - go long shoot i mean go short we bombing iran - bombing done go long
+[2026-05-14 19:29] green is green, recoup some of those longer term plays if you are still in
+[2026-05-14 19:29] green is green, recoup some of those longer term plays if you are still in
+[2026-05-14 19:29] lets go homie
+[2026-05-14 19:29] lets go homie
+[2026-05-14 19:30] anyone else in CRWD? I cut my RKLB's i find it in a good place but CRWD oh my my my i am eating steak tonight
+[2026-05-14 19:30] anyone else in CRWD? I cut my RKLB's i find it in a good place but CRWD oh my my my i am eating steak tonight
+[2026-05-14 19:31] https://tenor.com/view/teamwork-gif-6653060118347816641
+[2026-05-14 19:31] https://tenor.com/view/teamwork-gif-6653060118347816641
+[2026-05-14 19:32] anyone wanting a lotto - 800 MU good r/r
+[2026-05-14 19:32] anyone wanting a lotto - 800 MU good r/r
+[2026-05-14 19:32] i am out on all ES trades at this point. do what you want just don't mess up my CRWD trade lol
+[2026-05-14 19:32] i am out on all ES trades at this point. do what you want just don't mess up my CRWD trade lol
+[2026-05-14 19:32] sell the news of the china trip tomorrow 👀
+[2026-05-14 19:32] sell the news of the china trip tomorrow 👀
+[2026-05-14 19:33] June is going to be insane man. everyone needs to pucker up their you know what cause june gonna be wild
+[2026-05-14 19:33] June is going to be insane man. everyone needs to pucker up their you know what cause june gonna be wild
+[2026-05-14 19:34] you mean his dino's?
+[2026-05-14 19:34] you mean his dino's?
+[2026-05-14 19:35] yea he has a dino collection. search it up. that's what he is doing with your premiums lol
+[2026-05-14 19:35] yea he has a dino collection. search it up. that's what he is doing with your premiums lol
+[2026-05-14 19:41] 7600 tomorrow lol
+[2026-05-14 19:41] 7600 tomorrow lol
+[2026-05-14 19:49] as they say - dont fight the tape or in this case don't fight bias lol
+[2026-05-14 19:49] as they say - dont fight the tape or in this case don't fight bias lol
+[2026-05-14 19:49] https://tenor.com/view/jack-nicholson-yes-nod-agree-gif-21960775
+[2026-05-14 19:49] https://tenor.com/view/jack-nicholson-yes-nod-agree-gif-21960775
+[2026-05-14 19:50] I have been pretty good on the neutral bias and remora like bias. follow the whales don't fight them. nibble on their leftovers
+[2026-05-14 19:50] I have been pretty good on the neutral bias and remora like bias. follow the whales don't fight them. nibble on their leftovers
+[2026-05-14 19:50] generational dip buy was missed near 7300spx this week....
+[2026-05-14 19:50] generational dip buy was missed near 7300spx this week....
+[2026-05-14 19:51] lol that's what is throwing me off but i understood it once trump clearly explained it to all- they don't care about sheeps and expect you to pay the majority of it. we sheeps
+[2026-05-14 19:51] lol that's what is throwing me off but i understood it once trump clearly explained it to all- they don't care about sheeps and expect you to pay the majority of it. we sheeps
+[2026-05-14 19:52] i am riding some runners. officially 3 drinks in at the airport. vaca time
+[2026-05-14 19:52] i am riding some runners. officially 3 drinks in at the airport. vaca time
+[2026-05-14 19:52] you are just playing in their sandbox/playground. we sheeps...
+[2026-05-14 19:52] you are just playing in their sandbox/playground. we sheeps...
+[2026-05-14 19:54] anyone lotto some MU calls? good reward here intraday
+[2026-05-14 19:54] anyone lotto some MU calls? good reward here intraday
+[2026-05-14 19:56] i am at the lounge and i got a couple of hours of layover time. i am enjoying my free drinks. wife said i am moving too fast. let's see if we can get some headlines at this airport "Dark Matter: Stock influencer has too many prosseco's and vomits like mad man"
+[2026-05-14 19:56] i am at the lounge and i got a couple of hours of layover time. i am enjoying my free drinks. wife said i am moving too fast. let's see if we can get some headlines at this airport "Dark Matter: Stock influencer has too many prosseco's and vomits like mad man"
+[2026-05-14 19:56] i like the way you think btw
+[2026-05-14 19:56] i like the way you think btw
+[2026-05-14 19:59] looking for a swing? look at RKLB - 150 target with 130 as pivot and 125 as support
+[2026-05-14 19:59] looking for a swing? look at RKLB - 150 target with 130 as pivot and 125 as support
+[2026-05-14 20:00] 800 target
+[2026-05-14 20:00] 800 target
+[2026-05-14 20:00] a bit late not unfortunately if you didn't take it. nice 20ish pts inbound
+[2026-05-14 20:00] a bit late not unfortunately if you didn't take it. nice 20ish pts inbound
+[2026-05-15 10:52] I just landed in Spain. Poor WiFi on plane ✈️. What a nice selloff here overnight. Good job overnight gang.
+[2026-05-15 10:52] What does vanna look like for the next week?
+[2026-05-15 10:53] Vaca much needed vaca lol
+[2026-05-15 10:53] Wow positive vanna huh 🤔
+[2026-05-15 10:54] Looks like that 7450spx is our intraday pivot
+[2026-05-15 11:58] might have an abbreviated trade plan if i get to the hotel soon enough here and get settled before lunch
+[2026-05-15 11:59] i hope all swing shorts get some green back today
+[2026-05-15 11:59] its hard to see a vol increase on a friday none the less lol
+[2026-05-15 11:59] weird sleeping for a few hours and its almost lunch time now lol
+[2026-05-15 12:00] lol it really is haha. i feel like a million bucks right now lol
+[2026-05-15 12:00] my wife not so much lol
+[2026-05-15 12:08] 3 step candle rally and then sell again
+[2026-05-15 12:08] the es 30 min chart is interesting
+[2026-05-15 12:36] Yea plus Opex too. Will be good scalps today if one is paytient.
+[2026-05-15 12:37] I don’t like that we lost that LVN between 7470es and 7450es.
+[2026-05-15 12:39] I am with you both. Basically a hold of 7400spx - approx 7423es should push us back higher.
+[2026-05-15 12:39] Some interesting individual tickers for 0dte could get interesting. MU could push to 700 if not 650
+[2026-05-15 12:40] Was down almost 90 pts at one point
+[2026-05-15 12:40] Was going to ask were you trading last night???? lol
+[2026-05-15 12:41] And shifted overnight too
+[2026-05-15 12:41] Especially if it gets a push too
+[2026-05-15 12:41] Lots of tickers shifted. Dealers short too. Could be wild day today.
+[2026-05-15 17:25] @Johannes nice good easy move here. Good analysis 🧐
+[2026-05-15 17:29] Go look at the chart on crwd lol
+[2026-05-15 17:29] SNDK went green. Incredible
+[2026-05-15 17:30] Yes please
+[2026-05-15 17:31] Let’s gooooo
+[2026-05-15 17:32] This is incredible man. Is this coming to Volland or what?
+[2026-05-15 17:34] What you got on mu and crwd
+[2026-05-15 19:13] If we can get semis and memory to crack their lows would happen. they have held their gap downs so far. just get to a new LOD
+[2026-05-18 01:48] Gotta keep an eye on the positions and any opportunities ha
+[2026-05-18 07:48] the court’s injunction geez it looked like death haha
+[2026-05-18 09:25] Nice sell here from our resistance zone
+[2026-05-18 11:27] impossible to short this without those caving and until post NVDA ER
+[2026-05-18 11:27] look at semis and memory
+[2026-05-18 16:19] We have news this morning? Wow. Saw semis and memory
+[2026-05-18 16:19] What I miss?
+[2026-05-19 13:13] I don't think there is any respected leader in the world who wants more Israel or domination by Israel in that region or else where. I truly believe no one wants war and pick whatever theory you want - epstein, adelsons donating to trump and owning him, etc - folks want this to end vs not. Which is why the market has rallied in the face of this engagement. You have two critical holidays coming up - Memorial Day and 4th of July. Gas prices won't be down before Memorial Day, but a reckoning will come if these prices stay high like this into the 4th.
+[2026-05-19 14:07] we should be enjoying one of the most bullish earnings season ever and we had to tip toe into it cause of this Iran stuff. unbelieveable if you ask me...
+[2026-05-20 15:29] FOMC minutes at 2 pm est
+[2026-05-20 15:29] Let's keep an eye on that bond auction today at 1 pm est
+[2026-05-20 15:29] NVDA ER after hours
+[2026-05-20 15:30] yea by 4 am est when the premarket opens volland data updates as well with 0dte. good for overnight trades to see how to position and that days options are shaping up after Asia and EU starts to trade
+[2026-05-20 18:17] :beargasp:
+[2026-05-20 18:17] :neverunder:
+[2026-05-20 18:42] new faces i see let's gooo niceeee
+[2026-05-20 21:54] should bet on the predictions market of when iran deal gets done with this lol
+[2026-05-20 21:56] lol time for us to create our own market and ONLY have this one trade lol. we will become gazillionaries in fees alone haha
+[2026-05-21 01:13] what i took away that was interesting is NVDA is after CPU - which is why we see AMD and INTC sell of course but i am course how it impacts ARM...
+[2026-05-21 01:14] ARM maybe a winner here lol
+[2026-05-21 01:15] If MU, NVDA, ARM hold the lows of the earnings selloff this is another never/under buy IMO it feels like nvda is just getting punished right now as they might splinter some of their divions into separate companies even
+[2026-05-21 01:16] https://tenor.com/view/jack-nicholson-yes-nod-agree-gif-21960775
+[2026-05-21 01:16] lol exactly why i said this comment. so true. https://discord.com/channels/1356329071230980188/1362818729347645754/1506782460321468448
+[2026-05-21 01:20] while some truths here - there are mechanics behind the market and it gets a push for a reason. money finds money always has always will and with it brings the massess. there is a boiling point but right now between earnings, retail sales, capex growth it is extremely hard to be a bear right now. it is influencing how others/big money/retail/etc all see the market and how to trade it. every evolving, still hazy
+[2026-05-21 02:13] Yes imo. Another round of earnings with cyber security stocks and then I think we see a sell.
+[2026-05-21 02:14] Let’s see how they react to nvda overnight and in morning. I didn’t get the sell on it but who am I guess
+[2026-05-21 02:15] Of course anytime. We have handled the past couple of months well. Very very profitable 2 months.
+[2026-05-21 02:16] https://tenor.com/view/trump-winning-tired-of-winning-too-much-winning-trump-winning-gif-18117157088195654833
+[2026-05-21 11:19] 7470es
+[2026-05-21 11:19] good overnight action here from our levels - #5/18 ES/SPX Weekly & Daily Overviews
+[2026-05-21 11:19] it started with no nvda rally too until the 4am est open
+[2026-05-21 11:19] right on the dot...
+[2026-05-21 11:19] target hit
+[2026-05-21 11:20] was stuck at 222 all night lol
+[2026-05-21 13:26] can't believe that would be it???
+[2026-05-21 13:26] https://x.com/financialjuice/status/2057407435850015063?s=20 || The UK summons Israel diplomat over video posted by Ben Gvir
+[2026-05-21 13:26] i would say yes, but some news is clearly dropping
+[2026-05-21 13:27] everything flipped all of a sudden lol
+[2026-05-21 13:27] here it is
+[2026-05-21 13:27] https://x.com/financialjuice/status/2057407655027552615?s=20 || 🔴Iran's supreme leader has ordered that near\-weapons\-grade uranium must stay in Iran \- Two senior Iranian Sources
+[2026-05-21 13:27] more taco dip buying opportunity IMO
+[2026-05-21 13:27] something else must be happening
+[2026-05-21 13:27] trade plan active
+[2026-05-21 13:28] watching vol at 20.25 on the vx - stay below that i am sure in the next 2 hours someone will come out with a taco response
+[2026-05-21 13:31] interesting
+[2026-05-21 13:31] this might become our short here huh
+[2026-05-21 13:31] we were looking at 7500 and now that news tilting it to 7220
+[2026-05-21 13:31] wow the 0dte paradigm has shifted majorly
+[2026-05-21 13:32] perfect timing with nvda er ending lol
+[2026-05-21 13:33] gonna need that VX to expand if we want to get to that 7220 spx target lol.
+[2026-05-21 13:33] lots of time between trump finds his phone in his hand and his toilet in the morning
+[2026-05-21 13:50] IMO yes if we don't get any one to come and respond
+[2026-05-21 13:51] MU is heading for its gap close
+[2026-05-21 13:51] look at a few tickers as well
+[2026-05-21 13:51] nvda is testing its lows of the session
+[2026-05-21 13:51] we are ripping through support levels and a major one is coming which is the overnight lows here near 75-80spx
+[2026-05-21 13:52] on top of that we hit our top target on the day IMO as a bull which was 7450spx
+[2026-05-21 13:54] lol never under huh
+[2026-05-21 13:55] look at those wicks haha
+[2026-05-21 13:55] the 0dte charm is starting to look like garbage though as a bull
+[2026-05-21 13:56] could get taco'd but that thing don't look so hot without vol coming in
+[2026-05-21 13:57] you want to see a taco statement at one of those levels ideally
+[2026-05-21 13:58] the expectation being that as price enters that zone vol needs to increase as well to rip through it and ultimately charge to the last large green bar which has YET to be tested this week
+[2026-05-21 14:02] i cant wait for anthropic's IPO
+[2026-05-21 14:02] that's the new theme of the generation no lol. reward now punish later vs punish now reward later
+[2026-05-21 14:08] there is also some gamma sitting there that i didn't screenshot. its also near the lows of futures session as well. if you take a look at my trade plans i provide a weight to some of these greek levels to help me understand if vol is high and there is a catalyst that level most likely won't hold then. no catalyst will most times find 0dte trades to hold itself then https://discord.com/channels/1356329071230980188/1505652277220737104/1506874494164140103
+[2026-05-21 14:10] need more vol
+[2026-05-21 14:11] https://tenor.com/view/spy-stock-market-chop-chopping-pump-fake-gif-9938228920535112772
+[2026-05-21 14:13] WMT should help with the vol on ES
+[2026-05-21 14:13] but the market just brushed it off lol
+[2026-05-21 14:13] https://x.com/financialjuice/status/2057416408204505513?s=20 || $WMT Walmart Q1 2027 Earnings Adj EPS $0\.66, est\. $0\.66 Rev\. $177\.5B, est\. $174\.78B
+[2026-05-21 14:13] mean to say helping with the vol
+[2026-05-21 14:22] you see the gravitational pull that is 7420spx the trade plan called out? you have found your intraday extremes thus far all pulled back to the magnet
+[2026-05-21 14:23] https://tenor.com/view/get-over-here-scorpion-hiroyuki-sanada-mortal-kombat-ii-come-closer-gif-10458184889358477507
+[2026-05-21 14:38] yes ripper city - https://discord.com/channels/1356329071230980188/1362821077922742334/1506984504471060620
+[2026-05-21 16:15] nice love a HTF view of this from you or apollo - nice share
+[2026-05-21 19:39] no starlink huh?
+[2026-05-22 08:25] Interesting how dealer positioning is shifting after today's session. Check out the read here - #5/18 ES/SPX Weekly & Daily Overviews For the 5/22 Session: ## Quick Reference - **Bias:** range/pin, SPX 7,400–7,600 / ES 7,420–7,620, gravity to SPX 7,440 / ES 7,460. - **Fade:** SPX 7,500–7,560 / ES 7,520–7,580 back to the pin. - **Buy:** dips into SPX 7,400–7,440 / ES 7,420–7,460. - **Stand aside:** on a volatility-driven break of SPX 7,400 / ES 7,420 or SPX 7,600 / ES 7,620. - **Pin / close magnet:** SPX 7,440 / ES 7,460. - **Hard cap:** SPX 7,575–7,600 / ES 7,595–7,620. - **Wildcard:** Iran headline; be flat into the cash close ahead of the 3-day weekend.
+[2026-05-22 15:42] Next week not so much lol
+[2026-05-22 21:59] its coming...
+[2026-05-22 22:00] give me a market where 7k trades again yes
+[2026-05-22 22:00] the positioning changed quite a bit yesterday for higher time frames. i addressed it in my trade plan yesterday
+[2026-05-22 22:01] term structure into next week. once today's positions wipe out, watch out
+[2026-05-22 22:01] this coming from the guy who has been bullish for some time so keep that in mind lol
+[2026-05-22 22:01] wouldn't be shocked with an after hours shenanigan
+[2026-05-22 22:02] there is a reason i closed the majority of short dated calls
+[2026-05-22 22:03] haha lol
+[2026-05-22 22:03] let her begin
+[2026-05-22 23:08] yea i saw that too. it makes sense. there is that samsung strike where the union is voting and its way too frothy at this point.
+[2026-05-22 23:57] I have worked my way that way for sure. this sell will either come so fast or it will be the most frustrating selling it. next week vanna even positive but good luck getting above 7500 spx without something further compressing vol
+[2026-05-24 00:04] BTC been ripping too
+[2026-05-24 02:24] Ha. Never under. I can’t really be bearish in general but was hoping for some kind of dip. Even MU it would be nice for some drop. In general though we just need to get past Iran and focus a bit on rates and CPI and PPI. I was chatting with @Phoenix and we cant take out one critical support level , 7300, week before was 7250. Week before 7150. Week didn’t even touch our most critical support this last week. I would be a dip buyer than a seller imo. You have the dispersion of the AI economy now coming. The second wave of this.
+[2026-05-24 02:26] You are right
+[2026-05-24 17:56] Not sure if this one is real but it came up on my feed haha. https://x.com/mollyploofkins/status/2058361437437759909?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || Trump deleted this post after Ankara told its counterparts that Erdogan never said any such thing about him\.
+[2026-05-24 17:56] https://x.com/deitaone/status/2058562377545564659?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || NETANYAHU: MY POLICY, LIKE PRESIDENT TRUMP'S POLICY, REMAINS UNCHANGED: IRAN WILL NOT HAVE NUCLEAR WEAPONS
+[2026-05-24 17:56] lol more weird vibes. So we got a deal or what?
+[2026-05-24 18:07] so strange all of this lol
+[2026-05-24 18:07] yea clearly - there is now a 30 day or 60 day ceasefire on some element of it
+[2026-05-24 20:30] Holding so far
+[2026-05-24 20:30] Or near it.
+[2026-05-24 20:30] We did test 7500spx.
+[2026-05-24 20:32] First green line Friday close. We got near 7420spx after hours. And then the rally on news.
+[2026-05-24 21:00] I agree. I shared some thoughts here on the overall macro and fundamental side of why you can’t be bearish. #5/25 ES/SPX Weekly & Daily Overviews
+[2026-05-24 21:00] This Iran news imo is just being used to hold out from everyone going long
+[2026-05-24 23:48] it's selling back down. wouldn't be shocked if futures open here almost flat. see how that 7500spx zone goes
+[2026-05-25 00:25] before the market opens too lol
+[2026-05-25 00:58] selling off fast
+[2026-05-25 00:58] what do we say about ES gaps huh...
+[2026-05-25 01:06] held 7500spx like a charm so far
+[2026-05-25 01:09] lol to where and what is your goal. as a scalp sure but i would be wary of shorts. i explain why - #5/25 ES/SPX Weekly & Daily Overviews
+[2026-05-25 01:47] It typically fills in 2-3 sessions from past history. SPX and QQQ never a trend with them.
+[2026-05-25 01:50] Yes sir it is.
+[2026-05-25 05:51] I will just added on to what Wiz mentioned above and break it down real time too with my #⚛️┃dark-matter-trade plans. Yahya is onto something real here and it’s a problem I’ve wrestled with in my trading evolution. The way I think about it — dealer positioning is always present but it’s not always load-bearing. The question isn’t whether gamma/vanna/charm exist at a level, it’s whether there’s enough flow and dealer participation to actually enforce them. When MMs are standing down (thin sessions, post-catalyst shock, illiquid overnight) the levels are on the map but nobody’s defending them. The signals that tell you which regime you’re in: Spot-vol beta is the first read. When spot and vol are moving in the same direction, dealers are being forced to hedge reactively — they’re not in control. That’s your ‘other factors dominant’ flag. When spot-vol beta is normal/negative, Greeks are doing their job. Paradigm classification is the second. Positive gamma pinning with tight realized/imp
+[2026-05-25 06:32] See you at es 7590 enjoy this
+[2026-05-25 06:32] https://tenor.com/view/america-hurricane-happy4th-of-july-america-flag-independence-day-gif-21259025
+[2026-05-25 06:35] https://tenor.com/view/jack-nicholson-yes-nod-agree-gif-21960775
+[2026-05-25 06:37] Let’s gooo.
+[2026-05-26 02:44] 0DTE charm kicked in here so far at 7530spx/7545es
+[2026-05-26 02:45] you lose that level you start to fade this entire move IMO
+[2026-05-26 02:46] CC: @Phoenix
+[2026-05-26 02:46] this was interesting to see too lol.
+[2026-05-26 02:47] you ready for a macro lesson tonight. here is another reason lol.
+[2026-05-26 02:48] anyone telling you we are in a dotcom like situation - kick them in the you know what...
+[2026-05-26 02:50] there is a squeeze potential. look at this. @Phoenix did you see JPM target now 9k on SPX next 12 months 👀
+[2026-05-26 02:51] adjusted it after earnings season
+[2026-05-26 03:09] my target is 8100spx overall. be nice to get a dip but like 7000 passed watch how we trade between 7300-7500
+[2026-05-26 04:10] i had it end of year after adjusting when my first target of 7500 hit
+[2026-05-26 04:11] but if we weigh what JPM thinks we could overshoot 8100 go into next year even
+[2026-05-26 04:11] maybe "sell" comes at 8100 IMO
+[2026-05-26 04:12] for a push into 9k then
+[2026-05-26 04:12] look at the last paragraph in this report. capex is only increasing and NOT coming in over the next 3 years. earnings adjusted majorly and I shared an overview of this at the top of the #5/25 ES/SPX Weekly & Daily Overviews trade plan
+[2026-05-26 10:10] continue with the headlines nice 2 way action here provided to us in futures
+[2026-05-26 11:08] Iran news going on
+[2026-05-26 11:08] https://x.com/deitaone/status/2059176714668777879?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || \*IRAN'S IRGC FIRED AT US DRONE, JET IN IRAN AIRSPACE: TASNIM \*IRAN'S IRGC WARNS AGAINST CEASEFIRE VIOLATIONS: TASNIM
+[2026-05-26 11:08] https://x.com/financialjuice/status/2059176621014241791?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || Iran's Irgc: We have downed one MQ9 drone\.
+[2026-05-26 21:28] my fav ticker i have been trading. this has been a fun one lol
+[2026-05-27 04:20] 1k incoming and then 1480
+[2026-05-27 04:51] Just a casual billion in PnL lol https://x.com/unusual_whales/status/2059386534261039548?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || BREAKING: These option traders have made more than one billion dollars IN PROFIT\! Yes, you read that right\. On March 31st, Micron $MU bulls placed nearly $50\-$60 million on the $400 calls, expirying on June 18th\. Their trades at ask, urgent, all thirty minutes before close\.
+[2026-05-29 06:04] This thing is not slowing down. It just broke out of consolidation too. This is strength of qqq over spy. Guess when it broke trendline
+[2026-05-29 06:05] The breadth is increasing in tech driving this mega rally vs into iwm for example
+[2026-05-29 06:06] Ie mag 7 has basically flatlined outside of aapl yet look at semis, memory, cpu, and quantum
+[2026-05-29 23:55] i was i was mainly looking at the gamma structure last week. shifted majorly negative at the end of friday last week. so the ranges extended with minimal vanna put support along with negative vanna exposure on the week. today differs the close. you have positive gamma below spot and above spot, both all expiry and weekly expiry. on the vanna front while it looks extremely choppy to start the week it is positive vanna.
+[2026-06-01 04:26] did you not learn to stop doing that lol
+[2026-06-01 05:09] yea i am loving my MU trade.
+[2026-06-01 05:10] 1480
+[2026-06-01 05:10] we are breaking through 7600spx now let's see if it holds
+[2026-06-01 05:11] arm = 500
+[2026-06-01 05:11] dell = 600
+[2026-06-01 05:11] its the dispersion trade in AI...first gpu, memories, now cpu
+[2026-06-01 17:54] haha freaking classic...
+[2026-06-01 17:54] where is my taco 🌮
+[2026-06-01 19:45] Shh they weren’t supposed to know until the next ipo’s
+[2026-06-01 20:07] Trump speaking
+[2026-06-01 20:07] https://x.com/deitaone/status/2061494392444125413?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || TRUMP SAYS HE IS NOT WORRIED ABOUT OIL PRICES IF IRAN BLOCKS STRAIT OF HORMUZ
+[2026-06-01 20:07] https://x.com/financialjuice/status/2061493955229888720?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || Trump to CNBC: Asking Netanyahu what's going on\.
+[2026-06-01 20:07] https://x.com/kobeissiletter/status/2061494605141450981?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || BREAKING: President Trump responds after Iran ends all negotiations with the US, per CNBC\. "I really don’t care\. I couldn’t care less," Trump says\. He also said he was "going to ask" Israeli Prime Minister Netanyahu "what’s going on with Lebanon\."
+[2026-06-01 20:34] https://tenor.com/view/jack-nicholson-yes-nod-agree-gif-21960775
+[2026-06-01 20:43] https://x.com/Polymarket/status/2061503559728853198?s=20 || JUST IN: Trump announces he had a "very good call" with Hezbollah, & they have agreed to stop aggression towards Israel\.
+[2026-06-01 20:45] see you at 7650spx
+[2026-06-01 20:46] https://x.com/KobeissiLetter/status/2061504264900432289?s=20 || BREAKING: President Trump says talks with Iran are back on\.
+[2026-06-01 20:52] https://tenor.com/view/america-hurricane-happy4th-of-july-america-flag-independence-day-gif-21259025
+[2026-06-02 08:47] Nice bounce here again from a key level trust the levels 💪
+[2026-06-02 08:47] Nice bounce here again from a key level trust the levels 💪
+[2026-06-02 08:48] They keep buying MU and ARM at their support levels too
+[2026-06-02 08:48] They keep buying MU and ARM at their support levels too
+[2026-06-02 08:49] The weekly levels yes. Like last week 7500spx was a critical weekly and multiple times daily levels
+[2026-06-02 08:49] The weekly levels yes. Like last week 7500spx was a critical weekly and multiple times daily levels
+[2026-06-02 08:50] When weekly agrees with daily strong dose. Just paytience on the timing around catalyst events. Last few weeks was easier with earnings every day. Now key events trigger the breakout levels
+[2026-06-02 08:50] When weekly agrees with daily strong dose. Just paytience on the timing around catalyst events. Last few weeks was easier with earnings every day. Now key events trigger the breakout levels
+[2026-06-02 08:51] Outside of the holiday ramp the weekly support held and its target was 7575 SPX last week. It took us how many 0dte’s until the Thursday event catalyst to settle and we ripped from support again to finally hit target EOW
+[2026-06-02 08:51] Outside of the holiday ramp the weekly support held and its target was 7575 SPX last week. It took us how many 0dte’s until the Thursday event catalyst to settle and we ripped from support again to finally hit target EOW
+[2026-06-02 08:52] How you trade off a weekly level is now up to you. Day trade it or swing and scale out and scale back in at the support
+[2026-06-02 08:52] How you trade off a weekly level is now up to you. Day trade it or swing and scale out and scale back in at the support
+[2026-06-02 12:07] Look at HPE too
+[2026-06-02 12:07] Look at HPE too
+[2026-06-02 14:29] Trump ain’t messing haha https://x.com/deitaone/status/2061771029664465374?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || "YOU'RE FUCKING CRAZY" President Trump reportedly blasted Israeli Prime Minister Netanyahu in a heated call, accusing him of escalating the conflict in Lebanon and jeopardizing U\.S\.\-Iran negotiations\. According to sources, Trump warned that a strike on Beirut would further
+[2026-06-02 14:29] Trump ain’t messing haha https://x.com/deitaone/status/2061771029664465374?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || "YOU'RE FUCKING CRAZY" President Trump reportedly blasted Israeli Prime Minister Netanyahu in a heated call, accusing him of escalating the conflict in Lebanon and jeopardizing U\.S\.\-Iran negotiations\. According to sources, Trump warned that a strike on Beirut would further
+[2026-06-03 15:13] almost there - updated brief - https://discord.com/channels/1356329071230980188/1510718491349750061/1511704207701442690
+[2026-06-03 15:13] almost there - updated brief - https://discord.com/channels/1356329071230980188/1510718491349750061/1511704207701442690
+[2026-06-05 17:34] The pump lol
+[2026-06-05 17:34] The pump lol
+[2026-06-05 17:34] https://x.com/deitaone/status/2062905743204917290?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || TRUMP: WITH A GREAT JOBS REPORT, LIKE JUST ANNOUNCED, STOCKS SHOULD GO UP
+[2026-06-05 17:34] https://x.com/deitaone/status/2062905743204917290?s=46&t=L3X1huGYbtxr2w5DrW6Pcw || TRUMP: WITH A GREAT JOBS REPORT, LIKE JUST ANNOUNCED, STOCKS SHOULD GO UP
+[2026-06-08 14:16] there is also a bunch of weirdness as usual going down. jobs being hot sold us down which if you dissected it about 70k of jobs came from leisure & hospitality. of which about 55-60k are short term hires for the World Cup. then you have israel/iran. just need to trade level to level as i have mentioned. your bias has to be flexible. we saw what happened once 7500spx last week finally gave way...
+[2026-06-08 14:28] the guy on left with longs targeting 7450spx. the guy on the right with shorts already at 7400spx lol
+[2026-06-08 14:39] it is but everyone and their mom ran so fast to buying puts again
+[2026-06-08 14:40] keep bias uncheck. 7450, 7475, 7500 spx decide some levels today. if they really want to they could run this back up to 7575spx with some kind of catalyst but i am not leaning heavy this week with CPI and PPI around. real risk there.
+[2026-06-09 19:40] 7350 was a lot of delta selling for dealers if you missed that connection
+[2026-06-09 19:40] you know it brother and we got more 👀
+[2026-06-09 19:49] https://tenor.com/view/the-universe-tim-and-eric-mind-blown-mind-blown-meme-mind-explosion-mind-explosion-meme-gif-18002878
+
+
+===== messages REFERENCING thread/trade-plan/@Dark Matter (to locate his thread) =====
+[2025-10-15] Then combine it with your normal trade plan
+[2025-11-04] Just wanna make sure I understand, @Dark Matter said support is around 6780 SPX because it's the largest positive-gamma area on the board. When I look at vollan
+[2025-11-04] ok thanks I see its a thread under the weekly post
+[2025-11-18] @Dark Matter
+[2025-11-29] if its about Dark matter's trade plan best to ask @Dark Matter
+[2025-12-01] @Dark Matter just a nit when you say "IV down → dealer deltas increase (negative vanna)" you mean the dealer delta in absolute terms ? the delta itself is becom
+[2025-12-17] So in this case, your primary thesis is slow downside, but there is a chance for a rapid pop to 7000. So thats the thesis. Your trade plan should be comfortable
+[2025-12-30] @Dark Matter I can only trade the first 3 hours or so of US market open. Am I severely limiting myself trading before the “Line in the sand” can be established?
+[2025-12-30] Europe here - i sometimes trade the US overnight session (volland updates around London open), which is my morning hours. Works great! @Dark Matter has a lot of
+[2025-12-30] When volatility is greater than it has been during the holiday volume the moves overnight are great to @Sparks-Flying point. They behave even better to dealer p
+[2026-01-05] If you want a “head start”, pay attention to @Dark Matter’s posts! He’ll give you some levels and directional bias to start off with while you learn this stuff.
+[2026-01-27] Hi @Wizard of Ops @Dark Matter, in the market moves this morning you guys mentioned 0dte long straddles for earnings with interesting potential with the new DTE
+[2026-02-03] Hmm, not that I know of! I know @Dark Matter uses that strategy a lot (I haven’t been keeping up with day trading lately but I think he still trades with volume
+[2026-02-03] Ty @Dark Matter
+[2026-02-12] Silver, What you are asking is when to buy calls or puts in a swing timeframe. Volland can give you a good probability of success for that strategy, but that un
+[2026-02-20] After 2am est and the market does behave a bit differently but @Dark Matter can probably elaborate on that
+[2026-02-26] There are probably a bunch of them, just look up “volume profile trading” on YouTube, unless someone else has a specific recommendation… Lots of videos, or you 
+[2026-03-03] low feels decent but dont like we didnt get 477 @Dark Matter
+[2026-03-04] did one of these in case it happens overnight and recovers... @Dark Matter style
+[2026-03-09] @Dark Matter
+[2026-03-09] @Dark Matter can I interest your in some call spreads for gap fill?
+[2026-03-09] I leave that to @Dark Matter lol
+[2026-03-09] just kidding.. i'll be placing my bets after tomorrow's @Wizard of Ops substack and @A p o l l o 's tapeworm and @Dark Matter 's trade plan. lol
+[2026-03-10] Lets see what the overnight does with @Dark Matter
+[2026-03-16] All the talk on socials was like: "LIMIT DOWN" but this is pretty thin...maybe the London session. @Dark Matter
+[2026-03-16] We have some huge range for this week. Back in town working on the trade plan - 200pt range this week in options
+[2026-03-17] Hi @Dark Matter this week strategy is to sell rips mainly ?
+[2026-03-17] Positive gamma above makes me say fly above, but the repricing of skew so much lower would have me do long gamma put verticals until they succeed. Maybe both tr
+[2026-03-19] Hi @Dark Matter, Vix did not drop below 23..
+[2026-03-19] Wow @Dark Matter ‘s trade plan is superb..👍
+[2026-03-20] @Dark Matter quick note — really appreciate the work you’re doing in “Volland Edge Extractors.” Super clear and high-level. I’m trying to get better with this s
+[2026-03-20] @Dark Matter trade plan is superb
+[2026-03-20] This begs the question...... Are you successful because of Volland or the TA? Or perhaps superior trade planning?
+[2026-03-20] Whenever I hear about successful traders on TA, it is always not because of the TA, it is because that trader has solid trade planning and discipline.
+[2026-03-23] Bullish from here ? @Dark Matter
+[2026-03-23] C.c. @Dark Matter
+[2026-03-23] That's your level, boss. Let's see what happens. @Dark Matter
+[2026-03-23] Thx @Dark Matter for the overnight bid
+[2026-03-23] haha where do we go now. need to update my trade plan haha
+[2026-03-24] @Dark Matter 385 is LIS
+[2026-03-26] @Dark Matter i joined globex gang
+[2026-03-27] @Dark Matter look at JPM
+[2026-03-27] I found @Dark Matter alter ego
+[2026-03-27] No trade plan update ? @Dark Matter
+[2026-03-27] Really appreciate your trade plan @Dark Matter 👍
+[2026-03-30] Need a Ryzen Threadripper 128 Processor with 128gb and that should work just fine
+[2026-03-30] Was feeling a short here but prob just wait until RTH @Dark Matter😂🥲
+[2026-03-31] Hi @Dark Matter remember to post your trade plan 🤝
+[2026-03-31] might need an updated trade plan LOL
+[2026-04-02] @Dark Matter
+[2026-04-02] about to post my trade plan in #3/30 ES/SPX Weekly & Daily Overview
+[2026-04-02] trade plan for 4/2 now available
+[2026-04-06] @Dark Matter 6690 THIS WEEK, GET THERE
+[2026-04-06] What expiration did you look at @Dark Matter
+[2026-04-08] @Dark Matter
+[2026-04-08] @Dark Matter where is 6800?
+[2026-04-08] According to @Dark Matter gaps in futures close within 1 to 2 trading sessions
+[2026-04-09] @Dark Matter , can you speak to the manager?
+[2026-04-15] Superb trade plan again @Dark Matter 👍 Appreciate your work
+[2026-04-16] @Dark Matter we need a review of the past two weeks via Volland data 🙏
+[2026-04-16] Mainly range trade today? @Dark Matter
+[2026-04-16] Maybe retest and hold 7000 and Cramer tells everyone to sell maybe 🤷🏻‍♂️ Or maybe I need some hand holding from @Dark Matter @Wizard of Ops @A p o l l o to figu
+[2026-04-16] i agree with @Dark Matter , this week has seemed super clean to me as well. I dont trade spx that much but just with equities in general. Something clicked this
+[2026-04-16] kid has a basketball game so for now check ^^^ the above and trade plan in #4/13 ES/SPX Weekly & Daily Overview - will try to fill in after her game if i get th
+[2026-04-16] let me see if i have som time today, but for this week take a look at the marketmoves show and the short we put out. that squeeze above 6800 reclaim monday to 6
+[2026-04-17] @Dark Matter said it could touch 7150
+[2026-04-17] I’m sensing a @Dark Matter lotto bold call 7175 is 0.088
+[2026-04-17] Long trade still ? @Dark Matter
+[2026-04-17] Or wait for @Dark Matter target 7175
+[2026-04-17] increadible trade plan..
+[2026-04-20] @Dark Matter get off the bid
+[2026-04-20] @Dark Matter wen load the MSFT boat?
+[2026-04-20] I need to become a 1dte trader maybe lol @Dark Matter
+[2026-04-20] I think @Dark Matter is looking in same spot
+[2026-04-21] Ciao ✋ gang!! Waiting for @Dark Matter trade plan 😀
+[2026-04-22] @Dark Matter
+[2026-04-22] @Dark Matter MSFT = david goggins
+[2026-04-22] @Dark Matter MSFT looks about to pop higher
+[2026-04-23] @Dark Matter perfect 7105 bounce which I did not catch 😭
+[2026-04-23] @Dark Matter what are the odds we touch 6750 again 0dte?
+[2026-04-23] Is @Dark Matter trading now ? 🤣
+[2026-04-24] @Dark Matter
+[2026-04-24] @Dark Matter how sick is this
+[2026-04-24] @Dark Matter please, how do you use Volland to trade premarket?
+[2026-04-24] @Dark Matter reading your post "Gamma flipped from −$127M (amplifier mode — gaps expand) to +$735M (suppression mode — gaps pin) overnight." Is that using the e
+[2026-04-24] Ciao 👋 Gang !! Hi @Dark Matter
+[2026-04-24] are we looking for Setup 2 ?@Dark Matter
+[2026-04-26] we should find balance this week in that 7130-7150spx corridor - posted some initial thoughts in #4/27 ES/SPX Weekly & Daily Overviews - full trade plan out soo
+[2026-04-27] @Dark Matter
+[2026-04-27] Trade Plan is now fully out.
+[2026-04-28] Is this the short lol @Dark Matter
+[2026-04-30] hi @Dark Matter, any trade plan today ?
+[2026-05-01] Hi @Dark Matter , today's trade plan seems pretty tight.. thanks, another great week
+[2026-05-01] I have some runners on ES, but i am calling it an early day/week here. stop loss on those runners. another great week team. we all dominatd in here. great analy
+[2026-05-01] Legendary call @Dark Matter . also thanks to @Wizard of Ops substack
+[2026-05-01] Personally, I feel like I’ve lost the edge with volland this month. It’s frustrating because if a professional team (volland) can’t get alpha on the market, the
+[2026-05-02] What’s more, the longer the time horizon of the trade, the greater the dependence on the market That’s why I want to speak to @Dark Matter , because the whole p
+[2026-05-04] @Dark Matter is setup A valid again, now that we're knocking on that level from last night's dump?
+[2026-05-04] @Dark Matter sir, do you have any reference regarding how to interpret some of the comments, eg " A- — 0.5× (Caution-band)"
+[2026-05-05] Looking like Setup A ? @Dark Matter
+[2026-05-05] Waiting for that setup B, @Dark Matter
+[2026-05-06] @Dark Matter lets go for our 70s now
+[2026-05-06] took some time but we got there @Dark Matter
+[2026-05-07] 👋 @Dark Matter today’s trade plan looks like not complete ?😆
+[2026-05-08] Can u lmk when trade plan is out @Dark Matter i need ur macro wisdom my notifs r bugged on it
+[2026-05-08] Ciao @Dark Matter 👋
+[2026-05-08] Just overall market. Various tickers. I will share a view of it in my trade plan tonight. Seeing more and more stocks selling from their 20day moving avg
+[2026-05-08] shoot away trying to finish the trade plan now
+[2026-05-12] @Dark Matter are we still in 7300-7400 container?
+[2026-05-12] @Dark Matter how are we look’in ?
+[2026-05-12] Hope @Dark Matter updates the trade plan again 😆
+[2026-05-12] How’s this for exp tmmr? @Dark Matter
+[2026-05-13] @Dark Matter famous last words ? 👀 😆
+[2026-05-13] Ahhh yeah, summers are hectic haha. Appreciate the trade plan though. I’m sure that takes some time to put together every day
+[2026-05-13] Hi @Dark Matter Heads up typo on the title on latest trade plan
+[2026-05-13] Hi 👋 @Dark Matter, made money again with your trade plan yesterday, thanks a lot 👍 for your work
+[2026-05-13] It has been for the week. @Dark Matter and I agreed, 7450-7475
+[2026-05-13] Or just swinging these days @Dark Matter
+[2026-05-14] @Dark Matter time to hold the line as a bear
+[2026-05-14] Even simple shit like charm conversions in the same thread
+[2026-05-14] Hi 👋 @Dark Matter remember today’s trade plan 👍
+[2026-05-14] If you want to be a bull without a retracement it’s best you find selective tickers to trade. I am actively in on CRWD and RKLB for example. Their vanna and gam
+[2026-05-14] I’m on package 10 connected with CME denali data for ES (other CME too I just haven’t dabbled that far yet lol) Then connected to IBKR api to get top of book fo
+[2026-05-15] might have an abbreviated trade plan if i get to the hotel soon enough here and get settled before lunch
+[2026-05-15] 👋 @Dark Matter , Well deserved! Have a great time !! Does this mean no trade plan today ? 🤣
+[2026-05-18] @Dark Matter putting in work on vacation haha. Thx 4 that
+[2026-05-18] Shouldn't you be having your vaca ? 😆 Thanks for the trade plan 💪
+[2026-05-21] Hi 👋 @Dark Matter , Great trade plan man! Thank a million 👍 💪
+[2026-05-21] This is the catalyst to break the range ? @Dark Matter
+[2026-05-21] Yes, great profits again with your trade plan 💪
+[2026-05-21] there is also some gamma sitting there that i didn't screenshot. its also near the lows of futures session as well. if you take a look at my trade plans i provi
+[2026-05-21] trade plan active
+[2026-05-21] you see the gravitational pull that is 7420spx the trade plan called out? you have found your intraday extremes thus far all pulled back to the magnet
+[2026-05-21] 👋 @Dark Matter The trade plan still valid ?
+[2026-05-22] @Dark Matter @Phoenix bands of MU puts hitting the board
+[2026-05-22] the positioning changed quite a bit yesterday for higher time frames. i addressed it in my trade plan yesterday
+[2026-05-24] @Dark Matter so, taking back your bearish lean or nah? 😂
+[2026-05-25] @Dark Matter setup A off to a nice start
+[2026-05-25] I will just added on to what Wiz mentioned above and break it down real time too with my #⚛️┃dark-matter-trade plans. Yahya is onto something real here and it’s
+[2026-05-25] Thanks for participating in the discussion @Dark Matter 🙏
+[2026-05-26] So roughly 150pts of SPX since 18th.. how much more you reckon we’ll squeeze ? @Dark Matter
+[2026-05-26] look at the last paragraph in this report. capex is only increasing and NOT coming in over the next 3 years. earnings adjusted majorly and I shared an overview 
+[2026-06-01] Another great trade plan @Dark Matter 👍 💪
+[2026-06-02] Setup B 💪 @Dark Matter
+[2026-06-03] Any chance of a trade plan update today? 😀 @Dark Matter
+[2026-06-03] Trade plan is to make a bajillion dollars obviously, isnt that everyones?
+[2026-06-03] Trade plan was to short historic rally double top
+[2026-06-03] What is your trade plan?
+[2026-06-04] Let's start a lean hogs futures trading thread sir.
+[2026-06-08] Hi 👋 @Dark Matter
+[2026-06-08] Today’s trade plan leaning bearish I see
+[2026-06-09] 7350 --> 7300 right in the trade plan @Dark Matter

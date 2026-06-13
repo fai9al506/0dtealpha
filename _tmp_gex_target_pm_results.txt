@@ -1,0 +1,100 @@
+LONGS by paradigm x AM/PM (SC/DD/ES Abs, no V16 filter):
+
+  paradigm            sess    n     wr     total    mean
+                        AM    4 100.0%    +40.0pt +10.00pt
+                        PM    7  71.4%    +23.6pt  +3.37pt
+  AG-LIS                AM   46  50.0%    -42.6pt  -0.93pt
+  AG-LIS                PM   45  40.0%   -116.3pt  -2.58pt
+                      AM->PM mean delta: -73.67pt  (- PM is WORSE)
+
+  AG-PURE               AM   74  51.4%    +84.8pt  +1.15pt
+  AG-PURE               PM   43  39.5%    -78.4pt  -1.82pt
+                      AM->PM mean delta: -163.23pt  (- PM is WORSE)
+
+  AG-TARGET             AM   25  60.0%    +69.1pt  +2.76pt
+  AG-TARGET             PM    9  77.8%    +89.4pt  +9.93pt
+                      AM->PM mean delta: +20.30pt  (+ PM is BETTER)
+
+  BofA-LIS              AM   29  44.8%    -53.4pt  -1.84pt
+  BofA-LIS              PM    3 100.0%    +57.9pt +19.29pt
+                      AM->PM mean delta: +111.27pt  (+ PM is BETTER)
+
+  BOFA-LIS              AM   29  72.4%    +96.4pt  +3.32pt
+  BOFA-LIS              PM   10  50.0%     -6.9pt  -0.69pt
+                      AM->PM mean delta: -103.30pt  (- PM is WORSE)
+
+  BOFA-MESSY            AM    8  37.5%    -38.7pt  -4.84pt
+
+  BOFA-PURE             AM  135  63.0%   +550.0pt  +4.07pt
+  BOFA-PURE             PM  245  62.4%   +801.7pt  +3.27pt
+                      AM->PM mean delta: +251.67pt  (+ PM is BETTER)
+
+  GEX-LIS               AM   43  39.5%    -60.3pt  -1.40pt
+  GEX-LIS               PM   87  48.3%    -12.6pt  -0.14pt
+                      AM->PM mean delta: +47.76pt  (+ PM is BETTER)
+
+  GEX-PURE              AM   41  58.5%    +95.9pt  +2.34pt
+  GEX-PURE              PM   17  52.9%    +31.4pt  +1.85pt
+                      AM->PM mean delta: -64.50pt  (- PM is WORSE)
+
+  GEX-TARGET            AM   11  72.7%    +75.7pt  +6.88pt
+  GEX-TARGET            PM    6   0.0%    -50.0pt  -8.33pt
+                      AM->PM mean delta: -125.70pt  (- PM is WORSE)
+
+  SIDIAL-EXTREME        AM   36  58.3%   +104.0pt  +2.89pt
+  SIDIAL-EXTREME        PM   18  44.4%    +33.9pt  +1.88pt
+                      AM->PM mean delta: -70.10pt  (- PM is WORSE)
+
+  SIDIAL-MESSY          AM   54  63.0%   +219.0pt  +4.06pt
+  SIDIAL-MESSY          PM    3  66.7%    +15.3pt  +5.10pt
+                      AM->PM mean delta: -203.70pt  (- PM is WORSE)
+
+  Undefined             PM    3   0.0%    -30.0pt -10.00pt
+
+  UNDEFINED             PM    4  25.0%    -22.3pt  -5.58pt
+
+
+======================================================================
+Rank paradigms by PM-degradation (longs):
+======================================================================
+  paradigm            AM n   AM mn  PM n   PM mn   delta
+  GEX-TARGET            11  +6.88     6  -8.33 -15.22
+                         4 +10.00     7  +3.37  -6.63
+  BOFA-LIS              29  +3.32    10  -0.69  -4.01
+  AG-PURE               74  +1.15    43  -1.82  -2.97
+  AG-LIS                46  -0.93    45  -2.58  -1.66
+  SIDIAL-EXTREME        36  +2.89    18  +1.88  -1.01
+  BOFA-PURE            135  +4.07   245  +3.27  -0.80
+  GEX-PURE              41  +2.34    17  +1.85  -0.49
+  SIDIAL-MESSY          54  +4.06     3  +5.10  +1.04
+  GEX-LIS               43  -1.40    87  -0.14  +1.26
+  AG-TARGET             25  +2.76     9  +9.93  +7.17
+  BofA-LIS              29  -1.84     3 +19.29 +21.13
+
+
+======================================================================
+OVERALL longs by hour (SC/DD/ES Abs, all paradigms):
+======================================================================
+    hour    n     wr     total    mean
+     9:00   24  62.5%    +27.5pt  +1.15pt
+    10:00  203  54.2%   +336.9pt  +1.66pt
+    11:00  159  62.9%   +510.1pt  +3.21pt
+    12:00  152  53.3%   +233.3pt  +1.54pt
+    13:00  174  56.9%   +468.6pt  +2.69pt
+    14:00  163  50.3%    +62.2pt  +0.38pt
+    15:00  164  54.3%   +185.9pt  +1.13pt
+
+
+======================================================================
+RULE SIMULATIONS (V16-eligible longs only — apply current V16 filter)
+======================================================================
+
+  rule                                           n_kept     total     wr  blocked  block_pnl   delta
+  BASELINE (no new block)                           457  +1907.0pt  67.4%        0      +0.0pt   +0.0pt
+  Block GEX-TARGET longs ALL                        445  +1912.6pt  68.1%       12      -5.6pt   +5.6pt
+  Block GEX-TARGET longs PM (>=13:00 ET)            451  +1957.0pt  68.3%        6     -50.0pt  +50.0pt
+  Block GEX-TARGET longs PM (>=14:00 ET)            453  +1933.0pt  68.0%        4     -26.0pt  +26.0pt
+  Block GEX-TARGET DD longs only                    454  +1943.0pt  67.8%        3     -36.0pt  +36.0pt
+  Block GEX-TARGET DD longs PM only                 454  +1943.0pt  67.8%        3     -36.0pt  +36.0pt
+  Block ALL longs >=13:00                           270  +1138.0pt  68.5%      187    +769.0pt -769.0pt
+  Block GEX-TARGET + GEX-MESSY longs PM             451  +1957.0pt  68.3%        6     -50.0pt  +50.0pt

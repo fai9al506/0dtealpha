@@ -1,0 +1,337 @@
+Volland Discord - 5/18 ES/SPX Weekly & Daily Overviews [IMG:Guild icon] Volland Discord Volland Edge Extractors / ⚛️┃dark-matter-trade / 5/18 ES/SPX Weekly & Daily Overviews
+Dark Matter 17-05-2026 10:24 PM Good evening team. This week I will be on travel vacationing in beautiful Spain. Lovely Madrid and Sevilla.
+With that there will be no trade plans most likely unless I squeeze time in for Monday’s update and Tuesday’s trade plan.
+Unfortunately, I won’t be joining @Wizard of Ops this Monday but he will have a great show and get you off to a great start.
+With that said let’s jump in. [IMG:Image attachment] 10:25 PM What's on the Calendar
+This is a quieter macro week than last week — no inflation or jobs prints. The dominant econ event is FOMC Meeting Minutes (the Fed's record of their last meeting) Wednesday at 2:00 PM ET, with NVIDIA earnings landing the same afternoon after the close around 4:20 PM ET. That double-stack Wednesday is where most of the week's volatility will be concentrated. 10:26 PM [IMG:Image attachment] 10:27 PM ## Earnings [IMG:Image attachment] 10:28 PM Volatility Read
+VIX cash sits at 17.98, with the front-month VIX future at 20.65 — that's a low-to-mid volatility regime, slightly under-priced relative to where realized volatility has been. The key VIX-future levels to watch this week: 21.05 / 21.30 / 21.50 / 22.20 above (any push through those means stress is rebuilding), and 19.87 / 19.53 below (compression continuing). NVIDIA Wednesday after the close is the single most likely event to push the front-month future through either band. 10:31 PM The Structural Picture
+Here's the read in plain English — three structural features dominate this week:
+The cushion 80 points below spot is extremely strong. Four different option-window readings on dealer-vanna (1-week, 2-week, 0-30-day, and all-expirations) all agree that SPX 7,315 is a positive-vanna magnet — each window shows roughly +$97-99M of positive vanna at that strike. When four windows converge like that, the level pulls price back in on a flush. This is the single highest-conviction "buy the dip" level on the chain.
+The real near-spot ceiling sits 20-40 points above spot, not right at it. The SPX 7,420-7,440 band carries the dealer negative-Greek wall: multi-window negative gamma stack (-$15M to -$9M across the strikes) plus multi-window negative vanna stack (-$45M to -$39M). That's the actual rejection edge. SPX 7,400 itself reads as a positive-gamma round-number anchor (+$30M all-exp gamma, +$3.57B 2wk delta cushion) — supportive Greek territory, not a hard cap. The triple-timeframe extremes scanner does flag 7,400-7,405 as a resistance convergence, and that's a worthwhile sentinel signal, but the per-window Greek data says the heavier dealer pushback lives just above at 7,420-7,440.
+The deep magnet below is at SPX 7,200. The all-expirations vanna chart shows a massive negative reading at 7,200 (-$153M, the deepest single negative magnet within the strike range). If the 7,315 cushion fails and 7,300 mechanical floor cracks, this is where price gets pulled.
+The cushion at 7,315 + the acceleration belt at 7,420-7,440 together define a ~105-point corridor with spot sitting inside the positive-Greek envelope around 7,300-7,400. NVIDIA Wednesday is the single event that decides whether the corridor holds or breaks. (edited) 10:33 PM Structural Map
+⏫ EXTENSION UP --------------------------------------------
+SPX 7,600 / ES 7,622 ████████████ Triple-Greek extension cap
+SPX 7,575 / ES 7,597 ██████████ Pre-extension long-dated ceiling
+⏫ UPPER RESISTANCE ----------------------------------------
+SPX 7,505-7,510 / ES 7,527-7,532 ████████ Repellent stack
+SPX 7,456 / ES 7,478 · · · · Last week Value-Area High
+SPX 7,414 / ES 7,436 · · · · Last week Point of Control
+SPX 7,450 / ES 7,472 ██████████ Second-tier dealer wall
+⏫ IMMEDIATE RESISTANCE ------------------------------------
+SPX 7,420-7,440 / ES 7,442-7,462 ████████████ EXTREME belt — primary near-spot ceiling
+🎯 SPOT ----------------------------------------------------
+SPX 7,400-7,405 / ES 7,422-7,427 ▓██▓██ Positive-gamma anchor — supportive
+>>>>>>>>>>>>>>> SPOT SPX 7,397 / ES 7,418 (Friday) <<<<<<<<<<<<<<<<
+SPX 7,379 / ES 7,401 · · · · Last week Value-Area Low
+⏬ FIRST CUSHION -------------------------------------------
+SPX 7,350 / ES 7,372 ▒▒ Transit zone
+SPX 7,315 / ES 7,337 ▓██▓██▓██▓██ THE CUSHION — 4-window vanna stack
+SPX 7,300 / ES 7,322 ▓██▓██▓██ Mechanical delta floor
+⏬ DEEP SUPPORT --------------------------------------------
+SPX 7,265 / ES 7,287 · · · · Two-weeks-ago Value-Area Low
+SPX 7,250 / ES 7,272 ▓██▓██ Magnet support
+SPX 7,200 / ES 7,222 ▓██▓██▓██ Deep all-expirations magnet
+SPX 7,341 / ES 7,363 · · · · Last week's futures low (edited) 10:35 PM How This Week Could Play Out
+Base case (about 45%): Range chop inside the SPX 7,330-7,450 corridor. NVIDIA prints in-line; FOMC Minutes don't surprise. Setup B (buying the 7,315 cushion on a flush) is the primary trade. The positive-gamma anchor at 7,400 absorbs the first push, the 7,420-7,440 acceleration belt rejects the second.
+Bull breakout (about 25%): NVIDIA beat-and-raise + dovish FOMC Minutes. After-hours gap-up, Thursday cash chase pierces 7,450 wall, opens vacuum to the 7,505-7,510 → 7,575 → 7,600 extension chain. Setup A breakout-long arms only after the post-NVIDIA confirmation.
+Bear cushion-test (about 20%): NVIDIA miss or hawkish FOMC Minutes. After-hours gap-down, Thursday cash unwind tests the 7,315 cushion. The cushion is structurally strong enough to absorb a first test — Setup B reload works for end-of-week recovery if 7,315 holds.
+Bear cascade (about 10%): Cushion fails AND VIX future pushes above 21.50. SPX 7,300 mechanical floor breaks on a daily close, opens the deep magnet at SPX 7,200. Setup D tail-hedge only arms in this scenario. (edited) 10:37 PM ## Setups [IMG:Image attachment] [IMG:Image attachment] 10:39 PM [IMG:Image attachment] [IMG:Image attachment] 10:40 PM Watch List
+What to track tape-by-tape:
+At Monday open: Watch the gap relative to Friday close. A tag into SPX 7,420-7,440 on the first 30 minutes is the intraday belt-fade trigger for Setup C. Anything between 7,380-7,405 is range-chop inside the positive-gamma anchor and we wait for the 7,315 cushion test on Tuesday or Wednesday. Tuesday morning (Home Depot earnings): A weak Home Depot print would soften Tuesday's tape; combined with weak retail follow-through Wednesday would set up the cushion test. Wednesday at 2:00 PM ET (FOMC Minutes): Watch the immediate 30-minute SPX reaction. Dovish reading lifts SPX 5-15 points into NVIDIA. Hawkish drops 8-20 points and primes the cushion test pre-NVIDIA. Wednesday at 4:20 PM ET (NVIDIA prints): The single most important moment of the week. Watch the after-hours gap and SMH propagation. Gap up above 4% = Setup A arms for Thursday open. Gap down beyond 4% = Setup B cushion test or Setup D tail-hedge depending on VIX-future reaction. Thursday cash open: The post-NVIDIA reaction window. Most of the weekly directional move tends to be priced in the first 30 minutes. Friday into the close: Weekly expiry. Watch for the 7,400 magnet pulling spot into the cap on benign tape. (edited) 10:41 PM Bottom Line
+Bias is NEUTRAL-LONG with a buy-the-dip preference. Confidence: medium. Per-window Greek convergence reads SPX 7,400 as a positive-gamma anchor inside a cushion-corridor (7,300-7,400), with the actual near-spot resistance sitting 20-40 points above at the SPX 7,420-7,440 acceleration belt. The four-window extreme cushion at SPX 7,315 is the single highest-conviction structural feature on the chain. NVIDIA Wednesday after the close is the dominant single trigger that decides whether the corridor holds. Four setups in the playbook:
+A: Breakout long above 7,450 — only post-NVIDIA beat-and-raise. B: Reload long at 7,315 cushion — the highest-conviction trade of the week. C: Intraday short fade at 7,420-7,440 belt — intraday-only; counter-bias scalp inside the dealer negative-Greek wall. D: Cushion-failure short below 7,300 — tail-hedge only if VIX future pushes above 21.50. (edited)
+Dark Matter ## Setups Dark Matter 18-05-2026 12:28 AM I made a couple of small changes.
+7400 SPX - positive gamma anchor - not as much resistance 7420-7440 - negative vanna & gamma - will need vol event to occur and compress to get through this zone - potentially NVDA ER - otherwise this zone is tougher to get through than 7400 SPX
+This did make changes to the information above - which I have edited each section - and attached updated trade plans. [IMG:Image attachment] [IMG:Image attachment] 12:29 AM [IMG:Image attachment] [IMG:Image attachment] 12:31 AM ## Key Levels (edited)
+Dark Matter changed the channel name: 5/18 ES/SPX Weekly & Daily Overviews 18-05-2026 12:58 AM
+Dark Matter 18-05-2026 2:22 PM [IMG:Image attachment]
+Dark Matter 19-05-2026 10:59 AM 5/19 ES/SPX Update
+What's on the Calendar
+Today (Tuesday 5/19) is positioning into a heavy mid-week. The two prints that matter before the cash open:
+Home Depot earnings before the open (Dow-30 retail tape signal — first read on consumer + housing demand for the week). Vertiv earnings before the open (AI-infra read; preview tape for tomorrow's NVIDIA print).
+The morning macro print is Housing Starts and Building Permits at 8:30 AM ET — paired thematically with HD. Fed-speakers Bostic and Barkin at 10:00 AM ET round out the morning.
+The week's dominant binary lands tomorrow: Fed meeting minutes Wednesday at 2:00 PM ET, followed by NVIDIA earnings after the close. Today's job is to read the tape without burning capital into Wednesday's catalyst window — size down, scalp the levels, hold powder for Thursday's gap reaction.
+Iran headlines re-emerged Monday but did not escalate overnight. Brent and WTI crude were flat-to-firm — no risk-off through the energy proxy. Watch overnight crude into Tuesday's open as the cleanest read on whether the headline overhang is heating up or staying compressed. 11:00 AM What Changed Since Last Plan
+The Sunday weekly plan called a cushion-corridor SPX 7,300-7,400 / ES 7,322-7,422 with a ceiling stack at 7,420-7,450 / 7,442-7,472 and a multi-level wall at 7,450 / 7,472. Monday's session played the cushion-corridor thesis cleanly:
+ES held 7,373 / SPX 7,351 twice as the overnight floor (right at the upper edge of the "deep cushion" zone the Sunday plan flagged). ES rallied to 7,454 / SPX 7,432 pre-cash-open — rejected exactly at the ceiling stack the Sunday plan identified. Cash session sold all day from the 7,454 high back to the 7,373 floor around 2:00 PM ET. Recovered into the close — settled ES 7,420 / SPX 7,398.
+All four of last week's weekly map levels held the test. Specifically:
+5/11 Weekly VAH at SPX 7,456 / ES 7,478 — rejected Monday's pre-cash-open high cleanly. 5/11 Weekly POC at SPX 7,414 / ES 7,436 — sitting right at current spot, acting as a magnet. 5/11 Weekly VAL at SPX 7,379 / ES 7,401 — tested overnight (ES 7,391 low ≈ SPX 7,369 just below VAL; quickly reclaimed). Prior Week Low at SPX 7,341 / ES 7,363 — untested; clean downside reference.
+No weekly rebuild needed. The map you've been trading off carries forward.
+The single new feature today versus the Sunday plan: the dealer-positioning math for one-week-out options has sharpened more negative above current spot (the "magnet on rallies" energy strengthened versus Sunday's read), and a very large 0DTE pin-magnet has formed at SPX 7,425 / ES 7,447 for today's same-day expiration. That 7,425 pin is the single largest 0DTE pin-strike on the entire chain — by a wide margin. Today's cash session is going to gravitate to that strike, then react to the dealer wall stacked above it. 11:01 AM Dealer Flow Momentum
+The big dealer-positioning picture rolled more negative below spot and more compressed-negative above spot since Sunday's snapshot. Both moves are directionally consistent with a market that traded down inside the corridor on Monday and is positioning for the NVIDIA Wednesday binary. The dominant Greek of the week is vanna (the dealer hedging response to changes in implied volatility) — daily vanna hedging is at minus $8.14T, orders of magnitude larger than gamma's plus $482M. Translation: when vol moves on Wednesday, the dealer book swings will dominate price action. Gamma (the dealer hedging response to price moves) is modestly supportive at plus $482M — enough to lean into the cushion-corridor on dips but not enough to drive a trend. Charm (option time-decay hedging, the force behind the daily pin) jumped from plus $10M Friday to plus $219M today — that's why the 7,425 pin is so strong. [IMG:Image attachment] 11:02 AM The Big Picture for Tuesday
+Spot SPX 7,411.58 / ES 7,403 sits right inside the upper end of the 7,300-7,400 SPX / 7,322-7,422 ES cushion-corridor, just below today's dominant pin-magnet at SPX 7,425 / ES 7,447. Three structural features dominate the read:
+1. Today's 0DTE pin-magnet at SPX 7,425 / ES 7,447 is the strongest single same-day expiration force on the entire chain. From cash open to 4:00 PM ET, the option-decay hedging mechanic typically pulls price toward the largest positive-charm strike. Expect the tape to gravitate there.
+2. The dealer-wall ceiling at SPX 7,420-7,450 / ES 7,442-7,472 stays the primary near-spot resistance — REINFORCED today. The dealer positioning math: one-week-out vanna is -$166M above spot (versus closer to balanced on Sunday). Net read: spot magnetizes to 7,425, then rejects from the wall sitting behind it. The interaction is the trade.
+3. The cushion-corridor SPX 7,300-7,400 / ES 7,322-7,422 stays intact and arguably reinforced below spot. The 7,300 floor is the strongest single mechanical bid on the chain (two-week vanna +$90M, one-week delta +$2.34B). The 7,350 zone you identified as Monday's savior holds genuine vanna and delta backing — that's why it held. The "7,350 was Monday's savior" call is confirmed by per-strike positioning data.
+Above the corridor: the 7,450 / 7,472 wall → the 7,500-7,510 / 7,522-7,532 repellent stack → the long-dated 7,575-7,600 / 7,597-7,622 extension cap (only relevant on a clean NVIDIA-beat Wednesday break of 7,450).
+Below the corridor: the 7,379 / 7,401 weekly VAL → the 7,350 / 7,372 cushion (Monday's "savior") → the 7,300 / 7,322 mechanical floor → the 7,265 / 7,287 prior weekly VAL → the 7,200 / 7,222 deep tail target (only on a cushion-failure cascade). 11:03 AM ## Key Levels [IMG:Image attachment] 11:03 AM Structural Ladder
+⏫ UPSIDE LEG 3 ----------------------------------------------
+SPX 7,600 / ES 7,622 ████████████ Extension cap · long-dated triple-Greek
+SPX 7,575 / ES 7,597 ██████████ Pre-extension · long-dated vanna positive
+⏫ UPSIDE LEG 2 ----------------------------------------------
+SPX 7,505-7,510 / ES 7,527-7,532 ████████ Repellent stack · two-week vanna negative
+SPX 7,456 / ES 7,478 · · · · Last week's value-area high
+SPX 7,450 / ES 7,472 ██████████ Multi-Greek wall · gamma negative cluster
+⏫ UPSIDE LEG 1 ----------------------------------------------
+SPX 7,450 / ES 7,472 ██████████ Multi-Greek wall · dealer ceiling
+🎯 CURRENT LEG ─────────────────────────────────────────
+SPX 7,425-7,440 / ES 7,447-7,462 ████████████ 0DTE pin + acceleration belt
+SPX 7,415 / ES 7,437 ████ 0DTE secondary pin · today only
+>>>>>>>>>>>>>>> SPOT SPX 7,411.58 / ES 7,403 <<<<<<<<<<<<<<<<
+SPX 7,400-7,405 / ES 7,422-7,427 ██████████ Round-number anchor · gamma + delta + charm positive
+SPX 7,390 / ES 7,412 ████ 0DTE pin · today only
+SPX 7,379 / ES 7,401 · · · · Last week's value-area low
+⏬ DOWNSIDE LEG 2 ---------------------------------------------
+SPX 7,350 / ES 7,372 ▓████████ Vanna cushion · Monday's "savior" zone
+SPX 7,341 / ES 7,363 · · · · Prior week's low
+SPX 7,315-7,340 / ES 7,337-7,362 ▓▓▓▓▓▓▓▓▓▓ Triple-Greek cushion zone
+SPX 7,300 / ES 7,322 ▓▓▓▓▓▓▓▓▓▓▓▓ Mechanical floor · largest dealer bid
+⏬ DOWNSIDE LEG 3 ---------------------------------------------
+SPX 7,265 / ES 7,287 · · · · Prior week's value-area low
+SPX 7,250 / ES 7,272 ▓██████ Multi-Greek magnet support
+SPX 7,200 / ES 7,222 ▓▓██████ Deep magnet · all-expirations vanna negative
+SPX 7,150 / ES 7,172 ▓▓▓████ Long-dated cushion · all-expirations vanna deep negative 11:04 AM ## Setups [IMG:Image attachment] [IMG:Image attachment] 11:05 AM [IMG:Image attachment] [IMG:Image attachment] 11:05 AM What to Watch on the Tape 8:30 AM ET — HD earnings reaction. Pre-cash-open gap reaction telegraphs Dow-30 retail tape tone. A HD beat that gaps SPX above 7,425 pre-cash invalidates Setup B's first-tier entry; a HD miss that gaps below 7,390 invalidates Setup A. 8:30 AM ET — Housing Starts + Building Permits. Pairs thematically with HD. Surprise prints (greater than 2 standard deviations off the consensus) can move the housing-related complex. 10:00 AM ET — Pending Home Sales. Low-impact print; ignore unless surprise. 10:00 AM ET — Fed-speakers Bostic + Barkin. Watch the tape for FOMC-Minutes-preview commentary. All session — Brent and WTI crude. Iran headline proxy. A $3+ Brent gap overnight or intraday is the cleanest read on whether headline overhang is heating. All session — VIX-futures front-month vs 20.40-20.90 floor. Above 21.05 = early vol-expansion signal; above 21.50 = regime-flip warning. 3:30 PM ET — last-hour pin behavior. If spot is sitting at 7,425 with low vol going into the close, the pin held; if vol expands into the close, the pin broke and Wednesday opens with a re-priced gamma map. 11:06 AM Term Structure
+Term Structure — holds through this week into Wednesday's NVIDIA expiration; defends 7,300 next-week; carries deep below spot through monthly cycle:
+One-week (5/19-5/22): compressed and bearish-leaning above spot — vanna negative-net above. Holds through this week into NVIDIA's Wednesday after-close expiration window.
+Two-week (5/19-5/29): positive vanna cushion building below — defends the 7,300 floor through next-week.
+Long-dated all-expirations: vanna structure carries deep below spot through monthly cycle. Big long-dated dealer book carrying negative vanna below current price. 11:06 AM ## Level Changes [IMG:Image attachment] 11:06 AM Bias Short-term (intraday today): NEUTRAL with downside-lean bias. One-week vanna above-spot reading is the meaningful negative signal. Medium-term (this week): RANGE-bound 7,300-7,450 with binary inflection at Wednesday FOMC Minutes plus NVIDIA after-close. Long-term (next week and beyond): Pending NVIDIA Wednesday outcome; bullish path opens above 7,450; bearish path opens below 7,300. 11:06 AM Session Summary
+UPDATE summary for 5/19 ES/SPX:
+Spot sits in the upper end of the cushion-corridor at SPX 7,411 / ES 7,403. 7,425 SPX charm pin is today's gravity center. One-week vanna above spot has rolled more negative (reinforces the ceiling). All four of last week's weekly map levels are intact. Cushion-corridor below is intact. Wednesday FOMC Minutes plus NVIDIA after-close is the week's dominant binary; today is positioning. Four setups (A through D) live with intraday-only horizons.
+Paradigm Vanna and gamma acceleration ceiling at SPX 7,420-7,450 / ES 7,442-7,472. Charm-pin magnet at SPX 7,425 / ES 7,447 for today's 0DTE expiration. Anchored against the still-intact cushion-corridor SPX 7,300-7,400 / ES 7,322-7,422. 7,425 is the single largest 0DTE pin-strike on the entire chain.
+Directional Bias & Trade-Style Callout
+Directional Bias: NEUTRAL today with a short-term downside lean. One-week vanna above current spot has rolled materially more negative since Sunday, reinforcing the 7,425-7,450 ceiling. Below-spot cushion-corridor intact.
+Trade-Style Callout: Tuesday's optimal style is scalping the corridor edges. Setup A (long into the 7,425 pin) and Setup B (short from the 7,425-7,450 wall) are mirror-image plays that pair well. Setup C (VAL reclaim) and Setup D (floor bounce) are conditional/tail trades. Avoid overnight holds — Wednesday's FOMC Minutes plus NVIDIA after-close is a binary catalyst window. Keep size modest into the catalyst.
+Dark Matter 19-05-2026 3:35 PM # 5/19 Intraday Update on ES/SPX 3:35 PM What Changed Since Last Plan
+The 5/19 1:45 AM UPDATE called the 7,425-7,450 acceleration belt as the primary ceiling and the 7,300-7,400 cushion-corridor as the floor. Both proved out — but the action since 1:45 AM has WORKED through both edges and is now testing the lower boundary live:
+ES rallied to 7,433 in the overnight session — rejected exactly at the 5/11 Weekly POC (ES 7,436). Then sold off through pre-cash to a fresh ES 7,384 low — broke the prior 7,391 low AND broke below the 5/11 Weekly VAL (ES 7,401.75) for the first time this week. Currently ES 7,395 — sitting at/just below VAL with the 7,350 SPX cushion zone now in play.
+The single biggest delta in the dealer-positioning data: the cushion below current spot is BUILDING REAL-TIME. One-week vanna below spot has FLIPPED from negative cushion-repellent (-$58M) to positive cushion-build (+$48M); two-week below has nearly DOUBLED from +$133M to +$228M. The dealer mechanical-bid layer is actively rebuilding underneath the price action. At the same time, the negative gamma has CONCENTRATED at the SPX 7,350 strike — that single strike now has the largest one-week gamma reading on the chain (minus-$20.9M), making 7,350 the bidirectional decision strike for the cash session.
+Setup status delta from 1:45 AM: Setup A — Pin-magnet long into 7,425: RETIRED. Pin worked through, now above spot. Setup B — Wall-rejection short at 7,425-7,440: TRIGGERED and T1 already hit. Anyone who entered the short into the failed rally has banked the move to VAL. Setup C — Weekly VAL reclaim long: NOW LIVE. Trigger zone is active — awaiting a 15-min reclaim candle above SPX 7,380. Setup D — Cushion-floor 7,300 bounce: HELD MONITORING. Armed only if 7,350 fails. 3:38 PM Dealer Flow Momentum
+The big picture has shifted from "ceiling-rejection pending" to "ceiling-rejection CONFIRMED, cushion-test ACTIVE." Vanna remains the dominant Greek of the week, with daily hedging still in the multi-trillion-short range. The new story is the structural cushion that's building in real-time below the price: one-week vanna below spot flipped to positive at +$48M (a +$106M swing from negative repellent to positive cushion), and two-week below strengthened to +$228M. Translation: dealers are actively buying support below the cash open. Meanwhile the upper resistance has migrated higher — the primary ceiling strike walked from 7,425 to 7,450 as price worked through 7,425 (which eroded from -$43M to -$31M). 3:38 PM The Big Picture for Tuesday
+Spot SPX 7,380 / ES 7,395 has fallen INTO the cushion-corridor and is sitting AT/just below the 5/11 Weekly VAL. Four structural features dominate:
+1. The 5/11 Weekly POC at SPX 7,414 / ES 7,436 is the confirmed live ceiling. The overnight rally rejected mechanically right there. Vanna ceiling held and migrated up to SPX 7,450 / ES 7,472 — the new primary upper magnet only relevant on a clean VAL reclaim recovery.
+2. The 5/11 Weekly VAL at SPX 7,380 / ES 7,402 is the broken pivot. First close below this week. Historically (per the retro library), single-statistical levels like VAL/VAH/POC alone tend to break the same session they're tested — exactly what's happening now. The Setup C reclaim is the LIVE trigger.
+3. SPX 7,350 / ES 7,372 is the bidirectional acceleration zone — and the live decision strike for the cash session. One-week gamma is concentrated here at minus-$20.9M (largest single 1wk strike on the chain). Break below = cascade extension to 7,325 then 7,300; hold above = cushion-defense long is active.
+4. SPX 7,300 / ES 7,322 is the highest-conviction long anchor on the chain. Triple-confluence: largest single 1wk vanna strike (+$46.8M), largest single 2wk vanna strike (+$92.2M), plus monthly +$258M long-dated cushion. This is the strongest single dealer mechanical bid on the board.
+Above the cushion-corridor: 7,414 confirmed ceiling → 7,425 weakening ceiling → 7,450 migrated 1wk ceiling → 7,500-7,510 repellent stack → 7,575-7,600 long-dated extension cap.
+Below the cushion-corridor: 7,380 broken VAL → 7,350 acceleration zone → 7,325 secondary cushion → 7,300 primary cushion → 7,265 prior weekly VAL → 7,220-7,200 deep tail target. 3:39 PM Structural Ladder
+⏫ UPSIDE LEG 3 ----------------------------------------------
+SPX 7,600 / ES 7,622 ████████████ Extension cap · long-dated vanna
+SPX 7,575 / ES 7,597 ██████████ Pre-extension · long-dated vanna positive
+⏫ UPSIDE LEG 2 ----------------------------------------------
+SPX 7,450 / ES 7,472 ████████ Migrated 1wk ceiling · vanna negative
+SPX 7,425 / ES 7,447 ████ Weakening ceiling · vanna eroded
+⏫ UPSIDE LEG 1 ----------------------------------------------
+SPX 7,414 / ES 7,436 ██████████ Confirmed live ceiling · 5/11 POC rejected today
+🎯 CURRENT LEG ───────────────────────────────────────
+>>>>>>>>>>>>>>> SPOT SPX 7,380.47 / ES 7,395 <<<<<<<<<<<<<<<<
+SPX 7,380 / ES 7,402 · · · · 5/11 Weekly VAL · broken pivot
+⏬ DOWNSIDE LEG 1 ---------------------------------------------
+SPX 7,350 / ES 7,372 ▓▓██████████ Bidirectional acceleration · largest 1wk gamma
+SPX 7,325 / ES 7,347 ▓▓██████ Secondary cushion · vanna positive
+⏬ DOWNSIDE LEG 2 ---------------------------------------------
+SPX 7,300 / ES 7,322 ▓▓▓▓▓▓▓▓▓▓▓▓ Primary cushion · triple-confluence highest-conviction
+SPX 7,220 / ES 7,242 ▓▓████ Lower extension · vanna cluster negative
+⏬ DOWNSIDE LEG 3 ---------------------------------------------
+SPX 7,200 / ES 7,222 ▓▓██████ Deep magnet · all-expirations vanna deep negative 3:41 PM ## Setups [IMG:Image attachment] [IMG:Image attachment] [IMG:Image attachment] 3:41 PM Watch List VAL reclaim trigger window — first 15-30 min of cash session is the critical Setup C decision window. 7,350 cushion test — if reached, watch for bounce candle vs break-and-hold below. VRT earnings reaction — AI-power read-through into NVIDIA complex. Volatility-index front-month above 21.05 — early vol-expansion signal. Brent and WTI crude all session — Iran headline proxy; flat overnight is confirming no escalation. 3:41 PM Paradigm Delta
+Versus the previous plan:
+Paradigm has SHIFTED from "ceiling-rejection-pending + cushion-test-eligible" to "ceiling-rejection-CONFIRMED + cushion-test ACTIVE." The 7,425 SPX charm-pin thesis is retired — pin worked through. The 5/11 POC at SPX 7,414 is now the confirmed live ceiling — rejected the overnight rally. The 5/11 Weekly VAL at SPX 7,380 is the broken pivot — first close below this week. The 7,350 SPX strike has flipped from "vanna cushion (Monday's savior)" to "bidirectional acceleration zone" with the largest single 1wk gamma on the chain at minus-$20.9M. Vanna cushion below is BUILDING — 1wk flipped from -$58M to +$48M; 2wk strengthened from +$133M to +$228M.
+Vol Regime Context VIX cash 17.94 — mild +0.21 expansion from the prior overnight read, still inside the low-to-mid range band. Vol regime envelope holds: cushion-defense longs are favored at the 7,350-7,300 zone; ceiling-rejection shorts are favored at 7,414+ retouches. No regime-flip threat at this reading — Setups C and D remain valid. Watch for VIX-futures front-month above 21.50 (regime-flip threshold). (edited) 3:42 PM [IMG:Image attachment] 3:42 PM Term Structure
+Term Structure — holds through this week into Wednesday's NVIDIA expiration; defends 7,300 through next-week; carries deep below spot through monthly cycle:
+One-week (5/19-5/22): below-spot vanna FLIPPED to positive +$48M. Above-spot still negative -$146M. Compressed but cushion-supportive into Friday expiration.
+Two-week (5/19-5/29): below-spot vanna STRENGTHENED to +$228M. Strong structural cushion build over next-week window.
+Monthly and longer-dated all-expirations: vanna structure carries deep negative below spot through monthly cycle. Long-dated dealer book carrying negative vanna below current price. 3:43 PM Level Stack Asymmetry Above spot: three resistive levels (7,414 confirmed live ceiling weighting 3, 7,425 weakening weighting 1, 7,450 migrated weighting 2). Below spot: four supportive levels weighted heavily by the 7,300 primary cushion (weighting 4). Weighted ratio 9:7 inside the NEUTRAL band with slight support tilt. Verdict: NEUTRAL — both long-side and short-side setups valid; long-side has slight Greek-weighting edge from strengthening cushion.
+Revised Bias Short-term (intraday today): NEUTRAL with cushion-defense bias. The 7,350 SPX is the live decision strike. Medium-term (this week): RANGE-bound between 7,300 cushion and 7,450 migrated ceiling with binary inflection at Wednesday FOMC Minutes plus NVIDIA after-close. Long-term (next week and beyond): Pending NVIDIA outcome; bull path = post-NVIDIA reclaim above 7,414/7,450; bear path = cushion-fail through 7,300 to 7,220 extension. 3:46 PM Session Summary Spot SPX 7,380.47 / ES 7,395 — broken below 5/11 Weekly VAL (first close below this week). Paradigm has SHIFTED from ceiling-rejection-pending to ceiling-rejection-CONFIRMED + cushion-test ACTIVE. 5/11 POC at SPX 7,414 / ES 7,436 is the confirmed live ceiling after the overnight rally to ES 7,433 was rejected. 7,350 SPX has CONCENTRATED negative gamma (largest 1wk strike on the chain) = the bidirectional decision strike for the cash session. Cushion building real-time below spot: 1wk vanna FLIPPED positive; 2wk strengthened. Setup B TRIGGERED + T1 banked. Setup C LIVE (VAL reclaim awaiting trigger). Setup D MONITORING (7,300 floor, armed if 7,350 fails). Setup A RETIRED. Wednesday FOMC Minutes plus NVIDIA after-close remains the dominant week binary. 3:46 PM Paradigm Ceiling-rejection-confirmed regime entering cushion-test phase. SPX 7,414 / ES 7,436 = confirmed live ceiling (5/11 POC rejected today). SPX 7,380 / ES 7,402 = broken pivot (5/11 Weekly VAL first close below this week). SPX 7,350 / ES 7,372 = bidirectional acceleration zone (largest 1wk gamma on chain at minus-$20.9M). SPX 7,300 / ES 7,322 = highest-conviction long anchor (triple-confluence largest 1wk + 2wk + monthly vanna). 3:47 PM Directional Bias & Trade-Style Callout
+Directional Bias: NEUTRAL today with a cushion-defense tilt below spot. The 7,350 SPX strike is the live decision strike — break below = cascade extension; hold above = cushion-defense long. Cushion is building real-time (1wk vanna flipped positive, 2wk strengthened).
+Trade-Style Callout: Tuesday's optimal style is SCALPING the corridor edges — Setup C (VAL reclaim long) and Setup D (cushion-floor bounce) on the long side, Setup B re-fire only on a clean 7,414 retouch with rejection. Setup A is RETIRED — do NOT re-enter the 7,425 pin long thesis. Setup B (short) is TRIGGERED — runners only; no new entries unless 7,414 re-rejects from below. Keep size half — sizing modifier active. Avoid overnight holds into Wednesday's FOMC Minutes plus NVIDIA after-close binary.
+Dark Matter 20-05-2026 2:59 PM 5/20 ES/SPX Update
+What's on the Calendar
+Today is THE day of the week — double-event catalyst window: Wed 2:00 PM ET — FOMC Meeting Minutes. Primary macro print of the week. Wed approximately 4:20 PM ET — NVIDIA earnings after the close. Critical single-name binary; dominant week event. Before the open: TGT, LOW, ADI earnings (retail trio + AI-semis pre-NVIDIA tell). Thu 9:45 AM Flash PMIs = first post-binary growth read.
+Today's job: position into FOMC by 1:55 PM ET, hedge or flat through both events, hold powder for Thursday's gap reaction.
+Iran headlines stayed compressed overnight. The structural rally suggests no new escalation is priced. (edited) 3:00 PM What Changed Since Last Plan
+Yesterday's end-of-day UPDATE called for a regime-shift-in-progress with the cushion-test extended and the 7,350 SPX strike acting as a bidirectional decision strike between vanna magnet (plus-$92M) and gamma acceleration (minus-$408M). Today's pre-cash data shows the structure has FLIPPED back to rally-supportive overnight while the price action has been consistent with the structure:
+ES rallied through the overnight ETH session from yesterday's close ES 7,377 up to a high of ES 7,412, settling at ES 7,406. The 5/11 Weekly VAL at SPX 7,380 / ES 7,402 was reclaimed from below overnight — bullish reclaim event. The ES 7,354 floor was tested AGAIN overnight to ES 7,356 — held for the third time this week on the 4-hour chart (Monday + Tuesday intraday + Wednesday overnight = triple-test confirmation).
+The single biggest structural delta: gamma has FLIPPED BACK POSITIVE across every expiration window overnight. Yesterday's end-of-day read showed one-week gamma below at minus-$667M with vanna cushion building below — a vol-expansion mechanic on top of a strengthening cushion. Today's pre-cash read: one-week gamma below is at PLUS-$144M (a +$811M swing on a single window in 14 hours), all-expirations gamma flipped from negative to positive plus-$574M below. At the same time, vanna polarity has INVERTED — yesterday's positive-vanna-below cushion has flipped to negative (repellent off floor), and the negative-vanna-above ceiling has flipped to positive (magnet up). Translation: dealers have re-positioned aggressively pre-binary, and the structure now magnets price UP toward the 5/11 POC at SPX 7,414. 3:01 PM Weekly Levels Trajectory
+This section tracks every level we put on the chart in the 5/17 Sunday weekly plan, how it has performed through Monday + Tuesday + Wednesday pre-cash, and whether the view on that level has changed.
+Viewpoint changes to flag:
+1. The ES 7,354 floor (= SPX 7,332 at +22 basis) has been PROMOTED from a "Prior Week Low" reference level to a high-conviction triple-test structural anchor . Three holds on the 4-hour chart across Monday + Tuesday + Wednesday is the strongest single structural confirmation in the current cycle.
+2. The 5/11 Weekly POC at SPX 7,414 has FLIPPED roles. Tuesday it was the confirmed live ceiling — rejected three times. Today the dealer positioning has flipped it to the bullish magnet target — vanna and gamma both peak positive at this strike post-inversion. A clean break and hold above 7,414 unlocks the rally toward 7,450 → 7,475 → 7,500.
+3. The 5/11 Weekly VAL at SPX 7,380 has been "lost and reclaimed" — same level that failed Tuesday EOD has been reclaimed from below overnight Wednesday. Per the retro library, this two-step "break then reclaim" pattern historically continues 60-70% of the time in the bullish direction.
+4. No weekly-level views have been wiped out. Every level from the Sunday weekly plan remains in its structural role — only the dealer mechanic around them has evolved. The container at SPX 7,300-7,500 is intact; the triple-test floor confirms the lower bound; today's double-binary decides whether the upper bound (7,500) becomes the next test.
+5. The 7,500-7,575 upper extension and 7,200 deep magnet remain passive (untested all week). They are reserved for post-NVDA scenarios — beat unlocks the upper extension, miss activates the deep magnet. (edited) [IMG:Image attachment] 3:02 PM Dealer Flow Momentum
+Dealer-flow underwent a regime-class RESTORATION overnight. Yesterday's end-of-day read showed gamma deeply negative across all windows (one-week below at minus-$667M — the vol-expansion mechanic). Wednesday pre-cash: gamma is POSITIVE across every window with one-week below at PLUS-$144M (a +$811M swing on a single window overnight). At the same time, vanna polarity has INVERTED — positive ABOVE (rally-magnet) and negative BELOW (floor-repellent). The dealer book has re-positioned aggressively pre-FOMC and pre-NVIDIA, and the structure now favors absorption-into-binary rather than cascade. The single largest one-week vanna strike re-clustered from 7,350 yesterday up to 7,415 today (at the 5/11 POC) at plus-$47M — the magnet target moved from below to above. [IMG:Image attachment] 3:02 PM The Big Picture for Wednesday
+Spot SPX 7,383.28 / ES 7,406 sits ABOVE the reclaimed 5/11 Weekly VAL with the structure magneting toward the 5/11 POC at SPX 7,414. Four features dominate Wednesday pre-cash:
+1. The triple-test floor at ES 7,354 / SPX 7,332 is now the strongest single structural confirmation in the current cycle. Three holds within 2 points of identical level on the 4-hour chart across Monday + Tuesday + Wednesday.
+2. The 5/11 Weekly VAL reclaim from below was EXECUTED overnight. Spot is now above the VAL — the previously-broken pivot has been reclaimed.
+3. Gamma regime FLIPPED BACK POSITIVE across all windows. The dip-buying mechanic is restored; the vol-expansion mechanic from Tuesday EOD has been resolved.
+4. Vanna polarity INVERTED to rally-supportive. Vanna positive above magnets price UP; vanna negative below repels off the floor. Largest 1wk vanna strike re-clustered up to SPX 7,415 — the magnet target is now the former ceiling.
+Above the spot: 7,395 secondary → 7,414 magnet target → 7,450 → 7,475 → 7,500-7,575 extension.
+Below the spot: 7,380 reclaimed VAL → 7,372-7,350 gamma support cluster → 7,341 PWL → 7,332 triple-test floor → 7,300 primary cushion → 7,200 deep magnet. 3:03 PM ## Key Levels [IMG:Image attachment] 3:03 PM Structural Ladder
+⏫ UPSIDE LEG 3 ----------------------------------------------
+SPX 7,600 / ES 7,622 ████████████ Extension cap
+SPX 7,575 / ES 7,597 ██████████ Pre-extension
+⏫ UPSIDE LEG 2 ----------------------------------------------
+SPX 7,500 / ES 7,522 ████████ Upper ceiling
+SPX 7,475 / ES 7,497 ██████ Rally-extension magnet
+SPX 7,450 / ES 7,472 ████ Residual migrated ceiling
+⏫ UPSIDE LEG 1 ----------------------------------------------
+SPX 7,414 / ES 7,436 ████████████████ MAGNET TARGET · 5/11 POC + vanna+gamma positive largest
+🎯 CURRENT LEG ───────────────────────────────────────────
+>>>>>>>>>>>>>>> SPOT SPX 7,383.28 / ES 7,406 <<<<<<<<<<<<<<<<
+SPX 7,380 / ES 7,402 · · · · 5/11 VAL · reclaimed overnight
+SPX 7,372 / ES 7,394 ▓▓██ Near-spot gamma support
+SPX 7,360 / ES 7,382 ▓▓██ Gamma support cluster
+SPX 7,350 / ES 7,372 ▓▓██████ Vanna + gamma support zone
+⏬ DOWNSIDE LEG 1 ---------------------------------------------
+SPX 7,341 / ES 7,363 · · · · Prior Week Low
+SPX 7,332 / ES 7,354 · · · · TRIPLE-TEST FLOOR
+⏬ DOWNSIDE LEG 2 ---------------------------------------------
+SPX 7,300 / ES 7,322 ▓▓▓▓▓▓▓▓▓▓▓▓ Primary cushion · gamma plus-$574M
+SPX 7,250 / ES 7,272 ▓▓██████ Secondary support 3:05 PM ## Setups [IMG:Image attachment] 3:05 PM Paradigm Delta
+vs Tuesday EOD UPDATE:
+Paradigm FLIPPED from "regime-shift in progress + cushion-test extended" to "polarity-inverted rally-supportive structure post-triple-test-floor-hold." Gamma regime fully RESTORED to positive across all windows (the dip-buy mechanic is back). Vanna polarity INVERTED to rally-supportive (positive above magnets up; negative below repels off floor). Triple-test floor at ES 7,354 = SPX 7,332 confirmed as high-conviction structural anchor. 5/11 VAL reclaimed from below = first-instance bullish reclaim. Setup G replaces Setup C/E as the primary long; Setup F is new counter-bias scout.
+Vol Regime Context VIX approximately 18.5 stable from yesterday; pre-FOMC compression typical. Gamma regime fully restored to positive (every window) — vol-expansion mechanic resolved. Vanna polarity inverted to rally-supportive. Pre-NVIDIA absorption case CONFIRMED by overnight re-positioning (mirrors historical precedent). Bias: rally-continuation into FOMC if dovish + NVIDIA beat; cushion-retest if either prints hawkish/miss. 3:06 PM Term Structure
+Term Structure — holds through this week into NVIDIA earnings; defends 7,300 next-week; carries deep negative below spot through monthly cycle:
+One-week (5/19-5/22): vanna FLIPPED to positive above (+$77M) / negative below (-$211M) = rally-supportive polarity; gamma POSITIVE all windows = dip-buy mechanic restored.
+Two-week (5/19-5/29): mirror inversion (+$63M above / -$31M below); cushion-build replaced by ceiling-build.
+Monthly (6/18): vanna above +$249M positive (long-dated ceiling magnet); below -$4.8B (long-dated cushion intact).
+Quarterly (6/30): vanna below +$398M positive cushion through month-end.
+All-expirations: above -$490M; below -$7.87B. 3:07 PM Revised Bias Short-term (intraday today): NEUTRAL with upside tilt into FOMC; absorption setup pre-NVIDIA. Medium-term (today through Friday): RANGE-bound 7,332-7,475 with binary inflection at FOMC + NVIDIA AC. Long-term (next week and beyond): Bull path = NVIDIA-beat post-AC reclaim above 7,414. Bear path = NVIDIA-miss break of triple-test floor.
+Dark Matter 21-05-2026 6:45 AM 5/21 ES/SPX Update
+What's on the Calendar
+Thursday 5/21 is a second-tier data day after a heavy Wednesday. On deck: weekly jobless claims and the Philadelphia Fed manufacturing index at 8:30 AM ET, the flash composite PMI at 8:45 AM, Richmond Fed President Barkin speaking at 11:20 AM, and a 10-year TIPS auction at noon. None is a single high-impact trigger. The big binary event — NVIDIA earnings — is already behind us, and it landed without knocking the market over.
+What Changed Since Last Plan
+Yesterday's read looked for a rally-supportive grind toward SPX 7,414 / ES 7,434, and that is exactly what played out — then the tape consolidated into a tighter pin.
+ES rallied off its 7,356 overnight low to tag 7,458, stalling right at the SPX 7,450 / ES 7,470 ceiling, then closed 7,433 and has held a tight 7,407–7,437 band overnight. Dealer positioning at the center of the range deepened, turning SPX 7,400–7,420 / ES 7,420–7,440 into a stronger stabilizing pin. A same-day decay magnet has formed at SPX 7,420 / ES 7,440 — the strongest pull on the Thursday expiry chain. 6:46 AM Paradigm Delta
+Yesterday's structure was a rally-supportive lean toward the SPX 7,414 / ES 7,434 zone.
+Today it is a tighter pin centered on SPX 7,400–7,420 / ES 7,420–7,440, sharpened by the same-day expiry.
+Same constructive backdrop, later stage: the lean has matured into a mean-reversion pin rather than a directional drift.
+The takeaway for trading: work the edges of the range back to the middle instead of expecting a one-way move.
+Paradigm
+The tape is in a pinning regime. Dealers are positioned long gamma — the part of their hedging that gets more aggressive as price moves — through the SPX 7,400–7,420 / ES 7,420–7,440 band, and that positioning is stabilizing, not amplifying.
+When price drifts up, dealers lean against it; when it drifts down, they support it. The practical read is mean-reversion: rips toward the ceiling get faded and dips toward the cushion get bought.
+Because this is a same-day-expiry Thursday, the pin sharpens into the close, with the strongest decay magnet at SPX 7,420 / ES 7,440 pulling price toward that level.
+The ceiling is a two-step gate — SPX 7,450 / ES 7,470 is where hedging turns repellent, and SPX 7,500 / ES 7,520 is the hard wall — while the cushion below is well-defined at SPX 7,300 / ES 7,320 with a secondary shelf at SPX 7,250 / ES 7,270. (edited) 6:47 AM Vol Regime Context
+Volatility is compressed, with the index reading near 17.3 — a calm tape.
+In this kind of regime, rallies tend to sell volatility and dips tend to bid it, which supports mean-reversion inside the pin rather than a big directional run.
+That volatility-to-price relationship is reading negative right now — a bracket-the-range signal that argues against chasing breakouts and in favor of fading the edges back to the middle.
+The takeaway: trade the edges of the range back toward the middle, and respect the fact that a low-volatility pin can simply hold the center all session.
+A move in volatility above roughly 19 would be the first sign the pin is loosening. (edited) 6:47 AM Level Changes New same-day decay magnet at SPX 7,420 / ES 7,440 — the defining feature for the Thursday session. The center-of-range pin deepened at SPX 7,400 / ES 7,420, now the heaviest dealer-positioning node. The ceiling held: yesterday's high stalled at SPX 7,450 / ES 7,470, with SPX 7,500 / ES 7,520 the hard wall above. The cushion deepened at SPX 7,300 / ES 7,320, the level that absorbed yesterday's macro selling. 6:47 AM Level Carry-Forward Integrity The SPX 7,300 / ES 7,320 cushion, the SPX 7,450 / ES 7,470 and SPX 7,500 / ES 7,520 ceilings, and the SPX 7,400 / ES 7,420 pin all carry forward from yesterday's map. Added this session: the SPX 7,420 / ES 7,440 same-day magnet and the SPX 7,575 / ES 7,595 upside attractor. Nothing was dropped — every level on the table is an active dealer-positioning level or a chart anchor.
+Dark Matter 21-05-2026 7:21 AM ## Key Levels [IMG:Image attachment] 7:21 AM Structural Ladder
+⏫ UPSIDE LEG 2 ────────────────────────────────────────
+SPX 7,575 / ES 7,595 ████████████ Magnet · upside attractor above the wall
+SPX 7,500 / ES 7,520 ██████████████████████ Hard ceiling · the wall a breakout must clear
+⏫ UPSIDE LEG 1 ────────────────────────────────────────
+SPX 7,450 / ES 7,470 ██████████████ Breakout gate · hedging turns repellent above
+SPX 7,420 / ES 7,440 ████████████ Same-day pin · decay magnet pulls into the close
+🎯 CURRENT LEG ─────────────────────────────────────────
+>>>>>>>>>>>>>>> SPOT SPX 7,414 / ES 7,434 <<<<<<<<<<<<<<
+SPX 7,400 / ES 7,420 ███████████████ Pin center · dips bought, rips sold
+⏬ DOWNSIDE LEG 1 ───────────────────────────────────────
+SPX 7,383 / ES 7,403 ██████████ First shelf · weekly VAL + same-day support
+SPX 7,355 / ES 7,375 ████████ Second cushion · support, dips bought to the pin
+⏬ DOWNSIDE LEG 2 ───────────────────────────────────────
+SPX 7,300 / ES 7,320 ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ Primary cushion · strong support, buy-the-dip
+SPX 7,250 / ES 7,270 ▓▓▓▓▓▓▓▓ Secondary cushion · next support shelf 7:21 AM Term Structure
+Term Structure — holds through this week at the pin, carries into next week on the cushion, fades after today on the same-day magnet: The center-of-range pin and the same-day magnet are an expiration-day feature; the 4 PM close wipes the same-day magnet, so anything tied to it is for today only. The cushion at SPX 7,300 / ES 7,320 is the durable, multi-session structure and defends overnight. Net: trade the same-day pin as an intraday feature, but treat the lower cushion as the level that carries into next week. 7:22 AM Dealer Flow Momentum
+Dealers are sitting in a strong stabilizing pin around SPX 7,400–7,420, which means their hedging dampens moves rather than amplifying them — every push away from the center tends to get sold or bought back. The heaviest positioning pressure lives out in the wings (the wall above near SPX 7,500 and deep support far below), not right at current price. At spot, dealers are positioned to buy the dip near SPX 7,300 and to lean against rallies near SPX 7,450, which is why the tape keeps getting absorbed in both directions. The same-day expiry decay is the dominant near-term force, anchoring price to SPX 7,420 / ES 7,440 into the close. Net read: a calm, range-bound session unless a fresh catalyst expands volatility and breaks the pin. [IMG:Image attachment] 7:22 AM 5/21 Bias
+Range-bound and modestly constructive, inside SPX 7,400–7,450 / ES 7,420–7,470 with gravity toward the SPX 7,420 / ES 7,440 magnet.
+The plan: buy the SPX 7,300 / ES 7,320 cushion on a flush, fade the SPX 7,450 / ES 7,470 ceiling on a stall, and let the same-day magnet pin price into the close.
+Step aside on a close above SPX 7,500 / ES 7,520 (a real breakout toward SPX 7,575) or a close below SPX 7,300 / ES 7,320 (the cushion gives way).
+Both trades on the card are mean-reversion trades, because that is what a pinning regime pays for. 7:23 AM Directional Bias & Trade-Style Callout Bias: range-bound, long-leaning. Trade style: mean-reversion at the edges, not breakout-chasing — buy the cushion, fade the ceiling, scalp the magnet. This is a patience day: let price come to a level and stall before acting. Do not chase momentum into the gate or short into the cushion. 7:23 AM ## Setups [IMG:Image attachment] 7:25 AM [IMG:Image attachment] [IMG:Image attachment] 7:25 AM Setup Lifecycle Setup A (cushion-defense long at SPX 7,355) is new this session — the middle long tier at the vanna cushion, a clean, higher-conviction trade. Setup E (shallow-dip long at SPX 7,379–7,387) is new this session — the shallowest long tier and the 5/21 futures bounce zone (weekly VAL + same-day support); first-touch reversion to the pin. Long tiers shallow to deep: E (7,379–7,387) → A (7,355) → D (7,300). Setup B (ceiling-fade short at SPX 7,450) is new this session — a controlled fade with a wall-protected stop; smaller size. Setup C (same-day pin-reversion fade at SPX 7,420) is new this session — a quick scalp around the expiry magnet; flat by the close. Setup D (deep-cushion long at SPX 7,300) is new this session — the bigger-size catch if the tape sells off to the floor; split out so the buy-the-flush plan is tracked on its own. No setups carried over from yesterday's plan; all are freshly graded against today's pin. 7:25 AM Session Summary
+ES/SPX enters Thursday's cash session inside a tight pin. The cash index closed 7,400.62, the futures are at 7,434 (SPX-equivalent 7,414), and volatility near 17.3 confirms a calm backdrop.
+Yesterday ES rallied off 7,356 to 7,458 — stalling right at the SPX 7,450 ceiling — and closed 7,433, then held a tight 7,407–7,437 band overnight. A mixed NVIDIA print, the Fed minutes, and a Treasury auction all landed and none pushed price out of the zone.
+The dominant path is mean-reversion around SPX 7,400–7,420 / ES 7,420–7,440 into the same-day-expiry close. The plan buys dips in tiers — the SPX 7,379–7,387 first shelf (where futures bounced), the SPX 7,355 cushion, then the SPX 7,300 floor on a deep flush — and fades the SPX 7,450 / ES 7,470 ceiling on a stall.
+There is no chase higher into the gate and no breakdown short below the cushion — the structure pays for mean-reversion until a catalyst breaks the pin.
+Dark Matter 22-05-2026 8:01 AM 5/22 ES/SPX Update
+What's on the Calendar
+Friday 5/22 is the last trading day before the Memorial Day long weekend — US markets are closed Monday 5/25. It is also a Friday weekly/same-day-options expiration, so the closing-hour magnet pull is strong and desks tend to lighten up into a 3-day weekend.
+Morning (pre-market) — University of Michigan Consumer Sentiment, final May reading (~48.2 preliminary). A revision, so low surprise risk; the inflation-expectation lines are the part that can move rates. All day — Iran headline flow is the live wildcard. Thursday's rally was built on a report that the US and Iran were "near" a deal to end the conflict; that report is disputed and unconfirmed (the enriched-uranium stockpile is a sticking point), so the bid is fragile and can unwind on a contradicting print. Seasonality: the Friday before Memorial Day has been modestly constructive — the Nasdaq has been higher 66.7% of the time, up an average 0.38%, advancing 9 of the last 10 years. A mild tailwind, not a thesis. 8:02 AM Paradigm
+This is a positive-gamma range, or pin. Dealers are net-long gamma across this week and all expirations, which means their hedging dampens moves rather than amplifying them — they sell rallies and buy dips around the magnet cluster between SPX 7,440 and 7,500 / ES 7,460 and 7,520.
+The heaviest floor sits at SPX 7,400 / ES 7,420 (the largest positive-gamma node on the board, reinforced by a negative-vanna magnet); the overhead lid is a positive-vanna dealer call-wall at SPX 7,575–7,600 / ES 7,595–7,620.
+Today's same-day expiration adds a hard charm pin at SPX 7,440 / ES 7,460 that magnetizes price into the close. Net: a corridor of SPX 7,400–7,600 / ES 7,420–7,620 with gravity toward the SPX 7,440 / ES 7,460 pin and a this-week gamma lid at SPX 7,500–7,560 / ES 7,520–7,580.
+The one warning: dealer vanna hedging is deeply negative (about -$9.5B), so a volatility spike on the Iran headline would flip this calm pin into an amplifier that sells rallies and speeds declines. 8:02 AM Vol Regime Context
+VIX 16.5 and index implied volatility 16.5 are both low — a compressed-volatility backdrop that supports the dampening, mean-reverting pin.
+The price/volatility relationship reads near-neutral (0.14): rallies tend to sell volatility and dips tend to bid it, which is normal for a low-VIX pin.
+The single biggest regime risk is the deeply negative dealer vanna hedging (about -$9.5B) into a maxed-out catalyst gauge on the live Iran story. While VIX holds near 16.5 the pin is firm; if VIX breaks higher, the same positioning that dampens today flips to an amplifier — re-read fast on any volatility spike. [IMG:Image attachment]
+Dark Matter 22-05-2026 8:12 AM ## Key Levels [IMG:Image attachment] 8:12 AM Structural Ladder
+⏫ UPSIDE LEG 3 ----------------------------------------------
+SPX 7,700 / ES 7,720 ▓▓▓▓▓▓▓▓▓▓▓▓ Repellent · negative vanna above
+SPX 7,575–7,600 / ES 7,595–7,620 ████████████████ Call-wall lid · strongest ceiling
+⏫ UPSIDE LEG 2 ----------------------------------------------
+SPX 7,560 / ES 7,580 ████████████ Upper magnet · multi-window gamma
+⏫ UPSIDE LEG 1 ----------------------------------------------
+SPX 7,500 / ES 7,520 ████████████████ Heaviest magnet · gamma + delta
+🎯 CURRENT LEG ───────────────────────────────────────────
+>>>>>>>>>>>>>>> SPOT SPX 7,458 / ES 7,478 (overnight) <<<<<<<<<<<<<<<<
+SPX 7,450 / ES 7,470 ▓▓▓▓▓▓▓▓ Below-spot floor · gamma support
+⏬ DOWNSIDE LEG 1 ---------------------------------------------
+SPX 7,440 / ES 7,460 ▓▓▓▓▓▓▓▓▓▓▓▓▓▓ Charm pin · closing-hour magnet
+SPX 7,425 / ES 7,445 ▓▓▓▓▓▓▓▓▓▓ Floor cluster · gamma + delta
+⏬ DOWNSIDE LEG 2 ---------------------------------------------
+SPX 7,400 / ES 7,420 ▓██▓██▓██▓██▓██▓██ Structural floor · biggest gamma + vanna
+SPX 7,350 / ES 7,370 ▓▓▓▓▓▓▓▓ Deeper cushion · vanna magnet
+⏬ DOWNSIDE LEG 3 ---------------------------------------------
+SPX 7,300 / ES 7,320 · · · · Far-floor reference 8:13 AM Term Structure
+Today's pin is intraday-only; the corridor levels keep their spots into next week, but their behavior changes.
+The charm pin at SPX 7,440 / ES 7,460 and the same-day gamma anchors expire at today's cash close, so anything leaning on them is intraday-only and should be flat by the close.
+The floor at SPX 7,400 / ES 7,420 and the ceiling at SPX 7,575–7,600 / ES 7,595–7,620 keep their spots into next week — they are anchored by longer-dated positioning that runs into the June expiration.
+But the personality of those levels flips. This week, dealer positioning cushions moves and pins price near SPX 7,440 / ES 7,460. Starting next week (the week of May 26, after Memorial Day), that same positioning turns to amplifying moves instead of dampening them — so a move that simply bounced off an edge this week can instead break through and run. Translation: the levels are the same, but they shift from "bounce" to "break." Do not assume today's calm carries past the long weekend; be flat into the cash close. 8:15 AM Dealer Flow Momentum
+Dealers are net-long gamma by about $785M heading into Friday, the mean-reverting setup where they lean against moves in both directions and pull price back toward the magnet cluster between SPX 7,440 and 7,500 / ES 7,460 and 7,520. That is a meaningful strengthening from the prior read (last evening's plan showed the gamma peak pinned lower, around SPX 7,400 / ES 7,420), so the dampening engine is firmer and the gravity center has migrated up as price rallied. The hedge book also leans bullish, holding about $8.6B of long delta, which supports buying dips into the floor. The warning sign: dealer vanna hedging is deeply negative at about -$9.5B, so a volatility spike on the Iran headline would flip this calm pin into an amplifier that sells rallies and speeds declines.
+One caveat: that dampening is a this-week phenomenon. Looking into next week, the same dealers are positioned to amplify moves rather than dampen them, so the calm should not be assumed to carry past the long weekend. [IMG:Image attachment] 8:17 AM Directional Bias & Trade-Style Callout
+Trend Regime: Range / positive-gamma pin — low VIX (16.5), mean-reverting, corridor SPX 7,400–7,600 / ES 7,420–7,620.
+Catalyst Tilt: Mixed, mildly bullish — the live Iran de-escalation headline is the wildcard, with University of Michigan final sentiment in the morning and a favorable Friday-before-Memorial-Day seasonal lean; all of it hostage to a single Iran print.
+Strategic Bias Alignment: No open ES/SPX strategic positions — today's range setups stand on their own with no longer-term position to defend.
+Trade-Style Guidance for This Plan: [IMG:✅] Fade pushes into SPX 7,500–7,560 / ES 7,520–7,580 back toward the pin. [IMG:✅] Buy dips into the SPX 7,400–7,440 / ES 7,420–7,460 floor. [IMG:⚠️] Keep size to half into thin pre-holiday liquidity, and be flat by the cash close. [IMG:🚫] No breakout chasing above SPX 7,500 / ES 7,520 or below SPX 7,400 / ES 7,420 without a volatility catalyst.
+Why this matters: In a positive-gamma pin the edge is mean-reversion to the center, not direction — chasing breakouts in this regime is how traders give back the range, and a 3-day-weekend liquidity vacuum makes a false break even more punishing. 8:20 AM ## Setups [IMG:Image attachment] [IMG:Image attachment] 8:20 AM [IMG:Image attachment] [IMG:Image attachment] 8:22 AM Looking Past Today
+Looking past today: a clean weekly close above SPX 7,575–7,600 / ES 7,595–7,620 would turn that ceiling into a springboard toward 7,650–7,700; a daily close below SPX 7,400 / ES 7,420 would void the range and open a step-down toward 7,300. Neither is in play yet — they are just the lines to watch after the holiday. 8:22 AM Quick Reference Bias: range/pin, SPX 7,400–7,600 / ES 7,420–7,620, gravity to SPX 7,440 / ES 7,460. Fade: SPX 7,500–7,560 / ES 7,520–7,580 back to the pin. Buy: dips into SPX 7,400–7,440 / ES 7,420–7,460. Stand aside: on a volatility-driven break of SPX 7,400 / ES 7,420 or SPX 7,600 / ES 7,620. Pin / close magnet: SPX 7,440 / ES 7,460. Hard cap: SPX 7,575–7,600 / ES 7,595–7,620. Wildcard: Iran headline; be flat into the cash close ahead of the 3-day weekend. 8:24 AM Session Summary
+Friday 5/22 is a positive-gamma range/pin session into the Memorial Day weekend (US closed Monday 5/25). Spot SPX 7,458 / ES 7,478 sits on last week's value-area high, inside a corridor of SPX 7,400–7,600 / ES 7,420–7,620 with gravity toward the same-day charm pin at SPX 7,440 / ES 7,460.
+Dealers are long gamma (mean-reverting) but deeply short vanna, so the pin holds while VIX stays near 16.5 and flips to an amplifier on any Iran-headline volatility spike.
+Plan: fade the SPX 7,500–7,575 / ES 7,520–7,595 magnets back to the pin - SPX 7440-7460, buy dips into the SPX 7,400–7,440 / ES 7,420–7,460 floor, keep the breakdown short only as a catalyst-armed tail, and be flat by the cash close ahead of weekend gap risk.
+Net: range-trade the corridor, lean mildly long on dips, respect the Iran wildcard, and don't carry same-day risk over the long weekend.
+Dark Matter 22-05-2026 9:15 PM 5/22 ES/SPX Update
+Key Levels — (SPX / ES):
+[IMG:🔴] SPX 7,575–7,600 / ES 7,595–7,620 — positive-vanna call-wall lid; hard cap.
+[IMG:🟠] SPX 7,560 / ES 7,580 — gamma + vanna magnet; reclaim/squeeze target.
+[IMG:🔴] SPX 7,510 / ES 7,530 — fresh rejection zone; negative gamma + vanna + charm. Price already rejected ES 7,524 here.
+[IMG:🔴] SPX 7,500 / ES 7,520 — flipped to negative gamma (−$62M, was the magnet); overhead resistance now.
+[IMG:🟢] SPX 7,496 / ES 7,516 — SPOT (live ES ~7,511); negative-gamma pocket.
+[IMG:🟠] SPX 7,465 / ES 7,485 — below-spot support shelf.
+[IMG:🔴] SPX 7,440 / ES 7,460 — heaviest 0DTE delta floor (+$1.7B) + charm pull; primary dip-buy.
+[IMG:🔴] SPX 7,400 / ES 7,420 — structural floor (all-exp gamma +$44M + 0DTE delta +$1.65B + negative-vanna magnet −$346M). Strongest.
+[IMG:🟢] SPX 7,350 / ES 7,370 — deeper vanna cushion. 9:16 PM Bias
+fade the 7,500–7,510 rejection, buy the 7,400–7,465 floor. Two-sided: short failed pushes into SPX 7,500–7,510 / ES 7,520–7,530 back toward SPX 7,465–7,440, buy dips into the SPX 7,400–7,465 / ES 7,420–7,485 delta floor, stand aside on a vol-expanding reclaim above SPX 7,510 (squeeze to 7,560) or break below SPX 7,400.
+Top Two Setups —
+SHORT — fade the failed-breakout rejection. Entry SPX 7,505–7,512 / ES 7,525–7,532, stop SPX 7,524 / ES 7,544, T1 SPX 7,465 / ES 7,485, T2 SPX 7,440 / ES 7,460. Grade A-eligible — high-confidence failed-breakout-rejection archetype (fresh session high poked the negative-gamma node and rejected). Intraday-only. LONG — dip-buy the delta floor. Entry SPX 7,440–7,465 / ES 7,460–7,485, stop SPX 7,398 / ES 7,418, T1 SPX 7,495 / ES 7,515, T2 SPX 7,500 / ES 7,520. Grade B+. Intraday-only. (edited)
+Dark Matter 22-05-2026 9:40 PM What Changed Since Last Plan
+The morning plan was built around a calm positive-gamma pin: the SPX 7,500 / ES 7,520 node was a clean magnet to fade against, with gravity toward the SPX 7,440 / ES 7,460 charm pin.
+Since then, off the unchanged ES 7,466 low, price rallied to a new session high ES 7,524 / SPX 7,504, poked just above the 7,500 zone, and rejected back to ES 7,511 / SPX ~7,491. Three things changed:
+The positioning right at price flipped from cushioning to amplifying. The SPX 7,490–7,510 / ES 7,510–7,530 zone that pinned this morning now rejects rallies — which is exactly why the ES 7,524 poke failed. The 7,500–7,510 area is now overhead resistance, not a magnet. The dealer hedge book swung much more bullish. Daily delta hedging surged to about +$30.6B (from about +$8.6B this morning), lining up with a deep dip-buy floor at SPX 7,400–7,465 / ES 7,420–7,485. The pin thinned but held. Aggregate gamma roughly halved (still net-long, so a runaway breakdown isn't supported); VIX eased to 16.19; the same-day charm pull went two-sided (above at SPX 7,510, and below at SPX 7,420–7,465).
+Net: the floor held and strengthened; the ceiling flipped to a rejection zone and pulled the effective top of the range down to SPX 7,510 / ES 7,530.
+Net: fade the SPX 7,500–7,510 / ES 7,520–7,530 rejection to the floor; buy the SPX 7,400–7,465 / ES 7,420–7,485 dip; no runaway short. 9:42 PM [IMG:Image attachment] 9:42 PM Structural Ladder
+⏫ UPSIDE LEG 3 ----------------------------------------------
+SPX 7,575 / ES 7,595 ████████████ Magnet · strongest positive vanna
+SPX 7,600 / ES 7,620 ██████ Ceiling · gamma + vanna flip
+⏫ UPSIDE LEG 2 ----------------------------------------------
+SPX 7,550 / ES 7,570 ████████ Magnet · positive gamma attractor
+⏫ UPSIDE LEG 1 ----------------------------------------------
+SPX 7,510 / ES 7,530 ▓▓▓▓▓▓▓▓▓▓▓▓ Repellent · rejection cap
+SPX 7,500 / ES 7,520 ▓▓▓▓▓▓▓▓▓▓▓▓▓▓ Repellent · heaviest negative gamma
+🎯 CURRENT LEG ───────────────────────────────────────────
+>>>>>>>>>>>>>>> SPOT SPX 7,496 / ES 7,516 (live ES ~7,511) <<<<<<<<<<<<<<<<
+SPX 7,490 / ES 7,510 ▓▓▓▓▓▓ Amplifier · thin air to the floor
+⏬ DOWNSIDE LEG 1 ---------------------------------------------
+SPX 7,465 / ES 7,485 ████████ Floor · dip-buy shelf top
+SPX 7,440 / ES 7,460 ██████████████ Floor · heaviest same-day support
+⏬ DOWNSIDE LEG 2 ---------------------------------------------
+SPX 7,425 / ES 7,445 ██████████ Floor · dip-buy shelf interior
+SPX 7,400 / ES 7,420 ▓██▓██▓██▓██▓██▓██ Cushion · heaviest gamma + delta 9:43 PM Term Structure
+The rejection cap at SPX 7,500–7,510 / ES 7,520–7,530 and the floor at SPX 7,440 / ES 7,460 are same-day structures that expire at the cash close. The durable floor (SPX 7,400 / ES 7,420) and ceiling (SPX 7,575–7,600 / ES 7,595–7,620) carry into next week, but next week's positioning turns to amplifying moves, so the same levels flip from "bounce" to "break." Nothing should be carried over the long weekend.
+Net: today's cap and floor are intraday-only; the durable walls carry but flip personality next week — be flat by the close. 9:44 PM Dealer Flow Momentum
+Dealers are still net-long gamma at the chain level, but that cushion is thinning — total gamma roughly halved from this morning to about +$447M now. At the same time the strikes right at price flipped to negative, so the SPX 7,500–7,510 / ES 7,520–7,530 area rejects rallies even though the broader book still leans mean-reverting. The volatility-sensitivity piece barely moved (about -$8.93B versus this morning), so there's no fresh volatility fuel arming. The standout is delta: the hedge book surged to about +$30.6B long, a heavy bullish lean that lines up with the deep dip-buy floor at SPX 7,400–7,465 / ES 7,420–7,485. [IMG:Image attachment] 9:44 PM Directional Bias & Trade-Style Callout
+Trend Regime: Range — a rejection cap at SPX 7,500–7,510 / ES 7,520–7,530 over an intact floor at SPX 7,400–7,465 / ES 7,420–7,485; low volatility.
+Catalyst Tilt: Mixed, bullish-but-fragile — the Iran de-escalation headline is the live wildcard (Rubio: "slight progress," uranium-stockpile unresolved); UMich final printed a record-low 44.8 but faded; the bond market closed early at 2 PM, thinning liquidity into the close.
+Strategic Bias Alignment: No open ES/SPX strategic positions — today's range setups stand on their own.
+Trade-Style Guidance for This Plan: [IMG:✅] Fade failed pushes into SPX 7,500–7,510 / ES 7,520–7,530 back toward the floor (the highest-confidence side after the ES 7,524 rejection). [IMG:✅] Buy dips into the SPX 7,400–7,465 / ES 7,420–7,485 floor. [IMG:⚠️] Keep size to half into thin pre-holiday liquidity; be flat by the close. [IMG:🚫] No runaway breakdown short below SPX 7,400 / ES 7,420 — dealers are still net-long gamma in aggregate and the floor is the heaviest support on the board.
+Why this matters: the cushion right at price has thinned, so moves are cleaner both ways — but the floor is strong and the broad book still mean-reverts, so this is a fade-the-edges range, not a trend; chasing a breakout above 7,510 or a breakdown below 7,400 is how you give the range back into a thin holiday close.
+Exported 91 message(s) Timezone: UTC+3

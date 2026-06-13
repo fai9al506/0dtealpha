@@ -1,0 +1,212 @@
+Dark Matter substantive planning/bias posts (>=160 chars, bias-related): 70 of 1416 total
+
+
+[2025-09-02 20:35]
+Hey there. So higher timeframe support always wins but notional size matters on that higher timeframe. If you saw gamma this week vs all expiration we had support at 6425 gamma on weekly but not higher timeframe. Ripped right through that support. So yes higher timeframes I always give it more weight than smaller timeframes.
+
+[2025-11-04 20:44]
+my style is i am looking across different time expirations and give a weight. see the size of that positive gamma decrease and that support goes away breaking us lower then
+
+[2025-11-29 20:10]
+Negative vanna doesn’t change the SPX–VIX inverse correlation. It amplifies it. SPX up → IV down (spot-vol correlation) IV down → dealer deltas increase (negative vanna) Dealers buy → SPX up more (hedging feedback loop) This is why negative vanna = upside fuel in low-volatility regimes. When I identified negative vanna at 6840–6860 SPX, what I additionally identified was: * A region where falling IV → aggressive dealer buying * A zone that naturally acts as upside accelerant * A feedback loop that activates precisely when volatility compresses Volland confirms this interpretation: negative vanna above spot acts as a repellent when IV rises, but a magnet when IV falls. Think of it this way.... Spot-Vol Correlation: SPX up → IV down Negative Vanna: IV down → dealers buy delta So the loop looks like this: * SPX up → IV down → dealers buy → SPX up more This is why negative vanna is such a powerful form of upside continuation fuel when volatility is falling. This is also why the Volland framework teaches: * Negative vanna acts as upside fuel when volatility is contracting.
+
+[2025-12-01 02:42]
+yes — “increase” here refers to absolute delta magnitude, not “delta becoming more positive.” “dealer deltas increase” means the absolute delta exposure grows. For puts, that means delta becomes more negative; for calls, delta becomes more positive. In SPX, where negative vanna is dominated by puts, IV down → put deltas relax → dealers buy → upside fuel.
+
+[2025-12-30 22:52]
+When volatility is greater than it has been during the holiday volume the moves overnight are great to @Sparks-Flying point. They behave even better to dealer positions than RTH IMO. Take a look at some of my past trade plans in #⚛️┃dark-matter-trade you can see how these translate nicely into overnight futures action.
+
+[2026-01-19 06:31]
+New #1/19 ES/SPX Weekly & Daily Overview is now available. 6900spx is a critical pivot and will be an important pivot with 6850spx our big support level to hold to the downside before 6800spx. In between lots of chop with 6875spx holding ground in futures thus far.
+
+[2026-02-03 05:03]
+the TLDR IMO: 1. Watch for key intraday volume nodes, value areas and lay your volland levels over them. 2. Do the same thing with a weekly volume profile on the 4hr chart you will see critical levels like 6850 which was a key gamma level in volland is also where the previous week low resided, you had the 1/19 weekly VAL sitting there and so forth.
+
+[2026-03-19 22:12]
+feels more opex related. lets take over some critical levels in tickers then maybe we can get some moves. meta for example 608-600 was wide open gap on meta. it takes and holds 608-610, 180 on nvda and the vx to break 23 could get the bull party going again
+
+[2026-03-19 22:12]
+feels more opex related. lets take over some critical levels in tickers then maybe we can get some moves. meta for example 608-600 was wide open gap on meta. it takes and holds 608-610, 180 on nvda and the vx to break 23 could get the bull party going again
+
+[2026-03-23 14:50]
+they are not backing down. https://x.com/financialjuice/status/2036047303048413503?s=20 Iran's Fars, citing source: Trump retreated after hearing that Iran would target all power plants in West Asia
+
+[2026-03-27 16:16]
+`Session Summary (Updated with overnight trading)` Bias: BEARISH — sell bounces into resistance. The overnight drop shifted the entire structure lower. What was support yesterday is resistance today. Dealers are massively short and forced to sell into weakness. The VIX at 29.23 amplifies every Greek force on the bearish side. The session comes down to one level: 6,423 SPX / 6,473 ES (the Line in the Sand). Above it, we range-trade between 6,423 and 6,460. Below it, the waterfall begins — targeting the gamma buy wall at 6,390 and the structural floor at 6,370. The highest-probability trade is Setup A (fade bounces to 6,505-6,510 ES). The highest reward-to-risk is Setup B (cascade short if LIS breaks — 3:1). Keep size small given the DADS at 35.16 and wild execution conditions. The afternoon resolution will be telling — 0DTE time-decay forces accelerate after 2PM ET. If we're still on this knife-edge at the charm zero-crossing (6,445 SPX) by then, the resolution will be sharp and directional.
+
+[2026-03-27 19:41]
+i would like to see a bounce, @Phoenix is calling for this area, i personally think there is more but not before some kind of bounce. after this it's a bit back to trade level to level again.
+
+[2026-04-02 07:18]
+you seen this? https://x.com/Mayhem4Markets/status/2039549612856430623?s=20 A record short bet against oil\. Just before Trump sent oil prices surging higher\. The loss this trade will take is no April Fool's joke\.
+
+[2026-04-07 19:01]
+i would watch semis and aapl for now - if they hold these lows we will hold in ES/SPX - the rejection at 375 for MU will be important to watch if it accepts above or not
+
+[2026-04-07 19:08]
+my long criteria is 6600spx, MU above 375 and holding, NVDA above 175 and holding. I don't like how they are building positions above those levels in these tickers.
+
+[2026-04-08 01:41]
+for those learning you see how 6725 is the first true resistance in this cluster - all comes down to VOL and look at where it is at...you break that 22.5 on VIX and you will get those extra 20pts if not consolidation time.
+
+[2026-04-08 01:58]
+https://x.com/financialjuice/status/2041651531703878073?s=20 Israel doesn't like this plan—to say the least—but Trump calls the shots \- Israel Channel 12 News Reporter\.
+
+[2026-04-08 19:00]
+https://x.com/financialjuice/status/2041908728987783277?s=20 Iran’s Foreign Minister Araghchi in call with Turkish counterpart: Iran agreed to the ceasefire based on its 10\-point plan as basis for talks with the US\.
+
+[2026-04-13 19:52]
+This can be tough but we also need to keep our bias check. Ride the levels up and enter on key critical retests. ie 6775 and 6800spx levels today were given and so forth
+
+[2026-04-13 19:54]
+as long as Trump and Iran keep that side show in check and make progress we go up until ERs in tech play out. there will be vol shocks with iran indeed. risk management will be best to handle those shocks.
+
+[2026-04-14 01:28]
+yea semis and like tickers - MU - are semi-swing scalps I call them. Trade them level to level and seize the greater moves. for example MU holding 410 gave entry today multiple times. a close above 425 opens door to 440
+
+[2026-04-14 01:51]
+looking at the two tails of the cumulative exposure chart here. take the left and right end points you are negative vanna so we could see a market that turns into vol up spot up cause of it until it neutralizes itself. so our typical "bullish" signal won't be there.
+
+[2026-04-14 02:20]
+The red (negative) bars on the put vanna chart represent puts that dealers are short — meaning customers bought those puts from dealers. Volland charts show the dealer's exposure, not the customer's. So negative (red) vanna exposure on puts means dealers sold those puts and are now carrying the hedging obligation. On the right chart (call vanna), that big green bar around 7000 means dealers are long calls at that strike. Customers sold those calls to dealers. Since dealers own them, the vanna exposure is positive and stabilizing — as spot rises toward 7000 with falling vol, the delta on those calls decays and dealers' hedging flows act as a natural dampener rather than an accelerant. So to summarize: * Put Vanna chart (left): Red = dealers short puts (customers bought them). Green = dealers long puts (customers sold them). * Call Vanna chart (right): Green = dealers long calls (customers sold them). Red = dealers short calls (customers bought them). * That green bar at 7000 on the call side is actually a nice magnet/stabilizer if we were to rally toward it — dealers long those calls would be selling into strength as delta increases, capping upside momentum near that level. Separately, if price does come down into 6850 you have dealer support.
+
+[2026-04-15 21:40]
+i am with you - i feel like we are destined to 7100 with a close above 7000, but i need to see 2 days of closes above 7000. otherwise i will just ride level-to-level looking for dips to buy at this point
+
+[2026-04-15 21:42]
+good thing you still have ES highs so there is "some" kind of volume/target, but with you. it is why i love volland - helps navigate that uncertainty in new zones of volume. i typically HATE trading tickers at ATH's. you lose edge as you mentioned
+
+[2026-04-15 23:16]
+no way anyone could have called last week. i am sorry - that was all Iran feelings. Wiz and I had a target but it exceeded ven that target. even this move to 7k - probably not a lot of people calling for 7020 lol
+
+[2026-04-16 00:26]
+let me see if i have som time today, but for this week take a look at the marketmoves show and the short we put out. that squeeze above 6800 reclaim monday to 6900 it was there in volland for sure. that day only got more and more bullish especially when i did the trade plan for tuesday that evening
+
+[2026-04-16 00:26]
+let me see if i have som time today, but for this week take a look at the marketmoves show and the short we put out. that squeeze above 6800 reclaim monday to 6900 it was there in volland for sure. that day only got more and more bullish especially when i did the trade plan for tuesday that evening
+
+[2026-04-16 00:27]
+kid has a basketball game so for now check ^^^ the above and trade plan in #4/13 ES/SPX Weekly & Daily Overview - will try to fill in after her game if i get the time for it and a trade plan
+
+[2026-04-16 00:27]
+kid has a basketball game so for now check ^^^ the above and trade plan in #4/13 ES/SPX Weekly & Daily Overview - will try to fill in after her game if i get the time for it and a trade plan
+
+[2026-04-16 05:05]
+that vanna complex with positive vanna above spot goes into next week. As @Johannes mentioned 7050 is the key level that pushes price up towards those green bars. Looking at gamma in your second screenshot is a massive 7000 positive gamma.. Two things there need to occur - you can't lose 7k and you can't have vx get above 21 and vol increasing. otherwise vol compresses or goes sideways you will float up that way.
+
+[2026-04-16 05:05]
+that vanna complex with positive vanna above spot goes into next week. As @Johannes mentioned 7050 is the key level that pushes price up towards those green bars. Looking at gamma in your second screenshot is a massive 7000 positive gamma.. Two things there need to occur - you can't lose 7k and you can't have vx get above 21 and vol increasing. otherwise vol compresses or goes sideways you will float up that way.
+
+[2026-04-17 16:23]
+this is what we do 🙂 Working on an update here but I am sticking to this as a swing even until I proven wrong > Our 7000 and 7050 boundaries we discussed held and provdided some great two way trading intraday. While I think the market could have a "tight" and similar range like today until dealer o clock post 2 pm est the higher timeframes show 7000 growing in support by dealers and wanting to push price higher. > > There is a retracement and if we can see some volatility into next early next week around 6980 on an overshoot of 7000. Otherwise over the next month 7250 and 7300 could be targets in bound. https://discord.com/channels/1356329071230980188/1493004037313003551/1494563075343515791
+
+[2026-04-17 18:26]
+that ES/SPX short thesis needs help. it will be hard if you don't get tickers like the below down: * meta needs to break 680 * msft needs to break 430 * mu needs to break 450 and IF it breaks 460 will get squeezy then * qqq needs to break 647 and then 645 is even massive
+
+[2026-04-20 21:06]
+I started to stack at 415 some options with may opex for 430. what's throwing me off is the support at 400 and 405. They are trying to build a position here at 415 on the volume profile and some vanna is comiing in. I have room if we go down or will add on break of 425
+
+[2026-04-20 21:06]
+I started to stack at 415 some options with may opex for 430. what's throwing me off is the support at 400 and 405. They are trying to build a position here at 415 on the volume profile and some vanna is comiing in. I have room if we go down or will add on break of 425
+
+[2026-04-21 20:52]
+i am just saying sentiment online. i wouldn't short any semis. just watch, fall, pick it up where it falls IF it does that. was hoping for a pullback in AMD this week but didn't get enough of one
+
+[2026-04-21 20:52]
+i am just saying sentiment online. i wouldn't short any semis. just watch, fall, pick it up where it falls IF it does that. was hoping for a pullback in AMD this week but didn't get enough of one
+
+[2026-04-21 21:40]
+haha i feel ya. after yesterday's marketmoves show with wiz i was highly considering taking that trade to long it but i just couldn't after what it has done. not worth the risk at this point. 200-300pts ago maybe different story lol
+
+[2026-04-21 21:40]
+haha i feel ya. after yesterday's marketmoves show with wiz i was highly considering taking that trade to long it but i just couldn't after what it has done. not worth the risk at this point. 200-300pts ago maybe different story lol
+
+[2026-04-23 01:21]
+when we saw it on monday's show it was clearly heading to 600. i just can't go long on a chart that looks like that, ath's, straight up moon rocket. no red day for like 2 weeks. hard to long. just a matter of waiting for the first sign of some dealer build up and it came yesterday and added today. have you seen the IV on that ticker in VOL? 223.54 lol
+
+[2026-04-23 01:21]
+when we saw it on monday's show it was clearly heading to 600. i just can't go long on a chart that looks like that, ath's, straight up moon rocket. no red day for like 2 weeks. hard to long. just a matter of waiting for the first sign of some dealer build up and it came yesterday and added today. have you seen the IV on that ticker in VOL? 223.54 lol
+
+[2026-04-26 23:31]
+we should find balance this week in that 7130-7150spx corridor - posted some initial thoughts in #4/27 ES/SPX Weekly & Daily Overviews - full trade plan out soon
+
+[2026-04-26 23:31]
+we should find balance this week in that 7130-7150spx corridor - posted some initial thoughts in #4/27 ES/SPX Weekly & Daily Overviews - full trade plan out soon
+
+[2026-04-28 03:26]
+too early still. I need to see the 7200-7260 zone tested. I know it is large zone but I expect volatility thru that space and I don't care to be early in any shorts. paytience 🙂
+
+[2026-04-28 03:26]
+too early still. I need to see the 7200-7260 zone tested. I know it is large zone but I expect volatility thru that space and I don't care to be early in any shorts. paytience 🙂
+
+[2026-04-28 03:35]
+@Phoenix have you looked into CRDO - might be the next ARM like 52 week high breakout. Got so close, they gave it a nice sell today right into major gamma and vanna support.
+
+[2026-04-28 03:35]
+@Phoenix have you looked into CRDO - might be the next ARM like 52 week high breakout. Got so close, they gave it a nice sell today right into major gamma and vanna support.
+
+[2026-04-30 01:40]
+I just closed my long from the initial drop after hours. Curious how much they drop this now from 7170. higher timeframes paint similar ping pong sideways action
+
+[2026-05-05 17:22]
+yea i didn't put the 7200spx long in the plan as i assumed it would be only tradeable overnight and that is clearly the case. too much strength in memories right now but not enough in the semis. big night tonight could be a short out of AMD results...
+
+[2026-05-06 02:22]
+Finishing some lawn work let’s see how we look for tomorrow and into next week now. I wouldn’t be trying to call a top here for anyone. Just let it do its thing we can short when the wave starts. It won’t be just a 100 pt move.
+
+[2026-05-06 06:47]
+there is more pain as i have been saying. not only do you have semis moving, but memory is proving its worth. SNDK is not even at an "over value" level too - insane times
+
+[2026-05-07 15:52]
+lol i did - they keep popping levels up higher and higher lol. looks like that 7000 is going to be the critical retest for the year unless we get a larger drawdown like Tom Lee expects
+
+[2026-05-07 15:54]
+yea he called for this 7300 rally and expects a drawdown. last night he said he was even shocked with this push above 7300 which could go a bit more but he expects a 10% drawdown and then a massive rally to new ATHs coming out of that
+
+[2026-05-11 20:37]
+this one has the major catalyst with the strike and samsung. thesis being higher DRAM prices which helps MU. interim they have a bottleneck but the short term thinking is IF strike goes through MU can charge higher prices for existing deals/contracts that haven't shipped So consider it this way IMO: IF strike - MU = 1000 IF no strike - MU = 620-650
+
+[2026-05-11 20:37]
+this one has the major catalyst with the strike and samsung. thesis being higher DRAM prices which helps MU. interim they have a bottleneck but the short term thinking is IF strike goes through MU can charge higher prices for existing deals/contracts that haven't shipped So consider it this way IMO: IF strike - MU = 1000 IF no strike - MU = 620-650
+
+[2026-05-14 04:01]
+If you want to be a bull without a retracement it’s best you find selective tickers to trade. I am actively in on CRWD and RKLB for example. Their vanna and gamma look much better. With ES/SPX I am cautious and simply scalping overnight or intraday. I am leaving zero trades on at this point and locking level to level as I said. Even today’s trade plan we had 7350 support to push back up to 7475. Don’t fight it enjoy the nice intraday range.
+
+[2026-05-14 04:01]
+If you want to be a bull without a retracement it’s best you find selective tickers to trade. I am actively in on CRWD and RKLB for example. Their vanna and gamma look much better. With ES/SPX I am cautious and simply scalping overnight or intraday. I am leaving zero trades on at this point and locking level to level as I said. Even today’s trade plan we had 7350 support to push back up to 7475. Don’t fight it enjoy the nice intraday range.
+
+[2026-05-21 01:20]
+while some truths here - there are mechanics behind the market and it gets a push for a reason. money finds money always has always will and with it brings the massess. there is a boiling point but right now between earnings, retail sales, capex growth it is extremely hard to be a bear right now. it is influencing how others/big money/retail/etc all see the market and how to trade it. every evolving, still hazy
+
+[2026-05-21 14:08]
+there is also some gamma sitting there that i didn't screenshot. its also near the lows of futures session as well. if you take a look at my trade plans i provide a weight to some of these greek levels to help me understand if vol is high and there is a catalyst that level most likely won't hold then. no catalyst will most times find 0dte trades to hold itself then https://discord.com/channels/1356329071230980188/1505652277220737104/1506874494164140103
+
+[2026-05-22 08:25]
+Interesting how dealer positioning is shifting after today's session. Check out the read here - #5/18 ES/SPX Weekly & Daily Overviews For the 5/22 Session: ## Quick Reference - **Bias:** range/pin, SPX 7,400–7,600 / ES 7,420–7,620, gravity to SPX 7,440 / ES 7,460. - **Fade:** SPX 7,500–7,560 / ES 7,520–7,580 back to the pin. - **Buy:** dips into SPX 7,400–7,440 / ES 7,420–7,460. - **Stand aside:** on a volatility-driven break of SPX 7,400 / ES 7,420 or SPX 7,600 / ES 7,620. - **Pin / close magnet:** SPX 7,440 / ES 7,460. - **Hard cap:** SPX 7,575–7,600 / ES 7,595–7,620. - **Wildcard:** Iran headline; be flat into the cash close ahead of the 3-day weekend.
+
+[2026-05-22 23:57]
+I have worked my way that way for sure. this sell will either come so fast or it will be the most frustrating selling it. next week vanna even positive but good luck getting above 7500 spx without something further compressing vol
+
+[2026-05-24 02:24]
+Ha. Never under. I can’t really be bearish in general but was hoping for some kind of dip. Even MU it would be nice for some drop. In general though we just need to get past Iran and focus a bit on rates and CPI and PPI. I was chatting with @Phoenix and we cant take out one critical support level , 7300, week before was 7250. Week before 7150. Week didn’t even touch our most critical support this last week. I would be a dip buyer than a seller imo. You have the dispersion of the AI economy now coming. The second wave of this.
+
+[2026-05-25 05:51]
+I will just added on to what Wiz mentioned above and break it down real time too with my #⚛️┃dark-matter-trade plans. Yahya is onto something real here and it’s a problem I’ve wrestled with in my trading evolution. The way I think about it — dealer positioning is always present but it’s not always load-bearing. The question isn’t whether gamma/vanna/charm exist at a level, it’s whether there’s enough flow and dealer participation to actually enforce them. When MMs are standing down (thin sessions, post-catalyst shock, illiquid overnight) the levels are on the map but nobody’s defending them. The signals that tell you which regime you’re in: Spot-vol beta is the first read. When spot and vol are moving in the same direction, dealers are being forced to hedge reactively — they’re not in control. That’s your ‘other factors dominant’ flag. When spot-vol beta is normal/negative, Greeks are doing their job. Paradigm classification is the second. Positive gamma pinning with tight realized/implied spread = dealers ARE the market. Negative gamma trending with wide spread = they’re passengers. Catalyst window is the override. Any time you’re inside an earnings, macro event, or geopolitical shock window, assume dealer flow is secondary until the dust settles. What Yahya is describing already exists — it’s exactly what a well-built Volland trade plan delivers every session. All three of th
+
+[2026-05-26 04:12]
+look at the last paragraph in this report. capex is only increasing and NOT coming in over the next 3 years. earnings adjusted majorly and I shared an overview of this at the top of the #5/25 ES/SPX Weekly & Daily Overviews trade plan
+
+[2026-05-29 23:55]
+i was i was mainly looking at the gamma structure last week. shifted majorly negative at the end of friday last week. so the ranges extended with minimal vanna put support along with negative vanna exposure on the week. today differs the close. you have positive gamma below spot and above spot, both all expiry and weekly expiry. on the vanna front while it looks extremely choppy to start the week it is positive vanna.
+
+[2026-06-02 08:51]
+Outside of the holiday ramp the weekly support held and its target was 7575 SPX last week. It took us how many 0dte’s until the Thursday event catalyst to settle and we ripped from support again to finally hit target EOW
+
+[2026-06-02 08:51]
+Outside of the holiday ramp the weekly support held and its target was 7575 SPX last week. It took us how many 0dte’s until the Thursday event catalyst to settle and we ripped from support again to finally hit target EOW
+
+[2026-06-08 14:16]
+there is also a bunch of weirdness as usual going down. jobs being hot sold us down which if you dissected it about 70k of jobs came from leisure & hospitality. of which about 55-60k are short term hires for the World Cup. then you have israel/iran. just need to trade level to level as i have mentioned. your bias has to be flexible. we saw what happened once 7500spx last week finally gave way...
+
+[2026-06-08 14:40]
+keep bias uncheck. 7450, 7475, 7500 spx decide some levels today. if they really want to they could run this back up to 7575spx with some kind of catalyst but i am not leaning heavy this week with CPI and PPI around. real risk there.

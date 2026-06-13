@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>0DTE Alpha — GEX-TARGET PM Long Block Investigation (S180)</title>
+<style>
+  body { background: #0a0e1a; color: #e5e7eb; font-family: 'Plus Jakarta Sans','Segoe UI',sans-serif;
+         margin: 0; padding: 20px; line-height: 1.55; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 { color: #fff; margin-bottom: 4px; }
+  .subtitle { color: #94a3b8; margin-bottom: 25px; font-size: 14px; }
+  h2 { color: #fff; margin-top: 32px; padding-bottom: 6px; border-bottom: 2px solid #1e293b; }
+  h3 { color: #cbd5e1; margin-top: 22px; font-size: 16px; }
+  .headline {
+    background: #7c2d1233; border-left: 4px solid #fbbf24;
+    padding: 18px 22px; margin: 18px 0; border-radius: 4px;
+    font-size: 16px; font-weight: 500;
+  }
+  .verified {
+    background: #064e3b33; border-left: 4px solid #22c55e;
+    padding: 14px 18px; margin: 14px 0; border-radius: 4px;
+  }
+  .rejected {
+    background: #7f1d1d33; border-left: 4px solid #ef4444;
+    padding: 12px 16px; margin: 12px 0; border-radius: 4px; font-size: 13px;
+  }
+  .note {
+    background: #1e3a8a22; border-left: 4px solid #3b82f6;
+    padding: 12px 16px; margin: 14px 0; border-radius: 4px; font-size: 13px;
+  }
+  .recommend {
+    background: #064e3b44; border: 2px solid #22c55e;
+    padding: 18px 22px; margin: 22px 0; border-radius: 6px;
+  }
+  .recommend h3 { margin-top: 0; color: #4ade80; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+  th, td { padding: 8px 11px; text-align: left; border-bottom: 1px solid #1e293b; }
+  th { background: #1e293b; color: #e2e8f0; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  td.r, th.r { text-align: right; }
+  td.c, th.c { text-align: center; }
+  .good { color: #22c55e; font-weight: 600; }
+  .bad  { color: #ef4444; font-weight: 600; }
+  .warn { color: #fbbf24; }
+  .muted { color: #64748b; }
+  .hl-row { background: #fbbf2422; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 18px 0; }
+  .kpi { background: #111827; border-left: 4px solid #3b82f6;
+          padding: 12px 16px; border-radius: 4px; }
+  .kpi.bad { border-left-color: #ef4444; }
+  .kpi.good { border-left-color: #22c55e; }
+  .kpi.warn { border-left-color: #fbbf24; }
+  .kpi .label { font-size: 10px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
+  .kpi .value { font-size: 22px; font-weight: 700; margin-top: 4px; color: #fff; }
+  .kpi .sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+  code { background: #1e293b; padding: 2px 6px; border-radius: 3px;
+          font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #fbbf24; }
+  .codeblock { background: #0f172a; border: 1px solid #1e293b; padding: 12px 16px;
+                border-radius: 4px; margin: 12px 0; font-family: 'JetBrains Mono', monospace;
+                font-size: 13px; color: #e2e8f0; overflow-x: auto; }
+  .bar-chart { margin: 16px 0; }
+  .bar-row { display: flex; align-items: center; margin: 6px 0; font-size: 12px; }
+  .bar-label { width: 130px; color: #cbd5e1; }
+  .bar-track { flex: 1; height: 22px; background: #1e293b; border-radius: 3px; position: relative; }
+  .bar-fill { height: 100%; border-radius: 3px; display: flex; align-items: center;
+               padding: 0 8px; color: #fff; font-weight: 600; font-size: 11px; }
+  .bar-val { width: 90px; text-align: right; color: #e2e8f0; font-weight: 600; padding-left: 10px; }
+</style></head><body>
+<div class="container">
+
+<h1>GEX-TARGET PM Long Block — Deep Investigation</h1>
+<div class="subtitle">Saturday 2026-05-23 20:30 ET · Triggered by 2026-05-22 incident · S180 V17.1 candidate</div>
+
+<div class="headline">
+<strong>Your intuition is correct — partially.</strong>
+GEX-TARGET longs are <strong>positive in AM</strong> (n=11, 73% WR, +6.88pt mean) and
+<strong>toxic in PM</strong> (n=6, 0% WR, −8.33pt mean). This is the <strong>biggest
+AM→PM mean swing of any paradigm in the dataset</strong> (−15.22pt per trade). But the
+right rule is <strong>not</strong> "block all GEX-TARGET longs" — it's "block only after 13:00 ET."
+</div>
+
+<h2>The trigger — what happened 2026-05-22</h2>
+<div class="kpi-grid">
+  <div class="kpi good"><div class="label">Peak broker P&amp;L</div><div class="value">+$140</div><div class="sub">~13:00 ET, after 3 SIDIAL-MESSY long wins</div></div>
+  <div class="kpi bad"><div class="label">3 GEX-TARGET longs lost</div><div class="value">−$152.50</div><div class="sub">Real broker FIFO (lid 3184/3185/3189)</div></div>
+  <div class="kpi bad"><div class="label">Final day result</div><div class="value">−$65.85</div><div class="sub">Matches Telegram &quot;Day:&quot; line exactly</div></div>
+  <div class="kpi warn"><div class="label">Filter could have saved</div><div class="value">−$26</div><div class="sub">Portal sim of the 3 trades (17% of loss)</div></div>
+</div>
+
+<h3>Today's timeline (210VYX65 longs account)</h3>
+<table>
+<thead><tr><th>ET time</th><th>lid</th><th>Setup</th><th>Grade</th><th>Paradigm</th><th class="r">Real P&amp;L</th></tr></thead>
+<tbody>
+<tr><td>12:22</td><td>3169</td><td>SC long</td><td>A</td><td>SIDIAL-MESSY</td><td class="r good">+$31.25</td></tr>
+<tr><td>12:23</td><td>3170</td><td>DD long</td><td>A</td><td>SIDIAL-MESSY</td><td class="r good">+$52.50</td></tr>
+<tr><td>12:52</td><td>3173</td><td>SC long</td><td>A+</td><td>SIDIAL-MESSY</td><td class="r good">+$63.75</td></tr>
+<tr class="hl-row"><td><strong>13:57</strong></td><td>3184</td><td>DD long</td><td>B</td><td><strong>GEX-TARGET</strong></td><td class="r bad">−$27.50</td></tr>
+<tr class="hl-row"><td><strong>14:00</strong></td><td>3185</td><td>SC long</td><td>B</td><td><strong>GEX-TARGET</strong></td><td class="r bad">−$51.25</td></tr>
+<tr class="hl-row"><td><strong>14:23</strong></td><td>3189</td><td>ES Abs</td><td>A+</td><td><strong>GEX-TARGET</strong></td><td class="r bad">−$73.75</td></tr>
+<tr><td>15:17</td><td>3200</td><td>ES Abs</td><td>A</td><td>UNDEFINED</td><td class="r bad">−$7.50</td></tr>
+<tr><td>15:23</td><td>3201</td><td>ES Abs</td><td>A</td><td>UNDEFINED</td><td class="r bad">−$43.75</td></tr>
+</tbody>
+</table>
+<div class="muted" style="font-size:12px;">Paradigm flipped SIDIAL-MESSY → GEX-TARGET between 12:52 and 13:57 ET. All 3 GEX-TARGET trades lost in real broker; only −$26 was visible in portal SPX-sim — the rest (~$126) was MES tick wicks tagging stops (S55-class execution gap).</div>
+
+<h2>The data — 1039 long trades, Feb 1 → May 22 2026</h2>
+
+<h3>Per-paradigm AM/PM split (longs only, SC/DD/ES Abs, all grades)</h3>
+<table>
+<thead><tr><th>Paradigm</th><th class="c">AM n</th><th class="r">AM mean</th><th class="c">PM n</th><th class="r">PM mean</th><th class="r">AM→PM Δ</th><th>Notes</th></tr></thead>
+<tbody>
+<tr class="hl-row"><td><strong>GEX-TARGET</strong></td><td class="c">11</td><td class="r good">+6.88pt</td><td class="c">6</td><td class="r bad">−8.33pt</td><td class="r bad"><strong>−15.22</strong></td><td>← biggest swing</td></tr>
+<tr><td>BOFA-LIS</td><td class="c">29</td><td class="r good">+3.32</td><td class="c">10</td><td class="r bad">−0.69</td><td class="r">−4.01</td><td>mild PM degradation</td></tr>
+<tr><td>AG-PURE</td><td class="c">74</td><td class="r">+1.15</td><td class="c">43</td><td class="r bad">−1.82</td><td class="r">−2.97</td><td>mild PM degradation</td></tr>
+<tr><td>AG-LIS</td><td class="c">46</td><td class="r bad">−0.93</td><td class="c">45</td><td class="r bad">−2.58</td><td class="r">−1.66</td><td>both negative</td></tr>
+<tr><td>SIDIAL-EXTREME</td><td class="c">36</td><td class="r good">+2.89</td><td class="c">18</td><td class="r">+1.88</td><td class="r muted">−1.01</td><td>holds up in PM</td></tr>
+<tr><td>BOFA-PURE</td><td class="c">135</td><td class="r good">+4.07</td><td class="c">245</td><td class="r good">+3.27</td><td class="r muted">−0.80</td><td>robust both sessions</td></tr>
+<tr><td>GEX-PURE</td><td class="c">41</td><td class="r good">+2.34</td><td class="c">17</td><td class="r">+1.85</td><td class="r muted">−0.49</td><td>holds up in PM</td></tr>
+<tr><td>GEX-LIS</td><td class="c">43</td><td class="r bad">−1.40</td><td class="c">87</td><td class="r">−0.14</td><td class="r">+1.26</td><td>both negative</td></tr>
+<tr><td><strong>AG-TARGET</strong></td><td class="c">25</td><td class="r good">+2.76</td><td class="c">9</td><td class="r good"><strong>+9.93</strong></td><td class="r good"><strong>+7.17</strong></td><td>PM actually better!</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<strong>Specificity confirmed.</strong> Most paradigms hold their PM edge. BOFA-PURE +3.27pt PM,
+AG-TARGET +9.93pt PM. GEX-TARGET's PM collapse is paradigm-specific — <strong>not</strong> a general
+"PM longs bad" pattern. This rules out simple time-of-day blocking and points to the mechanism
+being paradigm-coupled.
+</div>
+
+<h3>Visual: AM vs PM mean per paradigm (longs)</h3>
+<div class="bar-chart">
+  <div class="bar-row">
+    <div class="bar-label">GEX-TARGET AM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:41.28%;background:#22c55e;">+6.88pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">GEX-TARGET PM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:49.980000000000004%;background:#ef4444;">-8.33pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">AG-TARGET AM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:16.56%;background:#22c55e;">+2.76pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">AG-TARGET PM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:50%;background:#22c55e;">+9.93pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">BOFA-PURE AM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:24.42%;background:#22c55e;">+4.07pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">BOFA-PURE PM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:19.62%;background:#22c55e;">+3.27pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">GEX-PURE AM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:14.04%;background:#22c55e;">+2.34pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">GEX-PURE PM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:11.100000000000001%;background:#22c55e;">+1.85pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">BOFA-LIS AM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:19.919999999999998%;background:#22c55e;">+3.32pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">BOFA-LIS PM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:4.14%;background:#ef4444;">-0.69pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">AG-PURE AM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:6.8999999999999995%;background:#22c55e;">+1.15pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">AG-PURE PM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:10.92%;background:#ef4444;">-1.82pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">AG-LIS AM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:5.58%;background:#ef4444;">-0.93pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">AG-LIS PM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:15.48%;background:#ef4444;">-2.58pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">SIDIAL-EXT AM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:17.34%;background:#22c55e;">+2.89pt</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">SIDIAL-EXT PM</div>
+    <div class="bar-track"><div class="bar-fill" style="width:11.28%;background:#22c55e;">+1.88pt</div></div>
+  </div>
+</div>
+
+<h2>GEX-TARGET focused stats (V16-eligible longs only)</h2>
+<div class="kpi-grid">
+  <div class="kpi good"><div class="label">AM (hr < 13)</div><div class="value">+75.7pt</div><div class="sub">11 trades · 73% WR · +6.88pt mean</div></div>
+  <div class="kpi bad"><div class="label">PM (hr ≥ 13)</div><div class="value">−50.0pt</div><div class="sub">6 trades · <strong>0% WR</strong> · −8.33pt mean</div></div>
+  <div class="kpi warn"><div class="label">Overall V16-eligible</div><div class="value">−5.6pt</div><div class="sub">12 trades · 42% WR · CI [−6.92, +6.41]</div></div>
+  <div class="kpi"><div class="label">Bootstrap CI on mean</div><div class="value muted">crosses 0</div><div class="sub">Whole sample = regime noise (filter MUST be time-split)</div></div>
+</div>
+
+<h2>Rule simulation — what would each block do?</h2>
+
+<p style="color:#94a3b8;font-size:13px;">Applied to V16-eligible long universe (457 trades). Baseline V16 = +1907.0pt = $9,535.</p>
+
+<table>
+<thead><tr><th>Rule</th><th class="c">n kept</th><th class="r">Total</th><th class="c">WR</th><th class="c">Blocked</th><th class="r">Δ vs baseline</th></tr></thead>
+<tbody>
+<tr><td><strong>BASELINE (current V16)</strong></td><td class="c">457</td><td class="r">+1907.0pt ($9,535)</td><td class="c">67.4%</td><td class="c">0</td><td class="r muted">—</td></tr>
+<tr class="rejected" style="background:#7f1d1d22"><td>Block ALL GEX-TARGET longs (blanket)</td><td class="c">445</td><td class="r">+1912.6pt</td><td class="c">68.1%</td><td class="c">12</td><td class="r warn">+$28 only (wash)</td></tr>
+<tr class="hl-row"><td><strong>Block GEX-TARGET longs PM (≥13:00 ET)</strong></td><td class="c">451</td><td class="r good">+1957.0pt</td><td class="c">68.3%</td><td class="c">6</td><td class="r good"><strong>+$250 (best)</strong></td></tr>
+<tr><td>Block GEX-TARGET longs PM (≥14:00 ET)</td><td class="c">453</td><td class="r">+1933.0pt</td><td class="c">68.0%</td><td class="c">4</td><td class="r">+$130</td></tr>
+<tr><td>Block GEX-TARGET DD longs only</td><td class="c">454</td><td class="r">+1943.0pt</td><td class="c">67.8%</td><td class="c">3</td><td class="r">+$180</td></tr>
+<tr class="rejected" style="background:#7f1d1d22"><td>Block ALL longs ≥13:00 (no paradigm)</td><td class="c">270</td><td class="r bad">+1138.0pt</td><td class="c">68.5%</td><td class="c">187</td><td class="r bad"><strong>−$3,845 (over-blocks)</strong></td></tr>
+</tbody>
+</table>
+
+<h2>Mechanism — refined</h2>
+
+<div class="note">
+<strong>GEX-TARGET</strong> = price is AT a +GEX magnet strike. Per Volland framework, this means
+<em>price has reached its destination</em>.
+<br><br>
+<strong>AM phase:</strong> open near +GEX magnet → brief gamma-squeeze pop. Price gets <em>pulled
+up to</em> the target. Long entries ride the magnetic pull. → +6.88pt mean, 73% WR.
+<br><br>
+<strong>PM phase:</strong> price has been at/near magnet for hours → destination exhausted, no
+more upward pull. Long entries are chasing a destination that's already been reached. Mean
+reversion / stabilization kicks in. → <strong>−8.33pt mean, 0% WR over 6 trades</strong>.
+</div>
+
+<h2>Hypotheses tested and rejected</h2>
+
+<div class="rejected">
+<strong>1. Blanket GEX-TARGET block.</strong>
+Would lose +75.7pt AM winners to save +50pt PM losers. Net +$28 only across 12 trades — not worth the complexity.
+</div>
+
+<div class="rejected">
+<strong>2. Paradigm-shift trigger</strong> (block N min after intraday paradigm change).
+REFUTED. Fresh shifts (0-15min) = +2.17pt mean, normal. Not a danger signal at all.
+</div>
+
+<div class="rejected">
+<strong>3. General "PM longs bad" pattern.</strong>
+REFUTED. BOFA-PURE keeps +3.27pt PM, AG-TARGET is +9.93pt PM. Other paradigms also fine.
+GEX-TARGET is the standout.
+</div>
+
+<div class="rejected">
+<strong>4. DD-Exhaustion-only GEX-TARGET block.</strong>
+Saves only +$180. DD's losses are already in the PM cluster — the PM rule captures them
+plus the SC/ES Abs PM losses too.
+</div>
+
+<h2>Recommendation</h2>
+
+<div class="recommend">
+<h3>S180: Block longs in GEX-TARGET when ET hour ≥ 13:00 — V17.1 CANDIDATE</h3>
+
+<div class="codeblock">
+if is_long and paradigm == "GEX-TARGET" and now_et().time() >= dtime(13, 0):
+    return False
+</div>
+
+<p>Add to <code>_passes_live_filter()</code> for SC, DD, ES Absorption long branches,
+BEFORE per-setup paradigm gates.</p>
+
+<p><strong>Expected lift:</strong> ~$30/mo at 1 MES, ~$300/mo at 1 ES. Modest.</p>
+
+<p style="margin-top: 16px; color: #fbbf24;"><strong>⚠️ DO NOT SHIP YET — MONITOR.</strong></p>
+<ul style="margin-top: 8px;">
+  <li>Sample very small: <strong>n=6</strong> historical PM losses</li>
+  <li>Today contributes 3 of those 6 — partly fitting on today</li>
+  <li>All 6 in same low-vol bullish Feb-May 2026 regime — no out-of-sample test</li>
+  <li>Per your standing principle "no deadlines, measure improvement curve"
+      + "don't ship setups based on short-term flip from negative backtest"</li>
+  <li><strong>Action:</strong> wait 30+ more GEX-TARGET long signals (~4-6 weeks at current cadence),
+      then re-test. If pattern holds → V17.1 ship.</li>
+</ul>
+</div>
+
+<h2>The bigger truth — execution gap dominates today's loss</h2>
+
+<div class="kpi-grid">
+  <div class="kpi warn"><div class="label">Portal SPX-sim P&amp;L</div><div class="value">−$26</div><div class="sub">What filter rule could have prevented</div></div>
+  <div class="kpi bad"><div class="label">Real broker P&amp;L (FIFO)</div><div class="value">−$152.50</div><div class="sub">Actual money lost</div></div>
+  <div class="kpi"><div class="label">Execution gap</div><div class="value bad">−$126.50</div><div class="sub">MES tick wicks tagging stops (S55-class)</div></div>
+</div>
+
+<div class="note">
+<strong>Filter fix alone closes only ~17% of today's loss.</strong> The other 83% is execution —
+MES tick wicks tagging broker stops on swings that didn't actually reverse in SPX. This is
+the S55-class structural divergence, and S179 FIFO reconcile (just shipped today) addresses
+the related per-lid attribution shuffle. Neither disappears with a smarter filter.
+</div>
+
+<h2>What also shipped today</h2>
+
+<ul>
+  <li><strong>S179 FIFO reconcile module</strong> shipped (commit <code>3329ab8</code>).
+      <code>app/fifo_reconcile.py</code> + daily 16:20 ET cron (currently env-gated off
+      via <code>FIFO_RECONCILE_ENABLED=true</code> for observation).</li>
+  <li><strong>147-lid historical backfill</strong> applied across 43 acct-days (Mar 24 → May 22).
+      Mix of NULL-recovery (previously missing close_fill_price) + FIFO re-attribution.
+      8 acct-days flagged COUNT MISMATCH (skipped safely).</li>
+  <li><strong>Today's lid=3200 manual fix:</strong> close_fill_price corrected to 7494.25
+      (FIFO truth, P&amp;L −$7.50) from earlier wrongly-backfilled 7487.75.</li>
+  <li><strong>Tasks.md updated:</strong> S179 DONE, S180 MONITORING entry added.</li>
+  <li><strong>Memory:</strong> <code>research_gex_target_pm_long_block.md</code>,
+      <code>reference_fifo_vs_oid_attribution_bug.md</code>.</li>
+</ul>
+
+<h2>Decision menu when you're back</h2>
+
+<table>
+<thead><tr><th>Option</th><th>Action</th><th>Reasoning</th></tr></thead>
+<tbody>
+<tr><td><strong>1 (rec.)</strong></td><td>Wait &amp; monitor S180</td><td>n=6 sample too thin. Re-test at 30+ signals (~mid-July). Scripts cached.</td></tr>
+<tr><td>2</td><td>Ship S180 now anyway</td><td>Small lift ($30/mo @ 1 MES). Risks overfitting today's 3 trades.</td></tr>
+<tr><td>3</td><td>Activate FIFO cron</td><td><code>railway variables --set FIFO_RECONCILE_ENABLED=true</code> on 0dtealpha. Module already deployed, just env-gated.</td></tr>
+</tbody>
+</table>
+
+<div class="muted" style="margin-top: 30px; font-size: 11px; text-align: center; padding-top: 20px; border-top: 1px solid #1e293b;">
+0DTE Alpha · S180 GEX-TARGET PM long block investigation · Generated {now_et.strftime('%Y-%m-%d %H:%M:%S ET')}
+</div>
+
+</div></body></html>

@@ -1,0 +1,3722 @@
+Volland Discord - ⛅│volland-daytrading-central
+Volland Discord
+Volland Daytrading / ⛅│volland-daytrading-central
+This channel is for those who use Volland for daytrading. Please keep all trades and chatter to daytrading timeframes.
+After 09-06-2026 12:00 AM
+BigBill
+@Wizard of Ops
+I see some people talking about how last Friday had a tremendous number of contracts outstanding (w/ 2/3rds being 0DTE).  Do you happen to have the data to confirm that and if yes any idea if we went into the day with a large amount outstanding or was it just a 0DTE tidal wave?  I am just wondering if this is another thing I might want to track.  I already download the current months SPX table at the close so with some pivot tables I could in theory track some things w/r/t this (unless it was all 0DTE).
+BigBill
+09-06-2026 12:09 AM
+Here is how things looked the past few days w/r/t number of contracts outstanding each day...
+12:10 AM
+6.4 Close
+(edited)
+12:10 AM
+6.5 Close
+12:10 AM
+12:11 AM
+6.8 close
+12:11 AM
+12:14 AM
+The Hypothesis I am looking to test is if outsized 1DTE positioning e.g. the 6/5 positioning as of the 6/4 close can lead to outsized moves when they become 0DTE positions.
+2
+2
+12:16 AM
+Current step will be to track for when there is outsized 1DTE positioning.
+12:20 AM
+Step thereafter will probably be to analyze Volland positioning on days with outsized positioning to understand when outsized moves are more likely vs less likely.
+dauma
+09-06-2026 1:13 AM
+must be some negative news coming - nice little sell off after hours here
+1
+LordHelmet
+09-06-2026 1:18 AM
+Let me guess, the ceasefire is over, I mean back on, I mean oil will go up at some point, or not.
+6
+Phoenix
+09-06-2026 3:07 AM
+Korea again
+3:07 AM
+lol
+Phoenix
+Korea again
+ChuckG
+09-06-2026 6:52 AM
+So goes Korea so goes the market?
+ChuckG
+So goes Korea so goes the market?
+nicowilliamsRW
+09-06-2026 6:58 AM
+they almost retraced fridays drop
+BigBill
+The Hypothesis I am looking to test is if outsized 1DTE positioning e.g. the 6/5 positioning as of the 6/4 close can lead to outsized moves when they become 0DTE positions.
+ImOnlyHereForApolloANDJohannes
+09-06-2026 7:01 AM
+Would be interesting to see if you also filtered down to split long short otm vs itm and then had machine learning analyze correlations if ovn positioning is deemed significant first in size but then also at x imbalance to get directional due to charm drag with a mix of var for dealers so probably only trading pure paradigms
+7:03 AM
+If u used that to sell premium, strikes getting tested can just be an opportunity to actually win on both sides if u keep a delta hedge around and have a band that price needs to break to actually keep it on which becomes unlikely as ppl start frontrunning charm/dealers defending premium
+O :t: C
+09-06-2026 7:13 AM
+7:15 AM
+I did not get filled on LMT while off playing tennis, missed me by 2.25 points
+7:16 AM
+SL was 24 pts to get to tgts 29550 and 29589.75 level
+7:18 AM
+CONTEXT
+SET UP
+TRIGGER
+was spot on
+3
+单日转向
+09-06-2026 8:18 AM
+Johannes
+09-06-2026 9:14 AM
+Good day everyone
+Johannes
+09-06-2026 9:40 AM
+poll_question_text
+Where is VIX gonna open
+victor_answer_votes
+4
+total_votes
+8
+victor_answer_id
+3
+victor_answer_text
+<20
+O :t: C
+09-06-2026 10:24 AM
+18.20-ish
+ImOnlyHereForApolloANDJohannes
+09-06-2026 11:07 AM
+Nvda looks solid for selling premium rn, monday practically already foreshadowed ken doesnt like the book moving
+11:12 AM
+220 to 202.5 looks like a hold same lvls as last week
+(edited)
+jk23
+09-06-2026 11:19 AM
+Nice longs again from the ovn low
+jk23
+Nice longs again from the ovn low
+ImOnlyHereForApolloANDJohannes
+09-06-2026 11:20 AM
+On nvda?
+jk23
+09-06-2026 11:20 AM
+Indexes
+11:20 AM
+I went long nq from 350
+11:21 AM
+Still long
+11:21 AM
+Coming into resistance again at 700
+11:22 AM
+Same level resistance on NQ but ES is 30 points lower
+Original message was deleted or could not be loaded.
+jk23
+09-06-2026 11:28 AM
+Yes
+1
+1
+11:29 AM
+Easy to hold onto winners when you’re asleep
+11:29 AM
+Nice surprise to wake up to haha
+11:30 AM
+Added a 2nd long at 586
+11:31 AM
+Wanting a good break above 700
+jk23
+Coming into resistance again at 700
+ImOnlyHereForApolloANDJohannes
+09-06-2026 11:31 AM
+Looks pretty topped out for now imo
+11:31 AM
+Atleast from kens seat
+jk23
+09-06-2026 11:31 AM
+Maybe, both in some good profit. Stops set at just above b/e on the 2nd so I’m chilling
+ImOnlyHereForApolloANDJohannes
+09-06-2026 11:32 AM
+Would be other players now if we get a second leg
+ImOnlyHereForApolloANDJohannes
+Would be other players now if we get a second leg
+jk23
+09-06-2026 11:32 AM
+You mean like Trump or Bessent
+ImOnlyHereForApolloANDJohannes
+09-06-2026 11:32 AM
+Im checking mags i wanna play dispersion using the vol
+11:33 AM
+I dont even think news will work its magic unless theyre neutral or positioned in its favor unless its something insane which is still actually likely
+jk23
+09-06-2026 11:33 AM
+Not much overhead on the qs but SPY still has a lot of cus short puts above
+ImOnlyHereForApolloANDJohannes
+09-06-2026 11:34 AM
+I think we’re gonna have a full on war with the middle east until they decide to view the world differently hot take
+11:35 AM
+Full on war is understated when we can blow them to rubble with no boots on ground netanyoohoo got his scorestreaks
+jk23
+Not much overhead on the qs but SPY still has a lot of cus short puts above
+ImOnlyHereForApolloANDJohannes
+09-06-2026 11:35 AM
+True
+11:36 AM
+Till maybe about 745 it looks like
+11:36 AM
+Still net short calls above from spy tho
+11:37 AM
+Almost net short calls on spx
+ImOnlyHereForApolloANDJohannes
+Still net short calls above from spy tho
+jk23
+09-06-2026 11:37 AM
+On what timeframe?
+jk23
+On what timeframe?
+ImOnlyHereForApolloANDJohannes
+09-06-2026 11:38 AM
+All exp gamma, atleast until shorter tenor gains some convexity
+11:43 AM
+This is mega topped out for now imo actually
+11:44 AM
+Triple bearish charm with no help flipping above plus its unwanted gamma behavior so low vol drift need someone else to step in besides ken, bars
+Toto
+09-06-2026 3:37 PM
+Morning folks
+3:37 PM
+We ready for a new ceasefire/deal announcement?
+4
+ImOnlyHereForApolloANDJohannes
+Would be interesting to see if you also filtered down to split long short otm vs itm and then had machine learning analyze correlations if ovn positioning is deemed significant first in size but then also at x imbalance to get directional due to charm drag with a mix of var for dealers so probably only trading pure paradigms
+BigBill
+09-06-2026 3:41 PM
+Yes you went way more detailed but at the highest level, that is what I meant here:
+https://discord.com/channels/1356329071230980188/1362818729347645754/1513653918968709181
+BigBill
+Yes you went way more detailed but at the highest level, that is what I meant here:
+https://discord.com/channels/1356329071230980188/1362818729347645754/1513653918968709181
+ImOnlyHereForApolloANDJohannes
+09-06-2026 3:53 PM
+The pre workout i use as caffeine took over
+Toto
+We ready for a new ceasefire/deal announcement?
+ImOnlyHereForApolloANDJohannes
+09-06-2026 3:53 PM
+I already sold calls so NO
+1
+3:54 PM
+This is one of those days you just buy puts at the open and watch us magnet
+charm eod just immediately just wait
+3:54 PM
+Ag heatseeking Netanyahu exe soon kill or fill baby
+LordHelmet
+09-06-2026 4:17 PM
+Food for thought
+4:17 PM
+"....when NDX loses -4% or more on a Friday there is a 90% chance that Friday low is breached in the next five trading days, and we don't think this time is different." (BTIG)
+That ES trend line remains key... bears main objective was to defend there and that's exactly what they did... as long as price remains subdued, Friday's lows are at risk of getting revisited as the data point describes above^^^... the trend line now sits @ 7487
+1
+Yahya
+09-06-2026 4:18 PM
+Those 20 days returns
+4:18 PM
+tasty
+Yahya
+tasty
+LordHelmet
+09-06-2026 4:18 PM
+Yahya
+09-06-2026 4:18 PM
+the left tail is a bit nasty but yeah
+LordHelmet
+"....when NDX loses -4% or more on a Friday there is a 90% chance that Friday low is breached in the next five trading days, and we don't think this time is different." (BTIG)
+That ES trend line remains key... bears main objective was to defend there and that's exactly what they did... as long as price remains subdued, Friday's lows are at risk of getting revisited as the data point describes above^^^... the trend line now sits @ 7487
+Toto
+09-06-2026 4:25 PM
+90% eh. And it seems like once that low is breached, you should be buying any and all dips
+Toto
+90% eh. And it seems like once that low is breached, you should be buying any and all dips
+LordHelmet
+09-06-2026 4:26 PM
+Indeed
+4:26 PM
+Typical NQ stop hunt behavior
+4:26 PM
+Lol
+4:26 PM
+Just on a larger timeframe
+Dragonboys
+09-06-2026 4:29 PM
+Good morning
+3
+Yahya
+09-06-2026 4:32 PM
+banks holding well
+Yahya
+09-06-2026 4:41 PM
+Banks
+4:41 PM
+On a bender
+4:41 PM
+BAC
+4:41 PM
+lol
+4:44 PM
+NQ filled the singles
+4:45 PM
+sqzme holding this OTM puts fwiw
+Yahya
+sqzme holding this OTM puts fwiw
+dauma
+09-06-2026 4:45 PM
+Oyreeee
+nicowilliamsRW
+09-06-2026 4:45 PM
+approaching 7475 spx
+Yahya
+09-06-2026 4:45 PM
+ES into the singles
+Yahya
+ES into the singles
+A p o l l o
+09-06-2026 4:48 PM
+fill it then higher
+Yahya
+09-06-2026 4:48 PM
+Im a reformed bear so Im all about the long trades
+A p o l l o
+fill it then higher
+LordHelmet
+09-06-2026 4:48 PM
+Are you fading once we get past the singles?
+A p o l l o
+09-06-2026 4:49 PM
+I need to see 7525 ES first
+1
+4:49 PM
+but buy side skewed
+4:49 PM
+still
+LordHelmet
+09-06-2026 4:51 PM
+I won't be a panican....
+LordHelmet
+I won't be a panican....
+Yahya
+09-06-2026 4:52 PM
+Never
+4:52 PM
+You will never catch me going to bed betting against 'up and to the right'
+2
+LordHelmet
+09-06-2026 4:53 PM
+Fools errand
+Saint_Seiya
+09-06-2026 4:54 PM
+Hold 75 and next stop 7580 per wizs substack note
+3
+LordHelmet
+09-06-2026 4:55 PM
+Yahya
+You will never catch me going to bed betting against 'up and to the right'
+Toto
+09-06-2026 4:58 PM
+all the good bull moves happen when we're sleeping
+LordHelmet
+09-06-2026 4:58 PM
+They're afraid of you...
+4:58 PM
+They have to sneak around.
+1
+Toto
+09-06-2026 5:00 PM
+when the range is already huge by RTH open, how much meat is left on the bone for continuation
+5:00 PM
+tough
+单日转向
+09-06-2026 5:04 PM
+can't hold 7475
+1
+5:10 PM
+tomorrow CPI..
+Yahya
+09-06-2026 5:11 PM
+SOXL murked
+5:11 PM
+rotation into banks
+5:11 PM
+not paying off
+单日转向
+09-06-2026 5:17 PM
+dump..
+nicowilliamsRW
+09-06-2026 5:17 PM
+-70pts es straight down ouuf
+dauma
+09-06-2026 5:17 PM
+Okay. Guess we wait for 7390 to long again.
+Johannes
+09-06-2026 5:19 PM
+bid trying here
+dauma
+09-06-2026 5:21 PM
+Apollo give us the 7525 ES bold call
+1
+Yahya
+09-06-2026 5:22 PM
+nasty PA
+O :t: C
+09-06-2026 5:23 PM
+that is what I call smashing the bid
+5:24 PM
+that was fun
+1
+5:25 PM
+nicowilliamsRW
+09-06-2026 5:36 PM
+gonna get spicy if we break overnight lows..
+2
+LordHelmet
+09-06-2026 5:39 PM
+At least we have a healthy initial balance range.
+3
+Toto
+09-06-2026 5:42 PM
+healthy is a good way of putting it
+2
+Toto
+healthy is a good way of putting it
+LordHelmet
+09-06-2026 5:42 PM
+I try to be an optimist
+2
+dauma
+09-06-2026 5:44 PM
+Time for that 7390 test.
+(edited)
+单日转向
+09-06-2026 5:44 PM
+woah, below 7400
+5:45 PM
+Vix going up
+5:45 PM
+ImOnlyHereForApolloANDJohannes
+This is one of those days you just buy puts at the open and watch us magnet
+charm eod just immediately just wait
+Toto
+09-06-2026 5:46 PM
+Good call bruv
+dauma
+09-06-2026 5:46 PM
+lol did someone get the early read on CPI
+1
+5:46 PM
+Sliced through 7390
+Toto
+09-06-2026 5:46 PM
+that's violent
+LordHelmet
+09-06-2026 5:47 PM
+Big volume
+5:47 PM
+Slicing bigly
+nicowilliamsRW
+09-06-2026 5:47 PM
+can we get below 7350 spx today..
+Sweaty Urbanwankermandickhead
+09-06-2026 5:48 PM
+IV expansion, sheesh
+Disciple3
+09-06-2026 5:52 PM
+im here boiz
+5:52 PM
+i see a dip
+6
+1
+LordHelmet
+"....when NDX loses -4% or more on a Friday there is a 90% chance that Friday low is breached in the next five trading days, and we don't think this time is different." (BTIG)
+That ES trend line remains key... bears main objective was to defend there and that's exactly what they did... as long as price remains subdued, Friday's lows are at risk of getting revisited as the data point describes above^^^... the trend line now sits @ 7487
+BigBill
+09-06-2026 5:54 PM
+BTIG was right, lol....
+1
+1
+Toto
+90% eh. And it seems like once that low is breached, you should be buying any and all dips
+BigBill
+09-06-2026 5:55 PM
+You buying the dip?
+BigBill
+You buying the dip?
+Toto
+09-06-2026 5:55 PM
+of course
+Toto
+of course
+LordHelmet
+09-06-2026 5:58 PM
+Neverunder is never far from our hearts...
+Toto
+09-06-2026 5:58 PM
+took 2 shots to get it though
+5:59 PM
+ate a fat loss in like 2 seconds to start lol
+Disciple3
+09-06-2026 6:02 PM
+200pt 3m candles lol
+nicowilliamsRW
+09-06-2026 6:02 PM
+nice bounce off lower edge
+LordHelmet
+09-06-2026 6:05 PM
+I don't think seller are done
+Toto
+09-06-2026 6:05 PM
+I didn't see any news that started this, did I miss it
+6:06 PM
+maybe this?
+1
+LordHelmet
+09-06-2026 6:06 PM
+I didn't either.
+Toto
+maybe this?
+jk23
+09-06-2026 6:07 PM
+Not the China announcement?
+6:07 PM
+Crude is down
+LordHelmet
+09-06-2026 6:08 PM
+Vx headed back up
+jk23
+Not the China announcement?
+Toto
+09-06-2026 6:08 PM
+what was the china announcement?
+LordHelmet
+09-06-2026 6:08 PM
+Opening strategic reserve
+Toto
+09-06-2026 6:08 PM
+ohh
+LordHelmet
+09-06-2026 6:08 PM
+They're in pain
+Toto
+what was the china announcement?
+jk23
+09-06-2026 6:08 PM
+https://discord.com/channels/1356329071230980188/1362821077922742334/1513910050475741204
+1
+A p o l l o
+09-06-2026 6:09 PM
+Need some
+@Disciple3
+in here
+6:09 PM
+We have a communication issue
+6:09 PM
+Buy the dip scheme
+jk23
+https://discord.com/channels/1356329071230980188/1362821077922742334/1513910050475741204
+dauma
+09-06-2026 6:10 PM
+Disciple3
+09-06-2026 6:10 PM
+hello
+6:10 PM
+my coming to the desk marked the bottom
+6:10 PM
+high volume buying there must be answered
+A p o l l o
+Buy the dip scheme
+dauma
+09-06-2026 6:10 PM
+lol i was going to short at 7475 and then disciple entered my head.  i blame him for now only being able to get a 6 inch sub instead of a footlong today for lunch
+3
+dauma
+lol i was going to short at 7475 and then disciple entered my head.  i blame him for now only being able to get a 6 inch sub instead of a footlong today for lunch
+Toto
+09-06-2026 6:11 PM
+but we all get to enjoy a footlong green candle up the butt instead
+Disciple3
+09-06-2026 6:11 PM
+7585 again soon or something
+2
+6:11 PM
+something saomething
+dauma
+09-06-2026 6:11 PM
+if wiz gets his vol event satisfied by tomorrow - cpi going to have to be negative
+1
+Disciple3
+09-06-2026 6:12 PM
+little too much selling today still
+6:13 PM
+not great to not blast on that volume
+1
+LordHelmet
+09-06-2026 6:13 PM
+The volume on this pop is weak.
+Disciple3
+09-06-2026 6:13 PM
+would love 54 es low taken
+LordHelmet
+09-06-2026 6:13 PM
+I'm looking for shorts at 7415 ES
+Disciple3
+09-06-2026 6:13 PM
+thats a hella buy the dip
+6:17 PM
+paytience
+2
+LordHelmet
+09-06-2026 6:22 PM
+Let's go there
+6:22 PM
+Didn't get my fill, was too ambitious
+Disciple3
+09-06-2026 6:23 PM
+here it comes
+6:23 PM
+6:24 PM
+so close
+LordHelmet
+09-06-2026 6:25 PM
+Friday low is close too
+6:25 PM
+For nq
+Disciple3
+09-06-2026 6:26 PM
+there it is
+dauma
+09-06-2026 6:27 PM
+very impressive bears
+Toto
+09-06-2026 6:27 PM
+wowee
+Saint_Seiya
+09-06-2026 6:27 PM
+7300 in sight?
+Dragonboys
+09-06-2026 6:27 PM
+News?
+dauma
+09-06-2026 6:27 PM
+lol 2% intraday sell off
+LordHelmet
+09-06-2026 6:29 PM
+Disciple3
+09-06-2026 6:29 PM
+spicy
+LordHelmet
+09-06-2026 6:29 PM
+Nq has more to go before I can buy
+Yahya
+09-06-2026 6:31 PM
+Time to buy the Vol event long
+1
+Yahya
+Time to buy the Vol event long
+ChuckG
+09-06-2026 6:31 PM
+Good question
+LordHelmet
+09-06-2026 6:31 PM
+Nq low was 29772
+6:31 PM
+So close
+ChuckG
+09-06-2026 6:31 PM
+Need to consult the expert
+6:32 PM
+@A p o l l o
+6:32 PM
+@Wizard of Ops
+dauma
+09-06-2026 6:32 PM
+@Wizard of Ops
+throw us a bold call today!
+Yahya
+Time to buy the Vol event long
+A p o l l o
+09-06-2026 6:32 PM
+yes
+1
+6:33 PM
+very spicy right here
+Disciple3
+09-06-2026 6:33 PM
+we need a hero
+A p o l l o
+09-06-2026 6:33 PM
+a lot of weakness in T10 right now
+6:33 PM
+ES side, they are trying to buy right here around 7320 spx
+BigBill
+09-06-2026 6:34 PM
+1
+A p o l l o
+09-06-2026 6:34 PM
+6:35 PM
+need
+@Disciple3
+to lift some offers on Q's
+Yahya
+09-06-2026 6:37 PM
+big fight here
+6:38 PM
+straight negative gamma to 70-75
+Disciple3
+09-06-2026 6:39 PM
+780s ?
+6:40 PM
+gotta close over this nasty 870 for higher
+Yahya
+09-06-2026 6:40 PM
+I bot some
+6:40 PM
+to play
+LordHelmet
+09-06-2026 6:40 PM
+Nice volume on this wick
+Disciple3
+09-06-2026 6:41 PM
+we might as well get the nq low now that weve come this far
+Hivey
+09-06-2026 6:42 PM
+interesting: the NQ is still going down, but the NDX already retraced 100 points up
+ChuckG
+09-06-2026 6:43 PM
+For the vol event CPI demolishes vol?
+dauma
+09-06-2026 6:44 PM
+its interesting because its like friday - where it was all tech.....RSP essentially flat.
+6:44 PM
+just tech getting destroyed
+Disciple3
+09-06-2026 6:45 PM
+we gotta get some money ready for space x to moon
+6:50 PM
+wew
+6:51 PM
+pathetic bounce
+Yahya
+09-06-2026 6:52 PM
+lol
+Dragonboys
+09-06-2026 6:52 PM
+Got some June 18 spy 750C
+Yahya
+09-06-2026 6:53 PM
+I like it
+1
+Disciple3
+09-06-2026 6:53 PM
+742 and 663 big spots too on nq
+6:56 PM
+1
+Disciple3
+we might as well get the nq low now that weve come this far
+Jonathan Hewitt
+09-06-2026 6:57 PM
+got it
+A p o l l o
+09-06-2026 6:57 PM
+6:57 PM
+mr 1k has appeared
+6:57 PM
+6:57 PM
+number 2
+1
+Yahya
+09-06-2026 6:58 PM
+got any of those bold calls laying around ?
+A p o l l o
+09-06-2026 6:58 PM
+rvol says revert back to 7357 spx
+Disciple3
+09-06-2026 6:59 PM
+jeeze quite bearish
+nicowilliamsRW
+09-06-2026 6:59 PM
+7350 --> 7300 right in the trade plan
+@Dark Matter
+Disciple3
+09-06-2026 6:59 PM
+volume smacking it now
+Dragonboys
+09-06-2026 6:59 PM
+We got to 7300
+Disciple3
+09-06-2026 7:00 PM
+lots of orders down on nq to fill still
+Dragonboys
+09-06-2026 7:01 PM
+So more down?
+Yahya
+09-06-2026 7:01 PM
+bought the 750C for July expo
+2
+A p o l l o
+rvol says revert back to 7357 spx
+dauma
+09-06-2026 7:01 PM
+I’d take 7357
+Disciple3
+09-06-2026 7:03 PM
+7:06 PM
+oiiiii
+dauma
+09-06-2026 7:06 PM
+almost like a recession trade today - bonds rallying and everything else dumping (crude included)
+Disciple3
+09-06-2026 7:07 PM
+nice little long scalp there
+7:07 PM
+do it agasin, 625
+Disciple3
+nice little long scalp there
+Topcheddar
+09-06-2026 7:07 PM
+Braver man than me haha
+Disciple3
+09-06-2026 7:07 PM
+definitely size down
+7:08 PM
+not the normal 15nq size today
+Dragonboys
+09-06-2026 7:08 PM
+we cut through 7300
+Disciple3
+09-06-2026 7:10 PM
+gap fill
+7:10 PM
+fr fr?
+Disciple3
+not the normal 15nq size today
+jk23
+09-06-2026 7:10 PM
+Just 14 today. Gotta be safe
+1
+7:11 PM
+Dow is still above 50k so all is good in the world
+Disciple3
+09-06-2026 7:12 PM
+yes, noone will mention epstein rn
+1
+7:13 PM
+guess we''ll go to 7200
+7:13 PM
+then  0
+Yahya
+09-06-2026 7:13 PM
+the lower it goes the higher you ride it back up
+3
+7:13 PM
+beauty
+Disciple3
+yes, noone will mention epstein rn
+BigBill
+09-06-2026 7:13 PM
+Getting close though!
+1
+1
+LordHelmet
+09-06-2026 7:16 PM
+Weee
+Dragonboys
+09-06-2026 7:16 PM
+seems are big orders are getting filled in this drop
+Yahya
+Time to buy the Vol event long
+FixedRate
+09-06-2026 7:17 PM
+If this actually gets satisfied that would be crazy
+Disciple3
+09-06-2026 7:17 PM
+yikes
+LordHelmet
+09-06-2026 7:17 PM
+Once SPx gap is filled...wouldn't be short.
+7:17 PM
+Look at vx futures
+7:17 PM
+60 degrees up
+Dragonboys
+09-06-2026 7:19 PM
+wowz
+Disciple3
+09-06-2026 7:19 PM
+0
+dauma
+09-06-2026 7:19 PM
+Never over?
+2
+LordHelmet
+09-06-2026 7:20 PM
+Not for at least a day
+Disciple3
+0
+dauma
+09-06-2026 7:20 PM
+Now i have to get a kids 3" sub cuz i didnt short at 7475
+Shawn
+09-06-2026 7:23 PM
+wtf happened wiz
+1
+dauma
+Never over?
+Yahya
+09-06-2026 7:24 PM
+NO
+dauma
+09-06-2026 7:24 PM
+Hopefully Trump is manipulating the inflation numbers right now so were good for tomorrow
+ingram142
+09-06-2026 7:25 PM
+hmm might get another vol event signal
+1
+Yahya
+09-06-2026 7:25 PM
+They will suck you in with a few days of ugliness then rip it for 3 months
+Disciple3
+09-06-2026 7:25 PM
+watch em sweep this low again
+Toto
+Good call bruv
+ImOnlyHereForApolloANDJohannes
+09-06-2026 7:28 PM
+Uh yeah.
+7:29 PM
+Thats what the fuck i do
+7:29 PM
+Feed my ego ken why dont u
+Shawn
+09-06-2026 7:29 PM
+So where is the lower edge
+ImOnlyHereForApolloANDJohannes
+09-06-2026 7:29 PM
+Think we’re pretty bottomed out
+7:29 PM
+Spy flips over gonna vol crush could catch a bid till like 29 spy imo
+Disciple3
+watch em sweep this low again
+ImOnlyHereForApolloANDJohannes
+09-06-2026 7:30 PM
+BTD szn annihilated. Price vol fair and thin out bagholdrr hair
+Dragonboys
+09-06-2026 7:34 PM
+another 1k at 85 ES
+(edited)
+7:35 PM
+what you seeing
+@A p o l l o
+?
+A p o l l o
+09-06-2026 7:35 PM
+yepp
+7:35 PM
+2 have already filled
+Dragonboys
+09-06-2026 7:35 PM
+yah few 500 orders too
+7:35 PM
+assuming these are all longs
+Disciple3
+09-06-2026 7:38 PM
+lmaop
+dauma
+09-06-2026 7:38 PM
+lol jesus - someone knows somethign
+Jonathan Hewitt
+09-06-2026 7:38 PM
+So much for TACO Tuesday
+LordHelmet
+09-06-2026 7:39 PM
+Angry market
+Yahya
+09-06-2026 7:39 PM
+we flash crashing or what
+LordHelmet
+09-06-2026 7:39 PM
+I have just been informed by our Great Military that last night the Iranians shot down one of our highly sophisticated Apache Helicopters while patrolling over the Strait of Hormuz. There were two pilots involved, both are safe and uninjured. Nevertheless, the United States must, of necessity, respond to this attack. Thank you for your attention to this matter! President DONALD J. TRUMP
+3
+Topcheddar
+09-06-2026 7:39 PM
+A lot of oil "news" came out today of different people publishing how long it would take to get hormuz back online
+Dragonboys
+09-06-2026 7:39 PM
+no idea man
+7:39 PM
+crazy
+Yahya
+09-06-2026 7:39 PM
+crude spike
+LordHelmet
+09-06-2026 7:39 PM
+War back on
+Pippen
+09-06-2026 7:39 PM
+Did Trump mark the top with "stock market looks good"
+Johannes
+09-06-2026 7:39 PM
+dayum
+Disciple3
+09-06-2026 7:40 PM
+7206
+7:40 PM
+straight to 0
+nicowilliamsRW
+7350 --> 7300 right in the trade plan
+@Dark Matter
+Dark Matter
+09-06-2026 7:40 PM
+you know it brother and we got more
+1
+7:40 PM
+7350 was a lot of delta selling for dealers if you missed that connection
+Dragonboys
+09-06-2026 7:40 PM
+spot vol beta above 2 again
+dauma
+09-06-2026 7:40 PM
+oh shit crude popping
+7:40 PM
+war news?
+dauma
+war news?
+LordHelmet
+09-06-2026 7:41 PM
+https://discord.com/channels/1356329071230980188/1362818729347645754/1513945631851286679
+dauma
+09-06-2026 7:41 PM
+ruh roh
+7:42 PM
+hahaha insiders been selling all morning
+1
+7:42 PM
+before that tweet
+jk23
+09-06-2026 7:43 PM
+So Trump wants to retaliate but also wants his stonks to go up
+7:43 PM
+Decisions
+Disciple3
+09-06-2026 7:44 PM
+well 200nq on now
+7:44 PM
+starting to just look like broad develeraging event
+7:47 PM
+stop hes already dead
+LordHelmet
+09-06-2026 7:47 PM
+Vx futures in the moon
+Disciple3
+09-06-2026 7:48 PM
+so what happens with double vol event
+LordHelmet
+09-06-2026 7:48 PM
+You square them
+7:48 PM
+7475*7475
+7:48 PM
+Neverunder
+2
+Dragonboys
+09-06-2026 7:49 PM
+spot vol 2.88
+Disciple3
+so what happens with double vol event
+Dark Matter
+09-06-2026 7:49 PM
+1
+Disciple3
+so what happens with double vol event
+dauma
+09-06-2026 7:51 PM
+lol the double Vol event.
+Disciple3
+09-06-2026 7:51 PM
+alright rinse the dip buy again to 200
+Zack
+09-06-2026 7:52 PM
+i put on a 0dte put spread at the literal highs 7440/7420 for $2.5 i literally should have just bought the 7440 for $5 would be like 3500% hahah
+1
+A p o l l o
+rvol says revert back to 7357 spx
+ImOnlyHereForApolloANDJohannes
+09-06-2026 7:57 PM
+Im on the toilet but spx short puts beneath plus spy charm flip i think we can see vol crush whipsaw spike
+7:57 PM
+Probably gonna be pretty short lived
+7:57 PM
+Speedwipe
+ImOnlyHereForApolloANDJohannes
+Im on the toilet but spx short puts beneath plus spy charm flip i think we can see vol crush whipsaw spike
+LordHelmet
+09-06-2026 7:58 PM
+I think you're right to urge caution here. Don't short the hole ..
+ImOnlyHereForApolloANDJohannes
+09-06-2026 7:58 PM
+Claude how do i potty quicker
+LordHelmet
+I think you're right to urge caution here. Don't short the hole ..
+ImOnlyHereForApolloANDJohannes
+09-06-2026 7:58 PM
+Nah i mean longs
+LordHelmet
+09-06-2026 7:58 PM
+I would want to see a sweep before up tho
+Disciple3
+so what happens with double vol event
+BigBill
+09-06-2026 7:58 PM
+Just keep buying the dip.  The key thing to remember about Martingaling is it always works eventually...
+4
+2
+ImOnlyHereForApolloANDJohannes
+Nah i mean longs
+LordHelmet
+09-06-2026 7:58 PM
+Agreed
+ImOnlyHereForApolloANDJohannes
+09-06-2026 7:58 PM
+Hard to stay long when ken gets insane short delta premiums like this
+7:58 PM
+It was clear at 7 am
+7:59 PM
+Shorted calls this morning
+7:59 PM
+Didnt even change that much
+7:59 PM
+Just more long puts
+(edited)
+Johannes
+09-06-2026 7:59 PM
+offer gone
+BigBill
+Just keep buying the dip.  The key thing to remember about Martingaling is it always works eventually...
+ImOnlyHereForApolloANDJohannes
+09-06-2026 7:59 PM
+I had a condor on for 30 seconds im so lucky
+LordHelmet
+09-06-2026 8:00 PM
+Let's see hold above 7300 es
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:00 PM
+Right before the last brutal leg
+Disciple3
+09-06-2026 8:00 PM
+insane candles for trading 100nqs
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:00 PM
+Wow i just missed the long
+nicowilliamsRW
+09-06-2026 8:01 PM
+@Yahya
+why didnt we keep our putsss...bears can never win!
+nicowilliamsRW
+@Yahya
+why didnt we keep our putsss...bears can never win!
+LordHelmet
+09-06-2026 8:02 PM
+Bears are fickle and unreliable.
+8:02 PM
+They'll turn on you when hungry or full
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:02 PM
+@A p o l l o
+u meant once spx reprices vol ?
+Dragonboys
+09-06-2026 8:02 PM
+some life showing up
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:02 PM
+Seems possible and short lived probably a 3min move then defense
+hmmmm
+09-06-2026 8:02 PM
+doesn't look like we're getting a second vol event
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:03 PM
+Wicking vwap would be comical
+Dragonboys
+09-06-2026 8:03 PM
+come on ES stay above 7300
+LordHelmet
+09-06-2026 8:05 PM
+A U.S. official told me the investigation determined that an Iranian drone hit the U.S. helicopter and got it to crash. The U.S. official said the investigation still hasn't determined if it was intentional or not
+8:05 PM
+News
+2
+nicowilliamsRW
+@Yahya
+why didnt we keep our putsss...bears can never win!
+Yahya
+09-06-2026 8:08 PM
+Nope, made some dough thats good enough,when you get paid too much on the short you start thinking it’s as easy as the long
+1
+8:08 PM
+Big mistake
+1
+8:09 PM
+Plenty of opps to scalp short today
+8:09 PM
+Bear flag after bear flag
+Dragonboys
+09-06-2026 8:10 PM
+now buy some longs and save my spy calls
+LordHelmet
+09-06-2026 8:10 PM
+Need a strong break here for a good long
+Dragonboys
+09-06-2026 8:10 PM
+not touching 0DTE
+LordHelmet
+09-06-2026 8:10 PM
+Yeah, I bought 30 June call debit spreads
+3
+8:11 PM
+Will be happy with that hopefully
+8:11 PM
+21 days for the vol signal to play out
+8:11 PM
+And end of month window dressing.
+Dragonboys
+09-06-2026 8:11 PM
+we did close that may 6th gap today
+1
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:11 PM
+Yeah this is a good spot to be levered long longer tenor
+1
+8:11 PM
+I dont think we move much from here till power hour
+LordHelmet
+09-06-2026 8:12 PM
+Watching vx futures for cues
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:12 PM
+This is a horrible trade now
+8:12 PM
+Charm fighting ken
+8:13 PM
+Probably a mega choppy rally aggressive pullbacks
+LordHelmet
+09-06-2026 8:13 PM
+Has to break, retest, then volume for longs
+ImOnlyHereForApolloANDJohannes
+Probably a mega choppy rally aggressive pullbacks
+LordHelmet
+09-06-2026 8:16 PM
+Agree, I don't think dealer flows will help us here.
+8:17 PM
+Need a populist bull movement.
+8:17 PM
+Not to be confused with a bowel movement
+2
+LordHelmet
+Agree, I don't think dealer flows will help us here.
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:17 PM
+This is quite literally a coin toss from a dealer pov
+8:17 PM
+Just gonna be shorts closing vol crush support then probably a dump around 3
+ImOnlyHereForApolloANDJohannes
+Im on the toilet but spx short puts beneath plus spy charm flip i think we can see vol crush whipsaw spike
+LordHelmet
+09-06-2026 8:18 PM
+Just realized you had a bull movement when texting
+8:18 PM
+...come on...that was funny
+1
+1
+8:19 PM
+You marked the 'bottom' of ES
+1
+8:19 PM
+Haha
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:21 PM
+Sustain this for a bit ken kick it even higher
+8:22 PM
+Ill happily take puts at 3
+A p o l l o
+rvol says revert back to 7357 spx
+Yahya
+09-06-2026 8:23 PM
+In play
+1
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:23 PM
+Its all just gonna come back to bite
+LordHelmet
+09-06-2026 8:25 PM
+I think we get more Iran pain before it's done
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:26 PM
+Its never actually the news hot take
+8:26 PM
+Thats always latent they just try and find a justification
+1
+LordHelmet
+I think we get more Iran pain before it's done
+Topcheddar
+09-06-2026 8:26 PM
+They announced progress in the talks five minutes ago
+2
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:27 PM
+they cant talk about kens inventory without being at blackmail risk
+1
+Topcheddar
+They announced progress in the talks five minutes ago
+LordHelmet
+09-06-2026 8:27 PM
+That's good news
+Topcheddar
+09-06-2026 8:28 PM
+It's more a nothing burger, like they are down to 4 nuclear issues but I'm sure they're still VERY far apart on all four
+8:28 PM
+on its face positive though yeah
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:31 PM
+Its not going to end bears always win
+2
+8:31 PM
+Nobody had the balls to sell puts is the real story
+ImOnlyHereForApolloANDJohannes
+Its never actually the news hot take
+Topcheddar
+09-06-2026 8:31 PM
+Ehh usually it's  just planned for in thoroughly detail very far ahead of time - you take signals based on what other funds are doing, there's meetings with funds and bank analysts about these things for months ahead of time. It's less intentional like that and more just much better access to information
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:32 PM
+Horrible headlines have hit the tape everyday its a matter of when its profitable yes they have that power
+8:32 PM
+Algos are frontrunning it
+8:32 PM
+Thats why gex and ag pure nuke charm targets hours before charm is even real
+8:33 PM
+What do i know tho, only made 30k tdy
+1
+Topcheddar
+09-06-2026 8:33 PM
+Oh wait are you talking about the market making side of citadel not the hedge fund business
+ImOnlyHereForApolloANDJohannes
+09-06-2026 8:33 PM
+They probably go hand in hand
+8:33 PM
+But its due to the fact its an extremely incentivizing aggressive trade to run algorithmically at scale
+8:34 PM
+Decay lines up with dealer profit tent, means load up for informed moneu
+Topcheddar
+09-06-2026 8:34 PM
+Ok, my bad I thought you were refering to L/S mrkt ntrl HFs in general misunderstood your meaning
+ImOnlyHereForApolloANDJohannes
+What do i know tho, only made 30k tdy
+Topcheddar
+09-06-2026 8:35 PM
+That's great man, not trying to insult anyone haha didn't mean any offense
+LordHelmet
+09-06-2026 8:36 PM
+For those not in finance for a career, how you do learn this stuff?
+8:36 PM
+*lear
+LordHelmet
+For those not in finance for a career, how you do learn this stuff?
+Topcheddar
+09-06-2026 8:37 PM
+For trading purposes or do you want to try to work in finance?
+8:37 PM
+another area of finance*
+LordHelmet
+09-06-2026 8:37 PM
+Trading purposes, trying to avoid going to the learing center
+Topcheddar
+For trading purposes or do you want to try to work in finance?
+LordHelmet
+09-06-2026 8:37 PM
+I'm too old to start a new career
+Sweaty Urbanwankermandickhead
+09-06-2026 8:38 PM
+gimme dat vwap bois,
+2
+8:39 PM
+and beyond
+Yahya
+09-06-2026 8:41 PM
+Rippy mode
+8:42 PM
+Lotto from the Uranium news lol
+8:42 PM
+Comedy
+8:43 PM
+Now 33 bucks
+8:43 PM
+Comeeedyyyyyy
+5
+Dragonboys
+now buy some longs and save my spy calls
+Yahya
+09-06-2026 8:44 PM
+Happy?
+dauma
+09-06-2026 8:50 PM
+Where we closing
+@A p o l l o
+A p o l l o
+09-06-2026 8:51 PM
+higher
+5
+LordHelmet
+09-06-2026 8:58 PM
+I hope everyone is green today. I like the big moves...
+1
+2
+ChuckG
+09-06-2026 8:58 PM
+ChuckG
+Click to see attachment
+🖼️
+LordHelmet
+09-06-2026 8:58 PM
+Apollo said yes!
+2
+Disciple3
+09-06-2026 9:04 PM
+Buy the dip
+Disciple3
+Buy the dip
+LordHelmet
+09-06-2026 9:04 PM
+Do we get to see our old friend 29k today?
+Disciple3
+09-06-2026 9:05 PM
+Last time we bounced this hard we did a 2 month all day every day ripper
+1
+Yahya
+09-06-2026 9:07 PM
+Need to overtake 50 then 65 to elimnate that nasty negative DD
+1
+dauma
+09-06-2026 9:13 PM
+Cmon Trump. Leak CPI with a 3 handle.
+2
+Yahya
+09-06-2026 9:14 PM
+lmaoooooo
+LordHelmet
+09-06-2026 9:14 PM
+"today is a good day to own
+__
+"
+O :t: C
+09-06-2026 9:15 PM
+tapeworm today, paired with upper MML, yippeee
+2
+LordHelmet
+09-06-2026 9:15 PM
+What is MML sir?
+LordHelmet
+What is MML sir?
+O :t: C
+09-06-2026 9:15 PM
+murrey math level
+1
+9:17 PM
+crazy day. hope every one is safe
+1
+9:18 PM
+I know for those on eval firm accts blowing up a sunbscription fee is minimal but its about the RISK MANAGEMENT
+1
+Yahya
+09-06-2026 9:19 PM
+VIX 20
+Hivey
+09-06-2026 9:19 PM
+these moves are crazy ... crypto meme coin worthy ... on the biggest global indices
+BigBill
+Just keep buying the dip.  The key thing to remember about Martingaling is it always works eventually...
+jk23
+09-06-2026 9:20 PM
+This is my quant
+Yahya
+09-06-2026 9:20 PM
+yeeeeet
+Hivey
+09-06-2026 9:20 PM
+rippp it higher
+jk23
+09-06-2026 9:20 PM
+Actually did average down into the swing long tho lol
+9:20 PM
+A couple of times
+Yahya
+09-06-2026 9:20 PM
+of course
+9:20 PM
+me too
+Hivey
+09-06-2026 9:20 PM
+averaging down is ok .. .do it all the time
+jk23
+09-06-2026 9:20 PM
+93% win rate
+Hivey
+09-06-2026 9:21 PM
+but there is a big difference between that and martingaling
+jk23
+Actually did average down into the swing long tho lol
+O :t: C
+09-06-2026 9:21 PM
+after that glbx trade you had you kept going.....wow
+9:21 PM
+gordon gecko style
+O :t: C
+after that glbx trade you had you kept going.....wow
+jk23
+09-06-2026 9:21 PM
+Well no day trades
+9:21 PM
+Just avg into a swing
+LordHelmet
+09-06-2026 9:22 PM
+Hard to bottom tick it...
+jk23
+09-06-2026 9:29 PM
+RSP is green 0.5%
+Sparks-Flying
+09-06-2026 9:29 PM
+"So despite two months of losses, from a directional standpoint I will breakeven both months of losses at 7365 right now. " ...
+@Wizard of Ops
+(edited)
+1
+2
+jk23
+09-06-2026 9:29 PM
+Energy and tech only sectors that are currently red
+Sparks-Flying
+"So despite two months of losses, from a directional standpoint I will breakeven both months of losses at 7365 right now. " ...
+@Wizard of Ops
+(edited)
+Wizard of Ops
+09-06-2026 9:45 PM
+eh, once the vol event hit, I neutralized a lot of risk, I had to be safer. This turned out to be my second scenario.
+3
+Wizard of Ops
+eh, once the vol event hit, I neutralized a lot of risk, I had to be safer. This turned out to be my second scenario.
+LordHelmet
+09-06-2026 9:54 PM
+Take the bat flip sir
+1
+FixedRate
+09-06-2026 9:56 PM
+How high we going today? Is this it or can we make it to 7400?
+nicowilliamsRW
+09-06-2026 9:59 PM
+just came back to the desk and holy crap almost taking back overnight lows...what a bounce
+Yahya
+09-06-2026 10:02 PM
+SPY QTRLY SWEEP DETECTED: >>3000 SPY Mar27 31st 900 Calls $3.7916 Above Ask! [MULTI] 14:59:25.881 IV=13.9% +0.2 C2 549 x $3.72 - $3.77 x 269 ISE OPENING Volume=3026, Premium=$1.14m SPY=737.05 Ref, OI=2328
+1
+10:02 PM
+lmaooo
+10:02 PM
+SPY 900
+10:02 PM
+another 20% rally from here
+Phoenix
+09-06-2026 10:03 PM
+He isn’t wrong but to early , qqq structure is still same as January - march this year
+10:03 PM
+I am bull so it is sad to see it but can’t deny it
+Yahya
+09-06-2026 10:04 PM
+lmaoooooo
+10:04 PM
+what a bounce
+ChuckG
+09-06-2026 10:10 PM
+This bounce brings back my PTSD from 03/31 where we dropped 400pt and rocketed 2000pt
+Yahya
+what a bounce
+dauma
+09-06-2026 10:14 PM
+Really hope squeeze closed some puts today.
+dauma
+Really hope squeeze closed some puts today.
+Sweaty Urbanwankermandickhead
+09-06-2026 10:16 PM
+True. He was going through it
+Wizard of Ops
+eh, once the vol event hit, I neutralized a lot of risk, I had to be safer. This turned out to be my second scenario.
+ImOnlyHereForApolloANDJohannes
+09-06-2026 10:18 PM
+FIND THA RECIEPTS
+dauma
+Really hope squeeze closed some puts today.
+Yahya
+09-06-2026 10:19 PM
+Lets see!
+ImOnlyHereForApolloANDJohannes
+09-06-2026 10:19 PM
+One could claim it wasnt charm driven but i have my claim
+10:19 PM
+More like everyone sell cheap puts.exe
+ImOnlyHereForApolloANDJohannes
+FIND THA RECIEPTS
+FixedRate
+09-06-2026 10:26 PM
+You short here?
+O :t: C
+09-06-2026 10:52 PM
+one good trade, holding for higher 1C of 4Cs
+Yahya
+09-06-2026 10:52 PM
+light 5 billi to buy
+RipTide487
+09-06-2026 10:53 PM
+going for HOD?
+O :t: C
+09-06-2026 10:53 PM
+29070 my tgt but trailing at 28960s
+Saint_Seiya
+09-06-2026 10:54 PM
+20 pt 1 min candle on spx
+1
+10:54 PM
+thats crazy
+Shawn
+09-06-2026 10:55 PM
+Wiz what’s tomorrow looking like
+10:55 PM
+Show us the path
+O :t: C
+09-06-2026 10:56 PM
+Saint_Seiya
+20 pt 1 min candle on spx
+nicowilliamsRW
+09-06-2026 10:58 PM
+insane
+2
+Saint_Seiya
+09-06-2026 11:00 PM
+We are never going into a recession ever again.
+Yahya
+09-06-2026 11:00 PM
+rippy mode
+Saint_Seiya
+09-06-2026 11:00 PM
+They won't allow it
+Hivey
+09-06-2026 11:00 PM
+madness
+11:01 PM
+what a day
+FixedRate
+You short here?
+ImOnlyHereForApolloANDJohannes
+09-06-2026 11:14 PM
+Nah I made a claim that our long awaited selloff would be intertwined with a intraday deeply bearish charm profile rather than overnight even off of strong news claims
+11:14 PM
+People literally needed to sell puts and finally once vol was high enough they got punished for it
+11:15 PM
+When enough ppl found then fairly valued deep down the chain
+11:16 PM
+Once spx converted b of a and qqq gex it was game over for bears
+LordHelmet
+09-06-2026 11:38 PM
+many bears ded today
+LordHelmet
+10-06-2026 12:05 AM
+we can put todays date in here, with a "2"
+1
+indyicon
+10-06-2026 12:10 AM
+Massive failed breakdown,
+1
+LordHelmet
+we can put todays date in here, with a "2"
+A p o l l o
+10-06-2026 12:26 AM
+"ChatGPT, put a "2" in the red circle and make no mistakes. Don't use any tokens either"
+2
+LordHelmet
+10-06-2026 12:26 AM
+"Do it. Do it now."
+A p o l l o
+10-06-2026 12:27 AM
+"I TOLD you to use no tokens..."
+12:27 AM
+"You are right to push back. I did use the all the token for your monthly budget on this request"
+1
+2
+LordHelmet
+10-06-2026 12:29 AM
+"Claude, make me $500 in the market today with your personal budget. Make no mistakes.  Report back when complete."
+12:29 AM
+I tried that with my kids
+12:29 AM
+They just spent money in Xbox games.
+4
+LordHelmet
+They just spent money in Xbox games.
+A p o l l o
+10-06-2026 12:29 AM
+they are front running the next bubble
+2
+单日转向
+10-06-2026 5:54 AM
+@Dark Matter
+any updates to the trade plan ?
+单日转向
+@Dark Matter
+any updates to the trade plan ?
+Dark Matter
+10-06-2026 6:40 AM
+yes there is - working on it now
+1
+2
+Yahya
+10-06-2026 10:11 AM
+GM
+3
+Yahya
+GM
+Johannes
+10-06-2026 10:47 AM
+good morning
+2
+jk23
+10-06-2026 11:45 AM
+Getting ugly again
+1
+Johannes
+10-06-2026 11:48 AM
+strong offer
+Yahya
+10-06-2026 12:07 PM
+Its almost a 50% retrace of the bounce from yesterday
+12:08 PM
+Could find a low in this 25-40 area
+Johannes
+10-06-2026 12:11 PM
+I see no buyer so far
+Yahya
+10-06-2026 12:16 PM
+If this doesnt hold, 7300 next
+Johannes
+I see no buyer so far
+Yahya
+10-06-2026 12:16 PM
+Fine i’ll try here
+Yahya
+10-06-2026 12:38 PM
+Noice 18 pts
+12:38 PM
+I shall take my slice
+12:41 PM
+Holy exit
+12:41 PM
+Demonic
+1
+Yahya
+Noice 18 pts
+Johannes
+10-06-2026 1:00 PM
+very nice
+1
+jk23
+10-06-2026 1:12 PM
+Either new lows or straight up 100pts
+1:13 PM
+Don’t see anything else likely
+O :t: C
+10-06-2026 1:23 PM
+pretty darn clean, MML + DMA rejection at psychological number 7500. these levels do not change, the main issue is how large the candles are relative to one MML spread
+Yahya
+10-06-2026 2:04 PM
+news ?
+2:04 PM
+Yikers
+2:04 PM
+Iran’s Military is a complete and total mess. Much of it, like their Navy and Air Force, doesn’t even exist anymore - They have been completely defeated. Iran is all talk and no action. The Bully of the Middle East is DEAD!!! They’ve taken too long to negotiate a deal that would have been great for them, now they will have to pay the price!!! President DONALD J. TRUMP
+2:05 PM
+crude ripping
+Sparks-Flying
+10-06-2026 2:08 PM
+One of Trump's buddies wanted a cheaper entry
+1
+Yahya
+10-06-2026 2:14 PM
+If this gets retraced post CPI, expecting some bullish PA
+2:14 PM
+rest of the week
+Shawn
+10-06-2026 2:17 PM
+So much for the vol event being satisfied
+1
+RipTide487
+10-06-2026 2:17 PM
+still has two weeks left
+2
+Yahya
+10-06-2026 2:21 PM
+more than 2 weeks actually
+RipTide487
+10-06-2026 2:21 PM
+25 June
+LordHelmet
+10-06-2026 2:22 PM
+I have many reasons to trust the data
+Yahya
+10-06-2026 2:22 PM
+if 3 weeks is counted as 15 trading days, then we have till Monday June 29th
+2:23 PM
+since June 19th is off
+Shawn
+So much for the vol event being satisfied
+Yahya
+10-06-2026 2:23 PM
+the vol event being realized in 3 days was kind of a bold call to be fair
+2:23 PM
+Still gotta position for 3 weeks out, and if it comes earlier it's welcomed
+LordHelmet
+10-06-2026 2:24 PM
+my positions are for jun 30
+RipTide487
+10-06-2026 2:24 PM
+I'm just going off the widget.
+Yahya
+10-06-2026 2:24 PM
+I bought 30 days out, rather be safe than sorry
+LordHelmet
+10-06-2026 2:24 PM
+in case the window dressing helps
+O :t: C
+10-06-2026 2:25 PM
+VIX is going to open near 21
+RipTide487
+I'm just going off the widget.
+Yahya
+10-06-2026 2:25 PM
+Good point,
+@Wizard of Ops
+Does the rule stating than the Vol event is satisfied in 3 weeks takes into consideration potential days where market is closed ?
+2:25 PM
+My first guess would be no
+Sparks-Flying
+10-06-2026 2:26 PM
+Trump: I am close to ordering new strikes against Iranian power plants and bridges - Fox News
+Yahya
+Good point,
+@Wizard of Ops
+Does the rule stating than the Vol event is satisfied in 3 weeks takes into consideration potential days where market is closed ?
+O :t: C
+10-06-2026 2:27 PM
+my guess no because if VIX is not trading like weekends then we have that Monday effect where its undervixed.but certainly would like to her WIZ response too
+Sparks-Flying
+Trump: I am close to ordering new strikes against Iranian power plants and bridges - Fox News
+RipTide487
+10-06-2026 2:29 PM
+today is shaping up to be another spicy day
+LordHelmet
+10-06-2026 2:31 PM
+USD/JPY > 160
+2:32 PM
+I guess it's been up there a while
+2:33 PM
+I hope BOJ doesnt raise rates again
+Yahya
+10-06-2026 2:34 PM
+https://x.com/FirstSquawk/status/2064672307466187060?s=20
+First Squawk (@FirstSquawk)
+TRUMP ON TRUTH SOCIAL:
+The Fake News Media refuses to report how EFFECTIVE the U.S. Naval BLOCKADE is, the most successful Blockade in the history of Naval Warfare. NOTHING GETS THROUGH unless we want it to. IT IS A STEEL WALL! Iran is doing ZERO business, not paying their
+X • 10-06-2026 2:33 PM
+2:34 PM
+PRAISE BE TO ALLAH
+LordHelmet
+10-06-2026 2:37 PM
+Stop feeding the bears!
+1
+2:37 PM
+Yahya
+Good point,
+@Wizard of Ops
+Does the rule stating than the Vol event is satisfied in 3 weeks takes into consideration potential days where market is closed ?
+Wizard of Ops
+10-06-2026 2:51 PM
+When we did this study, we didn't even consider closed market days. 3 calendar weeks.
+2:52 PM
+When I say we, I meant me.... I did this study before Volland was even started.
+1
+1
+2:53 PM
+Unofficial bold call, I might make it official after CPI... we close green today.
+3
+2:55 PM
+The reason I say this is because options players have absolutely sold vol for 0DTE.
+2
+1
+Wizard of Ops
+When we did this study, we didn't even consider closed market days. 3 calendar weeks.
+Yahya
+10-06-2026 3:04 PM
+Thank you
+3:04 PM
+spicy !
+1
+A p o l l o
+10-06-2026 3:30 PM
+1
+3:30 PM
+spicy
+Yahya
+10-06-2026 3:32 PM
+Above 4% is kinda bad
+3:32 PM
+at least its not above forecast
+LordHelmet
+10-06-2026 3:40 PM
+remember all the bad news pumps in the past?  This market can rip if it wants...
+3
+1
+Yahya
+10-06-2026 3:41 PM
+3:41 PM
+pretty insane lol
+1
+Dragonboys
+10-06-2026 3:43 PM
+Good morning
+3
+Dragonboys
+10-06-2026 4:22 PM
+-DD and close to AG target pre market. What you thinking of open?
+Toto
+10-06-2026 4:29 PM
+let's pump to the heavens
+Yahya
+10-06-2026 4:33 PM
+Trump congratulating Citi
+4:33 PM
+Oh my
+4:33 PM
+We are pumping banks now
+4:33 PM
+AI is sooo yesterday
+4:33 PM
+GET WITH THE PROGRAM
+dauma
+10-06-2026 4:34 PM
+So we have an unofficial bold call?
+单日转向
+10-06-2026 4:35 PM
+shitty market..
+LordHelmet
+10-06-2026 4:35 PM
+nice rejection of NQ friday low
+Yahya
+10-06-2026 4:35 PM
+lol
+4:36 PM
+the bid is always lurking
+4:36 PM
+neverforget
+2
+4:38 PM
+BTC nice reversal
+Yahya
+BTC nice reversal
+A p o l l o
+10-06-2026 4:38 PM
+its finally not down 50% from all time highs?
+1
+A p o l l o
+its finally not down 50% from all time highs?
+Yahya
+10-06-2026 4:39 PM
+4
+单日转向
+10-06-2026 4:44 PM
+Toto
+10-06-2026 4:44 PM
+NQ 150 pt rippers in 2 mins
+1
+4:44 PM
+love to see it
+2
+LordHelmet
+10-06-2026 4:50 PM
+1 MNQ
+3
+4:50 PM
+should quit for the morning
+4:50 PM
+let my swings cook
+A p o l l o
+10-06-2026 4:52 PM
+87 com seller on ES
+4:52 PM
+dont see a buyer yet
+Hivey
+10-06-2026 4:52 PM
+can only trade 30 mins today (have to leave soon). Saw that massive pamp in NQ; bought the options. 45 sec hold and done for the day. These are the best
+4
+LordHelmet
+10-06-2026 4:52 PM
+nice trade sir
+1
+A p o l l o
+10-06-2026 4:52 PM
+NVDA has weak bid
+ImOnlyHereForApolloANDJohannes
+10-06-2026 4:56 PM
+Z- setup today
+Yahya
+10-06-2026 4:57 PM
+Put spread seller 7300/7295 with size
+ImOnlyHereForApolloANDJohannes
+10-06-2026 4:57 PM
+Tap 7400 so i can aggressively short
+1
+ImOnlyHereForApolloANDJohannes
+Tap 7400 so i can aggressively short
+Yahya
+10-06-2026 4:58 PM
+agree with the tap 7400
+4:58 PM
+not the other half tho
+4:58 PM
+all you
+ImOnlyHereForApolloANDJohannes
+10-06-2026 4:58 PM
+Q and spy have deep charm bid massive size
+4:58 PM
+Really weak short
+A p o l l o
+NVDA has weak bid
+A p o l l o
+10-06-2026 4:59 PM
+4:59 PM
+Yesterday on TSLA, nailed the lows
+1
+A p o l l o
+Yesterday on TSLA, nailed the lows
+ImOnlyHereForApolloANDJohannes
+10-06-2026 5:01 PM
+Tsla consistently has been leading equity dd by atleast 2x notionals everything else
+5:01 PM
+Good dispersion trade mon wens fri
+ImOnlyHereForApolloANDJohannes
+Tsla consistently has been leading equity dd by atleast 2x notionals everything else
+A p o l l o
+10-06-2026 5:02 PM
+Now just need some good Lob data with it and have some good models
+5:02 PM
+From my experience so far, Lob shifts on individual stocks have been quite leading
+5:06 PM
+now NVDA has a bid
+5:07 PM
+TSLA... not supportive lol
+5:07 PM
+Strong out the gate for MOO and nothing since
+A p o l l o
+Now just need some good Lob data with it and have some good models
+ImOnlyHereForApolloANDJohannes
+10-06-2026 5:09 PM
+I think its a clean 0d trade when its paradigm is more uniform but following a similar charm trajectory than spx q spy
+5:09 PM
+No point in touching otherwise
+Yahya
+10-06-2026 5:09 PM
+gap filled
+5:09 PM
+gg
+@Wizard of Ops
+A p o l l o
+10-06-2026 5:11 PM
+A p o l l o
+Click to see attachment
+🖼️
+ImOnlyHereForApolloANDJohannes
+10-06-2026 5:11 PM
+Was literally just abt to send this
+A p o l l o
+10-06-2026 5:11 PM
+ImOnlyHereForApolloANDJohannes
+10-06-2026 5:11 PM
+That is EVERYDAY
+A p o l l o
+10-06-2026 5:11 PM
+What a beauty
+A p o l l o
+What a beauty
+ImOnlyHereForApolloANDJohannes
+10-06-2026 5:14 PM
+Solid ag on tsla
+Dragonboys
+10-06-2026 5:14 PM
+What is this new chart and what you looking at Apollo ?
+ImOnlyHereForApolloANDJohannes
+10-06-2026 5:14 PM
+Can probably tag 380 tdy
+ImOnlyHereForApolloANDJohannes
+Solid ag on tsla
+A p o l l o
+10-06-2026 5:14 PM
+AG with no bid, puts should work
+A p o l l o
+AG with no bid, puts should work
+Yahya
+10-06-2026 5:14 PM
+too bearish
+Dragonboys
+10-06-2026 5:14 PM
+Net bids and ask for individual tickets?
+Dragonboys
+What is this new chart and what you looking at Apollo ?
+A p o l l o
+10-06-2026 5:14 PM
+Im looking at order modifications on LOB for stocks
+Yahya
+too bearish
+A p o l l o
+10-06-2026 5:15 PM
+5:15 PM
+line go down and to the right
+1
+Dragonboys
+10-06-2026 5:15 PM
+What is LOB again ? sorry you might have said it before
+Dragonboys
+Net bids and ask for individual tickets?
+A p o l l o
+10-06-2026 5:16 PM
+tracking Ask(bid) Arrival/cancelation/modifcation
+5:16 PM
+For limit order book
+1
+5:16 PM
+Its just limit orders, no time and sales
+Dragonboys
+10-06-2026 5:16 PM
+Got it
+Yahya
+10-06-2026 5:16 PM
+ServiceNow tells customers a bug left some of their data exposed to the internet
+5:16 PM
+No bueno
+Dragonboys
+10-06-2026 5:17 PM
+What’s new there
+ImOnlyHereForApolloANDJohannes
+10-06-2026 5:17 PM
+Tsla is moving 1:1 with index kinda cooked without downside agreement
+Dragonboys
+10-06-2026 5:17 PM
+Our data is everywhere
+A p o l l o
+10-06-2026 5:18 PM
+Spy has weak bid
+A p o l l o
+Spy has weak bid
+ImOnlyHereForApolloANDJohannes
+10-06-2026 5:22 PM
+Spy and q are almost gex i think that helped keep the bid spx doesnt mind a dump
+Yahya
+10-06-2026 5:31 PM
+VVIX up 9
+5:32 PM
+for some reason
+5:32 PM
+spooky
+5:34 PM
+but
+5:34 PM
+program buying in the semis
+5:34 PM
+to save the day
+5:34 PM
+per usual
+5:34 PM
+SOXL zoomies
+A p o l l o
+10-06-2026 5:38 PM
+slow add to long vol
+LordHelmet
+10-06-2026 5:40 PM
+@Wizard of Ops
+was filled on that MU condor...
+Dragonboys
+10-06-2026 5:42 PM
+What was the trade on MU?
+Dragonboys
+What was the trade on MU?
+LordHelmet
+10-06-2026 5:43 PM
+1
+1
+5:43 PM
+1:1 RR
+5:44 PM
+if unmanaged
+5:44 PM
+i'll close before ER
+1
+ImOnlyHereForApolloANDJohannes
+Solid ag on tsla
+A p o l l o
+10-06-2026 5:46 PM
+Still bear book with -DD hedging on TSLA, works like a charm
+Yahya
+10-06-2026 5:52 PM
+this NFLX trades inverse of SMH
+5:52 PM
+comedy
+5:52 PM
+if semis are selling you bid NFLX
+5:57 PM
+lol
+5:57 PM
+still working
+5:57 PM
+comedy
+5:58 PM
+Find the rotationnnnnn
+1
+Yahya
+if semis are selling you bid NFLX
+LordHelmet
+10-06-2026 5:58 PM
+when retirement accounts are down, people watch netflix?  lol
+1
+A p o l l o
+10-06-2026 5:59 PM
+1
+5:59 PM
+now there is a buyer
+Yahya
+10-06-2026 6:00 PM
+bring back the days where breadth is dogshit and 1 sector is vertical
+6:00 PM
+I was sidelined before, now i want in lol
+Yahya
+bring back the days where breadth is dogshit and 1 sector is vertical
+LordHelmet
+10-06-2026 6:00 PM
+just sell otm puts?
+Yahya
+10-06-2026 6:01 PM
+oh my NFLX
+LordHelmet
+just sell otm puts?
+Yahya
+10-06-2026 6:01 PM
+I hate short gamma
+Yahya
+I hate short gamma
+LordHelmet
+10-06-2026 6:01 PM
+i rarely do those either anymore
+6:01 PM
+when you get burned, its hot
+(edited)
+Yahya
+10-06-2026 6:01 PM
+too much stress for little reward
+6:01 PM
+exact
+6:01 PM
+Dude the first time I sold SPX puts naked, was a few years ago after a CPI report
+6:02 PM
+it went 500% against me I panicked
+1
+6:02 PM
+tried hedging by buying puts below, then it went sideways rest of the day
+1
+1
+LordHelmet
+10-06-2026 6:03 PM
+ive been hurt very bad by short gamma when i didnt have set loss limits
+Yahya
+10-06-2026 6:03 PM
+NFLXXXXX
+6:03 PM
+lmaoooo
+6:03 PM
+found the rotation
+LordHelmet
+10-06-2026 6:03 PM
+I would keep thinking the price action would change and before you know it...ice cube soup for dinner that week
+Yahya
+I was sidelined before, now i want in lol
+nicowilliamsRW
+10-06-2026 6:04 PM
+LMAO
+Yahya
+10-06-2026 6:05 PM
+IYKYK nico
+nicowilliamsRW
+10-06-2026 6:06 PM
+bit below the lower edge here on 0dte
+BigBill
+10-06-2026 6:11 PM
+Was there news?
+Yahya
+10-06-2026 6:12 PM
+VVIX up 11 is the news
+dauma
+10-06-2026 6:14 PM
+We longing 7300? Or is wiz gonna bold call us greeen again
+1
+Yahya
+10-06-2026 6:14 PM
+this is nice man
+6:15 PM
+2 ways trading
+6:15 PM
+makes bears think this game is even
+6:15 PM
+build up that bias before decimation
+1
+单日转向
+10-06-2026 6:15 PM
+Shitty market
+Yahya
+10-06-2026 6:16 PM
+just close your eyes and imagine the incoming Friday vol crushas
+6:16 PM
+should make you smile
+1
+dauma
+10-06-2026 6:18 PM
+@Wizard of Ops
+we going to go green again? Or did that already satisfy for today’s unofficial bold call.
+Yahya
+just close your eyes and imagine the incoming Friday vol crushas
+BigBill
+10-06-2026 6:18 PM
+Might be the opposite if we are back at war.
+mmweld49
+10-06-2026 6:18 PM
+695 q's is the target lol then yall can bid it up to the moon
+nicowilliamsRW
+10-06-2026 6:19 PM
+wow those vol buyers paid well
+@A p o l l o
+1
+nicowilliamsRW
+wow those vol buyers paid well
+@A p o l l o
+A p o l l o
+10-06-2026 6:20 PM
+I think its going to be even better now with stock LOB / ETF lobster to correlate bid/ask data with Long and short vol flows...might be good spot vol factor
+1
+A p o l l o
+I think its going to be even better now with stock LOB / ETF lobster to correlate bid/ask data with Long and short vol flows...might be good spot vol factor
+LordHelmet
+10-06-2026 6:28 PM
+did we turn with vol coming down and back above IBL?
+dauma
+@Wizard of Ops
+we going to go green again? Or did that already satisfy for today’s unofficial bold call.
+Wizard of Ops
+10-06-2026 6:32 PM
+It was the pop I was anticipating. We could go green again, but I wouldn't count on it.
+1
+LordHelmet
+did we turn with vol coming down and back above IBL?
+A p o l l o
+10-06-2026 6:34 PM
+The interesting part was seeing bad bid on SPY with Long Vol on tapeworm. This might be a momentum based factor on if the long vol is good or not
+2
+6:34 PM
+im assuming that Long Vol on Tapeworm with a good bid, wont play out
+6:35 PM
+TSLA still isnt looking good lol
+6:35 PM
+NVDA is finding some bid support now though
+A p o l l o
+The interesting part was seeing bad bid on SPY with Long Vol on tapeworm. This might be a momentum based factor on if the long vol is good or not
+ImOnlyHereForApolloANDJohannes
+10-06-2026 6:41 PM
+Longs look valid if spy can hold its pivot
+6:41 PM
+Spy short puts beneath spot is by far biggest var on the book rn
+Wizard of Ops
+It was the pop I was anticipating. We could go green again, but I wouldn't count on it.
+BigBill
+10-06-2026 6:42 PM
+I give it a 13-14% probability....
+Wizard of Ops
+10-06-2026 6:42 PM
+I give it...
+6:42 PM
+1
+6:42 PM
+Not really.
+ImOnlyHereForApolloANDJohannes
+10-06-2026 6:43 PM
+Short calls overhead sellvol.exe
+6:43 PM
+Till charm facerips us or spy gives it up and we see possible new weekly low
+ImOnlyHereForApolloANDJohannes
+Longs look valid if spy can hold its pivot
+ImOnlyHereForApolloANDJohannes
+10-06-2026 6:46 PM
+Solid call as usual
+ImOnlyHereForApolloANDJohannes
+Solid call as usual
+ImOnlyHereForApolloANDJohannes
+10-06-2026 6:46 PM
+Thanks
+1
+1
+Dragonboys
+10-06-2026 6:51 PM
+are we going to hold 7300 or break here
+Toto
+10-06-2026 6:51 PM
+Trump talking
+1
+1
+6:52 PM
+Jonathan Hewitt
+10-06-2026 6:54 PM
+https://x.com/financialjuice/status/2064737765074366584?s=20
+FinancialJuice (@financialjuice)
+Trump on Iran: They have agreed not to have a nuclear weapon, all they have to do is sign the paper. It's fully negotiated.
+X • 10-06-2026 6:53 PM
+Dragonboys
+10-06-2026 6:54 PM
+insta bid
+3
+Jonathan Hewitt
+https://x.com/financialjuice/status/2064737765074366584?s=20
+LordHelmet
+10-06-2026 6:55 PM
+well it's settled then
+6:55 PM
+8k spx
+Dragonboys
+insta bid
+Yahya
+10-06-2026 6:55 PM
+The bid is always lurking
+6:55 PM
+Never forget
+Dragonboys
+10-06-2026 6:56 PM
+true.. still holding on to my puts
+6:56 PM
+I meant calls
+6:56 PM
+lol
+6:57 PM
+maybe not the smartest thing to do though
+Yahya
+10-06-2026 6:57 PM
+Nothing can get too high except vol
+4
+6:57 PM
+Lol
+Jonathan Hewitt
+https://x.com/financialjuice/status/2064737765074366584?s=20
+FixedRate
+10-06-2026 6:59 PM
+Manipulation, he also said he hit them hard today lol
+LordHelmet
+10-06-2026 7:00 PM
+he's trading with his thumb as he speaks, buying puts and calls with each sentence and market reaction...
+1
+7:00 PM
+...master degen
+LordHelmet
+he's trading with his thumb as he speaks, buying puts and calls with each sentence and market reaction...
+dauma
+10-06-2026 7:03 PM
+He slides the leverage to 50x….
+Tweet Iran is signing.
+1
+LordHelmet
+10-06-2026 7:04 PM
+4
+Dragonboys
+10-06-2026 7:05 PM
+Why stop at 150x
+7:05 PM
+Max
+7:05 PM
+All in
+LordHelmet
+10-06-2026 7:08 PM
+7:08 PM
+this looks rather bullish
+7:08 PM
+lets get out and push it over 7435
+A p o l l o
+10-06-2026 7:11 PM
+7:11 PM
+Still no supportive Bids on SPY side
+A p o l l o
+Still no supportive Bids on SPY side
+ImOnlyHereForApolloANDJohannes
+10-06-2026 7:13 PM
+This is a pretty brutal inventory mix for ken tdy
+Dragonboys
+10-06-2026 7:13 PM
+Come on Apollo do it… send ur bids in
+1
+ImOnlyHereForApolloANDJohannes
+10-06-2026 7:13 PM
+Think they want as much vol crush here as possible
+Dragonboys
+10-06-2026 7:13 PM
+Where is D3?
+Dragonboys
+Come on Apollo do it… send ur bids in
+A p o l l o
+10-06-2026 7:13 PM
+cannt send them into the meat grinder sir
+1
+ImOnlyHereForApolloANDJohannes
+10-06-2026 7:14 PM
+Spy short put turnover at lows would be a brutal flip rn
+A p o l l o
+10-06-2026 7:14 PM
+Once LOB flips though...then we can have fun
+ImOnlyHereForApolloANDJohannes
+10-06-2026 7:14 PM
+His put charm is cooked too
+7:14 PM
+Forced buyback on q and es
+Dragonboys
+10-06-2026 7:14 PM
+I am not watching… hopefully I can catch ur messages and long it when it happens
+1
+ImOnlyHereForApolloANDJohannes
+10-06-2026 7:15 PM
+Not the dumbest idea to sell vol here till 3
+LordHelmet
+10-06-2026 7:17 PM
+ImOnlyHereForApolloANDJohannes
+10-06-2026 7:17 PM
+Spy is single handedly fighting the dumpkis
+LordHelmet
+Click to see attachment
+🖼️
+Abcdefg
+10-06-2026 7:37 PM
+Is this bullish or a wall above? Is cumdd flipped?
+A p o l l o
+10-06-2026 7:37 PM
+bids starting to look better now
+Abcdefg
+Is this bullish or a wall above? Is cumdd flipped?
+Abcdefg
+10-06-2026 7:38 PM
+7345 is 6B bearish dd flip?
+Abcdefg
+Is this bullish or a wall above? Is cumdd flipped?
+LordHelmet
+10-06-2026 7:38 PM
+to me, looks like it wants up with not too mucyh pulling it down
+1
+Abcdefg
+10-06-2026 7:39 PM
+Maybe equilibrium/close around there
+LordHelmet
+10-06-2026 7:41 PM
+gamma goes up around 55s, wouldnt be surprised to see that as top
+7:41 PM
+Yahya
+10-06-2026 7:56 PM
+Straddle is 40 with 3h to go
+ImOnlyHereForApolloANDJohannes
+Not the dumbest idea to sell vol here till 3
+ImOnlyHereForApolloANDJohannes
+10-06-2026 8:06 PM
+Good call
+LordHelmet
+gamma goes up around 55s, wouldnt be surprised to see that as top
+ImOnlyHereForApolloANDJohannes
+10-06-2026 8:06 PM
+Its long put driven tho so any charm hedging into it is gonna be as passive as possible
+1
+LordHelmet
+@Wizard of Ops
+was filled on that MU condor...
+Wizard of Ops
+10-06-2026 8:07 PM
+Nice! Might I also recommend the FOMC double calendar.... I do it every 45 days! lol.
+2
+ImOnlyHereForApolloANDJohannes
+10-06-2026 8:12 PM
+Short call valley of death just keeps growing
+Wizard of Ops
+Nice! Might I also recommend the FOMC double calendar.... I do it every 45 days! lol.
+LordHelmet
+10-06-2026 8:27 PM
+SPX? sell front, buy back?  What are your time structures?
+8:28 PM
+weeks apart, opex to next opex?
+dauma
+10-06-2026 8:30 PM
+Pin at 7300 would be a boring result
+LordHelmet
+to me, looks like it wants up with not too mucyh pulling it down
+FixedRate
+10-06-2026 8:30 PM
+What makes it bullish?  I see a lot of customer put selling at 7345, isn't a bearish thing, since it makes market makers long those puts?
+FixedRate
+What makes it bullish?  I see a lot of customer put selling at 7345, isn't a bearish thing, since it makes market makers long those puts?
+LordHelmet
+10-06-2026 8:34 PM
+I'm not analyzing as granularly I think, but looking at DD, similarly to charm, I see some okay support below and if we can get over the debit spreads above, some upside room.
+8:35 PM
+also short calls above and short puts at 7280
+8:35 PM
+ive been flat since 1100 tho
+FixedRate
+What makes it bullish?  I see a lot of customer put selling at 7345, isn't a bearish thing, since it makes market makers long those puts?
+ImOnlyHereForApolloANDJohannes
+10-06-2026 8:38 PM
+Its bearish imo because of how mm’s hedge the greeks that are supposed to make it supportive on one end, and the fact the customer is probably hedging aggressively which in the case of the dealer short calls above spot, customer shorting to stay hedged
+8:38 PM
+If its a winning itm long put, they’re gonna want to hedge against it as passively as they possibly can
+LordHelmet
+10-06-2026 8:40 PM
+good point...dealer wants their long puts to stay ITM
+8:41 PM
+will be interested in stats post PDT rule suspension to see if that changed behavior much
+ImOnlyHereForApolloANDJohannes
+10-06-2026 8:41 PM
+That is somebody MASSIVE holding a short itm put. Someone holding it that long and at that size means they almost definitely need to be hedging against it by selling delta
+LordHelmet
+will be interested in stats post PDT rule suspension to see if that changed behavior much
+ImOnlyHereForApolloANDJohannes
+10-06-2026 8:41 PM
+Probably more spreads and especially short gamma spreads from retail
+1
+A p o l l o
+10-06-2026 8:42 PM
+its been going quite slow today, almost forgot we had a 4.2% inflation this mornign lol
+4
+1
+LordHelmet
+10-06-2026 8:42 PM
+we're living below IB...we need
+@Disciple3
+to make some bottom wicks
+ImOnlyHereForApolloANDJohannes
+10-06-2026 8:44 PM
+Pretty rough day for ken from spy
+8:44 PM
+Spx and Q definitely making up for it tho
+LordHelmet
+will be interested in stats post PDT rule suspension to see if that changed behavior much
+FixedRate
+10-06-2026 8:45 PM
+I'm wondering this as well, because my thesis is we will see a market crash by end of year, and I'm seeing more put selling behaviour than before, and if I recall correctly heavy put selling is what tends to crash markets
+FixedRate
+I'm wondering this as well, because my thesis is we will see a market crash by end of year, and I'm seeing more put selling behaviour than before, and if I recall correctly heavy put selling is what tends to crash markets
+ImOnlyHereForApolloANDJohannes
+10-06-2026 8:46 PM
+Agreed, elevated vol is gonna be a problem and will keep showing up premarket as it did yesterday, a good amount of the inventory i do think comes from ovn and sticks around through cash
+dauma
+Pin at 7300 would be a boring result
+ChuckG
+10-06-2026 8:47 PM
+Right
+Yahya
+10-06-2026 8:48 PM
+The bid is always lurking…
+1
+Dragonboys
+10-06-2026 8:50 PM
+Only if this dam thing did’nt hit my stop and go
+(edited)
+Disciple3
+10-06-2026 8:50 PM
+I have been summoned from the squat rack
+8:50 PM
+to pump
+1
+Disciple3
+to pump
+LordHelmet
+10-06-2026 8:52 PM
+pump it
+8:52 PM
+Disciple3
+10-06-2026 8:52 PM
+let me open the old land of vol
+LordHelmet
+10-06-2026 8:53 PM
+who is offering the 35s? stop it
+BigBill
+10-06-2026 8:53 PM
+1
+1
+Disciple3
+10-06-2026 8:53 PM
+i mean, guess ill buy
+8:53 PM
+why not
+2
+8:54 PM
+8:54 PM
+lift em
+8:57 PM
+hold on dont rocket without my new accounts
+Yahya
+10-06-2026 8:57 PM
+This bid …
+8:57 PM
+Is
+8:57 PM
+LordHelmet
+10-06-2026 8:57 PM
+need a nice wick to buy
+Yahya
+This bid …
+nicowilliamsRW
+10-06-2026 8:57 PM
+look below and fail of ovn low...lets see if we get some gas into close
+8:58 PM
+gimme a 6 dot vol seller with a lobster on the side w/ fries
+3
+Disciple3
+10-06-2026 8:59 PM
+uh oh
+9:02 PM
+1
+9:04 PM
+trump and his secret mission lol
+9:04 PM
+ok im out have fun kids
+Dragonboys
+10-06-2026 9:07 PM
+Stop me for loss rip 30 points
+Disciple3
+10-06-2026 9:08 PM
+sorry just had to buy that sweep one more time
+9:09 PM
+opk ok
+9:12 PM
+anyone wanna... sell some calls to ken?
+jk23
+10-06-2026 9:16 PM
+Honestly you look away for 2 secs and your pnl swings by 10pts
+Disciple3
+10-06-2026 9:16 PM
+i just wanna say, i came to the desk and started buying and everytime worked
+1
+1
+9:17 PM
+must be time for 7585 soon
+1
+9:17 PM
+accumulate and all that.  qqq over 700 needs to rip
+LordHelmet
+10-06-2026 9:18 PM
+ken wants more fuel for the ripper
+jk23
+10-06-2026 9:18 PM
+I can’t accumulate more longs
+9:19 PM
+Already max allocation into the vol event long
+O :t: C
+10-06-2026 9:19 PM
+dont need much intraday,,,,,just one good trade
+2
+2
+Disciple3
+10-06-2026 9:19 PM
+is this too much dip for you to buy?
+9:19 PM
+buying over a course of sessions makes it easier
+O :t: C
+dont need much intraday,,,,,just one good trade
+LordHelmet
+10-06-2026 9:19 PM
+nice discipline
+LordHelmet
+nice discipline
+O :t: C
+10-06-2026 9:20 PM
+thank you, came to desk knowing the COMM seller is in control! all I NEED is one good trade, I prefer longs down here, so take what I can get signal wise
+LordHelmet
+10-06-2026 9:21 PM
+COMM is large ihnstitutional?
+O :t: C
+10-06-2026 9:21 PM
+40 pts on 4C for 20 pts per C is still excellent pay day
+1
+Disciple3
+10-06-2026 9:21 PM
+oh my
+9:21 PM
+tomorrow looks a little bullish innit?
+2
+1
+O :t: C
+10-06-2026 9:21 PM
+COMMercials, yes tutes on some days and hedge funds on others
+1
+9:21 PM
+obviuosly this week its the big big big boys
+9:21 PM
+not small hedge funds controlling price action
+O :t: C
+COMMercials, yes tutes on some days and hedge funds on others
+LordHelmet
+10-06-2026 9:21 PM
+so
+@A p o l l o
+....
+LordHelmet
+so
+@A p o l l o
+....
+O :t: C
+10-06-2026 9:22 PM
+1
+LordHelmet
+10-06-2026 9:22 PM
+lol
+O :t: C
+10-06-2026 9:22 PM
+no apollo is
+Disciple3
+10-06-2026 9:22 PM
+let it drop some more, then we buy the dip back to 700qqq,  then after ripping through vol crush to valhalla
+O :t: C
+10-06-2026 9:22 PM
+if he is perch I am minnow
+LordHelmet
+10-06-2026 9:23 PM
+i'd be some plankton larvae
+O :t: C
+if he is perch I am minnow
+A p o l l o
+10-06-2026 9:23 PM
+did you see the world record Marlin in NC yesterday?
+9:23 PM
+919 lbs
+9:23 PM
+Thats Bessent Bid
+O :t: C
+10-06-2026 9:23 PM
+if you are able to consistently extract money from market than who cares how big your $%
+%&
+%& is
+2
+LordHelmet
+10-06-2026 9:23 PM
+that's a big fish
+Disciple3
+10-06-2026 9:23 PM
+i guess im not even real i trade TPT's fake money but somehow make money
+A p o l l o
+did you see the world record Marlin in NC yesterday?
+O :t: C
+10-06-2026 9:23 PM
+no wow........wonder how long it took to reeel in
+O :t: C
+no wow........wonder how long it took to reeel in
+A p o l l o
+10-06-2026 9:24 PM
+Does insurance cover back pain from reeling it in?
+1
+O :t: C
+10-06-2026 9:24 PM
+i fought a 300+ lb-er for 4 hrs
+LordHelmet
+10-06-2026 9:24 PM
+I go tuna fishing in the keys most years...I only need a 20# tuna to tire me out
+Disciple3
+10-06-2026 9:24 PM
+stealth helicarriers bringing oil i guess
+Disciple3
+i guess im not even real i trade TPT's fake money but somehow make money
+O :t: C
+10-06-2026 9:25 PM
+if someone is willing to pay to play SIM then exploit them.....I do
+9:25 PM
+TPT is best of them
+Disciple3
+10-06-2026 9:25 PM
+wow we really are going to 8k on these ipos
+1
+O :t: C
+10-06-2026 9:25 PM
+that is what I traded today, not my acct
+Disciple3
+10-06-2026 9:25 PM
+trump literally said gov buying them
+9:25 PM
+buy the dip scheme
+9:25 PM
+savvy
+O :t: C
+that is what I traded today, not my acct
+Disciple3
+10-06-2026 9:26 PM
+im trying to get consistent 5 x 150k accounts and pull 1k a day on each.
+9:26 PM
+hit or miss but up 10k on the month so far
+9:26 PM
+you just cant get into resetting pros
+9:27 PM
+thats how they get you
+O :t: C
+10-06-2026 9:27 PM
+never reset pros
+9:27 PM
+that is being dumb
+9:27 PM
+just beat another eval
+9:27 PM
+patience is king
+9:27 PM
+i have 3 150k never trade them together
+9:28 PM
+all i want from them is 2500 per day
+9:28 PM
+after the 80/20 cut
+9:28 PM
+do the math
+9:28 PM
+that is 50K per month
+Disciple3
+10-06-2026 9:28 PM
+yeah thats around where i shoot for with 1 mini
+O :t: C
+10-06-2026 9:28 PM
+2500 * 20
+Disciple3
+10-06-2026 9:29 PM
+lately should size down to micros though, volatility blew some of mine
+BigBill
+10-06-2026 9:30 PM
+Getting closer?
+9:30 PM
+Disciple3
+lately should size down to micros though, volatility blew some of mine
+O :t: C
+10-06-2026 9:30 PM
+you live in NYC?
+Disciple3
+10-06-2026 9:30 PM
+Pittsburgh
+O :t: C
+10-06-2026 9:31 PM
+50K per month is a lot of money in Pitts
+Disciple3
+10-06-2026 9:31 PM
+yeah i dont need much my wife pays the regular stuff around house here honestly
+9:31 PM
+she works from home biotech makes quite a bit
+9:32 PM
+think nq wants to sweep ovn low
+BigBill
+Click to see attachment
+🖼️
+jk23
+10-06-2026 9:39 PM
+Not so bold call: we see 49,999 before close
+Disciple3
+10-06-2026 9:41 PM
+590 to 600nq and its buy again i guess
+O :t: C
+10-06-2026 9:43 PM
+no such thing as a good long rn
+Disciple3
+10-06-2026 9:44 PM
+qqq dd flips there, kens goes ham, look below overnight low.  bullish divergence.  got lots of pluses there
+9:44 PM
+es got its low already, feels like we need nq too
+9:48 PM
+go on then
+9:48 PM
+gonna smash electronics if you bottom wick this before low again
+1
+9:49 PM
+9:50 PM
+there we go
+LordHelmet
+10-06-2026 9:50 PM
+ken wants it all...
+9:51 PM
+testing yesterdays low?
+Disciple3
+10-06-2026 9:51 PM
+ken lovesbuying there so cheap
+9:52 PM
+9:53 PM
+all day, everyday
+9:53 PM
+time for cigar now for real
+Disciple3
+all day, everyday
+FixedRate
+10-06-2026 9:55 PM
+Lol, I thought infinite bid was done?
+Disciple3
+10-06-2026 9:56 PM
+that was a tactical spot 590 to 630 was an easy scalp lol
+9:56 PM
+max pain on dip buyers again i see
+9:56 PM
+cant hodl it
+Dragonboys
+10-06-2026 9:57 PM
+That’s what it looks like
+Disciple3
+10-06-2026 9:57 PM
+they did just make me buy again
+9:57 PM
+sigh
+9:57 PM
+i wanna go puff
+Disciple3
+max pain on dip buyers again i see
+ImOnlyHereForApolloANDJohannes
+10-06-2026 9:57 PM
+Max pain on nq is quite literally higher
+9:58 PM
+Any higher
+nicowilliamsRW
+10-06-2026 9:58 PM
+breath rolling over into close
+FixedRate
+10-06-2026 9:58 PM
+Might reach 7250
+ImOnlyHereForApolloANDJohannes
+10-06-2026 9:58 PM
+Spx doesnt hate it
+9:58 PM
+Overextended short puts itm
+9:58 PM
+Spy and q damn well hate it lets see who wins
+Disciple3
+10-06-2026 9:59 PM
+yes youve got ken down here hodoring nq
+ImOnlyHereForApolloANDJohannes
+10-06-2026 9:59 PM
+Spx would love a close 10 to 15 higher
+(edited)
+Disciple3
+10-06-2026 10:00 PM
+def not a "strong" hodor tho
+ImOnlyHereForApolloANDJohannes
+10-06-2026 10:00 PM
+The premium pain of spy and q above is way worse
+10:00 PM
+Charm doesnt force it either
+Disciple3
+10-06-2026 10:00 PM
+perfectly unbalancex
+10:01 PM
+lol
+ImOnlyHereForApolloANDJohannes
+10-06-2026 10:01 PM
+Kill vol spike the book
+10:01 PM
+Right at the bell
+Disciple3
+10-06-2026 10:03 PM
+alright fr fr im done buyingh
+Saint_Seiya
+10-06-2026 10:03 PM
+Why not reset pros?
+@Disciple3
+@O :t: C
+Saint_Seiya
+Why not reset pros?
+@Disciple3
+@O :t: C
+Disciple3
+10-06-2026 10:03 PM
+1500 vs 200
+Saint_Seiya
+10-06-2026 10:04 PM
+oh I see,
+Disciple3
+10-06-2026 10:04 PM
+puts you into tilt like youve never seen lol especially if the trailing DD gets you
+10:04 PM
+which it will right now
+Saint_Seiya
+10-06-2026 10:05 PM
+I messed up a vanquish eval bc I made too much on day 1 so, I had to make 4k more to  pass, got impatient and blew it. lol.
+Disciple3
+10-06-2026 10:05 PM
+hate the consistency rules
+10:05 PM
+why TPT is goated
+Saint_Seiya
+10-06-2026 10:05 PM
+I know
+Disciple3
+10-06-2026 10:05 PM
+make 4500 day 1, then 1k basically for the other 4 days and youre good
+Saint_Seiya
+10-06-2026 10:06 PM
+topstep?
+Disciple3
+10-06-2026 10:06 PM
+nah they went to trash
+Saint_Seiya
+10-06-2026 10:06 PM
+what is TPT
+Disciple3
+10-06-2026 10:06 PM
+take profit trader
+Saint_Seiya
+10-06-2026 10:06 PM
+gotcha
+Disciple3
+10-06-2026 10:06 PM
+use their code to get 40% off and free pro activation.  basically 200 all in for the 150k account
+Disciple3
+use their code to get 40% off and free pro activation.  basically 200 all in for the 150k account
+LordHelmet
+10-06-2026 10:09 PM
+do you consistently extract USD from your accounts?
+LordHelmet
+do you consistently extract USD from your accounts?
+Disciple3
+10-06-2026 10:09 PM
+2
+LordHelmet
+10-06-2026 10:10 PM
+nice
+Saint_Seiya
+Why not reset pros?
+@Disciple3
+@O :t: C
+O :t: C
+10-06-2026 10:10 PM
+its a sucker play.....they want you to pay 800+ on tilt
+LordHelmet
+10-06-2026 10:10 PM
+do you think they pay out with sucker's money or do they copy your trades?
+(edited)
+O :t: C
+10-06-2026 10:11 PM
+who cares...they pay..and quickly
+2
+Disciple3
+10-06-2026 10:11 PM
+well you know most jabronis arent taking payouts.
+O :t: C
+10-06-2026 10:11 PM
+exploit it while it exists
+Disciple3
+10-06-2026 10:11 PM
+90% atleast arent making money on props
+dauma
+10-06-2026 10:11 PM
+Where we closing today. 7300?
+Disciple3
+10-06-2026 10:11 PM
+and if youre really good they just move you to live money so they dont bleed lol
+O :t: C
+10-06-2026 10:12 PM
+just remember, you are a a 1099 contractor so taxes are tough amount
+1
+O :t: C
+just remember, you are a a 1099 contractor so taxes are tough amount
+ImOnlyHereForApolloANDJohannes
+10-06-2026 10:12 PM
+Are u trading thru an llc to account for this
+O :t: C
+just remember, you are a a 1099 contractor so taxes are tough amount
+LordHelmet
+10-06-2026 10:12 PM
+but you can deduct keyboards and mice that are thrown
+O :t: C
+10-06-2026 10:12 PM
+simply open a separate bank separate savings acct and set aside 40% to be saefe
+LordHelmet
+but you can deduct keyboards and mice that are thrown
+Disciple3
+10-06-2026 10:12 PM
+many many keyboard deductions
+ImOnlyHereForApolloANDJohannes
+10-06-2026 10:13 PM
+Or the gas from your mclaren
+1
+10:13 PM
+Oh is that just me? Nvm
+ImOnlyHereForApolloANDJohannes
+Are u trading thru an llc to account for this
+O :t: C
+10-06-2026 10:13 PM
+i am in texas.i do everything through llc(s) is beneficial in this state.........answer to your Q, depnds on the state
+LordHelmet
+10-06-2026 10:14 PM
+are payouts bigger in texas too?
+10:14 PM
+lol
+ImOnlyHereForApolloANDJohannes
+10-06-2026 10:14 PM
+Im in nyc so its like losing money just by existing
+Disciple3
+10-06-2026 10:14 PM
+generally speaking trading llc would be more if you want to make your own 401k/health insurance i think
+LordHelmet
+are payouts bigger in texas too?
+O :t: C
+10-06-2026 10:14 PM
+hahaha
+Disciple3
+10-06-2026 10:14 PM
+you elect mark to market on your tax return and you get better tax status
+10:14 PM
+if you do trade full time
+LordHelmet
+10-06-2026 10:15 PM
+that guy
+10:15 PM
+lol
+Disciple3
+10-06-2026 10:15 PM
+here we go gonna make me buy this low again
+LordHelmet
+10-06-2026 10:16 PM
+alright, someone sell some vol, this is old
+O :t: C
+10-06-2026 10:16 PM
+all longs crushed by COMM
+10:17 PM
+COMMs buy in the dip !!!
+Disciple3
+10-06-2026 10:17 PM
+thats very rude
+ImOnlyHereForApolloANDJohannes
+10-06-2026 10:17 PM
+Days like today are why vanquish is actually the best firm
+O :t: C
+COMMs buy in the dip !!!
+LordHelmet
+10-06-2026 10:17 PM
+are they selling every pop and buying every dip?
+Dragonboys
+10-06-2026 10:17 PM
+Maybe long works now?
+ImOnlyHereForApolloANDJohannes
+10-06-2026 10:17 PM
+I doubt it highly
+LordHelmet
+are they selling every pop and buying every dip?
+O :t: C
+10-06-2026 10:17 PM
+they arent doing anything on the ask
+1
+ImOnlyHereForApolloANDJohannes
+10-06-2026 10:17 PM
+Even worse post 4
+Dragonboys
+10-06-2026 10:18 PM
+We are close to 75 spx
+O :t: C
+10-06-2026 10:18 PM
+overexxageration statement but makes my point
+Disciple3
+10-06-2026 10:18 PM
+we just need more cash for space x everyone calm down
+ImOnlyHereForApolloANDJohannes
+10-06-2026 10:19 PM
+Itm short put driven btw
+10:19 PM
+Entire day
+10:19 PM
+Long put***
+10:19 PM
+change the charmpath.exe
+Disciple3
+10-06-2026 10:20 PM
+oh my es broke daily
+O :t: C
+10-06-2026 10:20 PM
+VIX 1minute tapeW
+1
+Disciple3
+10-06-2026 10:20 PM
+working on its daily vomit dolphin
+ImOnlyHereForApolloANDJohannes
+10-06-2026 10:21 PM
+I bet ken spiked call prices to reel in the bait to balance his decay profile bearishly
+LordHelmet
+10-06-2026 10:21 PM
+ImOnlyHereForApolloANDJohannes
+10-06-2026 10:21 PM
+Sneaky vol traders reeled in
+10:21 PM
+Just to get annihlated and become a bid ask farm
+10:21 PM
+And flip the charm profile
+Disciple3
+and if youre really good they just move you to live money so they dont bleed lol
+Saint_Seiya
+10-06-2026 10:23 PM
+they do have a consistency rule too, tho
+10:24 PM
+you probably are consistently exploiting them, thats why u havent noticed.
+1
+jk23
+10-06-2026 10:26 PM
+BigBill
+10-06-2026 10:28 PM
+Oh boy!  Epstein time!
+3
+10:32 PM
+That might have been the Epstein bottom.
+10:33 PM
+1
+Saint_Seiya
+they do have a consistency rule too, tho
+Disciple3
+10-06-2026 10:34 PM
+That's not tpt, you can make 10k a day on pro and get it paid out that day if u want
+Saint_Seiya
+10-06-2026 10:35 PM
+oh sht yes, u r right
+Disciple3
+10-06-2026 10:35 PM
+Source, I've been paid 8k lol
+LordHelmet
+10-06-2026 10:36 PM
+the trailing DD promotes scalping vice holding?
+Toto
+10-06-2026 10:38 PM
+You can still hold with a trailing DD, just trail your stops if you're trading minis, with micros you don't really have to worry that much
+2
+10:39 PM
+4500 drawdown on a 150k account is more than enough to go for homeruns w/micros
+LordHelmet
+SPX? sell front, buy back?  What are your time structures?
+Wizard of Ops
+10-06-2026 10:42 PM
+Tuesday/Monday calendars about 200 points above and below spot. Maybe move puts out a little more.
+LordHelmet
+the trailing DD promotes scalping vice holding?
+Disciple3
+10-06-2026 10:46 PM
+I like to scalp up the trailing drawdown to atleasy 3k profit before trying to hold a trade
+10:46 PM
+2 or 3 nq mini usually is fine but right now you just wanna do 1 max take 700 to 1k a pop quickly
+1
+Disciple3
+I like to scalp up the trailing drawdown to atleasy 3k profit before trying to hold a trade
+Topcheddar
+10-06-2026 10:48 PM
+Why do you use props over personal?
+Disciple3
+10-06-2026 10:49 PM
+I do
+10:49 PM
+Whats point of risking my own money when I dont have to
+Topcheddar
+10-06-2026 10:49 PM
+fair enough
+Disciple3
+10-06-2026 10:50 PM
+On days like Thursday when you get clapped just start some new evals instead of losing a bunch of real money lol
+10:51 PM
+If I can start banging 50k months consistently id rather put that into swing trading options not daytrading
+10:51 PM
+But overall low risk prop trading even taking 10k a month is beating all the other day jobs and usually done trading in like an hour and have your whole day
+10:52 PM
+Freedom is fine
+Topcheddar
+10-06-2026 10:54 PM
+Yeah not saying its a bad idea, only ask because I had been told the rules were crazy restrictive
+Disciple3
+10-06-2026 10:54 PM
+If you can be patient, one good weekly run on TPT can make your month
+10:55 PM
+I've already beat my 10k goal for the month and its the 10th, so just chill and work more evals up for next week for 1k
+10:56 PM
+I agree I dont mess with other firms with the consistency rules on payouts though.  Topstep used to be good but then changed it all
+1
+Shawn
+10-06-2026 10:59 PM
+Where we going tomorrow wiz
+Toto
+10-06-2026 11:00 PM
+wen vol crush
+BigBill
+10-06-2026 11:01 PM
+What are we talking about post close?  I have some thoughts....
+11:01 PM
+Disciple3
+10-06-2026 11:02 PM
+We gonna find our next dip buy, you know its not allowed under 50k
+LordHelmet
+10-06-2026 11:02 PM
+what happened, I walked away and ripper cancelled
+1
+LordHelmet
+what happened, I walked away and ripper cancelled
+nicowilliamsRW
+10-06-2026 11:04 PM
+dont worry, trump gonna strike tonight, by the time we wake up taco will be back on
+1
+Disciple3
+10-06-2026 11:04 PM
+Typing up his announcement now
+LordHelmet
+10-06-2026 11:20 PM
+bro cant even walk away from the PC without a surprise
+2
+BigBill
+10-06-2026 11:28 PM
+Boring inside day....
+Dark Matter
+10-06-2026 11:30 PM
+could be an ugly gap down futures and into tomorrow IMO
+Dark Matter
+could be an ugly gap down futures and into tomorrow IMO
+dauma
+10-06-2026 11:33 PM
+what's the rationale behind that thought? geopol risk?
+O :t: C
+10-06-2026 11:34 PM
+recap
+3
+dauma
+what's the rationale behind that thought? geopol risk?
+Dark Matter
+10-06-2026 11:39 PM
+macro = rotation, japan, iran conflict/war keeps lingering like an annoying fly
+technicals = Lower highs on higher timeframes, volume profile and some of what
+@O :t: C
+shared ^^^
+dealers/volland = the levels we are breaking are key delta levels - not just gamma/vanna - and those levels we are breaking will only cause more dealers to sell and unwind in a negative vanna environment with vol getting perky
+1
+11:41 PM
+this is your next 2 weeks - that don't look too healthy.
+11:43 PM
+0DTE charm will find balance between 7220-7300 overnight and we are basically at 7220spx in futures already lol.
+(edited)
+Disciple3
+10-06-2026 11:44 PM
+7200 then blast it
+11:44 PM
+if we get 7k retest its full port
+Dark Matter
+10-06-2026 11:45 PM
+if we lose that wing 7220 on 0DTE you will see an increase in vol and with that look at any higher timeframes - that vol event will rip through 7200, and if that vol continues it goes to 7100.
+Disciple3
+10-06-2026 11:45 PM
+60% odds of getting 7200 this month
+Dark Matter
+10-06-2026 11:46 PM
+if vol suppresses you have some positive gamma at 7200 and 7150 to slow it down.
+a failed breakdown of 7200 would be EXTREMELY bullish then IMO
+Disciple3
+10-06-2026 11:46 PM
+Dark Matter
+this is your next 2 weeks - that don't look too healthy.
+FixedRate
+11-06-2026 12:01 AM
+@Wizard of Ops
+Yesterday in the call you mention being bullish until opex but then seeing a drop afterwards.  What makes you bullish next week for opex despite the significant negative vanna?
+1
+Wizard of Ops
+11-06-2026 12:12 AM
+The overpriced IV and skew mainly.
+FixedRate
+@Wizard of Ops
+Yesterday in the call you mention being bullish until opex but then seeing a drop afterwards.  What makes you bullish next week for opex despite the significant negative vanna?
+Dark Matter
+11-06-2026 12:16 AM
+my overall bullish thesis is from a higher timeframe standpoint and set of levels such as 7100-7000, earnings, etc.
+specifically, between now and opex i am of the opinion based on the data of mean reversion. we got our bullish view yesterday where my weekly view for this week is the wall at 7480-7500 containing price this week with a ceiling of 7575spx - you tested 7490-7500spx twice this week and failed. from there the downside can go all the way to 7200-7100 and what i mentioned above as to why. see my
+#6/8 ES/SPX Weekly & Daily Overview
+update from the day prior calling out key levels and the selloff that could come with it.
+that zone as we enter 7200 and below is where "bullish" kicks in as the data is highly suggestive of a hold of that zone - again what I mentioned above and take a look at gamma.
+all of that greek notional value doesn't expire until next week or the majority of it and some will come back as they rebalance. so my thesis then says buy the dip and scale in even as we get a failed breakdown of a key level such as 7200 to target 7300, 7400 - where we then have a major decision and if we see healthy consolidation we get back to 7500, 7575spx and so forth. you will see volland data shift as we reverse and vol compresses allowing positive vanna above spot to pull us up.
+last but not least we have YET to test or address our vol event we discussed in the show and there is 2 weeks out for that to still play out. so add the items above and this and how i come with my bullish thesis.
+---
+i manage my risk and 7k is my LIS. i am going to respect every stop loss reason i have below there and my bullish thesis wipes out in the interim.
+(edited)
+Dark Matter
+my overall bullish thesis is from a higher timeframe standpoint and set of levels such as 7100-7000, earnings, etc.
+specifically, between now and opex i am of the opinion based on the data of mean reversion. we got our bullish view yesterday where my weekly view for this week is the wall at 7480-7500 containing price this week with a ceiling of 7575spx - you tested 7490-7500spx twice this week and failed. from there the downside can go all the way to 7200-7100 and what i mentioned above as to why. see my
+#6/8 ES/SPX Weekly & Daily Overview
+update from the day prior calling out key levels and the selloff that could come with it.
+that zone as we enter 7200 and below is where "bullish" kicks in as the data is highly suggestive of a hold of that zone - again what I mentioned above and take a look at gamma.
+all of that greek notional value doesn't expire until next week or the majority of it and some will come back as they rebalance. so my thesis then says buy the dip and scale in even as we get a failed breakdown of a key level such as 7200 to target 7300, 7400 - where we then have a major decision and if we see healthy consolidation we get back to 7500, 7575spx and so forth. you will see volland data shift as we reverse and vol compresses allowing positive vanna above spot to pull us up.
+last but not least we have YET to test or address our vol event we discussed in the show and there is 2 weeks out for that to still play out. so add the items above and this and how i come with my bullish thesis.
+---
+i manage my risk and 7k is my LIS. i am going to respect every stop loss reason i have below there and my bullish thesis wipes out in the interim.
+(edited)
+Abcdefg
+11-06-2026 12:17 AM
+Do you think opex could break 7k
+Abcdefg
+Do you think opex could break 7k
+Dark Matter
+11-06-2026 12:17 AM
+opex+fomc yes. opex on its own not necessarily unless all that money leaves, doesn't come back and we don't rebalance any of it
+Abcdefg
+Do you think opex could break 7k
+Dark Matter
+11-06-2026 12:19 AM
+don't predict it. i have been saying for weeks trade these key weekly levels with all this uncertainity, ride some tickers with momentum, but es/spx level to level. take the risk where the data has the thesis
+2
+BigBill
+11-06-2026 12:20 AM
+50D SMA is at 7213 & 100D is at 7007, hard to still be bullish below that.
+Dark Matter
+don't predict it. i have been saying for weeks trade these key weekly levels with all this uncertainity, ride some tickers with momentum, but es/spx level to level. take the risk where the data has the thesis
+Abcdefg
+11-06-2026 12:22 AM
+Yeah ngl I haven’t been trading at all lol. Not been able to read the market very well lately so staying out. Except long term entries
+Abcdefg
+Yeah ngl I haven’t been trading at all lol. Not been able to read the market very well lately so staying out. Except long term entries
+Dark Matter
+11-06-2026 12:22 AM
+protect those profits nothing wrong with this until you get a sense
+1
+Phoenix
+11-06-2026 12:22 AM
+No buyers for 3 days now
+1
+BigBill
+50D SMA is at 7213 & 100D is at 7007, hard to still be bullish below that.
+Dark Matter
+11-06-2026 12:23 AM
+yes there is also the 55sma i like around 7120 on the daily. the other one i like is on the weekly 22sma around 7100
+Dark Matter
+yes there is also the 55sma i like around 7120 on the daily. the other one i like is on the weekly 22sma around 7100
+Abcdefg
+11-06-2026 12:26 AM
+Is 55 better than 50? Lol
+Abcdefg
+Is 55 better than 50? Lol
+Dark Matter
+11-06-2026 12:27 AM
+its those small "tweaks" you notice charting way too much lol
+1
+Dark Matter
+11-06-2026 12:36 AM
+no crystal ball here lol. let's see what happens when futures open. spy didn't react much to it yet but that could be the EOD/AH selloff
+https://x.com/financialjuice/status/2064823761656852704?s=20
+FinancialJuice (@financialjuice)
+U.S. strikes on Iran began: U.S. official tells Axios
+X • 11-06-2026 12:35 AM
+Dark Matter
+no crystal ball here lol. let's see what happens when futures open. spy didn't react much to it yet but that could be the EOD/AH selloff
+https://x.com/financialjuice/status/2064823761656852704?s=20
+nicowilliamsRW
+11-06-2026 12:36 AM
+@Dark Matter
+wide ranges and your plan makes me wanting to start the coffee machine now...looong night ahead folks
+2
+1
+nicowilliamsRW
+@Dark Matter
+wide ranges and your plan makes me wanting to start the coffee machine now...looong night ahead folks
+Dark Matter
+11-06-2026 12:36 AM
+Dark Matter
+no crystal ball here lol. let's see what happens when futures open. spy didn't react much to it yet but that could be the EOD/AH selloff
+https://x.com/financialjuice/status/2064823761656852704?s=20
+Dark Matter
+11-06-2026 12:37 AM
+can't wait for the taco tomorrow lol
+Dark Matter
+don't predict it. i have been saying for weeks trade these key weekly levels with all this uncertainity, ride some tickers with momentum, but es/spx level to level. take the risk where the data has the thesis
+mmweld49
+11-06-2026 1:38 AM
+This is exactly what I’ve been doing.  I’m at 7% on a prop firm challenge because I’ve lowered risk and been trading clean level to level.  A lot of 1:1’s and some 1:2’s and even sat out for most of May has gotten me closer than I’ve ever been in a challenge.
+Also, I credit the volland data in general to that success.
+3
+1
+nicowilliamsRW
+@Dark Matter
+wide ranges and your plan makes me wanting to start the coffee machine now...looong night ahead folks
+LordHelmet
+11-06-2026 1:39 AM
+Do we need to start to learn Korean?
+Yahya
+11-06-2026 1:40 AM
+Pyjamas traders already buying the iran strikes?
+LordHelmet
+Do we need to start to learn Korean?
+nicowilliamsRW
+11-06-2026 1:43 AM
+i dont mind if you hold my hand thru it
+2
+Phoenix
+11-06-2026 1:44 AM
+At least you say Iran, twitter says SpaceX is crashing market
+Yahya
+Pyjamas traders already buying the iran strikes?
+Dark Matter
+11-06-2026 2:02 AM
+keep an eye on KOPSI and eWY tonight. it will lead the sell. iran is the camo
+1
+Phoenix
+11-06-2026 2:02 AM
+In half hour we check
+Dark Matter
+11-06-2026 2:02 AM
+dell is getting whacked. tsm is fighting
+2
+Phoenix
+11-06-2026 2:03 AM
+Another big trade in TSM
+2:03 AM
+In VL today
+Dark Matter
+11-06-2026 2:03 AM
+ORCL is a beat down too
+Yahya
+11-06-2026 2:04 AM
+The lower it goes the better the bounce
+Dark Matter
+11-06-2026 2:04 AM
+nvda fighting 200
+Yahya
+The lower it goes the better the bounce
+Dark Matter
+11-06-2026 2:04 AM
+1
+Phoenix
+11-06-2026 2:04 AM
+175 and 178 price has 2 billion all together in EWY
+1
+2:04 AM
+my guess is sell
+2:04 AM
+But we see
+Yahya
+The lower it goes the better the bounce
+dauma
+11-06-2026 2:12 AM
+im still getting used to yahya as a perma bull
+(edited)
+2
+dauma
+im still getting used to yahya as a perma bull
+(edited)
+Phoenix
+11-06-2026 2:12 AM
+He was always bull
+dauma
+11-06-2026 2:12 AM
+lol this last rally tainted me as well
+Phoenix
+11-06-2026 2:12 AM
+Just this year don’t know what happened
+Dark Matter
+keep an eye on KOPSI and eWY tonight. it will lead the sell. iran is the camo
+LordHelmet
+11-06-2026 2:15 AM
+Aye aye general.
+nicowilliamsRW
+11-06-2026 2:19 AM
+approaching 7220 spx wing here
+nicowilliamsRW
+11-06-2026 2:30 AM
+dam they defended the shit outta 7220
+nicowilliamsRW
+dam they defended the shit outta 7220
+Dark Matter
+11-06-2026 2:33 AM
+Be paytient. That immediate bounce was expected. It’s gotta defend it now. And we haven’t even open Korea yet
+O :t: C
+11-06-2026 2:53 AM
+tomorrow is the best say ever in 4 years
+(edited)
+RipTide487
+11-06-2026 2:54 AM
+any thoughts on Korean open?
+O :t: C
+11-06-2026 2:56 AM
+GoSpursGo
+2:56 AM
+La Copa Mundial starts tomorrow
+RipTide487
+11-06-2026 3:00 AM
+does Rodman play for the Spurs?
+RipTide487
+does Rodman play for the Spurs?
+LordHelmet
+11-06-2026 3:04 AM
+I think Dennis rodman is retired.
+3:04 AM
+Lol
+3:04 AM
+RipTide487
+11-06-2026 3:05 AM
+but he is friendly to the Koreans
+3:06 AM
+Predominantly NK, I believe
+1
+Dark Matter
+11-06-2026 3:20 AM
+Escalations galore
+3:20 AM
+https://x.com/kobeissiletter/status/2064865208439341244?s=46&t=L3X1huGYbtxr2w5DrW6Pcw
+The Kobeissi Letter (@KobeissiLetter)
+BREAKING: Iranian state media says the Iranian Military has attacked the United States Fifth Fleet in Bahrain following US strikes on Southern Iran.
+X • 11-06-2026 3:20 AM
+O :t: C
+11-06-2026 3:20 AM
+are enough koreans margin blasted
+3
+O :t: C
+11-06-2026 3:37 AM
+KOSPI basically gapped down
+LordHelmet
+11-06-2026 4:08 AM
+i didnt expect a ripper tonight
+nicowilliamsRW
+11-06-2026 4:09 AM
+koreans green
+4:09 AM
+can never doubt the koreans
+nicowilliamsRW
+can never doubt the koreans
+Dark Matter
+11-06-2026 4:09 AM
+They don’t want their portfolios down
+4:09 AM
+They bid everything up after hitting 7220
+4:10 AM
+Coming into 7300spx lets see how it reacts
+nicowilliamsRW
+can never doubt the koreans
+Topcheddar
+11-06-2026 4:10 AM
+So committed they made shorting illegal
+2
+Disciple3
+11-06-2026 4:12 AM
+Straight up I see
+4:12 AM
+Wen all day every day
+nicowilliamsRW
+11-06-2026 4:12 AM
+i think iran solved cancer
+2
+LordHelmet
+11-06-2026 4:16 AM
+lol, we just needed to tag 7220 and we could have had the ripper during RTH
+Exported 1,127 message(s)
+Timezone: UTC+3

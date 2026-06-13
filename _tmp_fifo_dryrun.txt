@@ -1,0 +1,243 @@
+
+=== 210VYX65 2026-03-24 (5 lids) ===
+  lid= 1169 Skew Charm                long     close None -> 6627.0 (shift +0.00) oid=1248441026
+  lid= 1172 Skew Charm                long     close None -> 6610.75 (shift +0.00) oid=1248478609
+  lid= 1176 Skew Charm                long     close None -> 6620.0 (shift +0.00) oid=1248503766
+  lid= 1185 Skew Charm                long     close None -> 6624.75 (shift +0.00) oid=1248559011
+  lid= 1194 Skew Charm                long     close None -> 6610.0 (shift +0.00) oid=1248606874
+
+=== 210VYX91 2026-03-24 (2 lids) ===
+  lid= 1141 Skew Charm                short    close None -> 6596.0 (shift +0.00) oid=1248278853
+  lid= 1150 Skew Charm                short    close None -> 6611.75 (shift +0.00) oid=1248342502
+  WARN 210VYX91 2026-03-26: COUNT MISMATCH: 1 closed lids vs 2 FLL exits — refusing to FIFO-pair (would mis-attribute). Investigate manually.
+
+=== 210VYX65 2026-03-27 (4 lids) ===
+  lid= 1290 Skew Charm                long     close None -> 6472.75 (shift +0.00) oid=1249722762
+  lid= 1298 Skew Charm                long     close None -> 6455.0 (shift +0.00) oid=1249776610
+  lid= 1304 Skew Charm                long     close None -> 6473.0 (shift +0.00) oid=1249818279
+  lid= 1316 Skew Charm                long     close None -> 6464.75 (shift +0.00) oid=1249884731
+
+=== 210VYX91 2026-03-30 (2 lids) ===
+  lid= 1344 Skew Charm                short    close None -> 6424.0 (shift +0.00) oid=1250201600
+  lid= 1352 Skew Charm                short    close None -> 6452.0 (shift +0.00) oid=1250336156
+
+=== 210VYX91 2026-04-01 (2 lids) ===
+  lid= 1445 Skew Charm                short    close None -> 6622.25 (shift +0.00) oid=1251125344
+  lid= 1455 Skew Charm                short    close None -> 6615.0 (shift +0.00) oid=1251305861
+  WARN 210VYX91 2026-04-02: COUNT MISMATCH: 1 closed lids vs 2 FLL exits — refusing to FIFO-pair (would mis-attribute). Investigate manually.
+
+=== 210VYX91 2026-04-07 (5 lids) ===
+  lid= 1593 Skew Charm                short    close None -> 6592.5 (shift +0.00) oid=1252430991
+  lid= 1599 Skew Charm                short    close None -> 6591.25 (shift +0.00) oid=1252506311
+  lid= 1614 Skew Charm                short    close None -> 6605.0 (shift +0.00) oid=1252514564
+  lid= 1620 Skew Charm                short    close None -> 6632.0 (shift +0.00) oid=1252540178
+  lid= 1635 Skew Charm                short    close None -> 6618.0 (shift +0.00) oid=1252635334
+
+=== 210VYX91 2026-04-08 (7 lids) ===
+  lid= 1652 Skew Charm                short    close None -> 6814.25 (shift +0.00) oid=1252854869
+  lid= 1655 Skew Charm                short    close None -> 6804.75 (shift +0.00) oid=1252905883
+  lid= 1657 Skew Charm                short    close None -> 6785.25 (shift +0.00) oid=1252948906
+  lid= 1662 Skew Charm                short    close None -> 6811.5 (shift +0.00) oid=1252981394
+  lid= 1667 Skew Charm                short    close None -> 6827.25 (shift +0.00) oid=1253004151
+  lid= 1673 Skew Charm                short    close None -> 6799.5 (shift +0.00) oid=1253059078
+  lid= 1689 Skew Charm                short    close None -> 6804.75 (shift +0.00) oid=1253144028
+
+=== 210VYX91 2026-04-09 (3 lids) ===
+  lid= 1691 Skew Charm                short    close None -> 6810.0 (shift +0.00) oid=1253272546
+  lid= 1694 Skew Charm                short    close None -> 6823.75 (shift +0.00) oid=1253332859
+  lid= 1703 AG Short                  short    close None -> 6858.75 (shift +0.00) oid=1253496729
+
+=== 210VYX65 2026-04-10 (4 lids) ===
+  lid= 1715 Skew Charm                long     close None -> 6877.0 (shift +0.00) oid=1253737314
+  lid= 1719 Skew Charm                long     close None -> 6862.75 (shift +0.00) oid=1253784509
+  lid= 1730 Skew Charm                long     close None -> 6850.75 (shift +0.00) oid=1253844911
+  lid= 1753 Skew Charm                long     close None -> 6850.25 (shift +0.00) oid=1254005849
+
+=== 210VYX91 2026-04-10 (1 lids) ===
+  lid= 1714 Skew Charm                short    close None -> 6866.75 (shift +0.00) oid=1253739221
+
+=== 210VYX91 2026-04-14 (1 lids) ===
+  lid= 1787 Skew Charm                short    close None -> 7002.5 (shift +0.00) oid=1254820245
+
+=== 210VYX91 2026-04-15 (4 lids) ===
+  lid= 1793 Skew Charm                short    close None -> 7031.0 (shift +0.00) oid=1254981527
+  lid= 1802 Skew Charm                short    close None -> 7022.0 (shift +0.00) oid=1255062054
+  lid= 1821 Skew Charm                short    close None -> 7046.25 (shift +0.00) oid=1255162133
+  lid= 1845 Skew Charm                short    close None -> 7062.5 (shift +0.00) oid=1255270383
+
+=== 210VYX91 2026-04-16 (4 lids) ===
+  lid= 1848 Skew Charm                short    close None -> 7050.25 (shift +0.00) oid=1255389281
+  lid= 1853 Skew Charm                short    close None -> 7072.25 (shift +0.00) oid=1255444392
+  lid= 1863 Skew Charm                short    close None -> 7069.25 (shift +0.00) oid=1255536784
+  lid= 1875 Skew Charm                short    close None -> 7060.75 (shift +0.00) oid=1255613570
+
+=== 210VYX91 2026-04-17 (2 lids) ===
+  lid= 1898 Skew Charm                short    close None -> 7164.0 (shift +0.00) oid=1255895497
+  lid= 1905 Skew Charm                short    close None -> 7165.0 (shift +0.00) oid=1255943485
+
+=== 210VYX91 2026-04-20 (3 lids) ===
+  lid= 1948 Skew Charm                short    close None -> 7148.0 (shift +0.00) oid=1256439187
+  lid= 1962 Skew Charm                short    close None -> 7128.5 (shift +0.00) oid=1256516687
+  lid= 1968 Skew Charm                short    close None -> 7140.25 (shift +0.00) oid=1256725774
+
+=== 210VYX91 2026-04-21 (6 lids) ===
+  lid= 2001 Skew Charm                short    close None -> 7167.5 (shift +0.00) oid=1256846422
+  lid= 2005 Skew Charm                short    close None -> 7165.75 (shift +0.00) oid=1256899771
+  lid= 2018 Skew Charm                short    close None -> 7123.75 (shift +0.00) oid=1257008555
+  lid= 2028 Skew Charm                short    close None -> 7121.0 (shift +0.00) oid=1257048075
+  lid= 2031 Skew Charm                short    close None -> 7101.5 (shift +0.00) oid=1257082933
+  lid= 2054 Skew Charm                short    close None -> 7091.5 (shift +0.00) oid=1257160301
+
+=== 210VYX91 2026-04-22 (3 lids) ===
+  lid= 2061 Skew Charm                short    close None -> 7145.5 (shift +0.00) oid=1257311690
+  lid= 2079 Skew Charm                short    close None -> 7164.25 (shift +0.00) oid=1257495992
+  lid= 2088 Skew Charm                short    close None -> 7167.5 (shift +0.00) oid=1257572222
+
+=== 210VYX91 2026-04-23 (5 lids) ===
+  lid= 2097 Skew Charm                short    close None -> 7154.75 (shift +0.00) oid=1257773087
+  lid= 2102 Skew Charm                short    close None -> 7176.5 (shift +0.00) oid=1257830789
+  lid= 2108 Skew Charm                short    close None -> 7181.5 (shift +0.00) oid=1257872093
+  lid= 2110 Skew Charm                short    close None -> 7171.25 (shift +0.00) oid=1257908052
+  lid= 2118 Skew Charm                short    close None -> 7146.75 (shift +0.00) oid=1257977077
+
+=== 210VYX91 2026-04-24 (6 lids) ===
+  lid= 2178 Skew Charm                short    close None -> 7171.5 (shift +0.00) oid=1258343922
+  lid= 2182 Skew Charm                short    close None -> 7181.25 (shift +0.00) oid=1258382886
+  lid= 2186 Skew Charm                short    close None -> 7186.0 (shift +0.00) oid=1258416538
+  lid= 2190 Skew Charm                short    close None -> 7186.0 (shift +0.00) oid=1258447335
+  lid= 2205 Skew Charm                short    close None -> 7198.5 (shift +0.00) oid=1258518718
+  lid= 2208 Skew Charm                short    close None -> 7195.25 (shift +0.00) oid=1258604347
+
+=== 210VYX91 2026-04-27 (3 lids) ===
+  lid= 2222 Skew Charm                short    close None -> 7183.25 (shift +0.00) oid=1258754953
+  lid= 2237 Skew Charm                short    close None -> 7196.5 (shift +0.00) oid=1258870022
+  lid= 2247 Skew Charm                short    close None -> 7208.75 (shift +0.00) oid=1259034121
+
+=== 210VYX91 2026-04-28 (4 lids) ===
+  lid= 2259 Skew Charm                short    close None -> 7166.75 (shift +0.00) oid=1259172441
+  lid= 2262 Skew Charm                short    close None -> 7160.5 (shift +0.00) oid=1259223298
+  lid= 2276 Skew Charm                short    close None -> 7152.5 (shift +0.00) oid=1259291179
+  lid= 2294 Skew Charm                short    close None -> 7172.0 (shift +0.00) oid=1259482864
+
+=== 210VYX91 2026-04-29 (5 lids) ===
+  lid= 2306 Skew Charm                short    close None -> 7173.25 (shift +0.00) oid=1259625963
+  lid= 2315 Skew Charm                short    close None -> 7150.25 (shift +0.00) oid=1259732877
+  lid= 2323 Skew Charm                short    close None -> 7148.0 (shift +0.00) oid=1259778291
+  lid= 2346 Skew Charm                short    close None -> 7160.25 (shift +0.00) oid=1259908481
+
+=== 210VYX65 2026-04-30 (4 lids) ===
+  lid= 2358 Skew Charm                long     close None -> 7171.75 (shift +0.00) oid=1260115249
+  lid= 2361 Skew Charm                long     close None -> 7192.5 (shift +0.00) oid=1260162871
+  lid= 2370 Skew Charm                long     close None -> 7215.25 (shift +0.00) oid=1260258201
+  lid= 2375 Skew Charm                long     close None -> 7228.5 (shift +0.00) oid=1260301636
+
+=== 210VYX65 2026-05-01 (1 lids) ===
+  lid= 2427 Skew Charm                long     close None -> 7271.5 (shift +0.00) oid=1260838647
+
+=== 210VYX65 2026-05-04 (4 lids) ===
+  lid= 2434 Skew Charm                long     close None -> 7262.5 (shift +0.00) oid=1260959246
+  lid= 2444 Skew Charm                long     close None -> 7251.25 (shift +0.00) oid=1261051344
+  lid= 2473 VIX Divergence            long     close None -> 7224.5 (shift +0.00) oid=1261212567
+  lid= 2484 Skew Charm                long     close None -> 7225.0 (shift +0.00) oid=1261298378
+
+=== 210VYX91 2026-05-04 (6 lids) ===
+  lid= 2433 AG Short                  short    close None -> 7268.0 (shift +0.00) oid=1261026071
+  lid= 2442 AG Short                  short    close None -> 7259.25 (shift +0.00) oid=1261030565
+  lid= 2447 Skew Charm                short    close None -> 7253.75 (shift +0.00) oid=1261061264
+  lid= 2466 Skew Charm                short    close None -> 7231.75 (shift +0.00) oid=1261173927
+  lid= 2470 Skew Charm                short    close None -> 7227.0 (shift +0.00) oid=1261192914
+
+=== 210VYX65 2026-05-05 (2 lids) ===
+  lid= 2492 Skew Charm                long     close None -> 7281.5 (shift +0.00) oid=1261470928
+  lid= 2520 Skew Charm                long     close None -> 7291.5 (shift +0.00) oid=1261734396
+
+=== 210VYX91 2026-05-05 (2 lids) ===
+  lid= 2490 Skew Charm                short    close None -> 7274.0 (shift +0.00) oid=1261460628
+  lid= 2497 Skew Charm                short    close None -> 7293.25 (shift +0.00) oid=1261507197
+
+=== 210VYX65 2026-05-06 (2 lids) ===
+  lid= 2528 Skew Charm                long     close None -> 7351.5 (shift +0.00) oid=1261915705
+  lid= 2540 Skew Charm                long     close None -> 7378.75 (shift +0.00) oid=1262014689
+
+=== 210VYX91 2026-05-06 (2 lids) ===
+  lid= 2530 ES Absorption             bearish  close None -> 7355.0 (shift +0.00) oid=1261955520
+  lid= 2532 AG Short                  short    close None -> 7379.75 (shift +0.00) oid=1262144095
+
+=== 210VYX65 2026-05-07 (1 lids) ===
+  lid= 2575 Skew Charm                long     close None -> 7393.25 (shift +0.00) oid=1262445149
+
+=== 210VYX91 2026-05-07 (1 lids) ===
+  lid= 2565 Skew Charm                short    close None -> 7399.5 (shift +0.00) oid=1262345564
+  WARN 210VYX65 2026-05-08: COUNT MISMATCH: 2 closed lids vs 3 FLL exits — refusing to FIFO-pair (would mis-attribute). Investigate manually.
+
+=== 210VYX91 2026-05-11 (2 lids) ===
+  lid= 2651 Skew Charm                short    close None -> 7427.0 (shift +0.00) oid=1263245075
+  lid= 2657 Skew Charm                short    close None -> 7449.0 (shift +0.00) oid=1263338961
+  WARN 210VYX65 2026-05-12: COUNT MISMATCH: 9 closed lids vs 10 FLL exits — refusing to FIFO-pair (would mis-attribute). Investigate manually.
+
+=== 210VYX91 2026-05-12 (1 lids) ===
+  lid= 2726 AG Short                  short    close None -> 7428.75 (shift +0.00) oid=1264043542
+
+=== 210VYX65 2026-05-13 (3 lids) ===
+  lid= 2730 Skew Charm                long     close None -> 7418.0 (shift +0.00) oid=1264164694
+  lid= 2744 Skew Charm                long     close None -> 7458.25 (shift +0.00) oid=1264338249
+
+=== 210VYX91 2026-05-13 (6 lids) ===
+  lid= 2735 ES Absorption             bearish  close None -> 7427.5 (shift +0.00) oid=1264237554
+  lid= 2737 ES Absorption             bearish  close None -> 7430.25 (shift +0.00) oid=1264221993
+  lid= 2748 AG Short                  short    close None -> 7479.0 (shift +0.00) oid=1264367346
+
+=== 210VYX65 2026-05-14 (11 lids) ===
+  lid= 2768 Skew Charm                long     close None -> 7504.25 (shift +0.00) oid=1264658426
+  lid= 2770 ES Absorption             bullish  close None -> 7503.75 (shift +0.00) oid=1264689663
+  lid= 2780 Skew Charm                long     close None -> 7528.0 (shift +0.00) oid=1264740679
+  lid= 2783 Skew Charm                long     close None -> 7535.75 (shift +0.00) oid=1264774135
+  lid= 2796 Skew Charm                long     close None -> 7520.75 (shift +0.00) oid=1264886607
+  lid= 2798 ES Absorption             bullish  close None -> 7525.75 (shift +0.00) oid=1264893195
+  lid= 2801 ES Absorption             bullish  close None -> 7524.75 (shift +0.00) oid=1264898416
+  lid= 2803 Skew Charm                long     close None -> 7523.0 (shift +0.00) oid=1264900221
+  lid= 2806 ES Absorption             bullish  close None -> 7520.5 (shift +0.00) oid=1264911618
+  lid= 2808 ES Absorption             bullish  close None -> 7523.5 (shift +0.00) oid=1264921720
+  lid= 2809 Skew Charm                long     close None -> 7527.25 (shift +0.00) oid=1264978098
+
+=== 210VYX91 2026-05-14 (2 lids) ===
+  lid= 2773 AG Short                  short    close None -> 7520.0 (shift +0.00) oid=1264693904
+  lid= 2786 AG Short                  short    close None -> 7525.75 (shift +0.00) oid=1264787038
+  WARN 210VYX65 2026-05-15: COUNT MISMATCH: 7 closed lids vs 8 FLL exits — refusing to FIFO-pair (would mis-attribute). Investigate manually.
+
+=== 210VYX91 2026-05-15 (3 lids) ===
+  lid= 2821 AG Short                  short    close None -> 7438.5 (shift +0.00) oid=1265081648
+  lid= 2828 AG Short                  short    close None -> 7458.0 (shift +0.00) oid=1265158883
+  lid= 2850 AG Short                  short    close None -> 7459.5 (shift +0.00) oid=1265279030
+  WARN 210VYX65 2026-05-18: COUNT MISMATCH: 5 closed lids vs 6 FLL exits — refusing to FIFO-pair (would mis-attribute). Investigate manually.
+
+=== 210VYX65 2026-05-19 (4 lids) ===
+  lid= 2985 DD Exhaustion             long     close 7358.25 -> 7369.25 (shift +11.00) oid=1266123938
+  lid= 2986 ES Absorption             bullish  close 7369.25 -> 7358.25 (shift -11.00) oid=1266119762
+
+=== 210VYX65 2026-05-20 (13 lids) ===
+  lid= 3031 DD Exhaustion             long     close 7377.25 -> 7387.0 (shift +9.75) oid=1266588568
+  lid= 3032 ES Absorption             bullish  close 7387.0 -> 7377.25 (shift -9.75) oid=1266588340
+  lid= 3033 ES Absorption             bullish  close None -> 7400.5 (shift +0.00) oid=1266603591
+  lid= 3034 ES Absorption             bullish  close 7400.5 -> 7418.75 (shift +18.25) oid=1266617981
+  lid= 3038 DD Exhaustion             long     close 7445.75 -> 7416.5 (shift -29.25) oid=1266647841
+  lid= 3039 ES Absorption             bullish  close 7416.5 -> 7450.25 (shift +33.75) oid=1266685771
+  lid= 3044 Skew Charm                long     close 7441.25 -> 7445.75 (shift +4.50) oid=1266687238
+  lid= 3045 DD Exhaustion             long     close 7450.25 -> 7441.25 (shift -9.00) oid=1266687572
+  WARN 210VYX91 2026-05-20: COUNT MISMATCH: 4 closed lids vs 5 FLL exits — refusing to FIFO-pair (would mis-attribute). Investigate manually.
+  WARN 210VYX65 2026-05-21: COUNT MISMATCH: 13 closed lids vs 14 FLL exits — refusing to FIFO-pair (would mis-attribute). Investigate manually.
+
+=== 210VYX91 2026-05-21 (6 lids) ===
+  lid= 3105 ES Absorption             bearish  close 7425.75 -> 7418.0 (shift -7.75) oid=1267138378
+  lid= 3106 ES Absorption             bearish  close 7418.0 -> 7425.75 (shift +7.75) oid=1267144660
+  lid= 3109 Skew Charm                short    close None -> 7428.25 (shift +0.00) oid=1267154465
+
+=== 210VYX65 2026-05-22 (8 lids) ===
+  lid= 3169 Skew Charm                long     close 7518.75 -> 7513.25 (shift -5.50) oid=1267719662
+  lid= 3170 DD Exhaustion             long     close 7494.25 -> 7515.5 (shift +21.25) oid=1267719986
+  lid= 3173 Skew Charm                long     close 7515.5 -> 7518.75 (shift +3.25) oid=1267720866
+  lid= 3184 DD Exhaustion             long     close 7498.5 -> 7505.0 (shift +6.50) oid=1267775384
+  lid= 3185 Skew Charm                long     close 7494.75 -> 7498.5 (shift +3.75) oid=1267741333
+  lid= 3189 ES Absorption             bullish  close 7505.0 -> 7494.75 (shift -10.25) oid=1267742811
+
+=== DRY-RUN: 147 lid rewrites across 43 acct-days (of 88 acct-days seen, 214 total lids) ===

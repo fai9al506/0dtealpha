@@ -1,0 +1,94 @@
+Pulled 1039 long trades (SC/DD/ES Abs) since Feb 1 2026
+
+V16-eligible: 457, filtered out: 582
+
+V16-ELIGIBLE LONGS by paradigm (sorted worst -> best):
+-----------------------------------------------------------------------------------------------
+
+  UNDEFINED           TOTAL: n=  3 WR= 33.3% total=  -15.5pt $     -78 mean=-5.17pt
+    ES Absorption         n=  3 WR= 33.3% total=  -15.5pt $     -78 mean=-5.17pt
+
+  BOFA-MESSY          TOTAL: n=  1 WR=  0.0% total=  -14.0pt $     -70 mean=-14.00pt
+    Skew Charm            n=  1 WR=  0.0% total=  -14.0pt $     -70 mean=-14.00pt
+
+  GEX-MESSY           TOTAL: n=  1 WR=  0.0% total=   -8.0pt $     -40 mean=-8.00pt
+    ES Absorption         n=  1 WR=  0.0% total=   -8.0pt $     -40 mean=-8.00pt
+
+  GEX-TARGET          TOTAL: n= 12 WR= 41.7% total=   -5.6pt $     -28 mean=-0.47pt
+    DD Exhaustion         n=  3 WR=  0.0% total=  -36.0pt $    -180 mean=-12.00pt
+    Skew Charm            n=  6 WR= 66.7% total=  +23.9pt $    +120 mean=+3.98pt
+    ES Absorption         n=  3 WR= 33.3% total=   +6.5pt $     +32 mean=+2.17pt
+
+  AG-LIS              TOTAL: n= 13 WR= 69.2% total=  +22.5pt $    +112 mean=+1.73pt
+    Skew Charm            n= 13 WR= 69.2% total=  +22.5pt $    +112 mean=+1.73pt
+
+  NULL                TOTAL: n=  8 WR= 75.0% total=  +34.8pt $    +174 mean=+4.35pt
+    ES Absorption         n=  8 WR= 75.0% total=  +34.8pt $    +174 mean=+4.35pt
+
+  GEX-LIS             TOTAL: n= 22 WR= 50.0% total=  +35.2pt $    +176 mean=+1.60pt
+    ES Absorption         n= 22 WR= 50.0% total=  +35.2pt $    +176 mean=+1.60pt
+
+  BofA-LIS            TOTAL: n= 17 WR= 70.6% total=  +43.1pt $    +215 mean=+2.53pt
+    Skew Charm            n= 17 WR= 70.6% total=  +43.1pt $    +215 mean=+2.53pt
+
+  AG-PURE             TOTAL: n= 35 WR= 65.7% total= +105.2pt $    +526 mean=+3.00pt
+    ES Absorption         n= 23 WR= 65.2% total=  +52.5pt $    +262 mean=+2.28pt
+    Skew Charm            n= 12 WR= 66.7% total=  +52.7pt $    +263 mean=+4.39pt
+
+  BOFA-LIS            TOTAL: n= 34 WR= 73.5% total= +119.4pt $    +597 mean=+3.51pt
+    ES Absorption         n= 34 WR= 73.5% total= +119.4pt $    +597 mean=+3.51pt
+
+  AG-TARGET           TOTAL: n= 17 WR= 76.5% total= +121.4pt $    +607 mean=+7.14pt
+    DD Exhaustion         n=  9 WR= 55.6% total=  +26.7pt $    +134 mean=+2.97pt
+    Skew Charm            n=  8 WR=100.0% total=  +94.7pt $    +474 mean=+11.84pt
+
+  GEX-PURE            TOTAL: n= 29 WR= 69.0% total= +126.0pt $    +630 mean=+4.34pt
+    DD Exhaustion         n=  1 WR=  0.0% total=  -12.0pt $     -60 mean=-12.00pt
+    ES Absorption         n= 27 WR= 70.4% total= +126.6pt $    +633 mean=+4.69pt
+    Skew Charm            n=  1 WR=100.0% total=  +11.4pt $     +57 mean=+11.40pt
+
+  SIDIAL-MESSY        TOTAL: n= 44 WR= 65.9% total= +194.6pt $    +973 mean=+4.42pt
+    DD Exhaustion         n= 11 WR= 54.5% total=  +74.8pt $    +374 mean=+6.80pt
+    ES Absorption         n= 14 WR= 71.4% total=  +53.4pt $    +267 mean=+3.81pt
+    Skew Charm            n= 19 WR= 68.4% total=  +66.4pt $    +332 mean=+3.49pt
+
+  BOFA-PURE           TOTAL: n=221 WR= 69.7% total=+1148.0pt $   +5740 mean=+5.19pt
+    DD Exhaustion         n= 75 WR= 64.0% total= +412.3pt $   +2062 mean=+5.50pt
+    Skew Charm            n=109 WR= 79.8% total= +680.6pt $   +3403 mean=+6.24pt
+    ES Absorption         n= 37 WR= 51.4% total=  +55.0pt $    +275 mean=+1.49pt
+
+
+===============================================================================================
+FOCUS: GEX-TARGET LONGS (V16-eligible)
+===============================================================================================
+Total: n= 12 WR= 41.7% total=   -5.6pt $     -28 mean=-0.47pt
+Mean: -0.47 pt, StdDev: 12.58
+Bootstrap 95% CI on per-trade mean: [-6.92, +6.41]
+CI interpretation: CROSSES ZERO (regime noise)
+
+Monthly:
+  2026-02: n=  1 WR=  0.0% total=  -12.0pt $     -60 mean=-12.00pt
+  2026-03: n=  5 WR= 80.0% total=  +34.1pt $    +170 mean=+6.82pt
+  2026-04: n=  2 WR= 50.0% total=  +10.3pt $     +52 mean=+5.15pt
+  2026-05: n=  4 WR=  0.0% total=  -38.0pt $    -190 mean=-9.50pt
+
+By setup:
+  DD Exhaustion         n=  3 WR=  0.0% total=  -36.0pt $    -180 mean=-12.00pt
+  ES Absorption         n=  3 WR= 33.3% total=   +6.5pt $     +32 mean=+2.17pt
+  Skew Charm            n=  6 WR= 66.7% total=  +23.9pt $    +120 mean=+3.98pt
+
+
+===============================================================================================
+BLOCK-RULE SIMULATION: Add 'block longs in GEX-TARGET' to V16
+===============================================================================================
+V16 baseline (current):       n= 457  WR= 67.4%  total=+1907.0pt  $   +9535
+V16 + block GEX-TARGET longs: n= 445  WR= 68.1%  total=+1912.6pt  $   +9563
+
+>>> DELTA: +5.6pt  $+28 at 1 MES across 12 blocked trades
+>>> WR improvement: +0.69 percentage points
+
+Per-month delta of the proposed block (only including months where GEX-TARGET fired):
+  2026-02: base= +102.8pt  blocked-trades-pnl=  -12.0pt (1t)  after-block= +114.8pt  delta=+12.0pt
+  2026-03: base= +541.9pt  blocked-trades-pnl=  +34.1pt (5t)  after-block= +507.8pt  delta=-34.1pt
+  2026-04: base= +804.7pt  blocked-trades-pnl=  +10.3pt (2t)  after-block= +794.4pt  delta=-10.3pt
+  2026-05: base= +457.6pt  blocked-trades-pnl=  -38.0pt (4t)  after-block= +495.6pt  delta=+38.0pt

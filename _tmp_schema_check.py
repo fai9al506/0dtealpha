@@ -1,0 +1,13 @@
+import os, psycopg2
+c = psycopg2.connect(os.environ["DATABASE_URL"]); cur = c.cursor()
+cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='volland_exposure_points'")
+print("vep:", [r[0] for r in cur.fetchall()])
+cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='chain_snapshots'")
+print("cs:", [r[0] for r in cur.fetchall()])
+cur.execute("SELECT DISTINCT greek FROM volland_exposure_points WHERE ts_utc > now() - interval '1 day'")
+print("greeks 24h:", [r[0] for r in cur.fetchall()])
+cur.execute("SELECT min(ts_utc), max(ts_utc), count(*) FROM volland_exposure_points WHERE greek='charm' AND ts_utc > now() - interval '12 hours'")
+print("charm 12h:", cur.fetchall())
+cur.execute("SELECT DISTINCT expiration_option, ticker FROM volland_exposure_points WHERE ts_utc > now() - interval '1 day'")
+print("exp/ticker:", cur.fetchall())
+c.close()

@@ -1,0 +1,161 @@
+﻿Loaded 221 V16.1-filtered signals May 1-20 (out of 524 V14-eligible)
+
+===========================================================================
+DAILY V16.1 PORTAL P&L � May 1-20 (sorted worst to best)
+===========================================================================
+Date         Day          P&L  Trades
+  2026-05-01  Fri $ +294.50     12   >>
+  2026-05-04  Mon $ +112.00     16     
+  2026-05-05  Tue $  -44.50     14     
+  2026-05-06  Wed $ +293.00     19   >>
+  2026-05-07  Thu $ +480.00      9   >>
+  2026-05-08  Fri $  +42.00     13     
+  2026-05-11  Mon $ +271.00      9   >>
+  2026-05-12  Tue $ +395.00     16   >>
+  2026-05-13  Wed $  +12.80     12     
+  2026-05-14  Thu $ +230.80     31   >>
+  2026-05-15  Fri $  +61.00      8     
+  2026-05-18  Mon $ +150.00     18     
+  2026-05-19  Tue $ +371.50     16   >>
+  2026-05-20  Wed $ +431.00     28   >>
+
+  Total V16.1 sim:  $+3100.10  over 14 trading days
+
+===========================================================================
+WEEKLY V16.1 P&L (Mon-Fri)
+===========================================================================
+
+  Week 18 (2026-05-01 --> 2026-05-01): $+294.50, 12 trades
+    Fri 05-01: $+294.50
+
+  Week 19 (2026-05-04 --> 2026-05-08): $+882.50, 71 trades
+    Mon 05-04: $+112.00
+    Tue 05-05: $-44.50
+    Wed 05-06: $+293.00
+    Thu 05-07: $+480.00
+    Fri 05-08: $+42.00
+
+  Week 20 (2026-05-11 --> 2026-05-15): $+970.60, 76 trades
+    Mon 05-11: $+271.00
+    Tue 05-12: $+395.00
+    Wed 05-13: $+12.80
+    Thu 05-14: $+230.80
+    Fri 05-15: $+61.00
+
+  Week 21 (2026-05-18 --> 2026-05-20): $+952.50, 62 trades
+    Mon 05-18: $+150.00
+    Tue 05-19: $+371.50
+    Wed 05-20: $+431.00
+
+===========================================================================
+PER-SETUP x PER-WEEK CONTRIBUTION
+===========================================================================
+
+  Week 18 (2026-05-01 --> 2026-05-01): total $+294.50
+    Skew Charm         long     n=  3 WR=  33% $  -59.00
+    Skew Charm         short    n=  9 WR=  89% $ +353.50
+
+  Week 19 (2026-05-04 --> 2026-05-08): total $+882.50
+    Vanna Pivot Bounce short    n=  5 WR=   0% $ -186.00
+    AG Short           short    n=  8 WR=  62% $  +50.50
+    Skew Charm         long     n= 16 WR=  62% $ +156.50
+    Skew Charm         short    n= 35 WR=  54% $ +416.00
+    DD Exhaustion      long     n=  7 WR=  86% $ +445.50
+
+  Week 20 (2026-05-11 --> 2026-05-15): total $+970.60
+    ES Absorption      bearish  n=  2 WR=   0% $  -80.00
+    Skew Charm         short    n= 15 WR=  67% $  +20.00
+    Vanna Pivot Bounce short    n= 15 WR=  60% $  +92.50
+    AG Short           short    n= 11 WR=  70% $ +122.10
+    DD Exhaustion      long     n= 14 WR=  50% $ +351.50
+    Skew Charm         long     n= 19 WR=  68% $ +464.50
+
+  Week 21 (2026-05-18 --> 2026-05-20): total $+952.50
+    ES Absorption      bearish  n=  3 WR=   0% $  -80.00
+    AG Short           short    n=  4 WR=  50% $   -0.50
+    Skew Charm         short    n= 26 WR=  54% $ +220.00
+    Skew Charm         long     n= 18 WR=  72% $ +362.50
+    DD Exhaustion      long     n= 11 WR=  73% $ +450.50
+
+===========================================================================
+BLEEDER PATTERNS � (setup x direction x paradigm), worst $$ first
+===========================================================================
+
+  Top 10 BLEEDERS (n>=3, sorted worst):
+    Skew Charm         short    SIDIAL-MESSY       n= 5 WR=  40% $ -141.50
+    Vanna Pivot Bounce short    UNKNOWN            n=20 WR=  45% $  -93.50
+    AG Short           short    AG-PURE            n= 7 WR=  57% $  -51.50
+    Skew Charm         short    AG-LIS             n= 5 WR=  60% $  -17.00
+    Skew Charm         long     AG-LIS             n= 8 WR=  62% $  +19.00
+    Skew Charm         long     SIDIAL-MESSY       n= 6 WR=  67% $  +59.50
+    Skew Charm         long     AG-PURE            n= 5 WR=  80% $  +69.00
+    AG Short           short    AG-LIS             n=16 WR=  67% $ +223.60
+    Skew Charm         short    BOFA-PURE          n=43 WR=  51% $ +257.00
+    Skew Charm         short    GEX-LIS            n= 8 WR=  75% $ +378.00
+
+  Top 10 WINNERS:
+    Skew Charm         long     AG-LIS             n= 8 WR=  62% $  +19.00
+    Skew Charm         long     SIDIAL-MESSY       n= 6 WR=  67% $  +59.50
+    Skew Charm         long     AG-PURE            n= 5 WR=  80% $  +69.00
+    AG Short           short    AG-LIS             n=16 WR=  67% $ +223.60
+    Skew Charm         short    BOFA-PURE          n=43 WR=  51% $ +257.00
+    Skew Charm         short    GEX-LIS            n= 8 WR=  75% $ +378.00
+    DD Exhaustion      long     SIDIAL-MESSY       n= 4 WR= 100% $ +388.00
+    Skew Charm         short    GEX-PURE           n=20 WR=  75% $ +472.00
+    DD Exhaustion      long     BOFA-PURE          n=28 WR=  61% $ +859.50
+    Skew Charm         long     BOFA-PURE          n=34 WR=  68% $ +877.50
+
+===========================================================================
+ALIGNMENT BREAKDOWN � (setup x direction x align)
+===========================================================================
+  ES Absorption      bearish  align=-1 n=  5 WR=   0% $ -160.00 !! BLEED
+  Skew Charm         long     align=-1 n=  3 WR=  33% $ -110.00 !! BLEED
+  Vanna Pivot Bounce short    align=+3 n=  3 WR=   0% $ -106.00 !! BLEED
+  Vanna Pivot Bounce short    align=+1 n=  3 WR=  33% $  -30.00
+  AG Short           short    align=+1 n=  6 WR=  60% $  -15.70
+  Vanna Pivot Bounce short    align=-1 n= 14 WR=  57% $  +42.50
+  AG Short           short    align=-1 n= 15 WR=  67% $ +151.30
+  Skew Charm         short    align=+3 n= 15 WR=  53% $ +169.00
+  Skew Charm         short    align=+1 n= 70 WR=  61% $ +840.50 !! WIN
+  Skew Charm         long     align=+1 n= 53 WR=  68% $+1034.50 !! WIN
+  DD Exhaustion      long     align=+1 n= 32 WR=  66% $+1247.50 !! WIN
+
+===========================================================================
+REGIME � bad weeks vs good day (May 20)
+===========================================================================
+
+[BAD week May 12-15]   n=67 P&L=$+699.60 WR=58% long/short=33/34
+  avg VIX:  18.0
+  paradigm: BOFA-PURE=24, None=15, AG-LIS=13, SIDIAL-MESSY=6, AG-PURE=5
+  vanna:    None=52, bearish=15
+
+[GOOD day May 20]   n=28 P&L=$+431.00 WR=63% long/short=15/13
+  avg VIX:  17.6
+  paradigm: SIDIAL-MESSY=10, BOFA-PURE=10, AG-LIS=3, AG-PURE=2, BofA-LIS=1
+  vanna:    None=28
+
+===========================================================================
+V17 CANDIDATE BLOCK RULES � backtest on V16.1 May data
+===========================================================================
+
+BASELINE V16.1: $+3100.10 over 221 trades
+
+
+Top V17 candidates ranked by P&L improvement:
+
+  $+110.00  block  3 trades WR=  33% $-110.00  --  R17-8: SC long align=-1 *** TOP
+  $ +97.50  block  2 trades WR=   0% $ -97.50  --  R17-10: All longs when VIX < 17
+  $ -19.00  block  8 trades WR=  62% $ +19.00  --  R17-2: SC long AG-LIS
+  $ -48.00  block  8 trades WR=  50% $ +48.00  --  R17-12: SC long hour=15
+  $ -69.00  block  5 trades WR=  80% $ +69.00  --  R17-1: SC long AG-PURE
+
+===========================================================================
+COMBINED V17 = top 5 non-overlapping block rules
+===========================================================================
+
+  V16.1 baseline:  $+3100.10 (221 trades)
+  V17 combined:    $+3052.10 (206 trades, blocked 15)
+  Delta:           $-48.00
+
+  Per month:
+    2026-05: V16.1=$+3100.10 --> V17=$+3052.10 (delta $-48.00)

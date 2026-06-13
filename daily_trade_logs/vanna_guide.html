@@ -1,0 +1,89 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Vanna — How It Works & How To Trade It</title>
+<style>
+body{background:#0e1117;color:#e6edf3;font-family:Inter,Segoe UI,Arial;max-width:920px;margin:0 auto;padding:26px;line-height:1.6}
+h1{font-size:25px} h2{color:#58a6ff;border-bottom:1px solid #30363d;padding-bottom:6px;margin-top:30px;font-size:19px}
+h3{color:#bc8cff;font-size:15px;margin-top:18px}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin:12px 0} td,th{border:1px solid #30363d;padding:8px 10px;text-align:left;vertical-align:top}
+th{background:#1c2230;color:#8b949e} .card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px 18px;margin:14px 0}
+.key{color:#3fb950;font-weight:700} .warn{color:#d29922;font-weight:700} .bad{color:#f85149}
+code{background:#1c2230;padding:1px 6px;border-radius:4px;color:#e6edf3;font-size:13px}
+.q{border-left:3px solid #58a6ff;padding:6px 12px;margin:10px 0;color:#c9d1d9;font-style:italic;background:#11161d}
+.mut{color:#8b949e;font-size:12.5px} ul{margin:6px 0} li{margin:4px 0}
+.pos{color:#3fb950} .neg{color:#f85149}
+</style></head><body>
+
+<h1>⚡ Vanna — How It Works & How To Trade It</h1>
+<div class="mut">Synthesized from the Volland white paper + Discord community (Wizard of Ops, Apollo, Dark Matter, official 0DTE alerts). The one rule to remember: <span class="key">vanna is a magnet — but a VOL-CONDITIONAL one.</span></div>
+
+<h2>1 · What vanna is</h2>
+<p><b>Vanna = how much option deltas change when implied volatility (IV) changes.</b> Equivalently, how much vega changes when spot moves. Volland measures <b>dealer vanna exposure</b> (in $ notional) at every strike.</p>
+<div class="q">"From a delta lens, vanna only has an effect when IV changes." — Johannes (Volland)</div>
+<p>That last point is the whole game: <span class="warn">vanna is a VOLATILITY greek, not a spot greek.</span> On a quiet day where IV barely moves, vanna does little. It "wakes up" when vol moves — or, more subtly, as IV slowly bleeds toward zero into expiration (the "vanna drift").</p>
+
+<h2>2 · The core rule (and why it flips)</h2>
+<p>The naive starting rule everyone learns:</p>
+<div class="card"><span class="pos">Positive (green) vanna = MAGNET / support</span> &nbsp;·&nbsp; <span class="neg">Negative (red) vanna = REPELLENT / resistance</span></div>
+<p>This is true <b>only in the normal / low-vol regime</b> (VIX flat or falling — which is most of the time, because VIX is usually in contango and near-term IV is bleeding out). The instant <b>VIX starts rising (stress)</b>, the polarity <b>inverts</b>. This is the single biggest mistake new traders make.</p>
+
+<h3>The table the community actually uses</h3>
+<table>
+<tr><th></th><th>Normal vol (VIX flat/falling — most days)</th><th>Rising / high vol (VIX up, stress)</th></tr>
+<tr><td><b>+vanna ABOVE spot</b></td><td class="pos">Magnet UP — bullish target, price drifts up into it</td><td class="neg">Resistance — dealers sell rallies into it</td></tr>
+<tr><td><b>+vanna BELOW spot</b></td><td class="pos">Support — bullish drift up into expiry</td><td class="neg">Bearish accelerant — pulls price DOWN faster</td></tr>
+<tr><td><b>−vanna ABOVE spot</b></td><td>Resistance / repellent — if it flips, breakout fuel</td><td>Breakout potential if cleared</td></tr>
+<tr><td><b>−vanna BELOW spot</b></td><td>Thin support — "reds flip and cascade the sell" if breached</td><td class="pos">Structural support (inverted regime)</td></tr>
+</table>
+<div class="q">"VIX down → target positive vanna ABOVE spot. VIX up → target positive vanna BELOW spot." — the daytrading-central one-liner</div>
+
+<h2>3 · Why it's vol-conditional (the gotcha)</h2>
+<p>Wizard of Ops confirmed the definitive version directly in Discord:</p>
+<div class="q">During <b>low volatility</b> (VIX flat/falling — the majority of the time), positive vanna — whether below OR above spot — is <b>BULLISH</b>. During <b>increased volatility</b> (VIX rising), positive vanna below spot is actually <b>BEARISH</b> — it contributes to a faster downside move. — confirmed by Wizard of Ops</div>
+<ul>
+<li><b>Vanna drift:</b> because IV → 0 into expiration, a positive-vanna book has a built-in <b>upward drift</b> just from time passing on quiet days. That's the structural bullish bias of normal days.</li>
+<li><b>Apollo's confirmation tell:</b> a vanna support "really plays out" only when the strike's <b>IV actually falls</b> as price approaches. Watch the key strike's vol — rising = support fails, falling = support holds.</li>
+<li><b>Polarity inversion (Dark Matter, VIX&gt;~20):</b> "<i>positive vanna above spot becomes resistance rather than magnet; negative vanna below spot becomes structural support.</i>"</li>
+</ul>
+
+<h2>4 · The level concepts</h2>
+<ul>
+<li><b>Vanna magnet / attractor</b> — a strong +vanna concentration that <b>pulls price toward it</b> in normal vol. (See today's live example below.)</li>
+<li><b>Vanna support / resistance</b> — the workhorse. Official alerts quote a specific weekly-vanna strike as the next S/R band beyond the 0DTE edges every morning (e.g. "7320 is our vanna support for the week").</li>
+<li><b>Vanna wall</b> — a large cluster, often multi-expiry confluence, that caps/floors price (e.g. a triple-negative gamma+vanna+delta wall dealers "could not clear").</li>
+<li><b>Vanna flip / zero-cross</b> — the strike where per-strike vanna changes sign; treated as a <b>fade pivot</b>. "When all the negative vanna flips positive" → breakout fuel above.</li>
+<li><b>Cascade</b> — breaching a −vanna-below zone is self-reinforcing: "these reds start flipping and cascading the sell" → fast slide once support breaks.</li>
+</ul>
+
+<h2>5 · Which expiry to use</h2>
+<p>Unlike charm (always 0DTE), <b>vanna is read multi-expiry</b>. Match the tenor to your holding period:</p>
+<ul>
+<li><b>Intraday S/R</b> → <b>weekly</b> vanna ("vanna support for the week").</li>
+<li><b>Swing / multi-day targets</b> → <b>monthly / all-expiry</b> vanna walls (the persistent magnets).</li>
+<li>Short-term vanna is more influential for near-term price; persistent walls live in monthly. Different tenors can <b>conflict</b> (a longer-term resistance can sit below a shorter one) — don't mix them.</li>
+</ul>
+
+<h2>6 · Vanna vs gamma (mental model)</h2>
+<div class="card"><b>Gamma = structure</b> (pin/accelerant from <i>spot</i> moves) · <b>Vanna = volatility bias</b> (where vol takes price <i>if vol moves</i>) · <b>Charm = time flow</b> · <b>Delta = directional conviction</b></div>
+<p>Gamma walls hold when VIX is stable (intraday pins). Vanna governs the vol-driven excursions: <i>"couple vanna with vol — IF we get a vol spike, what area does vol take us? I use the vanna levels."</i></p>
+
+<h2>7 · How to trade it — practical rules</h2>
+<ol>
+<li><b>Default (normal vol):</b> treat the nearest strong <span class="pos">+vanna</span> as a <b>magnet/target</b> and the nearest <span class="neg">−vanna</span> as resistance. Bias long toward +vanna above; expect drift up into expiry.</li>
+<li><b>Check vol direction FIRST.</b> If VIX is <b>rising</b>, INVERT everything — fade rallies into +vanna above (now resistance), expect +vanna below to accelerate downside.</li>
+<li><b>Confirm with the strike's IV:</b> as price nears a vanna level, is that strike's vol falling (support holds) or rising (it fails)?</li>
+<li><b>Fade the vanna flip</b> on normal days; play the <b>cascade</b> (continuation) when a −vanna-below zone breaks cleanly.</li>
+<li><b>Confluence = conviction:</b> when 0DTE + weekly + monthly vanna stack same-sign within a few points, that wall is breached far less often — high-confidence S/R or target.</li>
+<li><b>Line it up:</b> for a directional thesis, make sure charm, vanna (and sometimes gamma) all agree before sizing up.</li>
+</ol>
+
+<h2>8 · Live example — Jun 11, 2026 (the 7400 magnet)</h2>
+<div class="card">
+SPX <b>opened 7289</b>, ran to a <b>high of 7411</b>, and <b>closed 7396</b> — <span class="key">+107 points, drawn straight up to the 7400 +vanna magnet (+215M cluster) and pinned there.</span><br><br>
+VIX was ~21.5 but <b>falling</b> (post-war-headline relief) → <b>normal-vol magnet behavior held</b>: positive vanna above spot acted as the upside magnet, and IV bleeding out provided the drift. Textbook "vanna drift → magnet → pin." Had VIX been <i>rising</i> instead, that same 7400 +vanna would have acted as <b>resistance</b> and price would have been sold into it.
+</div>
+
+<h2>Summary</h2>
+<div class="card">
+<b>Vanna tells you where vol will take price.</b> In the normal regime (VIX flat/falling, most days) <span class="pos">+vanna is a magnet</span> and price drifts into it as IV bleeds out. When <span class="warn">VIX rises, the polarity inverts</span> and the same +vanna becomes resistance/accelerant. Read it <b>multi-expiry</b> (weekly for intraday, monthly for swing), <b>confirm with the strike's IV</b>, and <b>always check vol direction before trusting the sign.</b>
+</div>
+<p class="mut">Sources: Volland White Paper (DeLorenzo); Discord — beginners-chatter (Wizard of Ops Dec-8 ruling), volland-daytrading-central, dark-matter-trade weekly overviews, official 0dte-alerts. Live example from our DB (chain_snapshots + volland_exposure_points), Jun 11 2026.</p>
+</body></html>

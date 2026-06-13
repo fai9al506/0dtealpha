@@ -1,0 +1,11 @@
+OID            open     close    side qty type        status fill      stop
+1270380803 09:45:06 09:45:06 Buy  1 Market      FLL     7601.5 -
+1270380805 09:45:06 10:17:00 Sell 0 StopMarket  OUT          0 7587.5
+1270423031 10:07:35 10:07:35 Buy  1 Market      FLL     7605.5 -
+1270423033 10:07:35 10:34:45 Sell 0 StopMarket  OUT          0 7593.5
+1270436730 10:16:37 10:16:37 Buy  1 Market      FLL    7609.25 -
+1270436731 10:16:37 10:38:03 Sell 1 StopMarket  FLL       7613 7613
+1270437518 10:17:09 10:17:09 Sell 1 Market      FLL       7608 -
+1270447186 10:23:37 10:23:37 Sell 1 Market      FLL       7608 -
+1270483513 10:48:35 10:48:35 Buy  1 Market      FLL     7618.5 -
+1270483514 10:48:35          Sell 0 StopMarket  ACK          0 7604.5

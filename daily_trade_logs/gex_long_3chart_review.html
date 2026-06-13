@@ -1,0 +1,891 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>GEX Long - TS vs Volland (3-chart)</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#1a1a2e;color:#fff;font-family:Inter,Segoe UI,sans-serif;padding:20px;max-width:1400px;margin:0 auto}
+h1{color:#ffd740;border-bottom:2px solid #ffd740;padding-bottom:8px}
+.sub{color:#b0bec5;font-size:13px;margin:8px 0 18px}
+.panel{background:#16213e;border:1px solid #607d8b;border-radius:8px;padding:14px;margin-bottom:18px}
+.big{font-size:24px;color:#ffd740;font-weight:bold}
+.tc{background:#16213e;border:1px solid #607d8b;border-radius:8px;padding:12px 14px;margin-bottom:16px}
+.th{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding-bottom:6px;border-bottom:1px solid #607d8b}
+.th .id{color:#ffd740;font-weight:bold;font-size:15px}.th .ts{color:#b0bec5;font-size:12px}
+.bk{padding:2px 9px;border-radius:3px;font-size:11px;font-weight:bold}
+.vd{font-size:11px;color:#b0bec5;background:#0d1424;padding:2px 7px;border-radius:3px}
+.ag{font-size:11px;font-weight:bold;margin-left:auto}
+.tm{display:flex;gap:14px;font-size:12px;color:#b0bec5;margin-top:8px;flex-wrap:wrap}.tm b{color:#fff}
+.charts3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
+@media(max-width:1000px){.charts3{grid-template-columns:1fr}}
+.leg{font-size:10px;color:#607d8b;margin-top:4px}
+.comment{width:100%;margin-top:10px;min-height:46px;background:#0d1424;color:#fff;border:1px solid #607d8b;border-radius:5px;padding:8px;font-size:13px;resize:vertical}
+.comment:focus{outline:none;border-color:#ffd740}.comment.has-content{border-color:#00e676;background:#0d1f17}
+.toolbar{position:sticky;top:0;z-index:50;background:#16213e;border:1px solid #607d8b;border-radius:8px;padding:10px 14px;margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.toolbar button{cursor:pointer;border:none;border-radius:5px;padding:7px 14px;font-weight:600}
+.be{background:#00e676;color:#000}.bc{background:#448aff;color:#000}
+</style></head><body>
+<h1>GEX Long - TS GEX vs Volland Gamma (3 charts per trade)</h1>
+<div class="sub">0DTE Alpha · 2026-06-08 · union of Volland-pass + TS-pass v3.2 signals · each card: <b style="color:#00e676">TS GEX</b> | <b style="color:#ffd740">Volland Gamma</b> | <b style="color:#e040fb">Volland Charm</b> · outcome = TS-magnet target, SL14/trail15-5</div>
+<div class="panel"><span class="big">28</span> trades &nbsp;·&nbsp;
+ <span style="color:#00e676">SHARED 12</span> &nbsp;·&nbsp;
+ <span style="color:#ffd740">VOLLAND-ONLY 6</span> (Volland picks, TS drops) &nbsp;·&nbsp;
+ <span style="color:#ff5252">TS-ONLY 10</span> (live fires, study never showed)
+ <p style="color:#b0bec5;margin-top:8px;font-size:13px">For each trade compare the three structures. Does the <b style="color:#00e676">TS magnet (green dash)</b> or the <b style="color:#ffd740">Volland magnet (gold dot)</b> better match where price actually went (MFE)? Where TS and Volland DISAGREE on pass/drop are the trades that make live differ from the old study.</p></div>
+<div class="toolbar"><span style="color:#ffd740;font-weight:bold">Comments:</span>
+ <button class="be" onclick="exportC()">Export TXT</button><button class="bc" onclick="copyC()">Copy</button>
+ <span style="color:#b0bec5;font-size:12px">notes save in this browser</span></div>
+
+<div class="tc" data-lid="96">
+ <div class="th">
+  <span class="id">#96</span><span class="ts">2026-02-09 09:53 (hr 9)</span>
+  <span class="bk" style="background:#ff5252;color:#000">TS-ONLY</span>
+  <span style="color:#00e676;font-weight:bold">WIN +20.0p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">NODATA</b> [drop]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6923.2</b></span><span></span>
+  <span>MFE <b>+25.0</b></span><span>MAE <b>-2.1</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span><span>VIX <b>n/a</b></span><span>grade A+</span></div>
+ <div class="charts3"><div id="ts96"></div><div id="vg96"></div><div id="vc96"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts96',[{x:[6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0, 6945.0, 6950.0, 6955.0, 6960.0, 6965.0, 6970.0],y:[-1.37, -6.25, -4.58, -5.67, -1.88, -5.3, -0.13, -2.61, 2.59, 6.54, 10.66, 8.64, 7.91, 3.53, 3.51, 11.83, 7.39, 9.02, 6.32, 10.19],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6923.16,x1:6923.16,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6950.0,x1:6950.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg96',[{x:[],y:[],type:'bar',marker:{color:[]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6923.16,x1:6923.16,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6950.0,x1:6950.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc96',[{x:[6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0, 6945.0, 6950.0, 6955.0, 6960.0, 6965.0, 6970.0],y:[-15.57, -2.67, 0.24, -3.36, -0.58, -5.3, -1.93, 1.61, -2.62, -1.97, -0.42, -0.77, -0.03, -0.43, 0.95, 2.94, 0.95, -2.06, 0.5, 4.11],type:'bar',marker:{color:["#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6923.16,x1:6923.16,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6950.0,x1:6950.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="96" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="123">
+ <div class="th">
+  <span class="id">#123</span><span class="ts">2026-02-18 13:00 (hr 13)</span>
+  <span class="bk" style="background:#00e676;color:#000">SHARED</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS -14.0p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">A++</b> [pass]</span>
+  <span class="ag" style="color:#00e676">AGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6902.9</b></span><span>TS magnet <b style='color:#00e676'>6915</b> vs Volland magnet <b style='color:#ffd740'>6925</b>  [different]</span>
+  <span>MFE <b>+5.1</b></span><span>MAE <b>-17.3</b></span>
+  <span>align <b>-1</b></span><span>GEX-TARGET</span><span>VIX <b>n/a</b></span><span>grade A-Entry</span></div>
+ <div class="charts3"><div id="ts123"></div><div id="vg123"></div><div id="vc123"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts123',[{x:[6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0, 6945.0, 6950.0],y:[-1.03, 0.67, 0.22, 3.75, 11.53, 8.0, 10.55, 11.13, 17.62, 48.44, 48.02, 32.6, 58.77, 38.29, 41.47, 11.27, 6.14, 7.0, 2.68, 14.62],type:'bar',marker:{color:["#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6902.95,x1:6902.95,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6915.0,x1:6915.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6925.0,x1:6925.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg123',[{x:[6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0, 6945.0, 6950.0],y:[4.02, 2.79, 9.27, 18.54, -15.5, -13.38, -6.0, -25.93, 2.01, -28.91, -13.43, 4.88, 31.96, 10.33, 42.21, 8.31, 0.37, -4.41, -1.08, 6.17],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6902.95,x1:6902.95,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6915.0,x1:6915.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6925.0,x1:6925.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc123',[{x:[6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0, 6945.0, 6950.0],y:[7.67, 4.78, 14.06, 24.52, -17.48, -12.48, -4.43, -14.09, 0.7, -4.43, 0.57, -1.16, -13.92, -6.54, -35.09, -8.55, -0.46, 6.27, 1.75, -3.84],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6902.95,x1:6902.95,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6915.0,x1:6915.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6925.0,x1:6925.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="123" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="200">
+ <div class="th">
+  <span class="id">#200</span><span class="ts">2026-02-24 09:51 (hr 9)</span>
+  <span class="bk" style="background:#ff5252;color:#000">TS-ONLY</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS -14.0p</span>
+  <span class="vd">TS <b style="color:#00e676">A++</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">BAD</b> [drop]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6862.0</b></span><span>TS magnet <b style='color:#00e676'>6900</b> vs Volland magnet <b style='color:#ffd740'>6885</b>  [different]</span>
+  <span>MFE <b>+1.3</b></span><span>MAE <b>-15.5</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span><span>VIX <b>n/a</b></span><span>grade A+</span></div>
+ <div class="charts3"><div id="ts200"></div><div id="vg200"></div><div id="vc200"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts200',[{x:[6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0],y:[-3.8, -7.35, -3.62, -6.34, -3.39, -5.07, -1.64, -6.95, 0.19, 4.05, 0.72, 5.48, 5.92, 10.86, 9.0, 2.46, 6.2, 14.21, 8.21, 9.8],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6861.97,x1:6861.97,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6885.0,x1:6885.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg200',[{x:[6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0],y:[1.74, 0.03, -2.84, 11.17, 2.49, -0.59, -0.06, -1.98, 2.64, -0.61, -0.07, -4.21, -0.46, 4.61, -9.03, 0.74, -0.15, 1.64, 4.26, 7.73],type:'bar',marker:{color:["#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6861.97,x1:6861.97,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6885.0,x1:6885.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc200',[{x:[6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0],y:[1.66, 0.02, -2.17, 7.44, 1.42, -0.28, -0.02, -0.55, 0.48, -0.05, 0.0, 0.45, 0.09, -1.39, 3.59, -0.36, 0.09, -1.13, -3.35, -6.82],type:'bar',marker:{color:["#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6861.97,x1:6861.97,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6885.0,x1:6885.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="200" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="227">
+ <div class="th">
+  <span class="id">#227</span><span class="ts">2026-02-25 10:06 (hr 10)</span>
+  <span class="bk" style="background:#ffd740;color:#000">VOLLAND-ONLY</span>
+  <span style="color:#00e676;font-weight:bold">WIN +20.5p</span>
+  <span class="vd">TS <b style="color:#00e676">C</b> [drop]</span>
+  <span class="vd">Volland <b style="color:#ffd740">A</b> [pass]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6924.1</b></span><span>TS magnet <b style='color:#00e676'>6950</b> vs Volland magnet <b style='color:#ffd740'>6925</b>  [different]</span>
+  <span>MFE <b>+25.5</b></span><span>MAE <b>-5.1</b></span>
+  <span>align <b>+1</b></span><span>GEX-MESSY</span><span>VIX <b>18.7</b></span><span>grade A-Entry</span></div>
+ <div class="charts3"><div id="ts227"></div><div id="vg227"></div><div id="vc227"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts227',[{x:[6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0, 6945.0, 6950.0, 6955.0, 6960.0, 6965.0, 6970.0],y:[-3.06, 0.56, 0.55, 0.36, 3.23, 19.99, 10.97, 17.77, 6.7, 31.25, 42.67, 43.75, 33.89, 37.7, 33.73, 50.04, 21.28, 11.98, 7.14, 33.91],type:'bar',marker:{color:["#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6924.06,x1:6924.06,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6950.0,x1:6950.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6925.0,x1:6925.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg227',[{x:[6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0, 6945.0, 6950.0, 6955.0, 6960.0, 6965.0, 6970.0],y:[6.38, 2.62, -1.69, -11.17, -0.55, -16.31, -9.42, -0.9, -8.77, 0.77, 29.76, 0.41, 5.13, 18.6, 7.4, 8.78, 16.77, 8.38, 5.97, 17.82],type:'bar',marker:{color:["#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6924.06,x1:6924.06,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6950.0,x1:6950.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6925.0,x1:6925.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc227',[{x:[6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0, 6945.0, 6950.0, 6955.0, 6960.0, 6965.0, 6970.0],y:[6.69, 2.49, -1.43, -8.35, -0.35, -8.92, -4.21, -0.31, -2.16, 0.11, 1.34, -0.02, -0.81, -4.83, -2.68, -4.09, -9.57, -5.66, -4.66, -15.76],type:'bar',marker:{color:["#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6924.06,x1:6924.06,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6950.0,x1:6950.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6925.0,x1:6925.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="227" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="263">
+ <div class="th">
+  <span class="id">#263</span><span class="ts">2026-02-26 11:38 (hr 11)</span>
+  <span class="bk" style="background:#ffd740;color:#000">VOLLAND-ONLY</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS -14.0p</span>
+  <span class="vd">TS <b style="color:#00e676">BAD</b> [drop]</span>
+  <span class="vd">Volland <b style="color:#ffd740">A++</b> [pass]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6892.6</b></span><span>TS magnet <b style='color:#00e676'>6900</b> vs Volland magnet <b style='color:#ffd740'>6930</b>  [different]</span>
+  <span>MFE <b>+0.0</b></span><span>MAE <b>-14.6</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span><span>VIX <b>19.4</b></span><span>grade A</span></div>
+ <div class="charts3"><div id="ts263"></div><div id="vg263"></div><div id="vc263"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts263',[{x:[6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0],y:[-4.66, -8.85, -3.21, -4.03, -4.81, -1.65, -21.5, -24.54, -15.96, -8.78, -1.56, -19.88, -3.68, -5.44, -0.44, -2.54, 2.21, -1.55, -0.06, 1.68],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6892.64,x1:6892.64,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6930.0,x1:6930.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg263',[{x:[6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0],y:[-4.61, 0.43, -4.09, 6.32, -5.75, -1.94, -21.66, -10.99, -7.46, -39.67, 0.92, -19.59, 0.11, 10.43, 7.64, 22.83, 10.83, 24.9, 5.97, 17.11],type:'bar',marker:{color:["#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6892.64,x1:6892.64,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6930.0,x1:6930.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc263',[{x:[6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0, 6930.0, 6935.0, 6940.0],y:[-7.1, 0.61, -5.19, 7.17, -5.75, -1.67, -15.8, -6.53, -3.43, -12.86, 0.17, -1.05, -0.01, -2.26, -2.69, -11.16, -6.76, -18.95, -5.35, -17.69],type:'bar',marker:{color:["#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6892.64,x1:6892.64,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6930.0,x1:6930.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="263" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="340">
+ <div class="th">
+  <span class="id">#340</span><span class="ts">2026-03-02 12:10 (hr 12)</span>
+  <span class="bk" style="background:#00e676;color:#000">SHARED</span>
+  <span style="color:#00e676;font-weight:bold">WIN +25.5p</span>
+  <span class="vd">TS <b style="color:#00e676">A++</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">A++</b> [pass]</span>
+  <span class="ag" style="color:#00e676">AGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6874.5</b></span><span>TS magnet <b style='color:#00e676'>6900</b> vs Volland magnet <b style='color:#ffd740'>6905</b>  [different]</span>
+  <span>MFE <b>+26.0</b></span><span>MAE <b>-5.0</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span><span>VIX <b>21.1</b></span><span>grade A-Entry</span></div>
+ <div class="charts3"><div id="ts340"></div><div id="vg340"></div><div id="vc340"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts340',[{x:[6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0],y:[-7.25, -6.34, -2.94, -4.7, -1.36, -16.29, 1.05, -4.97, -3.82, -2.02, -11.33, -1.89, 1.66, -1.78, 0.89, 17.23, -0.25, 4.28, 1.06, 2.6],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6874.47,x1:6874.47,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6905.0,x1:6905.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg340',[{x:[6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0],y:[1.18, -2.16, -3.1, -3.05, 3.97, -9.14, -10.55, 8.49, -3.12, -32.77, -11.07, -8.54, -1.64, -5.45, -3.67, 10.55, 29.07, -5.89, 5.73, -2.67],type:'bar',marker:{color:["#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6874.47,x1:6874.47,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6905.0,x1:6905.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc340',[{x:[6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0],y:[1.82, -3.0, -3.83, -3.29, 3.66, -7.03, -6.47, 3.89, -0.95, -4.86, 0.07, 1.38, 0.52, 2.58, 2.31, -8.27, -27.33, 6.46, -7.17, 3.75],type:'bar',marker:{color:["#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6874.47,x1:6874.47,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6905.0,x1:6905.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="340" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="346">
+ <div class="th">
+  <span class="id">#346</span><span class="ts">2026-03-02 13:39 (hr 13)</span>
+  <span class="bk" style="background:#ff5252;color:#000">TS-ONLY</span>
+  <span style="color:#00e676;font-weight:bold">WIN +22.8p</span>
+  <span class="vd">TS <b style="color:#00e676">A++</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">BAD</b> [drop]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6877.2</b></span><span>TS magnet <b style='color:#00e676'>6900</b> vs Volland magnet <b style='color:#ffd740'>6880</b>  [different]</span>
+  <span>MFE <b>+23.3</b></span><span>MAE <b>-7.7</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span><span>VIX <b>21.2</b></span><span>grade A+</span></div>
+ <div class="charts3"><div id="ts346"></div><div id="vg346"></div><div id="vc346"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts346',[{x:[6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0],y:[-4.93, -2.45, -4.2, -1.45, -16.85, 0.9, -6.34, -5.14, -2.98, -16.72, -3.09, 2.06, -2.67, 0.73, 14.22, -1.28, 2.58, 0.37, 1.48, -0.11],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6877.21,x1:6877.21,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6880.0,x1:6880.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg346',[{x:[6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0],y:[-2.87, -3.26, -3.1, 7.21, -10.74, -15.7, 5.84, -13.49, -51.92, -6.15, -31.56, -23.94, -5.79, -5.95, -6.04, 25.55, -8.15, 4.93, -1.61, -1.62],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6877.21,x1:6877.21,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6880.0,x1:6880.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc346',[{x:[6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0, 6925.0],y:[-7.16, -7.32, -6.19, 12.58, -16.07, -19.55, 5.82, -10.06, -25.77, -1.51, 0.12, 6.09, 2.92, 4.5, 6.08, -32.16, 12.3, -8.67, 3.24, 0.77],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6877.21,x1:6877.21,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6880.0,x1:6880.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="346" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="429">
+ <div class="th">
+  <span class="id">#429</span><span class="ts">2026-03-04 09:30 (hr 9)</span>
+  <span class="bk" style="background:#ff5252;color:#000">TS-ONLY</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS -14.0p</span>
+  <span class="vd">TS <b style="color:#00e676">A++</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">BAD</b> [drop]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6838.6</b></span><span>TS magnet <b style='color:#00e676'>6880</b> vs Volland magnet <b style='color:#ffd740'>6840</b>  [different]</span>
+  <span>MFE <b>+1.4</b></span><span>MAE <b>-19.9</b></span>
+  <span>align <b>+3</b></span><span>GEX-TARGET</span><span>VIX <b>22.4</b></span><span>grade A</span></div>
+ <div class="charts3"><div id="ts429"></div><div id="vg429"></div><div id="vc429"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts429',[{x:[6790.0, 6795.0, 6800.0, 6805.0, 6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0],y:[-1.37, -2.65, -7.66, 0.35, 1.33, -0.39, 2.82, -1.54, 3.74, 2.25, 5.71, -0.22, 5.68, 3.83, 3.86, 3.59, 3.23, 7.6, 9.61, 7.83],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6838.59,x1:6838.59,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6880.0,x1:6880.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6840.0,x1:6840.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg429',[{x:[6790.0, 6795.0, 6800.0, 6805.0, 6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0],y:[2.7, 2.09, 13.93, 0.57, 3.5, 5.42, 11.17, 3.74, 5.29, 5.9, -8.49, -0.12, -3.11, -5.0, 4.49, -1.47, 0.96, -0.18, -2.34, 2.94],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6838.59,x1:6838.59,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6880.0,x1:6880.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6840.0,x1:6840.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc429',[{x:[6790.0, 6795.0, 6800.0, 6805.0, 6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0],y:[2.34, 1.62, 9.53, 0.34, 1.75, 2.22, 3.54, 0.84, 0.71, 0.25, 0.42, 0.02, 0.72, 1.62, -1.87, 0.75, -0.58, 0.12, 1.83, -2.57],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6838.59,x1:6838.59,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6880.0,x1:6880.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6840.0,x1:6840.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="429" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="439">
+ <div class="th">
+  <span class="id">#439</span><span class="ts">2026-03-04 10:39 (hr 10)</span>
+  <span class="bk" style="background:#00e676;color:#000">SHARED</span>
+  <span style="color:#00e676;font-weight:bold">WIN +11.4p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">B</b> [pass]</span>
+  <span class="ag" style="color:#00e676">AGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6862.8</b></span><span>TS magnet <b style='color:#00e676'>6900</b> vs Volland magnet <b style='color:#ffd740'>6905</b>  [different]</span>
+  <span>MFE <b>+16.4</b></span><span>MAE <b>-8.1</b></span>
+  <span>align <b>+1</b></span><span>GEX-TARGET</span><span>VIX <b>20.9</b></span><span>grade A</span></div>
+ <div class="charts3"><div id="ts439"></div><div id="vg439"></div><div id="vc439"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts439',[{x:[6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0],y:[-0.96, 1.75, -2.98, 3.34, 2.14, 6.31, -1.12, 6.68, 5.36, 5.63, 5.57, 4.69, 12.63, 16.49, 13.52, 4.17, 7.03, 18.18, 7.68, 5.71],type:'bar',marker:{color:["#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6862.77,x1:6862.77,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6905.0,x1:6905.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg439',[{x:[6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0],y:[5.68, 9.86, 9.18, 9.63, 6.71, -8.03, -5.8, -1.1, -6.52, 8.08, 7.52, -2.61, 1.15, -9.68, 12.04, 13.05, 17.58, 0.35, 31.54, 2.15],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6862.77,x1:6862.77,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6905.0,x1:6905.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc439',[{x:[6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0],y:[6.44, 10.08, 8.37, 7.72, 4.63, -4.65, -2.72, -0.39, -1.61, 1.1, 0.19, 0.22, -0.23, 2.99, -5.06, -6.94, -11.32, -0.27, -27.39, -2.11],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6862.77,x1:6862.77,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6905.0,x1:6905.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="439" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="445">
+ <div class="th">
+  <span class="id">#445</span><span class="ts">2026-03-04 11:13 (hr 11)</span>
+  <span class="bk" style="background:#00e676;color:#000">SHARED</span>
+  <span style="color:#00e676;font-weight:bold">WIN +13.6p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">B</b> [pass]</span>
+  <span class="ag" style="color:#00e676">AGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6858.8</b></span><span>TS magnet <b style='color:#00e676'>6900</b> vs Volland magnet <b style='color:#ffd740'>6905</b>  [different]</span>
+  <span>MFE <b>+18.6</b></span><span>MAE <b>-0.4</b></span>
+  <span>align <b>+1</b></span><span>GEX-TARGET</span><span>VIX <b>21.2</b></span><span>grade A</span></div>
+ <div class="charts3"><div id="ts445"></div><div id="vg445"></div><div id="vc445"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts445',[{x:[6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0],y:[0.55, -0.91, 1.78, -3.03, 3.28, 2.05, 6.29, -1.31, 6.87, 5.38, 5.61, 5.61, 4.74, 12.6, 16.31, 13.46, 4.05, 6.81, 17.03, 7.23],type:'bar',marker:{color:["#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6858.75,x1:6858.75,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6905.0,x1:6905.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg445',[{x:[6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0],y:[4.8, 3.59, 7.87, 8.83, 13.01, 10.04, -9.22, -6.23, -5.66, -6.74, 12.93, 5.91, -1.8, 5.04, -6.59, 16.26, 13.24, 20.72, 1.03, 34.63],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6858.75,x1:6858.75,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6905.0,x1:6905.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc445',[{x:[6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0],y:[6.8, 4.64, 9.19, 9.21, 11.96, 7.98, -6.18, -3.41, -2.39, -2.01, 2.25, 0.29, 0.13, -1.0, 2.14, -7.31, -7.61, -14.53, -0.85, -33.02],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6858.75,x1:6858.75,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6900.0,x1:6900.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6905.0,x1:6905.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="445" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="456">
+ <div class="th">
+  <span class="id">#456</span><span class="ts">2026-03-04 12:23 (hr 12)</span>
+  <span class="bk" style="background:#ffd740;color:#000">VOLLAND-ONLY</span>
+  <span style="color:#00e676;font-weight:bold">WIN +9.1p</span>
+  <span class="vd">TS <b style="color:#00e676">C</b> [drop]</span>
+  <span class="vd">Volland <b style="color:#ffd740">A++</b> [pass]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6870.9</b></span><span>TS magnet <b style='color:#00e676'>6880</b> vs Volland magnet <b style='color:#ffd740'>6905</b>  [different]</span>
+  <span>MFE <b>+10.2</b></span><span>MAE <b>-5.9</b></span>
+  <span>align <b>+1</b></span><span>GEX-TARGET</span><span>VIX <b>21.1</b></span><span>grade A</span></div>
+ <div class="charts3"><div id="ts456"></div><div id="vg456"></div><div id="vc456"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts456',[{x:[6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0],y:[-2.85, 2.34, 1.63, 5.58, -1.2, 7.56, 6.38, 7.29, 7.57, 6.87, 18.99, 24.63, 20.33, 6.16, 9.68, 22.37, 8.68, 5.8, 4.94, 7.02],type:'bar',marker:{color:["#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6870.94,x1:6870.94,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6880.0,x1:6880.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6905.0,x1:6905.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg456',[{x:[6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0],y:[6.95, 4.97, 3.67, -13.06, -6.94, -7.05, -4.81, 4.03, 0.7, -8.97, 4.57, -20.51, 26.33, 19.92, 25.7, -16.71, 41.23, -5.5, 0.78, 5.13],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6870.94,x1:6870.94,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6880.0,x1:6880.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6905.0,x1:6905.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc456',[{x:[6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0, 6875.0, 6880.0, 6885.0, 6890.0, 6895.0, 6900.0, 6905.0, 6910.0, 6915.0, 6920.0],y:[10.99, 7.04, 4.61, -14.25, -6.45, -5.4, -2.9, 1.77, 0.19, -1.01, -0.23, 4.4, -9.98, -10.83, -18.23, 14.62, -42.92, 6.64, -1.07, -7.89],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6870.94,x1:6870.94,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6880.0,x1:6880.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6905.0,x1:6905.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="456" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="630">
+ <div class="th">
+  <span class="id">#630</span><span class="ts">2026-03-10 11:05 (hr 11)</span>
+  <span class="bk" style="background:#00e676;color:#000">SHARED</span>
+  <span style="color:#00e676;font-weight:bold">WIN +15.3p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">B</b> [pass]</span>
+  <span class="ag" style="color:#00e676">AGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6823.8</b></span><span>TS magnet <b style='color:#00e676'>6850</b> vs Volland magnet <b style='color:#ffd740'>6840</b>  [different]</span>
+  <span>MFE <b>+20.3</b></span><span>MAE <b>-12.7</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span><span>VIX <b>22.7</b></span><span>grade A-Entry</span></div>
+ <div class="charts3"><div id="ts630"></div><div id="vg630"></div><div id="vc630"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts630',[{x:[6775.0, 6780.0, 6785.0, 6790.0, 6795.0, 6800.0, 6805.0, 6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0],y:[1.88, 3.97, 2.73, 1.63, 2.25, 11.99, 8.14, 9.28, 9.31, 13.6, 5.8, 14.68, 24.48, 10.04, 6.57, 29.2, 5.95, 7.26, 9.55, 10.34],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6823.82,x1:6823.82,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6850.0,x1:6850.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6840.0,x1:6840.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg630',[{x:[6775.0, 6780.0, 6785.0, 6790.0, 6795.0, 6800.0, 6805.0, 6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0],y:[-0.75, -0.78, -4.84, -2.28, -6.34, -4.21, -6.08, 8.67, 8.28, -2.06, 6.47, 9.71, 10.15, 16.2, -3.44, -12.6, 4.14, -12.79, -5.96, -2.72],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6823.82,x1:6823.82,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6850.0,x1:6850.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6840.0,x1:6840.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc630',[{x:[6775.0, 6780.0, 6785.0, 6790.0, 6795.0, 6800.0, 6805.0, 6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0, 6870.0],y:[-0.92, -0.86, -4.77, -1.97, -4.71, -2.62, -3.05, 3.3, 2.15, -0.28, 0.11, -1.0, -2.27, -5.58, 1.6, 7.39, -2.93, 10.59, 5.66, 2.9],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6823.82,x1:6823.82,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6850.0,x1:6850.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6840.0,x1:6840.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="630" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="640">
+ <div class="th">
+  <span class="id">#640</span><span class="ts">2026-03-10 12:16 (hr 12)</span>
+  <span class="bk" style="background:#00e676;color:#000">SHARED</span>
+  <span style="color:#00e676;font-weight:bold">WIN +13.3p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">A++</b> [pass]</span>
+  <span class="ag" style="color:#00e676">AGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6816.0</b></span><span>TS magnet <b style='color:#00e676'>6835</b> vs Volland magnet <b style='color:#ffd740'>6840</b>  [different]</span>
+  <span>MFE <b>+18.3</b></span><span>MAE <b>+0.0</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span><span>VIX <b>23.1</b></span><span>grade A-Entry</span></div>
+ <div class="charts3"><div id="ts640"></div><div id="vg640"></div><div id="vc640"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts640',[{x:[6770.0, 6775.0, 6780.0, 6785.0, 6790.0, 6795.0, 6800.0, 6805.0, 6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0],y:[1.08, 2.26, 4.9, 3.49, 2.26, 2.86, 16.21, 10.75, 11.84, 12.13, 16.76, 6.98, 16.43, 25.98, 9.77, 5.85, 23.96, 4.41, 4.85, 5.88],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6816.03,x1:6816.03,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6835.0,x1:6835.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6840.0,x1:6840.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg640',[{x:[6770.0, 6775.0, 6780.0, 6785.0, 6790.0, 6795.0, 6800.0, 6805.0, 6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0],y:[0.59, -1.63, -2.24, -9.35, -4.67, -10.81, -13.25, -13.1, 10.3, 2.14, -7.04, 1.03, 6.56, 15.32, 19.52, -3.58, -11.63, 6.73, -7.18, -6.23],type:'bar',marker:{color:["#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6816.03,x1:6816.03,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6835.0,x1:6835.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6840.0,x1:6840.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc640',[{x:[6770.0, 6775.0, 6780.0, 6785.0, 6790.0, 6795.0, 6800.0, 6805.0, 6810.0, 6815.0, 6820.0, 6825.0, 6830.0, 6835.0, 6840.0, 6845.0, 6850.0, 6855.0, 6860.0, 6865.0],y:[0.84, -2.05, -2.45, -8.76, -3.63, -6.68, -6.07, -3.91, 1.44, -0.04, 1.26, -0.35, -3.26, -10.06, -15.91, 3.48, 13.2, -8.71, 10.42, 10.03],type:'bar',marker:{color:["#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6816.03,x1:6816.03,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6835.0,x1:6835.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6840.0,x1:6840.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="640" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="762">
+ <div class="th">
+  <span class="id">#762</span><span class="ts">2026-03-13 10:02 (hr 10)</span>
+  <span class="bk" style="background:#ff5252;color:#000">TS-ONLY</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS -14.0p</span>
+  <span class="vd">TS <b style="color:#00e676">A++</b> buried [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">BAD</b> [drop]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6711.5</b></span><span>TS magnet <b style='color:#00e676'>6755</b> vs Volland magnet <b style='color:#ffd740'>6750</b>  [different]</span>
+  <span>MFE <b>+1.5</b></span><span>MAE <b>-14.5</b></span>
+  <span>align <b>+3</b></span><span>GEX-LIS</span><span>VIX <b>25.4</b></span><span>grade A-Entry</span></div>
+ <div class="charts3"><div id="ts762"></div><div id="vg762"></div><div id="vc762"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts762',[{x:[6665.0, 6670.0, 6675.0, 6680.0, 6685.0, 6690.0, 6695.0, 6700.0, 6705.0, 6710.0, 6715.0, 6720.0, 6725.0, 6730.0, 6735.0, 6740.0, 6745.0, 6750.0, 6755.0, 6760.0],y:[-6.95, -10.85, -11.07, -10.72, -5.54, -6.12, -4.13, -25.15, -0.92, -6.01, 1.45, -2.47, 0.3, -1.62, -1.7, -2.87, 2.65, -5.4, 5.92, 1.38],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6711.46,x1:6711.46,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6755.0,x1:6755.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6750.0,x1:6750.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg762',[{x:[6665.0, 6670.0, 6675.0, 6680.0, 6685.0, 6690.0, 6695.0, 6700.0, 6705.0, 6710.0, 6715.0, 6720.0, 6725.0, 6730.0, 6735.0, 6740.0, 6745.0, 6750.0, 6755.0, 6760.0],y:[0.09, -9.21, 5.77, 3.68, -0.65, -5.37, 0.07, -41.55, -1.29, -6.17, -2.43, -9.22, -12.18, 0.09, 3.27, 2.13, 2.83, -18.97, 1.54, -5.25],type:'bar',marker:{color:["#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6711.46,x1:6711.46,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6755.0,x1:6755.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6750.0,x1:6750.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc762',[{x:[6665.0, 6670.0, 6675.0, 6680.0, 6685.0, 6690.0, 6695.0, 6700.0, 6705.0, 6710.0, 6715.0, 6720.0, 6725.0, 6730.0, 6735.0, 6740.0, 6745.0, 6750.0, 6755.0, 6760.0],y:[0.1, -8.78, 4.92, 2.77, -0.42, -2.98, 0.03, -14.72, -0.33, -0.95, -0.13, 0.41, 1.76, -0.02, -1.12, -0.95, -1.54, 12.19, -1.15, 4.43],type:'bar',marker:{color:["#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6711.46,x1:6711.46,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6755.0,x1:6755.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6750.0,x1:6750.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="762" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="798">
+ <div class="th">
+  <span class="id">#798</span><span class="ts">2026-03-13 13:48 (hr 13)</span>
+  <span class="bk" style="background:#ffd740;color:#000">VOLLAND-ONLY</span>
+  <span style="color:#00e676;font-weight:bold">WIN +8.7p</span>
+  <span class="vd">TS <b style="color:#00e676">BAD</b> [drop]</span>
+  <span class="vd">Volland <b style="color:#ffd740">B</b> [pass]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6641.3</b></span><span>TS magnet <b style='color:#00e676'>6650</b> vs Volland magnet <b style='color:#ffd740'>6645</b>  [different]</span>
+  <span>MFE <b>+10.4</b></span><span>MAE <b>-6.6</b></span>
+  <span>align <b>+3</b></span><span>GEX-LIS</span><span>VIX <b>27.4</b></span><span>grade A</span></div>
+ <div class="charts3"><div id="ts798"></div><div id="vg798"></div><div id="vc798"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts798',[{x:[6595.0, 6600.0, 6605.0, 6610.0, 6615.0, 6620.0, 6625.0, 6630.0, 6635.0, 6640.0, 6645.0, 6650.0, 6655.0, 6660.0, 6665.0, 6670.0, 6675.0, 6680.0, 6685.0, 6690.0],y:[-7.49, -55.45, -9.69, -15.53, -18.53, -27.59, -17.62, -18.69, -13.12, -31.02, -15.45, -69.38, -12.31, -11.43, -13.55, -17.82, -14.97, -12.06, -5.07, -4.74],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6641.29,x1:6641.29,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6650.0,x1:6650.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6645.0,x1:6645.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg798',[{x:[6595.0, 6600.0, 6605.0, 6610.0, 6615.0, 6620.0, 6625.0, 6630.0, 6635.0, 6640.0, 6645.0, 6650.0, 6655.0, 6660.0, 6665.0, 6670.0, 6675.0, 6680.0, 6685.0, 6690.0],y:[2.1, -10.57, 2.25, 8.94, 17.17, -26.75, 5.75, -15.47, 5.79, -4.62, 35.44, 32.98, 18.98, -12.31, -4.8, -15.57, 5.99, -1.35, -2.26, -13.51],type:'bar',marker:{color:["#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6641.29,x1:6641.29,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6650.0,x1:6650.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6645.0,x1:6645.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc798',[{x:[6595.0, 6600.0, 6605.0, 6610.0, 6615.0, 6620.0, 6625.0, 6630.0, 6635.0, 6640.0, 6645.0, 6650.0, 6655.0, 6660.0, 6665.0, 6670.0, 6675.0, 6680.0, 6685.0, 6690.0],y:[5.65, -25.66, 4.87, 16.96, 28.04, -36.61, 6.35, -12.97, 3.32, -1.43, 1.55, -7.3, -9.24, 9.25, 4.88, 19.96, -9.26, 2.45, 4.69, 31.62],type:'bar',marker:{color:["#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6641.29,x1:6641.29,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6650.0,x1:6650.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6645.0,x1:6645.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="798" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="1457">
+ <div class="th">
+  <span class="id">#1457</span><span class="ts">2026-04-01 14:23 (hr 14)</span>
+  <span class="bk" style="background:#ff5252;color:#000">TS-ONLY</span>
+  <span style="color:#00e676;font-weight:bold">WIN +10.9p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">BAD</b> [drop]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6570.6</b></span><span>TS magnet <b style='color:#00e676'>6600</b> vs Volland magnet <b style='color:#ffd740'>6580</b>  [different]</span>
+  <span>MFE <b>+15.9</b></span><span>MAE <b>-8.7</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span><span>VIX <b>24.9</b></span><span>grade A-Entry</span></div>
+ <div class="charts3"><div id="ts1457"></div><div id="vg1457"></div><div id="vc1457"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts1457',[{x:[6525.0, 6530.0, 6535.0, 6540.0, 6545.0, 6550.0, 6555.0, 6560.0, 6565.0, 6570.0, 6575.0, 6580.0, 6585.0, 6590.0, 6595.0, 6600.0, 6605.0, 6610.0, 6615.0, 6620.0],y:[9.59, 6.9, 5.93, 10.45, 19.09, 18.89, 19.86, 18.74, 18.86, 23.0, 31.9, 30.1, 23.58, 22.28, 6.58, 32.99, 7.82, 8.17, 3.8, 4.94],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6570.6,x1:6570.6,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6600.0,x1:6600.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6580.0,x1:6580.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg1457',[{x:[6525.0, 6530.0, 6535.0, 6540.0, 6545.0, 6550.0, 6555.0, 6560.0, 6565.0, 6570.0, 6575.0, 6580.0, 6585.0, 6590.0, 6595.0, 6600.0, 6605.0, 6610.0, 6615.0, 6620.0],y:[-16.16, 33.0, -4.61, -18.18, -18.47, -32.15, -34.88, -52.86, -30.19, -94.72, -64.96, -71.94, -31.75, -31.28, -25.65, 18.85, 25.14, 36.3, 0.34, 9.7],type:'bar',marker:{color:["#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6570.6,x1:6570.6,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6600.0,x1:6600.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6580.0,x1:6580.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc1457',[{x:[6525.0, 6530.0, 6535.0, 6540.0, 6545.0, 6550.0, 6555.0, 6560.0, 6565.0, 6570.0, 6575.0, 6580.0, 6585.0, 6590.0, 6595.0, 6600.0, 6605.0, 6610.0, 6615.0, 6620.0],y:[-57.79, 106.06, -13.15, -45.27, -39.31, -56.83, -49.05, -55.25, -20.64, -30.63, 2.44, 28.64, 24.11, 35.03, 37.96, -34.5, -55.11, -92.65, -0.96, -31.7],type:'bar',marker:{color:["#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6570.6,x1:6570.6,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6600.0,x1:6600.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6580.0,x1:6580.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="1457" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="1504">
+ <div class="th">
+  <span class="id">#1504</span><span class="ts">2026-04-02 12:02 (hr 12)</span>
+  <span class="bk" style="background:#ffd740;color:#000">VOLLAND-ONLY</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS -14.0p</span>
+  <span class="vd">TS <b style="color:#00e676">BAD</b> [drop]</span>
+  <span class="vd">Volland <b style="color:#ffd740">A++</b> [pass]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6568.2</b></span><span>TS magnet <b style='color:#00e676'>6575</b> vs Volland magnet <b style='color:#ffd740'>6580</b>  [different]</span>
+  <span>MFE <b>+0.0</b></span><span>MAE <b>-18.1</b></span>
+  <span>align <b>+1</b></span><span>GEX-LIS</span><span>VIX <b>25.6</b></span><span>grade A+</span></div>
+ <div class="charts3"><div id="ts1504"></div><div id="vg1504"></div><div id="vc1504"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts1504',[{x:[6520.0, 6525.0, 6530.0, 6535.0, 6540.0, 6545.0, 6550.0, 6555.0, 6560.0, 6565.0, 6570.0, 6575.0, 6580.0, 6585.0, 6590.0, 6595.0, 6600.0, 6605.0, 6610.0, 6615.0],y:[-2.25, -5.85, -4.99, 0.87, -9.66, -12.83, -7.36, 3.99, 10.04, 1.26, 13.18, -24.64, 5.6, 4.2, 11.33, -3.29, 17.06, 8.4, 7.6, 6.46],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6568.18,x1:6568.18,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6575.0,x1:6575.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6580.0,x1:6580.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg1504',[{x:[6520.0, 6525.0, 6530.0, 6535.0, 6540.0, 6545.0, 6550.0, 6555.0, 6560.0, 6565.0, 6570.0, 6575.0, 6580.0, 6585.0, 6590.0, 6595.0, 6600.0, 6605.0, 6610.0, 6615.0],y:[-8.3, -6.63, 4.44, 1.2, 1.96, -47.55, 4.5, 11.64, 3.13, -52.26, 11.2, 1.03, 56.57, 14.97, -13.04, 7.61, -5.64, 1.73, 0.47, 0.98],type:'bar',marker:{color:["#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6568.18,x1:6568.18,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6575.0,x1:6575.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6580.0,x1:6580.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc1504',[{x:[6520.0, 6525.0, 6530.0, 6535.0, 6540.0, 6545.0, 6550.0, 6555.0, 6560.0, 6565.0, 6570.0, 6575.0, 6580.0, 6585.0, 6590.0, 6595.0, 6600.0, 6605.0, 6610.0, 6615.0],y:[-10.94, -7.74, 4.54, 1.05, 1.42, -27.27, 1.92, 3.22, 0.41, 1.13, -1.9, -0.32, -26.35, -9.22, 9.97, -6.95, 5.99, -2.1, -0.64, -1.48],type:'bar',marker:{color:["#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6568.18,x1:6568.18,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6575.0,x1:6575.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6580.0,x1:6580.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="1504" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="1642">
+ <div class="th">
+  <span class="id">#1642</span><span class="ts">2026-04-07 14:54 (hr 14)</span>
+  <span class="bk" style="background:#ffd740;color:#000">VOLLAND-ONLY</span>
+  <span style="color:#00e676;font-weight:bold">WIN +8.4p</span>
+  <span class="vd">TS <b style="color:#00e676">BAD</b> [drop]</span>
+  <span class="vd">Volland <b style="color:#ffd740">A++</b> [pass]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>6566.6</b></span><span>TS magnet <b style='color:#00e676'>6575</b> vs Volland magnet <b style='color:#ffd740'>6600</b>  [different]</span>
+  <span>MFE <b>+30.3</b></span><span>MAE <b>-7.7</b></span>
+  <span>align <b>+1</b></span><span>GEX-PURE</span><span>VIX <b>27.6</b></span><span>grade A-Entry</span></div>
+ <div class="charts3"><div id="ts1642"></div><div id="vg1642"></div><div id="vc1642"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts1642',[{x:[6520.0, 6525.0, 6530.0, 6535.0, 6540.0, 6545.0, 6550.0, 6555.0, 6560.0, 6565.0, 6570.0, 6575.0, 6580.0, 6585.0, 6590.0, 6595.0, 6600.0, 6605.0, 6610.0, 6615.0],y:[-7.74, -3.94, -2.57, -1.49, -6.84, -7.06, -20.35, -8.19, -10.16, -1.07, -8.89, -9.94, -5.99, -1.68, -0.6, 0.05, 5.6, 9.71, 1.63, 1.79],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6566.56,x1:6566.56,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6575.0,x1:6575.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6600.0,x1:6600.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg1642',[{x:[6520.0, 6525.0, 6530.0, 6535.0, 6540.0, 6545.0, 6550.0, 6555.0, 6560.0, 6565.0, 6570.0, 6575.0, 6580.0, 6585.0, 6590.0, 6595.0, 6600.0, 6605.0, 6610.0, 6615.0],y:[-12.73, -17.11, -19.84, -21.3, -37.35, -48.36, -125.78, -44.02, -88.64, -89.99, -69.59, -93.41, -40.05, 20.64, 80.04, 76.38, 137.62, 40.4, 15.17, 1.22],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6566.56,x1:6566.56,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6575.0,x1:6575.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6600.0,x1:6600.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc1642',[{x:[6520.0, 6525.0, 6530.0, 6535.0, 6540.0, 6545.0, 6550.0, 6555.0, 6560.0, 6565.0, 6570.0, 6575.0, 6580.0, 6585.0, 6590.0, 6595.0, 6600.0, 6605.0, 6610.0, 6615.0],y:[-72.1, -87.92, -91.62, -87.25, -133.47, -147.57, -318.15, -88.33, -131.4, -86.28, -30.17, 8.35, 24.7, -23.21, -132.28, -166.11, -370.88, -129.84, -56.55, -5.14],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:6566.56,x1:6566.56,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:6575.0,x1:6575.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:6600.0,x1:6600.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="1642" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="2432">
+ <div class="th">
+  <span class="id">#2432</span><span class="ts">2026-05-04 09:31 (hr 9)</span>
+  <span class="bk" style="background:#00e676;color:#000">SHARED</span>
+  <span style="color:#00e676;font-weight:bold">WIN +17.5p</span>
+  <span class="vd">TS <b style="color:#00e676">A</b> buried [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">A</b> [pass]</span>
+  <span class="ag" style="color:#00e676">AGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>7221.7</b></span><span>TS magnet <b style='color:#00e676'>7250</b> vs Volland magnet <b style='color:#ffd740'>7250</b>  (same)</span>
+  <span>MFE <b>+22.5</b></span><span>MAE <b>-1.3</b></span>
+  <span>align <b>+0</b></span><span>GEX-LIS</span><span>VIX <b>17.7</b></span><span>grade A-Entry</span></div>
+ <div class="charts3"><div id="ts2432"></div><div id="vg2432"></div><div id="vc2432"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts2432',[{x:[7175.0, 7180.0, 7185.0, 7190.0, 7195.0, 7200.0, 7205.0, 7210.0, 7215.0, 7220.0, 7225.0, 7230.0, 7235.0, 7240.0, 7245.0, 7250.0, 7255.0, 7260.0, 7265.0, 7270.0],y:[-19.53, -8.87, -5.25, -13.83, -6.42, -5.49, -3.8, -1.78, 7.03, -1.33, -1.55, -1.05, 2.07, 1.87, -0.4, 6.75, 3.33, 2.84, 4.46, 4.64],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7221.66,x1:7221.66,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7250.0,x1:7250.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7250.0,x1:7250.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg2432',[{x:[7175.0, 7180.0, 7185.0, 7190.0, 7195.0, 7200.0, 7205.0, 7210.0, 7215.0, 7220.0, 7225.0, 7230.0, 7235.0, 7240.0, 7245.0, 7250.0, 7255.0, 7260.0, 7265.0, 7270.0],y:[-5.12, -0.71, 0.94, 5.72, 2.76, -6.07, 0.7, -2.81, -2.31, -3.99, 2.49, -8.16, -1.27, -4.54, -1.18, 13.67, -7.89, -2.43, -2.37, -1.38],type:'bar',marker:{color:["#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7221.66,x1:7221.66,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7250.0,x1:7250.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7250.0,x1:7250.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc2432',[{x:[7175.0, 7180.0, 7185.0, 7190.0, 7195.0, 7200.0, 7205.0, 7210.0, 7215.0, 7220.0, 7225.0, 7230.0, 7235.0, 7240.0, 7245.0, 7250.0, 7255.0, 7260.0, 7265.0, 7270.0],y:[-4.38, -0.54, 0.63, 3.32, 1.35, -2.41, 0.21, -0.6, -0.28, -0.12, -0.15, 1.25, 0.31, 1.54, 0.51, -7.18, 4.88, 1.73, 1.91, 1.24],type:'bar',marker:{color:["#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7221.66,x1:7221.66,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7250.0,x1:7250.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7250.0,x1:7250.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="2432" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="2881">
+ <div class="th">
+  <span class="id">#2881</span><span class="ts">2026-05-14 09:46 (hr 9)</span>
+  <span class="bk" style="background:#00e676;color:#000">SHARED</span>
+  <span style="color:#00e676;font-weight:bold">WIN +34.2p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">A</b> [pass]</span>
+  <span class="ag" style="color:#00e676">AGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>7477.0</b></span><span>TS magnet <b style='color:#00e676'>7525</b> vs Volland magnet <b style='color:#ffd740'>7515</b>  [different]</span>
+  <span>MFE <b>+39.2</b></span><span>MAE <b>-10.8</b></span>
+  <span>align <b>+0</b></span><span>SIDIAL-MESSY</span><span>VIX <b>18.0</b></span><span>grade A</span></div>
+ <div class="charts3"><div id="ts2881"></div><div id="vg2881"></div><div id="vc2881"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts2881',[{x:[7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0],y:[1.36, -5.01, -4.09, 1.51, 13.91, 14.11, 9.79, 12.27, 19.49, 7.0, 19.15, 35.61, 33.52, 4.67, 38.17, 21.49, 12.51, 84.91, 33.74, 128.05],type:'bar',marker:{color:["#00e676", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7477.0,x1:7477.0,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7525.0,x1:7525.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7515.0,x1:7515.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg2881',[{x:[7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0],y:[2.96, 4.21, 2.17, 2.51, 15.02, 10.39, 5.52, -9.67, -25.31, -14.83, -14.02, 11.52, -10.5, 2.98, -14.94, -1.16, -3.67, 38.6, -10.53, 4.08],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7477.0,x1:7477.0,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7525.0,x1:7525.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7515.0,x1:7515.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc2881',[{x:[7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0],y:[2.58, 3.27, 1.48, 1.48, 7.4, 4.14, 1.67, -2.01, -2.86, -0.26, 1.09, -2.0, 2.83, -1.09, 6.91, 0.65, 2.41, -29.11, 8.97, -3.87],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7477.0,x1:7477.0,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7525.0,x1:7525.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7515.0,x1:7515.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="2881" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="2882">
+ <div class="th">
+  <span class="id">#2882</span><span class="ts">2026-05-14 10:46 (hr 10)</span>
+  <span class="bk" style="background:#00e676;color:#000">SHARED</span>
+  <span style="color:#00e676;font-weight:bold">WIN +17.2p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">A++</b> [pass]</span>
+  <span class="ag" style="color:#00e676">AGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>7494.0</b></span><span>TS magnet <b style='color:#00e676'>7525</b> vs Volland magnet <b style='color:#ffd740'>7515</b>  [different]</span>
+  <span>MFE <b>+22.2</b></span><span>MAE <b>-0.3</b></span>
+  <span>align <b>+0</b></span><span>SIDIAL-MESSY</span><span>VIX <b>17.9</b></span><span>grade A+</span></div>
+ <div class="charts3"><div id="ts2882"></div><div id="vg2882"></div><div id="vc2882"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts2882',[{x:[7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0, 7535.0, 7540.0],y:[0.42, 7.22, 9.27, 7.21, 10.13, 18.07, 7.19, 21.9, 45.24, 46.77, 7.69, 61.18, 36.0, 21.5, 145.54, 56.46, 206.47, 42.95, 10.92, 4.76],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7494.0,x1:7494.0,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7525.0,x1:7525.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7515.0,x1:7515.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg2882',[{x:[7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0, 7535.0, 7540.0],y:[-2.71, 16.53, 12.97, 1.02, -6.94, -18.95, -3.89, -5.44, 7.24, -19.76, 14.98, -31.46, 2.73, -6.68, 50.13, 7.35, -21.48, 20.93, 2.73, 4.35],type:'bar',marker:{color:["#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7494.0,x1:7494.0,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7525.0,x1:7525.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7515.0,x1:7515.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc2882',[{x:[7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0, 7535.0, 7540.0],y:[-2.64, 14.29, 9.76, 0.66, -3.67, -7.91, -1.19, -1.05, 0.58, 0.63, -2.17, 8.14, -1.02, 3.26, -30.21, -5.28, 17.9, -19.88, -2.91, -5.14],type:'bar',marker:{color:["#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7494.0,x1:7494.0,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7525.0,x1:7525.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7515.0,x1:7515.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="2882" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="2884">
+ <div class="th">
+  <span class="id">#2884</span><span class="ts">2026-05-18 09:31 (hr 9)</span>
+  <span class="bk" style="background:#00e676;color:#000">SHARED</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS -14.0p</span>
+  <span class="vd">TS <b style="color:#00e676">A++</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">A++</b> [pass]</span>
+  <span class="ag" style="color:#00e676">AGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>7415.5</b></span><span>TS magnet <b style='color:#00e676'>7460</b> vs Volland magnet <b style='color:#ffd740'>7450</b>  [different]</span>
+  <span>MFE <b>+0.0</b></span><span>MAE <b>-15.9</b></span>
+  <span>align <b>+0</b></span><span>GEX-PURE</span><span>VIX <b>18.5</b></span><span>grade A+</span></div>
+ <div class="charts3"><div id="ts2884"></div><div id="vg2884"></div><div id="vc2884"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts2884',[{x:[7370.0, 7375.0, 7380.0, 7385.0, 7390.0, 7395.0, 7400.0, 7405.0, 7410.0, 7415.0, 7420.0, 7425.0, 7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0],y:[-5.27, -7.69, -8.7, -2.06, -14.83, -5.98, -29.28, -6.79, -2.69, -10.01, 10.66, 4.38, 1.85, -0.4, 2.45, 3.32, 17.65, 3.31, 22.17, 16.27],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7415.5,x1:7415.5,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7460.0,x1:7460.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7450.0,x1:7450.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg2884',[{x:[7370.0, 7375.0, 7380.0, 7385.0, 7390.0, 7395.0, 7400.0, 7405.0, 7410.0, 7415.0, 7420.0, 7425.0, 7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0],y:[0.47, -0.68, -5.23, 0.48, -0.57, -7.55, -11.55, -1.27, -11.74, -5.07, -24.55, -13.79, -16.16, -12.95, -10.43, -4.8, 27.56, -0.83, 6.6, 5.49],type:'bar',marker:{color:["#00e676", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7415.5,x1:7415.5,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7460.0,x1:7460.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7450.0,x1:7450.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc2884',[{x:[7370.0, 7375.0, 7380.0, 7385.0, 7390.0, 7395.0, 7400.0, 7405.0, 7410.0, 7415.0, 7420.0, 7425.0, 7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0],y:[0.42, -0.55, -3.77, 0.3, -0.31, -3.38, -4.11, -0.34, -2.03, -0.41, 0.26, 1.42, 3.16, 3.73, 3.97, 2.27, -15.62, 0.55, -4.97, -4.64],type:'bar',marker:{color:["#00e676", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7415.5,x1:7415.5,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7460.0,x1:7460.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7450.0,x1:7450.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="2884" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="3094">
+ <div class="th">
+  <span class="id">#3094</span><span class="ts">2026-05-21 10:07 (hr 10)</span>
+  <span class="bk" style="background:#ff5252;color:#000">TS-ONLY</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS -14.0p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">C</b> [drop]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>7417.0</b></span><span>TS magnet <b style='color:#00e676'>7440</b> vs Volland magnet <b style='color:#ffd740'>7420</b>  [different]</span>
+  <span>MFE <b>+4.8</b></span><span>MAE <b>-15.7</b></span>
+  <span>align <b>-1</b></span><span>GEX-TARGET</span><span>VIX <b>17.4</b></span><span>grade B</span></div>
+ <div class="charts3"><div id="ts3094"></div><div id="vg3094"></div><div id="vc3094"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts3094',[{x:[7370.0, 7375.0, 7380.0, 7385.0, 7390.0, 7395.0, 7400.0, 7405.0, 7410.0, 7415.0, 7420.0, 7425.0, 7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0],y:[-6.8, -14.51, -1.84, -0.66, -8.27, -4.96, -4.95, 1.52, -0.28, -0.2, 2.91, 6.37, 4.85, 13.02, 17.99, 8.53, 16.01, 1.95, 9.48, 16.57],type:'bar',marker:{color:["#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7416.97,x1:7416.97,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7440.0,x1:7440.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7420.0,x1:7420.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg3094',[{x:[7370.0, 7375.0, 7380.0, 7385.0, 7390.0, 7395.0, 7400.0, 7405.0, 7410.0, 7415.0, 7420.0, 7425.0, 7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0],y:[0.45, 2.25, 6.6, 7.19, -0.49, -1.54, 21.85, 21.68, 7.99, 11.39, 25.84, 17.33, 6.46, 3.2, 3.37, -0.43, 0.15, 6.51, 5.27, -0.68],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7416.97,x1:7416.97,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7440.0,x1:7440.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7420.0,x1:7420.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc3094',[{x:[7370.0, 7375.0, 7380.0, 7385.0, 7390.0, 7395.0, 7400.0, 7405.0, 7410.0, 7415.0, 7420.0, 7425.0, 7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0],y:[0.47, 2.14, 5.6, 5.38, -0.32, -0.84, 9.72, 7.45, 1.94, 1.61, 1.05, -1.05, -1.04, -0.84, -1.23, 0.2, -0.08, -4.35, -4.06, 0.59],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7416.97,x1:7416.97,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7440.0,x1:7440.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7420.0,x1:7420.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="3094" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="3148">
+ <div class="th">
+  <span class="id">#3148</span><span class="ts">2026-05-22 10:10 (hr 10)</span>
+  <span class="bk" style="background:#00e676;color:#000">SHARED</span>
+  <span style="color:#00e676;font-weight:bold">WIN +13.7p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">B</b> [pass]</span>
+  <span class="ag" style="color:#00e676">AGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>7478.7</b></span><span>TS magnet <b style='color:#00e676'>7500</b> vs Volland magnet <b style='color:#ffd740'>7500</b>  (same)</span>
+  <span>MFE <b>+18.7</b></span><span>MAE <b>-13.6</b></span>
+  <span>align <b>-1</b></span><span>GEX-TARGET</span><span>VIX <b>16.8</b></span><span>grade B</span></div>
+ <div class="charts3"><div id="ts3148"></div><div id="vg3148"></div><div id="vc3148"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts3148',[{x:[7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0],y:[0.06, 18.77, 19.11, 2.08, 13.87, 3.03, 17.8, 12.43, 24.79, 11.34, 13.05, 15.57, 20.71, 11.62, 82.57, 23.72, 10.58, 8.73, 18.09, 26.43],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7478.74,x1:7478.74,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg3148',[{x:[7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0],y:[17.56, 14.22, 5.11, 7.62, 2.77, -2.13, 12.51, 4.82, -8.91, -7.62, -5.13, -8.36, -0.03, 0.33, 27.14, 17.16, 2.99, 0.69, 8.38, 12.72],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7478.74,x1:7478.74,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc3148',[{x:[7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0],y:[15.82, 11.36, 3.56, 4.54, 1.37, -0.83, 3.63, 0.91, -0.77, 0.12, 0.6, 1.84, 0.01, -0.14, -14.28, -10.79, -2.19, -0.58, -7.85, -13.21],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7478.74,x1:7478.74,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="3148" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="3156">
+ <div class="th">
+  <span class="id">#3156</span><span class="ts">2026-05-22 10:26 (hr 10)</span>
+  <span class="bk" style="background:#00e676;color:#000">SHARED</span>
+  <span style="color:#00e676;font-weight:bold">WIN +21.9p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">B</b> [pass]</span>
+  <span class="ag" style="color:#00e676">AGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>7470.6</b></span><span>TS magnet <b style='color:#00e676'>7500</b> vs Volland magnet <b style='color:#ffd740'>7500</b>  (same)</span>
+  <span>MFE <b>+26.9</b></span><span>MAE <b>+0.0</b></span>
+  <span>align <b>-1</b></span><span>GEX-TARGET</span><span>VIX <b>16.9</b></span><span>grade B</span></div>
+ <div class="charts3"><div id="ts3156"></div><div id="vg3156"></div><div id="vc3156"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts3156',[{x:[7425.0, 7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0],y:[4.42, 0.21, 22.14, 21.99, 2.06, 14.66, 2.94, 19.03, 13.19, 25.68, 10.6, 12.96, 15.01, 19.6, 10.69, 73.86, 20.72, 8.98, 7.31, 14.84],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7470.55,x1:7470.55,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg3156',[{x:[7425.0, 7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0],y:[9.83, 19.14, 16.78, 5.29, 8.91, 2.54, -1.88, 14.16, 4.28, -9.58, -3.42, -8.26, -10.24, -1.7, -1.45, 20.99, 14.17, 1.18, -1.19, 6.74],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7470.55,x1:7470.55,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc3156',[{x:[7425.0, 7430.0, 7435.0, 7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0],y:[8.99, 15.47, 11.77, 3.15, 4.35, 0.97, -0.52, 2.38, 0.26, 0.44, 0.52, 2.14, 3.75, 0.8, 0.84, -14.44, -11.27, -1.07, 1.2, -7.53],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7470.55,x1:7470.55,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="3156" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="3183">
+ <div class="th">
+  <span class="id">#3183</span><span class="ts">2026-05-22 13:54 (hr 13)</span>
+  <span class="bk" style="background:#ff5252;color:#000">TS-ONLY</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS -14.0p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">BAD</b> [drop]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>7492.0</b></span><span>TS magnet <b style='color:#00e676'>7500</b> vs Volland magnet <b style='color:#ffd740'>7510</b>  [different]</span>
+  <span>MFE <b>+1.1</b></span><span>MAE <b>-15.1</b></span>
+  <span>align <b>+1</b></span><span>GEX-TARGET</span><span>VIX <b>16.6</b></span><span>grade B</span></div>
+ <div class="charts3"><div id="ts3183"></div><div id="vg3183"></div><div id="vc3183"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts3183',[{x:[7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0, 7535.0, 7540.0],y:[2.15, 11.1, 2.47, 15.25, 12.24, 27.94, 12.28, 19.9, 26.95, 39.88, 23.64, 169.17, 47.02, 19.22, 14.17, 25.33, 31.53, 12.9, 4.36, 13.07],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7492.04,x1:7492.04,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7510.0,x1:7510.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg3183',[{x:[7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0, 7535.0, 7540.0],y:[5.51, 1.58, 1.75, 7.75, 13.4, -7.04, 2.37, -8.94, -0.78, -19.52, -16.0, -29.06, 31.71, -37.49, -9.06, 9.97, 9.08, 7.67, 2.71, 6.22],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7492.04,x1:7492.04,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7510.0,x1:7510.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc3183',[{x:[7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0, 7535.0, 7540.0],y:[14.51, 3.72, 3.63, 13.93, 20.37, -8.75, 2.28, -6.13, -0.32, -2.48, 2.44, 12.56, -22.59, 37.22, 11.54, -15.5, -16.65, -16.22, -6.48, -16.63],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7492.04,x1:7492.04,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7510.0,x1:7510.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="3183" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="3186">
+ <div class="th">
+  <span class="id">#3186</span><span class="ts">2026-05-22 14:14 (hr 14)</span>
+  <span class="bk" style="background:#ff5252;color:#000">TS-ONLY</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS -14.0p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">BAD</b> [drop]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>7489.2</b></span><span>TS magnet <b style='color:#00e676'>7500</b> vs Volland magnet <b style='color:#ffd740'>7510</b>  [different]</span>
+  <span>MFE <b>+3.0</b></span><span>MAE <b>-15.5</b></span>
+  <span>align <b>+1</b></span><span>GEX-TARGET</span><span>VIX <b>16.6</b></span><span>grade B</span></div>
+ <div class="charts3"><div id="ts3186"></div><div id="vg3186"></div><div id="vc3186"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts3186',[{x:[7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0, 7535.0],y:[5.67, -0.15, 6.14, 1.54, 15.16, 13.52, 33.38, 17.28, 25.25, 34.2, 48.58, 27.11, 179.22, 45.01, 16.57, 11.17, 18.88, 23.02, 9.19, 3.56],type:'bar',marker:{color:["#00e676", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7489.24,x1:7489.24,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7510.0,x1:7510.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg3186',[{x:[7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0, 7535.0],y:[0.23, 4.99, 2.82, 1.61, 6.75, 9.24, -9.53, -8.53, -14.11, -4.87, -24.93, -20.83, -34.22, 37.2, -40.56, -6.95, 5.02, 9.25, 7.09, 2.26],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7489.24,x1:7489.24,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7510.0,x1:7510.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc3186',[{x:[7440.0, 7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0, 7535.0],y:[0.77, 15.06, 7.59, 3.81, 13.75, 15.81, -13.18, -9.01, -10.31, -1.96, -1.88, 5.26, 19.88, -33.83, 50.23, 10.89, -9.51, -20.57, -18.09, -6.51],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7489.24,x1:7489.24,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7510.0,x1:7510.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="3186" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+
+<div class="tc" data-lid="3192">
+ <div class="th">
+  <span class="id">#3192</span><span class="ts">2026-05-22 14:29 (hr 14)</span>
+  <span class="bk" style="background:#ff5252;color:#000">TS-ONLY</span>
+  <span style="color:#ff5252;font-weight:bold">LOSS -14.0p</span>
+  <span class="vd">TS <b style="color:#00e676">B</b> [pass]</span>
+  <span class="vd">Volland <b style="color:#ffd740">BAD</b> [drop]</span>
+  <span class="ag" style="color:#ff5252">DISAGREE</span>
+ </div>
+ <div class="tm"><span>spot <b>7490.5</b></span><span>TS magnet <b style='color:#00e676'>7500</b> vs Volland magnet <b style='color:#ffd740'>7500</b>  (same)</span>
+  <span>MFE <b>+1.7</b></span><span>MAE <b>-16.8</b></span>
+  <span>align <b>+1</b></span><span>GEX-TARGET</span><span>VIX <b>16.6</b></span><span>grade B</span></div>
+ <div class="charts3"><div id="ts3192"></div><div id="vg3192"></div><div id="vc3192"></div></div>
+ <div class="leg">Blue line = spot/entry · <span style="color:#00e676">green dash = TS magnet</span> · <span style="color:#ffd740">gold dot = Volland magnet</span></div>
+ <script>Plotly.newPlot('ts3192',[{x:[7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0, 7535.0, 7540.0],y:[1.75, 10.23, 2.46, 15.37, 12.72, 30.82, 15.09, 24.92, 35.53, 52.16, 30.3, 203.43, 50.43, 17.84, 11.4, 18.48, 22.25, 8.34, 3.15, 9.52],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'TS GEX (chain)',font:{color:'#00e676',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7490.47,x1:7490.47,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vg3192',[{x:[7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0, 7535.0, 7540.0],y:[4.48, 2.27, 1.85, 5.76, 10.54, -8.69, -8.24, -15.84, -9.33, -22.56, -20.19, -45.71, 41.44, -43.88, -7.11, 3.72, 9.0, 6.59, 2.04, 4.81],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#ff5252", "#ff5252", "#00e676", "#00e676", "#00e676", "#00e676", "#00e676"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Gamma (M)',font:{color:'#ffd740',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7490.47,x1:7490.47,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});Plotly.newPlot('vc3192',[{x:[7445.0, 7450.0, 7455.0, 7460.0, 7465.0, 7470.0, 7475.0, 7480.0, 7485.0, 7490.0, 7495.0, 7500.0, 7505.0, 7510.0, 7515.0, 7520.0, 7525.0, 7530.0, 7535.0, 7540.0],y:[15.98, 7.23, 5.17, 13.93, 21.48, -14.4, -10.5, -14.12, -4.75, -2.82, 5.23, 29.43, -42.64, 62.04, 12.78, -8.12, -23.09, -19.42, -6.78, -17.87],type:'bar',marker:{color:["#00e676", "#00e676", "#00e676", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#00e676", "#00e676", "#ff5252", "#00e676", "#00e676", "#ff5252", "#ff5252", "#ff5252", "#ff5252", "#ff5252"]},hovertemplate:'%{x}<br>%{y}M<extra></extra>'}],
+     {paper_bgcolor:'#16213e',plot_bgcolor:'#16213e',font:{color:'#b0bec5',size:10},height:230,
+      title:{text:'Volland Charm (M)',font:{color:'#e040fb',size:12}},
+      xaxis:{gridcolor:'#2a3a5a'},yaxis:{gridcolor:'#2a3a5a',zerolinecolor:'#778'},
+      margin:{l:44,r:10,t:34,b:30},showlegend:false,shapes:[{type:'line',xref:'x',yref:'paper',x0:7490.47,x1:7490.47,y0:0,y1:1,line:{color:'#448aff',width:2}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#00e676',width:1.5,dash:'dash'}},{type:'line',xref:'x',yref:'paper',x0:7500.0,x1:7500.0,y0:0,y1:1,line:{color:'#ffd740',width:1.5,dash:'dot'}}]},{displayModeBar:false,responsive:true});</script>
+ <textarea class="comment" data-lid="3192" placeholder="Is TS or Volland the right structure here? saves automatically..."></textarea>
+</div>
+<p style="color:#607d8b;font-size:11px;margin:24px 0;text-align:center">0DTE Alpha · TS vs Volland structure review</p>
+<script>
+const SK="gexlong-3chart-comments";
+function load(){const s=JSON.parse(localStorage.getItem(SK)||"{}");
+ document.querySelectorAll(".comment").forEach(ta=>{const l=ta.dataset.lid;
+  if(s[l]){ta.value=s[l];ta.classList.add("has-content");}
+  ta.addEventListener("input",()=>{const a=JSON.parse(localStorage.getItem(SK)||"{}");
+   if(ta.value.trim()){a[l]=ta.value;ta.classList.add("has-content");}else{delete a[l];ta.classList.remove("has-content");}
+   localStorage.setItem(SK,JSON.stringify(a));});});}
+function txt(){const s=JSON.parse(localStorage.getItem(SK)||"{}");let t="GEX Long TS-vs-Volland review\n\n";
+ document.querySelectorAll(".tc").forEach(c=>{const l=c.dataset.lid;const m=s[l];if(!m||!m.trim())return;
+  t+="[#"+l+" "+c.querySelector('.bk').innerText+"]\n"+m.trim()+"\n\n";});return t;}
+function exportC(){const b=new Blob([txt()],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="gexlong-3chart-comments.txt";a.click();}
+function copyC(){navigator.clipboard.writeText(txt()).then(()=>alert("Copied."));}
+load();
+</script></body></html>

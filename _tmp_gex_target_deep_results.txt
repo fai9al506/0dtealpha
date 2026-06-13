@@ -1,0 +1,137 @@
+====================================================================================================
+1. FULL GEX-TARGET UNIVERSE (no V16 filter applied, portal P&L)
+====================================================================================================
+Total GEX-TARGET trades: 79
+
+LONGS:  n= 44 WR= 43.2% total=   -8.1pt $     -41 mean=-0.18pt
+  Bootstrap 95% CI mean: [-3.71, +3.53]
+SHORTS: n= 35 WR= 62.9% total=   +6.6pt $     +33 mean=+0.19pt
+  Bootstrap 95% CI mean: [-2.84, +3.21]
+
+LONGS by setup:
+  GEX Long                  n= 24 WR= 41.7% total=  -29.0pt $    -145 mean=-1.21pt
+    CI: [-6.21, +4.17]  (noise)
+  SB2 Absorption            n=  2 WR=  0.0% total=  -20.0pt $    -100 mean=-10.00pt
+  ES Absorption             n=  4 WR= 25.0% total=   -1.5pt $      -8 mean=-0.38pt
+    CI: [-6.00, +4.88]  (noise)
+  DD Exhaustion             n=  7 WR= 42.9% total=   +3.3pt $     +17 mean=+0.47pt
+    CI: [-8.36, +9.74]  (noise)
+  Delta Absorption          n=  1 WR=100.0% total=  +15.2pt $     +76 mean=+15.20pt
+  Skew Charm                n=  6 WR= 66.7% total=  +23.9pt $    +120 mean=+3.98pt
+    CI: [-6.73, +15.77]  (noise)
+
+SHORTS by setup:
+  Skew Charm                n= 14 WR= 71.4% total=  +23.3pt $    +116 mean=+1.66pt
+    CI: [-4.02, +6.86]  (noise)
+  ES Absorption             n= 13 WR= 61.5% total=  +10.7pt $     +54 mean=+0.82pt
+    CI: [-3.54, +5.12]  (noise)
+  SB2 Absorption            n=  1 WR=  0.0% total=  -10.0pt $     -50 mean=-10.00pt
+  DD Exhaustion             n=  7 WR= 57.1% total=  -17.4pt $     -87 mean=-2.49pt
+    CI: [-7.83, +3.24]  (noise)
+
+
+====================================================================================================
+2. GEX-TARGET vs OTHER paradigms (LONGS only, SC/DD/ES Abs, ALL grades, no V16)
+====================================================================================================
+
+  DD Exhaustion
+  paradigm              n     wr    mean     total
+  BOFA-MESSY            5  40.0%  -4.14pt   -20.7pt
+  BofA-LIS             14  21.4%  -3.70pt   -51.8pt
+  AG-LIS               38  34.2%  -2.11pt   -80.0pt
+  GEX-LIS              40  37.5%  -1.37pt   -54.9pt
+  AG-PURE              48  29.2%  -1.20pt   -57.5pt
+  GEX-TARGET            7  42.9%  +0.47pt    +3.3pt <- GEX-TARGET
+  AG-TARGET            15  53.3%  +3.88pt   +58.2pt
+  BOFA-PURE           135  60.0%  +4.17pt  +563.3pt
+  SIDIAL-MESSY         17  47.1%  +4.78pt   +81.2pt
+  SIDIAL-EXTREME       17  58.8%  +7.20pt  +122.4pt
+
+  ES Absorption
+  paradigm              n     wr    mean     total
+  AG-LIS               19  42.1%  -1.38pt   -26.1pt
+  SIDIAL-EXTREME       16  43.8%  +0.03pt    +0.5pt
+  AG-TARGET            11  54.5%  +0.51pt    +5.6pt
+  BOFA-PURE            99  52.5%  +1.19pt  +117.7pt
+  GEX-LIS              52  50.0%  +1.46pt   +75.8pt
+  AG-PURE              31  61.3%  +1.95pt   +60.5pt
+  GEX-PURE             55  56.4%  +2.16pt  +118.9pt
+  BOFA-LIS             39  66.7%  +2.29pt   +89.5pt
+  SIDIAL-MESSY         21  71.4%  +4.13pt   +86.7pt
+                       11  81.8%  +5.78pt   +63.6pt
+
+  Skew Charm
+  paradigm              n     wr    mean     total
+  GEX-LIS              38  47.4%  -2.47pt   -93.8pt
+  AG-LIS               34  58.8%  -1.55pt   -52.7pt
+  AG-PURE              38  57.9%  +0.09pt    +3.4pt
+  SIDIAL-EXTREME       21  57.1%  +0.71pt   +15.0pt
+  BofA-LIS             18  72.2%  +3.13pt   +56.3pt
+  SIDIAL-MESSY         19  68.4%  +3.49pt   +66.4pt
+  GEX-TARGET            6  66.7%  +3.98pt   +23.9pt <- GEX-TARGET
+  BOFA-PURE           146  71.9%  +4.59pt  +670.7pt
+  AG-TARGET             8 100.0% +11.84pt   +94.7pt
+
+
+====================================================================================================
+3. REAL BROKER P&L (from real_trade_orders) vs PORTAL outcome_pnl — GEX-TARGET longs only
+====================================================================================================
+Real broker fires in GEX-TARGET longs: 4
+
+  lid setup                    portal     fill    close     real     gap
+ 3189 ES Absorption             +0.0  7509.50  7494.75  -14.75  -14.75
+ 3185 Skew Charm               -14.0  7508.75  7498.50  -10.25   +3.75
+ 3184 DD Exhaustion            -12.0  7510.50  7505.00   -5.50   +6.50
+ 1715 Skew Charm               +10.3  6866.75  6877.00  +10.25   -0.05
+
+  TOTAL: portal -15.7pt ($-78)   real -20.2pt ($-101)   gap -4.6pt ($-23)
+
+
+====================================================================================================
+4. MONTHLY: GEX-TARGET longs (all setups combined, V16-eligible & not)
+====================================================================================================
+   month    n     wr     total    mean
+ 2026-02    1   0.0%    -12.0pt -12.00pt
+ 2026-03    8  87.5%    +74.4pt  +9.30pt
+ 2026-04    3  33.3%     +9.3pt  +3.10pt
+ 2026-05    5   0.0%    -46.0pt  -9.20pt
+
+
+====================================================================================================
+5. TIME-OF-DAY: GEX-TARGET longs (does later in session = worse?)
+====================================================================================================
+  hour    n     wr     total    mean
+   9:00    2  50.0%    +11.2pt  +5.60pt
+  10:00    4  50.0%    +14.8pt  +3.70pt
+  11:00    3 100.0%    +29.0pt  +9.67pt
+  12:00    2 100.0%    +20.7pt +10.35pt
+  13:00    2   0.0%    -24.0pt -12.00pt
+  14:00    3   0.0%    -26.0pt  -8.67pt
+  15:00    1   0.0%     +0.0pt  +0.00pt
+
+
+====================================================================================================
+6. TODAY (2026-05-22) GEX-TARGET LONGS — context
+====================================================================================================
+  lid=3148 GEX Long               g=B    align=-1 vix=16.8  et=2026-05-22 10:10:03  portal_pnl=-14.0pt
+  lid=3149 SB2 Absorption         g=B    align=-2 vix=16.8  et=2026-05-22 10:13:03  portal_pnl=-10.0pt
+  lid=3150 GEX Long               g=B    align=-1 vix=16.9  et=2026-05-22 10:14:00  portal_pnl=+14.2pt
+  lid=3151 GEX Long               g=B    align=-1 vix=16.9  et=2026-05-22 10:18:29  portal_pnl=+14.8pt
+  lid=3152 GEX Long               g=B    align=-1 vix=16.9  et=2026-05-22 10:20:00  portal_pnl=+16.2pt
+  lid=3154 GEX Long               g=B    align=-1 vix=16.9  et=2026-05-22 10:23:30  portal_pnl=+16.9pt
+  lid=3156 GEX Long               g=B    align=-1 vix=16.9  et=2026-05-22 10:26:03  portal_pnl=+16.2pt
+  lid=3157 GEX Long               g=B    align=-1 vix=16.8  et=2026-05-22 10:28:03  portal_pnl=+14.7pt
+  lid=3158 GEX Long               g=B    align=-1 vix=16.8  et=2026-05-22 10:30:03  portal_pnl=+13.8pt
+  lid=3160 GEX Long               g=B    align=-1 vix=16.7  et=2026-05-22 10:32:00  portal_pnl=+13.5pt
+  lid=3182 SB2 Absorption         g=B    align=- vix=16.6  et=2026-05-22 13:49:43  portal_pnl=-10.0pt
+  lid=3183 GEX Long               g=B    align=1 vix=16.6  et=2026-05-22 13:54:03  portal_pnl=-14.0pt
+  lid=3184 DD Exhaustion          g=B    align=1 vix=16.6  et=2026-05-22 13:57:33  portal_pnl=-12.0pt
+  lid=3185 Skew Charm             g=B    align=1 vix=16.6  et=2026-05-22 14:00:00  portal_pnl=-14.0pt
+  lid=3186 GEX Long               g=B    align=1 vix=16.6  et=2026-05-22 14:14:00  portal_pnl=-14.0pt
+  lid=3187 GEX Long               g=B    align=1 vix=16.6  et=2026-05-22 14:16:01  portal_pnl=-14.0pt
+  lid=3188 GEX Long               g=B    align=1 vix=16.7  et=2026-05-22 14:22:04  portal_pnl=-14.0pt
+  lid=3189 ES Absorption          g=A+   align=1 vix=16.7  et=2026-05-22 14:23:04  portal_pnl=+0.0pt
+  lid=3190 GEX Long               g=B    align=1 vix=16.6  et=2026-05-22 14:24:03  portal_pnl=-14.0pt
+  lid=3191 GEX Long               g=B    align=1 vix=16.6  et=2026-05-22 14:26:03  portal_pnl=-14.0pt
+  lid=3192 GEX Long               g=B    align=1 vix=16.6  et=2026-05-22 14:29:03  portal_pnl=-14.0pt
+  lid=3193 DD Exhaustion          g=B    align=1 vix=16.6  et=2026-05-22 14:29:03  portal_pnl=-12.0pt

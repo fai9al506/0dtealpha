@@ -1,0 +1,795 @@
+
+########## Volland Discord - 0DTE Alerts - 📨┃0dte-alerts [1362822187647500489] (after 2026-06-07).json — 4 msgs ##########
+[2026-06-08 17:35] apollobix: Good morning, we are AG ish out the gate. We do have an active vol event from friday with a target of 7579.69 so keep that in mind. Vanna is supportive at 7390 below. We are quite undervixed right now with positive DD hedging. The upper edge overhead is 7470 with the lower edge around 7400.
+[2026-06-08 20:39] apollobix: Checking back in, we are in the same boat as this morning. We are still undervixing quite a bit with neutral DD hedging. Key support underneath is 7400 with Vanna being supportive at 7390. To the upside, 7470 is still the big level with slight resistance at 7450. Be cautious with Vol and headlines.
+[2026-06-09 17:48] apollobix: Good morning everyone, we are BofA pure this morning. we have slight undervixing with neutral DD hedging. Our upper edge is around 7450, the lower edge starts around 7365 and extends to 7350.
+[2026-06-09 20:48] apollobix: Checking back in, We broke the downside edge quit aggressively. we were significantly overvixing and has now tapered. We are between AG/ BofA. A lot of negative Gamma. Our upper edge is 7370 but not much resistance past that. To the downside, 7280 is supportive but is the strongest at 7250. Keep an eye on headlines and Vol.
+
+########## Volland Discord - Volland Daytrading - ⛅│volland-daytrading-central [1362818729347645754] (after 2026-06-07).json — 816 msgs ##########
+[2026-06-07 01:50] mrswizardofops: Volume, volatility... different words, different meanings. Just wanted to make sure you got the correct info.
+[2026-06-07 04:17] otc4313: yes, thank you. It was a simple mistake. I fully understand we are talking about relationship between SPX and VIX.
+[2026-06-07 17:51] bigbill8887: He is a big scammer.
+[2026-06-07 17:51] bigbill8887: https://www.reddit.com/r/Bitcoin/comments/1eqqo6m/is_james_altucher_from_investanswers_legit_whats/ || TITLE:Is James Altucher from InvestAnswers legit? What's your opinion on ... | I'm posting this just to get a whole honest picture about this guy before investing me money into his models. Please help a brother out. Sorry for…
+[2026-06-07 17:52] bigbill8887: He just says "around the hoop" and sells scammy worthless servies on whatever is hot.
+[2026-06-07 18:37] bigbill8887: Its the sort of thing where he might find an anomally and sell a model based on it. Something like long IBIT at the close, flip to short at the open, flip to long at the close. Now historically that might have done fantastic, but it realistically has no value and selling something like that as a "model" is entirely scammy. You are more or less selling something as valuable to a person who doesn't know better.
+[2026-06-07 20:13] dauma8500: Hyperliquid implying a 30-40 point gap up as of now.
+[2026-06-07 20:24] phoenix0088020: EWY is one I will be watching tonight
+[2026-06-07 20:24] phoenix0088020: after 8:30
+[2026-06-07 22:11] dauma8500: Lol now flat to down and crude moving higher with the Iran attacks.
+[2026-06-07 22:48] phoenix0088020: I am not rushing into anything before I see what Korea is doing lol
+[2026-06-07 23:31] jackedtothetatas: @Yahya I read you mention hyperliquid. Is that like perpetual trading?
+[2026-06-08 00:07] owlmaster08: https://app.hyperliquid.xyz/trade/cash:USA500 || TITLE:Hyperliquid | Trade crypto, commodities, indices, and more on Hyperliquid: 300+ perpetual and spot markets, fully onchain, non-custodial, 24/7.
+[2026-06-08 00:13] bigbill8887: H
+[2026-06-08 00:16] jackedtothetatas: How do they calculate SPX in AH?
+[2026-06-08 00:17] yahyaz: Yep
+[2026-06-08 00:19] smed23: Trump trying to save things with the deal announcement pump
+[2026-06-08 01:03] bigbill8887: Nice continued dip...
+[2026-06-08 01:03] bigbill8887: Hopefully it stays this way until the open.
+[2026-06-08 01:03] phoenix0088020: Korea will show the way
+[2026-06-08 01:07] phoenix0088020: If they start crashing I will just wait lol
+[2026-06-08 01:17] smed23: Based on where futures just opened we’re def green in the morning
+[2026-06-08 01:54] jackedtothetatas: GEX?🤷🏻‍♂️
+[2026-06-08 02:24] otc4313: quickest 70+ points I have made in a while, yellow circle was reason for long, large blue area is an SP zone that I expected to backfill so dip and rip was the play, green arrows are entry plus adds and red arrow was zone to fully exit..........off to play tennis now
+[2026-06-08 03:04] disciple3: Played buy the dip on Friday and actually went to 0
+[2026-06-08 03:23] windsurfer78: KOSPI limit down ?
+[2026-06-08 03:27] nicowilliamsrw: yep, meanwhile nq futures ripping lol
+[2026-06-08 03:27] nicowilliamsrw: 7350 spx -> 7400 spx straight bounce
+[2026-06-08 03:27] phoenix0088020: I am thinking if they were closed when American market went down Friday , so now it shows over there
+[2026-06-08 03:32] phoenix0088020: EWY is up 5$ from Friday , that is one I am watching
+[2026-06-08 03:41] disciple3: oh man were so back, straight up, all day every day
+[2026-06-08 03:47] phoenix0088020: Call me sceptic , rally doesn’t look staring
+[2026-06-08 04:07] phoenix0088020: Everyone raising targets , Citi has 8100 now
+[2026-06-08 04:17] phoenix0088020: I don’t know if Korea unwind is done
+[2026-06-08 04:17] phoenix0088020: That is biggest question now
+[2026-06-08 04:20] otc4313: I dont think sell off is over. I dont think a bounce will happen until at least IBC tomorrow.
+[2026-06-08 04:23] otc4313: remember thursday bounced. This allowed big bois to reload and liquidate a lot of chasing low slamming shorts then friday sold into bid. Wedneday was a lot of ask side action. Who sells on the ask? The COMMercials do. Then Thrusday was a cover rally for smaller large players (think smaller hedge funds and 7figure retail traders) and finally friday was bid side aggression where COMMs pummeled into the bid.
+[2026-06-08 04:24] phoenix0088020: Downside targets for EWY are 150, crash lead to 135, of course I hope not but I can’t say won’t happen
+[2026-06-08 04:25] phoenix0088020: Koreans are loaded with margin
+[2026-06-08 08:07] johannes3041: GM
+[2026-06-08 09:02] disciple3: buy that dip baby
+[2026-06-08 09:03] disciple3: looking for 300nq
+[2026-06-08 09:29] m______m______m: I got the taste of the short now we can be bagholder teamates again
+[2026-06-08 09:30] disciple3: allday, every dAY
+[2026-06-08 10:29] johannes3041: @nicowilliamsRW you win
+[2026-06-08 10:47] windsurfer78: KOSPI and Nikkei closed out pretty horribly..
+[2026-06-08 10:48] windsurfer78: but futures green .. 🤨
+[2026-06-08 11:10] windsurfer78: Crude and bond yields creeping up ..
+[2026-06-08 11:10] johannes3041: 🤨 describes it pretty well
+[2026-06-08 11:11] windsurfer78: VIX is down though..
+[2026-06-08 11:12] windsurfer78: Let’s get an undervix rally 😂
+[2026-06-08 11:12] johannes3041: I think we should be undervixxing,
+[2026-06-08 11:12] johannes3041: nahhhh - another 3%
+[2026-06-08 11:13] johannes3041: because spot vol betas have been contained by RVOL, I think without significant Rvol vix wont really rise any futher
+[2026-06-08 11:14] windsurfer78: 3% rally is not bad..that’s over 200pts
+[2026-06-08 11:14] johannes3041: what about 3%down
+[2026-06-08 11:14] windsurfer78: That’s bad 🤣
+[2026-06-08 11:14] johannes3041: but prob. bull camp is right..
+[2026-06-08 13:33] jk232323: Infinite bid is back
+[2026-06-08 13:34] jk232323: Effort from sellers getting them nowhere
+[2026-06-08 13:34] johannes3041: these news
+[2026-06-08 13:34] johannes3041: damn
+[2026-06-08 13:34] jk232323: lol wow
+[2026-06-08 13:34] johannes3041: do you know what it is
+[2026-06-08 13:35] jk232323: Genuinely no idea. So many theories from people
+[2026-06-08 13:36] jk232323: I just assume it’s typical bull market mass buying. Everyone for whatever reason is bullish
+[2026-06-08 13:36] jk232323: Trumps influence over the market?
+[2026-06-08 13:36] jk232323: I dunno
+[2026-06-08 13:36] jk232323: But buying leads to more buying
+[2026-06-08 13:36] johannes3041: I think so too.
+[2026-06-08 13:36] jk232323: If enough large players want it to go up it’ll go up
+[2026-06-08 13:37] johannes3041: this was the last news
+[2026-06-08 13:39] jk232323: They’re both bombing each other….definitely feels like ‘both sides al looking to do an immediate ceasefire’
+[2026-06-08 13:40] jk232323: Lots of effort to sell down to support then bang candle erases 15mins of effort
+[2026-06-08 13:40] jk232323: Same story
+[2026-06-08 13:43] johannes3041: being a bear is hard
+[2026-06-08 13:43] johannes3041: lol
+[2026-06-08 13:44] johannes3041: war is over=20p up, war starts again 10p down. every time lol
+[2026-06-08 14:16] darkmattertrade: there is also a bunch of weirdness as usual going down. jobs being hot sold us down which if you dissected it about 70k of jobs came from leisure & hospitality. of which about 55-60k are short term hires for the World Cup. then you have israel/iran. just need to trade level to level as i have mentioned. your bias has to be flexible. we saw what happened once 7500spx last week finally gave way...
+[2026-06-08 14:27] johannes3041: ❓
+[2026-06-08 14:28] darkmattertrade: the guy on left with longs targeting 7450spx. the guy on the right with shorts already at 7400spx lol
+[2026-06-08 14:33] l0rd.helmet: The 'news' is rapidly becoming irrelevant
+[2026-06-08 14:36] windsurfer78: Hi 👋 @Dark Matter
+[2026-06-08 14:37] windsurfer78: Today’s trade plan leaning bearish I see
+[2026-06-08 14:39] darkmattertrade: it is but everyone and their mom ran so fast to buying puts again
+[2026-06-08 14:40] darkmattertrade: keep bias uncheck. 7450, 7475, 7500 spx decide some levels today. if they really want to they could run this back up to 7575spx with some kind of catalyst but i am not leaning heavy this week with CPI and PPI around. real risk there.
+[2026-06-08 14:40] windsurfer78: Yes
+[2026-06-08 14:40] windsurfer78: CPI should be high I suppose
+[2026-06-08 14:41] windsurfer78: We did get a Vol event last Friday
+[2026-06-08 14:58] wizardofops: What would an Israel-Iran war look like? Seems like it would be theland version of the Battle of Midway. I'm sure Syria, Iraq, and Jordan wouldn't allow Israeli forces to walk across their land.
+[2026-06-08 14:58] wizardofops: So it will just be bombs and missiles lobbed at each other. lol.
+[2026-06-08 15:01] a_b_cdef: Could the vol event be satisfied today?
+[2026-06-08 15:02] a_b_cdef: Vanna is pretty steep on the upwards but overall negative
+[2026-06-08 15:12] wizardofops: Never say never, but I doubt it.
+[2026-06-08 15:20] johannes3041: yep, nothing to be gained for either side.
+[2026-06-08 15:23] jk232323: Sounds bullish tbh
+[2026-06-08 15:52] dragonboys.6655: Good morning
+[2026-06-08 16:14] otc4313: so, I have att fiber specifically for my trading station office and over the weekend the sprinker man cut the outside line. I am on here via 'other house internet' wifi but wont trade via wifi...........so SOHs until repaired this afternoon
+[2026-06-08 16:15] jk232323: Wow, @DK5000 catching strays in the market moves show
+[2026-06-08 16:15] l0rd.helmet: Gotta have standards
+[2026-06-08 16:19] mrswizardofops: Good to know you were watching, @jk23! 😂 Jason and I just had a laugh about that.
+[2026-06-08 16:20] johannes3041: just heard it now 😂
+[2026-06-08 16:20] jk232323: Djohannez
+[2026-06-08 16:22] owlmaster08: Dang, I liked this but wanted to wait until today to do it. looks like it has already almost doubled in price.
+[2026-06-08 16:28] bigbill8887: Yeah the fact pattern is always tough...
+[2026-06-08 16:28] bigbill8887: Probably best to scale in before the close but not a full position in case things really go bad over the weekend.
+[2026-06-08 16:29] toto2229: Morning y'all
+[2026-06-08 16:52] bigbill8887: @Wizard of Ops I see some people talking about how last Friday had a tremendous number of contracts outstanding (w/ 2/3rds being 0DTE). Do you happen to have the data to confirm that and if yes any idea if we went into the day with a large amount outstanding or was it just a 0DTE tidal wave? I am just wondering if this is another thing I might want to track. I already download the current months SPX table at the close so with some pivot tables I could in theory track some things w/r/t this (unless it was all 0DTE).
+[2026-06-08 17:00] bigbill8887: Edit... I am dumb... I can just go back to the daily files I downloaded.
+[2026-06-08 17:00] dauma8500: We going to go test 7400 again?
+[2026-06-08 17:01] l0rd.helmet: if we do, would look for 7390
+[2026-06-08 17:06] jk232323: Dow open got sold off hard
+[2026-06-08 17:09] yahyaz: I'm in the middle of bumblefuck nowhere jemaa el-fna Marrakech old medina and my wifi is 3 mbps, just observing today
+[2026-06-08 17:10] otc4313: NQ long, scary on WiFi but necessary on system, used qrtr size. as always yellow arrows = signals to trade, green arrow = long entry location and red arrow = all out exit trade
+[2026-06-08 17:10] toto2229: bearish opens all around after the massive overnight pump
+[2026-06-08 17:11] jk232323: I was in Marrakech back in Jan. Crazy place. Almost got ran over a million times 😂
+[2026-06-08 17:12] yahyaz: oh yeah its demonic
+[2026-06-08 17:12] yahyaz: I grew up in morocco and I still get surprised by the random motorbike switching lanes
+[2026-06-08 17:12] jk232323: Sitting in the back of the taxi was the scariest thing I’ve ever done
+[2026-06-08 17:13] dragonboys.6655: You never been to India I take it lol
+[2026-06-08 17:15] dragonboys.6655: I get scared probably get million mini stokes just sitting in the back seat each time I go back to visit
+[2026-06-08 17:15] l0rd.helmet: I have a friend who lived there with her husband and she felt like it was more dangerous to be alone in a taxi than riding a motorbike on the streets...so she would ride around on a scooter. Can't imagine...
+[2026-06-08 17:16] dauma8500: Wiz confirmed today on their show he was talking by this Weds to satisfy the vol event.
+[2026-06-08 17:20] dragonboys.6655: Depends on the area… there are more motor bikes than cars etc. staring off from traffic stops or train crossings gate will make you feel like you are war zone
+[2026-06-08 17:21] l0rd.helmet: sounds like an experience
+[2026-06-08 17:21] dk5000: But he is Johans! 🙂@Johannes Good morning guys!
+[2026-06-08 17:22] l0rd.helmet: there can be only one
+[2026-06-08 17:22] l0rd.helmet: https://tenor.com/view/only-one-there-can-be-only-one-highlander-gif-12213479 || TITLE:there can be only one
+[2026-06-08 17:23] yahyaz: wow
+[2026-06-08 17:24] dragonboys.6655: Yes!!!! Funniest thing is biker hit your car hard in back and damages your car and acts like nothing happened… it ain’t worth fixing dents out there IMO…
+[2026-06-08 17:26] dk5000: What system do you use to trade @O :t: C? Not sure I’ve seen that layout before….
+[2026-06-08 17:26] dk5000: And congrats on your trade btw!
+[2026-06-08 17:27] apollobix: Guten morgen
+[2026-06-08 17:32] otc4313: now that IBC has closed we could see a melt up continuation if COMM seller does not crush it
+[2026-06-08 17:32] otc4313: VIX is sideways at 18.75 area
+[2026-06-08 17:33] dk5000: Ok, I’m gonna take a wild guess. I may get this wrong. Sierra charts?
+[2026-06-08 17:33] otc4313: but SPX 7460s will likely not budge upward.........lets see what happens
+[2026-06-08 17:34] otc4313: oh you meant chart provider, yes sierra chart
+[2026-06-08 17:34] dk5000: Oh wow I got that right! Yeah I was curious about it cause it looks like @A p o l l o setup stylistically.
+[2026-06-08 17:35] otc4313: apollo is the man!
+[2026-06-08 17:35] otc4313: after his snoring dog...ofc
+[2026-06-08 17:37] apollobix: I am just a good student sir
+[2026-06-08 17:42] otc4313: indeed, a humble man, thats what makes you the man
+[2026-06-08 17:47] yahyaz: still got the singles above us
+[2026-06-08 17:47] nicowilliamsrw: odte edge there as well
+[2026-06-08 17:47] l0rd.helmet: they're lonely and it's Friday night
+[2026-06-08 17:49] apollobix: we have a good bid on ES at 7446
+[2026-06-08 17:49] apollobix: Boat has turned so I think higher
+[2026-06-08 17:50] l0rd.helmet: back to :neverunder:
+[2026-06-08 17:50] l0rd.helmet: until its not
+[2026-06-08 17:50] apollobix: I dont think shorts could really work (unless scalps) till 7525/7530 area ES
+[2026-06-08 17:51] l0rd.helmet: @Disciple3 would approve
+[2026-06-08 17:59] apollobix: bid is now 62's ES
+[2026-06-08 17:59] apollobix: bid sepping up
+[2026-06-08 18:00] otc4313: IBC and melt up
+[2026-06-08 18:01] otc4313: SP zone to fill at 7478 to 85 ES
+[2026-06-08 18:04] apollobix: 75's offered
+[2026-06-08 18:04] apollobix: Watching for test of bid now
+[2026-06-08 18:14] apollobix: Offer still holding 75's
+[2026-06-08 18:15] apollobix: I would like to see 64's
+[2026-06-08 18:15] apollobix: Not sell side, just want to see healthy upside
+[2026-06-08 18:16] disciple3: all day, every day
+[2026-06-08 18:21] apollobix: Still pounding away lol
+[2026-06-08 18:22] apollobix: pull back, absorb and go higher
+[2026-06-08 18:27] apollobix: Good rotation
+[2026-06-08 18:28] apollobix: dont see the long just yet
+[2026-06-08 18:30] l0rd.helmet: Like pruning a tree...
+[2026-06-08 18:30] otc4313: LSE close
+[2026-06-08 18:30] otc4313: sell off
+[2026-06-08 18:31] otc4313: offer showed up on ES right at SP zone and key level 7475
+[2026-06-08 18:38] apollobix: Longs look better now
+[2026-06-08 18:39] otc4313: can you share why from a volland dahsboard perspective please
+[2026-06-08 18:39] otc4313: you know I got it down via order flow
+[2026-06-08 18:39] apollobix: That was from a tape change
+[2026-06-08 18:40] nicowilliamsrw: front running vwap..no supply to even touch it
+[2026-06-08 18:40] apollobix: This is supportive from a Vanna side, but I dont think we are going to trade that support, especially with the Vol signal on Friday
+[2026-06-08 18:40] apollobix: Significant undervixing and lead stronger up moves
+[2026-06-08 19:26] dragonboys.6655: we chop here rest of the day?
+[2026-06-08 19:27] l0rd.helmet: I'm not expecting much until maybe last hour
+[2026-06-08 19:29] apollobix: prob test lower for now
+[2026-06-08 19:32] fixedrate: How low you think?
+[2026-06-08 19:33] apollobix: maybe 7400 spx but really depending on where the bid shows up
+[2026-06-08 19:37] l0rd.helmet: an RTH NLOD would be unwelcome for bulls
+[2026-06-08 19:37] l0rd.helmet: i need to speak to the manager
+[2026-06-08 19:41] m______m______m: Lets go tag 722
+[2026-06-08 19:41] m______m______m: Qqq
+[2026-06-08 19:41] apollobix: the legend is back
+[2026-06-08 19:42] m______m______m: 🤣🤣
+[2026-06-08 19:42] m______m______m: Im flattered
+[2026-06-08 19:43] m______m______m: D3 neverunderregime.exe lets see
+[2026-06-08 19:43] m______m______m: Wick vwap & moon it
+[2026-06-08 19:43] l0rd.helmet: i want to see tapeworm diamonds
+[2026-06-08 19:43] m______m______m: Looks like we need to tag nq vwap
+[2026-06-08 19:44] m______m______m: Ken wants to run his gamma scalp baggeth rq
+[2026-06-08 20:02] l0rd.helmet: somebody ctrl+alt+deleted the "neverunderregime.exe" program
+[2026-06-08 20:06] apollobix: normal business here sir
+[2026-06-08 20:10] mark487.: It’s going the wrong way 👀
+[2026-06-08 20:16] ingram142: in my experience timing the vol signal is tricky. just because there is a signal, macro events can still keep market bearish. it happened during the last year's April tariffs.
+[2026-06-08 20:19] dauma8500: Agreed. Which is why I was surprised to see wiz say he thinks it’s satisfies so quickly
+[2026-06-08 20:20] jk232323: There have been a couple of occasions when it did rebound really quickly <1week
+[2026-06-08 20:20] jk232323: With data this week it could easily move higher quickly
+[2026-06-08 20:21] jk232323: Imo that’s when the move will be
+[2026-06-08 20:21] jk232323: If it is this week
+[2026-06-08 20:22] ingram142: if I remember correctly during the April tariffs, the vol signal triggered 3 different times, while market kept dropping.
+[2026-06-08 20:23] jk232323: Then 60 day extension and bang 300pts
+[2026-06-08 20:26] fixedrate: DIdn't get a chance to watch the stream but I think the reason is June is still very bearish in terms of Vanna, so if the vol signal is to be satisfied it needs to happen quickly while we're at 7400's still
+[2026-06-08 20:27] calling.margin: @Wizard of Ops I know you've mentioned that the overvix signal failed back in 2015, do you remember what date in particular it triggered?
+[2026-06-08 20:28] dauma8500: lol ya. I mean we could get soft cpi and some Iran deal and bang. Back at highs.
+[2026-06-08 20:28] calling.margin: Seems like it would have triggered August 21st and August 24th?
+[2026-06-08 20:35] wizardofops: I think it was Aug. 17th?
+[2026-06-08 20:42] dauma8500: @A p o l l o we going to get 7400 spx today?
+[2026-06-08 20:42] apollobix: Could very well go for it
+[2026-06-08 20:43] apollobix: Slow downtrend but cautious as you can have volatile pops higher
+[2026-06-08 20:43] calling.margin: market was up on aug 17
+[2026-06-08 20:43] wizardofops: Sorry, looks like 21st.
+[2026-06-08 20:44] calling.margin: Yea, looks like it would have overvixed on on Aug 21 and 24th.
+[2026-06-08 20:44] calling.margin: The 24th overvix got satisifed soon after
+[2026-06-08 20:44] calling.margin: The 21st one, took two months
+[2026-06-08 20:45] wizardofops: Yes.
+[2026-06-08 20:45] wizardofops: That's correct. I have to dig out the study! lol.
+[2026-06-08 20:45] calling.margin: Somewhat simiar to what happened with the tariff overvix, we had two overvix days back to back, the second one caught the bottom and was satisfied right away
+[2026-06-08 20:45] calling.margin: while the first one took over 21 days
+[2026-06-08 20:45] wizardofops: Tariff there were 4 overvixes.... the first one was the only one that wasn't satisfied.
+[2026-06-08 20:46] l0rd.helmet: https://tenor.com/view/satisfaction-i-cant-get-no-satisfaction-the-rolling-stones-gif-15077611
+[2026-06-08 20:46] calling.margin: four on the way down? Think it was 2 on the way down, and then the other two after bottoming?
+[2026-06-08 20:46] wizardofops: Yes
+[2026-06-08 20:50] m______m______m: Kick it over the hump kenny
+[2026-06-08 20:50] l0rd.helmet: :kengriffinside:
+[2026-06-08 20:51] m______m______m: Ken def wants to turn this over
+[2026-06-08 20:51] m______m______m: Might not be able to tho
+[2026-06-08 20:51] m______m______m: Spy making this difficult
+[2026-06-08 20:53] m______m______m: B of a lis cracked
+[2026-06-08 20:53] m______m______m: Moon it
+[2026-06-08 20:53] m______m______m: LOL
+[2026-06-08 20:59] l0rd.helmet: that little dip above might help the bulls
+[2026-06-08 20:59] m______m______m: 740 should be support spu
+[2026-06-08 20:59] m______m______m: Spy
+[2026-06-08 20:59] calling.margin: By any chance does anyone have a list of all of the vol events over the last few years?
+[2026-06-08 20:59] m______m______m: Can be the magnet we arent getting folow thru
+[2026-06-08 21:09] apollobix: squeeze it higher
+[2026-06-08 21:09] apollobix: Trade 80 es
+[2026-06-08 21:09] m______m______m: Get above 743 and moon it
+[2026-06-08 21:09] m______m______m: Great longs off vwap on nq
+[2026-06-08 21:10] m______m______m: 80 es is ambitious king
+[2026-06-08 21:11] m______m______m: Ken taking his time widit
+[2026-06-08 21:11] m______m______m: Spx doesnt love the flip
+[2026-06-08 21:14] otc4313: having no internet is costing me too much $$$$
+[2026-06-08 21:15] m______m______m: I think mags are feeding some pushback tdy
+[2026-06-08 21:15] m______m______m: This is a little too hard of a fight
+[2026-06-08 21:15] m______m______m: Shouldnt be
+[2026-06-08 21:16] otc4313: You think price should move easier in down direction?
+[2026-06-08 21:16] m______m______m: Nah ken wants to turn over spy decay
+[2026-06-08 21:16] m______m______m: Wins on his hedges and premium by doing so
+[2026-06-08 21:17] otc4313: ask him. Since on first name basis 😂
+[2026-06-08 21:17] m______m______m: I think we’ll see a absolute ripper candle eventually
+[2026-06-08 21:18] m______m______m: Twuz great day to sell puts
+[2026-06-08 21:19] otc4313: collect collect collect
+[2026-06-08 21:21] m______m______m: Hold vwap pleade
+[2026-06-08 21:21] m______m______m: @A p o l l o whats the hold up 😕
+[2026-06-08 21:21] m______m______m: Ken tryna offload some spx short grelta
+[2026-06-08 21:25] l0rd.helmet: maybe we get a gamma squeeze if we get over 40/45
+[2026-06-08 21:28] m______m______m: I need tp to hit before my playdate at the lego factory
+[2026-06-08 21:28] m______m______m: @Disciple3 come back i didnt meen it
+[2026-06-08 21:33] m______m______m: Makes sense why its taking awhile
+[2026-06-08 21:33] disciple3: got my daily goal last night buying the dip bruh
+[2026-06-08 21:33] m______m______m: Spy is short put driven bearish charm so im thinking power hour random sweep
+[2026-06-08 21:33] m______m______m: To flip them
+[2026-06-08 21:39] l0rd.helmet: 5D VPOC is still above 7600 ES...building volume here seems good if bulls want to reclaim the upper value area
+[2026-06-08 21:39] otc4313: no te vayas a lastimar
+[2026-06-08 22:01] apollobix: pop the lows for stops is funnier though
+[2026-06-08 22:10] l0rd.helmet: kirkland needs inventory?
+[2026-06-08 22:19] apollobix: ES buyer is trying here
+[2026-06-08 22:20] apollobix: Will be a nice reversion
+[2026-06-08 22:20] l0rd.helmet: i counted some big mkt buys down there
+[2026-06-08 22:20] l0rd.helmet: 200, 485
+[2026-06-08 22:21] gammahivey: stepping up; green schrek incoming
+[2026-06-08 22:23] bigbill8887: @Wizard of Ops Is the outsized VIX move vs SPX here bad?
+[2026-06-08 22:24] wizardofops: No. Remember that undervixing works like a cartoon running. It runs in place for a while, then it takes off.
+[2026-06-08 22:25] wizardofops: At least after an overvixing.
+[2026-06-08 22:25] wizardofops: It could mean we get some vol followup tomorrow though.
+[2026-06-08 22:26] wizardofops: But it doesn't necessarily threaten the vol event.
+[2026-06-08 22:27] yahyaz: I love this description
+[2026-06-08 22:30] mark487.: https://giphy.com/gifs/bye-looney-tunes-running-away-xT39CVCn6Eq8Ve9FZu
+[2026-06-08 22:34] apollobix: nice vol seller
+[2026-06-08 22:45] dauma8500: Does today change your outlook for the vol event satisfying so quickly as you hinted at in the show today?
+[2026-06-08 22:46] wizardofops: I wouldn't trade that speculation, but I think something like CPI could push to the upside.
+[2026-06-08 23:25] bigbill8887: Is it really speculation if you are so money?
+[2026-06-08 23:26] wizardofops: lol.
+[2026-06-09 00:09] bigbill8887: Here is how things looked the past few days w/r/t number of contracts outstanding each day...
+[2026-06-09 00:10] bigbill8887: 6.4 Close
+[2026-06-09 00:10] bigbill8887: 6.5 Close
+[2026-06-09 00:11] bigbill8887: 6.8 close
+[2026-06-09 00:14] bigbill8887: The Hypothesis I am looking to test is if outsized 1DTE positioning e.g. the 6/5 positioning as of the 6/4 close can lead to outsized moves when they become 0DTE positions.
+[2026-06-09 00:16] bigbill8887: Current step will be to track for when there is outsized 1DTE positioning.
+[2026-06-09 00:20] bigbill8887: Step thereafter will probably be to analyze Volland positioning on days with outsized positioning to understand when outsized moves are more likely vs less likely.
+[2026-06-09 01:13] dauma8500: must be some negative news coming - nice little sell off after hours here
+[2026-06-09 01:18] l0rd.helmet: Let me guess, the ceasefire is over, I mean back on, I mean oil will go up at some point, or not.
+[2026-06-09 03:07] phoenix0088020: Korea again
+[2026-06-09 03:07] phoenix0088020: lol
+[2026-06-09 06:52] jackedtothetatas: So goes Korea so goes the market?
+[2026-06-09 06:58] nicowilliamsrw: they almost retraced fridays drop
+[2026-06-09 07:01] m______m______m: Would be interesting to see if you also filtered down to split long short otm vs itm and then had machine learning analyze correlations if ovn positioning is deemed significant first in size but then also at x imbalance to get directional due to charm drag with a mix of var for dealers so probably only trading pure paradigms
+[2026-06-09 07:03] m______m______m: If u used that to sell premium, strikes getting tested can just be an opportunity to actually win on both sides if u keep a delta hedge around and have a band that price needs to break to actually keep it on which becomes unlikely as ppl start frontrunning charm/dealers defending premium
+[2026-06-09 07:15] otc4313: I did not get filled on LMT while off playing tennis, missed me by 2.25 points 😵‍💫
+[2026-06-09 07:16] otc4313: SL was 24 pts to get to tgts 29550 and 29589.75 level
+[2026-06-09 07:18] otc4313: CONTEXT SET UP TRIGGER was spot on
+[2026-06-09 09:14] johannes3041: Good day everyone
+[2026-06-09 09:40] johannes3041: || poll_question_text=Where is VIX gonna open | victor_answer_votes=4 | total_votes=8 | victor_answer_id=3 | victor_answer_text=<20
+[2026-06-09 10:24] otc4313: 18.20-ish
+[2026-06-09 11:07] m______m______m: Nvda looks solid for selling premium rn, monday practically already foreshadowed ken doesnt like the book moving 📖
+[2026-06-09 11:12] m______m______m: 220 to 202.5 looks like a hold same lvls as last week
+[2026-06-09 11:19] jk232323: Nice longs again from the ovn low
+[2026-06-09 11:20] m______m______m: On nvda?
+[2026-06-09 11:20] jk232323: Indexes
+[2026-06-09 11:20] jk232323: I went long nq from 350
+[2026-06-09 11:21] jk232323: Still long
+[2026-06-09 11:21] jk232323: Coming into resistance again at 700
+[2026-06-09 11:22] jk232323: Same level resistance on NQ but ES is 30 points lower
+[2026-06-09 11:28] jk232323: Yes
+[2026-06-09 11:29] jk232323: Easy to hold onto winners when you’re asleep 😂
+[2026-06-09 11:29] jk232323: Nice surprise to wake up to haha
+[2026-06-09 11:30] jk232323: Added a 2nd long at 586
+[2026-06-09 11:31] jk232323: Wanting a good break above 700
+[2026-06-09 11:31] m______m______m: Looks pretty topped out for now imo
+[2026-06-09 11:31] m______m______m: Atleast from kens seat
+[2026-06-09 11:31] jk232323: Maybe, both in some good profit. Stops set at just above b/e on the 2nd so I’m chilling
+[2026-06-09 11:32] m______m______m: Would be other players now if we get a second leg
+[2026-06-09 11:32] jk232323: You mean like Trump or Bessent
+[2026-06-09 11:32] m______m______m: Im checking mags i wanna play dispersion using the vol
+[2026-06-09 11:33] m______m______m: I dont even think news will work its magic unless theyre neutral or positioned in its favor unless its something insane which is still actually likely
+[2026-06-09 11:33] jk232323: Not much overhead on the qs but SPY still has a lot of cus short puts above
+[2026-06-09 11:34] m______m______m: I think we’re gonna have a full on war with the middle east until they decide to view the world differently hot take
+[2026-06-09 11:35] m______m______m: Full on war is understated when we can blow them to rubble with no boots on ground netanyoohoo got his scorestreaks
+[2026-06-09 11:35] m______m______m: True
+[2026-06-09 11:36] m______m______m: Till maybe about 745 it looks like
+[2026-06-09 11:36] m______m______m: Still net short calls above from spy tho
+[2026-06-09 11:37] m______m______m: Almost net short calls on spx
+[2026-06-09 11:37] jk232323: On what timeframe?
+[2026-06-09 11:38] m______m______m: All exp gamma, atleast until shorter tenor gains some convexity
+[2026-06-09 11:43] m______m______m: This is mega topped out for now imo actually
+[2026-06-09 11:44] m______m______m: Triple bearish charm with no help flipping above plus its unwanted gamma behavior so low vol drift need someone else to step in besides ken, bars
+[2026-06-09 15:37] toto2229: Morning folks
+[2026-06-09 15:37] toto2229: We ready for a new ceasefire/deal announcement?
+[2026-06-09 15:41] bigbill8887: Yes you went way more detailed but at the highest level, that is what I meant here: https://discord.com/channels/1356329071230980188/1362818729347645754/1513653918968709181
+[2026-06-09 15:53] m______m______m: The pre workout i use as caffeine took over
+[2026-06-09 15:53] m______m______m: I already sold calls so NO
+[2026-06-09 15:54] m______m______m: This is one of those days you just buy puts at the open and watch us magnet 🧲 charm eod just immediately just wait
+[2026-06-09 15:54] m______m______m: Ag heatseeking Netanyahu exe soon kill or fill baby
+[2026-06-09 16:17] l0rd.helmet: Food for thought
+[2026-06-09 16:17] l0rd.helmet: "....when NDX loses -4% or more on a Friday there is a 90% chance that Friday low is breached in the next five trading days, and we don't think this time is different." (BTIG) That ES trend line remains key... bears main objective was to defend there and that's exactly what they did... as long as price remains subdued, Friday's lows are at risk of getting revisited as the data point describes above^^^... the trend line now sits @ 7487
+[2026-06-09 16:18] yahyaz: Those 20 days returns
+[2026-06-09 16:18] yahyaz: tasty
+[2026-06-09 16:18] yahyaz: the left tail is a bit nasty but yeah
+[2026-06-09 16:25] toto2229: 90% eh. And it seems like once that low is breached, you should be buying any and all dips
+[2026-06-09 16:26] l0rd.helmet: Indeed
+[2026-06-09 16:26] l0rd.helmet: Typical NQ stop hunt behavior
+[2026-06-09 16:26] l0rd.helmet: Lol
+[2026-06-09 16:26] l0rd.helmet: Just on a larger timeframe
+[2026-06-09 16:29] dragonboys.6655: Good morning
+[2026-06-09 16:32] yahyaz: banks holding well
+[2026-06-09 16:41] yahyaz: Banks
+[2026-06-09 16:41] yahyaz: On a bender
+[2026-06-09 16:41] yahyaz: BAC
+[2026-06-09 16:41] yahyaz: lol
+[2026-06-09 16:44] yahyaz: NQ filled the singles
+[2026-06-09 16:45] yahyaz: sqzme holding this OTM puts fwiw
+[2026-06-09 16:45] dauma8500: Oyreeee
+[2026-06-09 16:45] nicowilliamsrw: approaching 7475 spx
+[2026-06-09 16:45] yahyaz: ES into the singles
+[2026-06-09 16:48] apollobix: fill it then higher
+[2026-06-09 16:48] yahyaz: Im a reformed bear so Im all about the long trades
+[2026-06-09 16:48] l0rd.helmet: Are you fading once we get past the singles?
+[2026-06-09 16:49] apollobix: I need to see 7525 ES first
+[2026-06-09 16:49] apollobix: but buy side skewed
+[2026-06-09 16:49] apollobix: still
+[2026-06-09 16:51] l0rd.helmet: I won't be a panican....
+[2026-06-09 16:52] yahyaz: Never
+[2026-06-09 16:52] yahyaz: You will never catch me going to bed betting against 'up and to the right'
+[2026-06-09 16:53] l0rd.helmet: Fools errand
+[2026-06-09 16:54] jrestrepo: Hold 75 and next stop 7580 per wizs substack note
+[2026-06-09 16:58] toto2229: all the good bull moves happen when we're sleeping
+[2026-06-09 16:58] l0rd.helmet: They're afraid of you...
+[2026-06-09 16:58] l0rd.helmet: They have to sneak around.
+[2026-06-09 17:00] toto2229: when the range is already huge by RTH open, how much meat is left on the bone for continuation
+[2026-06-09 17:00] toto2229: tough
+[2026-06-09 17:04] windsurfer78: can't hold 7475
+[2026-06-09 17:10] windsurfer78: tomorrow CPI..
+[2026-06-09 17:11] yahyaz: SOXL murked
+[2026-06-09 17:11] yahyaz: rotation into banks
+[2026-06-09 17:11] yahyaz: not paying off
+[2026-06-09 17:17] windsurfer78: dump..
+[2026-06-09 17:17] nicowilliamsrw: -70pts es straight down ouuf
+[2026-06-09 17:17] dauma8500: Okay. Guess we wait for 7390 to long again.
+[2026-06-09 17:19] johannes3041: bid trying here
+[2026-06-09 17:21] dauma8500: Apollo give us the 7525 ES bold call 😂
+[2026-06-09 17:22] yahyaz: nasty PA
+[2026-06-09 17:23] otc4313: that is what I call smashing the bid
+[2026-06-09 17:24] otc4313: that was fun
+[2026-06-09 17:36] nicowilliamsrw: gonna get spicy if we break overnight lows..
+[2026-06-09 17:39] l0rd.helmet: At least we have a healthy initial balance range.
+[2026-06-09 17:42] toto2229: healthy is a good way of putting it
+[2026-06-09 17:42] l0rd.helmet: I try to be an optimist
+[2026-06-09 17:44] dauma8500: Time for that 7390 test.
+[2026-06-09 17:44] windsurfer78: woah, below 7400
+[2026-06-09 17:45] windsurfer78: Vix going up
+[2026-06-09 17:46] toto2229: Good call bruv
+[2026-06-09 17:46] dauma8500: lol did someone get the early read on CPI
+[2026-06-09 17:46] dauma8500: Sliced through 7390
+[2026-06-09 17:46] toto2229: that's violent
+[2026-06-09 17:47] l0rd.helmet: Big volume
+[2026-06-09 17:47] l0rd.helmet: Slicing bigly
+[2026-06-09 17:47] nicowilliamsrw: can we get below 7350 spx today..
+[2026-06-09 17:48] aurmeilius: IV expansion, sheesh
+[2026-06-09 17:52] disciple3: im here boiz
+[2026-06-09 17:52] disciple3: i see a dip
+[2026-06-09 17:54] bigbill8887: BTIG was right, lol....
+[2026-06-09 17:55] bigbill8887: You buying the dip?
+[2026-06-09 17:55] toto2229: of course
+[2026-06-09 17:58] l0rd.helmet: Neverunder is never far from our hearts...
+[2026-06-09 17:58] toto2229: took 2 shots to get it though
+[2026-06-09 17:59] toto2229: ate a fat loss in like 2 seconds to start lol
+[2026-06-09 18:02] disciple3: 200pt 3m candles lol
+[2026-06-09 18:02] nicowilliamsrw: nice bounce off lower edge
+[2026-06-09 18:05] l0rd.helmet: I don't think seller are done
+[2026-06-09 18:05] toto2229: I didn't see any news that started this, did I miss it
+[2026-06-09 18:06] toto2229: maybe this?
+[2026-06-09 18:06] l0rd.helmet: I didn't either.
+[2026-06-09 18:07] jk232323: Not the China announcement?
+[2026-06-09 18:07] jk232323: Crude is down
+[2026-06-09 18:08] l0rd.helmet: Vx headed back up
+[2026-06-09 18:08] toto2229: what was the china announcement?
+[2026-06-09 18:08] l0rd.helmet: Opening strategic reserve
+[2026-06-09 18:08] toto2229: ohh
+[2026-06-09 18:08] l0rd.helmet: They're in pain
+[2026-06-09 18:08] jk232323: https://discord.com/channels/1356329071230980188/1362821077922742334/1513910050475741204
+[2026-06-09 18:09] apollobix: Need some @Disciple3 in here
+[2026-06-09 18:09] apollobix: We have a communication issue
+[2026-06-09 18:09] apollobix: Buy the dip scheme
+[2026-06-09 18:10] disciple3: hello
+[2026-06-09 18:10] disciple3: my coming to the desk marked the bottom
+[2026-06-09 18:10] disciple3: high volume buying there must be answered
+[2026-06-09 18:10] dauma8500: lol i was going to short at 7475 and then disciple entered my head. i blame him for now only being able to get a 6 inch sub instead of a footlong today for lunch
+[2026-06-09 18:11] toto2229: but we all get to enjoy a footlong green candle up the butt instead
+[2026-06-09 18:11] disciple3: 7585 again soon or something
+[2026-06-09 18:11] disciple3: something saomething
+[2026-06-09 18:11] dauma8500: if wiz gets his vol event satisfied by tomorrow - cpi going to have to be negative 😂
+[2026-06-09 18:12] disciple3: little too much selling today still
+[2026-06-09 18:13] disciple3: not great to not blast on that volume
+[2026-06-09 18:13] l0rd.helmet: The volume on this pop is weak.
+[2026-06-09 18:13] disciple3: would love 54 es low taken
+[2026-06-09 18:13] l0rd.helmet: I'm looking for shorts at 7415 ES
+[2026-06-09 18:13] disciple3: thats a hella buy the dip
+[2026-06-09 18:17] disciple3: paytience
+[2026-06-09 18:22] l0rd.helmet: Let's go there
+[2026-06-09 18:22] l0rd.helmet: Didn't get my fill, was too ambitious
+[2026-06-09 18:23] disciple3: here it comes
+[2026-06-09 18:23] disciple3: https://tenor.com/view/lizard-gif-3550997427709209319
+[2026-06-09 18:24] disciple3: so close
+[2026-06-09 18:25] l0rd.helmet: Friday low is close too
+[2026-06-09 18:25] l0rd.helmet: For nq
+[2026-06-09 18:26] disciple3: there it is
+[2026-06-09 18:27] dauma8500: very impressive bears
+[2026-06-09 18:27] toto2229: wowee
+[2026-06-09 18:27] jrestrepo: 7300 in sight?
+[2026-06-09 18:27] dragonboys.6655: News?
+[2026-06-09 18:27] dauma8500: lol 2% intraday sell off
+[2026-06-09 18:29] disciple3: spicy
+[2026-06-09 18:29] l0rd.helmet: Nq has more to go before I can buy
+[2026-06-09 18:31] yahyaz: Time to buy the Vol event long
+[2026-06-09 18:31] jackedtothetatas: Good question
+[2026-06-09 18:31] l0rd.helmet: Nq low was 29772
+[2026-06-09 18:31] l0rd.helmet: So close
+[2026-06-09 18:31] jackedtothetatas: Need to consult the expert
+[2026-06-09 18:32] jackedtothetatas: @A p o l l o
+[2026-06-09 18:32] jackedtothetatas: @Wizard of Ops
+[2026-06-09 18:32] dauma8500: @Wizard of Ops throw us a bold call today!
+[2026-06-09 18:32] apollobix: yes
+[2026-06-09 18:33] apollobix: very spicy right here
+[2026-06-09 18:33] disciple3: we need a hero
+[2026-06-09 18:33] apollobix: a lot of weakness in T10 right now
+[2026-06-09 18:33] apollobix: ES side, they are trying to buy right here around 7320 spx
+[2026-06-09 18:35] apollobix: need @Disciple3 to lift some offers on Q's
+[2026-06-09 18:37] yahyaz: big fight here
+[2026-06-09 18:38] yahyaz: straight negative gamma to 70-75
+[2026-06-09 18:39] disciple3: 780s ?
+[2026-06-09 18:40] disciple3: gotta close over this nasty 870 for higher
+[2026-06-09 18:40] yahyaz: I bot some
+[2026-06-09 18:40] yahyaz: to play
+[2026-06-09 18:40] l0rd.helmet: Nice volume on this wick
+[2026-06-09 18:41] disciple3: we might as well get the nq low now that weve come this far
+[2026-06-09 18:42] gammahivey: interesting: the NQ is still going down, but the NDX already retraced 100 points up
+[2026-06-09 18:43] jackedtothetatas: For the vol event CPI demolishes vol?
+[2026-06-09 18:44] dauma8500: its interesting because its like friday - where it was all tech.....RSP essentially flat.
+[2026-06-09 18:44] dauma8500: just tech getting destroyed
+[2026-06-09 18:45] disciple3: we gotta get some money ready for space x to moon
+[2026-06-09 18:50] disciple3: wew
+[2026-06-09 18:51] disciple3: pathetic bounce
+[2026-06-09 18:52] yahyaz: lol
+[2026-06-09 18:52] dragonboys.6655: Got some June 18 spy 750C
+[2026-06-09 18:53] yahyaz: I like it
+[2026-06-09 18:53] disciple3: 742 and 663 big spots too on nq
+[2026-06-09 18:56] disciple3: https://tenor.com/view/lizard-gif-3550997427709209319
+[2026-06-09 18:57] owlmaster08: got it
+[2026-06-09 18:57] apollobix: mr 1k has appeared
+[2026-06-09 18:57] apollobix: number 2
+[2026-06-09 18:58] yahyaz: got any of those bold calls laying around ?
+[2026-06-09 18:58] apollobix: rvol says revert back to 7357 spx
+[2026-06-09 18:59] disciple3: jeeze quite bearish
+[2026-06-09 18:59] nicowilliamsrw: 7350 --> 7300 right in the trade plan @Dark Matter
+[2026-06-09 18:59] disciple3: volume smacking it now
+[2026-06-09 18:59] dragonboys.6655: We got to 7300
+[2026-06-09 19:00] disciple3: lots of orders down on nq to fill still
+[2026-06-09 19:01] dragonboys.6655: So more down?
+[2026-06-09 19:01] yahyaz: bought the 750C for July expo
+[2026-06-09 19:01] dauma8500: I’d take 7357
+[2026-06-09 19:06] disciple3: oiiiii
+[2026-06-09 19:06] dauma8500: almost like a recession trade today - bonds rallying and everything else dumping (crude included)
+[2026-06-09 19:07] disciple3: nice little long scalp there
+[2026-06-09 19:07] disciple3: do it agasin, 625
+[2026-06-09 19:07] idkwhatimdoing344: Braver man than me haha
+[2026-06-09 19:07] disciple3: definitely size down
+[2026-06-09 19:08] disciple3: not the normal 15nq size today
+[2026-06-09 19:08] dragonboys.6655: we cut through 7300
+[2026-06-09 19:10] disciple3: gap fill
+[2026-06-09 19:10] disciple3: fr fr?
+[2026-06-09 19:10] jk232323: Just 14 today. Gotta be safe
+[2026-06-09 19:11] jk232323: Dow is still above 50k so all is good in the world
+[2026-06-09 19:12] disciple3: yes, noone will mention epstein rn
+[2026-06-09 19:13] disciple3: guess we''ll go to 7200
+[2026-06-09 19:13] disciple3: then 0
+[2026-06-09 19:13] yahyaz: the lower it goes the higher you ride it back up
+[2026-06-09 19:13] yahyaz: beauty
+[2026-06-09 19:13] bigbill8887: Getting close though!
+[2026-06-09 19:16] l0rd.helmet: Weee
+[2026-06-09 19:16] dragonboys.6655: seems are big orders are getting filled in this drop
+[2026-06-09 19:17] fixedrate: If this actually gets satisfied that would be crazy
+[2026-06-09 19:17] disciple3: yikes
+[2026-06-09 19:17] l0rd.helmet: Once SPx gap is filled...wouldn't be short.
+[2026-06-09 19:17] l0rd.helmet: Look at vx futures
+[2026-06-09 19:17] l0rd.helmet: 60 degrees up
+[2026-06-09 19:19] dragonboys.6655: wowz
+[2026-06-09 19:19] disciple3: 0
+[2026-06-09 19:19] dauma8500: Never over?
+[2026-06-09 19:20] l0rd.helmet: Not for at least a day
+[2026-06-09 19:20] dauma8500: Now i have to get a kids 3" sub cuz i didnt short at 7475
+[2026-06-09 19:23] smed23: wtf happened wiz
+[2026-06-09 19:24] yahyaz: NO
+[2026-06-09 19:24] dauma8500: Hopefully Trump is manipulating the inflation numbers right now so were good for tomorrow
+[2026-06-09 19:25] ingram142: hmm might get another vol event signal
+[2026-06-09 19:25] yahyaz: They will suck you in with a few days of ugliness then rip it for 3 months
+[2026-06-09 19:25] disciple3: watch em sweep this low again
+[2026-06-09 19:28] m______m______m: Uh yeah.
+[2026-06-09 19:29] m______m______m: Thats what the fuck i do
+[2026-06-09 19:29] m______m______m: Feed my ego ken why dont u
+[2026-06-09 19:29] smed23: So where is the lower edge
+[2026-06-09 19:29] m______m______m: Think we’re pretty bottomed out
+[2026-06-09 19:29] m______m______m: Spy flips over gonna vol crush could catch a bid till like 29 spy imo
+[2026-06-09 19:30] m______m______m: BTD szn annihilated. Price vol fair and thin out bagholdrr hair
+[2026-06-09 19:34] dragonboys.6655: another 1k at 85 ES
+[2026-06-09 19:35] dragonboys.6655: what you seeing @A p o l l o ?
+[2026-06-09 19:35] apollobix: yepp
+[2026-06-09 19:35] apollobix: 2 have already filled
+[2026-06-09 19:35] dragonboys.6655: yah few 500 orders too
+[2026-06-09 19:35] dragonboys.6655: assuming these are all longs
+[2026-06-09 19:38] disciple3: lmaop
+[2026-06-09 19:38] dauma8500: lol jesus - someone knows somethign
+[2026-06-09 19:38] owlmaster08: So much for TACO Tuesday 💀
+[2026-06-09 19:39] l0rd.helmet: Angry market
+[2026-06-09 19:39] yahyaz: we flash crashing or what
+[2026-06-09 19:39] l0rd.helmet: I have just been informed by our Great Military that last night the Iranians shot down one of our highly sophisticated Apache Helicopters while patrolling over the Strait of Hormuz. There were two pilots involved, both are safe and uninjured. Nevertheless, the United States must, of necessity, respond to this attack. Thank you for your attention to this matter! President DONALD J. TRUMP
+[2026-06-09 19:39] idkwhatimdoing344: A lot of oil "news" came out today of different people publishing how long it would take to get hormuz back online
+[2026-06-09 19:39] dragonboys.6655: no idea man
+[2026-06-09 19:39] dragonboys.6655: crazy
+[2026-06-09 19:39] yahyaz: crude spike
+[2026-06-09 19:39] l0rd.helmet: War back on
+[2026-06-09 19:39] pippen: Did Trump mark the top with "stock market looks good" 👌
+[2026-06-09 19:39] johannes3041: dayum
+[2026-06-09 19:40] disciple3: 7206
+[2026-06-09 19:40] disciple3: straight to 0
+[2026-06-09 19:40] darkmattertrade: you know it brother and we got more 👀
+[2026-06-09 19:40] darkmattertrade: 7350 was a lot of delta selling for dealers if you missed that connection
+[2026-06-09 19:40] dragonboys.6655: spot vol beta above 2 again
+[2026-06-09 19:40] dauma8500: oh shit crude popping
+[2026-06-09 19:40] dauma8500: war news?
+[2026-06-09 19:41] l0rd.helmet: https://discord.com/channels/1356329071230980188/1362818729347645754/1513945631851286679
+[2026-06-09 19:41] dauma8500: ruh roh
+[2026-06-09 19:42] dauma8500: hahaha insiders been selling all morning
+[2026-06-09 19:42] dauma8500: before that tweet
+[2026-06-09 19:43] jk232323: So Trump wants to retaliate but also wants his stonks to go up
+[2026-06-09 19:43] jk232323: Decisions
+[2026-06-09 19:44] disciple3: well 200nq on now
+[2026-06-09 19:44] disciple3: starting to just look like broad develeraging event
+[2026-06-09 19:47] disciple3: stop hes already dead
+[2026-06-09 19:47] l0rd.helmet: Vx futures in the moon
+[2026-06-09 19:48] disciple3: so what happens with double vol event
+[2026-06-09 19:48] l0rd.helmet: You square them
+[2026-06-09 19:48] l0rd.helmet: 7475*7475
+[2026-06-09 19:48] l0rd.helmet: Neverunder
+[2026-06-09 19:49] dragonboys.6655: spot vol 2.88
+[2026-06-09 19:49] darkmattertrade: https://tenor.com/view/the-universe-tim-and-eric-mind-blown-mind-blown-meme-mind-explosion-mind-explosion-meme-gif-18002878
+[2026-06-09 19:51] dauma8500: lol the double Vol event.
+[2026-06-09 19:51] disciple3: alright rinse the dip buy again to 200
+[2026-06-09 19:52] zackhoski: i put on a 0dte put spread at the literal highs 7440/7420 for $2.5 i literally should have just bought the 7440 for $5 would be like 3500% hahah
+[2026-06-09 19:57] m______m______m: Im on the toilet but spx short puts beneath plus spy charm flip i think we can see vol crush whipsaw spike
+[2026-06-09 19:57] m______m______m: Probably gonna be pretty short lived
+[2026-06-09 19:57] m______m______m: Speedwipe
+[2026-06-09 19:58] l0rd.helmet: I think you're right to urge caution here. Don't short the hole ..
+[2026-06-09 19:58] m______m______m: Claude how do i potty quicker
+[2026-06-09 19:58] m______m______m: Nah i mean longs
+[2026-06-09 19:58] l0rd.helmet: I would want to see a sweep before up tho
+[2026-06-09 19:58] bigbill8887: Just keep buying the dip. The key thing to remember about Martingaling is it always works eventually...
+[2026-06-09 19:58] l0rd.helmet: Agreed
+[2026-06-09 19:58] m______m______m: Hard to stay long when ken gets insane short delta premiums like this
+[2026-06-09 19:58] m______m______m: It was clear at 7 am
+[2026-06-09 19:59] m______m______m: Shorted calls this morning
+[2026-06-09 19:59] m______m______m: Didnt even change that much
+[2026-06-09 19:59] m______m______m: Just more long puts
+[2026-06-09 19:59] johannes3041: offer gone
+[2026-06-09 19:59] m______m______m: I had a condor on for 30 seconds im so lucky
+[2026-06-09 20:00] l0rd.helmet: Let's see hold above 7300 es
+[2026-06-09 20:00] m______m______m: Right before the last brutal leg
+[2026-06-09 20:00] disciple3: insane candles for trading 100nqs
+[2026-06-09 20:00] m______m______m: Wow i just missed the long
+[2026-06-09 20:01] nicowilliamsrw: @Yahya why didnt we keep our putsss...bears can never win!
+[2026-06-09 20:02] l0rd.helmet: Bears are fickle and unreliable.
+[2026-06-09 20:02] l0rd.helmet: They'll turn on you when hungry or full
+[2026-06-09 20:02] m______m______m: @A p o l l o u meant once spx reprices vol ?
+[2026-06-09 20:02] dragonboys.6655: some life showing up
+[2026-06-09 20:02] m______m______m: Seems possible and short lived probably a 3min move then defense
+[2026-06-09 20:02] hmmmm___: doesn't look like we're getting a second vol event
+[2026-06-09 20:03] m______m______m: Wicking vwap would be comical
+[2026-06-09 20:03] dragonboys.6655: come on ES stay above 7300
+[2026-06-09 20:05] l0rd.helmet: A U.S. official told me the investigation determined that an Iranian drone hit the U.S. helicopter and got it to crash. The U.S. official said the investigation still hasn't determined if it was intentional or not
+[2026-06-09 20:05] l0rd.helmet: News
+[2026-06-09 20:08] yahyaz: Nope, made some dough thats good enough,when you get paid too much on the short you start thinking it’s as easy as the long
+[2026-06-09 20:08] yahyaz: Big mistake
+[2026-06-09 20:09] yahyaz: Plenty of opps to scalp short today
+[2026-06-09 20:09] yahyaz: Bear flag after bear flag
+[2026-06-09 20:10] dragonboys.6655: now buy some longs and save my spy calls 🙂
+[2026-06-09 20:10] l0rd.helmet: Need a strong break here for a good long
+[2026-06-09 20:10] dragonboys.6655: not touching 0DTE
+[2026-06-09 20:10] l0rd.helmet: Yeah, I bought 30 June call debit spreads
+[2026-06-09 20:11] l0rd.helmet: Will be happy with that hopefully
+[2026-06-09 20:11] l0rd.helmet: 21 days for the vol signal to play out
+[2026-06-09 20:11] l0rd.helmet: And end of month window dressing.
+[2026-06-09 20:11] dragonboys.6655: we did close that may 6th gap today
+[2026-06-09 20:11] m______m______m: Yeah this is a good spot to be levered long longer tenor
+[2026-06-09 20:11] m______m______m: I dont think we move much from here till power hour
+[2026-06-09 20:12] l0rd.helmet: Watching vx futures for cues
+[2026-06-09 20:12] m______m______m: This is a horrible trade now
+[2026-06-09 20:12] m______m______m: Charm fighting ken
+[2026-06-09 20:13] m______m______m: Probably a mega choppy rally aggressive pullbacks
+[2026-06-09 20:13] l0rd.helmet: Has to break, retest, then volume for longs
+[2026-06-09 20:16] l0rd.helmet: Agree, I don't think dealer flows will help us here.
+[2026-06-09 20:17] l0rd.helmet: Need a populist bull movement.
+[2026-06-09 20:17] l0rd.helmet: Not to be confused with a bowel movement
+[2026-06-09 20:17] m______m______m: This is quite literally a coin toss from a dealer pov
+[2026-06-09 20:17] m______m______m: Just gonna be shorts closing vol crush support then probably a dump around 3
+[2026-06-09 20:18] l0rd.helmet: Just realized you had a bull movement when texting
+[2026-06-09 20:18] l0rd.helmet: ...come on...that was funny
+[2026-06-09 20:19] l0rd.helmet: You marked the 'bottom' of ES
+[2026-06-09 20:19] l0rd.helmet: Haha
+[2026-06-09 20:21] m______m______m: Sustain this for a bit ken kick it even higher
+[2026-06-09 20:22] m______m______m: Ill happily take puts at 3
+[2026-06-09 20:23] yahyaz: In play
+[2026-06-09 20:23] m______m______m: Its all just gonna come back to bite
+[2026-06-09 20:25] l0rd.helmet: I think we get more Iran pain before it's done
+[2026-06-09 20:26] m______m______m: Its never actually the news hot take
+[2026-06-09 20:26] m______m______m: Thats always latent they just try and find a justification
+[2026-06-09 20:26] idkwhatimdoing344: They announced progress in the talks five minutes ago
+[2026-06-09 20:27] m______m______m: they cant talk about kens inventory without being at blackmail risk
+[2026-06-09 20:27] l0rd.helmet: That's good news
+[2026-06-09 20:28] idkwhatimdoing344: It's more a nothing burger, like they are down to 4 nuclear issues but I'm sure they're still VERY far apart on all four
+[2026-06-09 20:28] idkwhatimdoing344: on its face positive though yeah
+[2026-06-09 20:31] m______m______m: Its not going to end bears always win
+[2026-06-09 20:31] m______m______m: Nobody had the balls to sell puts is the real story
+[2026-06-09 20:31] idkwhatimdoing344: Ehh usually it's just planned for in thoroughly detail very far ahead of time - you take signals based on what other funds are doing, there's meetings with funds and bank analysts about these things for months ahead of time. It's less intentional like that and more just much better access to information
+[2026-06-09 20:32] m______m______m: Horrible headlines have hit the tape everyday its a matter of when its profitable yes they have that power
+[2026-06-09 20:32] m______m______m: Algos are frontrunning it
+[2026-06-09 20:32] m______m______m: Thats why gex and ag pure nuke charm targets hours before charm is even real
+[2026-06-09 20:33] m______m______m: What do i know tho, only made 30k tdy
+[2026-06-09 20:33] idkwhatimdoing344: Oh wait are you talking about the market making side of citadel not the hedge fund business
+[2026-06-09 20:33] m______m______m: They probably go hand in hand
+[2026-06-09 20:33] m______m______m: But its due to the fact its an extremely incentivizing aggressive trade to run algorithmically at scale
+[2026-06-09 20:34] m______m______m: Decay lines up with dealer profit tent, means load up for informed moneu
+[2026-06-09 20:34] idkwhatimdoing344: Ok, my bad I thought you were refering to L/S mrkt ntrl HFs in general misunderstood your meaning
+[2026-06-09 20:35] idkwhatimdoing344: That's great man, not trying to insult anyone haha didn't mean any offense
+[2026-06-09 20:36] l0rd.helmet: For those not in finance for a career, how you do learn this stuff?
+[2026-06-09 20:36] l0rd.helmet: *lear
+[2026-06-09 20:37] idkwhatimdoing344: For trading purposes or do you want to try to work in finance?
+[2026-06-09 20:37] idkwhatimdoing344: another area of finance*
+[2026-06-09 20:37] l0rd.helmet: Trading purposes, trying to avoid going to the learing center
+[2026-06-09 20:37] l0rd.helmet: I'm too old to start a new career
+[2026-06-09 20:38] aurmeilius: gimme dat vwap bois, :neverunder:
+[2026-06-09 20:39] aurmeilius: and beyond
+[2026-06-09 20:41] yahyaz: Rippy mode
+[2026-06-09 20:42] yahyaz: Lotto from the Uranium news lol
+[2026-06-09 20:42] yahyaz: Comedy
+[2026-06-09 20:43] yahyaz: Now 33 bucks
+[2026-06-09 20:43] yahyaz: Comeeedyyyyyy
+[2026-06-09 20:44] yahyaz: Happy?
+[2026-06-09 20:50] dauma8500: Where we closing @A p o l l o
+[2026-06-09 20:51] apollobix: higher
+[2026-06-09 20:58] l0rd.helmet: I hope everyone is green today. I like the big moves...
+[2026-06-09 20:58] jackedtothetatas: https://tenor.com/view/at-the-top-of-my-lungs-look-up-feeling-it-passion-higher-gif-5935475310088973531
+[2026-06-09 20:58] l0rd.helmet: Apollo said yes!
+[2026-06-09 21:04] disciple3: Buy the dip
+[2026-06-09 21:04] l0rd.helmet: Do we get to see our old friend 29k today?
+[2026-06-09 21:05] disciple3: Last time we bounced this hard we did a 2 month all day every day ripper
+[2026-06-09 21:07] yahyaz: Need to overtake 50 then 65 to elimnate that nasty negative DD
+[2026-06-09 21:13] dauma8500: Cmon Trump. Leak CPI with a 3 handle.
+[2026-06-09 21:14] yahyaz: lmaoooooo
+[2026-06-09 21:14] l0rd.helmet: "today is a good day to own______"
+[2026-06-09 21:15] otc4313: tapeworm today, paired with upper MML, yippeee
+[2026-06-09 21:15] l0rd.helmet: What is MML sir?
+[2026-06-09 21:15] otc4313: murrey math level
+[2026-06-09 21:17] otc4313: crazy day. hope every one is safe
+[2026-06-09 21:18] otc4313: I know for those on eval firm accts blowing up a sunbscription fee is minimal but its about the RISK MANAGEMENT
+[2026-06-09 21:19] yahyaz: VIX 20
+[2026-06-09 21:19] gammahivey: these moves are crazy ... crypto meme coin worthy ... on the biggest global indices
+[2026-06-09 21:20] jk232323: This is my quant
+[2026-06-09 21:20] yahyaz: yeeeeet
+[2026-06-09 21:20] gammahivey: rippp it higher
+[2026-06-09 21:20] jk232323: Actually did average down into the swing long tho lol
+[2026-06-09 21:20] jk232323: A couple of times
+[2026-06-09 21:20] yahyaz: of course
+[2026-06-09 21:20] yahyaz: me too
+[2026-06-09 21:20] gammahivey: averaging down is ok .. .do it all the time
+[2026-06-09 21:20] jk232323: 93% win rate
+[2026-06-09 21:21] gammahivey: but there is a big difference between that and martingaling
+[2026-06-09 21:21] otc4313: after that glbx trade you had you kept going.....wow
+[2026-06-09 21:21] otc4313: gordon gecko style
+[2026-06-09 21:21] jk232323: Well no day trades
+[2026-06-09 21:21] jk232323: Just avg into a swing
+[2026-06-09 21:22] l0rd.helmet: Hard to bottom tick it...
+[2026-06-09 21:29] jk232323: RSP is green 0.5%
+[2026-06-09 21:29] mor_itz: "So despite two months of losses, from a directional standpoint I will breakeven both months of losses at 7365 right now. " ... 👀 @Wizard of Ops👏
+[2026-06-09 21:29] jk232323: Energy and tech only sectors that are currently red
+[2026-06-09 21:45] wizardofops: eh, once the vol event hit, I neutralized a lot of risk, I had to be safer. This turned out to be my second scenario.
+[2026-06-09 21:54] l0rd.helmet: Take the bat flip sir
+[2026-06-09 21:56] fixedrate: How high we going today? Is this it or can we make it to 7400?
+[2026-06-09 21:59] nicowilliamsrw: just came back to the desk and holy crap almost taking back overnight lows...what a bounce
+[2026-06-09 22:02] yahyaz: SPY QTRLY SWEEP DETECTED: >>3000 SPY Mar27 31st 900 Calls $3.7916 Above Ask! [MULTI] 14:59:25.881 IV=13.9% +0.2 C2 549 x $3.72 - $3.77 x 269 ISE OPENING Volume=3026, Premium=$1.14m SPY=737.05 Ref, OI=2328
+[2026-06-09 22:02] yahyaz: lmaooo
+[2026-06-09 22:02] yahyaz: SPY 900
+[2026-06-09 22:02] yahyaz: another 20% rally from here
+[2026-06-09 22:03] phoenix0088020: He isn’t wrong but to early , qqq structure is still same as January - march this year
+[2026-06-09 22:03] phoenix0088020: I am bull so it is sad to see it but can’t deny it
+[2026-06-09 22:04] yahyaz: lmaoooooo
+[2026-06-09 22:04] yahyaz: what a bounce
+[2026-06-09 22:10] jackedtothetatas: This bounce brings back my PTSD from 03/31 where we dropped 400pt and rocketed 2000pt😣
+[2026-06-09 22:14] dauma8500: Really hope squeeze closed some puts today.
+[2026-06-09 22:16] aurmeilius: True. He was going through it
+[2026-06-09 22:18] m______m______m: FIND THA RECIEPTS
+[2026-06-09 22:19] yahyaz: Lets see!
+[2026-06-09 22:19] m______m______m: One could claim it wasnt charm driven but i have my claim
+[2026-06-09 22:19] m______m______m: More like everyone sell cheap puts.exe
+[2026-06-09 22:26] fixedrate: You short here?
+[2026-06-09 22:52] otc4313: one good trade, holding for higher 1C of 4Cs
+[2026-06-09 22:52] yahyaz: light 5 billi to buy
+[2026-06-09 22:53] mark487.: going for HOD?
+[2026-06-09 22:53] otc4313: 29070 my tgt but trailing at 28960s
+[2026-06-09 22:54] jrestrepo: 20 pt 1 min candle on spx
+[2026-06-09 22:54] jrestrepo: thats crazy
+[2026-06-09 22:55] smed23: Wiz what’s tomorrow looking like
+[2026-06-09 22:55] smed23: Show us the path
+[2026-06-09 22:58] nicowilliamsrw: insane
+[2026-06-09 23:00] jrestrepo: We are never going into a recession ever again.
+[2026-06-09 23:00] yahyaz: rippy mode
+[2026-06-09 23:00] jrestrepo: They won't allow it
+[2026-06-09 23:00] gammahivey: madness
+[2026-06-09 23:01] gammahivey: what a day
+[2026-06-09 23:14] m______m______m: Nah I made a claim that our long awaited selloff would be intertwined with a intraday deeply bearish charm profile rather than overnight even off of strong news claims
+[2026-06-09 23:14] m______m______m: People literally needed to sell puts and finally once vol was high enough they got punished for it
+[2026-06-09 23:15] m______m______m: When enough ppl found then fairly valued deep down the chain
+[2026-06-09 23:16] m______m______m: Once spx converted b of a and qqq gex it was game over for bears
+[2026-06-09 23:38] l0rd.helmet: many bears ded today
+[2026-06-10 00:05] l0rd.helmet: we can put todays date in here, with a "2"
+[2026-06-10 00:10] indyicon: Massive failed breakdown,
+[2026-06-10 00:26] apollobix: "ChatGPT, put a "2" in the red circle and make no mistakes. Don't use any tokens either"
+[2026-06-10 00:26] l0rd.helmet: "Do it. Do it now."
+[2026-06-10 00:27] apollobix: "I TOLD you to use no tokens..."
+[2026-06-10 00:27] apollobix: "You are right to push back. I did use the all the token for your monthly budget on this request"
+[2026-06-10 00:29] l0rd.helmet: "Claude, make me $500 in the market today with your personal budget. Make no mistakes. Report back when complete."
+[2026-06-10 00:29] l0rd.helmet: I tried that with my kids
+[2026-06-10 00:29] l0rd.helmet: They just spent money in Xbox games.
+[2026-06-10 00:29] apollobix: they are front running the next bubble

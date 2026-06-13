@@ -1,0 +1,164 @@
+
+==========================================================================================
+WEEK 4-13
+==========================================================================================
+  TREND REGIME    : —
+  BIAS            : Direction: LONG When: After 8:30 AM PPI — if price holds above 6900 SPX (6937 ES) on the first 15-minute pullback Entry: 6927–6940 ES Stop: 6882 ES (below 6850 SPX support) Target 1: 6987 ES (6950 SPX) — scale 1/3 Target 2: 7037 ES (7000 SPX) — scale 1/3, trail remainder Risk: ~45–58 pts | Reward: ~47–135 pts Why it wo
+  CONFIDENCE      : confidence signal. Kill it if: 15-minute candle closes below 6882 ES. VIX spikes above 21. Idea 2 — Data Dip Buy (Highest Conviction IF It Triggers) Direction: LONG When: IF PPI comes in hot or banks disappoint, driving a sell-off to the 6850 SPX zone Entry: 6870–6887 ES Stop: 6832 ES (below 6800 SPX structural floor)
+  VOL REGIME      : —
+  DEALER HEDGING  : Total dealer hedging has shifted dramatically more negative: -$4.36B (was -$2.01B Wednesday). The primary driver is vanna hedging deepening to -$5.01B as the market pushed higher. Meanwhile, gamma hedging has actually strengthened to +$747M — the dampening effect is more powerful. The net result: an environment where m
+  PARADIGM        : —
+  SETUPS:
+     - Setup A — SHORT the Fade at Weekly High [Grade: B] Entry: 6887 ES / 6850 SPX (weekly high rejection zone, on a 5-minute rejection candle) Target: 6855
+     - Setup B — LONG the Bounce at Gamma Wall [Grade: A — PRIMARY] Entry: 6840 ES / 6803 SPX (gamma wall zone, on a 5-minute reversal pattern — hammer or en
+     - Setup D.
+     - Setup C — LONG the Breakout Above 6888 [Grade: C — SCOUT] Entry: 6900 ES / 6863 SPX (break above 6888 + retest holds, on volume) Target: 6940 ES → str
+     - Setup D — SHORT the Cascade Below Gamma Wall [Grade: B] Entry: 6820 ES / 6783 SPX (break below gamma wall, two-candle close below 6837 ES) Target: 673
+     - Setup A) (edited) 1:11 AM Session Summary
+  SPOT/QR         : spot: 7010–7030 SPX (7047–7067 ES). Time decay supports price inside this band. Charm is positive at 7010 SPX (+$31M) and 7030 SPX (+$70M). If price pulls back from current levels into this zone, time decay helps it stabilize there. The +$70M at 7030 SPX is the charm gravity center — expect intraday price to be attract
+  RANGE EXP       : —
+
+==========================================================================================
+WEEK 4-20
+==========================================================================================
+  TREND REGIME    : —
+  BIAS            : Direction: SHORT When: Confirmed break of 7,087 ES — two consecutive 5-minute closes below. Most likely trigger window is midday (post-10:30 AM) if the open flushes the Monday low. Entry: Short at 7,087 ES on confirmed break Stop: 7,102 ES (15 pts above) Target 1: 7,047 ES (7,050 SPX cascade pivot) — scale 50% Target 2
+  CONFIDENCE      : —
+  VOL REGIME      : Vol Regime Context Regime: NORMAL. VIX 20.65 sits just above the boundary between LOW and NORMAL. That means classical vanna polarity applies on Thursday : both positive and negative vanna nodes act as magnets pulling spot toward them. No upside-repel inversion is active. (Inversion only kicks in when VIX breaks above
+  DEALER HEDGING  : total hedging — meaning any rally forces them to buy back, which amplifies upside moves. The spot-volatility relationship has normalized at 0.21 (mildly under-vixed normal), which keeps dealer walls reliable at their stated magnitudes. But two things temper the bullishness. First, the volatility forward curve (VX1) is
+  PARADIGM        : —
+  SPOT/QR         : Spot 7,140–7,175 ES (mid-container) │ └── Watch for rip to 7,180–7,195 on declining volume → Setup 3 short │ └── No rip by 1:00 PM → stand down; pin grinds to 7,135 ES default ├── Spot 7,105–7,135 ES (lower third) │ └── Setup 3 disarmed (spot already below PM pin target) │ └── Setup 1 may re-arm on a 7,105 second-test
+  RANGE EXP       : —
+
+==========================================================================================
+WEEK 4-27
+==========================================================================================
+  TREND REGIME    : —
+  BIAS            : Direction: range with magnet-pull-up early then late-session decay-down. Confidence: medium-high. The morning plan's pin-at-7,200 call has structurally evolved: pin gravity migrated UP 75 SPX points to 7,275-7,280, the strongest single multi-window pin level on the chain. The 7,200 cushion has eroded but the 7,150 cush
+  CONFIDENCE      : Confidence: medium-high. The overnight rally to ES 7,265 has already partially front-run the upper cluster — reactive trades favor fade-the-ceiling at 7,275-7,300 SPX into the pin, defend-the-cushion at 7,150-7,168 SPX. Gamma is real, vanna is back-loaded. Avoid momentum-chase in either direction. Top two setups: A — C
+  VOL REGIME      : Vol Regime Context VIX cash: 18.27 at Friday close. The vol baseline shows 10th percentile of the 6-month distribution sits at 18.08. Current VIX is essentially at the bottom of the regime distribution — a LOW-volatility regime . VX1 futures (front-month): trading 20.45–20.80 zone Friday close. Front-month basis is abo
+  DEALER HEDGING  : $2.35B all-exp vanna = the mega-floor invalidator. Weekly bias: fade rallies into the 7,200–7,260 stack, buy dips into 7,100–7,130 with stop below 7,050, but the entire setup is earnings-week conditional — MSFT/META/GOOGL/AMZN Wed AMC and AAPL Thu AMC are the binary events that decide whether the container holds, break
+  PARADIGM        : positive-gamma regime that flipped on Friday's INTC absorption is still in force three sessions later — Friday morning showed +$735M positive gamma; Friday afternoon +$458M; Sunday afternoon +$612M. That persistence is the structural setup of the week. If it holds into Monday cash open, the pin-and-fade playbook is loc
+  SETUPS:
+     - Setup C (breakout-long) only activates on these conditions; it is a Grade C trade until then. 12:40 AM [IMG:Image attachment] 12:40 AM ---
+     - Setup A's first scale-in zone.
+     - Setup A primary)
+     - Setup B T1 zone
+     - Setup C; a rejection from 7,200 keeps Setup A primary. Friday close — does SPX close above 7,180 (bullish-tilt outcome) or below 7,140 (bearish-tilt o
+     - Setup D (cascade-short below 7,043) — vetoed today.
+  SPOT/QR         : SPOT SPX 7,164.17 / ES 7,194.17 (4:22 PM ET Sun, futures-closed) <<<<<<<<<<<<<<<< SPX 7,160 ████████████████████████████████ TRIPLE-EXTREMES BAND BOTTOM + 4/24 close SPX 7,155 ██████████████ 4/24 cash close + Fri pin -$165M short-gamma SPX 7,150 ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 2-WEEK GAMMA DESTABILIZER (-$23M) SPX 7,145 ▓▓ short-gamm
+  RANGE EXP       : —
+
+==========================================================================================
+WEEK 5-4
+==========================================================================================
+  TREND REGIME    : Trend Regime: range-bound (medium confidence). Working oscillation has held SPX 7,145-7,300 for four-plus weeks; no trend signal points strongly in either direction this morning. Catalyst Tilt: mixed with bearish edge on the immediate window. The 10:00 AM ISM Services + JOLTS double print is the day's first binary. Aft
+  BIAS            : Direction: NEUTRAL pin-and-fade range with bearish-tilt risk on a clean break of SPX 7,200 / ES 7,227. Mode: Tuesday opens as a pin trade, not a directional drive. Primary action upside: fade the SPX 7,300 / ES 7,327 ceiling on any pre-cash rip. Primary action downside: defend SPX 7,200 / ES 7,227 then SPX 7,150 / ES 7
+  CONFIDENCE      : Confidence is medium-high for direction, medium for magnitude — Friday NFP is the binary that decides the magnitude tail. The Sunday read is the structural inverse of Friday's broken-pin close: aggregate dealer-hedging rebuilt 14×, vanna oscillation range preserved at 7,145-7,305, multi-week magnet structure intact at
+  VOL REGIME      : Regime classification: sub-25th-percentile of the six-month range — the LOW bucket. In low-vol, the dealer book behaves classically: upside resistance acts as a cap, downside support acts as a floor magnet. Dealer-fade gauge: prints +1.12 in the undervixed band — rallies get sold, dips get bought. Spot-vol relationship
+  DEALER HEDGING  : -$2.99B (LARGEST short-vanna). 12+ session streak no daily close below. 11:39 PM ## Key Levels [IMG:Image attachment] 11:39 PM --- Structural Ladder ⏫ UPSIDE LEG 3 ──────────────────────────────────────── SPX 7,400 / ES 7,427 ██████████████████ Far cap · vanna stack across windows ⏫ UPSIDE LEG 2 ───────────────────────
+  PARADIGM        : positive-gamma. Aggregate dealer gamma is roughly +$700 million across the chain. What it means for this plan: dealers will sell rallies and buy dips inside the working corridor. Mean-reversion is the dominant mechanic; break-and-go setups inside the corridor get downgraded. Dealer book is short-vanna. Aggregate dealer
+  SETUPS:
+     - Setup A (Triple-Extremes fade short 7,225-7,230): A- — 0.5× (Caution-band) Setup B (Second-test fade short 7,295-7,305): A — 0.5× (Caution-band) Setup
+     - Setup D (Cascade short below 7,145): C — 0.25× scout, SUPPRESSED until conditions met
+     - Setup C at SPX 7,150 intensified cushion, A grade 1.0× sizing) and a dual ceiling-fade short structure: Setup A at SPX 7,225-7,230 (Triple-Extremes co
+     - Setup B at SPX 7,295-7,305 (quad-window second-test fade, A grade with explicit Friday NFP catalyst, half-size from Caution-band). Setup D cascade-sho
+     - Setup B2 LONG at SPX 7,300 retest is the primary path; Setup A2 SHORT at SPX 7,315-7,320 rejection is the secondary scenario. If AMD misses: the 1-wee
+     - Setup A), the SPX 7,300 cushion test (Setup B regime check), and the late-session position into Friday's payrolls release.
+  SPOT/QR         : Spot: SPX 7,221.76 / ES 7,248.76 (Sun 5/1 7 PM ET publish anchor) VIX: 16.69 (DEEP-LOW p5) | VX1: 19.76 (modest contango) Top 3 levels — bullish: 1. SPX 7,200 (strengthened bidirectional pivot, carry-forward call-wall floor +$5.21B Friday) 2. SPX 7,150 (intensified cushion, 1-week dealer-hedging +$87.5M) 3. SPX 7,000 (
+  RANGE EXP       : —
+
+==========================================================================================
+WEEK 5-11
+==========================================================================================
+  TREND REGIME    : Trend Regime: Strong uptrend — five-week run of higher highs into the 5/8 all-time high; trading container migrated up to a 7,300-7,400 base. Catalyst Tilt: MIXED — six binary catalysts in the week (CPI, PPI, Retail Sales, Fed Chair vote, two index-relevant earnings prints). Inflation prints skew bear-risk via the Iran
+  BIAS            : Direction: LONG. Confidence: medium-high. Validation gate: PASS. Buy dips, fade rips only with intraday discipline. 2:02 AM ## Weekly Vol Forecast [IMG:Image attachment] 2:02 AM Setups Setup A — Breakout-Long Continuation Above SPX 7,450 — Grade B, full size The trade. Long SPX / ES above the sticky 7,450 cap with the
+  CONFIDENCE      : confidence into a binary catalyst week. The pinning dealer-positioning at the 7,400-7,450 cluster is intact. The back-month dealer-buy tailwind is active. Container migration to the new 7,300-7,400 base is confirmed from last week. Held at medium-to-high (not high) because the CPI / PPI / Retail Sales stack creates two
+  VOL REGIME      : Regime classification: range-defensive with mean-reverting tendencies. Below spot: negative dealer-positioning concentrates at the SPX 7300 / ES 7323 magnet and at the cushion levels (SPX 7375 / ES 7398, 7350, 7295). Dips get cushioned. Above spot: resistive stack at SPX 7430-7475 / ES 7453-7498 with gamma-flip at SPX
+  DEALER HEDGING  : total hedging notional is -$9.9B (the dealers who write the options are structurally short), but the daily delta-hedge component is +$1.2B (they're holding long-delta hedges on those positions). The translation: when the market dips, dealers buy to maintain those hedges — which gives us a cushion on flushes. (edited) D
+  PARADIGM        : positive-gamma (compressive, the kind of tape that mean-reverts on the close). The short-dated daily-window map is negative-gamma, meaning dealers are biased to amplify directional moves intraday rather than fade them. Layered on top is a very deep negative-vanna read of –$10.69B across all expirations, which keeps a s
+  SETUPS:
+     - Setup B — reload long at the 7,300 primary floor. Highest grade on the chain, swing-eligible. [IMG:✅] Breakout-long Setup A above 7,450 is the multi-s
+     - Setup C (against-the-grain short fade at 7,450) is intraday-only, quarter size with caution, same-day-only — never carried across a cash close. [IMG:🚫
+     - Setup A — Breakout-Long Continuation Above SPX 7,450 — Grade B, full size
+     - Setup D.
+     - Setup D — Cushion-Failure Short Below SPX 7,300 — Grade C, half size tail-hedge
+     - Setup C's extension target shifts from SPX 7500 to SPX 7575. The charm pin at SPX 7400 / ES 7423 is a Wednesday-only effect. Once Wednesday's close pr
+  SPOT/QR         : Spot SPX 7,397.82 / ES 7,420.82 (basis +23) sitting just below last week's ATH 7,427es / 7,404 SPX. VIX 16.76 — undervixed (SVB −0.01, neutral regime). Catalyst Impact 84.47 Strong Bullish Bias. Dealer Premium +$649.36B (massive long premium), Vanna hedging −$10.77B (deeply short — bearish vol posture), Gamma hedging +
+  RANGE EXP       : —
+
+==========================================================================================
+WEEK 5-18
+==========================================================================================
+  TREND REGIME    : Trend Regime: Range / positive-gamma pin — low VIX (16.5), mean-reverting, corridor SPX 7,400–7,600 / ES 7,420–7,620. Catalyst Tilt: Mixed, mildly bullish — the live Iran de-escalation headline is the wildcard, with University of Michigan final sentiment in the morning and a favorable Friday-before-Memorial-Day seasona
+  BIAS            : Bias Short-term (intraday today): NEUTRAL with downside-lean bias. One-week vanna above-spot reading is the meaningful negative signal. Medium-term (this week): RANGE-bound 7,300-7,450 with binary inflection at Wednesday FOMC Minutes plus NVIDIA after-close. Long-term (next week and beyond): Pending NVIDIA Wednesday ou
+  CONFIDENCE      : Confidence: medium. Per-window Greek convergence reads SPX 7,400 as a positive-gamma anchor inside a cushion-corridor (7,300-7,400), with the actual near-spot resistance sitting 20-40 points above at the SPX 7,420-7,440 acceleration belt. The four-window extreme cushion at SPX 7,315 is the single highest-conviction str
+  VOL REGIME      : Vol Regime Context VIX cash 17.94 — mild +0.21 expansion from the prior overnight read, still inside the low-to-mid range band. Vol regime envelope holds: cushion-defense longs are favored at the 7,350-7,300 zone; ceiling-rejection shorts are favored at 7,414+ retouches. No regime-flip threat at this reading — Setups C
+  DEALER HEDGING  : $2.34B). The 7,350 zone you identified as Monday's savior holds genuine vanna and delta backing — that's why it held. The "7,350 was Monday's savior" call is confirmed by per-strike positioning data. Above the corridor: the 7,450 / 7,472 wall → the 7,500-7,510 / 7,522-7,532 repellent stack → the long-dated 7,575-7,600
+  PARADIGM        : positive-gamma round-number anchor (+$30M all-exp gamma, +$3.57B 2wk delta cushion) — supportive Greek territory, not a hard cap. The triple-timeframe extremes scanner does flag 7,400-7,405 as a resistance convergence, and that's a worthwhile sentinel signal, but the per-window Greek data says the heavier dealer pushba
+  SETUPS:
+     - Setup B (buying the 7,315 cushion on a flush) is the primary trade. The positive-gamma anchor at 7,400 absorbs the first push, the 7,420-7,440 acceler
+     - Setup A breakout-long arms only after the post-NVIDIA confirmation.
+     - Setup D tail-hedge only arms in this scenario. (edited) 10:37 PM ## Setups [IMG:Image attachment] [IMG:Image attachment] 10:39 PM [IMG:Image attachmen
+     - Setup C. Anything between 7,380-7,405 is range-chop inside the positive-gamma anchor and we wait for the 7,315 cushion test on Tuesday or Wednesday. T
+     - Setup B's first-tier entry; a HD miss that gaps below 7,390 invalidates Setup A. 8:30 AM ET — Housing Starts + Building Permits. Pairs thematically wi
+     - Setup C — Weekly VAL reclaim long: NOW LIVE. Trigger zone is active — awaiting a 15-min reclaim candle above SPX 7,380. Setup D — Cushion-floor 7,300 
+  SPOT/QR         : SPOT SPX 7,397 / ES 7,418 (Friday) <<<<<<<<<<<<<<<< SPX 7,379 / ES 7,401 · · · · Last week Value-Area Low ⏬ FIRST CUSHION ------------------------------------------- SPX 7,350 / ES 7,372 ▒▒ Transit zone SPX 7,315 / ES 7,337 ▓██▓██▓██▓██ THE CUSHION — 4-window vanna stack SPX 7,300 / ES 7,322 ▓██▓██▓██ Mechanical delta
+  RANGE EXP       : today's range setups stand on their own with no longer-term position to defend. Trade-Style Guidance for This Plan: [IMG:✅] Fade pushes into SPX 7,500–7,560 / ES 7,520–7,580 back toward the pin. [IMG:✅] Buy dips into the SPX 7,400–7,440 / ES 7,420–7,460 floor. [IMG:⚠️] Keep size to half into thin pre-holiday liquidity,
+
+==========================================================================================
+WEEK 5-25
+==========================================================================================
+  TREND REGIME    : Trend Regime: RANGE at medium confidence. The auto-classifier still falls back to the single-snapshot heuristic — fewer than 10 prior ES/SPX session-state files exist on disk, so the fallback returns RANGE which disqualifies any strong-uptrend continuation-template language. Catalyst Tilt: BULLISH. Catalyst Impact 93.8
+  BIAS            : Direction: long. Confidence: medium. Time horizon: intraday-only. What changed in this UPDATE: The 7,570.75 ES reject of the SPX 7,575 wall is the first net-new high-conviction archetype to activate since the morning DAILY The Pre-Named-Cap Second-Test Rejection pattern (~80% historical base rate) is now LIVE-firing Do
+  CONFIDENCE      : Confidence lands Tuesday at 10:00 AM. VIX closed at 16.44, a quiet, low-volatility reading. Macro Context Friday's S&P closed at 7,468 (ES 7,483), down about 5 points on the day, with VIX at 16.44 — by our 6-month volatility baseline, a low-volatility regime. The backdrop into the long weekend is risk-on: easing Iran t
+  VOL REGIME      : Vol Regime Context VIX is 16.44, essentially flat on Friday and below the lower end of its 6-month range — a low-volatility setting. In that setting, dealer hedging runs in its normal, calming fashion: dips tend to get bought and rallies tend to get sold back toward the middle of the range. If Thursday's inflation prin
+  DEALER HEDGING  : $9.15B — the catalyst fuel: on a vol expansion, dealer hedging fades rallies hard. Term Structure : Multi-session, into-next-week read. Near-week gamma is short (−$131M) so the week can trend/break rather than pin; full-chain gamma is long (+$380M), stabilizing the bigger picture. Core PCE and GDP (both Thursday) are t
+  PARADIGM        : positive-gamma cushion (the dip-buy floor), with a support shelf at SPX 7,350–7,420 / ES 7,365–7,435 and a deep floor at SPX 7,000 / ES 7,015. The downside only arms if Thursday's inflation print flips the picture and 7,400 gives way. Upside path: SPX 7,500 / ES 7,515 gate → SPX 7,575 / ES 7,590 magnet → 7,600–7,630 bu
+  SETUPS:
+     - Setup B at SPX 7,500 as the highest-grade trade and a Target-magnetism Setup A at SPX 7,540. As of 8:46am ET, the structure has HELD with three notabl
+     - Setup B's stop and Setup D's entry trigger both pull down 5 SPX to track this. 0DTE option volume surged +38% (67,832 → 93,768 contracts in 70 minutes
+     - Setup A's runners cannot trail to 7,650 today; that contingency is deferred to a post-Thursday-PCE structural confirmation (a clean cool-PCE print wou
+     - Setup A — 0DTE Target Magnetism LONG · SPX 7,540–7,555 / ES 7,555–7,570 — Grade B+, half size
+     - Setup C — Upper-Wall Fade SHORT · SPX 7,620–7,650 / ES 7,635–7,665 — Grade C+, quarter size, counter-trend
+     - Setup D — Lines in the Sand Break SHORT · SPX 7,458 / ES 7,473 — Grade C, quarter size, tail hedge
+  SPOT/QR         : Spot: SPX 7,468 / ES 7,483 Break-and-go long (primary): above SPX 7,510 / ES 7,525 → 7,575 → 7,650 (stop back below SPX 7,495) Buy the dip (second long): SPX 7,400–7,408 / ES 7,415–7,423 (stop below SPX 7,378) Small fade scalp only: SPX 7,498–7,505 / ES 7,513–7,520 (stop SPX 7,515; flips long on a break) Up-targets: SP
+  RANGE EXP       : —
+
+==========================================================================================
+WEEK 6-1
+==========================================================================================
+  TREND REGIME    : —
+  BIAS            : direction: range with a bullish lean. Trade style emphasis: mean-reversion (fade rallies, defend floors on tests). Setups B and C can hold across several sessions. Setup A holds multiple sessions but exits before any Wednesday-or-later Fed speech. Setup D is intraday only. Wrap-Up This week's plan is a corridor trade b
+  CONFIDENCE      : confidence on any trade tied to this level. Idea #3 — the 7,580-7,650 overhead wall (short, watching only). Brand new this week, only 1 confirming reading so far. A cluster of negative dealer-positioning above spot is forming a soft ceiling. Needs 2 more weeks of consistency before it's tradable on its own. For now it'
+  VOL REGIME      : vol regime here is inferred from VIX and VX1 only. Next end-of-week recap will start one. What I Expect Vol to Do This Week A tight range between VIX 15 and 18 looks most likely, with the asymmetric downside risk landing on Friday morning. The Catalyst Impact gauge reads 93.76 (a high-skew bullish reading) — meaning de
+  DEALER HEDGING  : $8.35B (suppression of vol expansion active while VIX is below 17), near-term delta at –$1.97B (slight bearish hedge tilt). The dominant force this week is gamma. The negative aggregate vanna reading confirms the "fade rallies into overhead, defend cushions below" structural bias. 10:02 PM How the Levels Stack Up The r
+  PARADIGM        : positive-gamma concentration on the entire options chain sits at 7,400 — that means dealer hedging mechanically buys SPX on every dip into it. Use 14-to-30 day options here, long enough to stay engaged through the multi-week thesis without burning time value. Walk away if SPX closes below 7,400 / ES 7,413. The numbers
+  SETUPS:
+     - Setup B — long the 7,500 magnet on first test. Grade A, full size, ~5:1 reward-to-risk to second target.
+     - Setup A holds multiple sessions but exits before any Wednesday-or-later Fed speech. Setup D is intraday only.
+     - Setup C — Long the 7,400 deep cushion on first test (unchanged) Full size on first tag, swing-eligible Only triggers on a real risk-off move (NFP miss
+     - Setup D — Long the breakout reclaim above SPX 7,595 / ES 7,608 Half size base, scales to full size on the vol confirmation Trigger: 15-minute close ab
+     - Setup A's short entry.
+     - Setup B) because the one-week vanna structure at SPX 7,630 and the two-week structure at 7,500–7,525 both carry into next week. The front-loaded gamma
+  SPOT/QR         : SPOT SPX 7,577 / ES 7,591 <<<<<<<<<<<<<<<< 7,575 / 7,588 ▓▓▓▓▓▓▓▓▓▓▓▓▓▓ Local cushion at spot 7,539 / 7,552 · · · · 5/25 point of control (chart anchor) 7,520 / 7,533 ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ Three-way cushion 7,517 / 7,530 · · · · 5/25 value-area low (chart anchor) ⏬ TRANSITION BELOW — the 7,500 magnet zone 7,506 / 7,519 ·
+  RANGE EXP       : range expectation: 38–42 pts (benign NFP) / full ATR 55–62 pts (hot/cold NFP) Hard ceiling: SPX 7,650 / ES 7,663 (vanna wall -$256M — untested) Active ceiling: SPX 7,600 / ES 7,613 (triple-negative + 2 rejections confirmed) Magnet: SPX 7,575 / ES 7,588 (pin target +$84M) Active floor: SPX 7,540 / ES 7,553 (gamma cushio
+
+==========================================================================================
+WEEK 6-8
+==========================================================================================
+  TREND REGIME    : Trend Regime: Strong downtrend (medium confidence) — Friday's 200-point crash broke the 6-week uptrend structure. Catalyst Tilt: Bearish — CPI Wednesday is the next high-impact catalyst, arriving into a hostile rate-repricing environment with no Fed-speak relief (blackout through 6/18 FOMC). Strategic Bias Alignment: N
+  BIAS            : Direction: Long Primary Level: SPX 7,575 / ES 7,585 Greek Driver: Vanna +$588M across all expirations (persisting 3 consecutive weeks: late May through early June) Confirmation Count: 1 Recommended Action: WATCH — no position until cross-week confirmation Vol-Regime Check: Currently valid = false (EXTREME IV inverts va
+  CONFIDENCE      : Confidence: Medium Dealers are short across the board — vanna hedging (-$6.6B daily) dominates the mild gamma floor at spot. Under EXTREME volatility with VIX above 20, positive vanna above spot acts as resistance rather than magnet (under elevated volatility, levels that normally attract price now repel it). Rallies t
+  VOL REGIME      : Regime classification: EXTREME — IV at 21.22 vs the 90th-percentile baseline of 17.58. Polarity rule (inverted) is active: positive vanna above spot becomes resistance rather than magnet; negative vanna below spot becomes structural support. This is a one-session-old regime shift. VIX jumped from 15.40 to 21.51 on June
+  DEALER HEDGING  : Total dealer hedging now reads -$5.85B — deeply negative — meaning dealers amplify moves rather than dampen them. This is an amplification regime : every directional push generates more push in the same direction because dealers must hedge in the direction of the move. The dominant force is the daily vanna hedging comp
+  PARADIGM        : amplification regime : every directional push generates more push in the same direction because dealers must hedge in the direction of the move. The dominant force is the daily vanna hedging component at -$6.6B short . As long as volatility stays elevated (VIX above 20), dealers are forced sellers on every rally attemp
+  SETUPS:
+     - Setup A (the fade-short).
+     - Setup A. A second thesis — the SPX 7,575 vanna-attractor — is in observation stage (1 confirmation; no position warranted). 11:31 AM Term Structure
+     - Setup B — Cushion-Defense LONG at SPX 7,340–7,362 / ES 7,350–7,375 — Grade B (78), 0.5x
+     - Setup C — Breakdown Continuation SHORT below SPX 7,340 / ES 7,350 — Grade C (65), 0.25x
+     - Setup D — Fade Short at broken SPX 7,500 / ES 7,510 floor — Grade B- (72), 0.5x
+     - Setup A, narrower thesis (single-window Greeks).
+  SPOT/QR         : Spot: SPX 7,356 / ES 7,366 (Friday close); ES ~7,415 / SPX ~7,405 (Sunday evening) Today's range expectation: 200.5 pts ES (99th percentile) Hard ceiling: SPX 7,600 / ES 7,610 (monthly vanna ceiling) Active ceiling: SPX 7,575 / ES 7,585 (multi-expiration vanna wall — Setup A fade zone) Broken-floor resistance: SPX 7,50
+  RANGE EXP       : range expectation: 200.5 pts ES (99th percentile) Hard ceiling: SPX 7,600 / ES 7,610 (monthly vanna ceiling) Active ceiling: SPX 7,575 / ES 7,585 (multi-expiration vanna wall — Setup A fade zone) Broken-floor resistance: SPX 7,500 / ES 7,510 (former 6-week floor flipped to resistance — Setup D fade zone) Magnet: SPX 7,

@@ -1,0 +1,671 @@
+=== PAGE 1 ===
+________________________  
+Acknowledgements  
+Thank you to Michael Shields and Max Turnquist of Aureum , LLC for your brilliance in quantitative 
+development  and partnership in bringing Volland to life ; Hunter Edmonds for your data analysis  
+and development of charts and figures ; Paul Choi, David Olson, Mark Phillips, and Henry Schwartz 
+for your  critical review and commentary  on the ideas  presented herein ; and Jill A. DeLorenzo for 
+your careful editing and formatting of this paper.  
+ 
+Copyright © 2023 by Ad Deum Funds, LLC. All rights reserved.  
+ 
+Impact of option dealer flows on 
+equity returns  
+ 
+ 
+ 
+Jason D. DeLorenzo*  
+December 19, 2023  
+  
+Abstract  
+ Option dealer hedging is a major driver in market movements. This is apparent  after  analyzing  the 
+data both on a daily and intraday timeframe . We sought  patterns between our proprietary option 
+dealer positioning data (Volland)  and market returns. We used standard scientific method practices 
+to test the significance of our data. We conclude  that option dealers are predominantly more sensitive 
+to changes in implied volatility than to the movement in the underlying equity. On zero days to 
+expiration ( 0DTE ) observations, analyzing charm yields a significant edge when applied in the right 
+time frame relative to expiration.  
+ JEL Classification: G11, G12, G17, Y10   
+Keywords: Delta, Charm, Gamma, Vanna, Vega, option dealers, option wholesalers  
+ *Jason D. DeLorenzo founded Ad Deum Funds, LLC, a registered investment advisor, in 2018. He 
+serves as the firm’s Principal and Owner. Mr. DeLorenzo created the Volland options dealer positioning platform and offers it as a subscription service.  
+=== PAGE 2 ===
+ 
+info@addeumfunds.com    1 
+www.addeumfunds.com   1. Introduction  
+When the Chicago Board of Options Exchange launched their options product in 1973,  they 
+had no idea  how popular their product would become. On that first day, only 16 equities had options 
+on them, and 911 options were traded that day (Cboe Exchange, Inc. 2023). Now, roughly 44.4 million 
+option contracts are traded every day on average with as many as 70 million contracts traded across 
+countless equities, indices, and futures (The Options Clearing Corporation 2023) . Since then, options 
+have been blamed for numerous stock market crashes including the 1987 Crash and the 2010 “Flash Crash”. In both cases, laws were passed to further regulate derivative trading (Bernhardt and Eckblad 
+2013) (U.S. Commodity Futures Trading Commission, U.S. Securities and Exchange Commission 2010) . 
+ Since options were invented, options dealers ( or wholesalers) have used the underlying 
+security to hedge their position (Kambhu 1998) . Just prior to the Cboe ’s launch of options in America, 
+Fischer Black and Myron Scholes co -wrote a journal article that created a model for pricing options, 
+allowing for them to be widely commercially available (Black and Scholes 1973). The Black -Scholes -
+Merton model is still relevant today as the foundation of all options pricing and hedging models.  
+ However, with the increase in the popularity of options, option dealers’ hedging 
+requirements have become more of a driving force in markets. Further, as options have become more 
+popular, pricing has become more competitive, as seen in Table 1. Of all the options traded, an 
+estimated 90% are facilitated by options dealers, who use the underlying as a primary hedging 
+method (Cboe Exchange, Inc. 2023).  
+ 
+Table 1. Average Bid -Ask Spreads by Year.  
+ 
+Source: Horstmeyer, Favro and Yelland 2022 . 
+
+=== PAGE 3 ===
+ 
+info@addeumfunds.com    2 
+www.addeumfunds.com    Given these facts, an estimation of the option  dealer’s book would be very valuable. It was not 
+until SqueezeMetrics released his “Gamma Exposure” paper that anyone attempted to model the 
+option dealer book (SqueezeMetrics 2017) . This model’s value was immediately recognized by the 
+trading public. However, the nature of the model relied on assumptions that were spurious ; 
+therefore, as option trading increases in complexity , a more granular model is needed. Volland is that 
+model ( Ad Deum Funds  2023) . 
+ This paper will give a brief overview of the relevant metrics that option dealers use to hedge 
+their position. It will then describe at a high level how the algorithm behind Volland determines 
+option dealer positioning and its accuracy compared to C boe open/close data. Then , it will show the 
+correlation between data within Volland and daily movement in the SPX index that represents its 
+underlying. Finally, it will scrutinize the 0DTE tenor of options, and their impact on the market.  
+ 
+2. Who are Option Dealers?  
+When an option order is received, a middle man, called an “options dealer” or “options 
+wholesaler” (and sometimes referred to as a “ market maker ” although that is not exactly 
+synonymous) , is financially incentivized to accept the order. These entities (individuals, firms, etc.) 
+provide essential liquidity for markets to function. Because they are exposed to adverse selection, 
+they are motivated to hedge their risk. Their business is to buy options at the bid, sell at the ask, and 
+collect profits from the spread. As a result, it is in an option dealer’s  best interest to hedge away as 
+much risk as possible.  
+If any of the greeks  fell outside an acceptable threshold, many risk desks  would punish the 
+option dealer with heavy repercussions up to and including firing for multiple violations. Nowadays, 
+a small set of liquidity providers handles a large portion of option orders. Currently, most market 
+making is done through algorithms and computers, and there is little physical trading on an exchange.  
+ 
+3. The Black -Scholes Model and the Greeks  
+Extensive literature exists concerning the Black -Scholes model , and  the purpose of this paper 
+is not to discuss  the Black -Scholes Model or its relevance in today’s options pricing. In fact, each 
+individual market maker and serious options trader has their own proprietary pricing model. For 
+this paper, we will  use an adjusted Black -Scholes model and its derivatives (denoted as “greeks”) to 
+estimate option dealer positioning. Such a method is a simple yet comprehensive measure of option 
+=== PAGE 4 ===
+ 
+info@addeumfunds.com    3 
+www.addeumfunds.com   pricing and implied volatility (IV), as well as adjusted to account for skew and alternative 
+distributions implied by the data. The main greeks we will examine  are defined as follows.  
+ 
+a. Delta  
+Delta shows how much profit you can expect with a $1 increase in the underlying stock price. 
+This greek is also interpreted as the percent chance the option ends “in the money .” While these 
+definitions are common parlance, the pertinent  definition of delta, as pertains to option dealers , is 
+how many shares of the underlying the  option  dealers need to fully hedge their position at any given 
+moment. Option dealer delta is assumed to be hedged before the end of the day, based on hedging 
+best practices. This is because delta is the immediate risk that option dealers assume when they 
+accept an options position.  
+The delta of an option can change based on several factors. Since the goal of this model is to 
+estimate the aggregate option dealer book, the focus is the impact of variables on delta.  
+ 
+b. Gamma  
+Gamma is the sensitivity of delta to movements in the underlying price. Aggregate option 
+dealer gamma positioning is inversely correlated to standard deviations of realized volatility. In other 
+words, as option dealer gamma exposure decreases, volatility increases.  
+It is helpful to know this data on a strike -by-strike basis to understand how the market will 
+act as it approaches each strike. The higher magnitude of gamma at each strike, the more that strike 
+can act as an accelerant or support/resistance to the underlying market. A large positive gamma 
+position would act as support or resistance while large negative gamma positions would act as 
+accelerant s.      
+ 
+c. Vega  
+Vega measures how much profit is made on the options position based on a one -point 
+increase in annualized implied volatility. Option dealer vega is not necessarily immediately hedged, 
+as market makers have a wider risk acceptance for vega than for delta since its robust term structure 
+and variance surrounding events makes it more difficult to hedge effectively. To an extent, vega risk 
+is assumed to have realized gains through mean reversion, but it can also be  the first indication of 
+option dealer stress. Vega can be a source of liquidity strain to option dealers and can cause “vol 
+events” since vega impacts are independent of underlying impacts, but cause differences in price that 
+are not constrained  (Black and Scholes 1973) . 
+=== PAGE 5 ===
+ 
+info@addeumfunds.com    4 
+www.addeumfunds.com    
+d. Vanna  
+Vanna is the sensitivity of deltas to changes in implied volatility. It can also be interpreted as 
+changes to vega based on movements in the underlying. To be precise, vanna measures the change 
+in deltas for every one -point change in annualized implied volatility on a particular option (fixed 
+strike volatility).  
+Option dealer vanna positioning is inversely correlated to market trend. In other words, if 
+total option dealer notional vanna is positive, the market trend will be negative if implied volatility 
+is increasing, and vice versa.  
+One quality of vanna that makes it unique is that the exposure is positive or negative based 
+on its position to current price. For instance, an out -of-the-money put has negative vanna, because 
+as implied volatility decreases, its delta increases and trends from negative delta towards 0, but if 
+that same put is in -the-money, it will trend towards - 1 delta instead of 0, so the vanna is positive 
+because as implied volatility decreases, the delta of that option also decreases. This is because vanna 
+is the slope  of the vega curve as it relates to underlying price. Vanna has a larger impact when implied 
+volatility is high.  
+ 
+e. Charm  
+Charm is the sensitivity of deltas to the passage of one day in time. Cumulative option dealer 
+charm positioning will help determine the daily bias in the markets. Time to expiration is always 
+decreasing, and the exponential portion of it is accounted for in the actual measurement. Due to the 
+changing value of each day as the options approach  expiration, charm is the most volatile indicator 
+in Volland on the day of expiration.  
+Like vanna, charm exposure is positive or negative based on its position to current price. 
+However, because we calculate it as the passage of time (+1 day passing), it is the opposite sign of 
+vanna on each strike. Charm cooperates with vanna when implied volatility is decreasing, since time 
+until expiration is always decreasing . Both vanna and charm calculate the effect the option premium 
+has on deltas.  
+The effective time horizon of charm is typically 1 -2 days, meaning that charm is very potent 
+0-1 days until expiration. This is because when there is little time left until an option expires, each 
+time interval is more valuable than if the expiration is more distant. Charm effect is minimal when 
+there are greater than 2 days until expiration.  
+ 
+=== PAGE 6 ===
+ 
+info@addeumfunds.com    5 
+www.addeumfunds.com   4. Calculating Options Dealer Positioning  
+Volland is one of the only trade -level services in determining options dealer positioning. 
+Volland uses a real -time option trade execution feed through the Option Pricing Regulatory Authority 
+(OPRA) to identify every option trade executed. On an option order -by-order basis using executed 
+price, surrounding orders, Black -Scholes fair value, and bid/a sk spreads as a guide, Volland 
+determines if each order filled is a buy or a write on the dealer side using our proprietary 
+methodology. For each strike at each expiration, Volland compiles the total option  dealer positioning 
+and calculates the greeks on the aggregate position and at each strike. For the Exposure Sheet, 
+Volland calculates how much of each greek exposure the dealers would have at each strike. This is 
+relevant to determine the hedging momentum  for each greek.  
+ The C boe distributes open/close data, the definitive answer to which orders are dealer -
+bought or - sold. Since C boe has a monopoly on the SPX index, we have tested our methodology 
+against it . Volland is  over 90% accuracy over all expirations, with 99% accuracy in 0DTE options.   
+To determine aggregate dealer greeks, we sum all the strike values together at any given time.  
+5. Ground Rules and Assumptions   
+ For the purposes of our analysis , the following ground rules and assumptions  are relevant . 
+ 
+a. Volland Non -0DTE Framework  
+1. The timeframe of this study is all accumulated Volland data from 2018 -2022 using Cboe  
+open/close dealer positioning.  
+2. This study focuses on SPX options.  
+3. Because dealers are strongly economically compelled  to be hedged at the end of every day, 
+correlations are on a daily timeframe.  
+4. Deltas are converted to delta notional values using the formula: delta * total_size * 100 * 
+current underlying value.  
+5. Dealer hedging requirements are determined by the greek’s aggregate notional value 
+multiplied by the movement in the variable associated with the greek.  
+6. Unless otherwise specified, no outliers were removed in these analyses.  
+ 
+b. Volland 0DTE Framework  
+1. The dataset for this data is from 2023.  
+2. This study also focuses on SPX options.  
+=== PAGE 7 ===
+ 
+info@addeumfunds.com    6 
+www.addeumfunds.com   3. This study uses Volland categorization.  
+4. Deltas are converted to delta notional values using the formula: delta * total_size * 100 * 
+current_underlying. 
+5. Options that are between - .03 and .03 delta are eliminated to make a cleaner reading.  
+ 
+6. Notable Data Results  
+We hypothesize that, if options dealer positioning impacts market performance, then the 
+Volland- accumulated Greek positioning should have some bearing and correlation to the market on 
+an intraday, daily, or multi -day basis.  
+This section describes some of the more compelling findings from our analysis , including 
+those  that we believe to be most actionable to  traders. The results  begin  with a well -established 
+correlation between IV and market pricing , but calls to question the common explanation for it. The 
+impact of aggregate gamma hedging is compared to the impact of aggregate vega hedging. The 
+relevance of aggregate vanna is explored with the purpose of identifying actionable results.  
+The notable data results for 0DTE option data  are reserved for the subsequent section .    
+ 
+a. Spot -Vol Correlation  
+ 
+Figure 1. VIX Point Change versus SPX Percentage Change.  
+ 
+The correlation between spot price and volatility is well- known and - documented (Bennett 
+2014). The typical correlation is -.70 VIX annualized points for every 1% of SPX, and an R2 of 50 -60%. 
+      The sample dataset has a similar regression to the averages stated above and is statistically 
+significant. However, not enough work was done to determine why this correlation exists. The 
+prevailing wisdom is that gearing and dynamic volatility hedging is the cause of this correlation 
+
+=== PAGE 8 ===
+ 
+info@addeumfunds.com    7 
+www.addeumfunds.com   (Bennett 2014) . We explore alternative reasons for the existence of volatility -spot correlation, and 
+reason that options dealer volatility positioning may have more of a direct linkage to enforcing this 
+correlation than traditionally accepted (untested) explanations. This also leads us to examine 
+aggregate vanna hedging as it pertains to the possible impact in spot markets. Finally, we also 
+determine that 0DTE  hedging dynamics play a persistent role in market patterns and performance. 
+VIX approximates volatility based on the calculations devised by the C boe (Cboe Exchange, 
+Inc. 2019). It does a well -enough job that there is a strong correlation between VIX and SPX. VIX is 
+also considered the fair price for a variance swap. Because of this, VIX is a suitable measure from 
+which  to draw correlations to volatility, despite its shortcomings.  
+ 
+b. First Order Greek Correlation to SPX Changes  
+ 
+i. Daily Delta Change to SPX Correlation  
+Because of its definition as the first moment of pricing options, delta hedging correlation is a 
+natural place to start to see if option dealer hedging has an impact on the market. As soon as a trade 
+is put on, the net delta of that trade demands immediate action. Since option dealers must be hedged 
+at the end of every day, and the day consists of millions of options traded, the reaction is that delta 
+notional changes should be hedged within the same day and should result in a strong correlation.  
+ 
+Figure 2. Aggregate Delta Change versus SPX Percentage Change.  
+ 
+Judging by the regression in Figure  2, there is a statistically significant correlation between 
+delta changes and movement in SPX. However, this correlation is weaker than spot -vol correlation , 
+and there are some data points that stray very far from the regression curve without any discernible 
+
+=== PAGE 9 ===
+ 
+info@addeumfunds.com    8 
+www.addeumfunds.com   pattern. This means that there are other variables that need to be considered in this arena.  
+Alternatively, delta may be hedged in other ways than strictly using underlying. There are other 
+correlations that have follow -on effects that influence this regression.   
+ 
+ii. Daily Vega Hedging Requirements to SPX Correlation  
+The second moment greek driver is vega, which is the impact of implied volatility on profit 
+and loss ( P&L ). This  should be subordinate to delta. However,  when considering option  dealer 
+positioning, vega is dramatically more correlated  – and the stray datapoints are prejudiced to 
+stronger notional hedging requirements. Furthermore, vega’s hedging requirements are 100  times  
+that of delta’s notional. In fact, vega’s R2 and slope are very similar to the inverse spot -vol 
+correlation’s slope (since  option  dealers hedge in the opposite direction of their implicit greek 
+imbalance). While not a conclusive case, there is a lot of evidence to suggest option dealer vega 
+hedging drives spot -vol correlation, not new positioning. Further, it describes why skew is so closely 
+related to the spot -vol correlation.  Skew is the assumption of IV movement by  option  dealers given a 
+move in spot, so the vega hedging correlation shows option dealers how much their hedging needs 
+to change given a move in spot price.   
+ 
+Figure 3. Vega Hedging versus SPX Percentage Change.  
+ 
+Further study shows that option dealers are perpetually short vega, as seen in Figure  4.  
+ 
+  
+
+=== PAGE 10 ===
+ 
+info@addeumfunds.com    9 
+www.addeumfunds.com   Figure 4 . Aggregate Vega.  
+ 
+Figure 4  suggests that option dealers are net short options, particularly in the longer -dated 
+tenors. Knowing the behavior of SPX in 2022, this also suggests that , as the market drops in a manner 
+that is consistent with liquidity, options dealer negative vega exposure increases  – which forces them 
+to buy more vol to hedge their newfound vega (at least when vanna is positive) . During typical bull 
+markets, the option  dealer vega exposure is likely a distribution centered below spot price driven by 
+short dealer puts. It also suggests that as option dealer vega exposure increases, the market’s 
+adherence to spot -vol correlation is stronger.  
+From a Volland data standpoint, when determining option dealer hedging requirements, a lot 
+of the SPX vega is hedged outside the SPX complex  – some through futures, some through dispersion  
+in SPY, and other s through  single names. Henry Schwartz, Vice President, Global Head of Client 
+Engagement at Cboe Global Markets, Inc. (Cboe), stated  “I would guess only 25% of SPX option vega 
+is hedged in VIX instruments. The market makers that are taking that are warehousing this risk are 
+usually pretty happy to carry it and also lots of SPX is hedged out in dispersion style portfolios”  
+(Henry Schwartz, text  message to author, December 15, 2023) . As a result, it is a risk that option 
+market makers are willing to accept since it is not worth the cost to hedge it. This could explain why  
+from a notional standpoint, vega is the most correlated greek to hedging requirements , as well as the 
+strongest in terms of notional hedging requirements per point. Fortunately, vega is strongest in 
+longer tenors where IV is less variable, so that’s where option  dealers hedge that risk, if at all.   
+ 
+ 
+ 
+
+=== PAGE 11 ===
+ 
+info@addeumfunds.com    10 
+www.addeumfunds.com   c. Second Order Greek Correlations  
+ 
+i. Gamma Correlation to SPX  
+With gamma, when price is coming down, option dealers seem to be buying into the downside 
+pressure but selling into upside pressure  based on Figure 5 . Furthermore, gamma is very correlated 
+to the market in this way. This finding was unexpected, particularly if most of the time gamma is 
+positive. The anomaly is apparent, however, when the y -axis in Figure 4  is looked at more closely as 
+it relates to vega. Aggregate vega is in the trillions per IV point, while aggregate gamma hedging is 
+roughly $5- $10B per SPX point. In short, gamma hedging is almost insignificant compared to vega 
+hedging. The fact that  gamma  is correlated at all is likely an externality of vega exposure instead of 
+causation itself.  
+ 
+Figure 5. Gamma Daily Notional Hedging versus SPX Percentage Change.  
+ 
+The inverse nature of this correlation also suggests that gamma is positive. Indeed, option  
+dealer gamma exposure is typically positive while vega is typically negative. The conclusion from our 
+data is that option  dealers are long the near -dated tenors while short the far -dated tenors. This 
+phenomenon can also explain why, in normal liquidity conditions, the term structure on implied 
+volatility is in strong contango.   
+  
+ii. Vanna and the Spot -Vol Correlation  
+ Vanna is the second order g reek that has gained attention as a market driver recently. It has 
+become an opaque and immeasurable effect that is generally seen as a bullish force closer to monthly 
+option expiration, but there are currently no metrics to determine the strength of this effect or even 
+
+=== PAGE 12 ===
+ 
+info@addeumfunds.com    11 
+www.addeumfunds.com   if this perception is real.  While  the cause -and-effect  cycle of vanna impacts on the market appear to 
+be unfathomable, the data shows otherwise which will be explored in a later standalone study 
+ On an individual option, vanna is the slope of the vega curve as it relates to moves in the 
+underlying. As a result, vanna can be seen as having the same effect as gamma but with changes to 
+realized  volatility as the driver instead of moves in the underlying. As shown in Figures  3 and 4, vega 
+hedging is a primary driver of SPX market moves . This means option dealer vanna has a profound 
+effect on the markets, even if on a secondary basis , by increasing or decreasing vega exposure  as the 
+market moves .  
+Vanna itself does not correlate well to market moves independent of vega. Since it is the slope 
+of the vega curve, it needs to be considered in concert with vega to recognize its effect. To do this, we 
+have converted vanna into a stochastic to show where the market currently is on the option dealer 
+book vega curve. This method shows the sensitivity of the vega exposure to market moves. If the 
+vanna stochastic is at 1 or -1, that means the vega curve is as sensitive to market moves as it possibly 
+can be given the current  option  dealer positioning. If the vanna stochastic is at 0, it means that IV has 
+complete control of vega hedging, as the market would be at the dealers’ highest extreme vega value. 
+Additionally, one might interpret this as meaning that the closer the vanna stochastic is to extremes, 
+the more momentum the market will experience.  
+ In Figure 6 , we showed the cumulative daily value of the vanna stochastic on the option dealer 
+book as presented by Volland.  
+ 
+Figure 6.  Cumulative Vanna Stochastic.  
+ 
+ 
+
+=== PAGE 13 ===
+ 
+info@addeumfunds.com    12 
+www.addeumfunds.com   The strong positive or negative timeframes signify strong momentum in underlying prices 
+with the sign as a leading indicator of a bull or bear market. The flat readings signify times where IV 
+moves have more of an effect on market movement and vanna tracki ng has little effect on market 
+movement. This is significant because vanna is heavily dependent on realized volatility for its 
+measurement. Since implied volatility and realized volatility are correlated with realized being a 
+leading indicator of implied most of the time, the vanna stochastic mea surement could show periods 
+of stress within 1 -3 months of actual market stress. This must be considered alongside vega for a full 
+picture, but you can tell that vanna can lead secular market declines . 
+These results were unexpected. The assumed expectation was for strong positive vanna 
+levels to be bullish and to see rare occurrences of negative vanna timeframes. However, all of 2022 
+was negative vanna alongside a massive growth in vega as we saw in Figure 4. Since calls are mostly 
+sold and puts are mostly bought by customers, a negative vanna reading can either mean that the 
+market has dropped below the midpoint of the option dealer vega distribution or option dealers have 
+passed the peak of positive dealer vega from their long call positions.  
+As a concluding observation, the popular belief is that option dealer gamma is the reason for 
+market moves connected with option dealers. If that were the case, positive gamma would show 
+downside hedging pressure in bull markets. Since it is solely based on the underlying, these positive 
+readings would show increased resistance as price moves up. While that may be the case with 
+liqu idity concerns or other outside buying force pushing price to the upside, the data suggests that 
+the decline of implied volatility  – and, therefore, vega and vanna hedging  – is the true culprit to 
+market activity . This is because the gamma hedging correlation is inverse to market moves. In short, 
+we conclude that the high level of focus on gamma as a market -moving force is misguided.  
+ 
+7. 0DTE Option Dealer Hedging Data 
+ It is impossible to talk about option  dealer positioning nowadays and not mention so -called 
+“0DTE options”. These are daily options offered 2 weeks in advance, but the volume of these options 
+grows exponentially on the day of expiration.  
+0DTE options have inspired  many white papers before this one, with varying opinions and 
+different approaches to measuring the impact of 0DTE options. Many of these papers hold 
+diametrically opposed positions both on perceived dealer impact on the market and the impact of 
+these options on the market overall. Ironically, each of these papers are correct in assessing the 
+option dealer book in 0DTE options at different times. This has inspired the Volland community to 
+name the paradigm seen in 0DTE options that day after the paper that described it.  
+=== PAGE 14 ===
+ 
+info@addeumfunds.com    13 
+www.addeumfunds.com   We define these paradigms in terms of charm. Charm is the reaction of deltas to the passage 
+of time, and with 0DTE options, the effect of the passage of time grows exponentially. Each paradigm 
+is described as follows : 
+“BofA P aradigm”  – Bank of America released an investor note in May 2023 stating that 
+customers are net buyers of both puts and calls, and that the result is  option  dealers suppress 
+volatility (BofA Global Research 2023). From a charm perspective, this is seen as negative charm 
+below spot and positive charm above spot. This is the equivalent of option  dealers being short 
+strangles in a range of strikes. While initially this implies a day of strong momentum due to charm, 
+option dealers also have net positive premium. The working theory is that  they hedge with their 
+premiums in mind, gatekeeping the areas where that premium gained turns negative, which serves 
+as a “line in the sand”. A line in the sand is the strike where option dealers must change their hedging 
+behavior from buying to selling, or vice versa. While that is the working theory, it is fitted to the data 
+we notice, and is not proven. The skepticism surrounding that theory is that the objective of option 
+dealers is to trade as much positive expectancy over their cost of risk management. Either way, we 
+observe that lines in the sand are defended in this paradigm, even if the reason is not known with 
+certainty now. The BofA paradigm is the most frequent paradigm we see.  
+“GEX Paradigm”  – The GEX paradigm is named after the Gamma Exposure white paper 
+released by SqueezeMetrics in 2017 (SqueezeMetrics 2017). This paper was the first real attempt at 
+modeling option dealer positioning; it made a blanket assumption that all puts were bought, and all 
+calls were sold. At the time, larger institutions like insurance companies and long -only hedge funds 
+used options in this way, and granular data like Volland was not available. This, however, wa s not a 
+comprehensive picture of option dealer positioning. From a charm perspective, negative net charm 
+both above and below price is how this shows. This means that on the downside there is a line in the 
+sand, but with strong net negative charm option dealers must buy to hedge their position up to a 
+charm balance point referred to as a target. Targets are out -of-the-money (OTM) strikes that should 
+be hit during the day, but do not necessarily close at that value. GEX paradigms manifest on bullish 
+trend days. The GEX paradigm is the second most common paradigm.  
+“Anti -GEX Paradigm”  – N o existing literature references a scenario where customers buy 
+calls and sell puts, leaving the option dealers with a bearish risk reversal position. As a result, we 
+refer to this state as the Anti -GEX paradigm because it is the opposite of the GEX paradigm. From a 
+charm perspective, this presents as positive charm on both sides of spot , resulting in a bearish trend. 
+Like the GEX paradigm, there is a line in the sand and a target ; however , the line in the sand is above 
+spot , while the target is below spot. The Anti -GEX paradigm is the third most common paradigm.  
+=== PAGE 15 ===
+ 
+info@addeumfunds.com    14 
+www.addeumfunds.com   “Sidial Paradigm”  – In 2023, The Ambrus Group, with Kris Sidial as its Co -Chief Investment 
+Officer, released a paper describing another possible paradigm seen in the 0DTE options market (The 
+Ambrus Group 2023). Using slight movements in implied volatility on an order level, Kris describes 
+a scenario where option dealers are long options both above and below spot. This paradigm is the 
+opposite of the BofA paradigm but acts similarly. In this scenario, option dealers will work to revert 
+the market to where they are charm neutral. Therefore, the market is mean reverting to a single 
+target that closes within a certain percentage. This is the least common of all paradigms by a wide 
+margin, and typically only shows up when a target is approached in a GEX or Anti -GEX paradigm. This 
+is because the homogenous charm profile flips as the market advances toward the target of those 
+paradigm s, but because it is not actually net short options, those Sidial paradigms do not work as 
+prescribed. 
+ 
+8. 0DTE Statistical Results  
+Using the definitions presented in Section 6 - 0DTE Option Dealer Hedging Data for each 0DTE 
+paradigm, here are the 2023 backtested rates for 0DTE trades.  
+ 
+Table 2. 0DTE Paradigm Results, 2023.  
+ 
+These results are compelling , because they show how much capital and control the option 
+dealers have over the markets. In this scenario, dealers are net positive premiums; when the market 
+closes between the lines in the sand, they are collecting premiums as a part of their profits. So, if the 
+lines in the sand are defended, they increase net profits. Based on several private interviews with 
+experienced  option  dealers , we learned that option dealers  do not dynamically hedge  because of 
+increased costs . In fact, option dealers  warehouse their risk until the end of the day, typically 1 -2.5 
+hours until expiration, independent of events that happen in the afternoon.  
+We continue with t he timings and discussion of the successful readings.  All times below are 
+in Eastern time (EST: UTC−05:00 , EDT: UTC−04:00).  
+
+=== PAGE 16 ===
+ 
+info@addeumfunds.com    15 
+www.addeumfunds.com    
+ 
+a. Bank of America (BofA) Paradigm Results  
+The BofA paradigm success is defined as the price closing between the two lines in the sand 
+established as the largest negative charm strike to the downside, and largest positive charm strike to 
+the upside. The profile of the BofA paradigm success is shown in Table 3.  
+ 
+Table 3. Bank of America (BofA) Paradigm Results by Observation Time.  
+ 
+The first thing to notice is how the put lines are ~.65% away from the SPX price , while call 
+lines in the sand are almost half that at ~.30%. When a BofA paradigm is observed, however, the 
+upper bound is 1.5 standard deviations from the SPX average return in that timeframe. Further, the 
+return average is positive, despite the downside line in the sand having more implied volatility.  The 
+success rate speaks for itself and lends itself to iron condors executed at the 10:30 a.m. timeframe. 
+The deltas of these lines in the sand range between .15 to .3, which is enough premium to justify the 
+high success rate. This reflects the variance in IV when these options are bought by customers but 
+with a consistent spread that is actionable.   
+ 
+b. GEX and Anti -GEX Paradigm Results  
+The GEX and Anti -GEX Paradigms define success as a target being reached at some point 
+during the day , with failure being defined as a breach of the line in the sand. If it closes between those 
+two points without either being breached, it is a neutral outcome. While the data in Table 4 is 
+compelling, let us add some context.  
+ 
+
+=== PAGE 17 ===
+ 
+info@addeumfunds.com    16 
+www.addeumfunds.com   Table 4. GEX Paradigm Results by Observation Time. 
+ 
+ 
+Table 5. Anti -GEX Paradigm Results by Observation Time.  
+ 
+These targets during the midday are ~.25 deltas away from the spot price, which on average 
+moves less than .01% during these same timeframes. That means option dealer skew is different from 
+market -priced skew in these paradigms and creates an opportunity to observe trending days in 
+equities. The success rate on targets in Anti -GEX paradigms seems to justify a trade using that target 
+
+=== PAGE 18 ===
+ 
+info@addeumfunds.com    17 
+www.addeumfunds.com   during the day. The GEX paradigm seems to accelerate during the first hour of the day, but if the target 
+is not reached before 1pm, the chances of success diminish. Further, both paradigms seem to 
+transition progressively during the day to primarily BofA paradigms. If they transition to Sidial 
+paradigms, it is because the target is reached. As seen in Table  6, the GEX paradigm is more likely to  
+transition to a different paradigm within the first hour of the day. It seems the sweet spot again for 
+trading the GEX paradigm is at 10:30  a.m, when there is still a significant  chance  the target gets 
+reached , but a diminished probability of a transition out of the paradigm.  
+ 
+Table 6. GEX Paradigm Transition Frequency.  
+ 
+Anti -GEX paradigm transitions are more frequently target hits, as indicated by the number of 
+transitions to Sidial paradigms starting at 11:30  a.m. This is the first paradigm that needs a little more 
+time than 1 hour from the open to maximize statistical edge , but the late morning is again when to 
+apply trades destined for a target in Anti -GEX paradigms.  
+  
+Table 7. Anti -GEX Paradigm Transition Frequency.  
+ 
+One firm conclusion that can be reached is that the lines in the sand are very infrequently 
+breached in all these paradigms, which allows for short gamma trades on the line in the sand when 
+these paradigms are observed.  
+ 
+c. Sidial Paradigm Results  
+The Sidial paradigm does not happen often enough to create statistical significance in any 
+analysis conducted so far. The charm profile shows that option dealers will delta hedge to a single 
+point, but the fact they are strongly negative premium would suggest option  dealers would want 
+more volatility during this paradigm. As more instances of Sidial paradigms develop, data analysis 
+and trade plans can be assessed accordingly.    
+ 
+
+=== PAGE 19 ===
+ 
+info@addeumfunds.com    18 
+www.addeumfunds.com   d. Impact of 0DTE Options and Hedging on Market Volatility  
+Finally, there has been plenty of speculation about the impact of 0DTE options and hedging 
+on market volatility. Those who believe 0DTE options will crash the market primarily use gamma 
+metrics or ex ante empirical scenarios to prove their point. Our posit ion is contrary. A majority of the 
+0DTE trading is between option dealers, which suggests that the increased magnitude of the greeks 
+in 0DTE options allows option dealers to hedge their overall book daily at a fraction of the price and 
+with less uncertainty. As a result, we believe that the existence of 0DTE options reduces overall 
+volatility in markets. Speculatively, this is reflected in the BofA paradigm frequency. Since option 
+dealers are almost always short vega in their longer -tenored book, the BofA paradigm is a daily long 
+volatility hedge that is applied cheaply. Therefore, a lot of the “customers”, as we see in Volland, are 
+likely the longer -tenor option dealers who are hedging their short volatility daily using 0DTE options. 
+The one factor that can disrupt this balance is liquidity, primarily in overnight sessions.  
+ 
+9. Conclusions  
+It is clear from the data both on a daily and intraday timeframe that option dealer hedging is 
+a major driver in market movements. Flows from option dealers have become more pertinent as 
+option volumes have increased in recent years. Further, option dealers are more sensitive to changes 
+in implied volatility than the underlying stock movement most of the time, with vanna as the greek 
+that needs to be monitored for how much option dealers are sensitive to underlying movement and 
+aggregate vega as the primary greek that needs to be monitored for  option  dealer sensitivity to 
+implied volatility. On 0DTE observations, using charm as a primary analyzed greek yields significant 
+edge when applied in the right time frame relative to expiration.  
+Disagreements on how to estimate the dealer book have hampered this level of data analysis 
+in the past. However, as seen throughout this paper, Volland is a strong indicator of  the greek 
+positions in the option dealer book. The data clearly shows compelling correlations using aggregate 
+greek positions and the hedging associated with them. As assumptions increase in data analysis, so 
+do the outliers and exceptions. To achieve this level of granularity in the option dealer book estimate, 
+trade level categorization with Volland -specific aggregations and calculations is necessary for 
+accurate observations.  
+ 
+  
+=== PAGE 20 ===
+ 
+info@addeumfunds.com    19 
+www.addeumfunds.com   10. References  
+Ad Deum Funds. 2023. Volland.  https://www.vol.land.  
+Bennett, Colin. 2014. Trading Volatility: Trading Volatility, Correlation, Term Structure and Skew. 
+CreateSpace Independent Publishing Platform.  
+Bernhardt, Donald, and Marshall Eckblad. 2013. Stock Market Crash of 1987.  November 13. 
+https://www.federalreservehistory.org/essays/stock -market -crash -of-1987.  
+Black, Fischer, and Myron Scholes. 1973. "The Pricing of Options and Corporate Liabilities." Journal 
+of Political Economy.  
+BofA Global Research. 2023. "How much risk can equities ignore?" Global Equity Volatility Insights.  
+Cboe Exchange, Inc. 2023. "Cboe Open -Close Volume Summary." https://datashop.cboe.com/cboe-
+options -open -close -volume -summary.  
+—. 2019. Cboe VIX FAQ.  https://www.cboe.com/tradable_products/vix/faqs/.  
+—. 2023. Celebrating 50 years of Market Innovation.  https://www.cboe.com/50th_anniversary/.  
+Horstmeyer, Derek, Marco Favro, and Michael Yelland. 2022. "Options Markets: How Far Have 
+Implied Transaction Costs Fallen?" Derivatives, Drivers of Value, Economics, Performance 
+Measurement & Evaluation.  
+Kambhu, John E. 1998. "Dealers’ Hedging of Interest Rate Options in the U.S. Dollar Fixed -Income 
+Market." FRBNY Economic Policy Review.  
+SqueezeMetrics. 2017. "Gamma Exposure: Quantifying hedge rebalance in SPX options." 
+https://squeezemetrics.com/download/white_paper.pdf.  
+The Ambrus Group. 2023. "Dispelling False Narratives About 0DTE Options." New York.  
+The Options Clearing Corporation. 2023. OCC Reports October 2023 Monthly Volume Data.  
+https://www.theocc.com/newsroom/press -releases/2023/11 -02-occ-reports -october -
+2023 -monthly -volume -data.  
+U.S. Commodity Futures Trading Commission, U.S. Securities and Exchange Commission. 2010. 
+Findings Regarding the Market Events of May 6, 2010. https://www.sec.gov/files/marketevents -report.pdf.  
+  
+=== PAGE 21 ===
+ 
+info@addeumfunds.com    20 
+www.addeumfunds.com   Appendix A . Regression Statistics  
+ 
+Table 8. Spot -Vol Correlation  
+ 
+ 
+ 
+Table 9. Delta Regression  
+ 
+ 
+ Table 1 0. Vega Regression  
+ 
+  
+ 
+
+=== PAGE 22 ===
+ 
+info@addeumfunds.com    21 
+www.addeumfunds.com    
+Table 1 1. Gamma Regression  
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+ 
+  
+  
+
+=== PAGE 23 ===
+info@addeumfunds.com    22 
+www.addeumfunds.com   
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+ Disclaimer: Copyright © 2023, Ad Deum Funds, LLC. All Rights Reserved. These materials  are not 
+intended as a source of specific investment advice. The information contained herein  has been 
+carefully selected from sources believed to be reliable as of the time that it was published , but its 
+completeness, accuracy, and usefulness is not guaranteed. Some of the information contained herein  
+may be inconsistent or contrary to advice and information published at a prior or subsequent date. 
+Investment contains substantial risks and past performance is not indicative of future performance. Nothing contained herein should be construed as an offer  or the solicitation of an offer to buy or sel l 
+any stock, security, or other item mentioned in the se materials . Ad Deum Funds and its affiliates bears 
+no responsibility for any loss of principal, failure to obtain desired objectives, or any other outcome 
+related to the content  herein. The content is provided “as is,”  “where is ,” “with all faults ,” and “as 
+available .” At any time, Ad Deum Funds’ members, officers, directors, employees, contractors, and 
+other representatives may own any stock, securities, or other items mentioned in the se materials . Ad 
+Deum Funds  is not responsible for failure to receive the content herein and makes no warranty, 
+representation or guarantee regarding the information or materials  contained . Under no 
+circumstances shall Ad Deum Funds  be liable for any direct, indirect, incidental or any other type of 
+damages resulting from any use of or downloading of these materials . 

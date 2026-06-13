@@ -2400,3 +2400,163 @@ V16-pass results: pre-V16 era Apr18-May17 n=54: a20g5 +528.5/78%/DD-24 vs BE@12 
 **BE@12's win was a post-V16 12-day-window artifact.** In the larger era it costs -8.6% PnL AND worsens maxDD (BE scratches dip-then-rip winners at +1; clustered scratches deepen equity DD). Era-unstable — DO NOT ship.
 
 **FINAL: KEEP a20/g5/SL12. No code change.** a25 wins totals every era (+750 combined) but not recommended (monotonic curve, churn, variance). Do not re-run BE-hybrid hunts on DD without a new mechanism hypothesis.
+
+
+## Analysis #21 — AG Short regime audit: VIX >= 20 is the switch; SL is not the problem (2026-06-07)
+
+**Trigger:** User flagged AG Short's -$100 max loss (biggest in the book: SC=$70, ES Abs=$40) and asked for a full restudy: where does AG win, where does it die, cross-referenced with Discord pro shorting behavior.
+
+**Current live config (verified from code, not memory):** initial stop = LIS+5, pushed to +GEX wall if beyond, capped at entry+20 (main.py `_compute_setup_levels` short branch); trail hybrid BE@10 / act=12 / gap=5, trail-only (no target). `real_trade_orders.state.stop_pts` confirms: 14 of 28 placed trades ran the full 20pt cap.
+
+### Part 1 — SL sweep (MES-bar replay, S55 `mes_walk`)
+
+46 AG signals Apr 1+ (26 placed / 20 unplaced) replayed on `vps_es_range_bars` 5pt with live trail. Gate 2: baseline sim vs broker fills on placed trades mean |diff| = 2.72pt, losers match near-exactly (outliers are winners the sim understates — doesn't affect SL deltas).
+
+- 8 trades hit the full -20 stop; **NONE would have recovered between -14 and -20**. Only 1 winner in 46 ever drew below -14 before winning (lid 2980: -16 MAE -> +12.5).
+- Sweep: SL10 net -21 / SL12 -42 / SL14 -74 / LIS-20 -96; MaxDD -85/-92/-115/-126. SL8 collapses (WR 34%).
+- **BUT era split kills it:** the entire SL edge sits in the May 4-15 bleed cluster. V16.1 era (May 19+): SL10 -46.5 vs LIS -46.4 = wash. **SL evidence comes only from the losing regime — DO NOT ship a tighter SL** (March won WITH wide stops, avgL -17.8; tightening would fit the wrong regime). n=46 (23/era) = directional only.
+
+### Part 2 — Regime segmentation (123 graded+resolved signals Feb-Jun, portal outcomes)
+
+Monthly: Feb +47 (59% WR) / **Mar +311 (77%)** / Apr +24 (n=2) / May -26 (58%) / Jun -5. May broker truth on placed trades: -$291 net since Apr 9 go-live.
+
+| Segment | n | WR | PnL |
+|---|---|---|---|
+| VIX >= 25 | 37 | 75% | +217 |
+| VIX 20-25 | 16 | 82% | +94 |
+| **VIX < 20** | **56** | **56%** | **-47** |
+
+March traded entirely at VIX 21.4-28.2; May-Jun entirely at 15.6-18.8 — **zero overlap**. Best mode: VIX>=20 + price up on day (shorting failed rallies in bear tape) = 88% WR, +13.3/trade (n=17). Mirror in low VIX = 53% WR, -1.2. Economics: avg winner only +11-13pt (trail-only, shorts cover fast) vs -13..-18 losses -> needs ~60%+ WR; low-VIX delivers 56% = negative EV after commissions. Secondary cuts (watch-list only, thin): AG-TARGET subtype 53% WR -20; 10:30-12:00 window 48% WR -107.
+
+### Part 3 — Vanna tenors (user request: 0dte/weekly/monthly/all)
+
+Stored `vanna_all/weekly/monthly` cover 120/123 (computed-vs-stored sign check 36/36). Raw splits look predictive (ALL-pos 72% WR +321 vs neg 61% +27) but are a **pure VIX confound**: in VIX>=20, vanna ALL and monthly were positive on 53 OF 53 trades (never negative) — it's the March-regime fingerprint, not a signal. Within low-VIX, NO vanna bucket rescues AG: weekly-neg 58% -50; monthly-pos 47% -58; best bucket (monthly-neg) avg +0.32/trade = BE before commissions. 0DTE (TODAY) vanna: per-strike `volland_exposure_points` purged for older dates -> only 36 trades, buckets n=5-7, unusable. **Verdict: vanna adds ZERO independent information beyond VIX. No vanna filter.** (Same confound pattern as Mar 20 gamma/DD study and the SVB refutation.)
+
+### Part 4 — Discord cross-reference
+
+May 5-12 extract + Jun 1-5 raw exports: regime meme "never under"; Phoenix "trying to short all the time is losing money"; TheEdge "short the indices is the culprit... being short at the wrong times does a lot of damage"; Jun 4: "no shorting, only buy the dip", "shorting is like committing a sin"; yahyaz quit swing shorts after -$61k, booked his last Jun 5. Pros short only (a) tactical backside scalps vs failed retests, (b) AFTER the vol regime flips — Wizard/BigBill flagged warnings all May but didn't press until the Jun 4-5 vol event. Independently confirms: AG Short = bear-regime tool; low-VIX index shorting is the losing trade even for the best discretionary traders in the room.
+
+### Decision (implementation deferred to laptop session — Tasks S211)
+
+1. **Gate AG Short REAL placement on VIX >= 20** (block on VIX null). Mirrors the V10 long gate (longs blocked VIX>22). Would have placed ZERO real trades since Apr 9 (saves the full -$291) and auto-rearms in the regime that earned +311. Portal logging stays ungated (keep collecting for re-validation).
+2. **Stop floor fix:** LIS+5 formula has NO floor — lid 2487 computed a NEGATIVE stop distance (LIS+5 below entry; would be instant stop-out if ever placed). Floor at ~8pt.
+3. **Keep LIS-based stop + trail as-is** for the high-VIX regime; reassess SL after ~20 gated trades.
+4. Logging bug found: `setup_log.trail_sl` stores 14 for AG but actual broker stop is LIS-based (up to 20) — store actual stop_dist at signal time.
+5. `mes_sim_backfill.py` `_DEFAULT_PARAMS` AG sl=12 stale (real = LIS/20) — only matters as fallback when trail_sl null; align with #4.
+
+**Confidence:** VIX gate: 109 VIX-tagged trades, 53 vs 56 per bucket, clean mechanical story (AG paradigm shorts need bear tape), independently confirmed by Discord = moderate-to-high for a dormancy gate (cost of being wrong = missed trades, not losses). SL findings: directional only, era-unstable, NOT shipped. Scripts: `_tmp_ag_sl_sweep.py`, `_tmp_ag_regime_segment.py`, `_tmp_ag_vanna_study.py`; data `_tmp_ag_regime_data.json`.
+
+### Analysis #21 ADDENDUM (same day) — payoff anatomy both regimes + monthly projection + AG-LIS carve-out killed
+
+**User challenge:** "why does 71% WR generate only +22pts?" (AG-LIS low-VIX cut). Anatomy answer (n=33 portal + 19 placed broker):
+- The 71% is cosmetic: it excludes 12 EXPIRED (36% of sample) bleeding -2.1 avg. True green rate 61%.
+- Realized R:R inverted: avg win +12.8 vs avg loss -15.5 (ratio 0.83). Breakeven WR at this shape ~57%; 61% leaves ~nothing after $1/RT.
+- Wide SL buys NOTHING: 0/6 losers ever saw +10 (BE trigger), 1/6 saw +5 — they die straight.
+- Winners structurally small in low VIX: avg MFE +20.5, captured +12.8 (62%). Fixed-bracket sims (TP 8-14 x SL 12-20 from stored MFE/MAE) ALL <= trail (best TP14/SL20 +73.9 vs trail +73.3; TP10/SL20 only +31.7) — exit config is NOT the problem, the edge is thin.
+- AG-LIS low-VIX carve-out: 33t / 2mo effective / +73.3 portal / MaxDD -27.7 / broker on 19 placed = +$111 gross (~$45/mo) — and -$144 without the single May-26 morning. KILLED as a real-money option; portal-tracked hypothesis only.
+
+**VIX>=20 anatomy (n=53, Mar 3-26, 13 trading days):** the R:R asymmetry is the SAME or worse (win/loss ratio 0.75, avg loss -18.2, losers still 0/11 ever saw +10). What changes: true green rate 77% (vs 61%), EXPIRED share 11% vs 36% AND expireds flip green (+17.8 contribution vs -25.3), frequency ~4 signals/day (8x). AG = hit-rate engine, not payoff engine; only the bear tape delivers WR > the ~57% breakeven.
+
+**Monthly projection at 1 MES:** VIX>=20: +23.9 pts/day = $120/day gross -> ~$2,500/mo gross, ~$1,600-1,800/mo after ~70% real-capture + caps (extrapolated from ONE 13-day regime window — directional; MaxDD -60pts inside the run). VIX<20: broker -$145/mo (actual Apr 9-Jun 5). Blended at ~40% high-VIX time share: gated AG ~ +$600-700/mo avg vs -$145/mo ungated in the wrong regime. At 1 ES: 10x.
+
+**Re-test trigger:** if first ~20 gated trades deliver <60% WR, treat March as possibly unrepeatable and re-audit before scaling. SL question (wide stop pays nothing in BOTH regimes, but March bars pre-Mar-23 unavailable to verify winner MAE) parked to the same checkpoint.
+
+**Regime note (2026-06-07):** cash VIX printed 20.0-20.98 through Friday Jun 5's final hour (signals 15:00-15:33 all stamped >20; VX future settled 19.7). The gate condition is at the threshold NOW — S211 implementation is timely, and if VIX holds >20, gated AG is ACTIVE, not dormant.
+
+### Analysis #21 ADDENDUM 2 — TSRT both accounts post-V16 + SC-long misread corrected + S211 shadow-mode option
+
+**Broker truth May 19 - Jun 5 (13 days), from `tsrt_daily_stmt` + setup attribution via real_trade_orders (per-setup splits approximate +/-$150 — fill-to-signal matching by time/price; day totals exact):**
+- SHORT acct 210VYX91: 35t, 66% WR, +$722.50 gross. SC shorts 10W/1L +$521 (the engine); AG 15t 47% WR +$202.50 (May 26 morning = +$255 of it; without that morning AG = -$52.50); ES Abs shorts ~flat.
+- LONG acct 210VYX65: 90t, 53% WR, +$626.25 gross. DD +$279 (fat tails), ES Abs +$261, SC longs ~flat overall.
+- Combined: +$1,349 gross / ~+$1,224 net = +$94/day — on the era average (+$98/day) DESPITE eating Jun 3 + Jun 5.
+
+**SC-long "weakness" is a misread:** SC longs were ~+$530 May 19-Jun 2 (GOAT-grade), then -$262 on Jun 3 (underwater stacking — S203 guard now LIVE, replay -$290 -> -$106 day-level) and -$326 on Jun 5 (NFP macro slide — S208 territory, parked at n=7 macro days, re-study >=12 ~mid-July). Two known failure modes, one fixed one pending — NOT a setup decay. Do not re-rank setups on a 13-day window.
+
+**AG +$202 in low VIX post-V16:** consistent with the anatomy — thin negative-EV edge (needs ~57% WR, ran 47%) having a lucky window carried by 2 trades; same config produced -$290 May 4-15. Expectation still -$145/mo at VIX<20.
+
+**S211 implementation default updated: SHADOW MODE first** — log `vix_gate_would_block` as skip_reason WITHOUT blocking for 2-3 weeks, then review forward data before hard-enabling. Note VIX printed 20.0-20.98 in Jun 5 final hour: if vol holds, the gate barely binds anyway.
+
+---
+
+## Analysis #21 — June Drawdown Post-Mortem (Jun 5-12, -$1,338) — 2026-06-12
+
+**Trigger:** User flagged 6 straight losing days giving back all profit. Demanded full bug-vs-regime audit.
+
+**The damage (broker truth, tsrt_daily_stmt):** Win era May19-Jun04 = +$1,537/12d. Loss window Jun05-12 = **-$1,338/6d**. Net era +$199. Jun 9/10/11 each hit ~-$300 (breaker cap).
+
+**Direction is the story (broker FIFO):**
+- LONG: 59% WR/+$1,106 (win era) -> **42% WR/-$1,015** (loss window)
+- SHORT: 61%/+$535 -> 50%/-$240
+- **Skew Charm long: 63%/+$340 -> 27% WR/-$872** (single biggest bleeder)
+- DD Exhaustion long: 57%/+$574 -> 25%/-$291
+
+**REGIME confirmed, NOT a bug:**
+- SPX -265pt Jun5-10 (7534->7269), intraday ranges 168/237/122/152 = sustained high-vol downtrend. Long-biased MR book (SC/DD dip-buyers) fired into falling knives.
+- Portal chain-sim AND MES-sim BOTH lost on SC/DD longs -> faithful execution, signal lost (not a capture bug).
+- No SC/DD detector code changed in June (git log = darkmate/portal/eval only). $300 breaker worked (capped Jun9 11:22/Jun11 13:50). GEX Long v4/v6 leaked 0 real trades. ES Abs -31 vs +72 chain = high-vol slippage on 2 whipsaws (~$200), not a discrete bug.
+- The real gap: NO regime-aware sizing / no multi-day de-risk. Daily breaker resets and re-bleeds -> 3x -$300.
+
+**Validated fix (vol-regime size-down):** Halve MES on high-realized-range days. Across FULL post-V16 era: +$199 -> +$817 (delta +$618), **$0 given up on winners** (every range>=120 day this era was a loser, n=4). Corroborates prior Apr-Jun mes_sim lever (research_chainsim_baseline_flaw_vol_regime). VIX>=19 proxy weaker (+$461, misses Jun5 @18.1). Drawdown lever, not directional -> dodges the refuted long-block trap.
+
+**Confidence:** directional only (n=4 high-vol days this window) but corroborates independent prior validation. Realtime impl needs a proxy (VIX-at-open simplest; rolling intraday range most accurate; full-day range is hindsight). NOT auto-shipped — real-money sizing = user decision. Refuted alternatives (down-regime long-block, first-hour trend classifier) NOT re-recommended.
+
+### Analysis #21 addendum — the gate question (why months of profit -> 6-day bleed) + Jun 11 forensics
+
+**Real-money track record (not sim):** Apr +$379, May +$445, Jun **-$880** (real_trade_orders; tsrt_daily_stmt -$1338 w/ FIFO+comm). March real was 14 trades/-$165. So the "3-4 months of profit" is largely PORTAL-SIM; real live profit = Apr+May ~$824, June gave it all back.
+
+**WR did NOT decay — dollar asymmetry flipped.** Portal-sim WR = 54% EVERY month (Mar/Apr/May/Jun). The edge is regime-conditional, not all-weather: gentle/low-vol trends (Apr/May bull grind, avg range 52-58) -> fades catch the drift; June avg range 103 (highest), dir-efficiency 0.63 (most directional) -> big-range reversal days run the fades over on BOTH sides and stops (8-14pt) get blown through. Chain-sim hides it (~+100pt/mo overstatement every month; June chain -73 vs broker -176).
+
+**Book flipped LONG in June:** Feb-May consistently 58-59% SHORT-tilted; June 54% LONG. (Mean-reversion fires longs on the many dips of a falling market.)
+
+**Jun 11 forensics (user: "bullish day, got nothing, only loss"):** SPX morning-dip 7289->7258 then afternoon RIP to 7390 (+101 close). System placed 4 Skew Charm SHORTS 10:32-12:07 (each -14) fading the morning low; burned the loss budget; $300 breaker tripped ~13:50; then the afternoon rally fired A-grade LONGS (14:04 SC long A, 14:05 DD long A+, 15:02/15:38 ES bullish A) ALL blocked by daily_loss_limit + live_filter_block (AG-paradigm long-gate while price rallied). The breaker that "worked" CAUSED the missed recovery. Two compounding faults: (1) counter-trend fade on a reversal day, (2) breaker+paradigm-lag locked out the recovery.
+
+**Jun 12:** 3 tiny early shorts (-$36), then quiet. Minor.
+
+**Fix test (broker truth; era base +199 / loss window -1338):**
+| Fix | Era | Loss window | Gives up on winners |
+|---|---|---|---|
+| F1 halve size, range>=120 | +817 (+618) | -720 | $0 |
+| F2 halve size, VIX>=19 | +660 (+461) | -877 | $0 |
+| F3 stand-aside, range>=120 | +1434 (+1235) | -103 | $0 |
+| F4 half-size after 2 consec <=-250d | +523 (+324) | -1014 | $0 |
+| F5 daily breaker -200 | +535 (+336) | -991 | ~$65 |
+| F5b daily breaker -150 | +726 (+527) | -819 | ~$65 |
+| COMBO F1+F5b | +1098 (+899) | -447 | ~$65 |
+
+Caveats: range>=120 is full-day hindsight (real impl needs rolling intraday range / VIX-at-open / prior-day ATR). Tighter breaker (F5/F5b) WORSENS the reversal-day lockout (Jun 11 effect). F5 intraday cap approximate (overlapping fills). All n=4 high-vol days this window -> directional confidence, but corroborates prior Apr-Jun mes_sim vol-regime lever. NOT auto-shipped.
+
+### Analysis #21 CORRECTION (user challenge) — systemic findings, not "just regime"
+
+User pushback corrected 3 sloppy claims: (1) "April real +$379" — real_trade_orders has YX65/91 rows back Mar 24 but live trading started May; treat pre-May as test. (2) F1/F3 (halve/skip on full-day range) are LOOK-AHEAD, unworkable — scrapped. (3) tighter breaker (F5/F5b) RETRACTED: May 20 dipped -$136 intraday then finished +$392; tightening chops recovering winners.
+
+**Why winning then losing (real mechanism):** WR held 54% EVERY month. Wins (portal-exit + trail) were stable ~+400pt/mo May AND June. The LOSS side blew out:
+- **Stops tripled:** May 57 stops nominal -576 but ACTUAL -234 (+342 favorable slippage — price drifted to +8, breakeven-trail armed, stops scratched near 0). June 34 stops nominal -461, ACTUAL -431 (zero favorable — price wicked to full stop before +8 BE-trail could arm). avg/stop -4.1 (May) -> -12.7 (June).
+- **S131 gap:** S131 (enter portal / safety-SL / exit-on-portal-signal) lifts capture ONLY for trades that survive to the portal exit. Trades wicked into the safety SL first are unprotected; in high-vol reversal tape that's most of them. -> capture broke Jun 8 (portal +1.3/broker -$60) and Jun 11 (portal +3.4/broker -$278).
+- **Wrong-side rate exploded:** trades on the WRONG side of the day's net direction = 43% May -> 70% June (wrong-side -353pt vs right-side +177pt). Fade setups caught by reversal days (Jun 11: 4 SC shorts into the morning low, then locked out of the +101 afternoon rally by breaker+paradigm-gate).
+
+**Validated REAL-TIME protections (no look-ahead; WIN-era cost / LOSS-era save):**
+- Consec-stop>=2 -> halve: +$24 / +$159 (regime-agnostic, never hurts winners) — BEST standalone
+- VIX>=19-at-open -> halve day: $0 / +$302 (but would've cut March's high-VIX profit — sample has no hi-vol winners)
+- Rolling range-so-far>=80 -> halve: $0 / +$303
+- COMBO VIX>=19 + consec-stop: +$24 / +$420
+- Pause-after-3-stops: NET NEGATIVE (-$128) — skipping cuts recoveries; size-DOWN beats pause.
+Caveats: in-sample on 18-day window; WIN-era is low-vol (no hi-vol winning days to stress VIX rule); consec-stop is the most robust. Root disease = 70% wrong-side (fade into reversals); sizing treats damage not cause. NOT implemented — diagnosis only.
+
+### Analysis #21 FINAL (authoritative V16 Excel + code) — the capture leak dissected 2026-06-13
+
+Source: user's trade_log_2026-06-13.xlsx (V16 portal, matches Feb152.6/Mar1499.3/Apr985.7/May769.4/Jun-12.3).
+
+**Magnitude reframed:** V16 full June -$12 INCLUDES +$72pt of blocked trades we couldn't take (cap_long_full +67.7pt winners blocked by 3-long concurrency cap; daily_loss_limit correctly blocked -37.8pt LOSERS; master_kill +36.5). The trades ACTUALLY PLACED = -84.4pt portal (-$422) and -169.8pt broker (-$849, 105-lid clean view; -$1338 all-lid+comm). So ~half signal/selection (-$422 portal) + ~half capture (-$396).
+
+**Capture leak by exit path (placed June, broker-minus-portal):**
+- stop_filled 32t: -$169  (MES wicks hit the SL where SPX didn't — Mech A)
+- spx_trail_exit 19t: -$148 (the GOOD S131 path, but ~$8/trade SPX->MES basis x19)
+- resolved_loss 11t: -$129  (outcome tracker resolves on SPX, executes on MES)
+- trail_market_exit 2t: -$125  (**BUG**, see below)
+- resolved_win 25t: +$56 ; stop_rejected 3t: +$114 (broker beat portal)
+
+**BUG (trade #3905):** In S131 mode, update_stop() Layer-1 "wrong-side" check (real_trader.py ~1383-1410) fires close_trade("trail_market_exit") on **MES price** BEFORE the S131 gate (~1426). A normal MES pullback to the locked internal trail (+6) triggers an early MES market-exit — exactly the tick-wick S131 was built to ignore. #3905: SC short locked +6.8 on a pullback while SPX rode to +40 / portal banked +25.3. Fix: in S131 internal-trail updates (not first_realign), SKIP the L1 MES market-exit; let only SPX-based check_spx_trail_exit fire exits.
+
+**Mech A (MES wick-stops, 6t -$294):** NOT a tighter TSRT SL — stop_pts match portal (14/8); entry SLIPPAGE_BUFFER removed on first realign. It's MES > SPX intraday vol: same 14pt stop wicked on MES, not SPX (#3900 portal +6.8, broker stopped -14). Fix: vol-scale stop wider in high-vol OR size down.
+
+**Unifying lever:** even good exits leak ~$8/trade SPX->MES basis, and basis WIDENS with vol -> size-down in high-vol shrinks every flavor of capture leak. Consec-stop size-down catches wrong-side streaks. PROPOSED, not implemented: (A) fix trail_market_exit bug, (B) vol-scale stop / size-down, (C) consec-stop size-down.

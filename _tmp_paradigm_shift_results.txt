@@ -1,0 +1,26 @@
+Long trades with paradigm: 1039
+
+LONGS by time-since-last-paradigm-shift (intraday):
+     0-15min  n= 464 WR= 58.4% total= +1004.7pt mean=+2.17pt
+    15-60min  n= 255 WR= 55.3% total=  +639.2pt mean=+2.51pt
+       1-3hr  n= 232 WR= 48.3% total=    +0.5pt mean=+0.00pt
+        3hr+  n=  88 WR= 59.1% total=  +180.1pt mean=+2.05pt
+
+GEX-TARGET LONGS by time-since-shift:
+     0-15min  n=  13 WR= 46.2% total=   +17.0pt mean=+1.31pt
+    15-60min  n=   2 WR=  0.0% total=   -12.0pt mean=-6.00pt
+       1-3hr  n=   2 WR=100.0% total=   +20.7pt mean=+10.35pt
+        3hr+  n=0
+
+Longs fired within 60 min of SHIFT TO GEX-TARGET (any setup):
+  n=   9 WR= 44.4% total=    +4.5pt mean=+0.50pt
+
+    lid=440 DD Exhaustion          mins_since=0.0  pnl=+13.5
+    lid=446 DD Exhaustion          mins_since=0.0  pnl=+13.9
+    lid=447 Skew Charm             mins_since=1.0  pnl=+8.6
+    lid=449 ES Absorption          mins_since=9.2  pnl=+6.5
+    lid=1650 ES Absorption          mins_since=0.0  pnl=+0.0
+    lid=3184 DD Exhaustion          mins_since=0.0  pnl=-12.0
+    lid=3185 Skew Charm             mins_since=2.4  pnl=-14.0
+    lid=3189 ES Absorption          mins_since=25.5  pnl=+0.0
+    lid=3193 DD Exhaustion          mins_since=31.5  pnl=-12.0

@@ -1,0 +1,12 @@
+gex_long_v3: commit per iteration in _build_cache (root cause of 2026-06-03 outage)
+
+raw_connection() is non-autocommit, so the hourly portal overlay rebuild ran
+as ONE transaction holding AccessShareLock on chain_snapshots and
+volland_exposure_points for minutes. During a deploy, the old instance's
+rebuild blocked the new instance's db_init ALTER -> statement timeout ->
+crash loop (Application failed to respond). Diagnosis credit: VPS session.
+
+Reads only, so a commit at the top of each lid iteration just ends the txn
+and releases locks - max hold time drops from minutes to sub-seconds.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>

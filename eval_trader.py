@@ -148,7 +148,11 @@ def _init_file_paths(config_path: str):
 
 # ─── MES Contract Auto-Rollover ───────────────────────────────────────────────
 # MES quarterly cycle: H(Mar), M(Jun), U(Sep), Z(Dec)
-# Rollover = 2nd Thursday before 3rd Friday of expiry month (≈8 days before expiry)
+# Roll the DAY BEFORE expiry. (Was 8 days early — the 2026-06-12 incident: an 8-day roll
+# jumped to Sept while June was still the live front month on Sierra/TradingView, so orders
+# went to Sept while stops were calc'd off the June feed → ~62pt mismatch → rejected stops.
+# Real roll is volume-based; eval has no TS futures-volume feed, so we use the 1-day date roll
+# as the safety net. Near a roll, prefer pinning nt8_mes_symbol to the exact contract.)
 
 _MES_MONTHS = [(3, "H"), (6, "M"), (9, "U"), (12, "Z")]
 
@@ -161,7 +165,7 @@ def _third_friday(year: int, month: int) -> date:
 
 
 def current_mes_symbol(fmt: str = "nt8") -> str:
-    """Return front-month MES symbol, rolling to next contract the day after expiry.
+    """Return front-month MES symbol, rolling to next contract the day before expiry.
 
     fmt="nt8"  → "MES 03-26"
     fmt="ts"   → "MESH26"
@@ -170,7 +174,7 @@ def current_mes_symbol(fmt: str = "nt8") -> str:
     for month_num, code in _MES_MONTHS:
         year = today.year
         expiry = _third_friday(year, month_num)
-        rollover = expiry - timedelta(days=8)  # 2nd Thursday before expiry (CME convention)
+        rollover = expiry - timedelta(days=1)  # roll the day before expiry (was 8 — see note above)
         if today <= rollover:
             if fmt == "ts":
                 return f"MES{code}{year % 100}"

@@ -27,13 +27,79 @@ def _third_friday(year: int, month: int) -> date:
 
 
 def _auto_mes_symbol() -> str:
-    """Return front-month MES symbol for TradeStation (e.g. MESH26), rolling ~8 days before expiry."""
+    """DATE-BASED fallback front-month MES symbol (used only if the volume API fails).
+    Rolls the DAY BEFORE expiry (was 8 days early — the 2026-06-12 incident: an 8-day roll
+    jumped to Sept while June was still the live front month → ~62pt contract/feed mismatch →
+    rejected stops). The real roll is VOLUME-based (see _front_by_volume); this 1-day date roll
+    is only the safety net for when the volume API is unreachable."""
     today = date.today()
     for month_num, code in _MES_MONTHS:
         expiry = _third_friday(today.year, month_num)
-        if today <= expiry - timedelta(days=8):
+        if today <= expiry - timedelta(days=1):
             return f"MES{code}{today.year % 100}"
     return f"MESH{(today.year + 1) % 100}"
+
+
+def _mes_candidates() -> list[str]:
+    """The two nearest NON-EXPIRED quarterly MES symbols, [front, next] (e.g. ['MESM26','MESU26'])."""
+    today = date.today()
+    out = []
+    for yr in (today.year, today.year + 1):
+        for mn, code in _MES_MONTHS:
+            exp = _third_friday(yr, mn)
+            if exp >= today:
+                out.append((exp, f"MES{code}{yr % 100}"))
+    out.sort()
+    return [s for _, s in out[:2]]
+
+
+def _front_by_volume(token: str) -> str:
+    """PROPER roll — matches TradingView/Sierra: trade the contract whose DAILY VOLUME is
+    larger; roll to the next quarterly only once its volume exceeds the front's. Falls back
+    to the date-based _auto_mes_symbol() on any API failure."""
+    cands = _mes_candidates()
+    if len(cands) < 2:
+        return cands[0] if cands else _auto_mes_symbol()
+    front, nxt = cands[0], cands[1]
+    try:
+        syms = ",".join(s.replace("@", "%40") for s in cands)
+        r = requests.get(f"{REAL_BASE}/marketdata/quotes/{syms}",
+                         headers={"Authorization": f"Bearer {token}"}, timeout=5)
+        if r.status_code != 200:
+            return _auto_mes_symbol()
+        vol = {}
+        for q in r.json().get("Quotes", []):
+            vol[q.get("Symbol")] = float(q.get("Volume") or 0)
+        if vol.get(front, 0) <= 0 and vol.get(nxt, 0) <= 0:
+            return _auto_mes_symbol()  # no volume data yet (pre-open) — use date fallback
+        return nxt if vol.get(nxt, 0) > vol.get(front, 0) else front
+    except Exception:
+        return _auto_mes_symbol()
+
+
+_mes_resolve_date = None  # date MES_SYMBOL was last auto-resolved (re-check once/day)
+
+
+def _refresh_mes_symbol():
+    """Re-resolve MES_SYMBOL via daily VOLUME check (only when env=auto; respects a manual pin).
+    Reassigns the module global so all order paths trade the current front month. Alerts on roll."""
+    global MES_SYMBOL, _mes_resolve_date
+    if _es_env.lower() != "auto" or not _get_token:
+        return
+    today = date.today()
+    if _mes_resolve_date == today:
+        return
+    try:
+        new = _front_by_volume(_get_token())
+        if new and new != MES_SYMBOL:
+            print(f"[real-trader] MES contract roll: {MES_SYMBOL} -> {new} (volume-based)", flush=True)
+            try: _alert(f"📅 MES contract rolled (volume): {MES_SYMBOL} → {new}")
+            except Exception: pass
+        if new:
+            MES_SYMBOL = new
+        _mes_resolve_date = today
+    except Exception as e:
+        print(f"[real-trader] MES symbol refresh failed: {e}", flush=True)
 
 
 # ====== CONFIG ======
@@ -270,6 +336,10 @@ def init(engine, get_token_fn, send_telegram_fn):
     _engine = engine
     _get_token = get_token_fn
     _send_telegram = send_telegram_fn
+    try:
+        _refresh_mes_symbol()  # resolve correct front month by volume at startup
+    except Exception as e:
+        print(f"[real-trader] startup MES resolve failed (using {MES_SYMBOL}): {e}", flush=True)
     _load_active_orders()
     n = len(_active_orders)
     print(f"[real-trader] init: longs={LONGS_ENABLED} (acct={_LONGS_ACCOUNT}) "
@@ -573,6 +643,26 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         print(f"[real-trader] DISABLED (master kill): skip {setup_name} {direction}", flush=True)
         _log_skip_reason(setup_log_id, "master_kill")
         _alert(f"⏭ DISABLED: {setup_name} {direction} blocked (REAL_TRADE_DISABLED=true)")
+        return
+
+    # ── MES contract sync: ensure we're on the current front month (daily volume roll) ──
+    try:
+        _refresh_mes_symbol()
+    except Exception:
+        pass
+    # ── Basis guard (2026-06-12): refuse if the traded contract's live price diverges from
+    # the signal/stop-calc price (es_price) by >25pt. A wrong/rolled contract would otherwise
+    # get its protective stop on the wrong side of the market (the Sept-roll incident →
+    # rejected stops). Blocks BEFORE any order is sent. Cheap insurance against ANY symbol bug.
+    _mes_now = _get_current_mes_price()
+    if _mes_now is not None and abs(_mes_now - es_price) > 25:
+        msg = (f"⛔ BASIS GUARD: {setup_name} {direction} SKIPPED — {MES_SYMBOL} @ {_mes_now:.1f} "
+               f"diverges {_mes_now - es_price:+.1f}pt from signal {es_price:.1f} (>25). "
+               f"Likely contract/roll mismatch — NOT placing.")
+        print(f"[real-trader] {msg}", flush=True)
+        _log_skip_reason(setup_log_id, "basis_guard_contract_mismatch")
+        try: _alert(msg)
+        except Exception: pass
         return
 
     is_long = direction.lower() in ("long", "bullish")

@@ -5095,7 +5095,8 @@ def import_cooldowns(data: dict):
                         out[k] = None
         return out
     if "gex" in data:
-        _cooldown.update(_deserialize(data["gex"]))
+        _cooldown.update(_deserialize(data["gex"], has_datetimes=True,
+                                      dt_keys=("last_fire_time",)))
     if "ag" in data:
         _cooldown_ag.update(_deserialize(data["ag"], has_datetimes=True,
                                          dt_keys=("last_fire_time",)))

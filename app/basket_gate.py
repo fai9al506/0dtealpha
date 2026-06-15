@@ -43,36 +43,46 @@ def classify(basket_pct: float, direction: str) -> str:
     return "confirm" if (basket_up == is_long) else "contradict"
 
 
-def _latest_basket():
+def _latest_basket(engine=None):
     """Return (et_naive, basket_pct, n_names) of the newest semi_basket row, or None.
-    Raises on DB error (caller treats as fail-open)."""
+    Prefers the app's shared SQLAlchemy engine (proven to work in-container); falls back
+    to a raw psycopg2 connection. Raises on DB error (caller treats as fail-open)."""
+    sql = "SELECT et, basket_pct, n_names FROM semi_basket ORDER BY et DESC LIMIT 1"
+    if engine is not None:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            row = conn.execute(text(sql)).fetchone()
+            return tuple(row) if row is not None else None
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
         return None
     conn = psycopg2.connect(dsn, connect_timeout=4)
     try:
         cur = conn.cursor()
-        cur.execute("SELECT et, basket_pct, n_names FROM semi_basket ORDER BY et DESC LIMIT 1")
+        cur.execute(sql)
         return cur.fetchone()
     finally:
         conn.close()
 
 
-def evaluate(direction: str) -> dict:
+def evaluate(direction: str, engine=None) -> dict:
     """Decide whether the basket gate should BLOCK this real trade.
 
     Returns {state, basket_pct, n_names, block, enabled, reason}.
       state  ∈ confirm | neutral | contradict | no_data
       block  = True ONLY when enabled AND state in (neutral, contradict)
     Fail-open on EVERY uncertainty (no env / no data / stale / few names / error).
+    Pass the app's shared SQLAlchemy engine to avoid a raw psycopg2 connect (which
+    fail-opened silently in-container — S218, 2026-06-15). Logs every fail-open.
     """
     enabled = _enabled()
     out = {"state": "no_data", "basket_pct": None, "n_names": None,
            "block": False, "enabled": enabled, "reason": ""}
     try:
-        row = _latest_basket()
+        row = _latest_basket(engine)
         if not row or row[1] is None:
             out["reason"] = "no_row"
+            print(f"[basket_gate] fail-open ({direction}): no_row", flush=True)
             return out
         et, basket_pct, n_names = row[0], float(row[1]), (int(row[2]) if row[2] is not None else 0)
         out["basket_pct"] = basket_pct
@@ -83,9 +93,11 @@ def evaluate(direction: str) -> dict:
         age_min = (now_naive - et).total_seconds() / 60.0
         if age_min > FRESH_MINUTES:
             out["reason"] = f"stale_{age_min:.0f}m"
+            print(f"[basket_gate] fail-open ({direction}): stale {age_min:.0f}m", flush=True)
             return out  # fail-open
         if n_names < MIN_NAMES:
             out["reason"] = f"few_names_{n_names}"
+            print(f"[basket_gate] fail-open ({direction}): few_names {n_names}", flush=True)
             return out  # fail-open
 
         state = classify(basket_pct, direction)
@@ -93,7 +105,10 @@ def evaluate(direction: str) -> dict:
         out["reason"] = "ok"
         if enabled and state in ("neutral", "contradict"):
             out["block"] = True
+        print(f"[basket_gate] {direction} basket={basket_pct:+.2f}% -> {state} "
+              f"block={out['block']} (enabled={enabled})", flush=True)
         return out
     except Exception as e:  # ANY failure → fail-open (take the trade)
         out["reason"] = f"error:{type(e).__name__}"
+        print(f"[basket_gate] FAIL-OPEN ({direction}): {type(e).__name__}: {e}", flush=True)
         return out

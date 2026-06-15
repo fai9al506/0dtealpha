@@ -728,7 +728,7 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     # (default off). FAIL-SOFT: any error inside evaluate() returns block=False (trade taken).
     try:
         from app import basket_gate
-        _bg = basket_gate.evaluate(direction)
+        _bg = basket_gate.evaluate(direction, engine=_engine)
         if _bg.get("block"):
             _bp = _bg.get("basket_pct")
             _bp_str = f"{_bp:+.2f}%" if _bp is not None else "n/a"

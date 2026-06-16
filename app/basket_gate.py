@@ -21,7 +21,12 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import psycopg2
+# NOTE: do NOT import psycopg2 at module level — this project ships psycopg v3
+# (postgresql+psycopg), NOT psycopg2. A hard top-level `import psycopg2` threw
+# ModuleNotFoundError in-container, so `from app import basket_gate` failed and
+# place_trade's try/except fail-opened EVERY trade (gate never ran, Jun 13–15).
+# The engine path below is what runs in production; psycopg2 is a lazy, optional
+# last-resort fallback only.
 
 NY = ZoneInfo("America/New_York")
 
@@ -56,6 +61,10 @@ def _latest_basket(engine=None):
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
         return None
+    try:
+        import psycopg2  # lazy: not installed in prod (psycopg v3 only) — engine path is primary
+    except ModuleNotFoundError:
+        import psycopg as psycopg2  # fall back to psycopg v3, same DB-API
     conn = psycopg2.connect(dsn, connect_timeout=4)
     try:
         cur = conn.cursor()

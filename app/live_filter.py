@@ -153,7 +153,12 @@ def passes_v16(l, gaps):
     # Detector already enforced the v6 classifier (verdict/magnet-dominance) before logging.
     if sn == 'GEX Long':
         if not isLong: return False
-        if not gapFilter(): return False
+        # GEX-Long gap rule (2026-06-16, backtested Feb-Jun, chain-sim):
+        #   gap-up(>30) MORNING(<11:00) = 67% WR / +47.6 (n=9) -> GEX Long EXEMPT from the
+        #     generic pre-10:00 gap-long block (do NOT call gapFilter for GEX).
+        #   gap-up(>30) AFTER 11:00 = 15% WR / -204 (n=26, the 4042 rally-end zone) -> BLOCK.
+        _g = gaps.get(et.date().isoformat()) if et else None
+        if _g is not None and _g > 30 and mins is not None and mins >= 660: return False
         if para == 'SIDIAL-EXTREME' and et and et.hour == 14: return False
         return (align >= 0) or (para in ('BofA-LIS', 'GEX-TARGET', 'SIDIAL-MESSY', 'BOFA-PURE'))
     if sn == 'DD Exhaustion' and isLong:

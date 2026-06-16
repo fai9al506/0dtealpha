@@ -4373,7 +4373,10 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     # Rule A REMOVED: blocked 32 gap-up longs with 72% WR on V12-filtered data — was hurting, not helping.
     # Rule B (fixed): block LONGS only before 10:00 on big gap days (|gap|>30).
     # Study: 7 blocked longs = 29% WR, -68.8 pts. Shorts before 10:00 = 71% WR, +47 pts (not blocked).
-    if is_long and _daily_gap_pts is not None and abs(_daily_gap_pts) > 30:
+    # GEX Long EXEMPT (2026-06-16, backtested): gap-up mornings are its BEST trades
+    # (n=9, 67% WR, +47.6). Its toxic zone (gap-up after 11:00) is handled in its own
+    # branch below. All other longs keep the pre-10:00 big-gap block.
+    if is_long and setup_name != "GEX Long" and _daily_gap_pts is not None and abs(_daily_gap_pts) > 30:
         if t < dtime(10, 0):
             return False
 
@@ -4408,6 +4411,11 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         # (GEX_LONG_V3_REAL_TRADE_ENABLED). Validated 18t v3.2 sim 72% WR (trail-only)
         # / +180p / maxDD -14. Real-trade dispatch = trail-only (SL14, no fixed target).
         if setup_name == "GEX Long":
+            # GEX-Long gap rule (2026-06-16, backtested Feb-Jun): BLOCK on a gap-UP day
+            # (>30) AFTER 11:00 ET — n=26, 15% WR, -204 pts (the 4042 rally-end zone).
+            # Gap-up MORNINGS are exempt from the pre-10:00 block above and WIN (n=9/67%/+47.6).
+            if _daily_gap_pts is not None and _daily_gap_pts > 30 and t >= dtime(11, 0):
+                return False
             _GL_BULL = {"BofA-LIS", "GEX-TARGET", "SIDIAL-MESSY", "BOFA-PURE"}
             return (align >= 0) or (paradigm in _GL_BULL)
         # ── V14 (Apr 29 2026): SC longs use paradigm-aware align rule, no align>=2 gate ──
@@ -13770,6 +13778,13 @@ function passesStrategy(l, strat) {
   const sn = l.setup_name || '';
   const align = l.greek_alignment != null ? l.greek_alignment : 0;
   const isLong = l.direction === 'long' || l.direction === 'bullish';
+  // V16-SB = V16 + Semi-Basket (lockstep with _tlPassesStrategy / _passes_live_filter).
+  if (strat === 'v16sb') {
+    if (!passesStrategy(l, 'v16')) return false;
+    const bp = l.basket_pct;
+    if (bp != null && (Math.abs(bp) < 0.15 || ((bp > 0) !== isLong))) return false;
+    return true;
+  }
   if (strat === 'r1') return Math.abs(align) >= 3;
   if (strat === 'optB') {
     if (isLong) return align >= 3;
@@ -13964,8 +13979,12 @@ function passesStrategy(l, strat) {
     // enforced verdict ABC + hour<15 + R_BURIED_MAGNET veto. Live gate = gap filter +
     // SIDIAL-EXTREME hr14 block + (align>=0 OR bull-paradigm). Exempt from S180/align>=2.
     if (sn === 'GEX Long') {
-      if (!gapFilter(l.ts)) return false;
+      // GEX-Long gap rule (2026-06-16, backtested): EXEMPT from pre-10:00 gap block
+      // (gap-up mornings win n=9/67%/+47.6); BLOCK gap-up(>30) after 11:00 (n=26/15%/-204).
       const _glM = etMins(l.ts);
+      const _glDate = l.ts ? new Date(l.ts).toLocaleDateString('en-CA',{timeZone:'America/New_York'}) : null;
+      const _glGap = _glDate ? _dailyGaps[_glDate] : null;
+      if (_glGap != null && _glGap > 30 && _glM != null && _glM >= 660) return false;
       if (l.paradigm === 'SIDIAL-EXTREME' && _glM != null && Math.floor(_glM/60) === 14) return false;
       const _glBull = ['BofA-LIS','GEX-TARGET','SIDIAL-MESSY','BOFA-PURE'];
       return isLong && (align >= 0 || _glBull.includes(l.paradigm));
@@ -19024,8 +19043,13 @@ DASH_HTML_TEMPLATE = """
           // (Fixed 2026-06-16: was `return false` — a stale leftover from the v4 pause that
           // hid GEX Long 4044 from V16 while TSRT was trading it.)
           if (!isLong) return false;
-          if (!_tlGapFilter()) return false;
+          // GEX-Long gap rule (2026-06-16, backtested): EXEMPT from the pre-10:00 gap-long
+          // block (gap-up mornings WIN: n=9/67%/+47.6) — do NOT call _tlGapFilter; instead
+          // BLOCK gap-up(>30) AFTER 11:00 ET (n=26/15%/-204, the 4042 rally-end zone).
           const _mGex = _tlEtMins();
+          const _gxDate = l.ts ? new Date(l.ts).toLocaleDateString('en-CA',{timeZone:'America/New_York'}) : null;
+          const _gxGap = _gxDate ? _tlDailyGaps[_gxDate] : null;
+          if (_gxGap != null && _gxGap > 30 && _mGex != null && _mGex >= 660) return false;
           if (l.paradigm === 'SIDIAL-EXTREME' && _mGex != null && _mGex >= 840 && _mGex < 900) return false;
           return (align >= 0) || ['BofA-LIS','GEX-TARGET','SIDIAL-MESSY','BOFA-PURE'].includes(l.paradigm);
         }

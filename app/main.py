@@ -7674,7 +7674,7 @@ def _send_setup_eod_summary():
                 rows = conn.execute(text("""
                     SELECT setup_name, direction, grade, ts,
                            outcome_result, outcome_pnl, outcome_elapsed_min,
-                           greek_alignment, vix, overvix, paradigm
+                           greek_alignment, vix, overvix, paradigm, basket_pct
                     FROM setup_log
                     WHERE ts >= :today_start
                       AND outcome_result IS NOT NULL
@@ -7688,8 +7688,9 @@ def _send_setup_eod_summary():
                 _v = float(row[8]) if row[8] is not None else None
                 _ov = float(row[9]) if row[9] is not None else None
                 _par = row[10] if len(row) > 10 else None
-                # Only include trades that pass the live filter
-                if not _passes_live_filter(_sn, _dir, _align, _v, _ov, paradigm=_par, grade=_gr):
+                _bp = float(row[11]) if len(row) > 11 and row[11] is not None else None
+                # Only include trades that pass the live filter (V16-SB incl. basket)
+                if not _passes_live_filter(_sn, _dir, _align, _v, _ov, paradigm=_par, grade=_gr, basket_pct=_bp):
                     continue
                 ts_val = row[3]
                 ts_str = ts_val.strftime("%H:%M") if hasattr(ts_val, "strftime") else ""
@@ -12670,7 +12671,7 @@ def api_setup_filter_analysis(date: str = Query(None, description="Date YYYY-MM-
         with engine.connect() as conn:
             rows = conn.execute(text("""
                 SELECT id, ts, setup_name, direction, grade, score,
-                       outcome_result, outcome_pnl, greek_alignment, vix, overvix, paradigm
+                       outcome_result, outcome_pnl, greek_alignment, vix, overvix, paradigm, basket_pct
                 FROM setup_log
                 WHERE ts >= :d0 AND ts < :d1
                   AND grade != 'LOG'
@@ -12679,14 +12680,15 @@ def api_setup_filter_analysis(date: str = Query(None, description="Date YYYY-MM-
 
         passed, blocked = [], []
         for r in rows:
-            sid, ts, sn, d, grade, score, result, pnl, align, vix, ov, par = r
+            sid, ts, sn, d, grade, score, result, pnl, align, vix, ov, par, bp = r
             align = int(align) if align is not None else 0
             vix_f = float(vix) if vix is not None else None
             ov_f = float(ov) if ov is not None else None
+            bp_f = float(bp) if bp is not None else None
             pnl_f = float(pnl) if pnl is not None else 0.0
             is_long = d in ("long", "bullish")
 
-            passes = _passes_live_filter(sn, d, align, vix_f, ov_f, paradigm=par, grade=grade)
+            passes = _passes_live_filter(sn, d, align, vix_f, ov_f, paradigm=par, grade=grade, basket_pct=bp_f)
 
             # Determine block reason
             reason = ""

@@ -18717,7 +18717,10 @@ DASH_HTML_TEMPLATE = """
       if (fSetup === 'GEX Long v3.2') return {pass:'pass_v32', res:'result',    pnl:'pnl'};
       if (fSetup === 'GEX Long v3')   return {pass:'pass',     res:'result',    pnl:'pnl'};
       if (fStrat === 'gexlongv3')     return {pass:'pass',     res:'result',    pnl:'pnl'};
-      if (fStrat === 'v16')           return {pass:'pass_v4',  res:'result_v4', pnl:'pnl_v4'};
+      // V16 live view: GEX Long is now v6 (GEX_LONG_V6_MODE=true, live on TSRT
+      // since 2026-06-08). Was pointed at v4 while v4 was the candidate — corrected
+      // to v6 on 2026-06-16 so the V16 outcome columns match what TSRT actually trades.
+      if (fStrat === 'v16' || fStrat === 'v16sb') return {pass:'pass_v6', res:'result_v6', pnl:'pnl_v6'};
       return null;
     }
     function _tlV3Active() { return _tlGexMode() !== null; }
@@ -18951,13 +18954,19 @@ DASH_HTML_TEMPLATE = """
         // hr14 block + (align>=0 OR bull-paradigm). Detector enforced verdict ABC/hour<15/
         // R_BURIED_MAGNET. Exempt from S180/align>=2.
         if (sn === 'GEX Long') {
-          // GEX Long real-trading is PAUSED (env GEX_LONG_V3_REAL_TRADE_ENABLED=false,
-          // 2026-06-08): v4 was overstated by the Volland-selected study (TS-correct only
-          // ~60% WR). Nothing is placed on TSRT/eval, so the V16 (live) view must show
-          // ZERO GEX Long. The v6 candidate (21t/86% backtest) is collecting forward
-          // signals as a portal dropdown; when it validates and we re-enable, point this
-          // branch at the overlay's pass_v6.
-          return false;
+          // GEX Long v6 went LIVE on TSRT 2026-06-08 (GEX_LONG_V6_MODE=true +
+          // GEX_LONG_V3_REAL_TRADE_ENABLED=true). Mirror the runtime _passes_live_filter
+          // GEX branch (main.py:4360) / live_filter.py:passes_v16 (125-129) EXACTLY so the
+          // V16 view = what TSRT trades. The v6 classifier (verdict/magnet-dominance) was
+          // already enforced by the detector before the signal logged; here we apply the
+          // same live gates: gap filter + SIDIAL-EXTREME hr14 block + (align>=0 OR bull-para).
+          // (Fixed 2026-06-16: was `return false` — a stale leftover from the v4 pause that
+          // hid GEX Long 4044 from V16 while TSRT was trading it.)
+          if (!isLong) return false;
+          if (!_tlGapFilter()) return false;
+          const _mGex = _tlEtMins();
+          if (l.paradigm === 'SIDIAL-EXTREME' && _mGex != null && _mGex >= 840 && _mGex < 900) return false;
+          return (align >= 0) || ['BofA-LIS','GEX-TARGET','SIDIAL-MESSY','BOFA-PURE'].includes(l.paradigm);
         }
         // S180 (2026-05-24): GEX-TARGET PM long block — mirror live filter.
         if (isLong && l.paradigm === 'GEX-TARGET' && l.ts) {

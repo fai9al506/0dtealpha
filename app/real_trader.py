@@ -721,26 +721,13 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         _alert(f"⏭ SKIPPED {setup_name} {direction}: missing setup_log_id (race or detector bug)")
         return
 
-    # ── S217 Basket gate (Scheme B, 2026-06-13) ──
-    # Skip real trades the tech basket (NVDA/AMD/AVGO/META/MSFT/GOOGL) CONTRADICTS.
-    # "0/0/1": take only basket-CONFIRMED (+ fail-open when basket data missing/stale).
-    # Edge: confirm 72% WR vs contradict 54% (validated Mar–Jun). Env BASKET_GATE_ENABLED
-    # (default off). FAIL-SOFT: any error inside evaluate() returns block=False (trade taken).
-    try:
-        from app import basket_gate
-        _bg = basket_gate.evaluate(direction, engine=_engine)
-        if _bg.get("block"):
-            _bp = _bg.get("basket_pct")
-            _bp_str = f"{_bp:+.2f}%" if _bp is not None else "n/a"
-            print(f"[real-trader] skip {setup_name} {direction}: basket_gate "
-                  f"{_bg.get('state')} (basket={_bp_str})", flush=True)
-            _log_skip_reason(setup_log_id, "basket_gate_block")
-            _alert(f"⏭ BASKET GATE: {setup_name} {direction} blocked — "
-                   f"tech basket {_bg.get('state')} ({_bp_str})")
-            return
-    except Exception as _bge:
-        # Never let the gate break the dispatch — fail-open (continue to place).
-        print(f"[real-trader] basket_gate error (fail-open): {_bge}", flush=True)
+    # ── Semi-Basket gate: RETIRED here 2026-06-16 — folded into the live filter as V16-SB ──
+    # The basket Scheme B check now lives in _passes_live_filter (main.py) using a value
+    # STAMPED on each signal at detection (setup_log.basket_pct). The filter gates the
+    # dispatch BEFORE place_trade is called, so a separate gate here would double-check the
+    # same thing with a LIVE re-read that can disagree with the stamped value. Removed to
+    # keep ONE basket decision per trade. (app/basket_gate.py kept for reference / the
+    # /api ad-hoc view; no longer in the trade path.) See feedback_filter_three_copies_lockstep.
 
     # Dedup: already tracking this setup_log_id
     with _lock:

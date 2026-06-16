@@ -799,6 +799,7 @@ def db_init():
             ("vanna_monthly", "DOUBLE PRECISION"),
             ("spot_vol_beta", "DOUBLE PRECISION"),
             ("greek_alignment", "INTEGER"),
+            ("basket_pct", "DOUBLE PRECISION"),
         ]:
             conn.execute(text(f"""
             DO $$ BEGIN
@@ -2092,6 +2093,10 @@ def log_setup(result_wrapper):
                 _vanna_cliff, _vanna_peak = _v13_vanna_features()
                 insert_params["vanna_cliff_side"] = _vanna_cliff
                 insert_params["vanna_peak_side"] = _vanna_peak
+                # V16-SB (2026-06-16): stamp tech-basket %-from-open at signal time so the
+                # live filter reads a frozen value (not a live re-read at place time).
+                insert_params["basket_pct"] = _compute_basket_pct()
+                r["basket_pct"] = insert_params["basket_pct"]
                 # Auto-populate comments and abs_details for ES/SB2 Absorption
                 if setup_name in ("ES Absorption", "SB Absorption", "SB10 Absorption", "SB2 Absorption", "Delta Absorption") and not insert_params.get("comments"):
                     _parts = [
@@ -2131,7 +2136,7 @@ def log_setup(result_wrapper):
                          trail_sl, trail_activation, trail_gap,
                          v13_gex_above, v13_dd_near,
                          vanna_cliff_side, vanna_peak_side, vanna_regime,
-                         vix3m, vix_vix3m_ratio)
+                         vix3m, vix_vix3m_ratio, basket_pct)
                     VALUES
                         (:setup_name, :direction, :grade, :score, :paradigm, :spot, :lis, :target,
                          :max_plus_gex, :max_minus_gex, :gap_to_lis, :upside, :rr_ratio,
@@ -2144,7 +2149,7 @@ def log_setup(result_wrapper):
                          :trail_sl, :trail_activation, :trail_gap,
                          :v13_gex_above, :v13_dd_near,
                          :vanna_cliff_side, :vanna_peak_side, :vanna_regime,
-                         :vix3m, :vix_vix3m_ratio)
+                         :vix3m, :vix_vix3m_ratio, :basket_pct)
                     RETURNING id
                 """), insert_params)
                 log_id = result.fetchone()[0]
@@ -4134,10 +4139,35 @@ def _gex_long_v3_features() -> dict | None:
         return None
 
 
+def _compute_basket_pct() -> float | None:
+    """Latest tech-basket %-from-open (semi_basket) for V16-SB stamping. Returns None
+    on any error / no row / <4 of 6 names / stale (>10 min) -> the filter then fail-opens
+    (takes the trade). Mirrors basket_gate freshness rules; raw % so the filter classifies."""
+    if not engine:
+        return None
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(text(
+                "SELECT et, basket_pct, n_names FROM semi_basket ORDER BY et DESC LIMIT 1"
+            )).fetchone()
+        if not row or row[1] is None:
+            return None
+        et, bp, n = row[0], float(row[1]), (int(row[2]) if row[2] is not None else 0)
+        if n < 4:
+            return None
+        age_min = (now_et().replace(tzinfo=None) - et).total_seconds() / 60.0
+        if age_min > 10:
+            return None
+        return bp
+    except Exception:
+        return None
+
+
 def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None, grade: str | None = None,
-                        vanna_regime: str | None = None) -> bool:
+                        vanna_regime: str | None = None,
+                        basket_pct: float | None = None) -> bool:
     """Single source of truth for the LIVE auto-trade filter (currently V14).
     V14 = V13 + paradigm-aware SC long alignment rule (Apr 29 2026).
 
@@ -4174,6 +4204,18 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     Change this ONE function when the filter evolves."""
     if setup_name in ("IV Momentum", "Vanna Butterfly"):
         return False
+
+    # ── V16-SB Semi-Basket gate (2026-06-16) — this is what makes the live filter V16-SB ──
+    # Scheme B "0/0/1": take ONLY basket-CONFIRMED (tech basket %-from-open sign matches
+    # trade direction); skip neutral (|%|<0.15 deadband) AND contradict; FAIL-OPEN when
+    # basket_pct is None (no/stale data -> take, can never add a loss). basket_pct is
+    # stamped on the signal at detection (setup_log.basket_pct). MUST stay in lockstep with
+    # live_filter.basket_blocks() + portal JS _tlPassesStrategy 'v16sb' branch
+    # (see memory feedback_filter_three_copies_lockstep).
+    if basket_pct is not None:
+        _sb_long = direction.lower() in ("long", "bullish")
+        if abs(basket_pct) < 0.15 or ((basket_pct > 0) != _sb_long):
+            return False
 
     # ── S180 (2026-05-24): GEX-TARGET PM long block ──
     # GEX-TARGET paradigm = spot AT a +GEX magnet (destination reached). AM phase
@@ -5499,7 +5541,8 @@ def _run_setup_check():
                 _passes_live = _passes_live_filter(setup_name, r["direction"],
                                                    r.get("greek_alignment", 0), _vix_last, _overvix,
                                                    paradigm=r.get("paradigm"), grade=grade,
-                                                   vanna_regime=r.get("vanna_regime"))
+                                                   vanna_regime=r.get("vanna_regime"),
+                                                   basket_pct=r.get("basket_pct"))
                 # Observability fix (2026-05-19): log skip_reason when filter blocks.
                 # Pre-fix: filter-blocked trades had real_trade_skip_reason=NULL — couldn't
                 # tell from DB if vanna/paradigm/grade/align/cap was the cause. Today's 3
@@ -6259,6 +6302,8 @@ def _run_absorption_detection(bars: list) -> dict | None:
     _abs_align_at_trigger = int(result.get("greek_alignment") or 0)
     result["greek_alignment"] = _abs_align_at_trigger  # freeze in result for log_setup audit
     print(f"[absorption] align_at_trigger={_abs_align_at_trigger:+d} (frozen for filter+log)", flush=True)
+    # V16-SB: stamp tech-basket %-from-open at trigger (frozen for filter + log)
+    result["basket_pct"] = _compute_basket_pct()
 
     # Always log signal to setup_log for history (regardless of cooldown)
     rw = {
@@ -6272,7 +6317,8 @@ def _run_absorption_detection(bars: list) -> dict | None:
     # Send Telegram only when notification gate passes AND live filter
     _abs_passes_live = _passes_live_filter("ES Absorption", result["direction"],
                                            _abs_align_at_trigger, _vix_last, _overvix,
-                                           paradigm=result.get("paradigm"), grade=result.get("grade"))
+                                           paradigm=result.get("paradigm"), grade=result.get("grade"),
+                                           basket_pct=result.get("basket_pct"))
     if fire and _abs_passes_live:
         try:
             msg = rw["message"]
@@ -9635,7 +9681,7 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 "max_plus_gex, max_minus_gex, "
                 "outcome_result, outcome_pnl, "
                 "vanna_all, vanna_weekly, vanna_monthly, spot_vol_beta, greek_alignment, "
-                "charm_limit_entry, overvix, vix, vanna_regime "
+                "charm_limit_entry, overvix, vix, vanna_regime, basket_pct "
                 "FROM setup_log "
                 "WHERE id > :since AND ts::date = :today AND grade != 'LOG' "
                 "ORDER BY id ASC"
@@ -9654,6 +9700,7 @@ def api_eval_signals(since_id: int = Query(0, ge=0)):
                 paradigm=row.get("paradigm"),
                 grade=row.get("grade"),
                 vanna_regime=row.get("vanna_regime"),
+                basket_pct=row.get("basket_pct"),
             ):
                 continue
             # Compute target/stop levels
@@ -12443,7 +12490,7 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
                        outcome_first_event, outcome_elapsed_min,
                        greek_alignment, vix, overvix,
                        v13_gex_above, v13_dd_near,
-                       vanna_cliff_side, vanna_peak_side, vanna_regime,
+                       vanna_cliff_side, vanna_peak_side, vanna_regime, basket_pct,
                        mes_sim_outcome_pnl, mes_sim_outcome_result, mes_sim_max_fav
                 FROM setup_log
                 ORDER BY ts DESC
@@ -12463,7 +12510,7 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
                        outcome_first_event, outcome_elapsed_min,
                        greek_alignment, vix, overvix,
                        v13_gex_above, v13_dd_near,
-                       vanna_cliff_side, vanna_peak_side, vanna_regime
+                       vanna_cliff_side, vanna_peak_side, vanna_regime, basket_pct
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim OFFSET :off
@@ -15697,7 +15744,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (live)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16sb">V16-SB (live) ✦</option><option value="v16">V16 (base, no basket)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -18791,6 +18838,18 @@ DASH_HTML_TEMPLATE = """
 
     function _tlPassesStrategy(l, strat) {
       if (!strat) return true;
+      // V16-SB = V16 base + Semi-Basket Scheme B (0/0/1). Reuse v16 then apply basket so
+      // the two never diverge. LOCKSTEP with _passes_live_filter + live_filter.basket_blocks
+      // (see memory feedback_filter_three_copies_lockstep).
+      if (strat === 'v16sb') {
+        if (!_tlPassesStrategy(l, 'v16')) return false;
+        const bp = l.basket_pct;
+        if (bp != null) {
+          const _sbLong = l.direction === 'long' || l.direction === 'bullish';
+          if (Math.abs(bp) < 0.15 || ((bp > 0) !== _sbLong)) return false;  // neutral or contradict -> skip
+        }
+        return true;  // confirm or no-data(fail-open)
+      }
       const sn = l.setup_name || '';
       const align = l.greek_alignment != null ? l.greek_alignment : 0;
       const isLong = l.direction === 'long' || l.direction === 'bullish';

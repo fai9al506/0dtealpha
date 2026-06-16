@@ -12,11 +12,39 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 
 ET = ZoneInfo("America/New_York")
-LIVE_VER = "v16"
+LIVE_VER = "v16-sb"   # V16 + Semi-Basket (Scheme B 0/0/1). Bump when the live filter changes.
 
-# columns passes_v16 needs from setup_log
+# Semi-Basket (Scheme B) — 2026-06-16. Tech basket (NVDA/AMD/AVGO/META/MSFT/GOOGL)
+# %-from-session-open, stamped on each signal as setup_log.basket_pct at detection.
+# 0/0/1 policy: take ONLY basket-CONFIRMED (sign matches direction); skip neutral +
+# contradict; FAIL-OPEN when basket_pct is NULL (no/stale data -> take the trade).
+BASKET_DEADBAND = 0.15
+
+
+def basket_blocks(l):
+    """True = Semi-Basket says SKIP this trade. Fail-open (False) when basket_pct is NULL."""
+    bp = l['basket_pct'] if 'basket_pct' in l else None
+    if bp is None:
+        return False  # fail-open: no basket data -> take (cannot create a loss)
+    bp = float(bp)
+    is_long = l['direction'] in ('long', 'bullish')
+    if abs(bp) < BASKET_DEADBAND:
+        return True   # neutral -> skip
+    return (bp > 0) != is_long  # contradict (sign mismatch) -> skip ; confirm -> take
+
+
+def passes_v16_sb(l, gaps):
+    """THE live filter = V16 base AND Semi-Basket confirm. Single source of truth."""
+    if not passes_v16(l, gaps):
+        return False
+    if basket_blocks(l):
+        return False
+    return True
+
+
+# columns the live filter needs from setup_log
 COLS = ("id, setup_name, direction, greek_alignment, grade, paradigm, vix, overvix, ts, "
-        "v13_gex_above, v13_dd_near, vanna_cliff_side, vanna_peak_side")
+        "v13_gex_above, v13_dd_near, vanna_cliff_side, vanna_peak_side, basket_pct")
 
 
 def load_gaps(conn):
@@ -39,8 +67,9 @@ def backfill_live_pass(engine):
         c.execute(text("ALTER TABLE setup_log ADD COLUMN IF NOT EXISTS live_pass boolean"))
         c.execute(text("ALTER TABLE setup_log ADD COLUMN IF NOT EXISTS live_filter_ver text"))
         gaps = load_gaps(c)
+        c.execute(text("ALTER TABLE setup_log ADD COLUMN IF NOT EXISTS basket_pct DOUBLE PRECISION"))
         rows = c.execute(text(f"SELECT {COLS} FROM setup_log ORDER BY ts")).mappings().all()
-        lids = [r['id'] for r in rows if passes_v16(r, gaps)]
+        lids = [r['id'] for r in rows if passes_v16_sb(r, gaps)]
         c.execute(text("UPDATE setup_log SET live_pass=false, live_filter_ver=:v WHERE live_pass IS NOT false OR live_pass IS NULL"), {"v": LIVE_VER})
         for i in range(0, len(lids), 1000):
             c.execute(text("UPDATE setup_log SET live_pass=true, live_filter_ver=:v WHERE id=ANY(:ids)"), {"v": LIVE_VER, "ids": lids[i:i+1000]})

@@ -36,8 +36,20 @@ WHITELIST_SETUPS = (
 #   2. Last entry in real_trade_orders was > NO_TRADE_HOURS ago
 # That second check filters out days where bot was working earlier — only fires
 # if there's also been NO recent broker activity (genuine bot-down case).
+#
+# 2026-06-17: BASKET-GATE-AWARE fix. After V16-SB shipped, the filter intentionally
+# skips wrong-side signals (e.g. on a strong trend day every signal is a wrong-side
+# entry the basket gate correctly blocks). The raw-signal count then false-fired a
+# BOT-DOWN alert with 12 signals + 0 trades — but dispatch was 100% healthy. Fix:
+# count ONLY signals that PASSED every gate (real_trade_skip_reason IS NULL). A
+# blocked signal carries a reason (live_filter_block / master_kill / daily_loss_limit /
+# cap_*_full / dedup_window / basis_guard_* …), so it no longer inflates the count.
+# A NULL skip_reason means the bot decided to trade it → it MUST have a broker order;
+# if N>=threshold such signals exist with no recent broker activity, dispatch is broken
+# (the original Mar 25 / Mar 31 silent-bot-down failure mode). Threshold lowered to 3
+# since the count now reflects genuine should-have-traded signals, not raw fires.
 WINDOW_HOURS = 3
-SIGNAL_THRESHOLD = 10  # need >= this many signals before alerting (was 5)
+SIGNAL_THRESHOLD = 3  # genuine should-have-traded signals (skip_reason IS NULL); was 10 raw
 NO_TRADE_HOURS = 3  # last real_trade_orders entry must be > this old to alert
 ALERT_COOLDOWN_MIN = 60  # don't re-alert for 60 min after one fires
 
@@ -78,6 +90,7 @@ def check() -> None:
         FROM setup_log
         WHERE setup_name IN ({setup_filter})
           AND grade != 'LOG' AND grade IS NOT NULL
+          AND real_trade_skip_reason IS NULL  -- passed every gate -> SHOULD have a broker order
           AND ts >= NOW() - INTERVAL '{WINDOW_HOURS} hours'
           AND (ts AT TIME ZONE 'America/New_York')::time
               BETWEEN '09:30' AND '16:00'
@@ -106,7 +119,7 @@ def check() -> None:
         msg = (
             f"🚨 <b>BOT-DOWN ALERT</b>\n"
             f"Last {WINDOW_HOURS}h window:\n"
-            f"  • {n_signals} whitelist signals fired (≥{SIGNAL_THRESHOLD})\n"
+            f"  • {n_signals} signals PASSED the filter but were not placed (≥{SIGNAL_THRESHOLD})\n"
             f"  • Last real trade was {hours_since_last_trade:.1f}h ago (≥{NO_TRADE_HOURS}h)\n"
             f"\n"
             f"Bot may be down or dispatch broken. Check:\n"

@@ -1332,26 +1332,94 @@ class NT8Bridge:
         self._write(f"CANCELALLORDERS;{self.account};{self.symbol}\n")
         log.info(f"NT8 CANCELALLORDERS: {self.symbol}")
 
+    _MONTH3 = {1: "JAN", 2: "FEB", 3: "MAR", 4: "APR", 5: "MAY", 6: "JUN",
+               7: "JUL", 8: "AUG", 9: "SEP", 10: "OCT", 11: "NOV", 12: "DEC"}
+
+    def _contract_token(self) -> str | None:
+        """Map ATI symbol 'MES 09-26' -> NT8 file token 'SEP26' so we can match
+        the CURRENT contract's position file (NT8 names it 'MES SEP26 Globex_...')."""
+        try:
+            mm, yy = self.symbol.split()[-1].split("-")
+            return f"{self._MONTH3[int(mm)]}{yy}"
+        except Exception:
+            return None
+
     def read_oif_position(self) -> str | None:
         """Read NT8 OIF position file to get actual broker position state.
 
-        NT8 writes '{symbol}_{account}_position.txt' in outgoing folder with:
-          FLAT;0;0   or   LONG;qty;avg_price   or   SHORT;qty;avg_price
-        Returns 'FLAT', 'LONG', 'SHORT', or None if file not found.
+        NT8 writes '{display_symbol}_{account}_position.txt' (e.g.
+        'MES SEP26 Globex_<acct>_position.txt'). After a contract roll a STALE
+        prior-month file can linger ('MES JUN26 ...'). 2026-06-17 incident:
+        the eval read the stale JUN file (FLAT) and abandoned a live SEP
+        position as a "phantom", leaving an orphan open past EOD. Fix: only
+        read the file for the CURRENT contract month (token from self.symbol);
+        if none matches yet, return None ('no data', a safe no-op) rather than
+        falling back to a stale prior-month file.
+        Returns 'FLAT', 'LONG', 'SHORT', or None if no current-contract file.
         """
         outgoing = self.incoming.parent / "outgoing"
         if not outgoing.exists():
             return None
-        # Search for position file matching this account
+        cands = [f for f in outgoing.iterdir()
+                 if f.name.endswith(f"_{self.account}_position.txt")]
+        if not cands:
+            return None
+        token = self._contract_token()  # e.g. "SEP26"
+        if token:
+            matched = [f for f in cands if token in f.name]
+            if not matched:
+                # No file for the live contract yet → treat as unknown (no-op),
+                # never read a stale prior-month file (the 2026-06-17 orphan bug).
+                return None
+            cands = matched
+        # The live contract's file is the freshest among any remaining matches.
+        f = max(cands, key=lambda p: p.stat().st_mtime)
+        try:
+            parts = f.read_text().strip().split(";")
+            return parts[0]  # FLAT, LONG, or SHORT
+        except Exception:
+            return None
+
+    def cleanup_stale_position_files(self):
+        """Delete this account's position files for OTHER contract months at
+        startup (insurance for the next roll). NT8 re-creates the live file;
+        prior-month files are stale and would otherwise confuse readers."""
+        token = self._contract_token()
+        if not token:
+            return
+        outgoing = self.incoming.parent / "outgoing"
+        if not outgoing.exists():
+            return
         for f in outgoing.iterdir():
-            if f.name.endswith(f"_{self.account}_position.txt"):
+            if f.name.endswith(f"_{self.account}_position.txt") and token not in f.name:
                 try:
-                    content = f.read_text().strip()
-                    parts = content.split(";")
-                    return parts[0]  # FLAT, LONG, or SHORT
+                    f.unlink()
+                    log.info(f"[startup] removed stale position file: {f.name}")
                 except Exception:
-                    return None
-        return None
+                    pass
+
+    def read_oif_position_full(self) -> tuple[str | None, int]:
+        """Like read_oif_position but also returns qty → (status, qty).
+        Used by the orphan detector to flatten the exact broker quantity."""
+        outgoing = self.incoming.parent / "outgoing"
+        if not outgoing.exists():
+            return None, 0
+        cands = [f for f in outgoing.iterdir()
+                 if f.name.endswith(f"_{self.account}_position.txt")]
+        if not cands:
+            return None, 0
+        token = self._contract_token()
+        if token:
+            matched = [f for f in cands if token in f.name]
+            if not matched:
+                return None, 0
+            cands = matched
+        f = max(cands, key=lambda p: p.stat().st_mtime)
+        try:
+            parts = f.read_text().strip().split(";")
+            return parts[0], (int(parts[1]) if len(parts) > 1 and parts[1] else 0)
+        except Exception:
+            return None, 0
 
     def check_order_state(self, order_id: str) -> dict | None:
         """Check NT8 outgoing folder for order fill/reject status.
@@ -1424,6 +1492,40 @@ def _tg_alert(cfg: dict, text: str):
                           json={"chat_id": chat, "text": text}, timeout=10)
     except Exception as e:
         log.warning(f"[tg-alert] failed: {e}")
+
+
+# ── Orphan-position detector (S220, 2026-06-17) ──────────────────────────────
+# The 2026-06-17 incident: a stale prior-month position file made the eval
+# abandon a live position as a "phantom", leaving an untracked position open
+# past EOD (nearly failed the E2T eval). This catches an ORPHAN from ANY cause:
+# the broker holds a position the eval is NOT tracking → alert + flatten.
+# Runs even when the eval is flat (when reconcile_with_nt8 is a no-op).
+_orphan_confirm = 0
+
+
+def check_orphan_position(tracker, cfg: dict):
+    """Alert + flatten if the broker holds a position the eval isn't tracking.
+    Confirms twice (~2 cycles) to avoid racing a just-opened, not-yet-tracked entry."""
+    global _orphan_confirm
+    try:
+        if tracker.is_open:
+            _orphan_confirm = 0
+            return
+        status, qty = tracker.nt8.read_oif_position_full()
+        if status in ("LONG", "SHORT") and qty > 0:
+            _orphan_confirm += 1
+            if _orphan_confirm >= 2:
+                log.error(f"[ORPHAN] broker {status} {qty} {tracker.nt8.symbol} but eval FLAT "
+                          f"— alerting + flattening")
+                _tg_alert(cfg, f"🚨 EVAL ORPHAN ({cfg.get('nt8_account_id','?')[-6:]}): broker shows "
+                               f"{status} {qty} {tracker.nt8.symbol} but the eval is FLAT — untracked "
+                               f"position. Auto-flattening now. INVESTIGATE (stale position file / roll?).")
+                tracker.nt8.close_position("long" if status == "LONG" else "short", qty)
+                _orphan_confirm = 0
+        else:
+            _orphan_confirm = 0
+    except Exception as e:
+        log.debug(f"[ORPHAN] check skipped: {e}")
 
 
 # ── Consecutive order-reject alerting (S215, 2026-06-11) ─────────────────────
@@ -3299,6 +3401,7 @@ def main():
     quote_poller = TSQuotePoller()
     compliance = ComplianceGate(cfg)
     nt8 = NT8Bridge(cfg["nt8_incoming_folder"], cfg["nt8_account_id"], mes_symbol)
+    nt8.cleanup_stale_position_files()  # S220: drop prior-month position files (roll insurance)
     # Phase 2: pick StackingTracker for SIM (stack_enabled=true), PositionTracker for real account
     if cfg.get("stack_enabled"):
         log.info("=== STACKING MODE ENABLED (Phase 2) — multi-position tracker ===")
@@ -3569,10 +3672,12 @@ def main():
             # Periodic reconciliation (every 60s when position open)
             # NT8 fill detection only — Railway outcomes disabled (SPX-based,
             # doesn't match our MES position's independent trailing stop)
-            if (tracker.is_open
-                    and time.time() - last_reconcile >= RECONCILE_INTERVAL):
-                # NT8 position file check (fastest, no network)
-                tracker.reconcile_with_nt8()
+            if time.time() - last_reconcile >= RECONCILE_INTERVAL:
+                # NT8 position file check (fastest, no network).
+                if tracker.is_open:
+                    tracker.reconcile_with_nt8()        # eval open vs broker flat → phantom-clear
+                else:
+                    check_orphan_position(tracker, cfg)  # eval flat vs broker open → ORPHAN (S220 alert+flatten)
                 last_reconcile = time.time()
 
             # ── Poll for signals and outcomes ──

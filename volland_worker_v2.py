@@ -664,6 +664,7 @@ def run():
             return ""
 
         _premarket_ready = False  # True once pre-market warmup verified session
+        _premarket_alerted = False  # True if a pre-market FAIL/ERROR alert was sent (drives recovery ping)
 
         while True:
             if not market_open_now() and not is_premarket_warmup():
@@ -678,6 +679,7 @@ def run():
                     page = None
                     _was_in_market = False
                     _premarket_ready = False
+                    _premarket_alerted = False
                     consecutive_zero_pts = 0
                     zero_pts_alerted = False
                     consecutive_stale_modified = 0
@@ -715,6 +717,7 @@ def run():
                             f"Error: <code>{str(e)[:200]}</code>\n\n"
                             "⚠️ Volland data will NOT be available at market open!"
                         )
+                        _premarket_alerted = True
                         browser = None
                         page = None
                         time.sleep(30)
@@ -740,6 +743,7 @@ def run():
                                 "⚠️ Volland data will NOT be available at market open!\n"
                                 "Manual intervention needed."
                             )
+                            _premarket_alerted = True
                             # Try browser restart
                             try:
                                 browser.close()
@@ -768,6 +772,7 @@ def run():
                         f"Error: <code>{str(e)[:200]}</code>\n\n"
                         "⚠️ Volland may not be ready for market open!"
                     )
+                    _premarket_alerted = True
                     try:
                         browser.close()
                     except Exception:
@@ -776,6 +781,17 @@ def run():
                     page = None
                     time.sleep(30)
                     continue
+
+                # Recovery ping: fires ONLY if a prior pre-market FAIL/ERROR alert
+                # went out this session (resolves the open alarm without bringing
+                # back routine success spam — respects the 2026-06-11 issues-only policy).
+                if _premarket_alerted:
+                    send_telegram(
+                        "✅ <b>Volland Pre-Market RECOVERED</b>\n\n"
+                        f"Time: {datetime.now(NY).strftime('%H:%M ET')}\n"
+                        "Session verified — Volland data flowing for market open."
+                    )
+                    _premarket_alerted = False
 
                 # Pre-market warmup done, wait for market_open_now()
                 if not market_open_now():

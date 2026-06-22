@@ -5195,7 +5195,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             # — other setups don't go through the MES execution path live.
             if log_id and engine and setup_name in (
                 "Skew Charm", "AG Short", "Vanna Pivot Bounce",
-                "VIX Divergence", "ES Absorption",
+                "VIX Divergence", "ES Absorption", "DD Exhaustion",
             ):
                 try:
                     from app import mes_sim_backfill as _msb

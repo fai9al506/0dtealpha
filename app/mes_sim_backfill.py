@@ -47,6 +47,7 @@ V14_WHITELIST = {
     "Vanna Pivot Bounce",
     "VIX Divergence",
     "ES Absorption",  # PURE-filtered live as of Apr 29
+    "DD Exhaustion",  # real-traded longs since May 18; added to mes-sim 2026-06-23 (S206)
 }
 
 
@@ -63,6 +64,10 @@ _DEFAULT_PARAMS = {
     "Vanna Pivot Bounce": {"sl":  8, "be_trigger": None, "be_lock": 0, "trail_act": 10, "trail_gap": 5},
     "VIX Divergence":     {"sl":  8, "be_trigger": 6,    "be_lock": 1, "trail_act": 8,  "trail_gap": 8},
     "ES Absorption":      {"sl":  8, "be_trigger": None, "be_lock": 0, "trail_act": 8,  "trail_gap": 3},
+    # DD Exhaustion: continuous trail, NO breakeven. act/gap 10/10, SL 12 (S224, 2026-06-23;
+    # was 20/5). Per-row stored trail params are the stale 20/5 — the live outcome path passes
+    # the current 10/10 trade params, and the historical backfill forces 10/10 explicitly.
+    "DD Exhaustion":      {"sl": 12, "be_trigger": None, "be_lock": 0, "trail_act": 10, "trail_gap": 10},
 }
 
 

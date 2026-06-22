@@ -292,3 +292,12 @@
 4. **Discord Live Monitor (B12)** — researched user-token gateway approach. Read-only = very low detection risk. Saved as task.
 5. **Stock GEX live: 4 critical bugs found and fixed:**
    - T2 below spot → instant false exits (BAC, AMAT). Now T2 must be > spot.
+
+## 2026-06-22 — June portal-vs-TSRT deep dive + DD trail fix + Dip-Buy refinement
+
+**What was done:**
+1. **June portal(+232) vs TSRT(−$957) reconciled.** Signals (V16) were green; the loss was execution. Early June traded the BASE V16 basement (net −99 portal), SB cutover ~Jun 16. Decomposed the gap: chain-sim overstates winners because it walks 2-min SPX snapshots that miss the intra-move pullbacks a trailing stop actually hits (proved on the +25.3 trade: 1-min SPX trail = +7.1 = broker +6.8; 2-min sampling missed the 12:49 bounce). Capture split: post-V16 May broker ≈106% of chain-sim (chain-sim NOT universally optimistic — June-specific). Validation by signal density showed the real June driver = position churn on high-signal days (sim +240 vs broker −110) — NOT the trail. "Busy day" is look-ahead/unusable; lever = cut signal count (SB) + reversal/cap logic.
+2. **DD Exhaustion trail 20/5 → 10/10** (commit `125ee1f`, push deferred to 16:10 ET = S222). Walk-forward on clean 1-min SPX (train Feb–Apr, test May–Jun, SL=12): OOS 79.5% WR / DD −24 / +424 vs 63.6% / −36 / +332; confirmed on 889-trade all-DD sample. Shipped portal (main.py ×2) + eval_trader + real_trader (new `_SETUP_TRAIL_OVERRIDE`; real_trader used SC-style globals for ALL setups, DD got BE@10+10/5). SL unchanged.
+3. **Dip-Buy refinement study** (reconstructed 83 v1 signals on 1-min SPX, ~67% trade-match to live, aggregate WR matches). OOS-robust WR boosters: skip first ~15min (→71%), VIX rose during dip (→71%; detector's current vx_diverge grade is BACKWARDS), avoid GEX-TARGET/LIS. "Buy-dip-in-uptrend"/prior_close = OVERFIT (65%→52% OOS, dropped). Refined: after-9:45 + skip GEX-T/LIS, T10/S8 → ~67% WR / +209 / DD −19 vs baseline 55%. NOT implemented (user: check later). Dip-Buy is portal/log-only.
+
+**Data-quality finds:** `vps_es_range_bars` has replay-burst spikes (~1% of bars, e.g. Jun 11 13:28 fake spike to 7339) that corrupt after-the-fact MES backtests → use clean `spx_ohlc_1m`. Live `mes_sim` column is computed at resolution time on partial bars (not a clean backtest target).

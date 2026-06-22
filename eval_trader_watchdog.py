@@ -1,12 +1,21 @@
 """
-eval_trader_watchdog.py — Monitors eval_trader and alerts via Telegram if it stops.
-Runs as a scheduled task every 5 minutes. If eval_trader.py is not running
+eval_trader_watchdog.py — Monitors eval_trader + bridge and alerts via Telegram if they stop.
+Runs as a scheduled task every 5 minutes. If a monitored process is not running
 during market hours, sends a Telegram alert and optionally restarts it.
 
 False-positive hardening (2026-04-21):
 - Each PowerShell check retries once on empty/timeout (handles transient hangs)
 - Alerts only fire after 2 consecutive failed checks (state in watchdog_state.json)
 - eval_trader.lock PID fallback if primary process enumeration fails
+
+LONG/SHORT split + bridge monitoring (2026-06-22):
+- The old is_eval_trader_running() grepped for "eval_trader.py" across ALL python
+  procs, so a dead LONG eval went unnoticed while SHORT was alive (both run
+  eval_trader.py). Now LONG and SHORT are checked independently by config name.
+- Bridge (vps_data_bridge.py) is now monitored and AUTO-RESTARTED when dead
+  (data-only process — no S185 state-corruption risk, so restart is unconditional).
+- Eval auto-restart stays env-gated (WATCHDOG_AUTO_RESTART_EVAL, default false)
+  per the S185 decision — eval deaths still alert, restart manually.
 """
 
 import os, json, subprocess, sys, time, requests
@@ -27,7 +36,13 @@ CHAT_ID = "-1003886332593"
 # Re-enable by setting WATCHDOG_AUTO_RESTART_EVAL=true env var or flipping default to True.
 # Dead-process Telegram alerts still fire regardless of this flag.
 AUTO_RESTART = os.getenv("WATCHDOG_AUTO_RESTART_EVAL", "false").lower() == "true"
-VBS_PATH = r"C:\Users\Administrator\0dtealpha\run_eval_trader.vbs"
+VBS_LONG  = r"C:\Users\Administrator\0dtealpha\run_eval_trader.vbs"
+VBS_SHORT = r"C:\Users\Administrator\0dtealpha\run_eval_trader_short.vbs"
+VBS_BRIDGE = r"C:\Users\Administrator\0dtealpha\run_bridge.vbs"
+
+# Bridge auto-restart is ALWAYS on — vps_data_bridge.py is a data-only process
+# (no order placement, no S185 state risk), so self-recovery is safe.
+BRIDGE_AUTO_RESTART = os.getenv("WATCHDOG_AUTO_RESTART_BRIDGE", "true").lower() == "true"
 
 # Persistent state to require 2 consecutive failed checks before alerting
 STATE_FILE = r"C:\Users\Administrator\0dtealpha\eval_trader_watchdog_state.json"
@@ -80,16 +95,26 @@ def _pid_alive(pid):
         return False
 
 
-def is_eval_trader_running():
-    """Check if any python process is running eval_trader.py.
-    Primary: PowerShell CommandLine scan. Fallback: eval_trader.lock PID alive check."""
+def get_python_cmdlines():
+    """Return all running python process command lines, one per line (lower-cased)."""
     out = _run_ps(
         "Get-Process python* -ErrorAction SilentlyContinue | "
         "ForEach-Object { (Get-CimInstance Win32_Process -Filter \"ProcessId=$($_.Id)\").CommandLine }"
     )
-    if "eval_trader.py" in out:
+    return [ln.strip().lower() for ln in out.splitlines() if ln.strip()]
+
+
+def is_long_eval_running(cmdlines):
+    """LONG eval = eval_trader.py with NO config OR the default eval_trader_config.json
+    (NOT _short, NOT _sim). Fallback: eval_trader.lock PID alive (LONG holds this lock)."""
+    for ln in cmdlines:
+        if "eval_trader.py" not in ln:
+            continue
+        if "_short" in ln or "_sim" in ln:
+            continue
+        # Either no --config (defaults to long) or explicit long config
         return True
-    # Fallback: lockfile holds the PID; check if it's alive
+    # Fallback: lockfile holds the LONG eval PID
     try:
         if os.path.exists(LOCK_FILE):
             pid = open(LOCK_FILE).read().strip()
@@ -98,6 +123,16 @@ def is_eval_trader_running():
     except Exception:
         pass
     return False
+
+
+def is_short_eval_running(cmdlines):
+    """SHORT eval = eval_trader.py launched with the _short config."""
+    return any("eval_trader.py" in ln and "_short" in ln for ln in cmdlines)
+
+
+def is_bridge_running(cmdlines):
+    """Bridge = vps_data_bridge.py (data-only process)."""
+    return any("vps_data_bridge.py" in ln for ln in cmdlines)
 
 
 def is_nt8_running():
@@ -171,12 +206,12 @@ def send_telegram(msg):
         print(f"Telegram failed: {e}")
 
 
-def restart_eval_trader():
+def restart_via_vbs(vbs_path):
     try:
-        subprocess.Popen(["wscript.exe", VBS_PATH], shell=False)
+        subprocess.Popen(["wscript.exe", vbs_path], shell=False)
         return True
     except Exception as e:
-        print(f"Restart failed: {e}")
+        print(f"Restart failed ({vbs_path}): {e}")
         return False
 
 
@@ -208,31 +243,67 @@ if __name__ == "__main__":
     state = load_state()
     prev = state.get("last", {})
 
-    # ── Check 1: eval_trader process ──
-    eval_ok = is_eval_trader_running()
-    if eval_ok:
-        print("eval_trader is running. OK.")
+    cmdlines = get_python_cmdlines()
+
+    # ── Check 1a: LONG eval process ──
+    long_ok = is_long_eval_running(cmdlines)
+    if long_ok:
+        print("LONG eval is running. OK.")
     else:
-        # Only alert/restart if the PREVIOUS check also failed (2-consecutive rule)
-        prev_eval_ok = prev.get("eval_ok", True)  # benefit of doubt on first run
-        if prev_eval_ok:
-            print(f"eval_trader check failed once at {now_str} — will confirm next cycle")
+        prev_long_ok = prev.get("long_ok", True)  # benefit of doubt on first run
+        if prev_long_ok:
+            print(f"LONG eval check failed once at {now_str} — will confirm next cycle")
         else:
-            print("eval_trader DOWN confirmed (2 consecutive failures)")
+            print("LONG eval DOWN confirmed (2 consecutive failures)")
             if AUTO_RESTART:
-                restarted = restart_eval_trader()
-                if restarted:
-                    time.sleep(5)
-                    if is_eval_trader_running():
-                        alerts.append(f"⚠️ <b>Eval Trader CRASHED</b> — auto-restarted at {now_str}")
-                        print("Restarted successfully.")
-                    else:
-                        alerts.append(f"🚨 <b>Eval Trader CRASHED</b> — restart FAILED at {now_str}\nManual intervention needed!")
-                        print("Restart failed!")
+                restart_via_vbs(VBS_LONG)
+                time.sleep(5)
+                if is_long_eval_running(get_python_cmdlines()):
+                    alerts.append(f"⚠️ <b>LONG Eval CRASHED</b> — auto-restarted at {now_str}")
                 else:
-                    alerts.append(f"🚨 <b>Eval Trader CRASHED</b> — restart FAILED at {now_str}\nManual intervention needed!")
+                    alerts.append(f"🚨 <b>LONG Eval CRASHED</b> — restart FAILED at {now_str}\nManual intervention needed!")
             else:
-                alerts.append(f"🚨 <b>Eval Trader DOWN</b> at {now_str}\nRestart manually on VPS!")
+                alerts.append(f"🚨 <b>LONG Eval DOWN</b> at {now_str}\nRestart manually on VPS (run_eval_trader.vbs)!")
+
+    # ── Check 1b: SHORT eval process ──
+    short_ok = is_short_eval_running(cmdlines)
+    if short_ok:
+        print("SHORT eval is running. OK.")
+    else:
+        prev_short_ok = prev.get("short_ok", True)
+        if prev_short_ok:
+            print(f"SHORT eval check failed once at {now_str} — will confirm next cycle")
+        else:
+            print("SHORT eval DOWN confirmed (2 consecutive failures)")
+            if AUTO_RESTART:
+                restart_via_vbs(VBS_SHORT)
+                time.sleep(5)
+                if is_short_eval_running(get_python_cmdlines()):
+                    alerts.append(f"⚠️ <b>SHORT Eval CRASHED</b> — auto-restarted at {now_str}")
+                else:
+                    alerts.append(f"🚨 <b>SHORT Eval CRASHED</b> — restart FAILED at {now_str}\nManual intervention needed!")
+            else:
+                alerts.append(f"🚨 <b>SHORT Eval DOWN</b> at {now_str}\nRestart manually on VPS (run_eval_trader_short.vbs)!")
+
+    # ── Check 1c: VPS data bridge (data-only — auto-restart unconditionally) ──
+    bridge_ok = is_bridge_running(cmdlines)
+    if bridge_ok:
+        print("Bridge is running. OK.")
+    else:
+        prev_bridge_ok = prev.get("bridge_ok", True)
+        if prev_bridge_ok:
+            print(f"Bridge check failed once at {now_str} — will confirm next cycle")
+        else:
+            print("Bridge DOWN confirmed (2 consecutive failures)")
+            if BRIDGE_AUTO_RESTART:
+                restart_via_vbs(VBS_BRIDGE)
+                time.sleep(5)
+                if is_bridge_running(get_python_cmdlines()):
+                    alerts.append(f"⚠️ <b>VPS Bridge CRASHED</b> — auto-restarted at {now_str}")
+                else:
+                    alerts.append(f"🚨 <b>VPS Bridge CRASHED</b> — restart FAILED at {now_str}\nManual intervention needed!")
+            else:
+                alerts.append(f"🚨 <b>VPS Bridge DOWN</b> at {now_str}\nRestart manually on VPS (run_bridge.vbs)!")
 
     # ── Check 2: NinjaTrader process ──
     nt8_ok, nt8_reason = is_nt8_running()
@@ -264,7 +335,9 @@ if __name__ == "__main__":
     # Persist this cycle's results for next run's 2-consecutive comparison
     save_state({
         "last": {
-            "eval_ok": eval_ok,
+            "long_ok": long_ok,
+            "short_ok": short_ok,
+            "bridge_ok": bridge_ok,
             "nt8_ok": nt8_ok,
             "conn_ok": conn_ok,
         },

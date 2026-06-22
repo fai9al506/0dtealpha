@@ -172,11 +172,20 @@ def _spx_exit_enabled() -> bool:
 def _atomic_bracket_enabled() -> bool:
     return os.getenv("ATOMIC_BRACKET_ENABLED", "false").lower() == "true"
 
-# SC Trail parameters
+# SC Trail parameters (defaults for all setups unless overridden below)
 BE_TRIGGER_PTS = 10.0    # move stop to breakeven after 10pts profit
 TRAIL_ACTIVATION_PTS = 10.0  # trail activates at 10pts
 TRAIL_GAP_PTS = 5.0      # trail gap = max_fav - 5
 BE_BUFFER_PTS = 0.25     # breakeven + 1 tick buffer
+
+# Per-setup trail overrides (else use the SC-style globals above).
+# DD Exhaustion: continuous trail (NO breakeven), activation=10, gap=10.
+#   2026-06-22: was act/gap 10/5 + BE@10 (global). Walk-forward on clean 1-min SPX
+#   (train Feb-Apr, test May-Jun, SL=12) showed continuous 10/10 OOS WR 79.5% / DD -24
+#   vs the prior config 63.6% / -36 — better WR, DD, and PnL. Matches portal/eval DD config.
+_SETUP_TRAIL_OVERRIDE = {
+    "DD Exhaustion": {"be_trigger": None, "activation": 10.0, "gap": 10.0},
+}
 
 # Charm S/R limit entry timeout
 _LIMIT_ENTRY_TIMEOUT_S = 1800  # 30 min
@@ -2729,6 +2738,7 @@ def _backfill_ghost_fill(order: dict) -> tuple[str, float] | None:
 def update_trail(setup_log_id: int, current_es_price: float):
     """Update trailing stop based on current ES price.
     SC Trail: BE trigger=10, activation=10, gap=5.
+    Per-setup overrides via _SETUP_TRAIL_OVERRIDE (DD Exhaustion = continuous 10/10, no BE).
 
     Called externally (from main.py's outcome tracking loop) with the current ES price.
     This function tracks max favorable excursion and advances the stop accordingly.
@@ -2744,6 +2754,12 @@ def update_trail(setup_log_id: int, current_es_price: float):
             return
 
     is_long = order["direction"].lower() in ("long", "bullish")
+
+    # Per-setup trail params (DD Exhaustion = continuous 10/10 no-BE; else SC globals).
+    _ov = _SETUP_TRAIL_OVERRIDE.get(order.get("setup_name") or "", {})
+    _be_trigger = _ov["be_trigger"] if "be_trigger" in _ov else BE_TRIGGER_PTS
+    _trail_act = _ov.get("activation", TRAIL_ACTIVATION_PTS)
+    _trail_gap = _ov.get("gap", TRAIL_GAP_PTS)
 
     # Calculate current profit
     if is_long:
@@ -2763,8 +2779,8 @@ def update_trail(setup_log_id: int, current_es_price: float):
 
         new_stop = current_stop  # default: no change
 
-        # Phase 1: Breakeven trigger
-        if not order.get("be_triggered") and max_fav >= BE_TRIGGER_PTS:
+        # Phase 1: Breakeven trigger (skipped when _be_trigger is None — e.g. DD continuous)
+        if _be_trigger is not None and not order.get("be_triggered") and max_fav >= _be_trigger:
             order["be_triggered"] = True
             if is_long:
                 be_stop = _round_mes(fill_price + BE_BUFFER_PTS)
@@ -2776,10 +2792,10 @@ def update_trail(setup_log_id: int, current_es_price: float):
                     new_stop = be_stop
 
         # Phase 2: Trail activation
-        if max_fav >= TRAIL_ACTIVATION_PTS:
+        if max_fav >= _trail_act:
             order["trail_active"] = True
-            trail_stop = _round_mes(fill_price + (max_fav - TRAIL_GAP_PTS)) if is_long else \
-                         _round_mes(fill_price - (max_fav - TRAIL_GAP_PTS))
+            trail_stop = _round_mes(fill_price + (max_fav - _trail_gap)) if is_long else \
+                         _round_mes(fill_price - (max_fav - _trail_gap))
             # Trail only moves forward (tighter)
             if is_long and trail_stop > new_stop:
                 new_stop = trail_stop

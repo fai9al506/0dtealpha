@@ -4862,7 +4862,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                            if _v3_on()
                            else {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5})
         _trail_params = {
-            "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
+            "DD Exhaustion": {"mode": "continuous", "activation": 10, "gap": 10},  # 2026-06-22: 20/5 -> 10/10 (walk-forward OOS: WR 79.5% / DD -24 vs 63.6% / -36)
             "GEX Long": _gex_long_trail,
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
@@ -4981,7 +4981,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
 
         # Trail params already defined above (before ES/SPX branch).
         # Trailing stop setups: DD Exhaustion, GEX Long, AG Short
-        # DD: continuous trail (activation=20, gap=5) — waits for confirmed move before trailing
+        # DD: continuous trail (activation=10, gap=10) — 2026-06-22 (was 20/5; let the fade runners breathe)
         # GEX/AG: hybrid trail (BE, continuous trail)
         # Uses cycle low/high (not all-time) since trail level changes each cycle
         _tp = _trail_params.get(setup_name)
@@ -11810,7 +11810,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         is_long = direction.lower() == "long"
 
         # Trailing stop parameters
-        # DD Exhaustion: continuous trail (activation=20, gap=5, initial_sl=12)
+        # DD Exhaustion: continuous trail (activation=10, gap=10, initial_sl=12) — 2026-06-22 (was 20/5)
         # GEX Long: hybrid trail (BE at +8, continuous trail activation=10 gap=5, initial_sl=8)
         # AG Short: hybrid trail (BE at +10, continuous trail activation=12 gap=5)
         from app.setup_detector import is_gex_long_v3_enabled as _v3_on
@@ -11818,7 +11818,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                         if _v3_on()
                         else {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8})
         _trail_params = {
-            "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5, "initial_sl": 12},
+            "DD Exhaustion": {"mode": "continuous", "activation": 10, "gap": 10, "initial_sl": 12},  # 2026-06-22: 20/5 -> 10/10 (walk-forward validated)
             "GEX Long": _gex_long_tp,
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},

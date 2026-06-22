@@ -320,11 +320,11 @@ Detects DD-Charm divergence as a contrarian exhaustion signal. Based on Analysis
 - `dd_target_pts`: 10, `dd_stop_pts`: 20
 - `dd_market_start`: "10:00", `dd_market_end`: "15:30"
 
-**Outcome tracking — continuous trail** (updated 2026-02-19):
-- DD uses a continuous trailing stop: activation=20 pts, gap=5 pts
-- Once max profit reaches 20 pts, trail engages at max_profit - 5
+**Outcome tracking — continuous trail** (updated 2026-06-22):
+- DD uses a continuous trailing stop: **activation=10 pts, gap=10 pts** (was 20/5 until 2026-06-22), initial SL=12
+- Once max profit reaches 10 pts, trail engages at max_profit - 10 (lets the fade runners breathe)
+- **2026-06-22 change (act/gap 20/5 → 10/10):** walk-forward on clean 1-min SPX (train Feb–Apr, test May–Jun, SL=12) — OOS WR 79.5% / DD -24 / +424 vs prior 63.6% / -36 / +332. Confirmed on the 889-trade all-DD sample. Shipped in portal (main.py ×2), eval_trader, AND real_trader (via new `_SETUP_TRAIL_OVERRIDE` — real_trader otherwise uses SC-style globals for all setups; DD override = continuous no-BE 10/10). SL unchanged at 12.
 - Replaces rung-based trail (activation=7, step=5, lock=rung-2) which triggered prematurely on contrarian setups
-- Simulation: +41.9 pts (continuous) vs +4.0 pts (old rung-based) across 8 DD trades
 
 **Log-only mode:** Grade always "LOG", score always 0. Telegram messages tagged `[LOG-ONLY]`. Target: 50+ live signals before enabling as real setup.
 
@@ -411,7 +411,7 @@ Standalone local script that polls Railway for setup signals and places MES orde
 - **ES price for stops**: SPX and MES differ by ~15-20 pts (variable spread). Railway sends `es_price` from quote stream. Stop/target calculated from ES price, NOT SPX spot.
 - **OIF naming**: NT8 ATI requires prefix `oif`, extension `.txt`. Example: `oif1740422400000.txt`.
 - **Signal staleness**: `MAX_SIGNAL_AGE_S = 120` — signals older than 2 min are skipped (prevents stale entries after restart).
-- **Trailing stop**: DD Exhaustion=continuous trail (activation=20, gap=5). GEX Long=rung-based (start=12, step=5, lock=rung-2). Others=breakeven at `+be_trigger_pts`.
+- **Trailing stop**: DD Exhaustion=continuous trail (activation=10, gap=10; 2026-06-22, was 20/5). GEX Long=rung-based (start=12, step=5, lock=rung-2). Others=breakeven at `+be_trigger_pts`.
 - **Reversal**: Opposite-direction signal closes current position, opens new one. Checks compliance for new position first.
 - **Stale overnight**: On startup, if position date < today → auto-flatten.
 - **Orphan working-order guard (2026-06-08, commit `4d90ee7`)**: E2T FAILS the eval if ANY position OR working order rests on the book past **3:50pm CT** (a SHORT eval was failed this way — a synth-stop's CANCEL was dropped by NT8 ATI and the slot was untracked, leaving an orphan stop that E2T killed at 15:53 CT). Two layers: (1) `_register_orphan_cancel()`/`_verify_pending_cancels()` verify every synth-stop orphan CANCEL vs broker and re-send up to 4× (8s grace), escalating to `cancel_all()` once broker-flat — runs every loop even when the tracker is flat; (2) main loop fires an unconditional `nt8.cancel_all()` (CANCELALLORDERS) every 60s from `flatten_time`→16:55 ET regardless of `is_open`. Both StackingTracker + PositionTracker. Constants `_CANCEL_VERIFY_GRACE_S=8` / `_CANCEL_MAX_RETRIES=4`.

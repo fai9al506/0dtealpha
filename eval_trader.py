@@ -2728,12 +2728,12 @@ class PositionTracker:
         self._save()
 
     # Trail params — mirrors Railway's _trail_params in main.py
-    # DD Exhaustion: continuous trail (activation=20, gap=5)
+    # DD Exhaustion: continuous trail (activation=10, gap=10) — 2026-06-22 (was 20/5; walk-forward OOS WR 79.5%/DD -24)
     # GEX Long: v4 (2026-06-08) continuous trail (activation=15 gap=5, no BE, no fixed target, SL=14)
     # AG Short: hybrid trail (BE at +10, continuous trail activation=12 gap=5)
     # ES Absorption: hybrid trail (BE at +5, continuous trail activation=8 gap=3) — TSRT C6 ship 2026-05-06
     _TRAIL_PARAMS = {
-        "DD Exhaustion":  {"mode": "continuous", "activation": 20, "gap": 5},
+        "DD Exhaustion":  {"mode": "continuous", "activation": 10, "gap": 10},
         "GEX Long":       {"mode": "continuous", "activation": 15, "gap": 5},  # v4 2026-06-08: trail-only, SL=14
         "GEX Velocity":   {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
         "AG Short":       {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},

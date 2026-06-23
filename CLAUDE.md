@@ -569,7 +569,7 @@ finding).
 - `setup_cooldowns` - persisted cooldown state (trade_date, JSONB state including swing tracker)
 - `auto_trade_orders` - MES SIM auto-trade order state (setup_log_id PK, JSONB state with split-target tracking, crash recovery)
 - `stock_gex_scans` - Stock GEX data every 30 min (symbol, scan_date, spot, expiration, exp_label weekly/opex, key_levels JSONB, gex_data JSONB)
-- `setup_log.mes_sim_outcome_pnl / mes_sim_outcome_result / mes_sim_max_fav` (S55, 2026-05-13) - MES-driven trail simulation outcomes (portal realism, not new alpha; populated for V14 whitelist setups only)
+- `setup_log.mes_sim_outcome_pnl / mes_sim_outcome_result / mes_sim_max_fav` (S55, 2026-05-13) - MES-driven trail simulation outcomes (portal realism, not new alpha; populated for V14 whitelist setups). **2026-06-23: "DD Exhaustion" ADDED to whitelist (`mes_sim_backfill.py` V14_WHITELIST + _DEFAULT_PARAMS DD=continuous no-BE SL12/act10/gap10; `main.py` live-path tuple). Historical backfill Mar 23→now = 599/627 (Jun 15-16 Sierra-contaminated NULLed). Was excluded → DD-heavy filter comparisons flew blind. Finding: June DD shorts captured only +20 mes vs +223 chain (~9%).**
 - `tsrt_daily_stmt` (S204, 2026-06-04) - TSRT per-day broker-truth statement rows (day PK, gross/comm/net, n_trades, n_wins, trades JSONB) — persisted so weekly report history survives TS's 90-day lookback. **THE source of truth for day-$** — never sum `real_trade_orders.state` per-lid on multi-concurrent days (S210)
 - `vol_event_alerts` (S209, 2026-06-07) - dedup keys for vol-event Telegram alerts (key PK: `intraday-<date>` / `confirmed-<trigger date>`)
 

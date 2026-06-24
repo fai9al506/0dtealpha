@@ -8,6 +8,7 @@ Mirrors main.py _tlPassesStrategy(l,'v16') (~line 18833). Used by:
 Validated against the portal: 920 trades / +3408.2 pts (all-time Feb 2026+).
 WHEN THE LIVE FILTER CHANGES (V17/...): update passes_v16() here + bump LIVE_VER.
 """
+import os
 from zoneinfo import ZoneInfo
 from sqlalchemy import text
 
@@ -146,8 +147,13 @@ def passes_v16(l, gaps):
     # VIX Divergence (main.py:4233): long + grade!=C + GEX-* paradigm.
     if sn == 'VIX Divergence':
         return isLong and grade != 'C' and bool(para) and para.startswith('GEX-')
-    # Vanna Pivot Bounce (main.py:4295, S192): long + grade B + hour != 11 ET.
+    # Vanna Pivot Bounce (main.py:4340, S192): env-gated OFF by default (VPB_REAL_TRADE_ENABLED).
+    # Runtime returns False when the env != "true", so TSRT never places VPB; mirror that here so
+    # live_pass stops stamping phantom VPB trades (drift fixed 2026-06-25; verified vs portal CSV
+    # trade_log_2026-06-24 — 5 VPB longs were the ONLY diff). LOCKSTEP with main.py:4340.
     if sn == 'Vanna Pivot Bounce':
+        if os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower() != "true":
+            return False
         return isLong and grade == 'B' and not (et and et.hour == 11)
     # GEX Long v6 (main.py:4365): long + (gap filter) + not SIDIAL-EXTREME@hr14 + (align>=0 OR bull paradigm).
     # Detector already enforced the v6 classifier (verdict/magnet-dominance) before logging.

@@ -77,10 +77,103 @@ def _broker_realized_pnl(account_id: str) -> float | None:
         return None
 
 
+def _own_exit_price(state: dict[str, Any]) -> float | None:
+    """Per-lid exit price reflecting THIS signal's own trail/stop — NOT the
+    FIFO-reshuffled value.
+
+    On multi-concurrent days, app/fifo_reconcile.py (S210) overwrites
+    `close_fill_price` / `stop_fill_price` with broker-FIFO-paired prices that
+    are shuffled ACROSS the concurrent lids. The day/account totals stay
+    conserved, but a single lid's `close_fill_price` can then show another
+    lid's exit. For the per-lid gap comparison we want each signal's OWN exit,
+    so prefer the `*_pre_fifo_reconcile` audit fields when present and fall
+    back to the live fields otherwise. (Stop fill takes precedence over close
+    fill, mirroring the consumer order used elsewhere.)
+    """
+    for k in ("stop_fill_price_pre_fifo_reconcile", "stop_fill_price",
+              "close_fill_price_pre_fifo_reconcile", "close_fill_price"):
+        v = state.get(k)
+        if v is not None:
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _was_fifo_reshuffled(state: dict[str, Any]) -> bool:
+    """True if FIFO reconcile actually MOVED this lid's exit price (i.e. the
+    pre-reconcile value differs from the live value). Only happens on
+    multi-concurrent days where per-lid attribution is shuffled."""
+    for live_k, pre_k in (("stop_fill_price", "stop_fill_price_pre_fifo_reconcile"),
+                          ("close_fill_price", "close_fill_price_pre_fifo_reconcile")):
+        pre = state.get(pre_k)
+        live = state.get(live_k)
+        if pre is None or live is None:
+            continue
+        try:
+            if abs(float(pre) - float(live)) > 0.001:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _concurrent_lids(rows) -> set[int]:
+    """Find lids that ran CONCURRENTLY with another lid in the SAME account on
+    the same ET day (open intervals overlap). Those positions NET together at
+    the broker, so per-lid execution-gap flags are not meaningful (FIFO
+    attribution shuffles the per-lid exit). Returns the set of such lids.
+
+    Interval = [entry_et, entry_et + outcome_elapsed_min]. Entry comes from
+    setup_log.ts; duration from setup_log.outcome_elapsed_min (fallback 0 when
+    null → treated as an instantaneous point, still overlap-detectable).
+    """
+    # Build per-account list of (lid, start_min, end_min) using minutes-of-day.
+    by_acct: dict[str, list[tuple[int, float, float]]] = {}
+    for row in rows:
+        lid = row[0]
+        et = row[1]
+        state = row[6] or {}
+        acct = state.get("account_id", "?")
+        if et is None:
+            continue
+        try:
+            start_min = et.hour * 60 + et.minute + et.second / 60.0
+        except Exception:
+            continue
+        elapsed = row[7]
+        try:
+            dur = float(elapsed) if elapsed is not None else 0.0
+        except (TypeError, ValueError):
+            dur = 0.0
+        end_min = start_min + max(dur, 0.0)
+        by_acct.setdefault(acct, []).append((lid, start_min, end_min))
+
+    concurrent: set[int] = set()
+    for acct, intervals in by_acct.items():
+        if acct == "?" or len(intervals) < 2:
+            continue
+        for i in range(len(intervals)):
+            lid_i, s_i, e_i = intervals[i]
+            for j in range(len(intervals)):
+                if i == j:
+                    continue
+                lid_j, s_j, e_j = intervals[j]
+                # overlap if one starts before the other ends (inclusive)
+                if s_i <= e_j and s_j <= e_i:
+                    concurrent.add(lid_i)
+                    concurrent.add(lid_j)
+                    break
+    return concurrent
+
+
 def _classify_gap(state: dict[str, Any], gap_pts: float) -> str:
     """Map gap pattern to suspected root cause."""
     fill = state.get("fill_price")
-    exit_p = state.get("stop_fill_price") or state.get("close_fill_price")
+    # Use THIS lid's own exit (pre-FIFO-reconcile when present) for the
+    # wrong-side fingerprint — the FIFO-shuffled value belongs to a sibling.
+    exit_p = _own_exit_price(state)
     reason = state.get("close_reason", "")
     direction = state.get("direction", "").lower()
     is_long = direction in ("long", "bullish")
@@ -124,7 +217,7 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
         SELECT sl.id,
                (sl.ts AT TIME ZONE 'America/New_York') AS et,
                sl.setup_name, sl.direction, sl.outcome_pnl, sl.outcome_max_profit,
-               rto.state
+               rto.state, sl.outcome_elapsed_min
         FROM setup_log sl
         LEFT JOIN real_trade_orders rto ON rto.setup_log_id = sl.id
         WHERE (sl.ts AT TIME ZONE 'America/New_York')::date = '{target_date}'
@@ -142,6 +235,11 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
         from sqlalchemy import text
         rows = conn.execute(text(sql)).fetchall()
 
+    # Identify lids that ran concurrently with a sibling in the same account.
+    # Their per-lid exit price is FIFO-reshuffled (S210), so the per-lid gap is
+    # not meaningful — we suppress/relabel execution-gap flags for them.
+    concurrent_lids = _concurrent_lids(rows)
+
     for row in rows:
         lid = row[0]
         et = row[1]
@@ -151,9 +249,13 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
         state = row[6] or {}
 
         fill = state.get("fill_price")
-        exit_p = state.get("stop_fill_price") or state.get("close_fill_price")
+        # Per-lid comparison uses THIS signal's OWN exit (pre-FIFO-reconcile when
+        # present); the account total below uses the FIFO-correct live value.
+        exit_p = _own_exit_price(state)
+        acct_exit_p = state.get("stop_fill_price") or state.get("close_fill_price")
         acct = state.get("account_id", "?")
         is_long = direction.lower() in ("long", "bullish")
+        is_concurrent = lid in concurrent_lids
 
         portal_total_pts += portal_pnl
 
@@ -175,28 +277,51 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
             )
             continue
 
+        # Per-lid real P&L (own exit) for the gap comparison.
         if is_long:
             real_pts = exit_p - fill
         else:
             real_pts = fill - exit_p
 
-        if acct in real_total_pts_by_acct:
-            real_total_pts_by_acct[acct] += real_pts
+        # Per-account total uses the FIFO-correct (conserved) exit price so the
+        # account/day totals stay exactly right even on concurrent days.
+        if acct in real_total_pts_by_acct and acct_exit_p is not None:
+            try:
+                acct_exit_f = float(acct_exit_p)
+                acct_real_pts = (acct_exit_f - fill) if is_long else (fill - acct_exit_f)
+                real_total_pts_by_acct[acct] += acct_real_pts
+            except (TypeError, ValueError):
+                pass
 
         gap_pts = real_pts - portal_pnl
         gap_dollars = gap_pts * MES_DOLLAR_PER_PT
 
         if abs(gap_pts) >= GAP_FLAG_PTS:
-            flagged_count += 1
-            why = _classify_gap(state, gap_pts)
-            gap_emoji = "🟢" if gap_dollars > 0 else "🔴"
-            dir_arrow = "↗" if direction.lower() in ("long","bullish") else "↘"
-            trade_lines.append(
-                f"{gap_emoji} <b>{setup}</b> {dir_arrow} #{lid} <i>{acct[-4:]}</i>\n"
-                f"   Portal {portal_pnl:+.1f}p  →  Real {real_pts:+.1f}p  "
-                f"<b>(gap ${gap_dollars:+.0f})</b>\n"
-                f"   <i>{why}</i>"
-            )
+            if is_concurrent:
+                # On concurrent days the per-lid exit attribution is FIFO-shuffled
+                # across siblings → a per-lid "gap" is an artifact, not an
+                # execution problem. Relabel clearly instead of crying basis drift.
+                flagged_count += 1
+                dir_arrow = "↗" if is_long else "↘"
+                why = ("FIFO-attribution (per-lid P&amp;L not meaningful on "
+                       "concurrent days; trust the day/account total)")
+                trade_lines.append(
+                    f"🔵 <b>{setup}</b> {dir_arrow} #{lid} <i>{acct[-4:]}</i>\n"
+                    f"   Portal {portal_pnl:+.1f}p  →  Lid-exit {real_pts:+.1f}p  "
+                    f"<b>(Δ ${gap_dollars:+.0f})</b>\n"
+                    f"   <i>{why}</i>"
+                )
+            else:
+                flagged_count += 1
+                why = _classify_gap(state, gap_pts)
+                gap_emoji = "🟢" if gap_dollars > 0 else "🔴"
+                dir_arrow = "↗" if is_long else "↘"
+                trade_lines.append(
+                    f"{gap_emoji} <b>{setup}</b> {dir_arrow} #{lid} <i>{acct[-4:]}</i>\n"
+                    f"   Portal {portal_pnl:+.1f}p  →  Real {real_pts:+.1f}p  "
+                    f"<b>(gap ${gap_dollars:+.0f})</b>\n"
+                    f"   <i>{why}</i>"
+                )
 
     # Account-level reconcile vs broker
     acct_lines: list[str] = []

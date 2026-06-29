@@ -22,15 +22,26 @@ LIVE_VER = "v16-sb"   # V16 + Semi-Basket (Scheme B 0/0/1). Bump when the live f
 BASKET_DEADBAND = 0.15
 
 
+def _basket_sizing_mode():
+    """'012' (default) re-admits neutral as a TAKE (sized 1x); '001' = legacy skip-neutral.
+    LOCKSTEP env across all copies — see feedback_filter_three_copies_lockstep."""
+    return os.getenv("BASKET_SIZING_MODE", "012").lower()
+
+
 def basket_blocks(l):
-    """True = Semi-Basket says SKIP this trade. Fail-open (False) when basket_pct is NULL."""
+    """True = Semi-Basket says SKIP this trade. Fail-open (False) when basket_pct is NULL.
+
+    Mode '001' (legacy 0/0/1): skip neutral AND contradict.
+    Mode '012' (default 0/1/2): skip ONLY contradict; neutral is RE-ADMITTED (sized 1x by the
+    trader — sizing is the trader's job, the filter only decides take/skip)."""
     bp = l['basket_pct'] if 'basket_pct' in l else None
     if bp is None:
         return False  # fail-open: no basket data -> take (cannot create a loss)
     bp = float(bp)
     is_long = l['direction'] in ('long', 'bullish')
     if abs(bp) < BASKET_DEADBAND:
-        return True   # neutral -> skip
+        # neutral: '001' skips it, '012' re-admits it
+        return _basket_sizing_mode() != "012"
     return (bp > 0) != is_long  # contradict (sign mismatch) -> skip ; confirm -> take
 
 

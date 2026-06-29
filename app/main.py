@@ -4206,15 +4206,23 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         return False
 
     # ── V16-SB Semi-Basket gate (2026-06-16) — this is what makes the live filter V16-SB ──
-    # Scheme B "0/0/1": take ONLY basket-CONFIRMED (tech basket %-from-open sign matches
-    # trade direction); skip neutral (|%|<0.15 deadband) AND contradict; FAIL-OPEN when
-    # basket_pct is None (no/stale data -> take, can never add a loss). basket_pct is
-    # stamped on the signal at detection (setup_log.basket_pct). MUST stay in lockstep with
-    # live_filter.basket_blocks() + portal JS _tlPassesStrategy 'v16sb' branch
+    # BASKET_SIZING_MODE (default "012"):
+    #   "001" (legacy Scheme B 0/0/1): take ONLY basket-CONFIRMED; skip neutral
+    #     (|%|<0.15 deadband) AND contradict.
+    #   "012" (default, validated 2026-06-23): take CONFIRMED (sized 2x by the trader) AND
+    #     neutral (RE-ADMITTED, sized 1x); skip ONLY contradict. Sizing lives in
+    #     real_trader._effective_qty — the filter here only decides take/skip.
+    # FAIL-OPEN when basket_pct is None (no/stale data -> take, can never add a loss).
+    # basket_pct is stamped on the signal at detection (setup_log.basket_pct). MUST stay in
+    # lockstep with live_filter.basket_blocks() + BOTH portal JS copies
+    # (passesStrategy 'v16sb' ~13782 + _tlPassesStrategy 'v16sb' ~18865)
     # (see memory feedback_filter_three_copies_lockstep).
     if basket_pct is not None:
         _sb_long = direction.lower() in ("long", "bullish")
-        if abs(basket_pct) < 0.15 or ((basket_pct > 0) != _sb_long):
+        _sb_mode = os.getenv("BASKET_SIZING_MODE", "012").lower()
+        _sb_neutral = abs(basket_pct) < 0.15
+        _sb_contradict = (not _sb_neutral) and ((basket_pct > 0) != _sb_long)
+        if _sb_contradict or (_sb_neutral and _sb_mode != "012"):
             return False
 
     # ── S180 (2026-05-24): GEX-TARGET PM long block ──
@@ -5690,6 +5698,9 @@ def _run_setup_check():
                                     # (SC long BOFA-PURE align=+1 → 2 MES instead of 1).
                                     paradigm=r.get("paradigm"),
                                     greek_alignment=r.get("greek_alignment"),
+                                    # Basket "0/1/2" sizing: pass the SAME frozen basket_pct the
+                                    # live filter used (stamped at signal time) so size matches take/skip.
+                                    basket_pct=r.get("basket_pct"),
                                 )
                             elif not es_px:
                                 # S114: ES quote stream stale AND REST fallback returned None.
@@ -6422,6 +6433,8 @@ def _run_absorption_detection(bars: list) -> dict | None:
                             # S149: ES Abs is not in the SC long bucket so this is just defensive
                             paradigm=result.get("paradigm"),
                             greek_alignment=result.get("greek_alignment"),
+                            # Basket "0/1/2" sizing: pass the frozen stamped basket_pct (matches filter).
+                            basket_pct=result.get("basket_pct"),
                         )
                     except Exception as e:
                         print(f"[real-trader] ES Absorption place error: {e}", flush=True)
@@ -13766,6 +13779,9 @@ EOD_REVIEW_TEMPLATE = """
   </div>
 
 <script>
+// Basket sizing mode (server-injected from env BASKET_SIZING_MODE): '012' (default) re-admits
+// neutral as a TAKE; '001' = legacy skip-neutral. Lockstep with _passes_live_filter / passesStrategy.
+const _BASKET_SIZING_MODE = "__BASKET_SIZING_MODE__";
 const PILL_COLORS = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','SB Absorption':'#f59e0b','SB10 Absorption':'#f59e0b','SB2 Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899','GEX Velocity':'#22c55e','Vanna Pivot Bounce':'#818cf8'};
 const GRADE_COLORS = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308','B':'#f59e0b','C':'#888','LOG':'#555'};
 let _allTrades = [];
@@ -13779,10 +13795,15 @@ function passesStrategy(l, strat) {
   const align = l.greek_alignment != null ? l.greek_alignment : 0;
   const isLong = l.direction === 'long' || l.direction === 'bullish';
   // V16-SB = V16 + Semi-Basket (lockstep with _tlPassesStrategy / _passes_live_filter).
+  // BASKET_SIZING_MODE '012' (default) re-admits neutral; '001' = legacy skip-neutral.
   if (strat === 'v16sb') {
     if (!passesStrategy(l, 'v16')) return false;
     const bp = l.basket_pct;
-    if (bp != null && (Math.abs(bp) < 0.15 || ((bp > 0) !== isLong))) return false;
+    if (bp != null) {
+      const _neutral = Math.abs(bp) < 0.15;
+      const _contradict = !_neutral && ((bp > 0) !== isLong);
+      if (_contradict || (_neutral && _BASKET_SIZING_MODE !== '012')) return false;
+    }
     return true;
   }
   if (strat === 'r1') return Math.abs(align) >= 3;
@@ -18764,6 +18785,9 @@ DASH_HTML_TEMPLATE = """
 
     // ===== Trade Log Tab =====
     let _tradeLogData = [];
+    // Basket sizing mode (server-injected from env BASKET_SIZING_MODE): '012' (default) re-admits
+    // neutral as a TAKE; '001' = legacy skip-neutral. Lockstep with _passes_live_filter.
+    const _BASKET_SIZING_MODE = "__BASKET_SIZING_MODE__";
     let _tlDailyGaps = {};  // {date_str: gap_pts} for V12 filter
     fetch('/api/setup/daily_gaps', {cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_tlDailyGaps=d;}).catch(()=>{});
     // GEX Long v3 server-side overlay: per-trade {pass, result, pnl, max_fav, verdict}
@@ -18859,17 +18883,22 @@ DASH_HTML_TEMPLATE = """
 
     function _tlPassesStrategy(l, strat) {
       if (!strat) return true;
-      // V16-SB = V16 base + Semi-Basket Scheme B (0/0/1). Reuse v16 then apply basket so
-      // the two never diverge. LOCKSTEP with _passes_live_filter + live_filter.basket_blocks
+      // V16-SB = V16 base + Semi-Basket. BASKET_SIZING_MODE (default '012'):
+      //   '001' = legacy 0/0/1: skip neutral AND contradict.
+      //   '012' = 0/1/2: re-admit neutral (sized 1x by trader); skip ONLY contradict.
+      // Reuse v16 then apply basket so the two never diverge. LOCKSTEP with
+      // _passes_live_filter + live_filter.basket_blocks + passesStrategy 'v16sb'
       // (see memory feedback_filter_three_copies_lockstep).
       if (strat === 'v16sb') {
         if (!_tlPassesStrategy(l, 'v16')) return false;
         const bp = l.basket_pct;
         if (bp != null) {
           const _sbLong = l.direction === 'long' || l.direction === 'bullish';
-          if (Math.abs(bp) < 0.15 || ((bp > 0) !== _sbLong)) return false;  // neutral or contradict -> skip
+          const _neutral = Math.abs(bp) < 0.15;
+          const _contradict = !_neutral && ((bp > 0) !== _sbLong);
+          if (_contradict || (_neutral && _BASKET_SIZING_MODE !== '012')) return false;
         }
-        return true;  // confirm or no-data(fail-open)
+        return true;  // confirm, neutral(012), or no-data(fail-open)
       }
       const sn = l.setup_name || '';
       const align = l.greek_alignment != null ? l.greek_alignment : 0;
@@ -21312,6 +21341,7 @@ def spxw_dashboard(session: str = Cookie(default=None)):
             .replace("__LAST_MSG__", str(last_msg))
             .replace("__PULL_MS__", str(PULL_EVERY * 1000))
             .replace("__USER_EMAIL__", user["email"])
+            .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "012").lower())
             .replace("__IS_ADMIN__", "true" if user.get("is_admin") else "false"))
     return HTMLResponse(html)
 
@@ -21323,7 +21353,9 @@ def eod_review_page(session: str = Cookie(default=None), date: str = Query(None)
     if not user:
         return RedirectResponse(url="/", status_code=302)
     review_date = date or datetime.now(NY).strftime("%Y-%m-%d")
-    html = EOD_REVIEW_TEMPLATE.replace("__DATE__", review_date)
+    html = (EOD_REVIEW_TEMPLATE
+            .replace("__DATE__", review_date)
+            .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "012").lower()))
     return HTMLResponse(html)
 
 

@@ -614,12 +614,36 @@ def _is_double_up_bucket(setup_name: str, direction: str,
     return True
 
 
+def _basket_confirms(direction: str, basket_pct: float | None) -> bool:
+    """True only when BASKET_SIZING_MODE=='012' AND the stamped tech-basket %-from-open
+    CONFIRMS this trade's direction (sign matches, outside the deadband). Fail-safe: any
+    missing/None basket_pct, neutral, contradict, or mode!='012' → False (never size up on
+    uncertainty). Uses basket_gate.classify (the same pure classifier the filter uses)."""
+    if basket_pct is None:
+        return False
+    if os.getenv("BASKET_SIZING_MODE", "012").lower() != "012":
+        return False
+    try:
+        from app import basket_gate
+        return basket_gate.classify(float(basket_pct), direction) == "confirm"
+    except Exception:
+        return False  # fail-safe: on any error, do NOT increase size
+
+
 def _effective_qty(setup_name: str, direction: str,
-                   paradigm: str | None, align: int | None) -> int:
-    """Returns intended quantity for this trade (1 default, 2 for S149 bucket)."""
-    if _is_double_up_bucket(setup_name, direction, paradigm, align):
-        return 2
-    return QTY
+                   paradigm: str | None, align: int | None,
+                   basket_pct: float | None = None) -> int:
+    """Returns intended quantity for this trade.
+
+    Base = 1 (QTY), or 2 for the S149 double-up bucket (SC long BOFA-PURE align=+1).
+    Basket "0/1/2" sizing (BASKET_SIZING_MODE=='012'): a basket-CONFIRMED trade is sized to
+    AT LEAST 2 contracts. This is a max(qty, 2), NOT a multiplier — it does NOT stack onto
+    S149 to make 4 (the S149 bucket already returns 2; a confirmed S149 trade stays 2).
+    Fail-safe: missing/neutral/contradict basket, or mode!='012' → no size-up."""
+    qty = 2 if _is_double_up_bucket(setup_name, direction, paradigm, align) else QTY
+    if _basket_confirms(direction, basket_pct):
+        qty = max(qty, 2)
+    return qty
 
 
 # ====== MAIN ENTRY POINT ======
@@ -628,7 +652,8 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                 es_price: float, target_pts: float | None, stop_pts: float,
                 charm_limit_price: float | None = None,
                 paradigm: str | None = None,
-                greek_alignment: int | None = None):
+                greek_alignment: int | None = None,
+                basket_pct: float | None = None):
     """Place 1 MES REAL trade when a setup fires.
 
     Args:
@@ -641,6 +666,11 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         charm_limit_price: MES limit entry price (charm S/R shorts). None = market order.
         paradigm: Volland paradigm (passed from main.py dispatch for S149 bucket detection)
         greek_alignment: -3..+3 alignment (passed from main.py dispatch for S149)
+        basket_pct: tech-basket %-from-open STAMPED on the signal at detection
+            (setup_log.basket_pct). Used for basket "0/1/2" sizing (BASKET_SIZING_MODE=='012'):
+            a basket-CONFIRMED trade is sized to >=2. None / mode!='012' → base qty (fail-safe).
+            Prefer the stamped value so the size decision matches the filter's take/skip decision
+            (both read the SAME frozen basket_pct — no live re-read divergence).
     """
     # ── S175 Master kill (2026-05-21 emergency) ──
     # Volland deployed bot detection overnight → headless worker captures 0 widgets,
@@ -676,9 +706,11 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
 
     is_long = direction.lower() in ("long", "bullish")
 
-    # S149: determine effective quantity (1 default, 2 for SC long BOFA-PURE align=+1).
+    # S149 + basket "0/1/2": determine effective quantity.
+    #   base 1 (QTY); 2 for the SC long BOFA-PURE align=+1 S149 bucket; >=2 when the tech
+    #   basket CONFIRMS this trade's direction under BASKET_SIZING_MODE=='012' (max, not ×).
     # Computed BEFORE all gates so cap/dedup/alerts can reference it consistently.
-    qty = _effective_qty(setup_name, direction, paradigm, greek_alignment)
+    qty = _effective_qty(setup_name, direction, paradigm, greek_alignment, basket_pct)
 
     # Setup filter: only trade Skew Charm + AG Short + VPB-Bull (defense-in-depth, main.py also filters)
     # AG Short added 2026-04-08 — SHORT account only (AG hardcoded direction="short")

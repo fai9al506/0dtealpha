@@ -2075,9 +2075,12 @@ def log_setup(result_wrapper):
                     "GEX Velocity": (8, 10, 5),
                     "AG Short": (14, 12, 5),
                     "Skew Charm": (14, 10, 5),
-                    # ES Absorption C6 (2026-05-06): hybrid BE@5 + trail act=8 gap=3, no fixed target
-                    # Backtest 489t: PURE WR 56→62%, +$1839→+$4030, MaxDD 56→25pt
-                    "ES Absorption": (8, 8, 3),
+                    # ES Absorption: SL8 + trail act=6 gap=2, no fixed target (2026-06-29).
+                    # Tightened from act8/gap3: mes_walk on Sierra bars (108 V16 trades May-Jun) = +101.5p
+                    # vs -10.8p, WR 50→61%, positive in BOTH months (May +70 / Jun +31) — locks the
+                    # near-target spike before fast reversals tag the real fill (fixes lid-4454 capture
+                    # leak: ES hit +9.8 then reversed in ~1min, real banked only +3). Revert: (8, 8, 3).
+                    "ES Absorption": (8, 6, 2),
                     "SB Absorption": (12, 20, 10),
                     "SB10 Absorption": (12, 20, 10),
                     "SB2 Absorption": (12, 20, 10),

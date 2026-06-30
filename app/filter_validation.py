@@ -294,8 +294,9 @@ def evaluate_rules(window_days: int = 30) -> list[dict]:
 
 def format_telegram_summary(results: list[dict]) -> str:
     """Compact Telegram-friendly summary."""
+    _wd = next((r.get("window_days") for r in results if r.get("window_days")), 90)
     lines = [f"🛡️ <b>Filter Validation — {datetime.now(NY).strftime('%Y-%m-%d')}</b>",
-             "Active block rules vs recent 30-day data:\n"]
+             f"Active block rules vs recent {_wd}-day data:\n"]
     has_alert = False
     for r in results:
         if r.get("error"):
@@ -327,7 +328,7 @@ def run_today() -> None:
     if not (dtime(16, 30) <= now.time() <= dtime(23, 59)):
         return
     try:
-        results = evaluate_rules(window_days=30)
+        results = evaluate_rules(window_days=90)  # 90d (was 30) — spans multiple vol-regimes so a single low-vol month doesn't false-flag DEGRADING (2026-06-30)
         # Persist to filter_validation_runs for trend tracking across weeks
         n_written = _persist_results(results)
         print(f"[filter-validation] weekly check ({len(results)} rules, {n_written} persisted):",

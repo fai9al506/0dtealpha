@@ -2094,7 +2094,7 @@ def _reconcile_positions():
             # naturally transition to closed within seconds; counting them as
             # expected leads to false GHOST stamps during the close race.
             expected_qty = sum(
-                QTY for o in _active_orders.values()
+                o.get("quantity", QTY) for o in _active_orders.values()  # per-order qty (2 for basket-confirmed); was global QTY=1 → false POSITION MISMATCH on 2x trades (2026-06-30)
                 if o.get("account_id") == acct_id
                 and o["status"] in ("pending_entry", "filled")
                 and not o.get("closing_in_progress")

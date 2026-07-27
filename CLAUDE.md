@@ -261,6 +261,8 @@ Append new analysis sections to this file after each review session.
 
 ### ES Absorption Detector (Restored 2026-03-11)
 
+**SHORTS CUT from the live filter 2026-07-27 (S229, commit `d596bad`):** ES Absorption is now LONG-only in `_passes_live_filter` / `live_filter.passes_v16` / both portal `v16` mirrors (lockstep `if not isLong: return False` in the ES Abs branch). Reason: consistent recent loser (high-vol winner / low-vol loser — Mar +$458/75% → May/Jun/Jul negative; Apr-Jul net −$257). Longs unchanged. Reversible = delete the isLong guards.
+
 Volume-gated price vs CVD divergence on ES 5-pt range bars, with Volland confluence scoring. Originally replaced by "CVD Divergence" (simple swing-to-swing, no quality gates) on Mar 7, but CVD Divergence was net negative (39% WR, -140 pts across 11 dates). Original restored because with alignment filter: 76% WR, +88.1 pts at alignment +3; 67% WR, +117.6 pts at alignment >= 0.
 
 **Architecture:**

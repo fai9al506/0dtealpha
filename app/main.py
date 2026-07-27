@@ -4306,6 +4306,11 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     # 73% green trading days. Worst single day -$80 MES at 1 MES.
     # Promoted from shadow on backtest strength (166-trade sample, 7-18x VPB/VIX Div sample).
     if setup_name == "ES Absorption":
+        # CUT ES Absorption SHORTS (2026-07-27, user directive): consistent recent loser.
+        # By month (v16-sb, chain$): Mar +$458/75% (high-vol) -> May -$122 / Jun -$216 / Jul -$41;
+        # Apr-Jul net -$257, worst-WR short. Longs KEPT. Reversible (delete this line).
+        if direction not in ("long", "bullish"):
+            return False
         if grade not in ("A", "A+"):
             return False  # only model's high-confidence grades trade
         if paradigm in ("AG-TARGET", "AG-LIS"):
@@ -14038,6 +14043,7 @@ function passesStrategy(l, strat) {
     if (v13VannaBlock()) return false;
     if (v13DDQualityBlock()) return false;
     if (sn === 'ES Absorption') {
+      if (!isLong) return false;  // CUT ES Abs shorts 2026-07-27 (lockstep w/ _passes_live_filter)
       if (l.grade !== 'A' && l.grade !== 'A+') return false;
       if (l.paradigm === 'AG-TARGET' || l.paradigm === 'AG-LIS') return false;
       const m = etMins(l.ts);
@@ -19124,6 +19130,7 @@ DASH_HTML_TEMPLATE = """
         if (_tlV13VannaBlock()) return false;
         if (_tlV13DDQualityBlock()) return false;
         if (sn === 'ES Absorption') {
+          if (!isLong) return false;  // CUT ES Abs shorts 2026-07-27 (lockstep w/ _passes_live_filter)
           if (l.grade !== 'A' && l.grade !== 'A+') return false;
           if (l.paradigm === 'AG-TARGET' || l.paradigm === 'AG-LIS') return false;
           const mins = _tlEtMins();

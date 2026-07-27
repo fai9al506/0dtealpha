@@ -188,6 +188,7 @@ def passes_v16(l, gaps):
     if sn in ('IV Momentum', 'Vanna Butterfly'): return False
     if not v11() or v13Bull() or v13Vanna() or v13DDQ(): return False
     if sn == 'ES Absorption':
+        if not isLong: return False  # CUT ES Abs shorts 2026-07-27 (lockstep w/ _passes_live_filter)
         if grade not in ('A', 'A+') or para in ('AG-TARGET', 'AG-LIS'): return False
         if mins is not None and mins >= 945: return False
         if isLong and align < 0: return False

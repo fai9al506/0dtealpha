@@ -93,5 +93,15 @@ Era total 2026-05-14 → 2026-07-01: **+$512 net / 32 sessions / 283 trades.**
 - **Basket sizing has only ~8 weeks of data** — `setup_log.basket_pct` is 0% populated before
   June 2026. It is the largest single contributor to the projection and the least tested. Treat
   the first real month as its validation.
+- **The projection is slightly CONSERVATIVE: VIX Divergence was left out of the simulation.**
+  I inferred it was disabled (a `whitelist_reject` on 2026-05-21, nothing placed since 05-18),
+  but Railway shows `VIX_DIV_REAL_TRADE_ENABLED=true`. It passes V16 base 7× in Jul 1 – Aug 6
+  (+11.7 pts = +$58) and 13× since Mar 16 (54% WR, +58.2 pts = +$291 @1 MES). Small and positive
+  — fold it into the next re-run rather than restating the headline.
+- **Confirmed live env (2026-08-07):** `VPB_REAL_TRADE_ENABLED=true` (the sim depends on this —
+  without it `passes_v16` silently drops 21 VPB longs), `SPX_EXIT_ENABLED=true`,
+  `GEX_LONG_V3_ENABLED=true` (detector still logs for the S230 rebuild; only the *real-trade*
+  flag is off). `BASKET_GATE_ENABLED=true` is a dormant leftover — `basket_gate.evaluate()` is
+  no longer called anywhere in the trade path, only the pure `classify()` helper is used.
 
 Detail: memory `research_s231_tsrt_counterfactual_jul_aug.md`.

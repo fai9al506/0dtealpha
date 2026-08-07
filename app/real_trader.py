@@ -615,13 +615,19 @@ def _is_double_up_bucket(setup_name: str, direction: str,
 
 
 def _basket_confirms(direction: str, basket_pct: float | None) -> bool:
-    """True only when BASKET_SIZING_MODE=='012' AND the stamped tech-basket %-from-open
-    CONFIRMS this trade's direction (sign matches, outside the deadband). Fail-safe: any
-    missing/None basket_pct, neutral, contradict, or mode!='012' → False (never size up on
-    uncertainty). Uses basket_gate.classify (the same pure classifier the filter uses)."""
+    """True only when BASKET_SIZING_MODE is a sizing mode ('sizeonly' or '012') AND the stamped
+    tech-basket %-from-open CONFIRMS this trade's direction (sign matches, outside the deadband).
+    Fail-safe: any missing/None basket_pct, neutral, contradict, or a non-sizing mode → False
+    (never size up on uncertainty). Uses basket_gate.classify (the pure classifier the filter uses).
+
+    NOTE (S231, 2026-08-07): 'sizeonly' MUST be listed here. In that mode the filter stops
+    blocking contradicts and the basket's ONLY remaining job is this 2x decision — if this
+    function rejected the mode, the block would be removed and the sizing edge silently lost
+    with it, which is the whole value of the change. Keep in lockstep with
+    live_filter._basket_sizing_mode / main.py _passes_live_filter."""
     if basket_pct is None:
         return False
-    if os.getenv("BASKET_SIZING_MODE", "012").lower() != "012":
+    if os.getenv("BASKET_SIZING_MODE", "sizeonly").lower() not in ("sizeonly", "012"):
         return False
     try:
         from app import basket_gate

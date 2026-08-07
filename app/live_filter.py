@@ -23,17 +23,29 @@ BASKET_DEADBAND = 0.15
 
 
 def _basket_sizing_mode():
-    """'012' (default) re-admits neutral as a TAKE (sized 1x); '001' = legacy skip-neutral.
+    """'sizeonly' (default, S231): the basket NEVER blocks — it only decides 1x vs 2x.
+    '012': re-admits neutral as a TAKE (sized 1x), skips contradict.
+    '001': legacy Scheme B — skip neutral AND contradict.
     LOCKSTEP env across all copies — see feedback_filter_three_copies_lockstep."""
-    return os.getenv("BASKET_SIZING_MODE", "012").lower()
+    return os.getenv("BASKET_SIZING_MODE", "sizeonly").lower()
 
 
 def basket_blocks(l):
     """True = Semi-Basket says SKIP this trade. Fail-open (False) when basket_pct is NULL.
 
+    Mode 'sizeonly' (DEFAULT since 2026-08-07, S231): NEVER blocks. The basket is a SIZING
+      signal only — confirm -> 2x (real_trader._effective_qty), everything else -> 1x.
+      Measured Jul 1 - Aug 6 (GEX off, chain outcomes, real_trader gate order): the
+      contradict bucket is 107t / 55% WR / +36.8 pts — PROFITABLE, so blocking it forfeits
+      money AND roughly doubles MaxDD (-$424 -> -$944) by thinning the book down to
+      correlated confirmed trades. Blocking cost -$547 (Jul 1 - Aug 6) / -$590 (Jun 11 - Aug 6).
+      Control test: selective 2x beats FLAT 2 MES on both P&L and drawdown, so the basket is
+      genuinely selecting, not just levering. See memory research_s231_tsrt_counterfactual_jul_aug.
     Mode '001' (legacy 0/0/1): skip neutral AND contradict.
-    Mode '012' (default 0/1/2): skip ONLY contradict; neutral is RE-ADMITTED (sized 1x by the
-    trader — sizing is the trader's job, the filter only decides take/skip)."""
+    Mode '012' (previous default 0/1/2): skip ONLY contradict; neutral re-admitted."""
+    mode = _basket_sizing_mode()
+    if mode == "sizeonly":
+        return False
     bp = l['basket_pct'] if 'basket_pct' in l else None
     if bp is None:
         return False  # fail-open: no basket data -> take (cannot create a loss)
@@ -41,7 +53,7 @@ def basket_blocks(l):
     is_long = l['direction'] in ('long', 'bullish')
     if abs(bp) < BASKET_DEADBAND:
         # neutral: '001' skips it, '012' re-admits it
-        return _basket_sizing_mode() != "012"
+        return mode != "012"
     return (bp > 0) != is_long  # contradict (sign mismatch) -> skip ; confirm -> take
 
 

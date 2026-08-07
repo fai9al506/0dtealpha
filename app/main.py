@@ -4209,20 +4209,27 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         return False
 
     # ── V16-SB Semi-Basket gate (2026-06-16) — this is what makes the live filter V16-SB ──
-    # BASKET_SIZING_MODE (default "012"):
+    # BASKET_SIZING_MODE:
+    #   "sizeonly" (DEFAULT since 2026-08-07, S231): the basket NEVER blocks. It is a SIZING
+    #     signal only — confirm -> 2 MES via real_trader._effective_qty, everything else 1 MES.
+    #     Why: measured Jul 1 - Aug 6 (GEX off, chain outcomes, real_trader gate order) the
+    #     CONTRADICT bucket is 107t / 55% WR / +36.8 pts — profitable. Blocking it cost -$547
+    #     (Jul 1 - Aug 6) / -$590 (Jun 11 - Aug 6) AND roughly doubled MaxDD (-$424 -> -$944),
+    #     because the block thins the book to correlated confirmed trades that lose together.
+    #     Control: selective 2x beat FLAT 2 MES on BOTH P&L and drawdown in every window/cap,
+    #     so the basket really is selecting, not just levering.
     #   "001" (legacy Scheme B 0/0/1): take ONLY basket-CONFIRMED; skip neutral
     #     (|%|<0.15 deadband) AND contradict.
-    #   "012" (default, validated 2026-06-23): take CONFIRMED (sized 2x by the trader) AND
-    #     neutral (RE-ADMITTED, sized 1x); skip ONLY contradict. Sizing lives in
-    #     real_trader._effective_qty — the filter here only decides take/skip.
+    #   "012" (previous default): take CONFIRMED (sized 2x) AND neutral (sized 1x); skip
+    #     ONLY contradict.
     # FAIL-OPEN when basket_pct is None (no/stale data -> take, can never add a loss).
     # basket_pct is stamped on the signal at detection (setup_log.basket_pct). MUST stay in
     # lockstep with live_filter.basket_blocks() + BOTH portal JS copies
     # (passesStrategy 'v16sb' ~13782 + _tlPassesStrategy 'v16sb' ~18865)
     # (see memory feedback_filter_three_copies_lockstep).
-    if basket_pct is not None:
+    _sb_mode = os.getenv("BASKET_SIZING_MODE", "sizeonly").lower()
+    if basket_pct is not None and _sb_mode != "sizeonly":
         _sb_long = direction.lower() in ("long", "bullish")
-        _sb_mode = os.getenv("BASKET_SIZING_MODE", "012").lower()
         _sb_neutral = abs(basket_pct) < 0.15
         _sb_contradict = (not _sb_neutral) and ((basket_pct > 0) != _sb_long)
         if _sb_contradict or (_sb_neutral and _sb_mode != "012"):
@@ -13803,11 +13810,12 @@ function passesStrategy(l, strat) {
   const align = l.greek_alignment != null ? l.greek_alignment : 0;
   const isLong = l.direction === 'long' || l.direction === 'bullish';
   // V16-SB = V16 + Semi-Basket (lockstep with _tlPassesStrategy / _passes_live_filter).
-  // BASKET_SIZING_MODE '012' (default) re-admits neutral; '001' = legacy skip-neutral.
+  // BASKET_SIZING_MODE 'sizeonly' (default, S231) = basket NEVER blocks, sizing only;
+  // '012' re-admits neutral and skips contradict; '001' = legacy skip-neutral+contradict.
   if (strat === 'v16sb') {
     if (!passesStrategy(l, 'v16')) return false;
     const bp = l.basket_pct;
-    if (bp != null) {
+    if (bp != null && _BASKET_SIZING_MODE !== 'sizeonly') {
       const _neutral = Math.abs(bp) < 0.15;
       const _contradict = !_neutral && ((bp > 0) !== isLong);
       if (_contradict || (_neutral && _BASKET_SIZING_MODE !== '012')) return false;
@@ -18892,22 +18900,24 @@ DASH_HTML_TEMPLATE = """
 
     function _tlPassesStrategy(l, strat) {
       if (!strat) return true;
-      // V16-SB = V16 base + Semi-Basket. BASKET_SIZING_MODE (default '012'):
-      //   '001' = legacy 0/0/1: skip neutral AND contradict.
+      // V16-SB = V16 base + Semi-Basket. BASKET_SIZING_MODE (default 'sizeonly', S231):
+      //   'sizeonly' = basket NEVER blocks; it only picks 1x vs 2x (contradict bucket was
+      //                profitable: 107t / 55% WR / +36.8 pts, and blocking doubled MaxDD).
       //   '012' = 0/1/2: re-admit neutral (sized 1x by trader); skip ONLY contradict.
+      //   '001' = legacy 0/0/1: skip neutral AND contradict.
       // Reuse v16 then apply basket so the two never diverge. LOCKSTEP with
       // _passes_live_filter + live_filter.basket_blocks + passesStrategy 'v16sb'
       // (see memory feedback_filter_three_copies_lockstep).
       if (strat === 'v16sb') {
         if (!_tlPassesStrategy(l, 'v16')) return false;
         const bp = l.basket_pct;
-        if (bp != null) {
+        if (bp != null && _BASKET_SIZING_MODE !== 'sizeonly') {
           const _sbLong = l.direction === 'long' || l.direction === 'bullish';
           const _neutral = Math.abs(bp) < 0.15;
           const _contradict = !_neutral && ((bp > 0) !== _sbLong);
           if (_contradict || (_neutral && _BASKET_SIZING_MODE !== '012')) return false;
         }
-        return true;  // confirm, neutral(012), or no-data(fail-open)
+        return true;  // confirm, neutral(012), no-data(fail-open), or sizeonly(always)
       }
       const sn = l.setup_name || '';
       const align = l.greek_alignment != null ? l.greek_alignment : 0;
@@ -21351,7 +21361,7 @@ def spxw_dashboard(session: str = Cookie(default=None)):
             .replace("__LAST_MSG__", str(last_msg))
             .replace("__PULL_MS__", str(PULL_EVERY * 1000))
             .replace("__USER_EMAIL__", user["email"])
-            .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "012").lower())
+            .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "sizeonly").lower())
             .replace("__IS_ADMIN__", "true" if user.get("is_admin") else "false"))
     return HTMLResponse(html)
 
@@ -21365,7 +21375,7 @@ def eod_review_page(session: str = Cookie(default=None), date: str = Query(None)
     review_date = date or datetime.now(NY).strftime("%Y-%m-%d")
     html = (EOD_REVIEW_TEMPLATE
             .replace("__DATE__", review_date)
-            .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "012").lower()))
+            .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "sizeonly").lower()))
     return HTMLResponse(html)
 
 

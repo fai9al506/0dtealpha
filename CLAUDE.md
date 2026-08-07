@@ -35,6 +35,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Before presenting ANY trading study, backtest, performance report, or parameter recommendation:
 
+### Gate 0: Metric Selection (CHECK FIRST — picking the wrong metric has flipped results by $3,500)
+
+**For any window dated 2026-06-13 (S217) or later, the P&L metric is `setup_log.outcome_pnl`
+(the chain / SPX-path simulation). Full stop.**
+
+- Entries, trailing and exits are decided on the **SPX/portal path** (`SPX_EXIT_ENABLED` →
+  `real_trader.check_spx_trail_exit()`). MES is the instrument we *trade*, not what triggers
+  execution. So the SPX-path sim is the model that matches the code.
+- Measured against real broker fills, post-S217 (43 trades): **chain MAE 2.69 pt, median 1.70 pt,
+  bias +0.18 pt/trade**. MES-walk MAE 5.06 pt and totals −88.0 pt vs a real +33.8 pt.
+- **NEVER describe `mes_sim_*` as the "honest", "execution-realistic" or "conservative" number,
+  and never lead a report with it.** Post-S217 it is not conservative, it is simply wrong.
+- Apply at most a **−0.18 pt/trade** haircut to chain results. `mes_sim_*` is for pre-S217
+  windows only. If a study spans the boundary, split at 2026-06-13.
+- **Also check concentration before quoting any monthly rate**: report top-1 / top-3 day share
+  and the ex-top-3 total. This book earns on a few trend days; a window that contains one is
+  not a run rate.
+
+Details + the measurement script: memory `feedback_chainsim_valid_post_s217.md`,
+`research_s231_tsrt_counterfactual_jul_aug.md`.
+
 ### Gate 1: Data Quality (MUST PASS before running analysis)
 1. **Source check**: ALL numbers from DB queries or code output. Never manual math, never from memory files.
 2. **Date range**: State explicitly. Check for known outages (Mar 26 TS outage, any logged in SESSION_LOG).

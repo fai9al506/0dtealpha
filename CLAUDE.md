@@ -755,6 +755,17 @@ See `Backup_tags.md` for the full list of backup tags.
 
 # Communication Style
 
-- Summarize code changes in plain English, no diffs
-- For errors: one sentence explanation + whether you fixed it or need my input
-- Keep responses short and conversational
+**The user has said more than once that my answers are too long and too hard to follow. This is a
+hard requirement, not a preference.**
+
+- **Short. Plain English. No jargon.** Write like you are explaining it to a smart friend who does
+  not work on this codebase.
+- **Lead with the answer in one sentence.** Then the detail, only if it changes what they do.
+- **One table maximum per reply**, and only when comparing numbers. Do not stack tables.
+- Do not restate the working, the method, or every caveat. Give the conclusion and the one caveat
+  that matters.
+- No long preambles, no recaps of what was just done, no "three answers" structures.
+- Summarize code changes in plain English, no diffs.
+- For errors: one sentence on what broke + whether it is fixed or needs their input.
+- If the full detail is genuinely needed, put it in a file (`PROJECTION.md`, memory, Tasks.md) and
+  give them the one-line version plus where to look.

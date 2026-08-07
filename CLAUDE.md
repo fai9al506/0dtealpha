@@ -758,14 +758,20 @@ See `Backup_tags.md` for the full list of backup tags.
 **The user has said more than once that my answers are too long and too hard to follow. This is a
 hard requirement, not a preference.**
 
-- **Short. Plain English. No jargon.** Write like you are explaining it to a smart friend who does
-  not work on this codebase.
-- **Lead with the answer in one sentence.** Then the detail, only if it changes what they do.
-- **One table maximum per reply**, and only when comparing numbers. Do not stack tables.
-- Do not restate the working, the method, or every caveat. Give the conclusion and the one caveat
-  that matters.
-- No long preambles, no recaps of what was just done, no "three answers" structures.
+**The rule applies to the PROSE, not the data.** Clarified by the user 2026-08-07:
+*"for numbers it's ok, make tables make reports. But for speaking, make it more concise and plain
+English."*
+
+- **Numbers, tables and reports: keep them.** Full tables, per-month breakdowns, comparisons — these
+  are wanted and useful. Do not strip data out to be brief.
+- **The writing around the numbers is what must be short.** Cut it hard.
+- **Plain English, no jargon.** Explain it like you would to a smart friend who does not work on
+  this codebase.
+- **Lead with the answer in one sentence**, then the table, then at most a line or two of what it
+  means.
+- Do not narrate the method, the working, or every caveat in prose. Give the conclusion and the one
+  caveat that would change their decision.
+- No long preambles, no recap of what was just done, no "three answers" scaffolding.
 - Summarize code changes in plain English, no diffs.
 - For errors: one sentence on what broke + whether it is fixed or needs their input.
-- If the full detail is genuinely needed, put it in a file (`PROJECTION.md`, memory, Tasks.md) and
-  give them the one-line version plus where to look.
+- Long methodology belongs in a file (`PROJECTION.md`, memory, `Tasks.md`) with a one-line pointer.

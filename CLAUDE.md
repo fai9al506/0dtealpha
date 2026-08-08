@@ -581,6 +581,42 @@ shows +42.0pt and MES-sim shows +24.5pt, the portal was over-stating the trade
 by ~17.5pt — that's the trail-tag-early divergence on big runners (S55's main
 finding).
 
+### V17 monitoring filter (`app/live_filter.py:passes_v17`) — added 2026-08-08 (S233, MONITORING ONLY)
+
+**Nothing in the trade path reads this.** `_passes_live_filter` is untouched; V17 exists so the
+V16 and V17 books can be compared daily on live data before anything ships.
+
+V17 = V16, except that for **Skew Charm / AG Short / ES Absorption / DD Exhaustion / VIX
+Divergence**, when the signal's own VIX < 22 the per-setup **quality** rules are skipped. Three
+things stay: **full V16 at VIX ≥ 22**; **DD SHORTS still pass the existing V13 stack**
+(V13BULL/V13VANNA/V13DDQ/SCDD_SHORT_GEXLIS — raw DD shorts lost −$1,198 in April alone);
+**Vanna Pivot Bounce is never relaxed** (the only bucket negative in all 6 months). GEX Long
+excluded. Measured ×0.81: V16 $1,590/mo (SAR 5,963) → V17 $2,436/mo (SAR 9,135), MaxDD
+−$1,253 → −$1,198. Every risk control (cap, dedup, $300 breaker, underwater guard) is
+unchanged, so peak exposure is identical — only the number of sequential trades rises
+(8.9 → ~15/day). Full evidence: `S233_FILTER_STUDY.md`.
+
+**Three lockstep copies** — `live_filter.passes_v17`, portal JS `_tlPassesStrategy(l,'v17')`,
+portal JS `passesStrategy(l,'v17')`. Selectable in both portal dropdowns as
+"V17 (S233 relaxed — MONITORING)".
+
+**The (live) views are env-gated on GEX Long** (2026-08-08): both V16 allowed-sets add
+`'GEX Long'` only when `__GEX_LONG_REAL__` (from `GEX_LONG_V3_REAL_TRADE_ENABLED`) is true,
+mirroring the `__BASKET_SIZING_MODE__` pattern. Before this the V16 view showed 46 trades TSRT
+would never place. Rule: **a (live) view must equal exactly what TSRT places.**
+
+### Sierra monthly reminder (`_sierra_monthly_reminder`) — added 2026-08-08 (S238)
+
+Cron `day=1-7, hour=9, timezone=NY` with a weekday guard and a once-per-month latch
+(`_sierra_reminder_last_month`); sends the Sierra account checklist to the alerts channel.
+Fail-soft. Exists because the Denali CME exchange lapsed on an empty balance on 2026-06-30 and
+the ES feed ran 10 minutes delayed for five weeks with no alert (S236). Fires pre-open on a
+trading day because trading-account re-verification needs Sierra connected to the broker.
+
+**Monitoring gap it closes:** every other health check asks "did data arrive?", never "did it
+arrive on time". A constant offset in market-data timestamps means a **delayed feed**, not a
+slow pipe — check the exchange entitlement before the code.
+
 ### Database Tables
 - `chain_snapshots` - SPX/SPXW options chain data with Greeks
 - `spy_chain_snapshots` - SPY options chain data (same schema, isolated table)

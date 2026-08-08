@@ -83,9 +83,6 @@ you can actually carry, brings the true ceiling to **$2,226–2,723/mo (SAR 8,34
 **V16 already captures 84% of every available point using 33% of the signals.** Selection is
 not the bottleneck — the signal set is. No filter can produce $5k/mo at 1–2 MES.
 
-**V16 already captures 84% of every available point using 33% of the signals.** Selection is
-not the bottleneck — the signal set is. No filter can produce $5k/mo at 1–2 MES.
-
 **The path past ~$3k/mo is size, and size is capped by capital:**
 
 | configuration (×0.81) | $/mo | SAR/mo | MaxDD | vs $5,161 | vs $12k |

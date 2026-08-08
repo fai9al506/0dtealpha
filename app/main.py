@@ -1854,6 +1854,7 @@ _current_setup_log = {
     "last_date": None,
 }
 
+_sierra_reminder_last_month = None   # S238 — once-per-month latch for the Sierra account check
 # Live outcome tracking: open trades awaiting resolution, resolved trades for EOD summary
 _setup_open_trades = []
 # Each entry: {setup_name, direction, spot, target_level, stop_level, ts, grade, result_data, max_hold_minutes}
@@ -7568,6 +7569,46 @@ def _auto_trade_premarket_reconcile():
         print(f"[auto-trade-premarket] reconciliation error: {e}", flush=True)
 
 
+def _sierra_monthly_reminder():
+    """S238 — monthly Sierra account health reminder to the alerts channel.
+
+    Fires on the FIRST WEEKDAY of the month at 09:00 ET (cron day=1-7 + a weekday guard +
+    a once-per-month latch), because the CME re-verification needs Sierra connected to the
+    broker, which only happens on a trading day.
+
+    Why this exists: on 2026-06-30 the Sierra balance ran dry and killed the CME Market Depth
+    row *with auto-renewal already ticked*. Sierra fell back to the 10-minute delayed feed and
+    ES/SB absorption detection was dead for five weeks before anyone noticed (S236). Fail-soft:
+    never raises into the scheduler.
+    """
+    global _sierra_reminder_last_month
+    try:
+        now = now_et()
+        if now.weekday() >= 5:            # Sat/Sun — wait for the first weekday
+            return
+        key = now.strftime("%Y-%m")
+        if _sierra_reminder_last_month == key:
+            return                        # already sent this month
+        _sierra_reminder_last_month = key
+        msg = (
+            "🔁 <b>Monthly Sierra account check</b> (Tasks S238)\n\n"
+            "account.sierrachart.com — <code>faisalad506</code>\n\n"
+            "1️⃣ <b>Usage Time</b> expiry date\n"
+            "2️⃣ <b>Balance</b> vs the ~$71.50/mo stack\n"
+            "3️⃣ <b>Recurring Payments = ENABLED</b> ← the one that broke\n"
+            "4️⃣ <b>Verified Trading Accounts</b> ending date "
+            "(needs Sierra connected to the broker — do it pre-open)\n"
+            "5️⃣ Unread support tickets\n\n"
+            "<i>2026-06-30: the balance ran dry and killed CME Market Depth even with "
+            "auto-renewal ticked. The ES feed went 10 min delayed and absorption detection "
+            "was dead for 5 weeks before anyone noticed (S236).</i>"
+        )
+        send_telegram(msg)
+        print(f"[sierra-reminder] monthly reminder sent for {key}", flush=True)
+    except Exception as e:
+        print(f"[sierra-reminder] error (non-fatal): {e}", flush=True)
+
+
 def _send_setup_eod_summary():
     """Send end-of-day summary of all setup outcomes via Telegram. Runs at 16:05 ET."""
     global _setup_open_trades, _setup_resolved_trades
@@ -7999,6 +8040,12 @@ def start_scheduler():
                 id="broker_poll", coalesce=True, max_instances=1)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,
                 id="setup_eod", coalesce=True, max_instances=1)
+    # S238 — monthly Sierra account health reminder, 1st trading day of the month, 09:00 ET.
+    # The 2026-06-30 lapse (balance ran dry with auto-renewal ticked) delayed the ES feed by
+    # 10 minutes for five weeks before anyone noticed — see S236. Re-verification needs a live
+    # broker connection, so this fires pre-open on a trading day, not on the 1st calendar day.
+    sch.add_job(_sierra_monthly_reminder, "cron", day="1-7", hour=9, minute=0, timezone=NY,
+                id="sierra_monthly", coalesce=True, max_instances=1, misfire_grace_time=3600)
     # S81 — daily TSRT portal-vs-real reconcile at 16:15 ET
     try:
         from app.trade_reconcile import run_today as reconcile_run_today

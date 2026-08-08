@@ -29,18 +29,56 @@ moved the curve.
 
 ---
 
-## Current projection (as of 2026-08-07)
+## Current projection (as of 2026-08-08)
 
 **Config:** V16 base filter · GEX Long **OFF** · basket = **sizing only** (2× on confirm, no block)
 · concurrency cap **2/2** · 1 MES base · `SPX_EXIT_ENABLED=true`
 
+Re-measured on **100 sessions** (2026-03-16 → 08-06) instead of the 47-session window, per
+rule 3 above. The longer basis reads *higher*, not lower — the 47-session window started
+inside the June drawdown.
+
 | | value | basis |
 |---|---|---|
-| Theoretical (chain) | **$1,400 / mo** | Jun 1 – Aug 6, 47 sessions, $3,183 total |
-| × broker capture 0.81 | **~$1,150 / mo** | 43 executed post-S217 trades: chain +41.5 pt → broker +33.8 pt |
-| Expected MaxDD | **−$1,439 (28% of equity)** | same window |
-| Sanity floor (ex-top-3 days) | **~$1,500 / mo** | 100 sessions at 1 MES flat cap 3/3, no basket |
+| Theoretical (chain) | **$2,060 / mo** | 100 sessions, $9,816 total, cap 2/2, basket 2× |
+| × broker capture 0.81 | **~$1,590 / mo** | 43 executed post-S217 trades: chain +41.5 pt → broker +33.8 pt |
+| Expected MaxDD | **−$1,253 (24% of equity)** | same window, after haircut |
+| Sanity floor (ex-top-3 days) | **~$1,190 / mo** | same window |
 | Worst observed month | **−$933** | broker, June 2026 |
+
+⚠️ **Never validated forward.** Broker truth for the whole live era is **+$512 net over 32
+sessions** (May +$896, Jun −$933, Jul +$550), but that era ran a different config with the
+pre-S217 trail bug and the auto-roll incident, so it is not a clean test of this one. One
+month of live data on the shipped config is the single most valuable thing outstanding.
+
+⚠️ **S236 contamination:** ES Absorption signals on/after 2026-07-02 were computed from ES
+bars ~10 min stale. Removing them moves V16 $1,590 → $1,564/mo — immaterial here, but it
+matters for any ES-Absorption-specific study.
+
+---
+
+## The ceiling — how much money exists at all (measured 2026-08-08)
+
+| | trades | points | $ @ 1 MES, 6 months |
+|---|---|---|---|
+| every signal, all 6 setups, **no filter, no cap** | 4,047 | +4,268 | **$21,340 ≈ $3,556/mo** |
+| V16 today | 1,326 | +3,566 | $17,827 |
+| perfect foresight (winners only) | 2,177 | +22,528 | $112,641 *(unreachable)* |
+
+**V16 already captures 84% of every available point using 33% of the signals.** Selection is
+not the bottleneck — the signal set is. No filter can produce $5k/mo at 1–2 MES.
+
+**The path past ~$3k/mo is size, and size is capped by capital:**
+
+| configuration (×0.81) | $/mo | MaxDD | vs $5,161 | vs $12k |
+|---|---|---|---|---|
+| V16, 1 MES — today | $1,590 | −$1,253 | 24% | — |
+| V17 relaxed, 1 MES | $2,436 | −$1,198 | 23% | — |
+| V17 relaxed, cap 3/3 | ~$2,900 | −$773 | 15% | — |
+| V17 relaxed, cap 3/3, **2 MES base** | **$4,312** | −$1,712 | 33% | **14%** |
+
+$5,000/mo needs ≈ **2.5 MES**, which needs ≈ **$14–15k equity** to carry its drawdown at the
+14% risk level this account runs. That is compounding, measured in quarters.
 
 **Equity at last check:** ~$5,161 (2026-06-23). **Capital, not the edge, is the scaling limit** —
 contracts must track *realised* equity, never the projection. 1 ES ≈ $50k equity; 3 ES ≈ $150k.
@@ -51,6 +89,12 @@ contracts must track *realised* equity, never the projection. 1 ES ≈ $50k equi
 
 | date | change | Δ / month (theoretical) | measured on | status |
 |---|---|---|---|---|
+| 2026-08-08 | **V17 structural relaxation** — relax the filter per SETUP (SC/AG/ES Abs/DD/VIX Div) when the signal's VIX < 22; keep full V16 at VIX ≥ 22; DD shorts still via the V13 stack; VPB never relaxed | **+$846/mo** ($1,590 → $2,436) and MaxDD −$1,253 → −$1,198 | 100 sessions, ex-S236-contaminated | 🟡 **built + verified, MONITORING ONLY** — portal dropdown + `live_filter.passes_v17`, trade path untouched. Ship via Tasks S234 after ~2 weeks of live V16-vs-V17 comparison |
+| 2026-08-08 | *rejected* — drop individual V16 rules | +$228 per 100 sessions out-of-sample | leave-one-month-out, 6 folds | ❌ noise-fitting |
+| 2026-08-08 | *rejected* — **V18**, refit the entry filter per setup from scratch (16 numeric + 5 categorical features, thresholds from train data only) | OOS +1,741 pts vs V16 +3,566 and no-filter +4,268. In-sample it read +6,281 | leave-one-month-out | ❌ worse than V16 **and** worse than no filter; rule recurrence across folds ≈ 0 |
+| 2026-08-08 | *rejected* — **V19**, re-optimise stop + trail (1,440 parameter sets/setup on clean 1-min SPX, no lookahead) | nothing beat live on points; only a return/DD objective edged +10% at equal risk, by tightening stops, with a much worse Apr/May/Aug | leave-one-month-out, 118 sessions | ❌ **live exit params are already at the risk-adjusted optimum** — they are the output of S224 and the ES-Abs 6/2 change passing an independent re-test |
+| 2026-08-08 | *rejected* — add VPB shorts / VIX Div shorts to the book | looked like +$819 and half the drawdown; verification killed it | 100 sessions | ❌ **one day (2026-07-17) was the entire drawdown gain**; cap 4/4 turns it negative; bootstrap lower bound $0 |
+| 2026-08-08 | *pending* — add **SB Absorption** (Tasks S235) | +$692–769 per 100 sessions, but 80% of it is March | 45 clean signals (pre-S236) | 🟡 edge is real (+3.59 pts/t, 90% CI [+1.23, +6.05]) and driven by **longs** (24t, 75% WR, +5.20/t); shorts not established. n below this project's 50-signal bar — monitor, revisit once the feed is fixed |
 | 2026-08-07 | **GEX Long disabled** (fires longs into tops; Tasks S230) | +$220/mo on the Jul–Aug window; **~break-even over 100 sessions** (69 trades, 43% WR, −$227 total). July alone was −$644 on 33 trades. | 100 sessions Mar 16 – Aug 6 + Jul 1 – Aug 6 | ✅ shipped, env |
 | 2026-08-07 | **Basket → sizing-only** (`BASKET_SIZING_MODE=sizeonly`, block removed) | **+$440/mo**; block had cost −$547 (Jul 1 – Aug 6) / −$590 (Jun 11 – Aug 6) and roughly doubled MaxDD | 47 + 26 sessions | ✅ shipped, code |
 | 2026-08-07 | **Cap held at 2/2 while 2× sizing is on** | cap 3/3 would add **+$54** for **+$893** of drawdown (28% → 45% of equity) | 47 sessions Jun 1 – Aug 6 | ✅ no change needed |

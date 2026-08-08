@@ -5,6 +5,9 @@ Every setup added, filter refined, or sizing/cap change gets a row here **with i
 before/after** — so a projection is never a vibe, and we can see whether shipped changes actually
 moved the curve.
 
+**Always quote monthly figures in BOTH $ and SAR (peg x3.75).** See memory
+`feedback_projections_in_usd_and_sar`.
+
 **Two numbers, always kept apart:**
 - **Theoretical** — simulated on the current config over a stated window (chain outcomes).
 - **Actual** — broker truth from `tsrt_daily_stmt`. This is the only number that counts.
@@ -40,10 +43,10 @@ inside the June drawdown.
 
 | | value | basis |
 |---|---|---|
-| Theoretical (chain) | **$2,060 / mo** | 100 sessions, $9,816 total, cap 2/2, basket 2× |
-| × broker capture 0.81 | **~$1,590 / mo** | 43 executed post-S217 trades: chain +41.5 pt → broker +33.8 pt |
+| Theoretical (chain) | **$2,060 / mo · SAR 7,725** | 100 sessions, $9,816 total, cap 2/2, basket 2× |
+| × broker capture 0.81 | **~$1,590 / mo · SAR 5,963** | 43 executed post-S217 trades: chain +41.5 pt → broker +33.8 pt |
 | Expected MaxDD | **−$1,253 (24% of equity)** | same window, after haircut |
-| Sanity floor (ex-top-3 days) | **~$1,190 / mo** | same window |
+| Sanity floor (ex-top-3 days) | **~$1,190 / mo · SAR 4,463** | same window |
 | Worst observed month | **−$933** | broker, June 2026 |
 
 ⚠️ **Never validated forward.** Broker truth for the whole live era is **+$512 net over 32
@@ -59,23 +62,38 @@ matters for any ES-Absorption-specific study.
 
 ## The ceiling — how much money exists at all (measured 2026-08-08)
 
-| | trades | points | $ @ 1 MES, 6 months |
-|---|---|---|---|
-| every signal, all 6 setups, **no filter, no cap** | 4,047 | +4,268 | **$21,340 ≈ $3,556/mo** |
-| V16 today | 1,326 | +3,566 | $17,827 |
-| perfect foresight (winners only) | 2,177 | +22,528 | $112,641 *(unreachable)* |
+**All monthly figures in $ and SAR (peg ×3.75) — see memory `feedback_projections_in_usd_and_sar`.**
+
+| | trades | total $ @1 MES | $/mo | SAR/mo | MaxDD | DD % of $5,161 |
+|---|---|---|---|---|---|---|
+| every signal, **no filter, no cap** | 4,047 | $21,340 | **$4,074** | **SAR 15,278** | **−$1,655** | **32%** |
+| same, capped at 3 per side | 2,724 | $14,262 | $2,723 | SAR 10,211 | −$751 | 15% |
+| same, capped at 2 per side | 2,246 | $11,659 | $2,226 | SAR 8,348 | −$802 | 16% |
+| V16 today | 1,326 | $17,827* | — | — | — | — |
+| perfect foresight (winners only) | 2,177 | $112,641 | — | — | — | *(unreachable)* |
+
+\* raw ungated points; the tradeable V16 figure is in the projection table above.
+110 sessions (2026-03-01 → 08-06). Monthly = sessions ÷ 21.
+
+**The uncapped row is not achievable** — the busiest session alone had 75 signals, which is
+unlimited simultaneous positions and impossible margin. Capping at 2–3 per side, which is what
+you can actually carry, brings the true ceiling to **$2,226–2,723/mo (SAR 8,348–10,211)** at
+1 MES, and note the drawdown *halves* when you cap it (−$1,655 → −$751).
+
+**V16 already captures 84% of every available point using 33% of the signals.** Selection is
+not the bottleneck — the signal set is. No filter can produce $5k/mo at 1–2 MES.
 
 **V16 already captures 84% of every available point using 33% of the signals.** Selection is
 not the bottleneck — the signal set is. No filter can produce $5k/mo at 1–2 MES.
 
 **The path past ~$3k/mo is size, and size is capped by capital:**
 
-| configuration (×0.81) | $/mo | MaxDD | vs $5,161 | vs $12k |
-|---|---|---|---|---|
-| V16, 1 MES — today | $1,590 | −$1,253 | 24% | — |
-| V17 relaxed, 1 MES | $2,436 | −$1,198 | 23% | — |
-| V17 relaxed, cap 3/3 | ~$2,900 | −$773 | 15% | — |
-| V17 relaxed, cap 3/3, **2 MES base** | **$4,312** | −$1,712 | 33% | **14%** |
+| configuration (×0.81) | $/mo | SAR/mo | MaxDD | vs $5,161 | vs $12k |
+|---|---|---|---|---|---|
+| V16, 1 MES — today | $1,590 | SAR 5,963 | −$1,253 | 24% | — |
+| V17 relaxed, 1 MES | $2,436 | SAR 9,135 | −$1,198 | 23% | — |
+| V17 relaxed, cap 3/3 | ~$2,900 | SAR 10,875 | −$773 | 15% | — |
+| V17 relaxed, cap 3/3, **2 MES base** | **$4,312** | **SAR 16,170** | −$1,712 | 33% | **14%** |
 
 $5,000/mo needs ≈ **2.5 MES**, which needs ≈ **$14–15k equity** to carry its drawdown at the
 14% risk level this account runs. That is compounding, measured in quarters.

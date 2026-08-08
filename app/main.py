@@ -13844,6 +13844,10 @@ EOD_REVIEW_TEMPLATE = """
 // Basket sizing mode (server-injected from env BASKET_SIZING_MODE): '012' (default) re-admits
 // neutral as a TAKE; '001' = legacy skip-neutral. Lockstep with _passes_live_filter / passesStrategy.
 const _BASKET_SIZING_MODE = "__BASKET_SIZING_MODE__";
+    // S233 (2026-08-08): the (live) views must equal what TSRT actually places.
+    // GEX Long is env-gated (GEX_LONG_V3_REAL_TRADE_ENABLED); when it is false the
+    // real trader never places it, so V16 must not display it either.
+    const _GEX_LONG_REAL = "__GEX_LONG_REAL__" === "true";
 const PILL_COLORS = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','SB Absorption':'#f59e0b','SB10 Absorption':'#f59e0b','SB2 Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899','GEX Velocity':'#22c55e','Vanna Pivot Bounce':'#818cf8'};
 const GRADE_COLORS = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308','B':'#f59e0b','C':'#888','LOG':'#555'};
 let _allTrades = [];
@@ -14070,7 +14074,8 @@ function passesStrategy(l, strat) {
     //   BofA Scalp, Paradigm Reversal, SB2 Absorption, etc: not in whitelist → BLOCK
     // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
     const _v16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
-                                  'ES Absorption', 'DD Exhaustion', 'VIX Divergence', 'GEX Long']);
+                                  'ES Absorption', 'DD Exhaustion', 'VIX Divergence']);
+    if (_GEX_LONG_REAL) _v16Allowed.add('GEX Long');
     if (!_v16Allowed.has(sn)) return false;
     // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT via main.py:5430
     // _dd_short_block. V16 portal must mirror — previously fell through v13DDQualityBlock
@@ -18874,6 +18879,10 @@ DASH_HTML_TEMPLATE = """
     // Basket sizing mode (server-injected from env BASKET_SIZING_MODE): '012' (default) re-admits
     // neutral as a TAKE; '001' = legacy skip-neutral. Lockstep with _passes_live_filter.
     const _BASKET_SIZING_MODE = "__BASKET_SIZING_MODE__";
+    // S233 (2026-08-08): the (live) views must equal what TSRT actually places.
+    // GEX Long is env-gated (GEX_LONG_V3_REAL_TRADE_ENABLED); when it is false the
+    // real trader never places it, so V16 must not display it either.
+    const _GEX_LONG_REAL = "__GEX_LONG_REAL__" === "true";
     let _tlDailyGaps = {};  // {date_str: gap_pts} for V12 filter
     fetch('/api/setup/daily_gaps', {cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_tlDailyGaps=d;}).catch(()=>{});
     // GEX Long v3 server-side overlay: per-trade {pass, result, pnl, max_fav, verdict}
@@ -19172,7 +19181,8 @@ DASH_HTML_TEMPLATE = """
         // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
         // GEX Long v4 added 2026-06-08 (env GEX_LONG_V3_REAL_TRADE_ENABLED=true).
         const _tlV16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
-                                        'ES Absorption', 'DD Exhaustion', 'GEX Long']);
+                                        'ES Absorption', 'DD Exhaustion']);
+        if (_GEX_LONG_REAL) _tlV16Allowed.add('GEX Long');
         if (!_tlV16Allowed.has(sn)) return false;
         // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT — mirror it here.
         if (sn === 'DD Exhaustion' && !isLong) return false;
@@ -21463,6 +21473,7 @@ def spxw_dashboard(session: str = Cookie(default=None)):
             .replace("__PULL_MS__", str(PULL_EVERY * 1000))
             .replace("__USER_EMAIL__", user["email"])
             .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "sizeonly").lower())
+            .replace("__GEX_LONG_REAL__", os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower())
             .replace("__IS_ADMIN__", "true" if user.get("is_admin") else "false"))
     return HTMLResponse(html)
 
@@ -21476,7 +21487,8 @@ def eod_review_page(session: str = Cookie(default=None), date: str = Query(None)
     review_date = date or datetime.now(NY).strftime("%Y-%m-%d")
     html = (EOD_REVIEW_TEMPLATE
             .replace("__DATE__", review_date)
-            .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "sizeonly").lower()))
+            .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "sizeonly").lower())
+            .replace("__GEX_LONG_REAL__", os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower()))
     return HTMLResponse(html)
 
 

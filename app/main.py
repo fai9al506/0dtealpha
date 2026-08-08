@@ -66,24 +66,35 @@ _pipeline_status = {
     "sierra_es_status": "ok",
     "sierra_vx_status": "ok",
     "es_quote_status": "ok",  # S114: ES quote stream freshness (powers real_trader dispatch)
+    # S224: Sierra ES transport delay — does the bar arrive ON TIME, not just at all.
+    "sierra_delay_status": "ok",
     "ts_last_alert": 0,
     "vol_last_alert": 0,
     "sierra_es_last_alert": 0,
     "sierra_vx_last_alert": 0,
     "es_quote_last_alert": 0,
+    "sierra_delay_last_alert": 0,
     "ts_error_since": 0,
     "vol_error_since": 0,
     "sierra_es_error_since": 0,
     "sierra_vx_error_since": 0,
     "es_quote_error_since": 0,
+    "sierra_delay_error_since": 0,
     "ts_alert_sent": False,
     "vol_alert_sent": False,
     "sierra_es_alert_sent": False,
     "sierra_vx_alert_sent": False,
     "es_quote_alert_sent": False,
+    "sierra_delay_alert_sent": False,
     "reminder_minutes": 15,
     "alert_threshold_minutes": 2,  # suppress alerts for outages < 2 min (silent recovery)
 }
+
+# S224: Sierra ES transport-delay thresholds, seconds (median received_at - ts_end).
+# Healthy is ~4s. CME delayed (non-realtime) data is exactly 10 min, so the failure
+# we are catching sits at ~614s — an order of magnitude past the error line.
+_ES_DELAY_OK_S = 60       # < 60s  -> ok
+_ES_DELAY_ERROR_S = 180   # >= 180s -> error (60-180s = stale, watch but don't page)
 
 # Default alert settings (loaded from DB on startup).
 # Noisy per-level/volume alerts default OFF — they were disabled 2026-03-24
@@ -7933,6 +7944,10 @@ def start_scheduler():
             print(f"[watchdog] error: {wd_err}", flush=True)
     sch.add_job(_pipeline_watchdog, "interval", seconds=30,
                 id="pipeline_watchdog", coalesce=True, max_instances=1)
+    # S224: absorption-output canary — bars arriving but detectors silent all morning.
+    sch.add_job(_absorption_silence_check, "cron", day_of_week="mon-fri", hour=11, minute=0,
+                timezone=NY, id="absorption_canary", coalesce=True, max_instances=1,
+                misfire_grace_time=900)
     sch.add_job(_auto_trade_orphan_check, "interval", minutes=5,
                 id="auto_trade_orphan", coalesce=True, max_instances=1)
     # Fast reconcile: runs every 30s regardless of bot-tracked order state.
@@ -8391,12 +8406,17 @@ def api_health(request: Request):
     except Exception:
         pass
 
+    # S224: ES feed latency — bars arriving, but how far behind market time?
+    es_delay = freshness.get("sierra_es_delay", {})
+    es_delay_status = es_delay.get("status", "closed")
+
     # Overall status
     if not is_open:
         overall = "closed"
     elif chain_status == "error" or vol_status == "error":
         overall = "down"
-    elif chain_stale or vol_stale or (not rithmic_ok and not es_quote_ok and is_open):
+    elif (chain_stale or vol_stale or es_delay_status == "error"
+            or (not rithmic_ok and not es_quote_ok and is_open)):
         overall = "degraded"
     else:
         overall = "healthy"
@@ -8421,6 +8441,14 @@ def api_health(request: Request):
                 "stale": vol_stale,
             },
             "es_quote_stream": {"connected": es_quote_ok},
+            # S224: is the Sierra ES bar feed real-time or delayed? median_delay_s ~4
+            # is healthy; ~614 means CME delayed data (lapsed entitlement).
+            "sierra_es_feed": {
+                "status": es_delay_status,
+                "median_delay_s": es_delay.get("median_delay_s"),
+                "n_bars": es_delay.get("n_bars"),
+                "realtime": es_delay_status in ("ok", "closed"),
+            },
             "rithmic_stream": rithmic_info or {"connected": False},
             **_auto_trader_health(),
         },
@@ -12958,6 +12986,15 @@ def api_data_freshness():
         "volland": {"last_update": None, "age_seconds": None, "status": "closed"},
         "sierra_es": {"last_update": None, "age_seconds": None, "status": "closed"},
         "sierra_vx": {"last_update": None, "age_seconds": None, "status": "closed"},
+        # S224 (2026-08-08): every other check on this page asks whether data ARRIVED.
+        # None of them asked whether it arrived ON TIME. From 2026-07-02 to 2026-08-07
+        # the CME real-time entitlement was lapsed, ES ticks landed in the .scid ~614s
+        # behind market time, and ES/SB/SB2/Delta Absorption produced zero signals on
+        # 20 of 29 sessions — with no alert, for five weeks. This is that missing check:
+        # median(received_at - ts_end) over recent bars. It is a pure latency measure,
+        # so it is immune to the quiet-market false alarm that forces sierra_es to be
+        # lenient, and it is deliberately NOT suppressed by the VX cross-check below.
+        "sierra_es_delay": {"last_update": None, "age_seconds": None, "status": "closed"},
         # S114: ES quote stream powers real_trader entry-price lookup. If it goes
         # stale and the REST fallback also returns None, every real-trader
         # dispatch is silently skipped (S113 audit found 10 such victims). Track
@@ -13028,34 +13065,75 @@ def api_data_freshness():
         except Exception as e:
             print(f"[data_freshness] volland error: {e}", flush=True)
 
-        # Sierra ES: latest ts_end from vps_es_range_bars (range bars finish every few min)
+        # Sierra ES: two INDEPENDENT signals off the same rows.
+        #   sierra_es        — is a bar arriving at all?   age of newest ts_end
+        #   sierra_es_delay  — is it arriving on time?     median(received_at - ts_end)
+        # They fail differently and must be measured separately: a quiet market makes
+        # sierra_es look bad while the feed is perfect, and a delayed feed makes
+        # sierra_es_delay look bad while bars keep arriving on schedule.
+        def _age_of(t):
+            if t is None:
+                return None
+            if t.tzinfo is not None:
+                return (datetime.now(t.tzinfo) - t).total_seconds()
+            return (now_et.replace(tzinfo=None) - t).total_seconds()
+
         try:
             with engine.begin() as conn:
-                es_row = conn.execute(text("""
-                    SELECT ts_end FROM vps_es_range_bars
-                    ORDER BY ts_end DESC LIMIT 1
-                """)).mappings().first()
+                es_rows = conn.execute(text("""
+                    SELECT ts_end, received_at FROM vps_es_range_bars
+                    WHERE range_pts = 5
+                    ORDER BY id DESC LIMIT 20
+                """)).mappings().all()
 
-                if es_row and es_row["ts_end"]:
-                    e_time = es_row["ts_end"]
-                    if e_time.tzinfo is not None:
-                        age = (datetime.now(e_time.tzinfo) - e_time).total_seconds()
+            if es_rows and es_rows[0]["ts_end"]:
+                e_time = es_rows[0]["ts_end"]
+                age = _age_of(e_time)
+
+                if not is_open:
+                    status = "closed"
+                elif age < 600:       # < 10 min
+                    status = "ok"
+                elif age < 1200:      # 10–20 min
+                    status = "stale"
+                else:                 # ≥ 20 min
+                    status = "error"
+
+                result["sierra_es"] = {
+                    "last_update": e_time.isoformat() if hasattr(e_time, "isoformat") else str(e_time),
+                    "age_seconds": int(age),
+                    "status": status,
+                }
+
+                # ── transport delay: market time -> our DB ──
+                delays = sorted(
+                    (r["received_at"] - r["ts_end"]).total_seconds()
+                    for r in es_rows
+                    if r["received_at"] is not None and r["ts_end"] is not None
+                )
+                if delays:
+                    med = delays[len(delays) // 2]
+                    recv_age = _age_of(es_rows[0]["received_at"])
+                    # Judge the delay only off bars we actually received recently. A
+                    # median computed from yesterday's bars says nothing about now, and
+                    # "nothing is arriving" is already the sierra_es signal's job.
+                    stale_sample = recv_age is None or recv_age > 1800
+                    if not is_open or stale_sample:
+                        d_status = "closed"
+                    elif med < _ES_DELAY_OK_S:
+                        d_status = "ok"
+                    elif med < _ES_DELAY_ERROR_S:
+                        d_status = "stale"
                     else:
-                        age = (now_et.replace(tzinfo=None) - e_time).total_seconds()
+                        d_status = "error"
 
-                    if not is_open:
-                        status = "closed"
-                    elif age < 600:       # < 10 min
-                        status = "ok"
-                    elif age < 1200:      # 10–20 min
-                        status = "stale"
-                    else:                 # ≥ 20 min
-                        status = "error"
-
-                    result["sierra_es"] = {
-                        "last_update": e_time.isoformat() if hasattr(e_time, "isoformat") else str(e_time),
-                        "age_seconds": int(age),
-                        "status": status,
+                    result["sierra_es_delay"] = {
+                        "last_update": (es_rows[0]["received_at"].isoformat()
+                                        if hasattr(es_rows[0]["received_at"], "isoformat") else None),
+                        "age_seconds": int(med),
+                        "median_delay_s": round(med, 1),
+                        "n_bars": len(delays),
+                        "status": d_status,
                     }
         except Exception as e:
             print(f"[data_freshness] sierra_es error: {e}", flush=True)
@@ -13096,6 +13174,14 @@ def api_data_freshness():
         # is alive — ES range bar just hasn't closed yet (tight price range).
         # Downgrade ES to "stale" to suppress false-alarm Telegram alerts.
         # Real bridge outages stop BOTH ES and VX, so VX="ok" proves bridge health.
+        #
+        # S224 WARNING — this suppression is why the 2026-07-02 delay went unheard.
+        # A 10-min-delayed feed pushes sierra_es age past 1200s permanently, and VX
+        # (CFE, a different entitlement) stayed healthy throughout, so every single
+        # "error" got quietly rewritten to "stale", which never pages. The suppression
+        # is still correct for what it was built for (quiet market), so it stays —
+        # but it applies ONLY to sierra_es. sierra_es_delay is measured per bar and is
+        # deliberately left untouched here. Do not extend this block to cover it.
         if (result.get("sierra_es", {}).get("status") == "error"
                 and result.get("sierra_vx", {}).get("status") == "ok"):
             result["sierra_es"]["status"] = "stale"
@@ -13143,6 +13229,83 @@ def api_data_freshness():
 
     return result
 
+def _absorption_silence_check():
+    """S224: page if the ES-bar detectors have produced nothing all morning while
+    their input feed is clearly alive.
+
+    This is the backstop for the failure the delay check may not cover. A feed can be
+    intact and the detectors can still be dead — wrong contract in the bridge config,
+    a chart that stopped updating, a scoring change that silently gates everything out.
+    Freshness checks can't see any of that; only output can. Runs once at 11:00 ET.
+
+    Deliberately quiet about the normal case: a session with light ES activity legitimately
+    produces few signals, so this only fires on the ZERO case with the feed proven live.
+    """
+    if not engine:
+        return
+    t = now_et()
+    if t.weekday() >= 5:
+        return
+    try:
+        session_date = _es_session_date_now()
+        with engine.begin() as conn:
+            bars = conn.execute(text("""
+                SELECT count(*) FROM vps_es_range_bars
+                WHERE range_pts = 5 AND trade_date = :d
+            """), {"d": session_date}).scalar() or 0
+            sigs = conn.execute(text("""
+                SELECT count(*) FROM setup_log
+                WHERE ts::date = :d AND setup_name ILIKE '%Absorption%'
+            """), {"d": t.date()}).scalar() or 0
+
+        # Need enough bars that absorption had a real chance to evaluate. The detector
+        # needs an 8-bar lookback and only runs from 10:00 ET, so under ~15 bars by
+        # 11:00 is a genuinely quiet tape, not a fault.
+        if bars < 15:
+            print(f"[absorption-canary] {bars} bars by 11:00 — too quiet to judge, skipping", flush=True)
+            return
+        if sigs == 0:
+            send_telegram(
+                f"⚠️ ABSORPTION SILENT: {bars} ES range bars have arrived today "
+                f"but the absorption detectors have produced 0 signals by 11:00 ET.\n"
+                f"Bars are flowing, so this is not a dead feed — check feed LATENCY "
+                f"(/api/health -> sierra_es_feed), the bridge contract symbol, and the "
+                f"absorption grade gate.\n"
+                f"(2026-07-02 precedent: bars present and on-schedule-looking, but ~614s "
+                f"behind market time, and every absorption setup went dark for 5 weeks.)"
+            )
+            print(f"[absorption-canary] ALERT: {bars} bars, 0 signals", flush=True)
+        else:
+            print(f"[absorption-canary] ok — {bars} bars, {sigs} signals by 11:00", flush=True)
+    except Exception as e:
+        print(f"[absorption-canary] error (non-fatal): {e}", flush=True)
+
+
+def _pipeline_alert_text(source: str, label: str, fresh: dict, down_min: int, still: bool) -> str:
+    """Telegram body for a pipeline source.
+
+    S224: latency sources need their own wording — "data is N minutes old" is
+    meaningless for a measurement that is itself a duration, and the whole point of
+    this alert is that the operator immediately knows what to go and check.
+    """
+    if source == "sierra_es_delay":
+        med = fresh.get("median_delay_s") or 0
+        n = fresh.get("n_bars") or 0
+        head = ("\U0001f534 ES FEED STILL DELAYED" if still else "\U0001f534 ES FEED DELAYED")
+        return (
+            f"{head}: Sierra ES range bars are reaching the DB {med:.0f}s behind market "
+            f"time (median of last {n} bars; healthy is ~4s)"
+            + (f", for {down_min} min now" if still else "")
+            + ".\nES / SB / SB2 / Delta Absorption all run on these bars and will go "
+              "silent or fire on stale prices.\nMost likely cause: the CME real-time "
+              "entitlement lapsed. Check account.sierrachart.com → Services Balance and "
+              "Verified Trading Accounts. (CME delayed data is exactly 10 min = ~614s.)"
+        )
+    if still:
+        return f"\U0001f534 STILL DOWN: {label} data has been stale for {down_min} minutes"
+    return f"\U0001f534 DATA PIPELINE ERROR: {label} data is {down_min} minutes old — not updating"
+
+
 def check_pipeline_health():
     """Check data pipeline freshness and send Telegram alerts on error/recovery.
 
@@ -13152,7 +13315,6 @@ def check_pipeline_health():
     """
     freshness = api_data_freshness()
     now = time.time()
-    reminder_sec = _pipeline_status["reminder_minutes"] * 60
     threshold_sec = _pipeline_status["alert_threshold_minutes"] * 60
     is_open = market_open_now()
 
@@ -13164,11 +13326,19 @@ def check_pipeline_health():
         # S114: ES quote stream — when this goes stale, real_trader silently
         # skips placements because _get_es_price_fallback() also fails.
         ("es_quote", "es_quote", "ES quote stream"),
+        # S224: ES feed LATENCY. Separate from sierra_es on purpose — see the note in
+        # api_data_freshness(). This is the check that was missing for five weeks.
+        ("sierra_es_delay", "sierra_delay", "Sierra ES feed delay"),
     ]:
         current = freshness[source]["status"]
         prev = _pipeline_status[f"{key_prefix}_status"]
         age_sec = freshness[source].get("age_seconds")
         age_min = round(age_sec / 60) if age_sec else 0
+        # A lapsed data entitlement does not fix itself in 15 minutes, so reminding at
+        # the normal cadence would just be spam the user learns to scroll past — which
+        # is the same failure as silence. Remind hourly instead: ~6 per session.
+        reminder_sec = (3600 if source == "sierra_es_delay"
+                        else _pipeline_status["reminder_minutes"] * 60)
 
         # If market is open but freshness returned "closed" (query failed/no data),
         # treat as error — don't silently skip
@@ -13200,11 +13370,11 @@ def check_pipeline_health():
                 if outage_sec >= threshold_sec:
                     _pipeline_status[f"{key_prefix}_alert_sent"] = True
                     _pipeline_status[f"{key_prefix}_last_alert"] = now
-                    send_telegram(f"\U0001f534 DATA PIPELINE ERROR: {label} data is {down_min} minutes old — not updating")
+                    send_telegram(_pipeline_alert_text(source, label, freshness[source], down_min, still=False))
             else:
                 if (now - _pipeline_status[f"{key_prefix}_last_alert"]) >= reminder_sec:
                     _pipeline_status[f"{key_prefix}_last_alert"] = now
-                    send_telegram(f"\U0001f534 STILL DOWN: {label} data has been stale for {down_min} minutes")
+                    send_telegram(_pipeline_alert_text(source, label, freshness[source], down_min, still=True))
             continue
 
         # Recovery: only Telegram if an error alert was actually sent (outage > threshold)
@@ -13212,7 +13382,14 @@ def check_pipeline_health():
             down_min = round((now - _pipeline_status[f"{key_prefix}_error_since"]) / 60)
             _pipeline_status[f"{key_prefix}_status"] = current
             if _pipeline_status.get(f"{key_prefix}_alert_sent"):
-                send_telegram(f"\U0001f7e2 DATA RECOVERED: {label} is updating again (was down {down_min} minutes)")
+                if source == "sierra_es_delay":
+                    med = freshness[source].get("median_delay_s") or 0
+                    send_telegram(
+                        f"\U0001f7e2 ES FEED BACK TO REAL TIME: Sierra ES bars now arriving "
+                        f"{med:.0f}s behind market time (was delayed {down_min} minutes)."
+                    )
+                else:
+                    send_telegram(f"\U0001f7e2 DATA RECOVERED: {label} is updating again (was down {down_min} minutes)")
             else:
                 print(f"[pipeline] {label}: silent recovery after brief outage ({down_min}m, "
                       f"below {_pipeline_status['alert_threshold_minutes']}m threshold)", flush=True)

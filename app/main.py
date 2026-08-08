@@ -13782,7 +13782,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (live)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (live)</option><option value="v17">V17 (S233 relaxed — MONITORING)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -13819,6 +13819,28 @@ function passesStrategy(l, strat) {
       const _neutral = Math.abs(bp) < 0.15;
       const _contradict = !_neutral && ((bp > 0) !== isLong);
       if (_contradict || (_neutral && _BASKET_SIZING_MODE !== '012')) return false;
+    }
+    return true;
+  }
+  // V17 (S233) — MONITORING ONLY. Lockstep with _tlPassesStrategy(l,'v17') +
+  // live_filter.passes_v17. See S233_FILTER_STUDY.md.
+  if (strat === 'v17') {
+    const _v17Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
+                                 'ES Absorption', 'DD Exhaustion', 'VIX Divergence']);
+    if (!_v17Allowed.has(sn)) return false;
+    const _vix17 = l.vix != null ? l.vix : 0;
+    const _relaxed17 = new Set(['Skew Charm', 'AG Short', 'ES Absorption',
+                                'DD Exhaustion', 'VIX Divergence']);
+    if (_vix17 >= 22 || !_relaxed17.has(sn)) return passesStrategy(l, 'v16');
+    if (sn === 'VIX Divergence') return isLong;
+    if (sn === 'DD Exhaustion' && !isLong) {
+      const _ga17 = l.v13_gex_above != null ? l.v13_gex_above : 0;
+      const _dn17 = l.v13_dd_near != null ? l.v13_dd_near : 0;
+      if (_ga17 >= 75 || _dn17 >= 3000000000) return false;
+      if (l.vanna_cliff_side === 'A' && l.vanna_peak_side === 'B') return false;
+      if (l.paradigm === 'BOFA-PURE' || l.grade === 'A+' || l.grade === 'C') return false;
+      if (l.paradigm === 'GEX-LIS') return false;
+      return align !== 0;
     }
     return true;
   }
@@ -15803,7 +15825,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16sb">V16-SB (live) ✦</option><option value="v16">V16 (base, no basket)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16sb">V16-SB (live) ✦</option><option value="v17">V17 (S233 relaxed — MONITORING)</option><option value="v16">V16 (base, no basket)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -18918,6 +18940,38 @@ DASH_HTML_TEMPLATE = """
           if (_contradict || (_neutral && _BASKET_SIZING_MODE !== '012')) return false;
         }
         return true;  // confirm, neutral(012), no-data(fail-open), or sizeonly(always)
+      }
+      // ── V17 (S233, 2026-08-08) — MONITORING ONLY, nothing in the trade path reads it ──
+      // V16 discards ~55% of the book to pick better trades; over 100 sessions that
+      // selection costs more than it earns, because a thin book is a concentrated one.
+      // V17 = V16, except that for SC / AG Short / ES Abs / DD Exhaustion / VIX Divergence,
+      // when the signal's own VIX < 22 the per-setup QUALITY rules are skipped. Three
+      // things stay: full V16 at VIX >= 22; DD SHORTS still pass the V13 stack; VPB is
+      // never relaxed. Measured x0.81: V16 $1,590/mo DD -$1,253 -> V17 $2,520/mo DD -$727.
+      // LOCKSTEP with live_filter.passes_v17 + passesStrategy(l,'v17').
+      // Detail: S233_FILTER_STUDY.md. Compare V16-SB vs V17 daily before shipping anything.
+      if (strat === 'v17') {
+        const _v17Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
+                                     'ES Absorption', 'DD Exhaustion', 'VIX Divergence']);
+        const _sn17 = l.setup_name || '';
+        if (!_v17Allowed.has(_sn17)) return false;
+        const _long17 = l.direction === 'long' || l.direction === 'bullish';
+        const _vix17 = l.vix != null ? l.vix : 0;
+        const _relaxed17 = new Set(['Skew Charm', 'AG Short', 'ES Absorption',
+                                    'DD Exhaustion', 'VIX Divergence']);
+        if (_vix17 >= 22 || !_relaxed17.has(_sn17)) return _tlPassesStrategy(l, 'v16');
+        if (_sn17 === 'VIX Divergence') return _long17;
+        if (_sn17 === 'DD Exhaustion' && !_long17) {
+          const _ga17 = l.v13_gex_above != null ? l.v13_gex_above : 0;
+          const _dn17 = l.v13_dd_near != null ? l.v13_dd_near : 0;
+          if (_ga17 >= 75 || _dn17 >= 3000000000) return false;              // V13BULL
+          if (l.vanna_cliff_side === 'A' && l.vanna_peak_side === 'B') return false;  // V13VANNA
+          const _g17 = l.grade;
+          if (l.paradigm === 'BOFA-PURE' || _g17 === 'A+' || _g17 === 'C') return false;  // V13DDQ
+          if (l.paradigm === 'GEX-LIS') return false;              // SCDD_SHORT_GEXLIS
+          return (l.greek_alignment != null ? l.greek_alignment : 0) !== 0;
+        }
+        return true;
       }
       const sn = l.setup_name || '';
       const align = l.greek_alignment != null ? l.greek_alignment : 0;

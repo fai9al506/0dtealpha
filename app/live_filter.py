@@ -100,6 +100,55 @@ def backfill_live_pass(engine):
         return len(lids)
 
 
+# ── V17 (S233, 2026-08-08) — MONITORING ONLY, not wired to the trade path ──────────────
+# The structural relaxation from S233/`S233_FILTER_STUDY.md`. V16 discards ~55% of the book
+# to pick better trades; measured over 100 sessions that selection costs more than it earns
+# because a thin book is a concentrated one (same finding as the basket block).
+#
+# V17 = V16, except: for Skew Charm / AG Short / ES Absorption / DD Exhaustion / VIX Divergence,
+# when the signal's own VIX < 22, the per-setup QUALITY rules are skipped. Three things stay:
+#   1. full V16 whenever VIX >= 22        (protects the March-type high-vol regime)
+#   2. DD SHORTS still go through the existing V13 quality stack (raw DD shorts lost in April)
+#   3. Vanna Pivot Bounce is NEVER relaxed (the only bucket negative in all 6 months)
+# GEX Long is excluded (GEX_LONG_V3_REAL_TRADE_ENABLED=false).
+#
+# Measured (chain, cap 2/2, basket sizing, 100 sessions, x0.81 broker haircut):
+#   V16 $1,590/mo, MaxDD -$1,253 (24% of equity)  ->  V17 $2,520/mo, MaxDD -$727 (14%)
+# Every risk control (cap, dedup, breaker, underwater guard) is untouched; peak exposure is
+# identical. LOCKSTEP with main.py _tlPassesStrategy(l,'v17') and passesStrategy(l,'v17').
+V17_RELAXED = ("Skew Charm", "AG Short", "ES Absorption", "DD Exhaustion", "VIX Divergence")
+V17_VIX_REARM = 22.0
+
+
+def passes_v17(l, gaps):
+    """V17 monitoring filter. NOT used by the trade path — portal/analysis only."""
+    sn = l['setup_name'] or ''
+    if sn not in ('Skew Charm', 'AG Short', 'Vanna Pivot Bounce', 'ES Absorption',
+                  'DD Exhaustion', 'VIX Divergence'):
+        return False
+    isLong = l['direction'] in ('long', 'bullish')
+    vix = l['vix'] or 0
+    # high-vol regime, or a setup we never relax -> plain V16
+    if vix >= V17_VIX_REARM or sn not in V17_RELAXED:
+        return passes_v16(l, gaps)
+    if sn == 'VIX Divergence':
+        return isLong                      # long-only stands; grade/paradigm rules dropped
+    if sn == 'DD Exhaustion' and not isLong:
+        # re-admitted, but only through the V13 quality stack that already exists in the code
+        align = l['greek_alignment'] if l['greek_alignment'] is not None else 0
+        para = l['paradigm']; grade = l['grade']
+        if (l['v13_gex_above'] or 0) >= 75 or (l['v13_dd_near'] or 0) >= 3000000000:
+            return False                                            # V13BULL
+        if l['vanna_cliff_side'] == 'A' and l['vanna_peak_side'] == 'B':
+            return False                                            # V13VANNA
+        if para == 'BOFA-PURE' or grade in ('A+', 'C'):
+            return False                                            # V13DDQ (short branch)
+        if para == 'GEX-LIS':
+            return False                                            # SCDD_SHORT_GEXLIS
+        return align != 0
+    return True
+
+
 def passes_v16(l, gaps):
     """Exact mirror of main.py _tlPassesStrategy(l,'v16'). l = mapping with COLS. gaps from load_gaps()."""
     sn = l['setup_name'] or ''

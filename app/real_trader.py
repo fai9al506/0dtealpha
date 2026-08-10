@@ -2167,6 +2167,7 @@ def _reconcile_positions():
                 _closed_ids = []
                 _backfilled = []
                 _lost_price = []
+                _kept_price = []  # already had a usable exit price — not a lost fill
                 _orphan_stops = []  # (lid, stop_oid) to cancel — their contract is gone
                 # Release lock while querying broker history (network call)
                 for lid, o in _to_process:
@@ -2176,6 +2177,15 @@ def _reconcile_positions():
                             field, price = backfill
                             o[field] = price
                             _backfilled.append((lid, field, price))
+                        elif _existing_exit_price(o) is not None:
+                            # 2026-08-11: the broker scan found nothing NEW, but this
+                            # order already carries a usable exit price from an earlier
+                            # path, so its P&L is computable and nothing is lost.
+                            # Pre-fix this raised "🚨 Could not recover fill" for lids
+                            # 5861/5865 on 2026-08-10 even though both held
+                            # stop_fill_price=7774.75 and reconciled to the cent against
+                            # the broker. Only a lid with NO price anywhere is a real loss.
+                            _kept_price.append((lid, _existing_exit_price(o)))
                         else:
                             _lost_price.append(lid)
                         o["status"] = "closed"
@@ -2214,11 +2224,17 @@ def _reconcile_positions():
                 if _backfilled:
                     _msg += f"\n✅ Recovered {len(_backfilled)} fill price(s): "
                     _msg += ", ".join(f"lid={l} {f}={p}" for l, f, p in _backfilled)
+                if _kept_price:
+                    _msg += f"\n✅ {len(_kept_price)} already had an exit price: "
+                    _msg += ", ".join(f"lid={l}@{p}" for l, p in _kept_price)
                 if _lost_price:
-                    _msg += f"\n🚨 Could not recover fill for {len(_lost_price)} trade(s): {_lost_price}"
+                    _msg += (f"\n🚨 NO exit price anywhere for {len(_lost_price)} trade(s): "
+                             f"{_lost_price} — their P&L is missing from per-trade totals "
+                             f"(broker day-$ unaffected). Check the app log NOW.")
                 _alert(_msg)
                 print(f"[real-trader] fifo_reconcile {acct_id}: closed={_closed_ids} "
-                      f"backfilled={_backfilled} lost={_lost_price}", flush=True)
+                      f"backfilled={_backfilled} kept={_kept_price} lost={_lost_price}",
+                      flush=True)
 
 
 def _check_order_fills(lid, order, broker_orders):
@@ -2670,8 +2686,32 @@ def _get_order_fill_price(order_id: str, account_id: str) -> float | None:
     return None
 
 
+def _existing_exit_price(order: dict) -> float | None:
+    """The exit price this order ALREADY holds, or None if it has none.
+
+    Read order matches what the P&L consumers use (stop first — see the S210 FIFO
+    invariant in CLAUDE.md). A lid with a value here can be P&L'd, so it must never
+    be reported as a lost fill; a lid with None here drops out of every per-trade
+    total silently, which is the only case worth alerting on.
+    """
+    for key in ("stop_fill_price", "close_fill_price", "target_fill_price"):
+        v = order.get(key)
+        if v is None:
+            continue
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if fv > 0:
+            return fv
+    return None
+
+
 def _backfill_ghost_fill(order: dict) -> tuple[str, float] | None:
     """Try to recover the real fill price of a position that the bot missed.
+    See _existing_exit_price() for the cheap "does this order already have a price?"
+    check — call that BEFORE declaring a fill lost.
+
     Checks stop_order_id → target_order_id → close_order_id, then falls back to
     scanning broker historicalorders for an opposite-direction market fill that
     matches our qty + entered after our ts_placed.

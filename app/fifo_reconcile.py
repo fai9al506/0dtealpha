@@ -173,6 +173,26 @@ def _get_closed_lids(acct: str, date_et: str) -> list[tuple[int, dict]]:
     return out
 
 
+def _bot_exit_price(st: dict) -> float | None:
+    """Any usable exit price the bot recorded for a closed lid, or None if it has none.
+
+    Same read order the P&L consumers use (stop first — S210 invariant). A lid that
+    returns None here cannot be P&L'd at all: it silently contributes 0 to every
+    per-trade total while the broker still charges/credits the real fill.
+    """
+    for k in ("stop_fill_price", "close_fill_price", "target_fill_price"):
+        v = st.get(k)
+        if v is None:
+            continue
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if fv > 0:
+            return fv
+    return None
+
+
 def reconcile_account_date(acct: str, date_et: str, dry_run: bool = False) -> dict[str, Any]:
     """Run FIFO reconcile for one (account, date). Returns summary dict.
 
@@ -197,6 +217,25 @@ def reconcile_account_date(acct: str, date_et: str, dry_run: bool = False) -> di
 
     summary["lids_count"] = len(lids)
     summary["exits_count"] = len(exits)
+
+    # ── 2026-08-11: missing-exit-price audit ──
+    # Deliberately BEFORE the count guard below, which returns early and would
+    # otherwise swallow this on exactly the days it matters. A closed lid with no
+    # exit price anywhere is invisible: it contributes 0 to every per-trade total
+    # while the broker still settles the real fill. On 2026-08-10 lid 5853 lost
+    # +$52.50 this way and nothing flagged it — the day only looked wrong because
+    # the bot's tracked total ($19) disagreed with the broker's ($59).
+    # Broker day-$ is never affected, so this is a measurement alarm, not a risk one.
+    # Alert the SAME DAY: Railway logs roll within hours, so a next-morning
+    # investigation has nothing left to read.
+    no_price = [sid for sid, st in lids if _bot_exit_price(st) is None]
+    if no_price:
+        summary["no_exit_price"] = no_price
+        summary["warnings"].append(
+            f"NO EXIT PRICE on {len(no_price)} closed lid(s): {no_price}. Their P&L is "
+            f"missing from per-trade totals (broker day-$ unaffected). Pull the app log "
+            f"for these lids NOW — Railway logs roll within hours."
+        )
 
     if not lids:
         return summary  # nothing to do

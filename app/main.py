@@ -1091,6 +1091,15 @@ def db_init():
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_telegram_alerts_ts ON telegram_alerts (ts DESC);"))
 
+        # S243 — 5-minute TSRT health snapshots, so a session can be reviewed afterwards
+        # instead of only watched live. `et` is the ET wall-clock minute (PK = idempotent).
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS tsrt_health (
+            et TIMESTAMP PRIMARY KEY,
+            payload JSONB NOT NULL DEFAULT '{}'
+        );
+        """))
+
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS auto_trade_orders (
             setup_log_id BIGINT PRIMARY KEY,
@@ -7630,6 +7639,93 @@ def _auto_trade_premarket_reconcile():
         print(f"[auto-trade-premarket] reconciliation error: {e}", flush=True)
 
 
+_tsrt_health_fired: dict = {}   # (trade_date, key) already alerted -> don't repeat
+
+
+def _tsrt_health_watchdog():
+    """S243 (2026-08-11) — unattended TSRT health check. Every 5 min, 09:30-16:30 ET.
+
+    Exists so nobody has to sit and watch a session. It deliberately checks only the two
+    things NOTHING else in the app checks; position mismatches, orphan orders and pipeline
+    freshness are already covered by real_trader's reconcile and _pipeline_watchdog.
+
+    1. ES RANGE-BAR LAG. Every other health check asks "did data arrive?", never "did it
+       arrive ON TIME". That blind spot is exactly how S236 ran for five weeks: the CME
+       entitlement lapsed, Sierra served the free 10-minute delayed feed, bars kept
+       arriving, every check stayed green, and ES Absorption — a live-traded setup —
+       produced no signals on 20 of 29 sessions. A CONSTANT offset means a delayed feed,
+       not a slow pipe.
+    2. CLOSED TRADE WITH NO EXIT PRICE. Invisible P&L hole: the trade contributes 0 to
+       every per-trade total while the broker settles the real fill (lid 5853, 2026-08-10,
+       +$52.50 lost from the totals). Alerted the SAME DAY because Railway logs roll
+       within hours, so a next-morning look has nothing left to read.
+
+    Also writes a row to `tsrt_health` every run so the day can be analysed afterwards.
+    Fail-soft throughout: this must never take the scheduler down.
+    """
+    try:
+        now = now_et()
+        if now.weekday() >= 5 or not (dtime(9, 30) <= now.time() <= dtime(16, 30)):
+            return
+        if engine is None:
+            return
+        day = now.date().isoformat()
+        snap: dict = {}
+
+        with engine.begin() as conn:
+            lag, nbars = conn.execute(text("""
+                SELECT round(percentile_cont(0.5) WITHIN GROUP (
+                           ORDER BY EXTRACT(EPOCH FROM (received_at - ts_end)))::numeric, 1),
+                       count(*)
+                FROM vps_es_range_bars
+                WHERE range_pts = 5 AND received_at > now() - interval '30 minutes'
+            """)).fetchone()
+            snap["es_lag_s"] = float(lag) if lag is not None else None
+            snap["es_bars_30m"] = int(nbars or 0)
+
+            no_price = [r[0] for r in conn.execute(text("""
+                SELECT setup_log_id FROM real_trade_orders
+                WHERE created_at > now() - interval '20 hours'
+                  AND state->>'status' = 'closed'
+                  AND COALESCE(state->>'stop_fill_price', state->>'close_fill_price',
+                               state->>'target_fill_price') IS NULL
+                ORDER BY setup_log_id""")).fetchall()]
+            snap["no_exit_price"] = no_price
+
+            conn.execute(text(
+                "INSERT INTO tsrt_health (et, payload) VALUES (:et, CAST(:p AS jsonb)) "
+                "ON CONFLICT (et) DO NOTHING"),
+                {"et": now.replace(second=0, microsecond=0, tzinfo=None),
+                 "p": json.dumps(snap, default=str)})
+
+        # --- 1. feed lag ---
+        if snap["es_bars_30m"] >= 3 and snap["es_lag_s"] is not None and snap["es_lag_s"] > 60:
+            k = (day, "es_lag")
+            if k not in _tsrt_health_fired:
+                _tsrt_health_fired[k] = True
+                send_telegram(
+                    f"🚨 <b>ES BAR FEED IS LATE</b>\n"
+                    f"Median delay <b>{snap['es_lag_s']:.0f}s</b> over the last 30 min "
+                    f"({snap['es_bars_30m']} bars). Healthy is ~4s.\n"
+                    f"A constant offset = a DELAYED FEED, not a slow pipe — check the "
+                    f"Sierra CME entitlement before the code (this is how S236 hid for "
+                    f"5 weeks).\nES Absorption is live-traded and is now trading stale bars.")
+
+        # --- 2. closed trades carrying no exit price ---
+        for lid in snap["no_exit_price"]:
+            k = (day, f"noexit-{lid}")
+            if k in _tsrt_health_fired:
+                continue
+            _tsrt_health_fired[k] = True
+            send_telegram(
+                f"⚠️ <b>Trade closed with NO exit price</b> — lid {lid}\n"
+                f"Its P&L is missing from every per-trade total. Broker day-$ is "
+                f"unaffected.\nPull the app log for lid {lid} NOW — Railway logs roll "
+                f"within hours.")
+    except Exception as e:
+        print(f"[tsrt-health] error: {e}", flush=True)
+
+
 def _sierra_monthly_reminder():
     """S238 — monthly Sierra account health reminder to the alerts channel.
 
@@ -8118,6 +8214,11 @@ def start_scheduler():
     # The 2026-06-30 lapse (balance ran dry with auto-renewal ticked) delayed the ES feed by
     # 10 minutes for five weeks before anyone noticed — see S236. Re-verification needs a live
     # broker connection, so this fires pre-open on a trading day, not on the 1st calendar day.
+    # S243 — unattended TSRT health watchdog (ES feed lag + missing exit prices).
+    # Runs to 16:30 so it also covers the 16:15 FIFO reconcile window, which is when
+    # the 2026-08-10 alerts fired and were missed.
+    sch.add_job(_tsrt_health_watchdog, "interval", minutes=5, timezone=NY,
+                id="tsrt_health", coalesce=True, max_instances=1)
     sch.add_job(_sierra_monthly_reminder, "cron", day="1-7", hour=9, minute=0, timezone=NY,
                 id="sierra_monthly", coalesce=True, max_instances=1, misfire_grace_time=3600)
     # S81 — daily TSRT portal-vs-real reconcile at 16:15 ET

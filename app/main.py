@@ -35,6 +35,21 @@ if DB_URL.startswith("postgresql://"):
 PULL_EVERY     = 30   # seconds
 SAVE_EVERY_MIN = 2    # minutes
 
+# S242 (2026-08-11) — ONE end-of-day time, used by BOTH the real-money flatten cron and
+# the portal outcome tracker's EXPIRED cut. They must never drift apart: any gap means the
+# portal scores minutes the bot does not hold, which is exactly what happened on
+# 2026-08-10 (flatten 15:50 vs sim 15:57 = half that day's portal-vs-broker gap).
+#
+# Moved 15:50 -> 15:55 on measured evidence, 211 open trades over 75 sessions on the SPX
+# 1-min path: +157.8 pt vs 15:50, robust to leave-one-month-out (+62 to +172 with any single
+# month dropped) and to removing the 3 best days. Risk checked too — the WORST day improves
+# (-41.5 -> -28.2 pt) and no session takes the open book past -60 pt (the $300 breaker).
+# 15:58 scored higher (+326) but the minute-to-minute result zigzags, so the exact peak is
+# noise; 15:55 keeps 5 minutes of retry room before the close and matches the auto-trader
+# and options flatten. 16:00 is a cliff (worst 1-day delta -69.6) — do not go there.
+# Caveat: study walked the INITIAL stop, so a live (tighter) trail makes +157.8 an upper bound.
+EOD_FLATTEN_ET = (15, 55)
+
 # Chain window
 STREAM_SECONDS = 5.0  # Increased from 2.0 to allow full chain download
 TARGET_STRIKES = 40
@@ -4753,7 +4768,13 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         _setup_open_trades = []
         _setup_resolved_trades = []
 
-    market_closed = now.time() >= dtime(15, 57)  # close 3 min before market end so spot is still live
+    # S242 (2026-08-11): tied to EOD_FLATTEN_ET, the SAME minute real_trader flattens.
+    # Was a hardcoded 15:57 while the bot flattened at 15:50 — so the portal kept every
+    # still-open trade for 7 minutes the bot never held. On 2026-08-10 that gifted lids
+    # 5861/5865 +4.80 and +4.30 pt each (SPX fell 6 pt between 15:50 and 15:57), which was
+    # HALF the day's entire portal-vs-broker gap. Both sides must stop on the same minute
+    # or every EXPIRED trade in the book is scored on market the bot cannot trade.
+    market_closed = now.time() >= dtime(*EOD_FLATTEN_ET)
     still_open = []
 
     # Get current ES price + bar H/L extremes for absorption outcome checks
@@ -7509,7 +7530,9 @@ def _real_trade_market_open_cleanup():
 
 
 def _real_trade_eod_flatten():
-    """Flatten all open REAL auto-trade positions before market close. Runs at 15:50 ET."""
+    """Flatten all open REAL auto-trade positions before market close.
+    Runs at EOD_FLATTEN_ET (15:55 since S242) — the same minute the portal outcome
+    tracker stops, so portal and broker measure the same trade."""
     try:
         from app import real_trader
         real_trader.flatten_all_eod()
@@ -7926,7 +7949,8 @@ def start_scheduler():
                 id="auto_trade_eod", coalesce=True, max_instances=1)
     sch.add_job(_options_trade_eod_flatten, "cron", hour=15, minute=55,
                 id="options_trade_eod", coalesce=True, max_instances=1)
-    sch.add_job(_real_trade_eod_flatten, "cron", hour=15, minute=50,
+    sch.add_job(_real_trade_eod_flatten, "cron",
+                hour=EOD_FLATTEN_ET[0], minute=EOD_FLATTEN_ET[1],
                 id="real_trade_eod", coalesce=True, max_instances=1,
                 misfire_grace_time=300)
     # Real trader: fast 3s polling to minimize orphaned order window (cap=2 stacking safety)
@@ -7961,6 +7985,35 @@ def start_scheduler():
                     send_telegram("🔴 <b>Real trader poll DISABLED</b>\nTS brokerage API unreachable after 10 consecutive timeouts")
             finally:
                 _ex.shutdown(wait=False, cancel_futures=True)
+
+            # S242 (2026-08-11): run the S131 trail-cross check here at 3s instead of
+            # only on the 30s market cycle.
+            #
+            # This works ONLY because check_spx_trail_exit compares a LIVE MES quote
+            # against a trail level already held in MES space — nothing in it needs SPX.
+            # The other exit path (outcome_resolved_win/loss, which compares SPX spot to
+            # the target) CANNOT be accelerated this way: SPX only arrives with the 30s
+            # chain pull, so polling it faster just re-reads the same stale number. That
+            # is the path lids 5849/5853 took on 2026-08-10 when a 5-second flush cost
+            # $33 — this change would NOT have saved those. It helps the 38 trail exits,
+            # not the 96 target exits.
+            #
+            # One quote is fetched for the whole sweep rather than one per order, so the
+            # cost is a single ~150 ms REST call every 3s while positions are open.
+            try:
+                _open_lids = [lid for lid, o in list(real_trader._active_orders.items())
+                              if o.get("status") == "filled"]
+                if _open_lids:
+                    _mes = real_trader._get_current_mes_price()
+                    if _mes is not None:
+                        for _lid in _open_lids:
+                            try:
+                                real_trader.check_spx_trail_exit(_lid, _mes)
+                            except Exception as _te:
+                                print(f"[real-trader] fast trail check lid={_lid}: {_te}",
+                                      flush=True)
+            except Exception as _te:
+                print(f"[real-trader] fast trail sweep error: {_te}", flush=True)
         except Exception:
             pass
     sch.add_job(_real_trade_fast_poll, "interval", seconds=3,
@@ -15877,7 +15930,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16sb">V16-SB (live) ✦</option><option value="v17">V17 (S233 relaxed — MONITORING)</option><option value="v16">V16 (base, no basket)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (live) ✦</option><option value="v17">V17 (S233 relaxed — MONITORING)</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>

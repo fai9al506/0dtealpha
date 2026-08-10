@@ -7986,34 +7986,17 @@ def start_scheduler():
             finally:
                 _ex.shutdown(wait=False, cancel_futures=True)
 
-            # S242 (2026-08-11): run the S131 trail-cross check here at 3s instead of
-            # only on the 30s market cycle.
-            #
-            # This works ONLY because check_spx_trail_exit compares a LIVE MES quote
-            # against a trail level already held in MES space — nothing in it needs SPX.
-            # The other exit path (outcome_resolved_win/loss, which compares SPX spot to
-            # the target) CANNOT be accelerated this way: SPX only arrives with the 30s
-            # chain pull, so polling it faster just re-reads the same stale number. That
-            # is the path lids 5849/5853 took on 2026-08-10 when a 5-second flush cost
-            # $33 — this change would NOT have saved those. It helps the 38 trail exits,
-            # not the 96 target exits.
-            #
-            # One quote is fetched for the whole sweep rather than one per order, so the
-            # cost is a single ~150 ms REST call every 3s while positions are open.
-            try:
-                _open_lids = [lid for lid, o in list(real_trader._active_orders.items())
-                              if o.get("status") == "filled"]
-                if _open_lids:
-                    _mes = real_trader._get_current_mes_price()
-                    if _mes is not None:
-                        for _lid in _open_lids:
-                            try:
-                                real_trader.check_spx_trail_exit(_lid, _mes)
-                            except Exception as _te:
-                                print(f"[real-trader] fast trail check lid={_lid}: {_te}",
-                                      flush=True)
-            except Exception as _te:
-                print(f"[real-trader] fast trail sweep error: {_te}", flush=True)
+            # S242 REVERTED 2026-08-11, same evening, before it ever ran in a session.
+            # A 3s sweep calling check_spx_trail_exit was added here and removed again.
+            # DO NOT RE-ADD IT. Despite its name, check_spx_trail_exit compares the LIVE
+            # MES QUOTE against the trail; only the trail LEVEL comes from the SPX path.
+            # Calling it 10x more often therefore gives MES tick wicks 10x more chances to
+            # fire an exit — exactly the failure S217/S131 were built to remove (lid 3905:
+            # broker +6.8 vs portal +25.3). The 30s cadence is not a limitation to optimise
+            # away, it IS the wick protection: a 3-second spike falls between samples and is
+            # correctly ignored. Entries, trail and exits are all SPX-driven by design; MES
+            # is only the instrument. Anything that makes the bot react faster to MES is a
+            # regression, not an improvement.
         except Exception:
             pass
     sch.add_job(_real_trade_fast_poll, "interval", seconds=3,

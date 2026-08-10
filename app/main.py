@@ -121,6 +121,28 @@ _alert_settings = {
     "cooldown_minutes": 10,
 }
 
+def _log_telegram(channel: str, message: str) -> None:
+    """Persist every outgoing Telegram alert to `telegram_alerts`.
+
+    S243 (2026-08-11). A bot cannot read back messages it posted to a channel, so the
+    only way to review what was actually alerted is to record it at send time. Without
+    this, "monitoring Telegram" can only mean pinging getMe — checking the bot is
+    reachable, not what it said. On 2026-08-10 a GHOST POSITION alert and a FIFO WARN
+    both fired and neither was noticed until the user pasted them in by hand.
+
+    Fail-soft in every direction: never raises, never blocks the send.
+    """
+    try:
+        if engine is None:
+            return
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO telegram_alerts (channel, message) VALUES (:c, :m)"),
+                {"c": channel, "m": message[:4000]})
+    except Exception:
+        pass
+
+
 def send_telegram(message: str) -> bool:
     """Send a message via Telegram bot."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -135,6 +157,7 @@ def send_telegram(message: str) -> bool:
         }, timeout=10)
         if resp.status_code == 200:
             print(f"[telegram] sent: {message[:50]}...", flush=True)
+            _log_telegram("alerts", message)
             return True
         else:
             print(f"[telegram] error: {resp.status_code} {resp.text}", flush=True)
@@ -1053,6 +1076,20 @@ def db_init():
             state JSONB NOT NULL DEFAULT '{}'
         );
         """))
+
+        # S243 (2026-08-11) — every outgoing Telegram alert, recorded at send time.
+        # A bot cannot read back what it posted to a channel, so this table IS the
+        # alert history. Without it, "watch Telegram" degrades to pinging getMe.
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS telegram_alerts (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL DEFAULT now(),
+            channel TEXT NOT NULL,
+            message TEXT NOT NULL
+        );
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_telegram_alerts_ts ON telegram_alerts (ts DESC);"))
 
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS auto_trade_orders (
@@ -2205,6 +2242,7 @@ def send_telegram_setups(message: str) -> bool:
         }, timeout=10)
         if resp.status_code == 200:
             print(f"[setups-tg] sent: {message[:50]}...", flush=True)
+            _log_telegram("setups", message)
             return True
         else:
             print(f"[setups-tg] error: {resp.status_code} {resp.text}", flush=True)

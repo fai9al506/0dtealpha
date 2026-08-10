@@ -605,6 +605,53 @@ portal JS `passesStrategy(l,'v17')`. Selectable in both portal dropdowns as
 mirroring the `__BASKET_SIZING_MODE__` pattern. Before this the V16 view showed 46 trades TSRT
 would never place. Rule: **a (live) view must equal exactly what TSRT places.**
 
+### EOD flatten time — ONE constant (`EOD_FLATTEN_ET`) — added 2026-08-11 (S242)
+
+`main.py:EOD_FLATTEN_ET = (15, 55)` drives **both** the real-money flatten cron
+(`_real_trade_eod_flatten`) **and** the portal outcome tracker's EXPIRED cut (`market_closed`).
+They must never drift apart: before this, the bot flattened at 15:50 while the sim held to
+15:57, so the portal scored 7 minutes the bot never held — **half of 2026-08-10's entire
+−$134 portal-vs-broker gap** (SPX fell 6 pt in that window, and both affected trades were
+basket-sized 2×).
+
+Moved 15:50 → 15:55 on measured evidence (211 open trades / 75 sessions, SPX 1-min path):
+**+157.8 pt**, robust to leave-one-month-out and to removing the 3 best days; **worst day
+IMPROVES −41.5 → −28.2 pt**; no session takes the open book past −60 pt (the $300 breaker).
+**16:00 is a cliff (worst 1-day delta −69.6) — never go there.** 15:58 scored higher (+326)
+but the result zigzags minute-to-minute so the peak is noise; 15:55 keeps 5 min of retry room
+and matches the auto-trader/options flatten. Study walked the INITIAL stop → **upper bound**,
+forward validation owed (Tasks S242).
+
+**🛑 DO NOT "optimise" the 30-second exit cycle.** `real_trader.check_spx_trail_exit()` is
+misleadingly named — only the trail *level* is SPX-derived; the crossing test compares the
+**live MES quote**. Running it faster gives MES tick wicks more chances to fire, which is the
+exact failure S131/S217 exist to prevent (lid 3905: broker +6.8 vs portal +25.3). **The 30s
+cadence IS the wick protection** — a 3-second spike falls between samples and is correctly
+ignored. A 3s sweep was added and reverted the same evening (`38dedb1`); a comment guards the
+spot. Memory: `feedback_spx_drives_exits_30s_is_protection`.
+
+### TSRT health watchdog + alert log — added 2026-08-11 (S243)
+
+Unattended monitoring, so a live session is not required for cover.
+
+- **`_tsrt_health_watchdog`** — interval job every 5 min, **09:30–16:30 ET** (runs to 16:30 so
+  it covers the 16:15 FIFO reconcile). Checks the only two things nothing else covers:
+  **ES 5pt bar median lag > 60 s** over the last 30 min (the S236 blind spot — every other
+  health check asks "did data arrive?", never "did it arrive *on time*") and **any trade
+  closed with no exit price under any key** (lid 5853 on 2026-08-10 dropped +$52.50 out of
+  every per-trade total). Telegram, deduped per day (per lid for the second). Fail-soft.
+  Position mismatches / orphans / pipeline freshness are NOT duplicated here.
+- **`telegram_alerts` table** — every outgoing alert recorded at send time by
+  `_log_telegram()`, called from `send_telegram` and `send_telegram_setups`
+  (`fifo_reconcile._alert_telegram` delegates to the former). A bot cannot read back its own
+  channel posts, so this table **is** the alert history.
+- **`tsrt_health` table** — a 5-min snapshot (`et` PK, JSONB payload) so a session can be
+  analysed afterwards rather than only watched live.
+- **`tsrt_live_monitor.py`** (repo root) — manual one-shot sweep,
+  `railway run -s 0dtealpha python tsrt_live_monitor.py`; exit **0 OK / 1 WARN / 2 HALT**.
+  Encodes the S239 stop rules and reads `telegram_alerts`. Session-only — the in-app watchdog
+  is what covers unattended days.
+
 ### Sierra monthly reminder (`_sierra_monthly_reminder`) — added 2026-08-08 (S238)
 
 Cron `day=1-7, hour=9, timezone=NY` with a weekday guard and a once-per-month latch
@@ -631,6 +678,8 @@ slow pipe — check the exchange entitlement before the code.
 - `setup_log.mes_sim_outcome_pnl / mes_sim_outcome_result / mes_sim_max_fav` (S55, 2026-05-13) - MES-driven trail simulation outcomes (portal realism, not new alpha; populated for V14 whitelist setups). **2026-06-23: "DD Exhaustion" ADDED to whitelist (`mes_sim_backfill.py` V14_WHITELIST + _DEFAULT_PARAMS DD=continuous no-BE SL12/act10/gap10; `main.py` live-path tuple). Historical backfill Mar 23→now = 599/627 (Jun 15-16 Sierra-contaminated NULLed). Was excluded → DD-heavy filter comparisons flew blind. Finding: June DD shorts captured only +20 mes vs +223 chain (~9%).**
 - `tsrt_daily_stmt` (S204, 2026-06-04) - TSRT per-day broker-truth statement rows (day PK, gross/comm/net, n_trades, n_wins, trades JSONB) — persisted so weekly report history survives TS's 90-day lookback. **THE source of truth for day-$** — never sum `real_trade_orders.state` per-lid on multi-concurrent days (S210)
 - `vol_event_alerts` (S209, 2026-06-07) - dedup keys for vol-event Telegram alerts (key PK: `intraday-<date>` / `confirmed-<trigger date>`)
+- `telegram_alerts` (S243, 2026-08-11) - every outgoing Telegram alert, recorded at send time. **This IS the alert history** — a bot cannot read back its own channel posts
+- `tsrt_health` (S243, 2026-08-11) - 5-min TSRT health snapshots (`et` PK, JSONB) for after-the-fact session analysis
 
 ### TSRT Weekly Statement (`app/tsrt_weekly_report.py`) — added 2026-06-04 (S204)
 

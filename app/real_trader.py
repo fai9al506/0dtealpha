@@ -2166,8 +2166,8 @@ def _reconcile_positions():
                     _acc += int(o.get("quantity") or QTY)
                 _closed_ids = []
                 _backfilled = []
-                _lost_price = []
-                _kept_price = []  # already had a usable exit price — not a lost fill
+                _lost_price = []      # no exit price anywhere — genuinely unaccountable
+                _closed_lines = []    # per-lid "closed @ X, P&L $Y" lines for the alert
                 _orphan_stops = []  # (lid, stop_oid) to cancel — their contract is gone
                 # Release lock while querying broker history (network call)
                 for lid, o in _to_process:
@@ -2185,9 +2185,19 @@ def _reconcile_positions():
                             # 5861/5865 on 2026-08-10 even though both held
                             # stop_fill_price=7774.75 and reconciled to the cent against
                             # the broker. Only a lid with NO price anywhere is a real loss.
-                            _kept_price.append((lid, _existing_exit_price(o)))
+                            pass
                         else:
                             _lost_price.append(lid)
+                        # Every lid this path closes bypasses close_trade()'s own
+                        # alert, so report it here the way a normal close reports:
+                        # direction, size, exit, P&L. A bare "recovered the fill"
+                        # line tells the user nothing they can act on.
+                        _pnl, _xp, _q = _order_pnl(o)
+                        if _pnl is not None:
+                            _closed_lines.append(
+                                f"🏁 {o.get('setup_name')} "
+                                f"{'Long' if str(o.get('direction','')).lower() in ('long','bullish') else 'Short'} "
+                                f"{_q} MES @ {_xp} · P&L: ${_pnl:+.2f}  (lid {o['setup_log_id']})")
                         o["status"] = "closed"
                         o["close_reason"] = ("ghost_reconcile" if broker_qty == 0
                                              else "fifo_reconcile_partial")
@@ -2221,20 +2231,22 @@ def _reconcile_positions():
                 _msg = (f"⚠️ {_hdr} on {acct_id}\n"
                         f"Expected: {expected_qty} MES · Broker: {_broker_lbl}\n"
                         f"Marked {len(_closed_ids)} closed (FIFO oldest-first)")
-                if _backfilled:
-                    _msg += f"\n✅ Recovered {len(_backfilled)} fill price(s): "
-                    _msg += ", ".join(f"lid={l} {f}={p}" for l, f, p in _backfilled)
-                if _kept_price:
-                    _msg += f"\n✅ {len(_kept_price)} already had an exit price: "
-                    _msg += ", ".join(f"lid={l}@{p}" for l, p in _kept_price)
+                if _closed_lines:
+                    _msg += "\n" + "\n".join(_closed_lines)
+                    try:
+                        _tot = sum(_order_pnl(o)[0] or 0.0 for _, o in _to_process)
+                        if len(_closed_lines) > 1:
+                            _msg += f"\nTotal: ${_tot:+.2f}"
+                    except Exception:
+                        pass
                 if _lost_price:
                     _msg += (f"\n🚨 NO exit price anywhere for {len(_lost_price)} trade(s): "
                              f"{_lost_price} — their P&L is missing from per-trade totals "
                              f"(broker day-$ unaffected). Check the app log NOW.")
+                _msg += _day_line(acct_id)
                 _alert(_msg)
                 print(f"[real-trader] fifo_reconcile {acct_id}: closed={_closed_ids} "
-                      f"backfilled={_backfilled} kept={_kept_price} lost={_lost_price}",
-                      flush=True)
+                      f"backfilled={_backfilled} lost={_lost_price}", flush=True)
 
 
 def _check_order_fills(lid, order, broker_orders):
@@ -2689,12 +2701,13 @@ def _get_order_fill_price(order_id: str, account_id: str) -> float | None:
 def _existing_exit_price(order: dict) -> float | None:
     """The exit price this order ALREADY holds, or None if it has none.
 
-    Read order matches what the P&L consumers use (stop first — see the S210 FIFO
-    invariant in CLAUDE.md). A lid with a value here can be P&L'd, so it must never
-    be reported as a lost fill; a lid with None here drops out of every per-trade
-    total silently, which is the only case worth alerting on.
+    Same key precedence as close_trade's own alert (close, then stop, then target) so
+    a reconcile-path P&L is identical to the number a normal close would have shown.
+    A lid with a value here can be P&L'd and must never be reported as a lost fill;
+    a lid with None drops out of every per-trade total silently, which is the only
+    case worth alerting on.
     """
-    for key in ("stop_fill_price", "close_fill_price", "target_fill_price"):
+    for key in ("close_fill_price", "stop_fill_price", "target_fill_price"):
         v = order.get(key)
         if v is None:
             continue
@@ -2705,6 +2718,24 @@ def _existing_exit_price(order: dict) -> float | None:
         if fv > 0:
             return fv
     return None
+
+
+def _order_pnl(order: dict) -> tuple[float | None, float | None, int]:
+    """(pnl_dollars, exit_price, qty) for a closed order — the same arithmetic
+    close_trade() uses, so reconcile-path alerts read like normal close alerts.
+    pnl is None only when there is no exit price to work from."""
+    qty = int(order.get("quantity") or QTY)
+    exit_px = _existing_exit_price(order)
+    entry_px = order.get("fill_price")
+    if exit_px is None or entry_px is None:
+        return None, exit_px, qty
+    try:
+        entry_px = float(entry_px)
+    except (TypeError, ValueError):
+        return None, exit_px, qty
+    is_long = str(order.get("direction", "")).lower() in ("long", "bullish")
+    diff = (exit_px - entry_px) if is_long else (entry_px - exit_px)
+    return diff * MES_POINT_VALUE * qty, exit_px, qty
 
 
 def _backfill_ghost_fill(order: dict) -> tuple[str, float] | None:

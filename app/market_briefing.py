@@ -194,7 +194,27 @@ def _factors(inp: dict) -> list[dict]:
 
     # 1. LIS — the line dealers defend. Rarely breached; side of it sets the floor
     #    or the ceiling. Within LIS_PIVOT_PTS it is a pivot, not a direction. [VG]
-    if spot and lis:
+    #
+    #    GATED ON ALL-TENOR VANNA (user's call, 2026-08-12, then measured):
+    #    LIS only holds when long-dated vanna is POSITIVE. Measured over 120 sessions,
+    #    LIS read + forward move to close:
+    #        ALL-tenor vanna > 0 : n=18  66.7%  mean +14.14  median +12.51
+    #        ALL-tenor vanna < 0 : n=45  48.9%  mean  +4.04  median  -0.31  <- no edge
+    #    It is specifically the ALL tenor. The week+month+all SUM does not separate
+    #    (62.7% vs 59.4%) and THIRTY_NEXT_DAYS actually inverts, so do not "improve"
+    #    this by adding tenors together.
+    #    This also explains the decay that prompted the question: slots with positive
+    #    long vanna fell from 80%/78% (Feb/Mar) to 26-31% (May-Aug), which is exactly
+    #    when LIS went from 82% (Jun) to 48% (Jul) to 30% (Aug).
+    #    n=18 on the positive side — thin. Forward validation owed.
+    vanna_all = inp.get("vanna_all")
+    if spot and lis and vanna_all is not None and vanna_all <= 0:
+        f.append({"rule": "LIS_BLOCKED", "vote": 0.0, "src": "US",
+                  "why": f"LIS {lis:.0f} is NOT reliable today — all-time vanna is negative "
+                         f"({vanna_all/1e9:+.1f}B). In this regime the LIS read has run 48.9% "
+                         f"with a median of -0.3 pts, i.e. no edge. Treat the line as "
+                         f"decoration, not support."})
+    elif spot and lis:
         d = spot - lis
         if abs(d) < LIS_PIVOT_PTS:
             f.append({"rule": "LIS", "vote": 0.0, "src": "VG",
@@ -589,6 +609,21 @@ def _db_inputs(when: datetime) -> dict:
             """), {"t": naive_et, "cut": naive_et - timedelta(minutes=15)}).first()
             if b and b[0] is not None:
                 out["basket_pct"] = float(b[0])
+            # All-time net vanna — the gate on the LIS rule (see _factors). Read here so
+            # main.py needs no change. ts_utc IS timezone-aware, unlike semi_basket.
+            snap = c.execute(text("""
+                SELECT max(ts_utc) FROM volland_exposure_points
+                WHERE greek='vanna' AND ticker='SPX' AND expiration_option='ALL'
+                  AND ts_utc <= :t AND ts_utc > :t0
+            """), {"t": when, "t0": when - timedelta(minutes=45)}).scalar()
+            if snap:
+                v = c.execute(text("""
+                    SELECT SUM(value) FROM volland_exposure_points
+                    WHERE greek='vanna' AND ticker='SPX' AND expiration_option='ALL'
+                      AND ts_utc = :s
+                """), {"s": snap}).scalar()
+                if v is not None:
+                    out["vanna_all"] = float(v)
     except Exception as e:
         print(f"[briefing] db inputs partial: {e}", flush=True)
     return out

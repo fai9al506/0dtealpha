@@ -3964,9 +3964,39 @@ def send_summary_alert(time_label: str):
         summary += f"Max +Gamma: {max_pos_gamma:.0f}\n" if max_pos_gamma else "Max +Gamma: N/A\n"
         summary += f"Max -Gamma: {max_neg_gamma:.0f}\n" if max_neg_gamma else "Max -Gamma: N/A\n"
 
+        # Upgrade path: the same numbers, but read FOR the user (bias + levels +
+        # invalidation) and recorded so the call can be graded at EOD. If the briefing
+        # cannot build for any reason it returns None and we fall back to the raw dump
+        # below — the user never loses their 10:00/14:00 message.
+        if _send_briefing(time_label, spot, stats, max_pos_gamma, max_neg_gamma):
+            return
         send_telegram(summary)
     except Exception as e:
         print(f"[alerts] summary error: {e}", flush=True)
+
+
+def _send_briefing(time_label, spot, stats, max_pos_gamma, max_neg_gamma) -> bool:
+    """Build+send the interpreted briefing. True if it went out. Never raises."""
+    try:
+        from app import market_briefing as _mb
+        slot = "10:00" if time_label.startswith("10") else "14:00"
+        ctx = {
+            "spot": spot,
+            "paradigm": (stats or {}).get("paradigm"),
+            "lis": _mb._num((stats or {}).get("lines_in_sand")),
+            "target": _mb._num((stats or {}).get("target")),
+            # Prefer the worded display string when we have it; the module understands
+            # both that and the raw signed number the scraper stores.
+            "dd_str": _dd_combined_str or (stats or {}).get("delta_decay_hedging"),
+            "charm": _mb._num((stats or {}).get("aggregatedCharm")),
+            "vix": _vix_last, "vix3m": _vix3m_last,
+            "max_pos_gamma": float(max_pos_gamma) if max_pos_gamma else None,
+            "max_neg_gamma": float(max_neg_gamma) if max_neg_gamma else None,
+        }
+        return _mb.run_and_send(slot, ctx, now_et()) is not None
+    except Exception as e:
+        print(f"[briefing] send failed, falling back to raw summary: {e}", flush=True)
+        return False
 
 
 _v13_gex_magnet_cache = {"ts": 0.0, "spot": 0.0, "value": 0.0}
@@ -8282,6 +8312,20 @@ def start_scheduler():
         print(f"[watchdog] schedule error (non-fatal): {e}", flush=True)
     sch.add_job(fetch_economic_calendar, "cron", day_of_week="mon", hour=8, minute=0,
                 id="econ_cal", coalesce=True, max_instances=1)
+    # Grade the day's 10:00/14:00 bias calls against what SPX actually did. 16:20 ET so
+    # the 1-min bars are complete. This is the half that turns the briefing from an
+    # opinion into a measurement — without it there is no "understanding gap" to read.
+    try:
+        from app import market_briefing as _mb_sched
+        def _briefing_score_job():
+            if now_et().weekday() >= 5:
+                return
+            _mb_sched.score_day(now_et().date())
+        sch.add_job(_briefing_score_job, "cron", hour=16, minute=20, timezone=NY,
+                    id="briefing_score", coalesce=True, max_instances=1,
+                    misfire_grace_time=600)
+    except Exception as e:
+        print(f"[briefing] schedule error (non-fatal): {e}", flush=True)
     # 0DTE GEX scanner (S84) — SPX/SPY/QQQ/IWM, every 30 min on wall clock
     try:
         from app import dte0_gex_scanner
@@ -8531,6 +8575,14 @@ def on_startup():
         darkmate_init(engine, api_get, lambda: _spot_last)
     except Exception as e:
         print(f"[darkmate] init error (non-fatal): {e}", flush=True)
+    # Market-bias briefing (10:00 + 14:00 ET). ADVISORY ONLY — nothing reads its output
+    # to place, size or block a trade. Every call is stored with its levels and graded
+    # at EOD so the hit rate is a measured number, not an impression. 2026-08-12.
+    try:
+        from app.market_briefing import init as briefing_init
+        briefing_init(engine, send_telegram)
+    except Exception as e:
+        print(f"[briefing] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)
     try:
         from app.dashboard_v2 import init as dashboard_v2_init

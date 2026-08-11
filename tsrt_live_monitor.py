@@ -27,6 +27,15 @@ from zoneinfo import ZoneInfo
 import psycopg2
 import requests
 
+# Alert text carries emoji; a Windows cp1252 console raises UnicodeEncodeError on the
+# first one and kills the sweep AFTER the summary line — i.e. the alerts go unread,
+# which is the exact failure S243 exists to prevent. Never let encoding hide an alert.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 ET = ZoneInfo("America/New_York")
 TS_BASE = "https://api.tradestation.com/v3"
 ACCTS = ["210VYX65", "210VYX91"]

@@ -14023,6 +14023,10 @@ const _BASKET_SIZING_MODE = "__BASKET_SIZING_MODE__";
     // GEX Long is env-gated (GEX_LONG_V3_REAL_TRADE_ENABLED); when it is false the
     // real trader never places it, so V16 must not display it either.
     const _GEX_LONG_REAL = "__GEX_LONG_REAL__" === "true";
+    // Same rule for VIX Divergence (VIX_DIV_REAL_TRADE_ENABLED). Was hardcoded into the
+    // allowed-set on the 2026-05-19 assumption that the env was permanently false; it is
+    // true on Railway, so read it instead of assuming (2026-08-11).
+    const _VIX_DIV_REAL = "__VIX_DIV_REAL__" === "true";
 const PILL_COLORS = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','SB Absorption':'#f59e0b','SB10 Absorption':'#f59e0b','SB2 Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899','GEX Velocity':'#22c55e','Vanna Pivot Bounce':'#818cf8'};
 const GRADE_COLORS = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308','B':'#f59e0b','C':'#888','LOG':'#555'};
 let _allTrades = [];
@@ -14244,13 +14248,14 @@ function passesStrategy(l, strat) {
     // ANY setup not in real_trader's effective whitelist must NOT pass V16.
     // Real_trader whitelist (real_trader.py:385 + env gates as of 2026-05-19):
     //   Skew Charm, AG Short, Vanna Pivot Bounce, ES Absorption, DD Exhaustion (env true)
-    //   VIX Divergence: VIX_DIV_REAL_TRADE_ENABLED=false (default false) → BLOCK
-    //   GEX Long:      GEX_LONG_V3_REAL_TRADE_ENABLED=false (default false) → BLOCK
+    //   VIX Divergence: env VIX_DIV_REAL_TRADE_ENABLED → read at render, never assumed
+    //   GEX Long:       env GEX_LONG_V3_REAL_TRADE_ENABLED → read at render, never assumed
     //   BofA Scalp, Paradigm Reversal, SB2 Absorption, etc: not in whitelist → BLOCK
     // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
     const _v16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
-                                  'ES Absorption', 'DD Exhaustion', 'VIX Divergence']);
+                                  'ES Absorption', 'DD Exhaustion']);
     if (_GEX_LONG_REAL) _v16Allowed.add('GEX Long');
+    if (_VIX_DIV_REAL) _v16Allowed.add('VIX Divergence');
     if (!_v16Allowed.has(sn)) return false;
     // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT via main.py:5430
     // _dd_short_block. V16 portal must mirror — previously fell through v13DDQualityBlock
@@ -19058,6 +19063,11 @@ DASH_HTML_TEMPLATE = """
     // GEX Long is env-gated (GEX_LONG_V3_REAL_TRADE_ENABLED); when it is false the
     // real trader never places it, so V16 must not display it either.
     const _GEX_LONG_REAL = "__GEX_LONG_REAL__" === "true";
+    // Same rule for VIX Divergence (VIX_DIV_REAL_TRADE_ENABLED). This view had it
+    // hardcoded OUT since 2026-05-19 on the assumption the env stayed false; it is true
+    // on Railway, so TSRT placed VIX Div longs the trade log never showed (2026-08-11:
+    // lid 5893 was placed, filled and stopped out while V16 (live) hid it).
+    const _VIX_DIV_REAL = "__VIX_DIV_REAL__" === "true";
     let _tlDailyGaps = {};  // {date_str: gap_pts} for V12 filter
     fetch('/api/setup/daily_gaps', {cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_tlDailyGaps=d;}).catch(()=>{});
     // GEX Long v3 server-side overlay: per-trade {pass, result, pnl, max_fav, verdict}
@@ -19350,14 +19360,15 @@ DASH_HTML_TEMPLATE = """
         // real_trader's effective whitelist must NOT pass V16.
         // Real_trader whitelist (real_trader.py:385 + env gates as of 2026-05-19):
         //   Skew Charm, AG Short, Vanna Pivot Bounce, ES Absorption, DD Exhaustion (env true)
-        //   VIX Divergence: VIX_DIV_REAL_TRADE_ENABLED=false → BLOCK
-        //   GEX Long v4:   GEX_LONG_V3_REAL_TRADE_ENABLED=true → ALLOW (2026-06-08, align>=0/bull carve-out)
+        //   VIX Divergence: env VIX_DIV_REAL_TRADE_ENABLED → read at render, never assumed
+        //   GEX Long v4:    env GEX_LONG_V3_REAL_TRADE_ENABLED → read at render, never assumed
         //   BofA, Paradigm Reversal, SB2 Absorption, others: not in whitelist → BLOCK
         // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
         // GEX Long v4 added 2026-06-08 (env GEX_LONG_V3_REAL_TRADE_ENABLED=true).
         const _tlV16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
                                         'ES Absorption', 'DD Exhaustion']);
         if (_GEX_LONG_REAL) _tlV16Allowed.add('GEX Long');
+        if (_VIX_DIV_REAL) _tlV16Allowed.add('VIX Divergence');
         if (!_tlV16Allowed.has(sn)) return false;
         // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT — mirror it here.
         if (sn === 'DD Exhaustion' && !isLong) return false;
@@ -19418,9 +19429,17 @@ DASH_HTML_TEMPLATE = """
         if (!_tlGapFilter()) return false;
         if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
         if (sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
-        // VIX Divergence path removed (2026-05-19): blocked by _tlV16Allowed gate above
-        // since VIX_DIV_REAL_TRADE_ENABLED=false on real_trader. When that env flips back
-        // to true, re-add the VIX Div longs-only admit AND update _tlV16Allowed.
+        // VIX Divergence (S189, re-enabled 2026-05-27): runtime _passes_live_filter admits
+        // LONGS only + grade != C + paradigm LIKE 'GEX-%'. Restored here 2026-08-11 — the
+        // admit had been deleted in 2026-05-19 while the env was false and was never put
+        // back when it flipped true, so the (live) view silently hid real TSRT trades.
+        // LOCKSTEP with main.py:_passes_live_filter, live_filter.passes_v16, passesStrategy.
+        if (sn === 'VIX Divergence') {
+          if (!isLong) return false;
+          if (l.grade === 'C') return false;
+          if (!l.paradigm || !l.paradigm.startsWith('GEX-')) return false;
+          return true;
+        }
         if (!_tlV11TimeGates()) return false;
         if (_tlV13BullishBlock()) return false;
         if (_tlV13VannaBlock()) return false;
@@ -21649,6 +21668,7 @@ def spxw_dashboard(session: str = Cookie(default=None)):
             .replace("__USER_EMAIL__", user["email"])
             .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "sizeonly").lower())
             .replace("__GEX_LONG_REAL__", os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower())
+            .replace("__VIX_DIV_REAL__", os.getenv("VIX_DIV_REAL_TRADE_ENABLED", "false").lower())
             .replace("__IS_ADMIN__", "true" if user.get("is_admin") else "false"))
     return HTMLResponse(html)
 
@@ -21663,7 +21683,8 @@ def eod_review_page(session: str = Cookie(default=None), date: str = Query(None)
     html = (EOD_REVIEW_TEMPLATE
             .replace("__DATE__", review_date)
             .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "sizeonly").lower())
-            .replace("__GEX_LONG_REAL__", os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower()))
+            .replace("__GEX_LONG_REAL__", os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower())
+            .replace("__VIX_DIV_REAL__", os.getenv("VIX_DIV_REAL_TRADE_ENABLED", "false").lower()))
     return HTMLResponse(html)
 
 

@@ -8366,6 +8366,25 @@ def start_scheduler():
                     id="live_pass_restamp", coalesce=True, max_instances=1, misfire_grace_time=600)
     except Exception as e:
         print(f"[darkmate] schedule error (non-fatal): {e}", flush=True)
+    # GEX dealer-positioning state (S244) — MONITORING ONLY, nothing reads this to trade.
+    # capture: every 2 min (matches the chain_snapshots save cadence it reads).
+    # stamp:   EOD, writes setup_log.gex_* so the states accumulate for forward validation.
+    try:
+        from app import gex_state as _gex_state
+        def _gex_state_capture_job():
+            if now_et().weekday() >= 5:
+                return
+            if not (dtime(9, 30) <= now_et().time() <= dtime(16, 5)):
+                return
+            _gex_state.capture()
+        sch.add_job(_gex_state_capture_job, "interval", minutes=2,
+                    id="gex_state_capture", coalesce=True, max_instances=1,
+                    misfire_grace_time=60)
+        sch.add_job(lambda: _gex_state.stamp_setups(3), "cron", day_of_week="mon-fri",
+                    hour=16, minute=30, id="gex_state_stamp", coalesce=True,
+                    max_instances=1, misfire_grace_time=600)
+    except Exception as e:
+        print(f"[gex-state] schedule error (non-fatal): {e}", flush=True)
     # Stock GEX scanner — reduced schedule (protects core 0DTE pipeline)
     # 2026-05-04 (S22): scheduled scans DISABLED — 0 rows ever written despite
     # init firing daily. Module is dead; the working stock GEX system is
@@ -8575,6 +8594,14 @@ def on_startup():
         darkmate_init(engine, api_get, lambda: _spot_last)
     except Exception as e:
         print(f"[darkmate] init error (non-fatal): {e}", flush=True)
+    # GEX dealer-positioning state (S244) — six cards + 11-state taxonomy from the chain
+    # we already pull. MONITORING-ONLY, fail-soft, zero touch to the trade loop.
+    # Study: S244_GEX_FRAMEWORK_STUDY.md
+    try:
+        from app.gex_state import init as gex_state_init
+        gex_state_init(engine)
+    except Exception as e:
+        print(f"[gex-state] init error (non-fatal): {e}", flush=True)
     # Market-bias briefing (10:00 + 14:00 ET). ADVISORY ONLY — nothing reads its output
     # to place, size or block a trade. Every call is stored with its levels and graded
     # at EOD so the hit rate is a measured number, not an impression. 2026-08-12.
@@ -8835,6 +8862,18 @@ def darkmate_fw_page(session: str = Cookie(None)):
         return RedirectResponse("/login")
     from app.darkmate_fw_page import DARKMATE_FW_HTML
     return HTMLResponse(DARKMATE_FW_HTML)
+
+@app.get("/api/gex-state/latest")
+def api_gex_state_latest():
+    """Current dealer-positioning cards + state. MONITORING ONLY (S244)."""
+    from app import gex_state
+    return gex_state.latest()
+
+@app.get("/api/gex-state/history")
+def api_gex_state_history(date: str = None):
+    """All state rows for an ET date (default today). MONITORING ONLY (S244)."""
+    from app import gex_state
+    return {"date": date, "rows": gex_state.history(date)}
 
 @app.get("/api/darkmate/results")
 def api_darkmate_results(date: str = None, cap: float = 300.0):

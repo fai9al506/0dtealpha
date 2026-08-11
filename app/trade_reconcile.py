@@ -228,6 +228,11 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
 
     portal_total_pts = 0.0
     real_total_pts_by_acct: dict[str, float] = {a: 0.0 for a in ACCOUNTS}
+    # Dollars, not points × $5 — basket sizing means a lid can be 2 MES, and points
+    # alone silently halve those trades. Before this (2026-08-11) every 2x day raised a
+    # phantom account ⚠️: 2026-08-11 shorts read "broker $+303 · tracked $+155" — $155
+    # was the same three trades priced at 1 MES. Nothing was wrong with the money.
+    real_total_dollars_by_acct: dict[str, float] = {a: 0.0 for a in ACCOUNTS}
     real_count_by_acct: dict[str, int] = {a: 0 for a in ACCOUNTS}
     flagged_count = 0
 
@@ -256,6 +261,14 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
         acct = state.get("account_id", "?")
         is_long = direction.lower() in ("long", "bullish")
         is_concurrent = lid in concurrent_lids
+        # Contracts actually filled (basket sizing gives 2 on confirmed days). Default 1
+        # so a missing/garbage value under-states rather than invents money.
+        try:
+            qty = int(state.get("quantity") or 1)
+        except (TypeError, ValueError):
+            qty = 1
+        if qty < 1:
+            qty = 1
 
         portal_total_pts += portal_pnl
 
@@ -290,11 +303,13 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
                 acct_exit_f = float(acct_exit_p)
                 acct_real_pts = (acct_exit_f - fill) if is_long else (fill - acct_exit_f)
                 real_total_pts_by_acct[acct] += acct_real_pts
+                real_total_dollars_by_acct[acct] += acct_real_pts * qty * MES_DOLLAR_PER_PT
             except (TypeError, ValueError):
                 pass
 
         gap_pts = real_pts - portal_pnl
-        gap_dollars = gap_pts * MES_DOLLAR_PER_PT
+        # Dollar impact is what the account actually felt, so scale by size.
+        gap_dollars = gap_pts * qty * MES_DOLLAR_PER_PT
 
         if abs(gap_pts) >= GAP_FLAG_PTS:
             if is_concurrent:
@@ -331,7 +346,7 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
     broker_total_available = False
     for acct in ACCOUNTS:
         broker_pnl = _broker_realized_pnl(acct)
-        tracked_dollars = real_total_pts_by_acct[acct] * MES_DOLLAR_PER_PT
+        tracked_dollars = real_total_dollars_by_acct[acct]
         n = real_count_by_acct[acct]
         label = acct_label.get(acct, acct[-4:])
         if broker_pnl is None:
@@ -357,7 +372,7 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
         "trades": len(rows),
         "portal_total_pts": portal_total_pts,
         "flagged_trades": flagged_count,
-        "tracked_real_dollars": sum(real_total_pts_by_acct.values()) * MES_DOLLAR_PER_PT,
+        "tracked_real_dollars": sum(real_total_dollars_by_acct.values()),
         "broker_real_dollars": total_broker,
     }
 
@@ -373,7 +388,9 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
             f"<b>📊 TSRT Daily Reconcile</b> · {target_date}",
             f"━━━━━━━━━━━━━━━━━━",
             f"{day_emoji} <b>Day P&amp;L: ${real_dollars:+.0f}</b> across {len(rows)} trades",
-            f"<i>Portal sim: {portal_total_pts:+.1f}p (${portal_total_pts*MES_DOLLAR_PER_PT:+.0f})</i>",
+            # Portal sim is a per-1-MES measure by design — label it, so it is not read
+            # as a broker-$ figure sitting one line above the real per-account dollars.
+            f"<i>Portal sim: {portal_total_pts:+.1f}p (${portal_total_pts*MES_DOLLAR_PER_PT:+.0f} @1 MES)</i>",
             "",
         ]
         if trade_lines:

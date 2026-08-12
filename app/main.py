@@ -15568,6 +15568,7 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabEsDelta">ES Delta</button>
         <button class="btn" id="tabDarkmate">Dark Mate</button>
+        <button class="btn" id="tabGexState">GEX</button>
         <button class="btn" id="tabHistorical">Historical</button>
         <button class="btn" id="tabTradeLog">Trade Log</button>
         <a href="/stock-gex-live" class="btn" style="display:block;text-decoration:none;color:var(--muted)">Stock GEX <span style="font-size:9px;opacity:0.5">&#8599;</span></a>
@@ -16146,6 +16147,12 @@ DASH_HTML_TEMPLATE = """
                 style="width:100%;height:calc(100vh - 120px);min-height:580px;border:1px solid var(--border);border-radius:8px;background:#0e1117"></iframe>
       </div>
 
+      <!-- GEX dealer-positioning (S244) — MONITORING ONLY, nothing here trades -->
+      <div id="viewGexState" class="panel" style="display:none;flex-direction:column">
+        <iframe id="gexFrame" src="about:blank" title="GEX Dealer Positioning"
+                style="width:100%;height:calc(100vh - 90px);min-height:620px;border:1px solid var(--border);border-radius:8px;background:#0e1117"></iframe>
+      </div>
+
       <!-- Trade Log View -->
       <div id="viewTradeLog" class="panel" style="display:none;flex-direction:column;overflow:auto">
         <div class="header"><div><strong>Trade Log</strong></div><span id="tlStatus" style="font-size:11px;color:var(--muted)"></span></div>
@@ -16423,6 +16430,7 @@ DASH_HTML_TEMPLATE = """
           viewCharts=document.getElementById('viewCharts'),
           viewEsDelta=document.getElementById('viewEsDelta'),
           viewDarkmate=document.getElementById('viewDarkmate'),
+          viewGexState=document.getElementById('viewGexState'),
           viewHistorical=document.getElementById('viewHistorical'),
           viewTradeLog=document.getElementById('viewTradeLog');
 
@@ -16443,7 +16451,7 @@ DASH_HTML_TEMPLATE = """
       [tabTable,tabSpot,tabCharts,tabEsDelta,tabDarkmate,tabHistorical,tabTradeLog].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewHistorical.style.display='none'; viewEsDelta.style.display='none'; viewDarkmate.style.display='none'; viewTradeLog.style.display='none'; }
+    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewHistorical.style.display='none'; viewEsDelta.style.display='none'; viewDarkmate.style.display='none'; viewGexState.style.display='none'; viewTradeLog.style.display='none'; }
     function stopAllPolling(){ stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); }
     function saveTab(name){ try{sessionStorage.setItem('activeTab',name);}catch(e){} }
 
@@ -16488,6 +16496,14 @@ DASH_HTML_TEMPLATE = """
     document.querySelectorAll('#dmSubtabs .subtab-btn').forEach(b=>{
       b.addEventListener('click',()=>{ _dmSub=b.dataset.dm; document.querySelectorAll('#dmSubtabs .subtab-btn').forEach(x=>x.classList.toggle('active',x.dataset.dm===_dmSub)); _dmLoad(); });
     });
+    // GEX dealer-positioning tab: lazy-load the embedded page only when shown.
+    // MONITORING ONLY — nothing on that page places, sizes or blocks a trade.
+    function showGexState(){
+      setActive(tabGexState); hideAllViews(); viewGexState.style.display='flex'; stopAllPolling();
+      const f=document.getElementById('gexFrame');
+      if(f.getAttribute('data-cur')!=='/gex-state'){ f.src='/gex-state'; f.setAttribute('data-cur','/gex-state'); }
+      saveTab('gexState');
+    }
     function showHistorical(){ setActive(tabHistorical); hideAllViews(); viewHistorical.style.display=''; stopAllPolling(); _histShowSubTab(_histActiveSubTab); saveTab('historical'); }
     function showTradeLog(){ setActive(tabTradeLog); hideAllViews(); viewTradeLog.style.display='flex'; stopAllPolling(); _tlLoadActiveSubTab(); tradeLogTimer=setInterval(_tlLoadActiveSubTab,30000); saveTab('tradeLog'); }
     tabTable.addEventListener('click', showTable);
@@ -16495,6 +16511,7 @@ DASH_HTML_TEMPLATE = """
     tabCharts.addEventListener('click', showCharts);
     tabEsDelta.addEventListener('click', showEsDelta);
     tabDarkmate.addEventListener('click', showDarkmate);
+    tabGexState.addEventListener('click', showGexState);
     tabHistorical.addEventListener('click', showHistorical);
     tabTradeLog.addEventListener('click', showTradeLog);
 
@@ -16508,7 +16525,7 @@ DASH_HTML_TEMPLATE = """
       // Restore sub-tab memory
       const cSub = sessionStorage.getItem('chartsSubTab'); if(cSub) _chartsActiveSubTab = cSub;
       const hSub = sessionStorage.getItem('histSubTab'); if(hSub) _histActiveSubTab = hSub;
-      const tabMap = {spot:showSpot, charts:showCharts, esDelta:showEsDelta, darkmate:showDarkmate, historical:showHistorical, tradeLog:showTradeLog};
+      const tabMap = {spot:showSpot, charts:showCharts, esDelta:showEsDelta, darkmate:showDarkmate, gexState:showGexState, historical:showHistorical, tradeLog:showTradeLog};
       if(saved && tabMap[saved]) tabMap[saved]();
     } catch(e){}
 

@@ -8854,6 +8854,16 @@ def darkmate_page(session: str = Cookie(None)):
     from app.darkmate_page import DARKMATE_HTML
     return HTMLResponse(DARKMATE_HTML)
 
+@app.get("/gex-state")
+def gex_state_page(session: str = Cookie(None)):
+    """GEX Dealer Positioning — six cards + 11-state taxonomy + per-strike gamma.
+    MONITORING ONLY (S244): manual-trade map, nothing here places or blocks a trade."""
+    user = get_current_user(session)
+    if not user:
+        return RedirectResponse("/login")
+    from app.gex_state_page import GEX_STATE_HTML
+    return HTMLResponse(GEX_STATE_HTML)
+
 @app.get("/darkmate-fw")
 def darkmate_fw_page(session: str = Cookie(None)):
     """Dark Mate FW — live multi-expiry gamma/vanna cluster levels (manual-trade map)."""
@@ -8874,6 +8884,12 @@ def api_gex_state_history(date: str = None):
     """All state rows for an ET date (default today). MONITORING ONLY (S244)."""
     from app import gex_state
     return {"date": date, "rows": gex_state.history(date)}
+
+@app.get("/api/gex-state/profile")
+def api_gex_state_profile(at: str = None):
+    """Per-strike gamma exposure + levels for the chart. MONITORING ONLY (S244)."""
+    from app import gex_state
+    return gex_state.profile(at)
 
 @app.get("/api/darkmate/results")
 def api_darkmate_results(date: str = None, cap: float = 300.0):

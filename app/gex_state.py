@@ -310,6 +310,55 @@ def latest() -> dict:
         return {}
 
 
+def profile(at: str | None = None) -> dict:
+    """Per-strike gamma exposure + the derived levels, for the chart.
+
+    at = ISO timestamp (uses the snapshot at or before it); default = newest.
+    Dollar-gamma convention: gamma * OI * 100 * spot^2 * 0.01 = $ per 1% move, shown in $M.
+    {} on any failure.
+    """
+    if not _engine:
+        return {}
+    try:
+        with _engine.connect() as c:
+            if at:
+                row = c.execute(text(
+                    "SELECT ts, spot, rows FROM chain_snapshots "
+                    "WHERE spot IS NOT NULL AND spot > 100 AND ts <= CAST(:at AS timestamptz) "
+                    "ORDER BY ts DESC LIMIT 1"), dict(at=at)).fetchone()
+            else:
+                row = c.execute(text(
+                    "SELECT ts, spot, rows FROM chain_snapshots "
+                    "WHERE spot IS NOT NULL AND spot > 100 ORDER BY ts DESC LIMIT 1")).fetchone()
+        if not row:
+            return {}
+        ts, spot, rows = row
+        spot = float(spot)
+        rows = rows if isinstance(rows, list) else json.loads(rows)
+        f = compute(spot, rows)
+        if not f:
+            return {}
+        k = 100.0 * spot * spot * 0.01 / 1e6      # -> $M per 1% move
+        out = []
+        for r in rows:
+            try:
+                strike = float(r[STRIKE])
+                cg = float(r[C_GAMMA] or 0.0) * float(r[C_OI] or 0.0)
+                pg = float(r[P_GAMMA] or 0.0) * float(r[P_OI] or 0.0)
+            except (TypeError, ValueError, IndexError):
+                continue
+            out.append(dict(strike=strike, call_gex=cg * k, put_gex=-pg * k, net_gex=(cg - pg) * k))
+        out.sort(key=lambda x: x["strike"])
+        f["ts"] = ts.astimezone(ET).isoformat()
+        f["tier"] = TIER.get(f.get("state"))
+        f["net_gex_m"] = f["net_gex"] * k
+        f["net_dex_m"] = f["net_dex"] * 100.0 * spot / 1e6      # $M of delta
+        f["profile"] = out
+        return f
+    except Exception:
+        return {}
+
+
 def history(date: str | None = None) -> list:
     """All state rows for an ET date (default today). [] on any failure."""
     if not _engine:

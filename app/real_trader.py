@@ -190,6 +190,29 @@ _SETUP_TRAIL_OVERRIDE = {
 # Charm S/R limit entry timeout
 _LIMIT_ENTRY_TIMEOUT_S = 1800  # 30 min
 
+
+def _stamp(order: dict, key: str) -> None:
+    """S246 (2026-08-12): record WHEN each stage of an exit happened.
+
+    We stored `ts_placed` for entries but nothing at all for exits, so the only
+    way to ask "was the close slow?" was to reconstruct it from raw tick data
+    after the fact (lid 5933 took an hour of archaeology to explain).
+
+    Three stamps, ET ISO strings, written into the existing JSONB state — no
+    schema change, no behaviour change:
+      exit_decision_et    close_trade() was called (the decision)
+      exit_order_sent_et  the market close order left for TradeStation
+      exit_fill_et        we learned the fill price (either path)
+
+    Never overwrites an existing stamp (the first one is the honest one) and
+    never raises — a clock problem must not break a close.
+    """
+    try:
+        if order.get(key) is None:
+            order[key] = datetime.now(NY).isoformat(timespec="milliseconds")
+    except Exception:
+        pass
+
 # DB table name
 DB_TABLE = "real_trade_orders"
 
@@ -1583,6 +1606,7 @@ def close_trade(setup_log_id: int, result_type: str):
         if not order:
             return
         already_closed = order["status"] == "closed"
+        _stamp(order, "exit_decision_et")  # S246 — start of the exit clock
         # 2026-05-14 Bug 2 fix: exclude this lid from reconcile's expected_qty
         # and ghost-stamp candidates during _flatten_position's 2-5sec window.
         # Without this, reconcile races and overwrites close_reason with
@@ -1829,6 +1853,7 @@ def _flatten_position(order):
             if stop_fp is not None:
                 order["stop_fill_price"] = stop_fp
                 order["close_fill_price"] = stop_fp  # for portal/reconcile
+                _stamp(order, "exit_fill_et")  # S246
                 order["close_reason"] = order.get("close_reason") or "stop_filled_race_caught"
                 print(f"[real-trader] flatten SKIPPED: stop_order_id={stop_oid} already FLL "
                       f"at {stop_fp} — broker beat us to it (race caught). "
@@ -1933,6 +1958,7 @@ def _flatten_position(order):
             "TimeInForce": {"Duration": "DAY"},
             "Route": "Intelligent",
         }
+        _stamp(order, "exit_order_sent_et")  # S246 — order leaves for the broker
         resp = _ts_api("POST", "/orderexecution/orders", close_payload, account_id)
         if resp:
             # Check for rejection
@@ -1985,6 +2011,7 @@ def _flatten_position(order):
                                    f"Skipping store — backfill will retry.")
                     if sane:
                         order["close_fill_price"] = close_fp
+                        _stamp(order, "exit_fill_et")  # S246
             print(f"[real-trader] flattened: {order['setup_name']} qty={close_qty} "
                   f"fill={order.get('close_fill_price')} acct={account_id}", flush=True)
         else:
@@ -2578,6 +2605,9 @@ def _check_order_fills(lid, order, broker_orders):
                     order["stop_fill_price"] = stop_fp
                     order["status"] = "closed"
                     order["close_reason"] = "stop_filled"
+                    # S246: the broker's own stop fired — no decision/send stage
+                    # of ours, so only the fill stamp is meaningful here.
+                    _stamp(order, "exit_fill_et")
                 changed = True
                 # Cancel target since stop filled (verify + retry)
                 if order.get("target_order_id"):
@@ -3063,6 +3093,7 @@ def flatten_all_eod():
                 order["close_reason"] = "eod_flatten"
                 if close_fp is not None:
                     order["stop_fill_price"] = close_fp
+                    _stamp(order, "exit_fill_et")  # S246
             _persist_order(lid)
 
             # Compute P&L and send Telegram per trade

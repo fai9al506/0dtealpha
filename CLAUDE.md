@@ -47,8 +47,22 @@ Before presenting ANY trading study, backtest, performance report, or parameter 
   bias +0.18 pt/trade**. MES-walk MAE 5.06 pt and totals −88.0 pt vs a real +33.8 pt.
 - **NEVER describe `mes_sim_*` as the "honest", "execution-realistic" or "conservative" number,
   and never lead a report with it.** Post-S217 it is not conservative, it is simply wrong.
-- Apply at most a **−0.18 pt/trade** haircut to chain results. `mes_sim_*` is for pre-S217
-  windows only. If a study spans the boundary, split at 2026-06-13.
+- Apply a **−0.6 pt/trade** haircut to chain results (was −0.18 until 2026-08-12 — that
+  figure came from a 43-trade window and understated the real cost by ~3×). `mes_sim_*` is
+  for pre-S217 windows only. If a study spans the boundary, split at 2026-06-13.
+- **The haircut is STRUCTURAL, not a bug — do not try to engineer it away.** Two independent
+  methods agree: 56 real broker round-trips measure **−0.61 pt/trade**, and a 1,051-signal
+  1-min simulation measures **−0.59 pt/trade**. It is the distance price travels past a trail
+  level between the crossing and the market-order fill. Changing how max-favourable is
+  measured moves it by 0.07 pt (S246: wick-filtered MFE tested and REJECTED — +5.9% P&L but
+  13% worse drawdown, −1.4pp WR, and it loses in 2 of 6 months).
+- **Quote the haircut as a mean, never as a per-day expectation.** Per-trade spread is
+  **σ = 4.26 pt** (range −17.5 → +17.25), so a 4-trade day is dominated by noise: 2026-08-12
+  ran −2.41 pt/trade (z = −0.85, ordinary) while 2026-07-01 ran **+4.72**. Capture measured
+  against broker truth is **96%** over the whole post-S217 era — there is no leak to recover.
+- **Measure capture at DAY level from `tsrt_daily_stmt`, never by summing per-lid state**
+  (the S210 rule). Concurrent same-direction positions net at the broker, so per-lid exits are
+  fallback-attributed and read as fake slippage.
 - **Also check concentration before quoting any monthly rate**: report top-1 / top-3 day share
   and the ex-top-3 total. This book earns on a few trend days; a window that contains one is
   not a run rate.
@@ -595,6 +609,25 @@ excluded. Measured ×0.81: V16 $1,590/mo (SAR 5,963) → V17 $2,436/mo (SAR 9,13
 −$1,253 → −$1,198. Every risk control (cap, dedup, $300 breaker, underwater guard) is
 unchanged, so peak exposure is identical — only the number of sequential trades rises
 (8.9 → ~15/day). Full evidence: `S233_FILTER_STUDY.md`.
+
+**⚠️ First live verdict (2026-08-11, S244 — 2 sessions, directional only):** V17's portal lead
+over V16 is **mostly a CAP ARTIFACT**. Portal view (no cap) V16 $691 vs V17 $1,572; under the
+real 2/2 cap + 90s dedup + $300 breaker it is **$474 vs $554 = +$80**, because V17 fires earlier
+and crowds out 4 V16 winners worth $354. **Never compare filters on the portal view — it does
+not model the cap.** The entire edge was **Skew Charm SHORT (+$612) + DD Exhaustion SHORT
+(+$236)**; **ES Absorption went 0-for-5 (−$176)** and every relaxed long bucket lost. A
+**V17-NARROW** (relax only those two buckets) beat V17-full at every cap — $807 at the live 2/2
+with the SAME margin footprint (peak 1 long / 4 short MES) and lower drawdown. Margin ceiling is
+real: shorts account $2,920.77 = 11 MES max, so cap 2/6 ($3,180) and no-cap ($3,710) are
+unfundable. S234 is 🟠 ON HOLD pending ~15-20 sessions incl. a red week — both test days were
+green and down-trending, so no downside was sampled. Memory
+`research_v17_first_two_live_days`.
+
+**No shadow-stamp plumbing is needed to evaluate a filter variant.** Every input a filter reads
+(`grade`, `paradigm`, `vix`, `greek_alignment`, v13/vanna cols, `basket_pct`) plus `outcome_pnl`
+/ `outcome_elapsed_min` is stamped on `setup_log` at signal time regardless of which filter is
+live, so any variant is reconstructable retroactively. Only a **DETECTOR** change needs live
+capture — an unfired signal leaves no record. (This retires S234 stage 0b, the `v17_pass` stamp.)
 
 **Three lockstep copies** — `live_filter.passes_v17`, portal JS `_tlPassesStrategy(l,'v17')`,
 portal JS `passesStrategy(l,'v17')`. Selectable in both portal dropdowns as

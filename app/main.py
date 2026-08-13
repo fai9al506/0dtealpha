@@ -12620,7 +12620,8 @@ def api_setup_eod_review(date: str = Query(None, description="Date YYYY-MM-DD, d
                        vanna_cliff_side, vanna_peak_side,
                        v13_gex_above, v13_dd_near,
                        vanna_regime,
-                       mes_sim_outcome_pnl, mes_sim_outcome_result, mes_sim_max_fav
+                       mes_sim_outcome_pnl, mes_sim_outcome_result, mes_sim_max_fav,
+                       gex_state
                 FROM setup_log
                 WHERE date(ts AT TIME ZONE 'America/New_York') = :d
                 ORDER BY ts ASC
@@ -12857,7 +12858,8 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
                        greek_alignment, vix, overvix,
                        v13_gex_above, v13_dd_near,
                        vanna_cliff_side, vanna_peak_side, vanna_regime, basket_pct,
-                       mes_sim_outcome_pnl, mes_sim_outcome_result, mes_sim_max_fav
+                       mes_sim_outcome_pnl, mes_sim_outcome_result, mes_sim_max_fav,
+                       gex_state
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim OFFSET :off
@@ -14748,6 +14750,7 @@ function populateFilterOptions(trades) {
   // Add variant filtered setups (✦ marker indicates filtered subset of base setup)
   const variants = [];
   if (setups.includes('GEX Long')) variants.push('<option value="GEX Long v3">GEX Long v3.1 ✦</option>');
+  if (setups.includes('GEX Long')) variants.push('<option value="GEX Long v7">GEX Long v7 — Gamma Support ✦</option>');
   if (setups.includes('ES Absorption')) variants.push('<option value="ES Abs-Pure">ES Abs-Pure ✦</option>');
   sel.innerHTML = '<option value="">All</option>' +
     setups.map(s => '<option>'+s+'</option>').join('') +
@@ -14764,6 +14767,11 @@ function getFilteredTrades() {
     // Setup variant filters: GEX Long v3 / ES Abs-Pure are filtered subsets of base setup
     if (fSetup === 'GEX Long v3') {
       if (!passesStrategy(t.entry, 'gexlongv3')) return false;
+    } else if (fSetup === 'GEX Long v7') {
+      // v7 = GEX Long gated to the SUPPORT dealer-positioning state (S244/S245).
+      // Monitoring only; stamped from 2026-08-07 onward, earlier rows are null.
+      if (t.entry.setup_name !== 'GEX Long') return false;
+      if (t.entry.gex_state !== 'SUPPORT') return false;
     } else if (fSetup === 'ES Abs-Pure') {
       if (!passesStrategy(t.entry, 'esabspure')) return false;
     } else if (fSetup && t.entry.setup_name !== fSetup) {
@@ -16163,7 +16171,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="options">Options Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option value="GEX Long v3">GEX Long v3.1 ✦</option><option value="GEX Long v3.2">GEX Long v3.2 ✦</option><option value="GEX Long v4">GEX Long v4 ✦</option><option value="GEX Long v6">GEX Long v6 ✦</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option value="ES Abs-Pure">ES Abs-Pure ✦</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Vanna Pivot Bounce</option><option>Delta Absorption</option><option>Dip-Buy</option><option value="Dip-Buy v2">Dip-Buy v2 ✦</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option value="GEX Long v3">GEX Long v3.1 ✦</option><option value="GEX Long v3.2">GEX Long v3.2 ✦</option><option value="GEX Long v4">GEX Long v4 ✦</option><option value="GEX Long v6">GEX Long v6 ✦</option><option value="GEX Long v7">GEX Long v7 — Gamma Support ✦</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option value="ES Abs-Pure">ES Abs-Pure ✦</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Vanna Pivot Bounce</option><option>Delta Absorption</option><option>Dip-Buy</option><option value="Dip-Buy v2">Dip-Buy v2 ✦</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="pickday">Pick Day...</option><option value="week">This Week</option><option value="lastweek">Last Week</option><option value="month">This Month</option><option value="lastmonth">Last Month</option><option value="custom">Custom Range...</option></select>
@@ -19972,6 +19980,16 @@ DASH_HTML_TEMPLATE = """
           if (!_tlV3Overlay) return false;
           const ov = _tlV3Overlay[String(l.id)];
           if (!ov || !ov.pass_v6) return false;
+        } else if (fSetup === 'GEX Long v7') {
+          // v7 "Gamma Support" (S244/S245, 2026-08-11, MONITORING ONLY — not in the
+          // trade path). NOT a detector: it is a GATE on the v6 GEX Long signal,
+          // keeping only bars where the Exelza dealer-positioning state is SUPPORT
+          // (net_gex>0, net_dex>=0, spot<put_wall, spot<=call_wall, |spot-ZG|>=8).
+          // Read straight off setup_log.gex_state, stamped nightly at 16:30 by
+          // gex_state.stamp_setups(). Rows before 2026-08-07 are unstamped (null)
+          // and therefore never match — that is correct, not a bug.
+          if (l.setup_name !== 'GEX Long') return false;
+          if (l.gex_state !== 'SUPPORT') return false;
         } else if (fSetup === 'ES Abs-Pure') {
           if (!_tlPassesStrategy(l, 'esabspure')) return false;
         } else if (fSetup && l.setup_name !== fSetup) {

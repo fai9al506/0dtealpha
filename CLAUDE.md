@@ -663,6 +663,35 @@ cadence IS the wick protection** — a 3-second spike falls between samples and 
 ignored. A 3s sweep was added and reverted the same evening (`38dedb1`); a comment guards the
 spot. Memory: `feedback_spx_drives_exits_30s_is_protection`.
 
+### Market briefing (`app/market_briefing.py`) — added 2026-08-11, ADVISORY ONLY
+
+The 10:00 / 14:00 ET Telegram summary is *interpreted* instead of a raw number dump: a bias,
+the levels, what would prove it wrong — and it grades itself. **Nothing reads its output; it
+places and blocks nothing.**
+
+- Hooks the existing summary path via `_send_briefing()` in main.py, which **falls back to the
+  raw dump on any failure** — the user can never lose their 10:00/14:00 message.
+- **Rule votes are earned.** Only rules that beat baseline standing alone move the bias;
+  everything else keeps its explanation and shows as *context* with vote 0. On the first two
+  live days that left the tech basket as the sole voting rule.
+- `market_briefing` table + `score_day()` cron **16:20 ET** grades each call against the 1-min
+  path (direction_correct, MFE/MAE, target_hit, invalidation_hit, per-rule votes).
+- Backfilled 2026-05-15 → 08-11: **BEARISH 61.7% correct, RANGE 55.6%, BULLISH 47.3%.** The
+  bearish calls carry the entire edge.
+- **The invalidation level must sit on the side that can falsify the call** (below spot for
+  bullish, above for bearish). It used the LIS unconditionally until 2026-08-12 (`fa7090f`),
+  so 53% of directional briefings shipped a level price had already passed and 34 bearish rows
+  were auto-marked invalidated. Fix is a side check only — **the LIS is still first choice when
+  correctly sided; do not "improve" it into a nearest-level rule.**
+
+### Exit clock (`real_trader._stamp`) — added 2026-08-12 (S246)
+
+Every close writes `exit_decision_et` / `exit_order_sent_et` / `exit_fill_et` into the existing
+JSONB state, across all four exit paths (flatten, stop-race, broker stop, EOD flatten). No
+migration, no behaviour change, never raises. Exits previously had **no timestamps at all** —
+`ts_placed` covered entries only — so diagnosing one trade meant reconstructing it from raw MES
+ticks. **Use these before theorising about latency.**
+
 ### TSRT health watchdog + alert log — added 2026-08-11 (S243)
 
 Unattended monitoring, so a live session is not required for cover.

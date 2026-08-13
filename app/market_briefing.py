@@ -355,16 +355,32 @@ def _levels(inp: dict, bias: str) -> dict:
     support = max(below) if below else None
     resistance = min(above) if above else None
 
-    # Invalidation = the level that, if lost, means the read was wrong. LIS is the
-    # cleanest such line; fall back to the far side of the day's range.
-    if lis is not None and spot:
-        invalid = lis
-    elif bias == "BULLISH":
-        invalid = lo
-    elif bias == "BEARISH":
-        invalid = hi
-    else:
-        invalid = None
+    # Invalidation = the level that, if broken, proves the read wrong. It MUST sit on
+    # the side price has to travel to falsify the call: BELOW spot for a bullish call,
+    # ABOVE spot for a bearish one.
+    #
+    # 2026-08-12 fix: this used the LIS unconditionally, with no side check, so
+    # whenever the LIS sat on the wrong side of spot the briefing published a level
+    # price had ALREADY passed -- the call was born invalidated. It hit 53% of
+    # directional briefings (36 of 49 bearish, 19 of 55 bullish) and auto-marked 34
+    # bearish rows `invalidation_hit=true`, since the scorer tests high >= level and
+    # that is guaranteed when the level is below spot. Example: 2026-08-12 14:00,
+    # BEARISH from 7751.33, published "wrong if SPX closes above 7748".
+    #
+    # This is a SIDE fix only -- the preference order is unchanged. The LIS is still
+    # first choice whenever it is correctly sided; we fall back to the day's extreme
+    # on that side, then the structural level, only when it is not. (An earlier draft
+    # picked the *nearest* qualifying level, which quietly re-designed the level
+    # choice and moved 31 rows whose LIS was already fine. Don't do that.)
+    # RANGE has no single falsifying level, so it stays None.
+    invalid = None
+    if spot:
+        if bias == "BULLISH":
+            invalid = next((x for x in (lis, lo, support)
+                            if x is not None and x < spot), None)
+        elif bias == "BEARISH":
+            invalid = next((x for x in (lis, hi, resistance)
+                            if x is not None and x > spot), None)
     return {"support": support, "resistance": resistance, "invalidation": invalid}
 
 

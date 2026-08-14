@@ -932,8 +932,22 @@ See `Backup_tags.md` for the full list of backup tags.
 
 # Communication Style
 
-**The user has said more than once that my answers are too long and too hard to follow. This is a
-hard requirement, not a preference.**
+**The user has asked THREE times (2026-08-07 ×2, 2026-08-14) for simpler writing. This is a hard
+requirement, not a preference. English is not their first language.**
+
+## Write like this (they approved this exact style on 2026-08-14: "clear and nice")
+
+1. **Short sentences. One idea each.**
+2. **Easy words.** "Wrong web address", not "incorrect endpoint". "It never worked", not "it was
+   non-functional since deployment".
+3. **Number what I did: 1, 2, 3.**
+4. **Explain any term inline with `=`.** Example: "Commit = save on your computer. Safe."
+5. **Bold the one thing that matters** in each block.
+6. **On a live-trading day, say plainly what is NOT affected.**
+7. **One question at the end**, if I need one. Not three.
+8. **No fluff.** No preamble, no recap, no long apology, no listing options I will not take.
+
+Full template + the reasoning: memory `feedback_be_concise_plain_english.md`.
 
 **The rule applies to the PROSE, not the data.** Clarified by the user 2026-08-07:
 *"for numbers it's ok, make tables make reports. But for speaking, make it more concise and plain

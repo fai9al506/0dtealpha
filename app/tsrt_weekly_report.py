@@ -27,7 +27,9 @@ from sqlalchemy import text
 NY = ZoneInfo("America/New_York")
 MES_PT = 5.0
 SAR = 3.75  # USD/SAR peg
-ACCOUNTS = ("210VYX65", "210VYX91")
+# S253: the v7 account joins the weekly capital statement when configured.
+_V7_ACCT = os.getenv("REAL_TRADE_V7_ACCOUNT", "").strip()
+ACCOUNTS = ("210VYX65", "210VYX91") + ((_V7_ACCT,) if _V7_ACCT else ())
 REAL_BASE = "https://api.tradestation.com/v3"
 # Destination: "0DTE Alpha Trades" channel (TELEGRAM_CHAT_ID_SETUPS env var on
 # Railway). Hardcoded fallback = the Trades channel ID, per user 2026-06-06

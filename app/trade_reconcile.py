@@ -15,6 +15,7 @@ Self-contained module. No imports from main.py. Receives `engine`,
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, time as dtime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -33,7 +34,10 @@ WHITELIST_SETUPS = (
     "ES Absorption",
     "DD Exhaustion",
 )
-ACCOUNTS = ("210VYX65", "210VYX91")
+# S253: include the GEX Long v7 account when configured, so the daily reconcile
+# covers it too. Unset -> unchanged two-account tuple.
+_V7_ACCT = os.getenv("REAL_TRADE_V7_ACCOUNT", "").strip()
+ACCOUNTS = ("210VYX65", "210VYX91") + ((_V7_ACCT,) if _V7_ACCT else ())
 REAL_BASE = "https://api.tradestation.com/v3"
 
 _engine = None

@@ -472,11 +472,29 @@ def init(engine, get_token_fn, send_telegram_fn):
 _V7_STATE_MAX_AGE_S = 600      # a state older than 10 min is treated as unknown
 _V7_ACCOUNT = os.getenv("REAL_TRADE_V7_ACCOUNT", "").strip()
 MAX_CONCURRENT_V7 = int(os.getenv("REAL_TRADE_MAX_CONCURRENT_V7", "8"))
+# Its own breaker (user's call 2026-08-14): the v7 account is separately funded,
+# so a bad v7 day must not stop the main book and vice versa. $150 = roughly the
+# measured full-history MaxDD (-$158) — one bad day ends v7 for the session.
+V7_DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_V7_DAILY_LOSS_LIMIT", "150"))
 
 
 def _v7_enabled() -> bool:
-    return (os.getenv("GEX_LONG_V7_ENABLED", "false").lower() == "true"
-            and bool(_V7_ACCOUNT))
+    """v7 is armed only if the flag is on AND it has its own distinct account.
+
+    The distinctness check is the important half. A typo that pointed
+    REAL_TRADE_V7_ACCOUNT at the shorts account would send LONG orders there, and
+    v7 deliberately skips the direction binding that would otherwise catch it.
+    Refusing to arm is the only safe response.
+    """
+    if os.getenv("GEX_LONG_V7_ENABLED", "false").lower() != "true":
+        return False
+    if not _V7_ACCOUNT:
+        return False
+    if _V7_ACCOUNT in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+        print(f"[real-trader] v7 DISABLED: account {_V7_ACCOUNT} collides with the "
+              f"longs/shorts account — refusing to arm.", flush=True)
+        return False
+    return True
 
 
 def _all_accounts() -> tuple:
@@ -520,12 +538,18 @@ def _v7_state_ok() -> tuple[bool, str]:
 
 
 def _count_active_for_setup(setup_name: str) -> int:
-    """Open positions for ONE setup, so v7 has a pool independent of the long cap."""
+    """Open positions for ONE setup, so v7 has a pool independent of the long cap.
+
+    Takes _lock like every other reader of _active_orders — without it a concurrent
+    fill/close mutating the dict raises RuntimeError mid-iteration and the whole
+    place_trade call dies.
+    """
     n = 0
-    for o in _active_orders.values():
-        if o.get("status") in ("pending_entry", "pending_limit", "pending_stop_entry", "filled") \
-                and o.get("setup_name") == setup_name:
-            n += 1
+    with _lock:
+        for o in _active_orders.values():
+            if o.get("status") in ("pending_entry", "pending_limit", "pending_stop_entry", "filled") \
+                    and o.get("setup_name") == setup_name:
+                n += 1
     return n
 
 
@@ -979,14 +1003,18 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     # blocking decisions.
     _get_buying_power(account_id)  # logs margin diagnostic to stdout, return ignored
 
-    # Daily loss circuit breaker
-    daily_loss = _get_daily_realized_loss()
-    if daily_loss >= DAILY_LOSS_LIMIT:
-        print(f"[real-trader] CIRCUIT BREAKER: daily loss ${daily_loss:,.0f} >= limit ${DAILY_LOSS_LIMIT:,.0f}", flush=True)
-        _log_skip_reason(setup_log_id, "daily_loss_limit")
-        _alert(f"🚨 CIRCUIT BREAKER HIT\n"
-               f"Daily loss: ${daily_loss:,.0f} >= ${DAILY_LOSS_LIMIT:,.0f}\n"
-               f"No more trades today.")
+    # Daily loss circuit breaker. S253: v7 is measured against its OWN account and
+    # its OWN limit, so the two books cannot stop each other.
+    _brk_limit = V7_DAILY_LOSS_LIMIT if _is_v7 else DAILY_LOSS_LIMIT
+    daily_loss = _get_daily_realized_loss(only_acct=_V7_ACCOUNT if _is_v7 else None)
+    if daily_loss >= _brk_limit:
+        _who = "v7" if _is_v7 else "main book"
+        print(f"[real-trader] CIRCUIT BREAKER ({_who}): daily loss ${daily_loss:,.0f} "
+              f">= limit ${_brk_limit:,.0f}", flush=True)
+        _log_skip_reason(setup_log_id, "daily_loss_limit_v7" if _is_v7 else "daily_loss_limit")
+        _alert(f"🚨 CIRCUIT BREAKER HIT ({_who})\n"
+               f"Daily loss: ${daily_loss:,.0f} >= ${_brk_limit:,.0f}\n"
+               f"No more {_who} trades today.")
         return
 
     # S203: underwater-stack guard — block 3rd same-setup same-direction entry
@@ -3643,7 +3671,7 @@ def _get_broker_position(account_id: str, expect_position: bool = False) -> dict
     return None
 
 
-def _get_daily_realized_loss() -> float:
+def _get_daily_realized_loss(only_acct: str | None = None) -> float:
     """Return today's NET realized loss across both whitelisted accounts, in $.
     Positive return = net down by that much. Zero = flat or net green.
 
@@ -3656,11 +3684,21 @@ def _get_daily_realized_loss() -> float:
     New behavior reads TS BalanceDetail.RealizedProfitLoss directly (same field
     used by `_day_line()` for Telegram alerts), sums across both ACCOUNT_WHITELIST
     accounts, and returns the absolute net loss only (or 0 if net flat/green).
-    Breaker now trips only when REAL BROKER MONEY is down >= DAILY_LOSS_LIMIT."""
+    Breaker now trips only when REAL BROKER MONEY is down >= DAILY_LOSS_LIMIT.
+
+    S253 (2026-08-14, user's call): the v7 account has its OWN breaker and is
+    excluded here. It is separately funded with its own risk budget, so a bad v7
+    cluster must not stop the main book trading, and a bad main-book day must not
+    stop v7. Pass only_acct to scope the query to one account."""
     try:
         net = 0.0
         got_any = False
         for acct in ACCOUNT_WHITELIST:
+            if only_acct is not None:
+                if acct != only_acct:
+                    continue
+            elif _V7_ACCOUNT and acct == _V7_ACCOUNT:
+                continue          # v7 has its own breaker, below
             v = _get_daily_realized_pnl(acct)
             if v is not None:
                 net += v

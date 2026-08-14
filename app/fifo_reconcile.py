@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, time as dtime, timedelta, timezone
 from typing import Any
+import os
 from zoneinfo import ZoneInfo
 
 import requests
@@ -51,6 +52,12 @@ _ACCOUNT_EXIT_SIDE = {
     "210VYX65": "Sell",  # longs
     "210VYX91": "Buy",   # shorts
 }
+# S253: the GEX Long v7 account is long-only, so it exits via Sell like the longs
+# account. Added only when configured, so with the env var unset ACCOUNTS is the
+# original two-tuple and every reconcile behaves exactly as before.
+_V7_ACCT = os.getenv("REAL_TRADE_V7_ACCOUNT", "").strip()
+if _V7_ACCT and _V7_ACCT not in _ACCOUNT_EXIT_SIDE:
+    _ACCOUNT_EXIT_SIDE[_V7_ACCT] = "Sell"  # v7 = longs only
 ACCOUNTS = tuple(_ACCOUNT_EXIT_SIDE.keys())
 
 _engine = None

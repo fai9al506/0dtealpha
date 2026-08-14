@@ -106,7 +106,14 @@ def _refresh_mes_symbol():
 REAL_BASE = "https://api.tradestation.com/v3"
 
 # Account whitelist -- ONLY these accounts can receive orders
-ACCOUNT_WHITELIST = frozenset({"210VYX65", "210VYX91"})
+ACCOUNT_WHITELIST = frozenset(
+    {"210VYX65", "210VYX91"}
+    # S253: an optional third account dedicated to GEX Long v7 ("Gamma Support").
+    # Empty by default, so with the env var unset the whitelist is byte-identical
+    # to what it was and nothing about the existing two accounts changes.
+    | ({os.getenv("REAL_TRADE_V7_ACCOUNT", "").strip()}
+       if os.getenv("REAL_TRADE_V7_ACCOUNT", "").strip() else set())
+)
 
 # Direction binding -- each account is locked to one direction
 _LONGS_ACCOUNT = os.getenv("REAL_TRADE_LONGS_ACCOUNT", "210VYX65")
@@ -417,7 +424,7 @@ def init(engine, get_token_fn, send_telegram_fn):
             _market_close = _now_et.replace(hour=16, minute=10, second=0, microsecond=0)
             if _now_et < _market_open or _now_et > _market_close:
                 # Outside market hours -- flatten everything
-                for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+                for acct_id in _all_accounts():
                     if acct_id not in ACCOUNT_WHITELIST:
                         continue
                     broker_pos = _get_broker_position(acct_id)
@@ -443,7 +450,7 @@ def init(engine, get_token_fn, send_telegram_fn):
                     print(f"[real-trader] PRE-MARKET: closed order {name} id={lid}", flush=True)
             else:
                 # During market hours -- orphan check
-                for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+                for acct_id in _all_accounts():
                     if acct_id in ACCOUNT_WHITELIST:
                         _close_broker_orphans(acct_id, source="STARTUP")
         except Exception as e:
@@ -451,6 +458,76 @@ def init(engine, get_token_fn, send_telegram_fn):
 
 
 # ====== HELPERS ======
+
+# ====================== S253: GEX Long v7 ("Gamma Support") ======================
+# v7 is NOT a detector — it is a live GATE on the existing GEX Long signal, plus its
+# own account and its own concurrency pool. Everything below is inert unless
+# GEX_LONG_V7_ENABLED=true, so with the flag off this file behaves exactly as before.
+#
+# Why it needs its own pool: v7 signals CLUSTER (19 on 2026-06-30, 10 on 08-03) and
+# the clustered days carry 100% of the measured profit — every low-signal day is net
+# negative. Sharing the 2 long slots captures only 23% of the edge; cap 8 captures 92%.
+# Backfill evidence (131 sessions, 85 signals): 77.6% WR, +543 pt, MaxDD −28 pt,
+# versus ungated GEX Long at 46.8% / −91 pt.
+_V7_STATE_MAX_AGE_S = 600      # a state older than 10 min is treated as unknown
+_V7_ACCOUNT = os.getenv("REAL_TRADE_V7_ACCOUNT", "").strip()
+MAX_CONCURRENT_V7 = int(os.getenv("REAL_TRADE_MAX_CONCURRENT_V7", "8"))
+
+
+def _v7_enabled() -> bool:
+    return (os.getenv("GEX_LONG_V7_ENABLED", "false").lower() == "true"
+            and bool(_V7_ACCOUNT))
+
+
+def _all_accounts() -> tuple:
+    """Every account the safety sweeps must cover — EOD flatten, orphan checks,
+    overnight cleanup, final flat verification.
+
+    The v7 account is included the moment it is configured, INDEPENDENT of
+    GEX_LONG_V7_ENABLED: if the flag is turned off while a v7 position is open,
+    that position still has to be flattened. Returns the original two-account
+    tuple when no v7 account is set, so every existing sweep is unchanged.
+    """
+    return (_LONGS_ACCOUNT, _SHORTS_ACCOUNT) + ((_V7_ACCOUNT,) if _V7_ACCOUNT else ())
+
+
+def _v7_state_ok() -> tuple[bool, str]:
+    """Is the dealer-positioning state SUPPORT *right now*?
+
+    FAIL-CLOSED: any error, missing row or stale row means we do NOT trade. v7 is a
+    pure opt-in addition, so refusing is always the safe answer — unlike the basket
+    gate, which fails OPEN because it only ever removes trades from an existing book.
+    """
+    if _engine is None:
+        return False, "no engine"
+    try:
+        from sqlalchemy import text as _t
+        with _engine.connect() as c:
+            r = c.execute(_t("SELECT et, state FROM gex_state ORDER BY et DESC LIMIT 1")).fetchone()
+        if not r:
+            return False, "no gex_state row"
+        et, state = r[0], (r[1] or "")
+        if et.tzinfo is None:
+            et = et.replace(tzinfo=NY)
+        age = (datetime.now(NY) - et).total_seconds()
+        if age > _V7_STATE_MAX_AGE_S:
+            return False, f"state stale ({age/60:.1f} min)"
+        if state != "SUPPORT":
+            return False, f"state={state}"
+        return True, "SUPPORT"
+    except Exception as e:
+        return False, f"error: {str(e)[:60]}"
+
+
+def _count_active_for_setup(setup_name: str) -> int:
+    """Open positions for ONE setup, so v7 has a pool independent of the long cap."""
+    n = 0
+    for o in _active_orders.values():
+        if o.get("status") in ("pending_entry", "pending_limit", "pending_stop_entry", "filled") \
+                and o.get("setup_name") == setup_name:
+            n += 1
+    return n
+
 
 def _get_account_for_direction(is_long: bool) -> str | None:
     """Return the account ID for a given direction, or None if disabled."""
@@ -486,11 +563,20 @@ def _validate_account_direction(account_id: str, is_long: bool) -> bool:
 
 
 def _count_active_for_direction(is_long: bool) -> int:
-    """Count currently active orders (pending or filled) for a direction."""
+    """Count currently active orders (pending or filled) for a direction.
+
+    S253: positions living in the dedicated v7 account are EXCLUDED. They have their
+    own capital, their own margin and their own cap, so counting them here would let
+    a v7 cluster silently starve the main long book of its 2 slots — the exact
+    crowd-out this separation exists to prevent. With no v7 account configured the
+    filter is a no-op and the count is unchanged.
+    """
     count = 0
     with _lock:
         for o in _active_orders.values():
             if o["status"] in ("pending_entry", "pending_limit", "pending_stop_entry", "filled"):
+                if _V7_ACCOUNT and o.get("account_id") == _V7_ACCOUNT:
+                    continue
                 o_is_long = o["direction"].lower() in ("long", "bullish")
                 if o_is_long == is_long:
                     count += 1
@@ -771,8 +857,22 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         _alert(f"⏭ SKIPPED {setup_name} {direction}: setup not in real-trader whitelist")
         return
 
+    # ---- S253: GEX Long v7 routing + live SUPPORT gate ----
+    # A GEX Long only reaches here when its own env switch is on. When v7 mode is
+    # armed we additionally require the live dealer-positioning state to be SUPPORT,
+    # and we send the trade to the dedicated v7 account with its own concurrency pool.
+    _is_v7 = False
+    if setup_name == "GEX Long" and is_long and _v7_enabled():
+        ok, why = _v7_state_ok()
+        if not ok:
+            print(f"[real-trader] skip GEX Long: v7 gate — {why}", flush=True)
+            _log_skip_reason(setup_log_id, "v7_state_not_support")
+            _alert(f"⏭ SKIPPED GEX Long (v7): dealer state not SUPPORT — {why}")
+            return
+        _is_v7 = True
+
     # Check master switch for this direction
-    account_id = _get_account_for_direction(is_long)
+    account_id = _V7_ACCOUNT if _is_v7 else _get_account_for_direction(is_long)
     if not account_id:
         dir_str = "longs" if is_long else "shorts"
         print(f"[real-trader] skip {setup_name}: {dir_str} master switch OFF", flush=True)
@@ -780,9 +880,16 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         _alert(f"⏭ SKIPPED {setup_name} {direction}: {dir_str} master switch OFF")
         return
 
-    # Validate account-direction binding (CRITICAL SAFETY) — already alerts internally
-    if not _validate_account_direction(account_id, is_long):
+    # Validate account-direction binding (CRITICAL SAFETY) — already alerts internally.
+    # The v7 account is long-only by construction (the gate above requires is_long),
+    # so it is exempt from the two-account direction binding rather than bypassing it.
+    if not _is_v7 and not _validate_account_direction(account_id, is_long):
         _log_skip_reason(setup_log_id, "account_direction_mismatch")
+        return
+    if _is_v7 and account_id not in ACCOUNT_WHITELIST:
+        print(f"[real-trader] BLOCKED: v7 account {account_id} not in whitelist!", flush=True)
+        _log_skip_reason(setup_log_id, "v7_account_not_whitelisted")
+        _alert(f"🚨 BLOCKED GEX Long v7: account {account_id} not whitelisted")
         return
 
     if not setup_log_id:
@@ -835,11 +942,17 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                    f"(prior id={_dedup_meta[0]}, {_dedup_meta[1]:.0f}s ago)")
             return
 
-    # Cap check: max concurrent per direction (asymmetric — longs=1, shorts=2)
-    active_count = _count_active_for_direction(is_long)
-    cap = MAX_CONCURRENT_LONG if is_long else MAX_CONCURRENT_SHORT
+    # Cap check: max concurrent per direction (asymmetric — longs=1, shorts=2).
+    # S253: v7 counts against its OWN pool, so it never consumes a slot the main
+    # long book needs — and the main book never consumes a v7 slot either.
+    if _is_v7:
+        active_count = _count_active_for_setup("GEX Long")
+        cap = MAX_CONCURRENT_V7
+    else:
+        active_count = _count_active_for_direction(is_long)
+        cap = MAX_CONCURRENT_LONG if is_long else MAX_CONCURRENT_SHORT
     if active_count >= cap:
-        dir_str = "long" if is_long else "short"
+        dir_str = "v7" if _is_v7 else ("long" if is_long else "short")
         # Log which orders are blocking (for debugging stale-order issues)
         blocking = [(lid, o.get("setup_name"), o.get("ts_placed", "")[:10], o.get("status"))
                     for lid, o in _active_orders.items()
@@ -2116,7 +2229,7 @@ def _reconcile_positions():
     because reconcile fired before fill_poll updated status. Race surface scales
     linearly with cap (cap=2 = 2 concurrent windows; cap=3 = 3x exposure).
     """
-    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+    for acct_id in _all_accounts():
         if acct_id not in ACCOUNT_WHITELIST:
             continue
         # Count expected qty from tracked orders (includes pending_entry to avoid
@@ -3016,7 +3129,7 @@ def flatten_all_eod():
         time.sleep(3)
 
         # Phase 1c: Close actual broker positions with retry
-        for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+        for acct_id in _all_accounts():
             if acct_id not in ACCOUNT_WHITELIST:
                 continue
             broker_pos = _get_broker_position(acct_id)
@@ -3126,7 +3239,7 @@ def flatten_all_eod():
                   f"acct={acct_id} close_fp={close_fp} pnl={pnl_str}", flush=True)
 
     # Phase 2: Cancel ALL remaining open orders on both accounts
-    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+    for acct_id in _all_accounts():
         if acct_id not in ACCOUNT_WHITELIST:
             continue
         try:
@@ -3145,13 +3258,13 @@ def flatten_all_eod():
 
     # Phase 3: Close any orphaned positions
     time.sleep(1)
-    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+    for acct_id in _all_accounts():
         if acct_id in ACCOUNT_WHITELIST:
             _close_broker_orphans(acct_id, source="EOD")
 
     # Phase 4: Final verification -- confirm we are flat on both accounts
     time.sleep(1)
-    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+    for acct_id in _all_accounts():
         if acct_id not in ACCOUNT_WHITELIST:
             continue
         final_pos = _get_broker_position(acct_id)
@@ -3352,7 +3465,7 @@ def periodic_orphan_check():
         _persist_order(lid)
 
     # Check each account
-    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+    for acct_id in _all_accounts():
         if acct_id not in ACCOUNT_WHITELIST:
             continue
         broker_pos = _get_broker_position(acct_id)

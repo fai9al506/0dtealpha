@@ -722,6 +722,34 @@ migration, no behaviour change, never raises. Exits previously had **no timestam
 `ts_placed` covered entries only — so diagnosing one trade meant reconstructing it from raw MES
 ticks. **Use these before theorising about latency.**
 
+### Reconcile heal — the shortfall must come from ONE snapshot (S259, 2026-08-14)
+
+`real_trader._reconcile_positions()` snapshots `expected_qty` **before** the
+`_get_broker_position()` network call, then rebuilt the heal's candidate list **after** it.
+`poll_order_status` runs on a **separate 30s scheduler job and thread** (`broker_poll`,
+`main.py:8240`) from the reconciler (`real_trade_reconcile`, `main.py:8218`), so a lid can be
+marked closed inside that window. The stale count then read that same exit as a **second**
+missing contract, healed a still-live lid, and **cancelled its protective stop** — leaving a real
+contract naked until the orphan sweep market-closed it.
+
+Now both guards derive from **one locked snapshot**: only lids counted into `expected_qty`
+(`_counted_lids`) may be healed, and the shortfall is recomputed from those same candidates with
+a silent no-op if it resolved itself concurrently. Ghost (broker flat), partial-ghost, and the
+`broker > expected` orphan branch are unchanged.
+
+- **Do not "simplify" this back to `expected_qty - broker_qty`.** That single line is the bug.
+- The `_counted_lids` filter also blocks a **brand-new** trade that filled inside the window from
+  being healed — a second defect found during the audit.
+- **`ts_placed` is written in TWO formats** — offset-aware at `real_trader.py:~1129`, naive
+  `utcnow()` at ~1256/1374/1446. **Never compare or sort it as text.** (The existing FIFO
+  `sorted(key=ts_placed)` still does; latent, not yet fixed.)
+- **A stop going `UROut` is NOT evidence of a bug** — it is the normal signature of the S131
+  trail exit (cancel stop → market sell ~9 s later). The real fingerprint is
+  `close_reason='fifo_reconcile_partial'` together with a missing exit price.
+- Measured: 3 occurrences in 37 live trading days, all on the long account. **Broker day-$ was
+  never affected** (`tsrt_daily_stmt` is FIFO-matched from real fills); only per-trade reports
+  understated. Memory `research_s259_healer_double_count`.
+
 ### TSRT health watchdog + alert log — added 2026-08-11 (S243)
 
 Unattended monitoring, so a live session is not required for cover.

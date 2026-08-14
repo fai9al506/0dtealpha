@@ -2557,6 +2557,9 @@ def _check_order_fills(lid, order, broker_orders):
                     order["target_fill_price"] = tgt_fp
                     order["status"] = "closed"
                     order["close_reason"] = "target_filled"
+                    # S246: the broker's own target order filled — like the stop
+                    # path, there is no decision/send stage of ours to time.
+                    _stamp(order, "exit_fill_et")
                 changed = True
                 # Cancel stop since target filled (verify + retry)
                 if order.get("stop_order_id"):

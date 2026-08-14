@@ -260,7 +260,17 @@ def reconcile_account_date(acct: str, date_et: str, dry_run: bool = False) -> di
                     return float(st[k])
                 except (TypeError, ValueError):
                     pass
-        v = st.get("stop_fill_price") or st.get("close_fill_price")
+        # 2026-08-13: `target_fill_price` MUST be in this chain. It is the only key
+        # the target-fill path writes (real_trader ~2557), so a lid that exited on
+        # its own target order looked exit-less here and aborted the whole
+        # conservation check — while `_bot_exit_price()` twenty lines up already
+        # read all three keys. The two helpers disagreed.
+        # It hid until 2026-08-13 lid 6004 (VPB target-filled at 7827.0, +$100)
+        # because every other exit in the restart era came from the trail or a stop.
+        # Nothing was mis-paired: the reconciler refused rather than guessed, which
+        # is the behaviour we want — it was just refusing for a phantom reason.
+        v = (st.get("stop_fill_price") or st.get("close_fill_price")
+             or st.get("target_fill_price"))
         try:
             return float(v) if v is not None else None
         except (TypeError, ValueError):

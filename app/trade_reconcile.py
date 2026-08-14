@@ -89,9 +89,17 @@ def _own_exit_price(state: dict[str, Any]) -> float | None:
     so prefer the `*_pre_fifo_reconcile` audit fields when present and fall
     back to the live fields otherwise. (Stop fill takes precedence over close
     fill, mirroring the consumer order used elsewhere.)
+
+    2026-08-13: `target_fill_price` is LAST in this chain but must be present.
+    The target-fill path in real_trader writes ONLY that key, so a lid closed by
+    its own target order read as NO_EXIT and was reported as a "ghost candidate
+    (broker may still hold position)" — alarming, and wrong. It is last because
+    FIFO reshuffling only ever touches stop/close, so those stay authoritative
+    when they exist.
     """
     for k in ("stop_fill_price_pre_fifo_reconcile", "stop_fill_price",
-              "close_fill_price_pre_fifo_reconcile", "close_fill_price"):
+              "close_fill_price_pre_fifo_reconcile", "close_fill_price",
+              "target_fill_price"):
         v = state.get(k)
         if v is not None:
             try:
@@ -257,7 +265,11 @@ def run_reconcile(target_date: str | None = None) -> dict[str, Any]:
         # Per-lid comparison uses THIS signal's OWN exit (pre-FIFO-reconcile when
         # present); the account total below uses the FIFO-correct live value.
         exit_p = _own_exit_price(state)
-        acct_exit_p = state.get("stop_fill_price") or state.get("close_fill_price")
+        # 2026-08-13: target_fill_price included — without it a target-filled lid
+        # contributes 0 to the account total, which is what produced the
+        # "broker $+240 · tracked $+150 · diff $+90" mismatch on 2026-08-13.
+        acct_exit_p = (state.get("stop_fill_price") or state.get("close_fill_price")
+                       or state.get("target_fill_price"))
         acct = state.get("account_id", "?")
         is_long = direction.lower() in ("long", "bullish")
         is_concurrent = lid in concurrent_lids

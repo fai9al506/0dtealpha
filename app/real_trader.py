@@ -2269,12 +2269,18 @@ def _reconcile_positions():
             # _flatten_position window (closing_in_progress=True) — they will
             # naturally transition to closed within seconds; counting them as
             # expected leads to false GHOST stamps during the close race.
-            expected_qty = sum(
-                o.get("quantity", QTY) for o in _active_orders.values()  # per-order qty (2 for basket-confirmed); was global QTY=1 → false POSITION MISMATCH on 2x trades (2026-06-30)
+            _counted = [
+                (lid, o) for lid, o in _active_orders.items()
                 if o.get("account_id") == acct_id
                 and o["status"] in ("pending_entry", "filled")
                 and not o.get("closing_in_progress")
-            )
+            ]
+            expected_qty = sum(o.get("quantity", QTY) for _, o in _counted)  # per-order qty (2 for basket-confirmed); was global QTY=1 → false POSITION MISMATCH on 2x trades (2026-06-30)
+            # S259 (2026-08-14): remember WHICH lids produced expected_qty. The
+            # shortfall branch below rebuilds its candidate list AFTER the broker
+            # network call, so without this the two views disagree — see the long
+            # comment at the `_qty_to_close` computation.
+            _counted_lids = {lid for lid, _ in _counted}
         # Query broker
         broker_pos = _get_broker_position(acct_id)
         broker_qty = broker_pos["qty"] if broker_pos else 0
@@ -2315,17 +2321,52 @@ def _reconcile_positions():
                 # broker history. Generalizes the old full-flat ghost branch — when
                 # broker_qty == 0 the shortfall equals the full tracked set, so this closes
                 # everything exactly as before (backward compatible).
-                _qty_to_close = expected_qty - broker_qty
                 with _lock:
                     # FIFO oldest-first candidates, same status/closing guards the ghost
                     # path used. S99: include pending_entry. 2026-05-14: skip
                     # closing_in_progress (an active close_trade will persist properly).
+                    #
+                    # S259 (2026-08-14) — `lid in _counted_lids` + the recomputed
+                    # shortfall below. `expected_qty` is snapshotted at the top of this
+                    # function, BEFORE the _get_broker_position() network call, but this
+                    # candidate list is rebuilt AFTER it. poll_order_status runs on a
+                    # SEPARATE 30s scheduler job ("broker_poll", main.py) on its own
+                    # thread, so a lid can be marked closed inside that window. The stale
+                    # expected_qty then counts that exit a SECOND time and this branch
+                    # heals a still-live lid — and cancels its protective stop below,
+                    # leaving a real contract naked until the orphan sweep catches it.
+                    #   2026-08-14 lid 6034: 6029's stop filled 11:51:22, poll closed
+                    #   6029 at 11:51:26, this ran 11:51:32 with expected=2 vs broker=1,
+                    #   closed 6034 and cancelled its stop. 1 MES sat unprotected 24s.
+                    #   Same fingerprint (healed, no exit price anywhere) on lid 3520
+                    #   2026-06-03 and lid 3704 2026-06-08 — 3 hits in 37 live days.
+                    # Two guards, both derived from ONE locked snapshot:
+                    #   1. only lids that were actually counted into expected_qty may be
+                    #      healed — a lid that filled after the broker read cannot
+                    #      explain that read's shortfall (would close a brand-new trade);
+                    #   2. recompute the shortfall from those same candidates, and if it
+                    #      has resolved itself, do nothing at all.
+                    # NOT done via ts_placed string compare: that field is written in two
+                    # different formats in this file (offset-aware at ~1129, naive at
+                    # ~1256/1374/1446), so text ordering is not reliable.
                     _cands = sorted(
                         [(lid, o) for lid, o in _active_orders.items()
                          if o.get("account_id") == acct_id
                          and o["status"] in ("pending_entry", "filled")
-                         and not o.get("closing_in_progress")],
+                         and not o.get("closing_in_progress")
+                         and lid in _counted_lids],
                         key=lambda x: x[1].get("ts_placed") or "")
+                    _fresh_expected = sum(int(o.get("quantity") or QTY) for _, o in _cands)
+                _qty_to_close = _fresh_expected - broker_qty
+                if _qty_to_close <= 0:
+                    # Another thread recorded the exit while we were querying the broker.
+                    # Nothing is missing; healing here would close a live lid. Silent by
+                    # design (log only) — the next cycle sees expected == broker and this
+                    # branch is not entered at all, so there is nothing to alert about.
+                    print(f"[real-trader] fifo_reconcile {acct_id}: shortfall resolved "
+                          f"concurrently (stale expected={expected_qty}, fresh="
+                          f"{_fresh_expected}, broker={broker_qty}) — no heal", flush=True)
+                    continue
                 # Take oldest lids until their cumulative qty covers the shortfall.
                 _to_process = []
                 _acc = 0
@@ -2399,7 +2440,10 @@ def _reconcile_positions():
                 _broker_lbl = "FLAT" if broker_qty == 0 else f"{broker_qty} MES"
                 _hdr = "GHOST POSITION" if broker_qty == 0 else "QTY MISMATCH auto-healed"
                 _msg = (f"⚠️ {_hdr} on {acct_id}\n"
-                        f"Expected: {expected_qty} MES · Broker: {_broker_lbl}\n"
+                        # S259: report the RECOMPUTED count, not the pre-network-call
+                        # snapshot — the old line could print "Expected: 2" for a heal
+                        # that was actually decided on 1.
+                        f"Expected: {_fresh_expected} MES · Broker: {_broker_lbl}\n"
                         f"Marked {len(_closed_ids)} closed (FIFO oldest-first)")
                 if _closed_lines:
                     _msg += "\n" + "\n".join(_closed_lines)

@@ -122,6 +122,12 @@ ACCOUNT_DIRECTION_BINDING = {
     _LONGS_ACCOUNT: "long",
     _SHORTS_ACCOUNT: "short",
 }
+# S253: the GEX Long v7 account is registered here like any other account rather
+# than special-cased. v7 is long-only by construction, so binding it to "long"
+# means _validate_account_direction() protects it exactly as it protects the other
+# two — no bypass, no exemption. Only the ACCOUNT it routes to differs.
+if os.getenv("REAL_TRADE_V7_ACCOUNT", "").strip():
+    ACCOUNT_DIRECTION_BINDING[os.getenv("REAL_TRADE_V7_ACCOUNT").strip()] = "long"
 
 # Master switches -- both default OFF for safety
 LONGS_ENABLED = os.getenv("REAL_TRADE_LONGS_ENABLED", "false").lower() == "true"
@@ -905,15 +911,11 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         return
 
     # Validate account-direction binding (CRITICAL SAFETY) — already alerts internally.
-    # The v7 account is long-only by construction (the gate above requires is_long),
-    # so it is exempt from the two-account direction binding rather than bypassing it.
-    if not _is_v7 and not _validate_account_direction(account_id, is_long):
+    # S253: v7 goes through this unchanged. It is registered in
+    # ACCOUNT_DIRECTION_BINDING as "long" like any other account, so it gets the
+    # same whitelist + direction check rather than an exemption.
+    if not _validate_account_direction(account_id, is_long):
         _log_skip_reason(setup_log_id, "account_direction_mismatch")
-        return
-    if _is_v7 and account_id not in ACCOUNT_WHITELIST:
-        print(f"[real-trader] BLOCKED: v7 account {account_id} not in whitelist!", flush=True)
-        _log_skip_reason(setup_log_id, "v7_account_not_whitelisted")
-        _alert(f"🚨 BLOCKED GEX Long v7: account {account_id} not whitelisted")
         return
 
     if not setup_log_id:

@@ -684,6 +684,36 @@ places and blocks nothing.**
   were auto-marked invalidated. Fix is a side check only — **the LIS is still first choice when
   correctly sided; do not "improve" it into a nearest-level rule.**
 
+### GEX Long v7 "Gamma Support" — own account, own cap (S253, arms 2026-08-17)
+
+v7 is **not a detector** — it is a live GATE on the existing GEX Long signal plus its own
+account and concurrency pool. Ships dormant; with `REAL_TRADE_V7_ACCOUNT` unset every code
+path is byte-identical to before.
+
+- **Live gate.** `real_trader._v7_state_ok()` reads the latest `gex_state` row at signal
+  time and requires `state='SUPPORT'` within 10 minutes. **FAILS CLOSED** on any error,
+  missing row, stale row or other state — the opposite of `basket_gate`, which fails OPEN
+  because it only removes trades from an existing book. v7 is pure opt-in, so refusing is
+  always safe. (Before this, `gex_state` was stamped onto `setup_log` at 16:30 — after the
+  close — and nothing in the trade path read it.)
+- **Own account.** Registered in `ACCOUNT_DIRECTION_BINDING` as `"long"` like any other
+  account, so `_validate_account_direction()` protects it identically — no exemption.
+- **Own cap-8 pool.** `MAX_CONCURRENT_V7`, and v7 is EXCLUDED from
+  `_count_active_for_direction`, so a v7 cluster can never starve the main long book's 2
+  slots and vice versa.
+- **Own $150 breaker** (`REAL_TRADE_V7_DAILY_LOSS_LIMIT`), excluded from the main $300.
+- **All 8 safety sweeps** (EOD flatten, orphan checks, overnight cleanup, final flat
+  verification) use `_all_accounts()`, which includes v7 whenever it is **configured** —
+  not merely enabled — so a position cannot be stranded by flipping the flag off.
+- `fifo_reconcile`, `trade_reconcile` and `tsrt_weekly_report` all pick the account up
+  from the same env var. **A trading account no reconciler watches is the hole S210/S243
+  exist to close** — if a fourth account is ever added, check all four modules.
+
+**Config that must not drift: FLAT 1 MES, cap 8, no basket sizing.** MaxDD is −$158 at
+every cap ≥2 but doubles to ~−$320 the moment size doubles — slots are free, size is not.
+Scale by taking the next SLOT. Evidence + funding ladder: memory
+`project_gex_v7_own_account`, Tasks S252.
+
 ### Exit clock (`real_trader._stamp`) — added 2026-08-12 (S246)
 
 Every close writes `exit_decision_et` / `exit_order_sent_et` / `exit_fill_et` into the existing

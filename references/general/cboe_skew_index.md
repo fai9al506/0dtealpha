@@ -67,9 +67,42 @@ So after a crash, tail risk is priced *lower*, not higher. SKEW is not simply "f
 
 ---
 
-# WHAT WE SHOULD DO WITH IT
+# 🛑 USER DECISION 2026-08-14 — SWING ONLY, NOT 0DTE
 
-## 1. The 2-D gate for the v7 credit spread ⭐
+The user cut this correctly on two points, and they were both right:
+
+1. **"I think it helps swing trades, for 0dte it's same."** SKEW is a **30-day** measure. Using it
+   to gate a same-day trade is applying a monthly number to a 6-hour hold. Keep it for the swing
+   book (S257-B / S258), drop it from the 0DTE and v7 plans.
+2. **"We should trade based on risk and gain… a spread of 10 points with 4 credit, it's risk
+   limited, no need to complicated."** Correct, and it is the better rule — see the box below.
+
+## ✅ THE ACTUAL DECISION RULE FOR A DEFINED-RISK SPREAD
+
+A credit spread's whole economics are in two numbers: **width** and **credit**.
+
+```
+break-even win rate = (width − credit) / width
+```
+
+| Width | Credit | Max gain | Max loss | Break-even WR | v7 measured 81.2% |
+|---|---|---|---|---|---|
+| 10 | **4** | 4 | 6 | **60%** | ✅ 21 pts of margin |
+| 10 | 3 | 3 | 7 | 70% | ⚠️ 11 pts |
+| 10 | **2** | 2 | 8 | **80%** | 🛑 no margin at all |
+
+**The check before every spread is "is the credit big enough today?", not "what is SKEW?"** If the
+credit collapses, the break-even rate climbs to meet our win rate and the edge is gone — regardless
+of what any volatility index says.
+
+This is also the cleanest expression of Natenberg's IV rule: **rich options = fat credit = low
+break-even**. The credit already contains the information.
+
+---
+
+# For the SWING book only — what SKEW could do
+
+## 1. The 2-D gate ⭐ (swing horizon, not 0DTE)
 
 Combine with Natenberg's rule (`reference_natenberg_credit_spread_rules`, and
 `references/general/natenberg_option_volatility_pricing.md`). His rule says *sell the ATM only when

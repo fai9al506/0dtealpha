@@ -14166,19 +14166,16 @@ function passesStrategy(l, strat) {
     }
     return true;
   }
-  // V19 (S263) — MONITORING ONLY. V18 plus: nothing on FRIDAY from 11:00 ET.
-  // Friday is the only losing weekday (-$62/day, 26% green vs 64-73% elsewhere) and
-  // the morning is fine — the damage is all after 11:00. Lockstep with
-  // _tlPassesStrategy(l,'v19') + live_filter.passes_v19 / v19_blocks.
+  // V19 (S263) — MONITORING ONLY. V18 plus: nothing on FRIDAY at all.
+  // Friday is the only losing weekday (-$62/day, 26% green vs 64-73% elsewhere). The
+  // morning looked salvageable but is a coin flip (n=47, +0.85 pt/t, p=0.587) worth
+  // ~$25/mo, so the whole day goes. Lockstep with _tlPassesStrategy(l,'v19') +
+  // live_filter.passes_v19 / v19_blocks (V19_AFTER_MIN=0).
   if (strat === 'v19') {
     if (!passesStrategy(l, 'v18')) return false;
     if (!l.ts) return true;
-    const _d19 = new Date(l.ts);
-    if (_d19.toLocaleDateString('en-US', {timeZone: 'America/New_York',
-                                          weekday: 'short'}) !== 'Fri') return true;
-    const _s19 = _d19.toLocaleString('en-US', {timeZone: 'America/New_York', hour12: false});
-    const _p19 = (_s19.split(', ')[1] || _s19).split(':');
-    return (parseInt(_p19[0]) * 60 + parseInt(_p19[1])) < 660;
+    return new Date(l.ts).toLocaleDateString('en-US', {timeZone: 'America/New_York',
+                                                       weekday: 'short'}) !== 'Fri';
   }
   // V18 (S260) — MONITORING ONLY. V16 minus shorts with a +GEX wall close overhead.
   // Lockstep with _tlPassesStrategy(l,'v18') + live_filter.passes_v18 / v18_blocks.
@@ -19376,23 +19373,22 @@ DASH_HTML_TEMPLATE = """
       // never relaxed. Measured x0.81: V16 $1,590/mo DD -$1,253 -> V17 $2,520/mo DD -$727.
       // LOCKSTEP with live_filter.passes_v17 + passesStrategy(l,'v17').
       // Detail: S233_FILTER_STUDY.md. Compare V16-SB vs V17 daily before shipping anything.
-      // V19 (S263) — MONITORING ONLY. V18 plus: nothing on FRIDAY from 11:00 ET.
+      // V19 (S263) — MONITORING ONLY. V18 plus: nothing on FRIDAY at all.
       // Friday is the only losing weekday: -$62/day at 26% green, against +$72..+$153
       // and 64-73% on Mon-Thu, and only 3 of 20 Fridays since 2026-03-13 were green.
-      // The MORNING is fine (+0.85 pt/trade, 57% WR) — the loss is 11:00-15:00, so the
-      // cut starts at 11:00 rather than taking the whole day. At the live 2/3 cap this
-      // takes the book to $10,774 with MaxDD -$763 (V16: $9,077 / -$1,598).
+      // The morning LOOKS fine (+0.85 pt/trade) but n=47 and the 95% CI is
+      // [-2.14, +3.93], p=0.587 — a coin flip. Keeping it bought ~$25/mo for 42 extra
+      // trades, so the whole day goes (user's call 2026-08-15; the statistics agree).
+      // At the live 2/3 cap: $10,623, MaxDD -$955, 65.0% WR, 26 red days
+      // (V16: $9,077 / -$1,598 / 61.5% / 48 red).
       // Not data mining: the same rule on Mon/Tue/Wed/Thu is LOMO 0/7 and loses money
-      // on all four, and it beats 400/400 random afternoon blocks.
+      // on all four, and it beats 400/400 random blocks of the same size.
       // LOCKSTEP with live_filter.passes_v19 + passesStrategy(l,'v19').
       if (strat === 'v19') {
         if (!_tlPassesStrategy(l, 'v18')) return false;
         if (!l.ts) return true;
-        const _d19 = new Date(l.ts);
-        if (_d19.toLocaleDateString('en-US', {timeZone: 'America/New_York',
-                                              weekday: 'short'}) !== 'Fri') return true;
-        const _m19 = _tlEtMins();
-        return _m19 == null || _m19 < 660;
+        return new Date(l.ts).toLocaleDateString('en-US', {timeZone: 'America/New_York',
+                                                           weekday: 'short'}) !== 'Fri';
       }
       // V18 (S260) — MONITORING ONLY. V16 minus SHORTS that have a +GEX wall within
       // 15pt overhead while VIX < 22. The wall is an upward magnet: near it longs win

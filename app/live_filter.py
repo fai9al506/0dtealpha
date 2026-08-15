@@ -363,17 +363,27 @@ def passes_v18(l, gaps):
 # +2.27). It is NOT opex: ordinary Fridays are -$1,218 over 18 sessions, opex
 # Fridays only -$213 over 5.
 #
-# WHY 11:00 AND NOT ALL DAY. Friday MORNING is fine — +0.85 pt/trade at 57% WR
-# before 11:00. The damage is 11:00-13:00 (-2.18) and 13:00-15:00 (-5.32 pt/trade,
-# 31% WR). Cutting the whole day earns less ($10,508) than cutting the afternoon
-# ($10,662), because the morning trades are good ones.
+# WHY THE WHOLE DAY AND NOT JUST THE AFTERNOON. The first cut was 11:00, because
+# Friday morning looks positive (+0.85 pt/trade, 57% WR) while the afternoon is
+# clearly bad (-3.10 pt/trade, 43% WR). But the morning bucket is only 47 trades and
+# it is NOT distinguishable from zero:
+#     Friday before 11:00   n= 47  +0.85 pt/t  95% CI [-2.14, +3.93]  p=0.587
+#     Friday after  11:00   n= 96  -3.10 pt/t  95% CI [-5.44, -0.72]  p=0.012
+#     Mon-Thu all day       n=945  +2.42 pt/t  95% CI [+1.59, +3.31]  p=0.000
+# Mon-Thu is clearly positive, Friday afternoon clearly negative, Friday morning a
+# coin flip. Keeping it buys $150 over six months (~$25/mo) for 42 extra trades of
+# operational exposure — and $25/mo is inside the noise of a single execution error.
+# The user's call, 2026-08-15, and the statistics agree with it. Blocking the whole
+# day also removes a timezone/DST edge from the rule.
 #
 # MEASURED at the live cap (2 long / 3 short, 90s dedup, 1 MES, chain -0.6 haircut,
 # 123 sessions), V19 vs V16:
-#     $9,077 -> $10,774 (+19%)     $/trade 8.34 -> 12.33 (+48%)
-#     MaxDD -$1,598 -> -$763 (-52%)   trade WR 61.5% -> 64.8%
-#     GREEN days 75 -> 81          RED days 48 -> 33
-# Fridays alone go from -$1,432 (6 green / 17 red) to +$150 (9 green / 7 red).
+#     $9,077 -> $10,623 (+17%)     $/trade 8.34 -> 12.77 (+53%)
+#     MaxDD -$1,598 -> -$955 (-40%)   trade WR 61.5% -> 65.0%
+#     GREEN days 75 -> 72          RED days 48 -> 26
+# The afternoon-only variant scores $10,774 / MaxDD -$763 / 81 green / 33 red — more
+# money and a smaller peak drawdown, but SEVEN more red days and a worse $/trade.
+# Whole-day was chosen for consistency and simplicity, not for the headline.
 #
 # EVIDENCE IT IS NOT DATA MINING — five weekdays were tested, so one landing at
 # p<0.05 proves nothing on its own. What does:
@@ -395,11 +405,15 @@ def passes_v18(l, gaps):
 # LOCKSTEP with main.py _tlPassesStrategy(l,'v19') and passesStrategy(l,'v19').
 # Evidence: memory research_friday_afternoon_gate.
 V19_DOW = 4               # Monday=0 ... Friday=4
-V19_AFTER_MIN = 11 * 60   # 11:00 ET
+# Minute of the ET day from which Friday is blocked. 0 = the whole session.
+# Was 660 (11:00) until 2026-08-15; moved to 0 because the Friday-morning bucket is
+# a coin flip (n=47, p=0.587) and keeping it was worth only ~$25/mo. Set it back to
+# 660 to restore the afternoon-only variant.
+V19_AFTER_MIN = 0
 
 
 def v19_blocks(l):
-    """True = V19 says SKIP (Friday from 11:00 ET). Fail-open on a missing ts."""
+    """True = V19 says SKIP (Friday). Fail-open on a missing ts."""
     ts = l['ts'] if 'ts' in l else None
     if ts is None:
         return False

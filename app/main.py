@@ -14113,7 +14113,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (live)</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (live)</option><option value="v16fri">V16 w/Friday Off ✦</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -14171,6 +14171,15 @@ function passesStrategy(l, strat) {
   // morning looked salvageable but is a coin flip (n=47, +0.85 pt/t, p=0.587) worth
   // ~$25/mo, so the whole day goes. Lockstep with _tlPassesStrategy(l,'v19') +
   // live_filter.passes_v19 / v19_blocks (V19_AFTER_MIN=0).
+  // V16FRI (S263) — "V16 w/Friday Off". THE LIVE VIEW once REAL_TRADE_NO_FRIDAY=true:
+  // V16 minus Fridays, WITHOUT V18 (which is not in the trade path). Lockstep with
+  // _tlPassesStrategy(l,'v16fri') + live_filter.passes_v16_fri.
+  if (strat === 'v16fri') {
+    if (!passesStrategy(l, 'v16')) return false;
+    if (!l.ts) return true;
+    return new Date(l.ts).toLocaleDateString('en-US', {timeZone: 'America/New_York',
+                                                       weekday: 'short'}) !== 'Fri';
+  }
   if (strat === 'v19') {
     if (!passesStrategy(l, 'v18')) return false;
     if (!l.ts) return true;
@@ -16222,7 +16231,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (live) ✦</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (live) ✦</option><option value="v16fri">V16 w/Friday Off ✦</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -19384,6 +19393,17 @@ DASH_HTML_TEMPLATE = """
       // Not data mining: the same rule on Mon/Tue/Wed/Thu is LOMO 0/7 and loses money
       // on all four, and it beats 400/400 random blocks of the same size.
       // LOCKSTEP with live_filter.passes_v19 + passesStrategy(l,'v19').
+      // V16FRI (S263) — "V16 w/Friday Off". THIS is the live view: it equals what
+      // TSRT places once REAL_TRADE_NO_FRIDAY=true (armed 2026-08-15). V19 also
+      // applies V18, which is NOT in the trade path, so V19 stays a research view.
+      // Friday-only is worth +$1,432 over 123 sessions; V18 adds a further +$115.
+      // LOCKSTEP with live_filter.passes_v16_fri + passesStrategy(l,'v16fri').
+      if (strat === 'v16fri') {
+        if (!_tlPassesStrategy(l, 'v16')) return false;
+        if (!l.ts) return true;
+        return new Date(l.ts).toLocaleDateString('en-US', {timeZone: 'America/New_York',
+                                                           weekday: 'short'}) !== 'Fri';
+      }
       if (strat === 'v19') {
         if (!_tlPassesStrategy(l, 'v18')) return false;
         if (!l.ts) return true;

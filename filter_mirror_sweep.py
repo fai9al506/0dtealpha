@@ -25,8 +25,8 @@ sys.path.insert(0, REPO)
 
 # which filter version to sweep: v16 (the live one), v17 or v18 (both monitoring)
 STRAT = (sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else "v16").lower()
-if STRAT not in ("v16", "v17", "v18", "v19"):
-    print(f"usage: python filter_mirror_sweep.py [v16|v17|v18|v19]   (got {STRAT!r})")
+if STRAT not in ("v16", "v16fri", "v17", "v18", "v19"):
+    print(f"usage: python filter_mirror_sweep.py [v16|v16fri|v17|v18|v19]   (got {STRAT!r})")
     sys.exit(2)
 
 # env flags exactly as Railway has them
@@ -123,9 +123,10 @@ if errs:
     print(f"JS errors on {len(errs)} rows, e.g. {list(errs.items())[:2]}")
 
 # ---------- 4. Python filter ----------
-from app.live_filter import passes_v16, passes_v17, passes_v18, passes_v19
-_PY = {"v16": passes_v16, "v17": passes_v17, "v18": passes_v18,
-       "v19": passes_v19}[STRAT]
+from app.live_filter import (passes_v16, passes_v16_fri, passes_v17,
+                             passes_v18, passes_v19)
+_PY = {"v16": passes_v16, "v16fri": passes_v16_fri, "v17": passes_v17,
+       "v18": passes_v18, "v19": passes_v19}[STRAT]
 py_res = {}
 for r in rows:
     row = dict(r)

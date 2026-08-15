@@ -431,3 +431,23 @@ def passes_v19(l, gaps):
     if not passes_v18(l, gaps):
         return False
     return not v19_blocks(l)
+
+
+def passes_v16_fri(l, gaps):
+    """V16 with Fridays removed — "V16 w/Friday Off" in the portal.
+
+    THIS is the one that mirrors what TSRT actually places once
+    REAL_TRADE_NO_FRIDAY=true (armed 2026-08-15). V19 additionally applies V18,
+    which is NOT in the trade path, so V19 is a research view and this is the
+    live view. Keep them apart: measured over 123 sessions at the live cap,
+    Friday-only is +$1,432 while V18 adds a further +$115.
+
+    NOTE the one difference from the real gate: v7 is excluded there (its Fridays
+    are profitable), but v7 is GEX Long, which the V16 view only admits when
+    GEX_LONG_V3_REAL_TRADE_ENABLED is true — false today, so the two agree.
+    If GEX Long is ever re-enabled for the main book this view needs a v7 carve-out
+    to stay equal to what TSRT places. See feedback_v16_equals_tsrt_placed.
+    """
+    if not passes_v16(l, gaps):
+        return False
+    return not v19_blocks(l)

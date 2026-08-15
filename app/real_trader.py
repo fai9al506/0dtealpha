@@ -484,6 +484,16 @@ MAX_CONCURRENT_V7 = int(os.getenv("REAL_TRADE_MAX_CONCURRENT_V7", "8"))
 V7_DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_V7_DAILY_LOSS_LIMIT", "150"))
 
 
+def _no_friday_enabled() -> bool:
+    """S263 Friday gate — is trading blocked on Fridays for the MAIN book?
+
+    Read at CALL time, not at import, so flipping the Railway variable takes effect
+    on the very next signal. (v7's flags are read at import and need a restart —
+    that trap is written into Tasks S252 step 3. Do not repeat it here.)
+    """
+    return os.getenv("REAL_TRADE_NO_FRIDAY", "false").lower() == "true"
+
+
 def _v7_enabled() -> bool:
     """v7 is armed only if the flag is on AND it has its own distinct account.
 
@@ -922,6 +932,37 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         # NOTE: can't log skip_reason without an id, but the alert below still fires.
         print(f"[real-trader] skip {setup_name}: no setup_log_id", flush=True)
         _alert(f"⏭ SKIPPED {setup_name} {direction}: missing setup_log_id (race or detector bug)")
+        return
+
+    # ── FRIDAY GATE (S263, armed 2026-08-15) ─────────────────────────────────────────
+    # Friday is the only losing weekday on the main book, and not by a little:
+    #     Mon +$72/day 67% green · Tue +$115 72% · Wed +$77 64% · Thu +$153 73%
+    #     FRI -$62/day, 26% green
+    # Only 3 of 20 Fridays since 2026-03-13 were green. BOTH directions lose (long
+    # -1.37 pt/trade, short -2.91, against +2.13/+2.79 on other days) and all three
+    # live setups lose. It is NOT opex — ordinary Fridays are -$1,218 over 18
+    # sessions vs -$213 over 5 opex ones. Measured worth over 123 sessions at the
+    # live cap: +$1,432 and -$421 of drawdown, 17 fewer red days.
+    #
+    # Not data mining: the same rule on Mon/Tue/Wed/Thu is leave-one-month-out 0/7
+    # on ALL FOUR and loses $1,033-$1,763 each, while Friday is 7/7; the blind
+    # walk-forward is positive in both halves; and it beats 400/400 random blocks
+    # of the same size (p=0.000).
+    #
+    # 🚫 v7 IS DELIBERATELY EXCLUDED. On Fridays v7 runs +6.47 pt/trade at 77% WR
+    # (n=22 over 5 sessions), statistically the same as its Mon-Thu +6.05 / 75%.
+    # Blocking its Fridays would have COST $712. The mechanism is coherent: Friday
+    # is weekly expiry so the gamma pin is strongest — the fade book needs MOVEMENT
+    # and dies in the pin, while v7 needs price to STOP FALLING and the pin is
+    # exactly that. The same pin that kills one book feeds the other.
+    #
+    # Instant revert: REAL_TRADE_NO_FRIDAY=false (read at call time, no restart).
+    # Evidence: memory research_friday_afternoon_gate.
+    if _no_friday_enabled() and not _is_v7 and datetime.now(NY).weekday() == 4:
+        print(f"[real-trader] skip {setup_name} {direction}: Friday gate", flush=True)
+        _log_skip_reason(setup_log_id, "friday_block")
+        _alert(f"⏭ SKIPPED {setup_name} {direction}: Friday gate (S263) — "
+               f"the main book does not trade Fridays. v7 is unaffected.")
         return
 
     # ── Semi-Basket gate: RETIRED here 2026-06-16 — folded into the live filter as V16-SB ──

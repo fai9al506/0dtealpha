@@ -346,3 +346,74 @@ def passes_v18(l, gaps):
     if not passes_v16(l, gaps):
         return False
     return not v18_blocks(l)
+
+
+# ── V19 (S263, 2026-08-15) — MONITORING ONLY, not wired to the trade path ─────────────
+# ⚠️ NAME NOTE: "V19" in PROJECTION.md is a REJECTED 2026-08-08 stop/trail refit, renamed
+# there to V19-exits. This is the only V19 in code.
+#
+# V19 = V18 + skip everything on FRIDAY from 11:00 ET.
+#
+# WHY. Friday is the only losing weekday and it is not close:
+#     Mon +$72/day 67% green · Tue +$115 72% · Wed +$77 64% · Thu +$153 73%
+#     FRI -$62/day, 26% green
+# Since 2026-03-13 only 3 of 20 Fridays were green. Both directions lose (long
+# -1.37 pt/trade, short -2.91, against +2.13 / +2.79 on other days) and all three
+# live setups lose (Skew Charm -2.31 vs +2.66, DD -2.60 vs +1.84, ES Abs -0.29 vs
+# +2.27). It is NOT opex: ordinary Fridays are -$1,218 over 18 sessions, opex
+# Fridays only -$213 over 5.
+#
+# WHY 11:00 AND NOT ALL DAY. Friday MORNING is fine — +0.85 pt/trade at 57% WR
+# before 11:00. The damage is 11:00-13:00 (-2.18) and 13:00-15:00 (-5.32 pt/trade,
+# 31% WR). Cutting the whole day earns less ($10,508) than cutting the afternoon
+# ($10,662), because the morning trades are good ones.
+#
+# MEASURED at the live cap (2 long / 3 short, 90s dedup, 1 MES, chain -0.6 haircut,
+# 123 sessions), V19 vs V16:
+#     $9,077 -> $10,774 (+19%)     $/trade 8.34 -> 12.33 (+48%)
+#     MaxDD -$1,598 -> -$763 (-52%)   trade WR 61.5% -> 64.8%
+#     GREEN days 75 -> 81          RED days 48 -> 33
+# Fridays alone go from -$1,432 (6 green / 17 red) to +$150 (9 green / 7 red).
+#
+# EVIDENCE IT IS NOT DATA MINING — five weekdays were tested, so one landing at
+# p<0.05 proves nothing on its own. What does:
+#   * leave-one-month-out 7/7, and the SAME rule on Mon/Tue/Wed/Thu is 0/7 on all
+#     four AND loses $1,033-$1,763 each. The other weekdays are the control group.
+#   * blind walk-forward positive in BOTH halves (+$169 train / +$1,416 test).
+#   * against 400 random blocks of the same number of afternoon trades: beaten
+#     0/400, p=0.000.
+#   * not an outlier effect — dropping the 3 worst Fridays still leaves -$600
+#     over the other 20.
+#
+# LIKELY MECHANISM (a story, not evidence): Friday is weekly-expiry 0DTE, the
+# largest OI on the board, so the afternoon pins. Our book needs movement.
+#
+# HONEST LIMITS: 23 Fridays is a small day sample; Feb's 2 Fridays were positive,
+# so the effect starts around March; and as with V18 the gain concentrates in
+# June-July (+$940 / +$1,067) while Feb/Mar/May/Aug are slightly negative.
+#
+# LOCKSTEP with main.py _tlPassesStrategy(l,'v19') and passesStrategy(l,'v19').
+# Evidence: memory research_friday_afternoon_gate.
+V19_DOW = 4               # Monday=0 ... Friday=4
+V19_AFTER_MIN = 11 * 60   # 11:00 ET
+
+
+def v19_blocks(l):
+    """True = V19 says SKIP (Friday from 11:00 ET). Fail-open on a missing ts."""
+    ts = l['ts'] if 'ts' in l else None
+    if ts is None:
+        return False
+    try:
+        et = ts.astimezone(ET)
+    except (AttributeError, ValueError):
+        return False
+    if et.weekday() != V19_DOW:
+        return False
+    return (et.hour * 60 + et.minute) >= V19_AFTER_MIN
+
+
+def passes_v19(l, gaps):
+    """V19 monitoring filter. NOT used by the trade path — portal/analysis only."""
+    if not passes_v18(l, gaps):
+        return False
+    return not v19_blocks(l)

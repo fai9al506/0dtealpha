@@ -219,6 +219,28 @@ _BLOCK_RULES: list[dict] = [
             _is_long(r) and r.get("paradigm") == "SIDIAL-EXTREME"
         ),
     },
+    {
+        # S263 — the whole-Friday gate, armed on real money 2026-08-15
+        # (REAL_TRADE_NO_FRIDAY=true). This entry IS the standing revert check the
+        # user asked for: the weekly verdict logic already flags DEGRADING when a
+        # rule's blocked set turns net-POSITIVE, which is exactly "Fridays started
+        # working again, reconsider". No separate monitor needed.
+        #
+        # Restricted to live_pass so it measures the trades TSRT would really have
+        # taken, not every Friday signal. v7 is excluded automatically — GEX Long is
+        # not in the setup list this module queries, and v7 keeps trading Fridays on
+        # purpose (+6.47 pt/trade, 77% WR; blocking it would have cost $712).
+        "id": "S263-FRI", "name": "Whole-Friday block (main book, v7 exempt)",
+        "shipped": "2026-08-15",
+        "expected": "blocked PnL <= 0 (saves money); DEGRADING = Fridays recovered, review the gate",
+        "setups": ("Skew Charm", "DD Exhaustion", "ES Absorption",
+                   "AG Short", "Vanna Pivot Bounce"),
+        "predicate": lambda r: (
+            bool(r.get("live_pass"))
+            and r.get("ts_et") is not None
+            and r["ts_et"].weekday() == 4
+        ),
+    },
 ]
 
 
@@ -235,7 +257,7 @@ def evaluate_rules(window_days: int = 30) -> list[dict]:
     with _engine.connect() as c:
         rows = c.execute(text("""
             SELECT id, setup_name, direction, grade, paradigm,
-                   greek_alignment, vix,
+                   greek_alignment, vix, live_pass,
                    ts AT TIME ZONE 'America/New_York' AS ts_et,
                    outcome_result, outcome_pnl
             FROM setup_log

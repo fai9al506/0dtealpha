@@ -958,11 +958,14 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     #
     # Instant revert: REAL_TRADE_NO_FRIDAY=false (read at call time, no restart).
     # Evidence: memory research_friday_afternoon_gate.
+    # SILENT on purpose (user, 2026-08-15): this is a FILTERED trade, not an
+    # incident. Filtered trades never alert — every other filter rule drops them
+    # without a word, and a weekly Telegram line for each blocked signal would be
+    # pure noise. The skip_reason stamp is still written, so the block is fully
+    # auditable in setup_log and in the weekly filter-validation report (S263 rule).
     if _no_friday_enabled() and not _is_v7 and datetime.now(NY).weekday() == 4:
         print(f"[real-trader] skip {setup_name} {direction}: Friday gate", flush=True)
         _log_skip_reason(setup_log_id, "friday_block")
-        _alert(f"⏭ SKIPPED {setup_name} {direction}: Friday gate (S263) — "
-               f"the main book does not trade Fridays. v7 is unaffected.")
         return
 
     # ── Semi-Basket gate: RETIRED here 2026-06-16 — folded into the live filter as V16-SB ──

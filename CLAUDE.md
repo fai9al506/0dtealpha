@@ -595,6 +595,56 @@ shows +42.0pt and MES-sim shows +24.5pt, the portal was over-stating the trade
 by ~17.5pt — that's the trail-tag-early divergence on big runners (S55's main
 finding).
 
+### Friday gate — LIVE ON REAL MONEY (S263, armed 2026-08-15)
+
+**The only day-level gate in the trade path.** `real_trader.place_trade()` refuses every signal on a
+Friday for the two MAIN accounts. One check at the choke point both dispatch sites use, so it covers
+SC / AG Short / VPB / VIX Div / DD / ES Abs.
+
+- **`REAL_TRADE_NO_FRIDAY`** (default `false`) — read at **call time**, so flipping the Railway
+  variable takes effect on the next signal with **no restart**. v7's flags are read at import and DO
+  need one (Tasks S252 step 3); this deliberately does not repeat that.
+- **🚫 v7 IS EXCLUDED** via `not _is_v7`. On Fridays v7 runs **+6.47 pt/trade at 77% WR** — the same
+  as its Mon–Thu. Blocking it would have cost **$712**. Friday is weekly expiry so the gamma pin is
+  strongest: the fade book needs MOVEMENT and dies in the pin, v7 needs price to STOP FALLING and the
+  pin is exactly that. **The same pin that kills one book feeds the other.**
+- **SILENT.** No Telegram per blocked signal — a filtered trade is not an incident. The
+  `setup_log.real_trade_skip_reason='friday_block'` stamp is the audit trail.
+- **Evidence:** Friday is the only losing weekday, −$62/day at 26% green against +$72..+$153 and
+  64–73% Mon–Thu; only 3 of 20 Fridays green since 2026-03-13. Worth **+$1,432 and −$421 drawdown**
+  over 123 sessions. The same rule on Mon/Tue/Wed/Thu is LOMO **0/7 on all four**; Friday is 7/7.
+  Beats 400/400 random blocks (p=0.000). Memory `research_friday_afternoon_gate`.
+- **Portal view = "V16 w/Friday Off" (`v16fri`), labelled (live).** NOT V19 — V19 also applies V18,
+  which is monitoring only. **When a gate is armed, the `(live)` label moves in the same commit.**
+
+### V18 / V19 monitoring filters (S260/S263, 2026-08-15) — NOT in the trade path
+
+- **V18** = V16 minus SHORTS with a +net-GEX wall within 15pt overhead while VIX < 22. The wall is an
+  upward magnet and orders BOTH books oppositely (V16 longs +3.14 pt/t at the wall decaying to +0.80
+  far away; shorts the mirror). Needs **NET** gex and the **LARGEST** strike — `gex_call_wall` uses
+  call-gex over the whole window and does NOT reproduce it. New input
+  **`setup_log.gex_net_ceiling`**, computed in `gex_state.compute()` (`NET_CEILING_WIN=60`) and
+  stamped by the 16:30 job; history via `gex_net_ceiling_backfill.py`.
+- **V19** = V18 + no Friday. Research view; the live one is `v16fri`.
+- **`gex_state` table backfilled** (`gex_state_backfill.py`, 23,742 rows Feb 19 → Aug 14) so the live
+  gate and every study read ONE source. Verified 5,068/5,068 against the setup_log stamps.
+- **`filter_mirror_sweep.py` takes a version argument** (`v16|v16fri|v17|v18|v19`) and sets the
+  Railway env flags itself. **Run it after ANY filter change.**
+
+### Weekly filter validation — counterfactual attribution (fixed 2026-08-15)
+
+`app/filter_validation.py`, Monday 17:00 ET → Telegram. Each rule carries **`live_line`**, the exact
+source line in `live_filter.py`. The monitor neutralises just that line and re-runs `passes_v16`; a
+signal counts as blocked BY THIS RULE only if it **fails V16 and passes V16-minus-this-rule**.
+
+**Why:** shape matching produced two false 🚨 DEGRADING alarms saying rules blocked WINNERS when they
+blocked LOSERS — a stale rule shape (SIDIAL narrowed to 14:00–15:00 on 2026-05-30, monitor still
+tested all day) plus crediting one signal to every matching rule. If a source line is ever edited the
+rule reports **STALE-RULE** instead of wrong numbers. A **post-filter gate** (`post_gate: True`, e.g.
+the Friday block) is the mirror image — it matches signals that PASS V16.
+**Add every new block rule here, with its `live_line`.** Memory
+`research_filter_validation_attribution_bug`.
+
 ### V17 monitoring filter (`app/live_filter.py:passes_v17`) — added 2026-08-08 (S233, MONITORING ONLY)
 
 **Nothing in the trade path reads this.** `_passes_live_filter` is untouched; V17 exists so the

@@ -230,6 +230,22 @@ def passes_v16(l, gaps):
     # GEX Long v6 (main.py:4365): long + (gap filter) + not SIDIAL-EXTREME@hr14 + (align>=0 OR bull paradigm).
     # Detector already enforced the v6 classifier (verdict/magnet-dominance) before logging.
     if sn == 'GEX Long':
+        # Env gate (added 2026-08-15, S260). GEX_LONG_V3_REAL_TRADE_ENABLED was named in the
+        # header comment of this file but NEVER READ, so this branch stamped live_pass=true on
+        # 59 signals TSRT does not place — -108.1 pts of phantom loss in every
+        # `WHERE live_pass=true` query, i.e. the book read 607.6 pts when it was really 715.7.
+        # Mirrors both portal copies (`if (_GEX_LONG_REAL) _tlV16Allowed.add('GEX Long')`) and
+        # the VPB gate 8 lines above. Found by filter_mirror_sweep.py: JS 0 vs Python 59.
+        #
+        # Note on semantics: this retroactively marks the 8 GEX Longs that WERE traded
+        # (2026-06-15 → 07-01, while the env was true) as live_pass=false. That is correct and
+        # already how this column behaves — 46 other real trades are stamped false because the
+        # filter changed after they were placed (ES Abs shorts cut, SC long rules tightened).
+        # `live_pass` answers "would TODAY's config trade this"; for what was ACTUALLY placed,
+        # join real_trade_orders. backfill_live_pass() re-stamps the whole table nightly, so
+        # history stays consistent by itself.
+        if os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower() != "true":
+            return False
         if not isLong: return False
         # GEX-Long gap rule (2026-06-16, backtested Feb-Jun, chain-sim):
         #   gap-up(>30) MORNING(<11:00) = 67% WR / +47.6 (n=9) -> GEX Long EXEMPT from the

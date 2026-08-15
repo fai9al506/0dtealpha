@@ -14136,6 +14136,11 @@ const _BASKET_SIZING_MODE = "__BASKET_SIZING_MODE__";
     // allowed-set on the 2026-05-19 assumption that the env was permanently false; it is
     // true on Railway, so read it instead of assuming (2026-08-11).
     const _VIX_DIV_REAL = "__VIX_DIV_REAL__" === "true";
+    // Vanna Pivot Bounce (VPB_REAL_TRADE_ENABLED). 2026-08-15: SAME BUG CLASS as VIX Div
+    // above — VPB sat in the allowed-set but the v16 branch had no admit, so it fell
+    // through to _v10BaseV14()'s `align >= 2` gate and was hidden. TSRT placed 3 VPB longs
+    // on 2026-08-13 (lids 5967/5973/6004, align 1/-3/-1) that the V16 view never showed.
+    const _VPB_REAL = "__VPB_REAL__" === "true";
 const PILL_COLORS = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','SB Absorption':'#f59e0b','SB10 Absorption':'#f59e0b','SB2 Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899','GEX Velocity':'#22c55e','Vanna Pivot Bounce':'#818cf8'};
 const GRADE_COLORS = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308','B':'#f59e0b','C':'#888','LOG':'#555'};
 let _allTrades = [];
@@ -14396,6 +14401,20 @@ function passesStrategy(l, strat) {
       if (_m180 != null && _m180 >= 13*60) return false;
     }
     if (v16DDAdmit()) return true;  // DD long admit (new setup type)
+    // Vanna Pivot Bounce admit (2026-08-15). MUST come before the V14 base filter: the
+    // runtime _passes_live_filter (main.py, "if setup_name == 'Vanna Pivot Bounce'")
+    // RETURNS EARLY on longs/Grade B/not-hour-11, so it never reaches the generic
+    // `align >= 2` long gate. Without this early return the view applied that gate and
+    // silently hid real TSRT trades. LOCKSTEP: _passes_live_filter, live_filter.passes_v16,
+    // _tlPassesStrategy(l,'v16').
+    if (sn === 'Vanna Pivot Bounce') {
+      if (!_VPB_REAL) return false;
+      if (!isLong) return false;
+      if (l.grade !== 'B') return false;
+      const _mVpb = etMins(l.ts);
+      if (_mVpb != null && Math.floor(_mVpb / 60) === 11) return false;
+      return true;
+    }
     // V14 base filter:
     if (!gapFilter(l.ts)) return false;
     if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
@@ -16456,7 +16475,7 @@ DASH_HTML_TEMPLATE = """
     function stopTradeLog() { if(tradeLogTimer){clearInterval(tradeLogTimer);tradeLogTimer=null;} }
 
     function setActive(btn){
-      [tabTable,tabSpot,tabCharts,tabEsDelta,tabDarkmate,tabHistorical,tabTradeLog].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabSpot,tabCharts,tabEsDelta,tabDarkmate,tabGexState,tabHistorical,tabTradeLog].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
     function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewHistorical.style.display='none'; viewEsDelta.style.display='none'; viewDarkmate.style.display='none'; viewGexState.style.display='none'; viewTradeLog.style.display='none'; }
@@ -19200,6 +19219,13 @@ DASH_HTML_TEMPLATE = """
     // on Railway, so TSRT placed VIX Div longs the trade log never showed (2026-08-11:
     // lid 5893 was placed, filled and stopped out while V16 (live) hid it).
     const _VIX_DIV_REAL = "__VIX_DIV_REAL__" === "true";
+    // Vanna Pivot Bounce (VPB_REAL_TRADE_ENABLED). 2026-08-15: SAME BUG CLASS as VIX Div
+    // above — VPB was in the allowed-set but the v16 branch had no admit, so it fell
+    // through to _tlV10BaseV14()'s `align >= 2` gate and was hidden. TSRT placed 3 VPB
+    // longs on 2026-08-13 (lids 5967/5973/6004, align 1/-3/-1, +12.0 pts) that the V16
+    // (live) view never showed. Fixing VIX Div on 08-11 without sweeping the other setups
+    // is what let this survive four more days.
+    const _VPB_REAL = "__VPB_REAL__" === "true";
     let _tlDailyGaps = {};  // {date_str: gap_pts} for V12 filter
     fetch('/api/setup/daily_gaps', {cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_tlDailyGaps=d;}).catch(()=>{});
     // GEX Long v3 server-side overlay: per-trade {pass, result, pnl, max_fav, verdict}
@@ -19542,6 +19568,22 @@ DASH_HTML_TEMPLATE = """
           const etStr = d.toLocaleString('en-US',{timeZone:'America/New_York'});
           const ed = new Date(etStr);
           return ed.getDay() === 5 && ed.getDate() >= 15 && ed.getDate() <= 21;
+        }
+        // Vanna Pivot Bounce admit (2026-08-15). MUST come before the V14 base filter: the
+        // runtime _passes_live_filter ("if setup_name == 'Vanna Pivot Bounce'") RETURNS
+        // EARLY on longs/Grade B/not-hour-11, so it never reaches the generic `align >= 2`
+        // gate in _tlV10BaseV14(). Without this early return the trade log applied that
+        // gate and hid real TSRT trades — 3 VPB longs on 2026-08-13 (lids 5967/5973/6004,
+        // align 1/-3/-1) were placed, filled and closed while the V16 (live) view showed
+        // only 2 of that day's 5 trades. LOCKSTEP: _passes_live_filter,
+        // live_filter.passes_v16, passesStrategy(l,'v16').
+        if (sn === 'Vanna Pivot Bounce') {
+          if (!_VPB_REAL) return false;
+          if (!isLong) return false;
+          if (l.grade !== 'B') return false;
+          const _mVpb = _tlEtMins();
+          if (_mVpb != null && Math.floor(_mVpb / 60) === 11) return false;
+          return true;
         }
         // V16 admits DD Exhaustion long (V14 internal quality gates still apply)
         // V16.1 (2026-05-18): added align >= 0 to MATCH live filter (live blocks negative
@@ -21811,6 +21853,7 @@ def spxw_dashboard(session: str = Cookie(default=None)):
             .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "sizeonly").lower())
             .replace("__GEX_LONG_REAL__", os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower())
             .replace("__VIX_DIV_REAL__", os.getenv("VIX_DIV_REAL_TRADE_ENABLED", "false").lower())
+            .replace("__VPB_REAL__", os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower())
             .replace("__IS_ADMIN__", "true" if user.get("is_admin") else "false"))
     return HTMLResponse(html)
 
@@ -21826,7 +21869,8 @@ def eod_review_page(session: str = Cookie(default=None), date: str = Query(None)
             .replace("__DATE__", review_date)
             .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "sizeonly").lower())
             .replace("__GEX_LONG_REAL__", os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower())
-            .replace("__VIX_DIV_REAL__", os.getenv("VIX_DIV_REAL_TRADE_ENABLED", "false").lower()))
+            .replace("__VIX_DIV_REAL__", os.getenv("VIX_DIV_REAL_TRADE_ENABLED", "false").lower())
+            .replace("__VPB_REAL__", os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower()))
     return HTMLResponse(html)
 
 

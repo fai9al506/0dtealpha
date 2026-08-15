@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 import requests
+import types
 from datetime import datetime, time as dtime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Callable
@@ -168,6 +169,7 @@ def _is_opex_friday(row) -> bool:
 _BLOCK_RULES: list[dict] = [
     {
         "id": "S180", "name": "GEX-TARGET PM long block",
+        "live_line": None,   # composite (paradigm + time + direction) — no single line to neutralise
         "shipped": "2026-05-24",
         "expected": "blocked PnL <= 0 (saves money)",
         "setups": ("Skew Charm", "DD Exhaustion", "ES Absorption"),
@@ -179,6 +181,7 @@ _BLOCK_RULES: list[dict] = [
     },
     {
         "id": "V16-R5", "name": "SC long GEX-LIS block (all alignments)",
+        "live_line": "    if sn == 'Skew Charm' and isLong and para == 'GEX-LIS': return False",
         "shipped": "2026-05-17",
         "expected": "blocked PnL <= 0 (saves money)",
         "setups": ("Skew Charm",),
@@ -190,6 +193,7 @@ _BLOCK_RULES: list[dict] = [
     },
     {
         "id": "V16-R2", "name": "SC long monthly OpEx Friday block",
+        "live_line": "    if sn == 'Skew Charm' and isLong and isOpex(): return False",
         "shipped": "2026-05-17",
         "expected": "blocked PnL <= 0 (saves money)",
         "setups": ("Skew Charm",),
@@ -201,6 +205,7 @@ _BLOCK_RULES: list[dict] = [
     },
     {
         "id": "V16-R10", "name": "ES Absorption bearish PM block (hr>=14)",
+        "live_line": None,   # lives inside the ES Absorption branch, several lines
         "shipped": "2026-05-17",
         "expected": "blocked PnL <= 0 (saves money)",
         "setups": ("ES Absorption",),
@@ -212,6 +217,7 @@ _BLOCK_RULES: list[dict] = [
     },
     {
         "id": "V14-SIDIAL-EXT", "name": "SIDIAL-EXTREME longs block",
+        "live_line": "        if para == 'SIDIAL-EXTREME' and mins is not None and 840 <= mins < 900: return False",
         "shipped": "2026-04-12",
         "expected": "blocked PnL <= 0 (saves money)",
         "setups": ("Skew Charm", "DD Exhaustion", "ES Absorption"),
@@ -231,6 +237,8 @@ _BLOCK_RULES: list[dict] = [
         # not in the setup list this module queries, and v7 keeps trading Fridays on
         # purpose (+6.47 pt/trade, 77% WR; blocking it would have cost $712).
         "id": "S263-FRI", "name": "Whole-Friday block (main book, v7 exempt)",
+        "live_line": None,   # not a live_filter rule at all — it is a real_trader gate
+        "post_gate": True,   # applies AFTER V16 passes, so match on PASSING signals
         "shipped": "2026-08-15",
         "expected": "blocked PnL <= 0 (saves money); DEGRADING = Fridays recovered, review the gate",
         "setups": ("Skew Charm", "DD Exhaustion", "ES Absorption",
@@ -242,6 +250,60 @@ _BLOCK_RULES: list[dict] = [
         ),
     },
 ]
+
+
+def _rule_variant(live_line: str):
+    """Return a copy of live_filter with ONE rule neutralised, or None if the
+    source line no longer matches.
+
+    WHY THIS EXISTS (2026-08-15). The old method matched signals by SHAPE — "is
+    this a SIDIAL-EXTREME long?" — and called them blocked. That is wrong twice
+    over and it produced two false DEGRADING alarms:
+
+      V14-SIDIAL-EXT   shape says 39t +$1,128 (blocking winners!)
+                       truth      3t   -$190 (blocking losers, correctly)
+      V16-R5           shape says 44t   +$329
+                       truth     25t   -$244
+
+    1. STALE SHAPE. The SIDIAL rule was narrowed to 14:00-15:00 on 2026-05-30
+       (S195) but the predicate still tested every hour, so 24 of its 39 "blocked"
+       signals were actually being TRADED.
+    2. BAD ATTRIBUTION. A signal rejected by three rules was credited to all three.
+       Removing any one of them would not have freed it, so its P&L belongs to none.
+
+    The only definition that survives both: a signal is blocked BY THIS RULE if it
+    fails passes_v16 AND passes a copy of passes_v16 with just this rule turned off.
+
+    The line is neutralised (`: return False` -> `: pass`) rather than deleted,
+    because deleting the sole body of an `if` breaks indentation.
+
+    FAILS LOUD: if the live rule is edited and the line stops matching, the rule
+    reports STALE-RULE in Telegram instead of quietly reporting wrong numbers.
+    """
+    try:
+        src = _LIVE_FILTER_SRC()
+        if src is None or (live_line + "\n") not in src:
+            return None
+        if not live_line.rstrip().endswith("return False"):
+            return None
+        patched = src.replace(live_line + "\n",
+                              live_line[:live_line.rindex("return False")] + "pass\n")
+        mod = types.ModuleType("live_filter_variant")
+        mod.__file__ = "live_filter_variant.py"
+        exec(compile(patched, "live_filter_variant.py", "exec"), mod.__dict__)
+        return mod
+    except Exception as e:
+        print(f"[filter-validation] variant build failed: {e}", flush=True)
+        return None
+
+
+def _LIVE_FILTER_SRC():
+    try:
+        import app.live_filter as _lf
+        with open(_lf.__file__, encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return None
 
 
 def evaluate_rules(window_days: int = 30) -> list[dict]:
@@ -257,7 +319,9 @@ def evaluate_rules(window_days: int = 30) -> list[dict]:
     with _engine.connect() as c:
         rows = c.execute(text("""
             SELECT id, setup_name, direction, grade, paradigm,
-                   greek_alignment, vix, live_pass,
+                   greek_alignment, vix, live_pass, ts, overvix,
+                   v13_gex_above, v13_dd_near, vanna_cliff_side, vanna_peak_side,
+                   basket_pct,
                    ts AT TIME ZONE 'America/New_York' AS ts_et,
                    outcome_result, outcome_pnl
             FROM setup_log
@@ -268,10 +332,53 @@ def evaluate_rules(window_days: int = 30) -> list[dict]:
         """), {"cutoff": cutoff}).fetchall()
 
     all_rows = [dict(r._mapping) for r in rows]
+
+    # Counterfactual attribution (2026-08-15). See _rule_variant for why shape
+    # matching was wrong. Compute passes_v16 once for every row, then per rule ask
+    # "does it pass with ONLY this rule switched off". Rules with live_line=None
+    # keep the old shape match but are marked so the report says which is which.
+    from app.live_filter import passes_v16 as _v16, load_gaps as _lg
+    _base_ok, _gaps = {}, None
+    try:
+        with _engine.connect() as _c:
+            _gaps = _lg(_c)
+        for r in all_rows:
+            _base_ok[r["id"]] = bool(_v16(r, _gaps))
+    except Exception as e:
+        print(f"[filter-validation] counterfactual setup failed: {e}", flush=True)
+        _base_ok = None
+
     results = []
     for rule in _BLOCK_RULES:
+        method = "shape"
         try:
-            blocked = [r for r in all_rows if rule["predicate"](r)]
+            variant = _rule_variant(rule["live_line"]) if rule.get("live_line") else None
+            if rule.get("live_line") and variant is None:
+                results.append({
+                    "id": rule["id"], "name": rule["name"], "shipped": rule["shipped"],
+                    "window_days": window_days, "n_blocked": 0, "verdict": "STALE-RULE",
+                    "note": "live_filter source line no longer matches — rule "
+                            "definition here is out of date, numbers withheld",
+                })
+                continue
+            if variant is not None and _base_ok is not None:
+                blocked = [r for r in all_rows
+                           if not _base_ok.get(r["id"], True)
+                           and variant.passes_v16(r, _gaps)]
+                method = "counterfactual"
+            elif rule.get("post_gate"):
+                # A real_trader gate (e.g. the Friday block) runs AFTER the filter,
+                # so its blocked set is drawn from signals that PASS V16 — the
+                # opposite of a live_filter rule. Requiring "fails V16" here would
+                # always return zero.
+                blocked = [r for r in all_rows if rule["predicate"](r)]
+                method = "post-gate"
+            else:
+                blocked = [r for r in all_rows if rule["predicate"](r)]
+                if _base_ok is not None:
+                    # even shape-matched rules must at least BE rejected by V16
+                    blocked = [r for r in blocked if not _base_ok.get(r["id"], True)]
+                    method = "shape+v16"
         except Exception as e:
             results.append({"id": rule["id"], "name": rule["name"], "error": str(e)})
             continue
@@ -281,7 +388,7 @@ def evaluate_rules(window_days: int = 30) -> list[dict]:
             results.append({
                 "id": rule["id"], "name": rule["name"], "shipped": rule["shipped"],
                 "window_days": window_days, "n_blocked": 0,
-                "verdict": "DORMANT",
+                "verdict": "DORMANT", "method": method,
                 "note": f"No matching signals fired in last {window_days} days",
             })
             continue
@@ -308,7 +415,7 @@ def evaluate_rules(window_days: int = 30) -> list[dict]:
             "window_days": window_days, "n_blocked": n,
             "win_count": wins, "wr": wr, "total_pnl_pt": total,
             "total_pnl_usd": total * 5, "avg_pnl_pt": avg,
-            "verdict": verdict,
+            "verdict": verdict, "method": method,
         })
 
     return results

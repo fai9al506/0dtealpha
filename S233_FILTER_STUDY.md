@@ -287,7 +287,12 @@ study before anything else. (`BofA Scalp` +88.6 pts / 0.53 per trade and `Paradi
 
 ---
 
-# V18 — "build a better filter from 5 months of data" (2026-08-08, user-requested)
+# V18-refit — "build a better filter from 5 months of data" (2026-08-08, user-requested)
+#
+# ⚠️ NAME NOTE: this REJECTED experiment predates the shipped **V18** filter
+# (S260, 2026-08-15 — V16 minus shorts with a +GEX wall close overhead, in
+# app/live_filter.py:passes_v18). They are unrelated. Everything below is the
+# dead one.
 
 Scripts: `_tmp_v18_data.py` (full feature set), `_tmp_v18_audit.py` (per-setup baseline),
 `_tmp_v18_engine.py` (fitting engine + leave-one-month-out), `_tmp_v18_ceiling.py`,

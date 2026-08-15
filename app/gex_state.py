@@ -44,6 +44,12 @@ P_DELTA, P_GAMMA, P_OI = 16, 17, 19
 # pt all land in the same place).
 ZG_BAND_PTS = 8.0
 
+# V18 overhead-wall search window, in points above spot. The one arbitrary parameter
+# in the net-ceiling definition, and the study showed it does not matter — 40 / 60 / 80
+# and unlimited all score identically (LOMO 7/7 in every case). 60 keeps continuity
+# with the earlier long-side study. See memory research_overhead_gex_wall_both_sides.
+NET_CEILING_WIN = 60.0
+
 _engine = None
 
 
@@ -113,12 +119,29 @@ def compute(spot: float, rows: list) -> dict | None:
     put_wall = _argmax(pgex)
     max_gamma = _argmax([a + b for a, b in zip(cgex, pgex)])
 
+    # --- V18 "overhead wall": points from spot up to the LARGEST positive NET-gex
+    # strike within NET_CEILING_WIN above it. None = no +net-gex strike overhead.
+    #
+    # This is NOT call_wall. call_wall is max CALL gex over the whole window and may
+    # sit BELOW spot. The S260 definition study tested 16 variants: the effect lives
+    # only in NET gex (calls minus puts) and the LARGEST strike, not the nearest —
+    # call-gex and nearest-strike versions both fail leave-one-month-out. The window
+    # size is the one arbitrary parameter and it does not matter (40/60/80/unlimited
+    # score identically), so 60 is kept for continuity with the earlier long study.
+    _nc_k = _nc_v = None
+    for _k, _g in zip(ks, ngex):
+        if _k > spot and (_k - spot) <= NET_CEILING_WIN and _g > 0 \
+           and (_nc_v is None or _g > _nc_v):
+            _nc_k, _nc_v = _k, _g
+    net_ceiling = (_nc_k - spot) if _nc_k is not None else None
+
     state = _label(spot, net_gex, net_dex, zg, call_wall, put_wall)
     return dict(
         spot=spot,
         net_gex=net_gex, net_dex=net_dex,
         zero_gamma=zg, zg_in_window=zg_in_window, zg_side=zg_side, zg_dist=zg_dist,
         call_wall=call_wall, put_wall=put_wall, max_gamma=max_gamma,
+        net_ceiling=net_ceiling,
         head_call_wall=(call_wall - spot) if call_wall is not None else None,
         drop_put_wall=(spot - put_wall) if put_wall is not None else None,
         state=state,
@@ -191,7 +214,8 @@ def _db_init():
     # setup_log stamps — separate short transactions so one failure cannot block the rest
     for col, typ in (("gex_state", "text"), ("gex_net_dex", "double precision"),
                      ("gex_net_gex", "double precision"), ("gex_zero_gamma", "double precision"),
-                     ("gex_call_wall", "double precision"), ("gex_put_wall", "double precision")):
+                     ("gex_call_wall", "double precision"), ("gex_put_wall", "double precision"),
+                     ("gex_net_ceiling", "double precision")):
         try:
             with _engine.begin() as c:
                 c.execute(text(f"ALTER TABLE setup_log ADD COLUMN IF NOT EXISTS {col} {typ}"))
@@ -249,9 +273,13 @@ def stamp_setups(days: int = 3) -> int:
                 "WHERE spot IS NOT NULL AND spot > 100 "
                 "  AND ts >= now() - CAST(:d AS interval) ORDER BY ts"),
                 dict(d=f"{days + 1} days")).fetchall()
+            # gex_net_ceiling was added later (V18), so a row already carrying a
+            # gex_state can still be missing it — re-stamp on EITHER gap, or the
+            # new column would stay NULL forever on every previously-stamped row.
             trades = c.execute(text(
                 "SELECT id, ts FROM setup_log "
-                "WHERE ts >= now() - CAST(:d AS interval) AND gex_state IS NULL "
+                "WHERE ts >= now() - CAST(:d AS interval) "
+                "  AND (gex_state IS NULL OR gex_net_ceiling IS NULL) "
                 "ORDER BY ts"), dict(d=f"{days} days")).fetchall()
         if not snaps or not trades:
             return 0
@@ -277,13 +305,15 @@ def stamp_setups(days: int = 3) -> int:
             if not f:
                 continue
             out.append(dict(lid=lid, st=f["state"], nd=f["net_dex"], ng=f["net_gex"],
-                            zg=f["zero_gamma"], cw=f["call_wall"], pw=f["put_wall"]))
+                            zg=f["zero_gamma"], cw=f["call_wall"], pw=f["put_wall"],
+                            nc=f["net_ceiling"]))
         if not out:
             return 0
         with _engine.begin() as c:
             for o in out:
                 c.execute(text("""UPDATE setup_log SET gex_state=:st, gex_net_dex=:nd,
-                    gex_net_gex=:ng, gex_zero_gamma=:zg, gex_call_wall=:cw, gex_put_wall=:pw
+                    gex_net_gex=:ng, gex_zero_gamma=:zg, gex_call_wall=:cw, gex_put_wall=:pw,
+                    gex_net_ceiling=:nc
                     WHERE id=:lid"""), o)
         print(f"[gex-state] stamped {len(out)} setup_log rows", flush=True)
         return len(out)

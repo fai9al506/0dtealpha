@@ -12621,7 +12621,7 @@ def api_setup_eod_review(date: str = Query(None, description="Date YYYY-MM-DD, d
                        v13_gex_above, v13_dd_near,
                        vanna_regime,
                        mes_sim_outcome_pnl, mes_sim_outcome_result, mes_sim_max_fav,
-                       gex_state
+                       gex_state, gex_net_ceiling
                 FROM setup_log
                 WHERE date(ts AT TIME ZONE 'America/New_York') = :d
                 ORDER BY ts ASC
@@ -12859,7 +12859,7 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
                        v13_gex_above, v13_dd_near,
                        vanna_cliff_side, vanna_peak_side, vanna_regime, basket_pct,
                        mes_sim_outcome_pnl, mes_sim_outcome_result, mes_sim_max_fav,
-                       gex_state
+                       gex_state, gex_net_ceiling
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim OFFSET :off
@@ -14113,7 +14113,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (live)</option><option value="v17">V17 (S233 relaxed — MONITORING)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (live)</option><option value="v17">V17 (S233 relaxed — MONITORING)</option><option value="v18">V18 (S260 wall-short block — MONITORING)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -14165,6 +14165,19 @@ function passesStrategy(l, strat) {
       if (_contradict || (_neutral && _BASKET_SIZING_MODE !== '012')) return false;
     }
     return true;
+  }
+  // V18 (S260) — MONITORING ONLY. V16 minus shorts with a +GEX wall close overhead.
+  // Lockstep with _tlPassesStrategy(l,'v18') + live_filter.passes_v18 / v18_blocks.
+  // Fail-open: gex_net_ceiling null -> the trade is kept. Memory:
+  // research_overhead_gex_wall_both_sides. (NB: "V18" in PROJECTION.md is a different,
+  // rejected 2026-08-08 experiment that was never code.)
+  if (strat === 'v18') {
+    if (!passesStrategy(l, 'v16')) return false;
+    if (isLong) return true;
+    const _nc18 = l.gex_net_ceiling;
+    const _vx18 = l.vix;
+    if (_nc18 == null || _vx18 == null || _vx18 >= 22) return true;
+    return !(_nc18 >= 0 && _nc18 <= 15);
   }
   // V17 (S233) — MONITORING ONLY. Lockstep with _tlPassesStrategy(l,'v17') +
   // live_filter.passes_v17. See S233_FILTER_STUDY.md.
@@ -16198,7 +16211,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (live) ✦</option><option value="v17">V17 (S233 relaxed — MONITORING)</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (live) ✦</option><option value="v17">V17 (S233 relaxed — MONITORING)</option><option value="v18">V18 (S260 wall-short block — MONITORING)</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -19349,6 +19362,23 @@ DASH_HTML_TEMPLATE = """
       // never relaxed. Measured x0.81: V16 $1,590/mo DD -$1,253 -> V17 $2,520/mo DD -$727.
       // LOCKSTEP with live_filter.passes_v17 + passesStrategy(l,'v17').
       // Detail: S233_FILTER_STUDY.md. Compare V16-SB vs V17 daily before shipping anything.
+      // V18 (S260) — MONITORING ONLY. V16 minus SHORTS that have a +GEX wall within
+      // 15pt overhead while VIX < 22. The wall is an upward magnet: near it longs win
+      // and shorts die (V16 shorts -0.01 pt/trade at 5-15pt vs +4.21 beyond 30pt).
+      // Measured at the live 2/3 cap over 123 sessions: $8,589 -> $9,247, MaxDD
+      // -$1,677 -> -$1,348, GREEN days 75 -> 83, RED days 48 -> 39, LOMO 7/7.
+      // Fail-open on a null ceiling — this filter may only ever REMOVE trades.
+      // LOCKSTEP with live_filter.passes_v18 + passesStrategy(l,'v18').
+      // Memory: research_overhead_gex_wall_both_sides.
+      if (strat === 'v18') {
+        if (!_tlPassesStrategy(l, 'v16')) return false;
+        const _long18 = l.direction === 'long' || l.direction === 'bullish';
+        if (_long18) return true;
+        const _nc18 = l.gex_net_ceiling;
+        const _vx18 = l.vix;
+        if (_nc18 == null || _vx18 == null || _vx18 >= 22) return true;
+        return !(_nc18 >= 0 && _nc18 <= 15);
+      }
       if (strat === 'v17') {
         const _v17Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
                                      'ES Absorption', 'DD Exhaustion', 'VIX Divergence']);

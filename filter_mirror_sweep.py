@@ -14,18 +14,31 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
 import psycopg2
 import psycopg2.extras
 
-REPO = r"G:/My Drive/Python/MyProject/GitHub/0dtealpha"
-SCR = (r"C:/Users/Faisa/AppData/Local/Temp/claude/"
-       r"G--My-Drive-Python-MyProject-GitHub-0dtealpha/"
-       r"ee17be24-af23-4146-904a-6af98b5d86ea/scratchpad")
+REPO = os.path.dirname(os.path.abspath(__file__))
+SCR = tempfile.mkdtemp(prefix="filter_sweep_")   # was a hard-coded session scratchpad
 sys.path.insert(0, REPO)
+
+# which filter version to sweep: v16 (the live one), v17 or v18 (both monitoring)
+STRAT = (sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else "v16").lower()
+if STRAT not in ("v16", "v17", "v18"):
+    print(f"usage: python filter_mirror_sweep.py [v16|v17|v18]   (got {STRAT!r})")
+    sys.exit(2)
 
 # env flags exactly as Railway has them
 FLAGS = {"_GEX_LONG_REAL": False, "_VIX_DIV_REAL": True, "_VPB_REAL": True}
+
+# The JS harness gets these as consts, but live_filter.py reads them from the OS at
+# call time. Set BOTH from one place or the sweep reports phantom mismatches that are
+# really just the operator's shell (this produced 32 fake VPB diffs on 2026-08-15).
+_ENV_FOR_FLAG = {"_GEX_LONG_REAL": "GEX_LONG_V3_REAL_TRADE_ENABLED",
+                 "_VPB_REAL": "VPB_REAL_TRADE_ENABLED"}
+for _f, _envname in _ENV_FOR_FLAG.items():
+    os.environ[_envname] = "true" if FLAGS[_f] else "false"
 SINCE = "2026-05-19"          # post-V16.1 era
 
 # ---------- 1. extract the portal function verbatim ----------
@@ -48,12 +61,14 @@ cur.execute("""
     SELECT id, setup_name, direction, grade, paradigm, greek_alignment, vix, overvix,
            spot, max_plus_gex, max_minus_gex, basket_pct,
            v13_dd_near, v13_gex_above, vanna_cliff_side, vanna_peak_side,
+           gex_net_ceiling,
            to_char(ts AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS ts, ts AS ts_dt,
            live_pass, outcome_pnl
     FROM setup_log
     WHERE ts::date >= DATE %s
     ORDER BY id""", (SINCE,))
 rows = [dict(r) for r in cur.fetchall()]
+print(f"sweeping {STRAT.upper()}")
 print(f"signals since {SINCE}: {len(rows)}")
 
 cur.execute("""
@@ -76,7 +91,7 @@ traded = {r["setup_log_id"] for r in cur.fetchall()}
 # ---------- 3. run the real JS ----------
 for r in rows:
     for k in ("greek_alignment", "vix", "overvix", "spot", "max_plus_gex",
-              "max_minus_gex", "basket_pct", "v13_gex_above"):
+              "max_minus_gex", "basket_pct", "v13_gex_above", "gex_net_ceiling"):
         if r.get(k) is not None:
             r[k] = float(r[k])
     r["outcome_pnl"] = float(r["outcome_pnl"]) if r["outcome_pnl"] is not None else None
@@ -91,7 +106,7 @@ const __BASKET_SIZING_MODE__ = 'sizeonly';
 const rows = JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));
 const out = {{}};
 for (const l of rows) {{
-  try {{ out[l.id] = !!_tlPassesStrategy(l, 'v16'); }}
+  try {{ out[l.id] = !!_tlPassesStrategy(l, '{STRAT}'); }}
   catch (e) {{ out[l.id] = 'ERR:' + e.message; }}
 }}
 console.log(JSON.stringify(out));
@@ -108,13 +123,14 @@ if errs:
     print(f"JS errors on {len(errs)} rows, e.g. {list(errs.items())[:2]}")
 
 # ---------- 4. Python filter ----------
-from app.live_filter import passes_v16
+from app.live_filter import passes_v16, passes_v17, passes_v18
+_PY = {"v16": passes_v16, "v17": passes_v17, "v18": passes_v18}[STRAT]
 py_res = {}
 for r in rows:
     row = dict(r)
-    row["ts"] = r["ts_dt"]      # passes_v16 wants a real datetime, not the JS string
+    row["ts"] = r["ts_dt"]      # the filter wants a real datetime, not the JS string
     try:
-        py_res[str(r["id"])] = bool(passes_v16(row, gaps))
+        py_res[str(r["id"])] = bool(_PY(row, gaps))
     except Exception as e:
         py_res[str(r["id"])] = f"ERR:{e}"
 
@@ -150,6 +166,13 @@ if mismatches:
         who = "JS hides it" if (y and not j) else "JS over-admits"
         print(f"  lid {lid:<6}{s[:20]:<22}{d:<7}grade={str(g):<5}"
               f"traded={str(t):<6}pnl={str(pnl):<7}{who}")
+
+if STRAT != "v16":
+    # The invariant below only holds for the LIVE filter. V17/V18 are monitoring
+    # versions: a traded lid that they REJECT is the whole point of them, not a bug.
+    print(f"\n(skipping the traded-lid invariant — {STRAT.upper()} is monitoring-only; "
+          f"TSRT places on V16)")
+    sys.exit(0 if tot == 0 else 1)
 
 print("\n=== THE INVARIANT: every TRADED lid must pass BOTH ===")
 bad = [(r['id'], r['setup_name']) for r in rows

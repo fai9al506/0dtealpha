@@ -68,7 +68,8 @@ def passes_v16_sb(l, gaps):
 
 # columns the live filter needs from setup_log
 COLS = ("id, setup_name, direction, greek_alignment, grade, paradigm, vix, overvix, ts, "
-        "v13_gex_above, v13_dd_near, vanna_cliff_side, vanna_peak_side, basket_pct")
+        "v13_gex_above, v13_dd_near, vanna_cliff_side, vanna_peak_side, basket_pct, "
+        "gex_net_ceiling")
 
 
 def load_gaps(conn):
@@ -276,3 +277,72 @@ def passes_v16(l, gaps):
     if sn == 'Skew Charm' and isLong and isOpex(): return False
     if sn == 'AG Short' and isOpex(): return False
     return v10BaseV14()
+
+
+# ── V18 (S260, 2026-08-15) — MONITORING ONLY, not wired to the trade path ─────────────
+# ⚠️ NAME CLASH: "V18" in PROJECTION.md / S233_FILTER_STUDY.md refers to a REJECTED
+# 2026-08-08 experiment (refit the entry filter per setup from scratch). That one is
+# dead and was never code. THIS is the shipped V18 and the only V18 in the codebase.
+#
+# V18 = V16 + ONE subtraction: skip a SHORT when a +GEX wall sits close overhead.
+#
+# WHY. The distance from spot up to the strongest NET-gex strike above it is an upward
+# magnet, and it orders BOTH books in opposite directions (V16 longs +3.14 pt/trade at
+# the wall falling to +0.80 far from it; V16 shorts the mirror, -0.01 at 5-15pt rising
+# to +4.21 beyond 30pt). Only the short half is actionable — cutting far-wall longs
+# removes more profit than it saves.
+#
+# MEASURED at the LIVE cap (2 long / 3 short, 90s dedup, 1 MES, chain sim -0.6 pt
+# haircut, 123 sessions Feb 19 - Aug 14):
+#     $8,589 -> $9,247 (+$658)   MaxDD -$1,677 -> -$1,348   $/trade 7.51 -> 9.07
+#     GREEN days 75 -> 83        RED days 48 -> 39          trade WR 60.3% -> 61.6%
+# Leave-one-month-out positive 7/7. Against 400 random blocks of the same size:
+# total $ p=0.005, green days gained p=0.010, red days removed p=0.003, and green days
+# DESTROYED p=0.015 (a random block of this size destroys ~6; V18 destroys 1).
+#
+# It works because it fires at the same rate on good and bad sessions (0.89 vs 0.98
+# blocked trades) but the trades it catches are +1.92 pt/trade on green sessions and
+# -5.83 on red ones: on a day price grinds UP into the walls, near-wall shorts get run
+# over repeatedly, and that is the day it stands the short book down.
+#
+# HONEST LIMITS — read before arming:
+#   * buy it for CONSISTENCY, not money. 3 sessions carry 60% of the gain; ex-top-3 it
+#     is ~$2.87/session and the mean daily delta is NOT significant (p=0.177).
+#   * it does NOTHING for the tails — worst day, best day and longest red streak are
+#     all unchanged.
+#   * do NOT add a grade-A+ exception. It earns $185 more and costs $209 of drawdown,
+#     two red days, and the near-perfect zero-green-days-destroyed record.
+#   * do NOT put it on V17 — there the walk-forward test half is -$21 (nothing), LOMO
+#     drops to 6/7, and the blocked bucket is net POSITIVE.
+#   * do NOT re-hunt a sub-rule to "release the winners". 51 numeric + 7 categorical
+#     axes were screened; 2 cleared p<0.05 where chance predicts 2.6, and one of those
+#     was MFE (lookahead). There is no separator.
+#
+# FAIL-OPEN: gex_net_ceiling NULL (not yet stamped, or no +net-gex strike within 60pt
+# overhead) -> the trade is TAKEN. Like basket_gate, this filter can only ever REMOVE
+# trades, so missing data must never invent one.
+#
+# LOCKSTEP with main.py _tlPassesStrategy(l,'v18') and passesStrategy(l,'v18').
+# Evidence: memory research_overhead_gex_wall_both_sides.
+V18_CEILING_PTS = 15.0     # block when the wall is this close overhead, or closer
+V18_VIX_MAX = 22.0         # ...and only below this VIX; at/above it, near-wall shorts are fine
+
+
+def v18_blocks(l):
+    """True = V18 says SKIP this short. Fail-open on missing data."""
+    if l['direction'] in ('long', 'bullish'):
+        return False
+    ceil = l['gex_net_ceiling'] if 'gex_net_ceiling' in l else None
+    if ceil is None:
+        return False                                   # fail-open: no wall data
+    vix = l['vix']
+    if vix is None or float(vix) >= V18_VIX_MAX:
+        return False                                   # high vol -> V16 behaviour
+    return 0 <= float(ceil) <= V18_CEILING_PTS
+
+
+def passes_v18(l, gaps):
+    """V18 monitoring filter. NOT used by the trade path — portal/analysis only."""
+    if not passes_v16(l, gaps):
+        return False
+    return not v18_blocks(l)

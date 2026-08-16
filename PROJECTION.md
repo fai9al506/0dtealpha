@@ -23,8 +23,11 @@ moved the curve.
    `tsrt_daily_stmt`, and re-state the forward projection. Scheduled as **Tasks S232**.
 3. **Never quote a monthly rate from < ~60 sessions.** Concentration makes short windows lie
    (see *Method notes*).
-4. **Always apply the broker-capture haircut** (currently **×0.81**, measured) to a chain
-   projection before calling it an expectation.
+4. **Always charge execution costs** — **−0.6 pt/trade/contract** (S246 slippage) **plus
+   $1.92/contract round-turn** (S266 all-in fees). Charge them *inside* the simulation, per
+   contract. **Do NOT then multiply by a capture ratio as well** — measured on 15 post-S217
+   live days that double-counts (residual is −0.24 pt, i.e. already slightly too harsh).
+   Re-measure the residual monthly with `_tmp_s275_capture_by_day.py`, never on one week.
 5. **State the drawdown alongside the profit.** A projection without its MaxDD is not a
    projection — it's a wish. Also state MaxDD as **% of current equity**.
 6. If Actual misses Theoretical by more than ~40% for two consecutive months, stop and
@@ -52,16 +55,25 @@ reported separately.**
 Everything below is **one** simulation: one window, one haircut, one cost model.
 Script: `_tmp_s275_projection_rerun.py`.
 
-| | Main | v7 | **Combined** |
-|---|---|---|---|
-| Simulated (chain, full window) | $2,076 /mo | $298 /mo | **$2,374 /mo · SAR 8,903** |
-| × 0.67 live capture | $1,391 /mo | $200 /mo | **$1,591 /mo · SAR 5,966** |
-| **Honest floor** (ex-top-3 days, × 0.67) | $1,088 /mo | $13 /mo | **~$1,100 /mo · SAR 4,125** |
-| MaxDD (sim $) | **−$1,733** = 29% of $6,000 | **−$170** = 6% of $3,000 | — |
-| Worst single day | −$450 | −$150 | — |
+**No further capture multiplier is applied.** The −0.6 pt haircut and the $1.92/RT fees ARE
+the capture correction, and measured against 15 post-S217 live days they are already slightly
+too harsh (see below). Applying an extra ×0.81/×0.87/×0.67 on top would double-count.
 
-**Headline: ~$1,600 /mo (SAR 6,000), floor ~$1,100 (SAR 4,125), ceiling ~$2,400 (SAR 9,000).**
-Quote the range, not the point.
+Built up so the untested parts are visible:
+
+| | $/mo | SAR/mo | evidence |
+|---|---|---|---|
+| **Validated core** — V16 + S249 cap 2/3, basket 2× | **$1,665** | SAR 6,244 | this config, or near it, has traded live |
+| + Friday gate | +$411 | +SAR 1,541 | **never blocked a live trade**, first acts 08-21 |
+| + v7 | +$298 | +SAR 1,118 | **never placed an order**, arms 08-17 |
+| **= Combined projection** | **$2,374** | **SAR 8,903** | |
+| **Honest floor** (ex-top-3 days) | **$1,643** | SAR 6,161 | main $1,623 + v7 $20 |
+| MaxDD (main) | **−$1,733** | — | 29% of the $6,000 main capital |
+| MaxDD (v7) | **−$170** | — | 6% of the $3,000 v7 capital |
+| Worst single day | −$450 main / −$150 v7 | — | the two breakers |
+
+**Headline: ~$2,400 /mo (SAR 8,900), floor ~$1,650 (SAR 6,200).** Quote the range, not the
+point — and remember **$709/mo of it has never traded**.
 
 **Basis:** 2026-03-01 → 2026-08-15, **119 calendar trading sessions**, chain `outcome_pnl`,
 **−0.6 pt/trade/contract** execution haircut (S246) **+ $1.92/contract round-turn** all-in fees
@@ -71,35 +83,44 @@ Quote the range, not the point.
 
 | | Main | v7 | Combined |
 |---|---|---|---|
-| Simulated | $1,794 /mo | $814 /mo | $2,608 /mo |
-| × 0.67 | $1,202 /mo | $545 /mo | **$1,747 /mo · SAR 6,551** |
+| Simulated | $1,794 /mo | $814 /mo | **$2,608 /mo · SAR 9,780** |
 
 Reads slightly **higher** than the full window, so March's high-vol month is not carrying the
 result. Main-book MaxDD in this era is only −$896.
 
-### ⚠️ The 0.67 rests on five days
+### Capture: measured on every live day, not on one week
 
-This is the weakest link and it must not be quoted as if it were solid. The **only** live
-window on approximately this config is 2026-08-10 → 14:
+Script: `_tmp_s275_capture_by_day.py`. Method that removes config drift completely — do **not**
+re-run the filter. Take the lids TSRT **actually placed** (`real_trade_orders`, using the real
+`quantity` field), score them with the chain model + the standard costs, and compare to
+**day-level** broker truth (`tsrt_daily_stmt.net` — the S210 rule). Both sides then look at the
+same trades, so whatever filter/cap/basket was live that day is irrelevant.
 
-| day | sim $ | broker net $ | diff |
-|---|---|---|---|
-| 08-10 | 164 | 53 | +110 |
-| 08-11 | 300 | 257 | +44 |
-| 08-12 | 20 | −53 | +72 |
-| 08-13 | 292 | 286 | +5 |
-| 08-14 | −140 | −116 | −24 |
-| **total** | **636** | **427** | **+208** |
+| window | days | contract RT | sim $ | broker $ | gap per contract |
+|---|---|---|---|---|---|
+| **post-S217, clean** | **15** | **82** | 621 | 718 | **−0.24 pt** |
+| all live days, clean | 30 | 217 | 684 | 1,234 | −0.51 pt |
+| *(August week alone)* | *5* | *34* | *636* | *427* | *+1.23 pt* |
 
-**Ratio 0.67** — the sim runs ~50% hot *even after* the haircut and fees are charged. It is
-high on 4 of 5 days, so it looks systematic rather than noise, but **n=5 sessions and 34
-contract round-trips**. The prior figures (×0.81, then ×0.87) came from different windows and
-neither charged the newly-found fee. **Re-measure this every month — it is the single number
-the whole projection multiplies by.**
+"Clean" = the sim's contract count equals the broker's that day (30 of 37; the 7 excluded are
+mostly May, before `quantity` was stored, plus 06-30's manual stack close).
 
-Trade selection is *not* the gap: that week produced 27 V16-passing signals, 20 placed, 7
-correctly cap-skipped, and the broker booked 34 contract round-trips. The sim and reality agree
-on *which* trades. The gap is per-trade capture.
+**The gap post-S217 is −0.24 pt/contract with a standard error of ±0.47 pt (σ=4.26, n=82) —
+statistically zero, and it is NEGATIVE, meaning the sim is if anything slightly pessimistic.**
+Sign test 9 high / 6 low, a coin flip. The −0.6 pt haircut is doing its job; nothing further is
+owed.
+
+**Cross-check:** if the residual after a 0.6 haircut is −0.24, the raw chain bias is about
++0.36 pt/trade. Memory `feedback_chainsim_valid_post_s217` measured +0.18 pt on 43 trades
+independently. Same sign, same order — the two agree.
+
+⚠️ **The August week alone reads +1.23 pt/contract (ratio 0.67) and that is what an earlier
+version of this file quoted.** It is 1.7 standard errors from zero on 34 round-trips — noise.
+**Never calibrate capture on one week.** June's post-S217 days track the broker to within a few
+dollars (06-15 +$3, 06-16 +$1, 06-25 +$4, 06-26 −$3).
+
+⚠️ **This validates EXECUTION, not SELECTION.** It only measures trades the bot really placed.
+The Friday gate and v7 change *which* trades get placed, and neither has traded.
 
 ### 🚨 v7 is three days
 
@@ -110,7 +131,8 @@ treat it as a steady income line. The main book by contrast is well spread — t
 21.8% and the ex-top-3 rate is $1,623/mo simulated.
 
 ⚠️ **Still never validated forward:** the Friday gate first acts 2026-08-21 and v7 has never
-placed an order. Roughly **$700/mo of the $1,600 headline** comes from those two.
+placed an order. **$709/mo of the $2,374 headline (30%)** comes from those two. Execution
+capture *is* now validated on 15 live days — selection is not.
 
 ⚠️ **S236 contamination:** ES Absorption signals on/after 2026-07-02 were computed from ES
 bars ~10 min stale. Immaterial at this level, but it matters for any ES-Absorption-only study.
@@ -198,8 +220,9 @@ contracts must track *realised* equity, never the projection. 1 ES ≈ $50k equi
 | 2026-05 | — | **+$895.50** | — | 11 sessions, post-V16.1 — **pre-fee-correction figure** |
 | 2026-06 | — | **−$933.00** | — | drawdown month: execution bugs, auto-roll incident, macro regime |
 | 2026-07 | — | **+$549.50** | — | 1 session only — TSRT disabled 07-01 ~11:57 ET |
-| 2026-08 (10–14) | $636 | **+$427.22** | **0.67** | **the only clean live week**; 5 sessions, cap 2/2, no Friday gate |
-| 2026-08 (full) | ~$1,600 | *pending* | | first month on the current config |
+| 2026-08 (10–14) | $636 | **+$427.22** | 0.67 | 5 sessions — **too short to calibrate on**; see the capture section |
+| **post-S217, all live days** | **$621** | **+$718** | **1.16** | **15 days / 82 contract RT — this is the real capture check** |
+| 2026-08 (full) | ~$2,400 | *pending* | | first month on the current config |
 
 Era total 2026-05-14 → 2026-07-01, **restamped with the true $1.92/RT cost**: **+$1,035.39 net
 / 34 days / 283 round-turns** (was +$1,295.75 before the fee was found).

@@ -426,23 +426,12 @@ def _on_cycle(now_et: datetime, spot, vix):
           f"max loss ${max_loss:,.0f}  B/E {k_short + credit:.2f}  "
           f"spot {spot:.2f}  delta {s_delta:.3f}  gex={ctx.get('gex_state')}", flush=True)
 
-    tag = "REAL MONEY" if mode == "live" else "PAPER — not a real trade"
+    tag = "REAL" if mode == "live" else "PAPER"
     _tg("\n".join([
-        f"🗓️ FRIDAY SPREAD — opened  ({tag})",
-        f"SPXW {d:%d %b} · SPX {spot:,.2f}",
-        "",
-        f"SELL  C{k_short:.0f}   (delta {abs(s_delta):.2f})",
-        f"BUY   C{k_long:.0f}",
-        f"Size  {qty} spread{'s' if qty > 1 else ''}, {width:.0f} points wide",
-        "",
-        f"Credit       ${credit_usd:,.0f}",
-        f"Max win      ${max_profit:,.0f}",
-        f"Max loss    -${abs(max_loss):,.0f}",
-        f"Break-even   {k_short + credit:,.2f}",
-        "",
-        f"SPX must close BELOW {k_short + credit:,.2f} to win.",
-        f"No stop. Held to the 4pm cash settlement.",
-        f"GEX state: {ctx.get('gex_state') or 'n/a'}",
+        f"🗓️ Friday spread opened ({tag})",
+        f"Sell C{k_short:.0f} / buy C{k_long:.0f} ×{qty}",
+        f"Credit ${credit_usd:,.0f} · risk ${abs(max_loss):,.0f}",
+        f"Win if SPX closes under {k_short + credit:,.2f}",
     ]))
 
 
@@ -474,9 +463,7 @@ def _settle(for_date: _date | None = None):
                         "SELECT result FROM friday_spread_log WHERE trade_date = :d"
                     ), {"d": d}).fetchone()
                 if not done:
-                    _tg(f"➖ FRIDAY SPREAD — no trade taken {d:%d %b}.\n"
-                        f"No spread met the rules (credit too small, chain stale, "
-                        f"or no strike near {_target_delta():.2f} delta).")
+                    _tg(f"➖ Friday spread — no trade {d:%d %b} (nothing met the rules)")
             return
 
     # A live order is a LIMIT order and may not have filled. Confirm before settling,
@@ -491,7 +478,7 @@ def _settle(for_date: _date | None = None):
                     WHERE id = :i
                 """), {"i": r[0]})
             print(f"[friday-spread] {d} limit order never filled — no position", flush=True)
-            _tg(f"🗓️ Friday spread — {d} limit never filled, no position taken")
+            _tg(f"➖ Friday spread — limit never filled {d:%d %b}, no position")
             return
         if filled_credit is not None:
             with _engine.begin() as c:
@@ -538,39 +525,24 @@ def _settle(for_date: _date | None = None):
 
 
 def _result_message(d, mode, k_s, k_l, width, qty, credit, sf, cost, pnl_usd, result):
-    """The Friday message. Money is always shown in $ AND SAR."""
+    """The Friday result. Four lines. Money always in $ and SAR."""
     icon = {"WIN": "✅", "LOSS": "🔻", "MAX_LOSS": "🔻", "FLAT": "➖"}.get(result, "•")
-    tag = "REAL MONEY" if mode == "live" else "PAPER"
+    tag = "REAL" if mode == "live" else "PAPER"
     gap = sf - k_s
-    if cost <= 0:
-        where = f"Closed {abs(gap):,.2f} BELOW the short strike — expired worthless."
-    elif cost >= width:
-        where = f"Closed {gap:,.2f} ABOVE the short strike — through both strikes, full loss."
-    else:
-        where = f"Closed {gap:,.2f} above the short strike — partly through the spread."
-
+    where = (f"{abs(gap):,.1f} under C{k_s:.0f}" if cost <= 0
+             else f"{gap:,.1f} over C{k_s:.0f}")
+    sgn = "+" if pnl_usd >= 0 else "-"
     lines = [
-        f"{icon} FRIDAY SPREAD — {result.replace('_', ' ')}  ({tag})",
-        f"{d:%d %b} · SPX closed {sf:,.2f}",
-        "",
-        f"Sold C{k_s:.0f} / bought C{k_l:.0f}  x{qty}",
-        f"Credit taken  ${credit * MULT * qty:,.0f}",
-        where,
-        "",
-        f"RESULT   {'+' if pnl_usd >= 0 else '-'}${abs(pnl_usd):,.2f}"
-        f"   (SAR {'+' if pnl_usd >= 0 else '-'}{abs(pnl_usd) * 3.75:,.0f})",
+        f"{icon} Friday spread {result.replace('_', ' ')} ({tag})",
+        f"SPX closed {sf:,.2f} — {where}",
+        f"{sgn}${abs(pnl_usd):,.2f}  (SAR {sgn}{abs(pnl_usd) * 3.75:,.0f})",
     ]
     tot = _running_totals()
     if tot and tot["n"] > 0:
-        lines += [
-            "",
-            f"Since we started: {tot['n']} Friday{'s' if tot['n'] != 1 else ''}"
-            f" · {tot['wins']}W/{tot['losses']}L ({tot['wr']:.0f}%)",
-            f"Total  {'+' if tot['total'] >= 0 else '-'}${abs(tot['total']):,.0f}"
-            f"  (SAR {'+' if tot['total'] >= 0 else '-'}{abs(tot['total']) * 3.75:,.0f})",
-        ]
-        if tot["n"] < 20:
-            lines.append(f"Need ~{20 - tot['n']} more before this proves anything.")
+        ts = "+" if tot["total"] >= 0 else "-"
+        more = f" · {20 - tot['n']} to go" if tot["n"] < 20 else ""
+        lines.append(f"Run: {tot['n']}F {tot['wins']}W/{tot['losses']}L · "
+                     f"{ts}${abs(tot['total']):,.0f}{more}")
     return "\n".join(lines)
 
 

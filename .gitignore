@@ -30,3 +30,7 @@ desktop.ini
 # Misc
 *.log
 .pytest_cache/
+
+# TSRT live monitor local state (per-day, machine-local — never commit)
+tsrt_monitor_sod.json
+tsrt_monitor_alerts_seen.json

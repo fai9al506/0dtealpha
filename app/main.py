@@ -35,6 +35,21 @@ if DB_URL.startswith("postgresql://"):
 PULL_EVERY     = 30   # seconds
 SAVE_EVERY_MIN = 2    # minutes
 
+# S242 (2026-08-11) — ONE end-of-day time, used by BOTH the real-money flatten cron and
+# the portal outcome tracker's EXPIRED cut. They must never drift apart: any gap means the
+# portal scores minutes the bot does not hold, which is exactly what happened on
+# 2026-08-10 (flatten 15:50 vs sim 15:57 = half that day's portal-vs-broker gap).
+#
+# Moved 15:50 -> 15:55 on measured evidence, 211 open trades over 75 sessions on the SPX
+# 1-min path: +157.8 pt vs 15:50, robust to leave-one-month-out (+62 to +172 with any single
+# month dropped) and to removing the 3 best days. Risk checked too — the WORST day improves
+# (-41.5 -> -28.2 pt) and no session takes the open book past -60 pt (the $300 breaker).
+# 15:58 scored higher (+326) but the minute-to-minute result zigzags, so the exact peak is
+# noise; 15:55 keeps 5 minutes of retry room before the close and matches the auto-trader
+# and options flatten. 16:00 is a cliff (worst 1-day delta -69.6) — do not go there.
+# Caveat: study walked the INITIAL stop, so a live (tighter) trail makes +157.8 an upper bound.
+EOD_FLATTEN_ET = (15, 55)
+
 # Chain window
 STREAM_SECONDS = 5.0  # Increased from 2.0 to allow full chain download
 TARGET_STRIKES = 40
@@ -66,35 +81,24 @@ _pipeline_status = {
     "sierra_es_status": "ok",
     "sierra_vx_status": "ok",
     "es_quote_status": "ok",  # S114: ES quote stream freshness (powers real_trader dispatch)
-    # S224: Sierra ES transport delay — does the bar arrive ON TIME, not just at all.
-    "sierra_delay_status": "ok",
     "ts_last_alert": 0,
     "vol_last_alert": 0,
     "sierra_es_last_alert": 0,
     "sierra_vx_last_alert": 0,
     "es_quote_last_alert": 0,
-    "sierra_delay_last_alert": 0,
     "ts_error_since": 0,
     "vol_error_since": 0,
     "sierra_es_error_since": 0,
     "sierra_vx_error_since": 0,
     "es_quote_error_since": 0,
-    "sierra_delay_error_since": 0,
     "ts_alert_sent": False,
     "vol_alert_sent": False,
     "sierra_es_alert_sent": False,
     "sierra_vx_alert_sent": False,
     "es_quote_alert_sent": False,
-    "sierra_delay_alert_sent": False,
     "reminder_minutes": 15,
     "alert_threshold_minutes": 2,  # suppress alerts for outages < 2 min (silent recovery)
 }
-
-# S224: Sierra ES transport-delay thresholds, seconds (median received_at - ts_end).
-# Healthy is ~4s. CME delayed (non-realtime) data is exactly 10 min, so the failure
-# we are catching sits at ~614s — an order of magnitude past the error line.
-_ES_DELAY_OK_S = 60       # < 60s  -> ok
-_ES_DELAY_ERROR_S = 180   # >= 180s -> error (60-180s = stale, watch but don't page)
 
 # Default alert settings (loaded from DB on startup).
 # Noisy per-level/volume alerts default OFF — they were disabled 2026-03-24
@@ -117,6 +121,28 @@ _alert_settings = {
     "cooldown_minutes": 10,
 }
 
+def _log_telegram(channel: str, message: str) -> None:
+    """Persist every outgoing Telegram alert to `telegram_alerts`.
+
+    S243 (2026-08-11). A bot cannot read back messages it posted to a channel, so the
+    only way to review what was actually alerted is to record it at send time. Without
+    this, "monitoring Telegram" can only mean pinging getMe — checking the bot is
+    reachable, not what it said. On 2026-08-10 a GHOST POSITION alert and a FIFO WARN
+    both fired and neither was noticed until the user pasted them in by hand.
+
+    Fail-soft in every direction: never raises, never blocks the send.
+    """
+    try:
+        if engine is None:
+            return
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO telegram_alerts (channel, message) VALUES (:c, :m)"),
+                {"c": channel, "m": message[:4000]})
+    except Exception:
+        pass
+
+
 def send_telegram(message: str) -> bool:
     """Send a message via Telegram bot."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -131,6 +157,7 @@ def send_telegram(message: str) -> bool:
         }, timeout=10)
         if resp.status_code == 200:
             print(f"[telegram] sent: {message[:50]}...", flush=True)
+            _log_telegram("alerts", message)
             return True
         else:
             print(f"[telegram] error: {resp.status_code} {resp.text}", flush=True)
@@ -1050,6 +1077,29 @@ def db_init():
         );
         """))
 
+        # S243 (2026-08-11) — every outgoing Telegram alert, recorded at send time.
+        # A bot cannot read back what it posted to a channel, so this table IS the
+        # alert history. Without it, "watch Telegram" degrades to pinging getMe.
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS telegram_alerts (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL DEFAULT now(),
+            channel TEXT NOT NULL,
+            message TEXT NOT NULL
+        );
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_telegram_alerts_ts ON telegram_alerts (ts DESC);"))
+
+        # S243 — 5-minute TSRT health snapshots, so a session can be reviewed afterwards
+        # instead of only watched live. `et` is the ET wall-clock minute (PK = idempotent).
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS tsrt_health (
+            et TIMESTAMP PRIMARY KEY,
+            payload JSONB NOT NULL DEFAULT '{}'
+        );
+        """))
+
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS auto_trade_orders (
             setup_log_id BIGINT PRIMARY KEY,
@@ -1865,6 +1915,7 @@ _current_setup_log = {
     "last_date": None,
 }
 
+_sierra_reminder_last_month = None   # S238 — once-per-month latch for the Sierra account check
 # Live outcome tracking: open trades awaiting resolution, resolved trades for EOD summary
 _setup_open_trades = []
 # Each entry: {setup_name, direction, spot, target_level, stop_level, ts, grade, result_data, max_hold_minutes}
@@ -2086,9 +2137,12 @@ def log_setup(result_wrapper):
                     "GEX Velocity": (8, 10, 5),
                     "AG Short": (14, 12, 5),
                     "Skew Charm": (14, 10, 5),
-                    # ES Absorption C6 (2026-05-06): hybrid BE@5 + trail act=8 gap=3, no fixed target
-                    # Backtest 489t: PURE WR 56→62%, +$1839→+$4030, MaxDD 56→25pt
-                    "ES Absorption": (8, 8, 3),
+                    # ES Absorption: SL8 + trail act=6 gap=2, no fixed target (2026-06-29).
+                    # Tightened from act8/gap3: mes_walk on Sierra bars (108 V16 trades May-Jun) = +101.5p
+                    # vs -10.8p, WR 50→61%, positive in BOTH months (May +70 / Jun +31) — locks the
+                    # near-target spike before fast reversals tag the real fill (fixes lid-4454 capture
+                    # leak: ES hit +9.8 then reversed in ~1min, real banked only +3). Revert: (8, 8, 3).
+                    "ES Absorption": (8, 6, 2),
                     "SB Absorption": (12, 20, 10),
                     "SB10 Absorption": (12, 20, 10),
                     "SB2 Absorption": (12, 20, 10),
@@ -2197,6 +2251,7 @@ def send_telegram_setups(message: str) -> bool:
         }, timeout=10)
         if resp.status_code == 200:
             print(f"[setups-tg] sent: {message[:50]}...", flush=True)
+            _log_telegram("setups", message)
             return True
         else:
             print(f"[setups-tg] error: {resp.status_code} {resp.text}", flush=True)
@@ -3909,9 +3964,39 @@ def send_summary_alert(time_label: str):
         summary += f"Max +Gamma: {max_pos_gamma:.0f}\n" if max_pos_gamma else "Max +Gamma: N/A\n"
         summary += f"Max -Gamma: {max_neg_gamma:.0f}\n" if max_neg_gamma else "Max -Gamma: N/A\n"
 
+        # Upgrade path: the same numbers, but read FOR the user (bias + levels +
+        # invalidation) and recorded so the call can be graded at EOD. If the briefing
+        # cannot build for any reason it returns None and we fall back to the raw dump
+        # below — the user never loses their 10:00/14:00 message.
+        if _send_briefing(time_label, spot, stats, max_pos_gamma, max_neg_gamma):
+            return
         send_telegram(summary)
     except Exception as e:
         print(f"[alerts] summary error: {e}", flush=True)
+
+
+def _send_briefing(time_label, spot, stats, max_pos_gamma, max_neg_gamma) -> bool:
+    """Build+send the interpreted briefing. True if it went out. Never raises."""
+    try:
+        from app import market_briefing as _mb
+        slot = "10:00" if time_label.startswith("10") else "14:00"
+        ctx = {
+            "spot": spot,
+            "paradigm": (stats or {}).get("paradigm"),
+            "lis": _mb._num((stats or {}).get("lines_in_sand")),
+            "target": _mb._num((stats or {}).get("target")),
+            # Prefer the worded display string when we have it; the module understands
+            # both that and the raw signed number the scraper stores.
+            "dd_str": _dd_combined_str or (stats or {}).get("delta_decay_hedging"),
+            "charm": _mb._num((stats or {}).get("aggregatedCharm")),
+            "vix": _vix_last, "vix3m": _vix3m_last,
+            "max_pos_gamma": float(max_pos_gamma) if max_pos_gamma else None,
+            "max_neg_gamma": float(max_neg_gamma) if max_neg_gamma else None,
+        }
+        return _mb.run_and_send(slot, ctx, now_et()) is not None
+    except Exception as e:
+        print(f"[briefing] send failed, falling back to raw summary: {e}", flush=True)
+        return False
 
 
 _v13_gex_magnet_cache = {"ts": 0.0, "spot": 0.0, "value": 0.0}
@@ -4217,15 +4302,30 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         return False
 
     # ── V16-SB Semi-Basket gate (2026-06-16) — this is what makes the live filter V16-SB ──
-    # Scheme B "0/0/1": take ONLY basket-CONFIRMED (tech basket %-from-open sign matches
-    # trade direction); skip neutral (|%|<0.15 deadband) AND contradict; FAIL-OPEN when
-    # basket_pct is None (no/stale data -> take, can never add a loss). basket_pct is
-    # stamped on the signal at detection (setup_log.basket_pct). MUST stay in lockstep with
-    # live_filter.basket_blocks() + portal JS _tlPassesStrategy 'v16sb' branch
+    # BASKET_SIZING_MODE:
+    #   "sizeonly" (DEFAULT since 2026-08-07, S231): the basket NEVER blocks. It is a SIZING
+    #     signal only — confirm -> 2 MES via real_trader._effective_qty, everything else 1 MES.
+    #     Why: measured Jul 1 - Aug 6 (GEX off, chain outcomes, real_trader gate order) the
+    #     CONTRADICT bucket is 107t / 55% WR / +36.8 pts — profitable. Blocking it cost -$547
+    #     (Jul 1 - Aug 6) / -$590 (Jun 11 - Aug 6) AND roughly doubled MaxDD (-$424 -> -$944),
+    #     because the block thins the book to correlated confirmed trades that lose together.
+    #     Control: selective 2x beat FLAT 2 MES on BOTH P&L and drawdown in every window/cap,
+    #     so the basket really is selecting, not just levering.
+    #   "001" (legacy Scheme B 0/0/1): take ONLY basket-CONFIRMED; skip neutral
+    #     (|%|<0.15 deadband) AND contradict.
+    #   "012" (previous default): take CONFIRMED (sized 2x) AND neutral (sized 1x); skip
+    #     ONLY contradict.
+    # FAIL-OPEN when basket_pct is None (no/stale data -> take, can never add a loss).
+    # basket_pct is stamped on the signal at detection (setup_log.basket_pct). MUST stay in
+    # lockstep with live_filter.basket_blocks() + BOTH portal JS copies
+    # (passesStrategy 'v16sb' ~13782 + _tlPassesStrategy 'v16sb' ~18865)
     # (see memory feedback_filter_three_copies_lockstep).
-    if basket_pct is not None:
+    _sb_mode = os.getenv("BASKET_SIZING_MODE", "sizeonly").lower()
+    if basket_pct is not None and _sb_mode != "sizeonly":
         _sb_long = direction.lower() in ("long", "bullish")
-        if abs(basket_pct) < 0.15 or ((basket_pct > 0) != _sb_long):
+        _sb_neutral = abs(basket_pct) < 0.15
+        _sb_contradict = (not _sb_neutral) and ((basket_pct > 0) != _sb_long)
+        if _sb_contradict or (_sb_neutral and _sb_mode != "012"):
             return False
 
     # ── S180 (2026-05-24): GEX-TARGET PM long block ──
@@ -4306,6 +4406,11 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     # 73% green trading days. Worst single day -$80 MES at 1 MES.
     # Promoted from shadow on backtest strength (166-trade sample, 7-18x VPB/VIX Div sample).
     if setup_name == "ES Absorption":
+        # CUT ES Absorption SHORTS (2026-07-27, user directive): consistent recent loser.
+        # By month (v16-sb, chain$): Mar +$458/75% (high-vol) -> May -$122 / Jun -$216 / Jul -$41;
+        # Apr-Jul net -$257, worst-WR short. Longs KEPT. Reversible (delete this line).
+        if direction not in ("long", "bullish"):
+            return False
         if grade not in ("A", "A+"):
             return False  # only model's high-confidence grades trade
         if paradigm in ("AG-TARGET", "AG-LIS"):
@@ -4740,7 +4845,13 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
         _setup_open_trades = []
         _setup_resolved_trades = []
 
-    market_closed = now.time() >= dtime(15, 57)  # close 3 min before market end so spot is still live
+    # S242 (2026-08-11): tied to EOD_FLATTEN_ET, the SAME minute real_trader flattens.
+    # Was a hardcoded 15:57 while the bot flattened at 15:50 — so the portal kept every
+    # still-open trade for 7 minutes the bot never held. On 2026-08-10 that gifted lids
+    # 5861/5865 +4.80 and +4.30 pt each (SPX fell 6 pt between 15:50 and 15:57), which was
+    # HALF the day's entire portal-vs-broker gap. Both sides must stop on the same minute
+    # or every EXPIRED trade in the book is scored on market the bot cannot trade.
+    market_closed = now.time() >= dtime(*EOD_FLATTEN_ET)
     still_open = []
 
     # Get current ES price + bar H/L extremes for absorption outcome checks
@@ -4873,7 +4984,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
                            if _v3_on()
                            else {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5})
         _trail_params = {
-            "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5},
+            "DD Exhaustion": {"mode": "continuous", "activation": 10, "gap": 10},  # 2026-06-22: 20/5 -> 10/10 (walk-forward OOS: WR 79.5% / DD -24 vs 63.6% / -36)
             "GEX Long": _gex_long_trail,
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
@@ -4992,7 +5103,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
 
         # Trail params already defined above (before ES/SPX branch).
         # Trailing stop setups: DD Exhaustion, GEX Long, AG Short
-        # DD: continuous trail (activation=20, gap=5) — waits for confirmed move before trailing
+        # DD: continuous trail (activation=10, gap=10) — 2026-06-22 (was 20/5; let the fade runners breathe)
         # GEX/AG: hybrid trail (BE, continuous trail)
         # Uses cycle low/high (not all-time) since trail level changes each cycle
         _tp = _trail_params.get(setup_name)
@@ -5206,7 +5317,7 @@ def _check_setup_outcomes(spot: float, cycle_high=None, cycle_low=None):
             # — other setups don't go through the MES execution path live.
             if log_id and engine and setup_name in (
                 "Skew Charm", "AG Short", "Vanna Pivot Bounce",
-                "VIX Divergence", "ES Absorption",
+                "VIX Divergence", "ES Absorption", "DD Exhaustion",
             ):
                 try:
                     from app import mes_sim_backfill as _msb
@@ -5317,6 +5428,15 @@ def _run_setup_check():
         dipbuy_detector.on_cycle(now_et(), spot, _vix_last)
     except Exception as _dbe:
         print(f"[dipbuy] cycle hook error: {_dbe}", flush=True)
+
+    # Friday SPX 0DTE call credit spread (S267) — LOG-ONLY unless three env vars agree.
+    # Own table, own settlement, writes nothing to setup_log, so it cannot touch V16
+    # recall, the filter monitor or any MES path. Fails closed. Never raises.
+    try:
+        from app import friday_spread
+        friday_spread.on_cycle(now_et(), spot, _vix_last)
+    except Exception as _fse:
+        print(f"[friday-spread] cycle hook error: {_fse}", flush=True)
 
     # ── Volland data from cache (refreshes every 90s, not every 30s cycle) ──
     vc = _refresh_volland_cache()
@@ -5701,6 +5821,9 @@ def _run_setup_check():
                                     # (SC long BOFA-PURE align=+1 → 2 MES instead of 1).
                                     paradigm=r.get("paradigm"),
                                     greek_alignment=r.get("greek_alignment"),
+                                    # Basket "0/1/2" sizing: pass the SAME frozen basket_pct the
+                                    # live filter used (stamped at signal time) so size matches take/skip.
+                                    basket_pct=r.get("basket_pct"),
                                 )
                             elif not es_px:
                                 # S114: ES quote stream stale AND REST fallback returned None.
@@ -6433,6 +6556,8 @@ def _run_absorption_detection(bars: list) -> dict | None:
                             # S149: ES Abs is not in the SC long bucket so this is just defensive
                             paradigm=result.get("paradigm"),
                             greek_alignment=result.get("greek_alignment"),
+                            # Basket "0/1/2" sizing: pass the frozen stamped basket_pct (matches filter).
+                            basket_pct=result.get("basket_pct"),
                         )
                     except Exception as e:
                         print(f"[real-trader] ES Absorption place error: {e}", flush=True)
@@ -7491,7 +7616,9 @@ def _real_trade_market_open_cleanup():
 
 
 def _real_trade_eod_flatten():
-    """Flatten all open REAL auto-trade positions before market close. Runs at 15:50 ET."""
+    """Flatten all open REAL auto-trade positions before market close.
+    Runs at EOD_FLATTEN_ET (15:55 since S242) — the same minute the portal outcome
+    tracker stops, so portal and broker measure the same trade."""
     try:
         from app import real_trader
         real_trader.flatten_all_eod()
@@ -7549,6 +7676,133 @@ def _auto_trade_premarket_reconcile():
         auto_trader._close_broker_orphans(source="PREMARKET")
     except Exception as e:
         print(f"[auto-trade-premarket] reconciliation error: {e}", flush=True)
+
+
+_tsrt_health_fired: dict = {}   # (trade_date, key) already alerted -> don't repeat
+
+
+def _tsrt_health_watchdog():
+    """S243 (2026-08-11) — unattended TSRT health check. Every 5 min, 09:30-16:30 ET.
+
+    Exists so nobody has to sit and watch a session. It deliberately checks only the two
+    things NOTHING else in the app checks; position mismatches, orphan orders and pipeline
+    freshness are already covered by real_trader's reconcile and _pipeline_watchdog.
+
+    1. ES RANGE-BAR LAG. Every other health check asks "did data arrive?", never "did it
+       arrive ON TIME". That blind spot is exactly how S236 ran for five weeks: the CME
+       entitlement lapsed, Sierra served the free 10-minute delayed feed, bars kept
+       arriving, every check stayed green, and ES Absorption — a live-traded setup —
+       produced no signals on 20 of 29 sessions. A CONSTANT offset means a delayed feed,
+       not a slow pipe.
+    2. CLOSED TRADE WITH NO EXIT PRICE. Invisible P&L hole: the trade contributes 0 to
+       every per-trade total while the broker settles the real fill (lid 5853, 2026-08-10,
+       +$52.50 lost from the totals). Alerted the SAME DAY because Railway logs roll
+       within hours, so a next-morning look has nothing left to read.
+
+    Also writes a row to `tsrt_health` every run so the day can be analysed afterwards.
+    Fail-soft throughout: this must never take the scheduler down.
+    """
+    try:
+        now = now_et()
+        if now.weekday() >= 5 or not (dtime(9, 30) <= now.time() <= dtime(16, 30)):
+            return
+        if engine is None:
+            return
+        day = now.date().isoformat()
+        snap: dict = {}
+
+        with engine.begin() as conn:
+            lag, nbars = conn.execute(text("""
+                SELECT round(percentile_cont(0.5) WITHIN GROUP (
+                           ORDER BY EXTRACT(EPOCH FROM (received_at - ts_end)))::numeric, 1),
+                       count(*)
+                FROM vps_es_range_bars
+                WHERE range_pts = 5 AND received_at > now() - interval '30 minutes'
+            """)).fetchone()
+            snap["es_lag_s"] = float(lag) if lag is not None else None
+            snap["es_bars_30m"] = int(nbars or 0)
+
+            no_price = [r[0] for r in conn.execute(text("""
+                SELECT setup_log_id FROM real_trade_orders
+                WHERE created_at > now() - interval '20 hours'
+                  AND state->>'status' = 'closed'
+                  AND COALESCE(state->>'stop_fill_price', state->>'close_fill_price',
+                               state->>'target_fill_price') IS NULL
+                ORDER BY setup_log_id""")).fetchall()]
+            snap["no_exit_price"] = no_price
+
+            conn.execute(text(
+                "INSERT INTO tsrt_health (et, payload) VALUES (:et, CAST(:p AS jsonb)) "
+                "ON CONFLICT (et) DO NOTHING"),
+                {"et": now.replace(second=0, microsecond=0, tzinfo=None),
+                 "p": json.dumps(snap, default=str)})
+
+        # --- 1. feed lag ---
+        if snap["es_bars_30m"] >= 3 and snap["es_lag_s"] is not None and snap["es_lag_s"] > 60:
+            k = (day, "es_lag")
+            if k not in _tsrt_health_fired:
+                _tsrt_health_fired[k] = True
+                send_telegram(
+                    f"🚨 <b>ES BAR FEED IS LATE</b>\n"
+                    f"Median delay <b>{snap['es_lag_s']:.0f}s</b> over the last 30 min "
+                    f"({snap['es_bars_30m']} bars). Healthy is ~4s.\n"
+                    f"A constant offset = a DELAYED FEED, not a slow pipe — check the "
+                    f"Sierra CME entitlement before the code (this is how S236 hid for "
+                    f"5 weeks).\nES Absorption is live-traded and is now trading stale bars.")
+
+        # --- 2. closed trades carrying no exit price ---
+        for lid in snap["no_exit_price"]:
+            k = (day, f"noexit-{lid}")
+            if k in _tsrt_health_fired:
+                continue
+            _tsrt_health_fired[k] = True
+            send_telegram(
+                f"⚠️ <b>Trade closed with NO exit price</b> — lid {lid}\n"
+                f"Its P&L is missing from every per-trade total. Broker day-$ is "
+                f"unaffected.\nPull the app log for lid {lid} NOW — Railway logs roll "
+                f"within hours.")
+    except Exception as e:
+        print(f"[tsrt-health] error: {e}", flush=True)
+
+
+def _sierra_monthly_reminder():
+    """S238 — monthly Sierra account health reminder to the alerts channel.
+
+    Fires on the FIRST WEEKDAY of the month at 09:00 ET (cron day=1-7 + a weekday guard +
+    a once-per-month latch), because the CME re-verification needs Sierra connected to the
+    broker, which only happens on a trading day.
+
+    Why this exists: on 2026-06-30 the Sierra balance ran dry and killed the CME Market Depth
+    row *with auto-renewal already ticked*. Sierra fell back to the 10-minute delayed feed and
+    ES/SB absorption detection was dead for five weeks before anyone noticed (S236). Fail-soft:
+    never raises into the scheduler.
+    """
+    global _sierra_reminder_last_month
+    try:
+        now = now_et()
+        if now.weekday() >= 5:            # Sat/Sun — wait for the first weekday
+            return
+        key = now.strftime("%Y-%m")
+        if _sierra_reminder_last_month == key:
+            return                        # already sent this month
+        _sierra_reminder_last_month = key
+        msg = (
+            "🔁 <b>Monthly Sierra account check</b> (Tasks S238)\n\n"
+            "account.sierrachart.com — <code>faisalad506</code>\n\n"
+            "1️⃣ <b>Usage Time</b> expiry date\n"
+            "2️⃣ <b>Balance</b> vs the ~$71.50/mo stack\n"
+            "3️⃣ <b>Recurring Payments = ENABLED</b> ← the one that broke\n"
+            "4️⃣ <b>Verified Trading Accounts</b> ending date "
+            "(needs Sierra connected to the broker — do it pre-open)\n"
+            "5️⃣ Unread support tickets\n\n"
+            "<i>2026-06-30: the balance ran dry and killed CME Market Depth even with "
+            "auto-renewal ticked. The ES feed went 10 min delayed and absorption detection "
+            "was dead for 5 weeks before anyone noticed (S236).</i>"
+        )
+        send_telegram(msg)
+        print(f"[sierra-reminder] monthly reminder sent for {key}", flush=True)
+    except Exception as e:
+        print(f"[sierra-reminder] error (non-fatal): {e}", flush=True)
 
 
 def _send_setup_eod_summary():
@@ -7868,7 +8122,8 @@ def start_scheduler():
                 id="auto_trade_eod", coalesce=True, max_instances=1)
     sch.add_job(_options_trade_eod_flatten, "cron", hour=15, minute=55,
                 id="options_trade_eod", coalesce=True, max_instances=1)
-    sch.add_job(_real_trade_eod_flatten, "cron", hour=15, minute=50,
+    sch.add_job(_real_trade_eod_flatten, "cron",
+                hour=EOD_FLATTEN_ET[0], minute=EOD_FLATTEN_ET[1],
                 id="real_trade_eod", coalesce=True, max_instances=1,
                 misfire_grace_time=300)
     # Real trader: fast 3s polling to minimize orphaned order window (cap=2 stacking safety)
@@ -7903,6 +8158,18 @@ def start_scheduler():
                     send_telegram("🔴 <b>Real trader poll DISABLED</b>\nTS brokerage API unreachable after 10 consecutive timeouts")
             finally:
                 _ex.shutdown(wait=False, cancel_futures=True)
+
+            # S242 REVERTED 2026-08-11, same evening, before it ever ran in a session.
+            # A 3s sweep calling check_spx_trail_exit was added here and removed again.
+            # DO NOT RE-ADD IT. Despite its name, check_spx_trail_exit compares the LIVE
+            # MES QUOTE against the trail; only the trail LEVEL comes from the SPX path.
+            # Calling it 10x more often therefore gives MES tick wicks 10x more chances to
+            # fire an exit — exactly the failure S217/S131 were built to remove (lid 3905:
+            # broker +6.8 vs portal +25.3). The 30s cadence is not a limitation to optimise
+            # away, it IS the wick protection: a 3-second spike falls between samples and is
+            # correctly ignored. Entries, trail and exits are all SPX-driven by design; MES
+            # is only the instrument. Anything that makes the bot react faster to MES is a
+            # regression, not an improvement.
         except Exception:
             pass
     sch.add_job(_real_trade_fast_poll, "interval", seconds=3,
@@ -7944,10 +8211,6 @@ def start_scheduler():
             print(f"[watchdog] error: {wd_err}", flush=True)
     sch.add_job(_pipeline_watchdog, "interval", seconds=30,
                 id="pipeline_watchdog", coalesce=True, max_instances=1)
-    # S224: absorption-output canary — bars arriving but detectors silent all morning.
-    sch.add_job(_absorption_silence_check, "cron", day_of_week="mon-fri", hour=11, minute=0,
-                timezone=NY, id="absorption_canary", coalesce=True, max_instances=1,
-                misfire_grace_time=900)
     sch.add_job(_auto_trade_orphan_check, "interval", minutes=5,
                 id="auto_trade_orphan", coalesce=True, max_instances=1)
     # Fast reconcile: runs every 30s regardless of bot-tracked order state.
@@ -7986,10 +8249,34 @@ def start_scheduler():
                 id="broker_poll", coalesce=True, max_instances=1)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,
                 id="setup_eod", coalesce=True, max_instances=1)
-    # S81 — daily TSRT portal-vs-real reconcile at 16:15 ET
+    # S267 — cash-settle the Friday call credit spread against the closing print.
+    # 16:06 so it lands after the 16:00 chain snapshot that carries the settlement spot.
+    try:
+        from app.friday_spread import settle as _friday_spread_settle
+        sch.add_job(_friday_spread_settle, "cron", day_of_week="fri", hour=16, minute=6,
+                    timezone=NY, id="friday_spread_settle", coalesce=True,
+                    max_instances=1, misfire_grace_time=600)
+    except Exception as e:
+        print(f"[friday-spread] schedule error (non-fatal): {e}", flush=True)
+    # S238 — monthly Sierra account health reminder, 1st trading day of the month, 09:00 ET.
+    # The 2026-06-30 lapse (balance ran dry with auto-renewal ticked) delayed the ES feed by
+    # 10 minutes for five weeks before anyone noticed — see S236. Re-verification needs a live
+    # broker connection, so this fires pre-open on a trading day, not on the 1st calendar day.
+    # S243 — unattended TSRT health watchdog (ES feed lag + missing exit prices).
+    # Runs to 16:30 so it also covers the 16:15 FIFO reconcile window, which is when
+    # the 2026-08-10 alerts fired and were missed.
+    sch.add_job(_tsrt_health_watchdog, "interval", minutes=5, timezone=NY,
+                id="tsrt_health", coalesce=True, max_instances=1)
+    sch.add_job(_sierra_monthly_reminder, "cron", day="1-7", hour=9, minute=0, timezone=NY,
+                id="sierra_monthly", coalesce=True, max_instances=1, misfire_grace_time=3600)
+    # S81 — daily TSRT portal-vs-real reconcile.
+    # Moved 16:15 -> 16:07 on 2026-08-15 so the post-market Telegrams arrive as one
+    # batch instead of trickling in over 20 minutes. NOT 16:05 as asked: this reads
+    # close_fill_price / stop_fill_price, which fifo_reconcile REWRITES at 16:03
+    # (S210), so it must not race it. 16:07 keeps four minutes of headroom.
     try:
         from app.trade_reconcile import run_today as reconcile_run_today
-        sch.add_job(reconcile_run_today, "cron", hour=16, minute=15, timezone=NY,
+        sch.add_job(reconcile_run_today, "cron", hour=16, minute=7, timezone=NY,
                     id="trade_reconcile", coalesce=True, max_instances=1,
                     misfire_grace_time=300)
     except Exception as e:
@@ -8047,6 +8334,20 @@ def start_scheduler():
         print(f"[watchdog] schedule error (non-fatal): {e}", flush=True)
     sch.add_job(fetch_economic_calendar, "cron", day_of_week="mon", hour=8, minute=0,
                 id="econ_cal", coalesce=True, max_instances=1)
+    # Grade the day's 10:00/14:00 bias calls against what SPX actually did. 16:20 ET so
+    # the 1-min bars are complete. This is the half that turns the briefing from an
+    # opinion into a measurement — without it there is no "understanding gap" to read.
+    try:
+        from app import market_briefing as _mb_sched
+        def _briefing_score_job():
+            if now_et().weekday() >= 5:
+                return
+            _mb_sched.score_day(now_et().date())
+        sch.add_job(_briefing_score_job, "cron", hour=16, minute=20, timezone=NY,
+                    id="briefing_score", coalesce=True, max_instances=1,
+                    misfire_grace_time=600)
+    except Exception as e:
+        print(f"[briefing] schedule error (non-fatal): {e}", flush=True)
     # 0DTE GEX scanner (S84) — SPX/SPY/QQQ/IWM, every 30 min on wall clock
     try:
         from app import dte0_gex_scanner
@@ -8087,6 +8388,25 @@ def start_scheduler():
                     id="live_pass_restamp", coalesce=True, max_instances=1, misfire_grace_time=600)
     except Exception as e:
         print(f"[darkmate] schedule error (non-fatal): {e}", flush=True)
+    # GEX dealer-positioning state (S244) — MONITORING ONLY, nothing reads this to trade.
+    # capture: every 2 min (matches the chain_snapshots save cadence it reads).
+    # stamp:   EOD, writes setup_log.gex_* so the states accumulate for forward validation.
+    try:
+        from app import gex_state as _gex_state
+        def _gex_state_capture_job():
+            if now_et().weekday() >= 5:
+                return
+            if not (dtime(9, 30) <= now_et().time() <= dtime(16, 5)):
+                return
+            _gex_state.capture()
+        sch.add_job(_gex_state_capture_job, "interval", minutes=2,
+                    id="gex_state_capture", coalesce=True, max_instances=1,
+                    misfire_grace_time=60)
+        sch.add_job(lambda: _gex_state.stamp_setups(3), "cron", day_of_week="mon-fri",
+                    hour=16, minute=30, id="gex_state_stamp", coalesce=True,
+                    max_instances=1, misfire_grace_time=600)
+    except Exception as e:
+        print(f"[gex-state] schedule error (non-fatal): {e}", flush=True)
     # Stock GEX scanner — reduced schedule (protects core 0DTE pipeline)
     # 2026-05-04 (S22): scheduled scans DISABLED — 0 rows ever written despite
     # init firing daily. Module is dead; the working stock GEX system is
@@ -8221,6 +8541,12 @@ def on_startup():
         options_trader_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[options] init error (non-fatal): {e}", flush=True)
+    # Friday SPX 0DTE call credit spread (S267) — log-only collector, trade-ready by env.
+    try:
+        from app.friday_spread import init as friday_spread_init
+        friday_spread_init(engine, ts_access_token, send_telegram_setups)
+    except Exception as e:
+        print(f"[friday-spread] init error (non-fatal): {e}", flush=True)
     # Initialize real trader (MES REAL accounts — disabled by default)
     try:
         from app.real_trader import init as real_trader_init
@@ -8296,6 +8622,22 @@ def on_startup():
         darkmate_init(engine, api_get, lambda: _spot_last)
     except Exception as e:
         print(f"[darkmate] init error (non-fatal): {e}", flush=True)
+    # GEX dealer-positioning state (S244) — six cards + 11-state taxonomy from the chain
+    # we already pull. MONITORING-ONLY, fail-soft, zero touch to the trade loop.
+    # Study: S244_GEX_FRAMEWORK_STUDY.md
+    try:
+        from app.gex_state import init as gex_state_init
+        gex_state_init(engine)
+    except Exception as e:
+        print(f"[gex-state] init error (non-fatal): {e}", flush=True)
+    # Market-bias briefing (10:00 + 14:00 ET). ADVISORY ONLY — nothing reads its output
+    # to place, size or block a trade. Every call is stored with its levels and graded
+    # at EOD so the hit rate is a measured number, not an impression. 2026-08-12.
+    try:
+        from app.market_briefing import init as briefing_init
+        briefing_init(engine, send_telegram)
+    except Exception as e:
+        print(f"[briefing] init error (non-fatal): {e}", flush=True)
     # Initialize V2 dashboard (separate design at /v2)
     try:
         from app.dashboard_v2 import init as dashboard_v2_init
@@ -8406,17 +8748,12 @@ def api_health(request: Request):
     except Exception:
         pass
 
-    # S224: ES feed latency — bars arriving, but how far behind market time?
-    es_delay = freshness.get("sierra_es_delay", {})
-    es_delay_status = es_delay.get("status", "closed")
-
     # Overall status
     if not is_open:
         overall = "closed"
     elif chain_status == "error" or vol_status == "error":
         overall = "down"
-    elif (chain_stale or vol_stale or es_delay_status == "error"
-            or (not rithmic_ok and not es_quote_ok and is_open)):
+    elif chain_stale or vol_stale or (not rithmic_ok and not es_quote_ok and is_open):
         overall = "degraded"
     else:
         overall = "healthy"
@@ -8441,14 +8778,6 @@ def api_health(request: Request):
                 "stale": vol_stale,
             },
             "es_quote_stream": {"connected": es_quote_ok},
-            # S224: is the Sierra ES bar feed real-time or delayed? median_delay_s ~4
-            # is healthy; ~614 means CME delayed data (lapsed entitlement).
-            "sierra_es_feed": {
-                "status": es_delay_status,
-                "median_delay_s": es_delay.get("median_delay_s"),
-                "n_bars": es_delay.get("n_bars"),
-                "realtime": es_delay_status in ("ok", "closed"),
-            },
             "rithmic_stream": rithmic_info or {"connected": False},
             **_auto_trader_health(),
         },
@@ -8553,6 +8882,16 @@ def darkmate_page(session: str = Cookie(None)):
     from app.darkmate_page import DARKMATE_HTML
     return HTMLResponse(DARKMATE_HTML)
 
+@app.get("/gex-state")
+def gex_state_page(session: str = Cookie(None)):
+    """GEX Dealer Positioning — six cards + 11-state taxonomy + per-strike gamma.
+    MONITORING ONLY (S244): manual-trade map, nothing here places or blocks a trade."""
+    user = get_current_user(session)
+    if not user:
+        return RedirectResponse("/login")
+    from app.gex_state_page import GEX_STATE_HTML
+    return HTMLResponse(GEX_STATE_HTML)
+
 @app.get("/darkmate-fw")
 def darkmate_fw_page(session: str = Cookie(None)):
     """Dark Mate FW — live multi-expiry gamma/vanna cluster levels (manual-trade map)."""
@@ -8561,6 +8900,24 @@ def darkmate_fw_page(session: str = Cookie(None)):
         return RedirectResponse("/login")
     from app.darkmate_fw_page import DARKMATE_FW_HTML
     return HTMLResponse(DARKMATE_FW_HTML)
+
+@app.get("/api/gex-state/latest")
+def api_gex_state_latest():
+    """Current dealer-positioning cards + state. MONITORING ONLY (S244)."""
+    from app import gex_state
+    return gex_state.latest()
+
+@app.get("/api/gex-state/history")
+def api_gex_state_history(date: str = None):
+    """All state rows for an ET date (default today). MONITORING ONLY (S244)."""
+    from app import gex_state
+    return {"date": date, "rows": gex_state.history(date)}
+
+@app.get("/api/gex-state/profile")
+def api_gex_state_profile(at: str = None):
+    """Per-strike gamma exposure + levels for the chart. MONITORING ONLY (S244)."""
+    from app import gex_state
+    return gex_state.profile(at)
 
 @app.get("/api/darkmate/results")
 def api_darkmate_results(date: str = None, cap: float = 300.0):
@@ -8576,6 +8933,12 @@ def api_darkmate_results_history(days: int = 20):
 def api_darkmate_levels(at: str = None, greek: str = "gamma", rng: int = 150):
     from app import darkmate
     return darkmate.levels(at, greek, rng)
+
+# ── Friday call credit spread (S267) — config, per-week ledger, running total ──
+@app.get("/api/friday-spread/status")
+def api_friday_spread_status():
+    from app import friday_spread
+    return friday_spread.status()
 
 # ── Stock GEX Scanner API (independent from 0DTE) ──────────────────
 @app.get("/api/stock-gex/levels")
@@ -11838,7 +12201,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
         is_long = direction.lower() == "long"
 
         # Trailing stop parameters
-        # DD Exhaustion: continuous trail (activation=20, gap=5, initial_sl=12)
+        # DD Exhaustion: continuous trail (activation=10, gap=10, initial_sl=12) — 2026-06-22 (was 20/5)
         # GEX Long: hybrid trail (BE at +8, continuous trail activation=10 gap=5, initial_sl=8)
         # AG Short: hybrid trail (BE at +10, continuous trail activation=12 gap=5)
         from app.setup_detector import is_gex_long_v3_enabled as _v3_on
@@ -11846,7 +12209,7 @@ def _calculate_setup_outcome(entry: dict) -> dict:
                         if _v3_on()
                         else {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8})
         _trail_params = {
-            "DD Exhaustion": {"mode": "continuous", "activation": 20, "gap": 5, "initial_sl": 12},
+            "DD Exhaustion": {"mode": "continuous", "activation": 10, "gap": 10, "initial_sl": 12},  # 2026-06-22: 20/5 -> 10/10 (walk-forward validated)
             "GEX Long": _gex_long_tp,
             "GEX Velocity": {"mode": "hybrid", "be_trigger": 8, "activation": 10, "gap": 5, "initial_sl": 8},
             "AG Short": {"mode": "hybrid", "be_trigger": 10, "activation": 12, "gap": 5},
@@ -12291,7 +12654,8 @@ def api_setup_eod_review(date: str = Query(None, description="Date YYYY-MM-DD, d
                        vanna_cliff_side, vanna_peak_side,
                        v13_gex_above, v13_dd_near,
                        vanna_regime,
-                       mes_sim_outcome_pnl, mes_sim_outcome_result, mes_sim_max_fav
+                       mes_sim_outcome_pnl, mes_sim_outcome_result, mes_sim_max_fav,
+                       gex_state, gex_net_ceiling
                 FROM setup_log
                 WHERE date(ts AT TIME ZONE 'America/New_York') = :d
                 ORDER BY ts ASC
@@ -12528,7 +12892,8 @@ def api_setup_log_with_outcomes(limit: int = Query(50), offset: int = Query(0, g
                        greek_alignment, vix, overvix,
                        v13_gex_above, v13_dd_near,
                        vanna_cliff_side, vanna_peak_side, vanna_regime, basket_pct,
-                       mes_sim_outcome_pnl, mes_sim_outcome_result, mes_sim_max_fav
+                       mes_sim_outcome_pnl, mes_sim_outcome_result, mes_sim_max_fav,
+                       gex_state, gex_net_ceiling
                 FROM setup_log
                 ORDER BY ts DESC
                 LIMIT :lim OFFSET :off
@@ -12986,15 +13351,6 @@ def api_data_freshness():
         "volland": {"last_update": None, "age_seconds": None, "status": "closed"},
         "sierra_es": {"last_update": None, "age_seconds": None, "status": "closed"},
         "sierra_vx": {"last_update": None, "age_seconds": None, "status": "closed"},
-        # S224 (2026-08-08): every other check on this page asks whether data ARRIVED.
-        # None of them asked whether it arrived ON TIME. From 2026-07-02 to 2026-08-07
-        # the CME real-time entitlement was lapsed, ES ticks landed in the .scid ~614s
-        # behind market time, and ES/SB/SB2/Delta Absorption produced zero signals on
-        # 20 of 29 sessions — with no alert, for five weeks. This is that missing check:
-        # median(received_at - ts_end) over recent bars. It is a pure latency measure,
-        # so it is immune to the quiet-market false alarm that forces sierra_es to be
-        # lenient, and it is deliberately NOT suppressed by the VX cross-check below.
-        "sierra_es_delay": {"last_update": None, "age_seconds": None, "status": "closed"},
         # S114: ES quote stream powers real_trader entry-price lookup. If it goes
         # stale and the REST fallback also returns None, every real-trader
         # dispatch is silently skipped (S113 audit found 10 such victims). Track
@@ -13065,75 +13421,34 @@ def api_data_freshness():
         except Exception as e:
             print(f"[data_freshness] volland error: {e}", flush=True)
 
-        # Sierra ES: two INDEPENDENT signals off the same rows.
-        #   sierra_es        — is a bar arriving at all?   age of newest ts_end
-        #   sierra_es_delay  — is it arriving on time?     median(received_at - ts_end)
-        # They fail differently and must be measured separately: a quiet market makes
-        # sierra_es look bad while the feed is perfect, and a delayed feed makes
-        # sierra_es_delay look bad while bars keep arriving on schedule.
-        def _age_of(t):
-            if t is None:
-                return None
-            if t.tzinfo is not None:
-                return (datetime.now(t.tzinfo) - t).total_seconds()
-            return (now_et.replace(tzinfo=None) - t).total_seconds()
-
+        # Sierra ES: latest ts_end from vps_es_range_bars (range bars finish every few min)
         try:
             with engine.begin() as conn:
-                es_rows = conn.execute(text("""
-                    SELECT ts_end, received_at FROM vps_es_range_bars
-                    WHERE range_pts = 5
-                    ORDER BY id DESC LIMIT 20
-                """)).mappings().all()
+                es_row = conn.execute(text("""
+                    SELECT ts_end FROM vps_es_range_bars
+                    ORDER BY ts_end DESC LIMIT 1
+                """)).mappings().first()
 
-            if es_rows and es_rows[0]["ts_end"]:
-                e_time = es_rows[0]["ts_end"]
-                age = _age_of(e_time)
-
-                if not is_open:
-                    status = "closed"
-                elif age < 600:       # < 10 min
-                    status = "ok"
-                elif age < 1200:      # 10–20 min
-                    status = "stale"
-                else:                 # ≥ 20 min
-                    status = "error"
-
-                result["sierra_es"] = {
-                    "last_update": e_time.isoformat() if hasattr(e_time, "isoformat") else str(e_time),
-                    "age_seconds": int(age),
-                    "status": status,
-                }
-
-                # ── transport delay: market time -> our DB ──
-                delays = sorted(
-                    (r["received_at"] - r["ts_end"]).total_seconds()
-                    for r in es_rows
-                    if r["received_at"] is not None and r["ts_end"] is not None
-                )
-                if delays:
-                    med = delays[len(delays) // 2]
-                    recv_age = _age_of(es_rows[0]["received_at"])
-                    # Judge the delay only off bars we actually received recently. A
-                    # median computed from yesterday's bars says nothing about now, and
-                    # "nothing is arriving" is already the sierra_es signal's job.
-                    stale_sample = recv_age is None or recv_age > 1800
-                    if not is_open or stale_sample:
-                        d_status = "closed"
-                    elif med < _ES_DELAY_OK_S:
-                        d_status = "ok"
-                    elif med < _ES_DELAY_ERROR_S:
-                        d_status = "stale"
+                if es_row and es_row["ts_end"]:
+                    e_time = es_row["ts_end"]
+                    if e_time.tzinfo is not None:
+                        age = (datetime.now(e_time.tzinfo) - e_time).total_seconds()
                     else:
-                        d_status = "error"
+                        age = (now_et.replace(tzinfo=None) - e_time).total_seconds()
 
-                    result["sierra_es_delay"] = {
-                        "last_update": (es_rows[0]["received_at"].isoformat()
-                                        if hasattr(es_rows[0]["received_at"], "isoformat") else None),
-                        "age_seconds": int(med),
-                        "median_delay_s": round(med, 1),
-                        "n_bars": len(delays),
-                        "status": d_status,
+                    if not is_open:
+                        status = "closed"
+                    elif age < 600:       # < 10 min
+                        status = "ok"
+                    elif age < 1200:      # 10–20 min
+                        status = "stale"
+                    else:                 # ≥ 20 min
+                        status = "error"
+
+                    result["sierra_es"] = {
+                        "last_update": e_time.isoformat() if hasattr(e_time, "isoformat") else str(e_time),
+                        "age_seconds": int(age),
+                        "status": status,
                     }
         except Exception as e:
             print(f"[data_freshness] sierra_es error: {e}", flush=True)
@@ -13174,14 +13489,6 @@ def api_data_freshness():
         # is alive — ES range bar just hasn't closed yet (tight price range).
         # Downgrade ES to "stale" to suppress false-alarm Telegram alerts.
         # Real bridge outages stop BOTH ES and VX, so VX="ok" proves bridge health.
-        #
-        # S224 WARNING — this suppression is why the 2026-07-02 delay went unheard.
-        # A 10-min-delayed feed pushes sierra_es age past 1200s permanently, and VX
-        # (CFE, a different entitlement) stayed healthy throughout, so every single
-        # "error" got quietly rewritten to "stale", which never pages. The suppression
-        # is still correct for what it was built for (quiet market), so it stays —
-        # but it applies ONLY to sierra_es. sierra_es_delay is measured per bar and is
-        # deliberately left untouched here. Do not extend this block to cover it.
         if (result.get("sierra_es", {}).get("status") == "error"
                 and result.get("sierra_vx", {}).get("status") == "ok"):
             result["sierra_es"]["status"] = "stale"
@@ -13229,83 +13536,6 @@ def api_data_freshness():
 
     return result
 
-def _absorption_silence_check():
-    """S224: page if the ES-bar detectors have produced nothing all morning while
-    their input feed is clearly alive.
-
-    This is the backstop for the failure the delay check may not cover. A feed can be
-    intact and the detectors can still be dead — wrong contract in the bridge config,
-    a chart that stopped updating, a scoring change that silently gates everything out.
-    Freshness checks can't see any of that; only output can. Runs once at 11:00 ET.
-
-    Deliberately quiet about the normal case: a session with light ES activity legitimately
-    produces few signals, so this only fires on the ZERO case with the feed proven live.
-    """
-    if not engine:
-        return
-    t = now_et()
-    if t.weekday() >= 5:
-        return
-    try:
-        session_date = _es_session_date_now()
-        with engine.begin() as conn:
-            bars = conn.execute(text("""
-                SELECT count(*) FROM vps_es_range_bars
-                WHERE range_pts = 5 AND trade_date = :d
-            """), {"d": session_date}).scalar() or 0
-            sigs = conn.execute(text("""
-                SELECT count(*) FROM setup_log
-                WHERE ts::date = :d AND setup_name ILIKE '%Absorption%'
-            """), {"d": t.date()}).scalar() or 0
-
-        # Need enough bars that absorption had a real chance to evaluate. The detector
-        # needs an 8-bar lookback and only runs from 10:00 ET, so under ~15 bars by
-        # 11:00 is a genuinely quiet tape, not a fault.
-        if bars < 15:
-            print(f"[absorption-canary] {bars} bars by 11:00 — too quiet to judge, skipping", flush=True)
-            return
-        if sigs == 0:
-            send_telegram(
-                f"⚠️ ABSORPTION SILENT: {bars} ES range bars have arrived today "
-                f"but the absorption detectors have produced 0 signals by 11:00 ET.\n"
-                f"Bars are flowing, so this is not a dead feed — check feed LATENCY "
-                f"(/api/health -> sierra_es_feed), the bridge contract symbol, and the "
-                f"absorption grade gate.\n"
-                f"(2026-07-02 precedent: bars present and on-schedule-looking, but ~614s "
-                f"behind market time, and every absorption setup went dark for 5 weeks.)"
-            )
-            print(f"[absorption-canary] ALERT: {bars} bars, 0 signals", flush=True)
-        else:
-            print(f"[absorption-canary] ok — {bars} bars, {sigs} signals by 11:00", flush=True)
-    except Exception as e:
-        print(f"[absorption-canary] error (non-fatal): {e}", flush=True)
-
-
-def _pipeline_alert_text(source: str, label: str, fresh: dict, down_min: int, still: bool) -> str:
-    """Telegram body for a pipeline source.
-
-    S224: latency sources need their own wording — "data is N minutes old" is
-    meaningless for a measurement that is itself a duration, and the whole point of
-    this alert is that the operator immediately knows what to go and check.
-    """
-    if source == "sierra_es_delay":
-        med = fresh.get("median_delay_s") or 0
-        n = fresh.get("n_bars") or 0
-        head = ("\U0001f534 ES FEED STILL DELAYED" if still else "\U0001f534 ES FEED DELAYED")
-        return (
-            f"{head}: Sierra ES range bars are reaching the DB {med:.0f}s behind market "
-            f"time (median of last {n} bars; healthy is ~4s)"
-            + (f", for {down_min} min now" if still else "")
-            + ".\nES / SB / SB2 / Delta Absorption all run on these bars and will go "
-              "silent or fire on stale prices.\nMost likely cause: the CME real-time "
-              "entitlement lapsed. Check account.sierrachart.com → Services Balance and "
-              "Verified Trading Accounts. (CME delayed data is exactly 10 min = ~614s.)"
-        )
-    if still:
-        return f"\U0001f534 STILL DOWN: {label} data has been stale for {down_min} minutes"
-    return f"\U0001f534 DATA PIPELINE ERROR: {label} data is {down_min} minutes old — not updating"
-
-
 def check_pipeline_health():
     """Check data pipeline freshness and send Telegram alerts on error/recovery.
 
@@ -13315,6 +13545,7 @@ def check_pipeline_health():
     """
     freshness = api_data_freshness()
     now = time.time()
+    reminder_sec = _pipeline_status["reminder_minutes"] * 60
     threshold_sec = _pipeline_status["alert_threshold_minutes"] * 60
     is_open = market_open_now()
 
@@ -13326,19 +13557,11 @@ def check_pipeline_health():
         # S114: ES quote stream — when this goes stale, real_trader silently
         # skips placements because _get_es_price_fallback() also fails.
         ("es_quote", "es_quote", "ES quote stream"),
-        # S224: ES feed LATENCY. Separate from sierra_es on purpose — see the note in
-        # api_data_freshness(). This is the check that was missing for five weeks.
-        ("sierra_es_delay", "sierra_delay", "Sierra ES feed delay"),
     ]:
         current = freshness[source]["status"]
         prev = _pipeline_status[f"{key_prefix}_status"]
         age_sec = freshness[source].get("age_seconds")
         age_min = round(age_sec / 60) if age_sec else 0
-        # A lapsed data entitlement does not fix itself in 15 minutes, so reminding at
-        # the normal cadence would just be spam the user learns to scroll past — which
-        # is the same failure as silence. Remind hourly instead: ~6 per session.
-        reminder_sec = (3600 if source == "sierra_es_delay"
-                        else _pipeline_status["reminder_minutes"] * 60)
 
         # If market is open but freshness returned "closed" (query failed/no data),
         # treat as error — don't silently skip
@@ -13370,11 +13593,11 @@ def check_pipeline_health():
                 if outage_sec >= threshold_sec:
                     _pipeline_status[f"{key_prefix}_alert_sent"] = True
                     _pipeline_status[f"{key_prefix}_last_alert"] = now
-                    send_telegram(_pipeline_alert_text(source, label, freshness[source], down_min, still=False))
+                    send_telegram(f"\U0001f534 DATA PIPELINE ERROR: {label} data is {down_min} minutes old — not updating")
             else:
                 if (now - _pipeline_status[f"{key_prefix}_last_alert"]) >= reminder_sec:
                     _pipeline_status[f"{key_prefix}_last_alert"] = now
-                    send_telegram(_pipeline_alert_text(source, label, freshness[source], down_min, still=True))
+                    send_telegram(f"\U0001f534 STILL DOWN: {label} data has been stale for {down_min} minutes")
             continue
 
         # Recovery: only Telegram if an error alert was actually sent (outage > threshold)
@@ -13382,14 +13605,7 @@ def check_pipeline_health():
             down_min = round((now - _pipeline_status[f"{key_prefix}_error_since"]) / 60)
             _pipeline_status[f"{key_prefix}_status"] = current
             if _pipeline_status.get(f"{key_prefix}_alert_sent"):
-                if source == "sierra_es_delay":
-                    med = freshness[source].get("median_delay_s") or 0
-                    send_telegram(
-                        f"\U0001f7e2 ES FEED BACK TO REAL TIME: Sierra ES bars now arriving "
-                        f"{med:.0f}s behind market time (was delayed {down_min} minutes)."
-                    )
-                else:
-                    send_telegram(f"\U0001f7e2 DATA RECOVERED: {label} is updating again (was down {down_min} minutes)")
+                send_telegram(f"\U0001f7e2 DATA RECOVERED: {label} is updating again (was down {down_min} minutes)")
             else:
                 print(f"[pipeline] {label}: silent recovery after brief outage ({down_min}m, "
                       f"below {_pipeline_status['alert_threshold_minutes']}m threshold)", flush=True)
@@ -13931,7 +14147,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (live)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v16fri">V16 w/Friday Off (live) ✦</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -13943,6 +14159,22 @@ EOD_REVIEW_TEMPLATE = """
   </div>
 
 <script>
+// Basket sizing mode (server-injected from env BASKET_SIZING_MODE): '012' (default) re-admits
+// neutral as a TAKE; '001' = legacy skip-neutral. Lockstep with _passes_live_filter / passesStrategy.
+const _BASKET_SIZING_MODE = "__BASKET_SIZING_MODE__";
+    // S233 (2026-08-08): the (live) views must equal what TSRT actually places.
+    // GEX Long is env-gated (GEX_LONG_V3_REAL_TRADE_ENABLED); when it is false the
+    // real trader never places it, so V16 must not display it either.
+    const _GEX_LONG_REAL = "__GEX_LONG_REAL__" === "true";
+    // Same rule for VIX Divergence (VIX_DIV_REAL_TRADE_ENABLED). Was hardcoded into the
+    // allowed-set on the 2026-05-19 assumption that the env was permanently false; it is
+    // true on Railway, so read it instead of assuming (2026-08-11).
+    const _VIX_DIV_REAL = "__VIX_DIV_REAL__" === "true";
+    // Vanna Pivot Bounce (VPB_REAL_TRADE_ENABLED). 2026-08-15: SAME BUG CLASS as VIX Div
+    // above — VPB sat in the allowed-set but the v16 branch had no admit, so it fell
+    // through to _v10BaseV14()'s `align >= 2` gate and was hidden. TSRT placed 3 VPB longs
+    // on 2026-08-13 (lids 5967/5973/6004, align 1/-3/-1) that the V16 view never showed.
+    const _VPB_REAL = "__VPB_REAL__" === "true";
 const PILL_COLORS = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','SB Absorption':'#f59e0b','SB10 Absorption':'#f59e0b','SB2 Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899','GEX Velocity':'#22c55e','Vanna Pivot Bounce':'#818cf8'};
 const GRADE_COLORS = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308','B':'#f59e0b','C':'#888','LOG':'#555'};
 let _allTrades = [];
@@ -13956,10 +14188,71 @@ function passesStrategy(l, strat) {
   const align = l.greek_alignment != null ? l.greek_alignment : 0;
   const isLong = l.direction === 'long' || l.direction === 'bullish';
   // V16-SB = V16 + Semi-Basket (lockstep with _tlPassesStrategy / _passes_live_filter).
+  // BASKET_SIZING_MODE 'sizeonly' (default, S231) = basket NEVER blocks, sizing only;
+  // '012' re-admits neutral and skips contradict; '001' = legacy skip-neutral+contradict.
   if (strat === 'v16sb') {
     if (!passesStrategy(l, 'v16')) return false;
     const bp = l.basket_pct;
-    if (bp != null && (Math.abs(bp) < 0.15 || ((bp > 0) !== isLong))) return false;
+    if (bp != null && _BASKET_SIZING_MODE !== 'sizeonly') {
+      const _neutral = Math.abs(bp) < 0.15;
+      const _contradict = !_neutral && ((bp > 0) !== isLong);
+      if (_contradict || (_neutral && _BASKET_SIZING_MODE !== '012')) return false;
+    }
+    return true;
+  }
+  // V19 (S263) — MONITORING ONLY. V18 plus: nothing on FRIDAY at all.
+  // Friday is the only losing weekday (-$62/day, 26% green vs 64-73% elsewhere). The
+  // morning looked salvageable but is a coin flip (n=47, +0.85 pt/t, p=0.587) worth
+  // ~$25/mo, so the whole day goes. Lockstep with _tlPassesStrategy(l,'v19') +
+  // live_filter.passes_v19 / v19_blocks (V19_AFTER_MIN=0).
+  // V16FRI (S263) — "V16 w/Friday Off". THE LIVE VIEW once REAL_TRADE_NO_FRIDAY=true:
+  // V16 minus Fridays, WITHOUT V18 (which is not in the trade path). Lockstep with
+  // _tlPassesStrategy(l,'v16fri') + live_filter.passes_v16_fri.
+  if (strat === 'v16fri') {
+    if (!passesStrategy(l, 'v16')) return false;
+    if (!l.ts) return true;
+    return new Date(l.ts).toLocaleDateString('en-US', {timeZone: 'America/New_York',
+                                                       weekday: 'short'}) !== 'Fri';
+  }
+  if (strat === 'v19') {
+    if (!passesStrategy(l, 'v18')) return false;
+    if (!l.ts) return true;
+    return new Date(l.ts).toLocaleDateString('en-US', {timeZone: 'America/New_York',
+                                                       weekday: 'short'}) !== 'Fri';
+  }
+  // V18 (S260) — MONITORING ONLY. V16 minus shorts with a +GEX wall close overhead.
+  // Lockstep with _tlPassesStrategy(l,'v18') + live_filter.passes_v18 / v18_blocks.
+  // Fail-open: gex_net_ceiling null -> the trade is kept. Memory:
+  // research_overhead_gex_wall_both_sides. (NB: "V18" in PROJECTION.md is a different,
+  // rejected 2026-08-08 experiment that was never code.)
+  if (strat === 'v18') {
+    if (!passesStrategy(l, 'v16')) return false;
+    if (isLong) return true;
+    const _nc18 = l.gex_net_ceiling;
+    const _vx18 = l.vix;
+    if (_nc18 == null || _vx18 == null || _vx18 >= 22) return true;
+    return !(_nc18 >= 0 && _nc18 <= 15);
+  }
+  // V17 (S233) — MONITORING ONLY. Lockstep with _tlPassesStrategy(l,'v17') +
+  // live_filter.passes_v17. See S233_FILTER_STUDY.md.
+  if (strat === 'v17') {
+    const _v17Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
+                                 'ES Absorption', 'DD Exhaustion', 'VIX Divergence']);
+    if (!_v17Allowed.has(sn)) return false;
+    const _vix17 = l.vix != null ? l.vix : 0;
+    const _relaxed17 = new Set(['Skew Charm', 'AG Short', 'ES Absorption',
+                                'DD Exhaustion', 'VIX Divergence']);
+    if (_vix17 >= 22 || !_relaxed17.has(sn)) return passesStrategy(l, 'v16');
+    if (sn === 'VIX Divergence') return isLong;
+    if (sn === 'DD Exhaustion' && !isLong) {
+      const _ga17 = l.v13_gex_above != null ? l.v13_gex_above : 0;
+      const _dn17 = l.v13_dd_near != null ? l.v13_dd_near : 0;
+      if (_ga17 >= 75 || _dn17 >= 3000000000) return false;
+      if (l.vanna_cliff_side === 'A' && l.vanna_peak_side === 'B') return false;
+      if (l.paradigm === 'BOFA-PURE' || l.grade === 'A+' || l.grade === 'C') return false;
+      if (l.paradigm === 'GEX-LIS') return false;
+      return align !== 0;
+    }
     return true;
   }
   if (strat === 'r1') return Math.abs(align) >= 3;
@@ -14136,12 +14429,14 @@ function passesStrategy(l, strat) {
     // ANY setup not in real_trader's effective whitelist must NOT pass V16.
     // Real_trader whitelist (real_trader.py:385 + env gates as of 2026-05-19):
     //   Skew Charm, AG Short, Vanna Pivot Bounce, ES Absorption, DD Exhaustion (env true)
-    //   VIX Divergence: VIX_DIV_REAL_TRADE_ENABLED=false (default false) → BLOCK
-    //   GEX Long:      GEX_LONG_V3_REAL_TRADE_ENABLED=false (default false) → BLOCK
+    //   VIX Divergence: env VIX_DIV_REAL_TRADE_ENABLED → read at render, never assumed
+    //   GEX Long:       env GEX_LONG_V3_REAL_TRADE_ENABLED → read at render, never assumed
     //   BofA Scalp, Paradigm Reversal, SB2 Absorption, etc: not in whitelist → BLOCK
     // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
     const _v16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
-                                  'ES Absorption', 'DD Exhaustion', 'VIX Divergence', 'GEX Long']);
+                                  'ES Absorption', 'DD Exhaustion']);
+    if (_GEX_LONG_REAL) _v16Allowed.add('GEX Long');
+    if (_VIX_DIV_REAL) _v16Allowed.add('VIX Divergence');
     if (!_v16Allowed.has(sn)) return false;
     // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT via main.py:5430
     // _dd_short_block. V16 portal must mirror — previously fell through v13DDQualityBlock
@@ -14173,6 +14468,20 @@ function passesStrategy(l, strat) {
       if (_m180 != null && _m180 >= 13*60) return false;
     }
     if (v16DDAdmit()) return true;  // DD long admit (new setup type)
+    // Vanna Pivot Bounce admit (2026-08-15). MUST come before the V14 base filter: the
+    // runtime _passes_live_filter (main.py, "if setup_name == 'Vanna Pivot Bounce'")
+    // RETURNS EARLY on longs/Grade B/not-hour-11, so it never reaches the generic
+    // `align >= 2` long gate. Without this early return the view applied that gate and
+    // silently hid real TSRT trades. LOCKSTEP: _passes_live_filter, live_filter.passes_v16,
+    // _tlPassesStrategy(l,'v16').
+    if (sn === 'Vanna Pivot Bounce') {
+      if (!_VPB_REAL) return false;
+      if (!isLong) return false;
+      if (l.grade !== 'B') return false;
+      const _mVpb = etMins(l.ts);
+      if (_mVpb != null && Math.floor(_mVpb / 60) === 11) return false;
+      return true;
+    }
     // V14 base filter:
     if (!gapFilter(l.ts)) return false;
     if (sn==='Skew Charm' && l.grade && (l.grade==='C'||l.grade==='LOG')) return false;
@@ -14191,6 +14500,7 @@ function passesStrategy(l, strat) {
     if (v13VannaBlock()) return false;
     if (v13DDQualityBlock()) return false;
     if (sn === 'ES Absorption') {
+      if (!isLong) return false;  // CUT ES Abs shorts 2026-07-27 (lockstep w/ _passes_live_filter)
       if (l.grade !== 'A' && l.grade !== 'A+') return false;
       if (l.paradigm === 'AG-TARGET' || l.paradigm === 'AG-LIS') return false;
       const m = etMins(l.ts);
@@ -14526,6 +14836,7 @@ function populateFilterOptions(trades) {
   // Add variant filtered setups (✦ marker indicates filtered subset of base setup)
   const variants = [];
   if (setups.includes('GEX Long')) variants.push('<option value="GEX Long v3">GEX Long v3.1 ✦</option>');
+  if (setups.includes('GEX Long')) variants.push('<option value="GEX Long v7">GEX Long v7 — Gamma Support ✦</option>');
   if (setups.includes('ES Absorption')) variants.push('<option value="ES Abs-Pure">ES Abs-Pure ✦</option>');
   sel.innerHTML = '<option value="">All</option>' +
     setups.map(s => '<option>'+s+'</option>').join('') +
@@ -14542,6 +14853,11 @@ function getFilteredTrades() {
     // Setup variant filters: GEX Long v3 / ES Abs-Pure are filtered subsets of base setup
     if (fSetup === 'GEX Long v3') {
       if (!passesStrategy(t.entry, 'gexlongv3')) return false;
+    } else if (fSetup === 'GEX Long v7') {
+      // v7 = GEX Long gated to the SUPPORT dealer-positioning state (S244/S245).
+      // Monitoring only; stamped from 2026-08-07 onward, earlier rows are null.
+      if (t.entry.setup_name !== 'GEX Long') return false;
+      if (t.entry.gex_state !== 'SUPPORT') return false;
     } else if (fSetup === 'ES Abs-Pure') {
       if (!passesStrategy(t.entry, 'esabspure')) return false;
     } else if (fSetup && t.entry.setup_name !== fSetup) {
@@ -15346,6 +15662,7 @@ DASH_HTML_TEMPLATE = """
         <button class="btn" id="tabCharts">Charts</button>
         <button class="btn" id="tabEsDelta">ES Delta</button>
         <button class="btn" id="tabDarkmate">Dark Mate</button>
+        <button class="btn" id="tabGexState">GEX</button>
         <button class="btn" id="tabHistorical">Historical</button>
         <button class="btn" id="tabTradeLog">Trade Log</button>
         <a href="/stock-gex-live" class="btn" style="display:block;text-decoration:none;color:var(--muted)">Stock GEX <span style="font-size:9px;opacity:0.5">&#8599;</span></a>
@@ -15924,6 +16241,12 @@ DASH_HTML_TEMPLATE = """
                 style="width:100%;height:calc(100vh - 120px);min-height:580px;border:1px solid var(--border);border-radius:8px;background:#0e1117"></iframe>
       </div>
 
+      <!-- GEX dealer-positioning (S244) — MONITORING ONLY, nothing here trades -->
+      <div id="viewGexState" class="panel" style="display:none;flex-direction:column">
+        <iframe id="gexFrame" src="about:blank" title="GEX Dealer Positioning"
+                style="width:100%;height:calc(100vh - 90px);min-height:620px;border:1px solid var(--border);border-radius:8px;background:#0e1117"></iframe>
+      </div>
+
       <!-- Trade Log View -->
       <div id="viewTradeLog" class="panel" style="display:none;flex-direction:column;overflow:auto">
         <div class="header"><div><strong>Trade Log</strong></div><span id="tlStatus" style="font-size:11px;color:var(--muted)"></span></div>
@@ -15934,7 +16257,7 @@ DASH_HTML_TEMPLATE = """
           <button class="subtab-btn" data-subtab="options">Options Log</button>
         </div>
         <div class="tl-filters">
-          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option value="GEX Long v3">GEX Long v3.1 ✦</option><option value="GEX Long v3.2">GEX Long v3.2 ✦</option><option value="GEX Long v4">GEX Long v4 ✦</option><option value="GEX Long v6">GEX Long v6 ✦</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option value="ES Abs-Pure">ES Abs-Pure ✦</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Vanna Pivot Bounce</option><option>Delta Absorption</option><option>Dip-Buy</option><option value="Dip-Buy v2">Dip-Buy v2 ✦</option></select>
+          <select id="tlFilterSetup"><option value="">All Setups</option><option>GEX Long</option><option value="GEX Long v3">GEX Long v3.1 ✦</option><option value="GEX Long v3.2">GEX Long v3.2 ✦</option><option value="GEX Long v4">GEX Long v4 ✦</option><option value="GEX Long v6">GEX Long v6 ✦</option><option value="GEX Long v7">GEX Long v7 — Gamma Support ✦</option><option>AG Short</option><option>BofA Scalp</option><option>ES Absorption</option><option value="ES Abs-Pure">ES Abs-Pure ✦</option><option>DD Exhaustion</option><option>Paradigm Reversal</option><option>Skew Charm</option><option>SB Absorption</option><option>SB10 Absorption</option><option>SB2 Absorption</option><option>GEX Velocity</option><option>VIX Divergence</option><option>VIX Compression</option><option>IV Momentum</option><option>Vanna Butterfly</option><option>Vanna Pivot Bounce</option><option>Delta Absorption</option><option>Dip-Buy</option><option value="Dip-Buy v2">Dip-Buy v2 ✦</option></select>
           <select id="tlFilterResult"><option value="">All Results</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option><option value="TIMEOUT">TIMEOUT</option><option value="OPEN">OPEN</option><option value="PENDING">PENDING</option></select>
           <select id="tlFilterGrade"><option value="">All Grades</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
           <select id="tlFilterDate"><option value="">All Dates</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="pickday">Pick Day...</option><option value="week">This Week</option><option value="lastweek">Last Week</option><option value="month">This Month</option><option value="lastmonth">Last Month</option><option value="custom">Custom Range...</option></select>
@@ -15942,7 +16265,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16sb">V16-SB (live) ✦</option><option value="v16">V16 (base, no basket)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v16fri">V16 w/Friday Off (live) ✦</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -16201,6 +16524,7 @@ DASH_HTML_TEMPLATE = """
           viewCharts=document.getElementById('viewCharts'),
           viewEsDelta=document.getElementById('viewEsDelta'),
           viewDarkmate=document.getElementById('viewDarkmate'),
+          viewGexState=document.getElementById('viewGexState'),
           viewHistorical=document.getElementById('viewHistorical'),
           viewTradeLog=document.getElementById('viewTradeLog');
 
@@ -16218,10 +16542,10 @@ DASH_HTML_TEMPLATE = """
     function stopTradeLog() { if(tradeLogTimer){clearInterval(tradeLogTimer);tradeLogTimer=null;} }
 
     function setActive(btn){
-      [tabTable,tabSpot,tabCharts,tabEsDelta,tabDarkmate,tabHistorical,tabTradeLog].forEach(b=>b.classList.remove('active'));
+      [tabTable,tabSpot,tabCharts,tabEsDelta,tabDarkmate,tabGexState,tabHistorical,tabTradeLog].forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
     }
-    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewHistorical.style.display='none'; viewEsDelta.style.display='none'; viewDarkmate.style.display='none'; viewTradeLog.style.display='none'; }
+    function hideAllViews(){ viewTable.style.display='none'; viewCharts.style.display='none'; viewSpot.style.display='none'; viewHistorical.style.display='none'; viewEsDelta.style.display='none'; viewDarkmate.style.display='none'; viewGexState.style.display='none'; viewTradeLog.style.display='none'; }
     function stopAllPolling(){ stopCharts(); stopChartsHT(); stopSpot(); stopStatistics(); stopEsDelta(); stopTradeLog(); }
     function saveTab(name){ try{sessionStorage.setItem('activeTab',name);}catch(e){} }
 
@@ -16266,6 +16590,14 @@ DASH_HTML_TEMPLATE = """
     document.querySelectorAll('#dmSubtabs .subtab-btn').forEach(b=>{
       b.addEventListener('click',()=>{ _dmSub=b.dataset.dm; document.querySelectorAll('#dmSubtabs .subtab-btn').forEach(x=>x.classList.toggle('active',x.dataset.dm===_dmSub)); _dmLoad(); });
     });
+    // GEX dealer-positioning tab: lazy-load the embedded page only when shown.
+    // MONITORING ONLY — nothing on that page places, sizes or blocks a trade.
+    function showGexState(){
+      setActive(tabGexState); hideAllViews(); viewGexState.style.display='flex'; stopAllPolling();
+      const f=document.getElementById('gexFrame');
+      if(f.getAttribute('data-cur')!=='/gex-state'){ f.src='/gex-state'; f.setAttribute('data-cur','/gex-state'); }
+      saveTab('gexState');
+    }
     function showHistorical(){ setActive(tabHistorical); hideAllViews(); viewHistorical.style.display=''; stopAllPolling(); _histShowSubTab(_histActiveSubTab); saveTab('historical'); }
     function showTradeLog(){ setActive(tabTradeLog); hideAllViews(); viewTradeLog.style.display='flex'; stopAllPolling(); _tlLoadActiveSubTab(); tradeLogTimer=setInterval(_tlLoadActiveSubTab,30000); saveTab('tradeLog'); }
     tabTable.addEventListener('click', showTable);
@@ -16273,6 +16605,7 @@ DASH_HTML_TEMPLATE = """
     tabCharts.addEventListener('click', showCharts);
     tabEsDelta.addEventListener('click', showEsDelta);
     tabDarkmate.addEventListener('click', showDarkmate);
+    tabGexState.addEventListener('click', showGexState);
     tabHistorical.addEventListener('click', showHistorical);
     tabTradeLog.addEventListener('click', showTradeLog);
 
@@ -16286,7 +16619,7 @@ DASH_HTML_TEMPLATE = """
       // Restore sub-tab memory
       const cSub = sessionStorage.getItem('chartsSubTab'); if(cSub) _chartsActiveSubTab = cSub;
       const hSub = sessionStorage.getItem('histSubTab'); if(hSub) _histActiveSubTab = hSub;
-      const tabMap = {spot:showSpot, charts:showCharts, esDelta:showEsDelta, darkmate:showDarkmate, historical:showHistorical, tradeLog:showTradeLog};
+      const tabMap = {spot:showSpot, charts:showCharts, esDelta:showEsDelta, darkmate:showDarkmate, gexState:showGexState, historical:showHistorical, tradeLog:showTradeLog};
       if(saved && tabMap[saved]) tabMap[saved]();
     } catch(e){}
 
@@ -18941,6 +19274,25 @@ DASH_HTML_TEMPLATE = """
 
     // ===== Trade Log Tab =====
     let _tradeLogData = [];
+    // Basket sizing mode (server-injected from env BASKET_SIZING_MODE): '012' (default) re-admits
+    // neutral as a TAKE; '001' = legacy skip-neutral. Lockstep with _passes_live_filter.
+    const _BASKET_SIZING_MODE = "__BASKET_SIZING_MODE__";
+    // S233 (2026-08-08): the (live) views must equal what TSRT actually places.
+    // GEX Long is env-gated (GEX_LONG_V3_REAL_TRADE_ENABLED); when it is false the
+    // real trader never places it, so V16 must not display it either.
+    const _GEX_LONG_REAL = "__GEX_LONG_REAL__" === "true";
+    // Same rule for VIX Divergence (VIX_DIV_REAL_TRADE_ENABLED). This view had it
+    // hardcoded OUT since 2026-05-19 on the assumption the env stayed false; it is true
+    // on Railway, so TSRT placed VIX Div longs the trade log never showed (2026-08-11:
+    // lid 5893 was placed, filled and stopped out while V16 (live) hid it).
+    const _VIX_DIV_REAL = "__VIX_DIV_REAL__" === "true";
+    // Vanna Pivot Bounce (VPB_REAL_TRADE_ENABLED). 2026-08-15: SAME BUG CLASS as VIX Div
+    // above — VPB was in the allowed-set but the v16 branch had no admit, so it fell
+    // through to _tlV10BaseV14()'s `align >= 2` gate and was hidden. TSRT placed 3 VPB
+    // longs on 2026-08-13 (lids 5967/5973/6004, align 1/-3/-1, +12.0 pts) that the V16
+    // (live) view never showed. Fixing VIX Div on 08-11 without sweeping the other setups
+    // is what let this survive four more days.
+    const _VPB_REAL = "__VPB_REAL__" === "true";
     let _tlDailyGaps = {};  // {date_str: gap_pts} for V12 filter
     fetch('/api/setup/daily_gaps', {cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_tlDailyGaps=d;}).catch(()=>{});
     // GEX Long v3 server-side overlay: per-trade {pass, result, pnl, max_fav, verdict}
@@ -19036,17 +19388,101 @@ DASH_HTML_TEMPLATE = """
 
     function _tlPassesStrategy(l, strat) {
       if (!strat) return true;
-      // V16-SB = V16 base + Semi-Basket Scheme B (0/0/1). Reuse v16 then apply basket so
-      // the two never diverge. LOCKSTEP with _passes_live_filter + live_filter.basket_blocks
+      // V16-SB = V16 base + Semi-Basket. BASKET_SIZING_MODE (default 'sizeonly', S231):
+      //   'sizeonly' = basket NEVER blocks; it only picks 1x vs 2x (contradict bucket was
+      //                profitable: 107t / 55% WR / +36.8 pts, and blocking doubled MaxDD).
+      //   '012' = 0/1/2: re-admit neutral (sized 1x by trader); skip ONLY contradict.
+      //   '001' = legacy 0/0/1: skip neutral AND contradict.
+      // Reuse v16 then apply basket so the two never diverge. LOCKSTEP with
+      // _passes_live_filter + live_filter.basket_blocks + passesStrategy 'v16sb'
       // (see memory feedback_filter_three_copies_lockstep).
       if (strat === 'v16sb') {
         if (!_tlPassesStrategy(l, 'v16')) return false;
         const bp = l.basket_pct;
-        if (bp != null) {
+        if (bp != null && _BASKET_SIZING_MODE !== 'sizeonly') {
           const _sbLong = l.direction === 'long' || l.direction === 'bullish';
-          if (Math.abs(bp) < 0.15 || ((bp > 0) !== _sbLong)) return false;  // neutral or contradict -> skip
+          const _neutral = Math.abs(bp) < 0.15;
+          const _contradict = !_neutral && ((bp > 0) !== _sbLong);
+          if (_contradict || (_neutral && _BASKET_SIZING_MODE !== '012')) return false;
         }
-        return true;  // confirm or no-data(fail-open)
+        return true;  // confirm, neutral(012), no-data(fail-open), or sizeonly(always)
+      }
+      // ── V17 (S233, 2026-08-08) — MONITORING ONLY, nothing in the trade path reads it ──
+      // V16 discards ~55% of the book to pick better trades; over 100 sessions that
+      // selection costs more than it earns, because a thin book is a concentrated one.
+      // V17 = V16, except that for SC / AG Short / ES Abs / DD Exhaustion / VIX Divergence,
+      // when the signal's own VIX < 22 the per-setup QUALITY rules are skipped. Three
+      // things stay: full V16 at VIX >= 22; DD SHORTS still pass the V13 stack; VPB is
+      // never relaxed. Measured x0.81: V16 $1,590/mo DD -$1,253 -> V17 $2,520/mo DD -$727.
+      // LOCKSTEP with live_filter.passes_v17 + passesStrategy(l,'v17').
+      // Detail: S233_FILTER_STUDY.md. Compare V16-SB vs V17 daily before shipping anything.
+      // V19 (S263) — MONITORING ONLY. V18 plus: nothing on FRIDAY at all.
+      // Friday is the only losing weekday: -$62/day at 26% green, against +$72..+$153
+      // and 64-73% on Mon-Thu, and only 3 of 20 Fridays since 2026-03-13 were green.
+      // The morning LOOKS fine (+0.85 pt/trade) but n=47 and the 95% CI is
+      // [-2.14, +3.93], p=0.587 — a coin flip. Keeping it bought ~$25/mo for 42 extra
+      // trades, so the whole day goes (user's call 2026-08-15; the statistics agree).
+      // At the live 2/3 cap: $10,623, MaxDD -$955, 65.0% WR, 26 red days
+      // (V16: $9,077 / -$1,598 / 61.5% / 48 red).
+      // Not data mining: the same rule on Mon/Tue/Wed/Thu is LOMO 0/7 and loses money
+      // on all four, and it beats 400/400 random blocks of the same size.
+      // LOCKSTEP with live_filter.passes_v19 + passesStrategy(l,'v19').
+      // V16FRI (S263) — "V16 w/Friday Off". THIS is the live view: it equals what
+      // TSRT places once REAL_TRADE_NO_FRIDAY=true (armed 2026-08-15). V19 also
+      // applies V18, which is NOT in the trade path, so V19 stays a research view.
+      // Friday-only is worth +$1,432 over 123 sessions; V18 adds a further +$115.
+      // LOCKSTEP with live_filter.passes_v16_fri + passesStrategy(l,'v16fri').
+      if (strat === 'v16fri') {
+        if (!_tlPassesStrategy(l, 'v16')) return false;
+        if (!l.ts) return true;
+        return new Date(l.ts).toLocaleDateString('en-US', {timeZone: 'America/New_York',
+                                                           weekday: 'short'}) !== 'Fri';
+      }
+      if (strat === 'v19') {
+        if (!_tlPassesStrategy(l, 'v18')) return false;
+        if (!l.ts) return true;
+        return new Date(l.ts).toLocaleDateString('en-US', {timeZone: 'America/New_York',
+                                                           weekday: 'short'}) !== 'Fri';
+      }
+      // V18 (S260) — MONITORING ONLY. V16 minus SHORTS that have a +GEX wall within
+      // 15pt overhead while VIX < 22. The wall is an upward magnet: near it longs win
+      // and shorts die (V16 shorts -0.01 pt/trade at 5-15pt vs +4.21 beyond 30pt).
+      // Measured at the live 2/3 cap over 123 sessions: $8,589 -> $9,247, MaxDD
+      // -$1,677 -> -$1,348, GREEN days 75 -> 83, RED days 48 -> 39, LOMO 7/7.
+      // Fail-open on a null ceiling — this filter may only ever REMOVE trades.
+      // LOCKSTEP with live_filter.passes_v18 + passesStrategy(l,'v18').
+      // Memory: research_overhead_gex_wall_both_sides.
+      if (strat === 'v18') {
+        if (!_tlPassesStrategy(l, 'v16')) return false;
+        const _long18 = l.direction === 'long' || l.direction === 'bullish';
+        if (_long18) return true;
+        const _nc18 = l.gex_net_ceiling;
+        const _vx18 = l.vix;
+        if (_nc18 == null || _vx18 == null || _vx18 >= 22) return true;
+        return !(_nc18 >= 0 && _nc18 <= 15);
+      }
+      if (strat === 'v17') {
+        const _v17Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
+                                     'ES Absorption', 'DD Exhaustion', 'VIX Divergence']);
+        const _sn17 = l.setup_name || '';
+        if (!_v17Allowed.has(_sn17)) return false;
+        const _long17 = l.direction === 'long' || l.direction === 'bullish';
+        const _vix17 = l.vix != null ? l.vix : 0;
+        const _relaxed17 = new Set(['Skew Charm', 'AG Short', 'ES Absorption',
+                                    'DD Exhaustion', 'VIX Divergence']);
+        if (_vix17 >= 22 || !_relaxed17.has(_sn17)) return _tlPassesStrategy(l, 'v16');
+        if (_sn17 === 'VIX Divergence') return _long17;
+        if (_sn17 === 'DD Exhaustion' && !_long17) {
+          const _ga17 = l.v13_gex_above != null ? l.v13_gex_above : 0;
+          const _dn17 = l.v13_dd_near != null ? l.v13_dd_near : 0;
+          if (_ga17 >= 75 || _dn17 >= 3000000000) return false;              // V13BULL
+          if (l.vanna_cliff_side === 'A' && l.vanna_peak_side === 'B') return false;  // V13VANNA
+          const _g17 = l.grade;
+          if (l.paradigm === 'BOFA-PURE' || _g17 === 'A+' || _g17 === 'C') return false;  // V13DDQ
+          if (l.paradigm === 'GEX-LIS') return false;              // SCDD_SHORT_GEXLIS
+          return (l.greek_alignment != null ? l.greek_alignment : 0) !== 0;
+        }
+        return true;
       }
       const sn = l.setup_name || '';
       const align = l.greek_alignment != null ? l.greek_alignment : 0;
@@ -19194,13 +19630,15 @@ DASH_HTML_TEMPLATE = """
         // real_trader's effective whitelist must NOT pass V16.
         // Real_trader whitelist (real_trader.py:385 + env gates as of 2026-05-19):
         //   Skew Charm, AG Short, Vanna Pivot Bounce, ES Absorption, DD Exhaustion (env true)
-        //   VIX Divergence: VIX_DIV_REAL_TRADE_ENABLED=false → BLOCK
-        //   GEX Long v4:   GEX_LONG_V3_REAL_TRADE_ENABLED=true → ALLOW (2026-06-08, align>=0/bull carve-out)
+        //   VIX Divergence: env VIX_DIV_REAL_TRADE_ENABLED → read at render, never assumed
+        //   GEX Long v4:    env GEX_LONG_V3_REAL_TRADE_ENABLED → read at render, never assumed
         //   BofA, Paradigm Reversal, SB2 Absorption, others: not in whitelist → BLOCK
         // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
         // GEX Long v4 added 2026-06-08 (env GEX_LONG_V3_REAL_TRADE_ENABLED=true).
         const _tlV16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
-                                        'ES Absorption', 'DD Exhaustion', 'GEX Long']);
+                                        'ES Absorption', 'DD Exhaustion']);
+        if (_GEX_LONG_REAL) _tlV16Allowed.add('GEX Long');
+        if (_VIX_DIV_REAL) _tlV16Allowed.add('VIX Divergence');
         if (!_tlV16Allowed.has(sn)) return false;
         // S164 (2026-05-20): DD shorts unconditionally blocked by TSRT — mirror it here.
         if (sn === 'DD Exhaustion' && !isLong) return false;
@@ -19243,6 +19681,22 @@ DASH_HTML_TEMPLATE = """
           const ed = new Date(etStr);
           return ed.getDay() === 5 && ed.getDate() >= 15 && ed.getDate() <= 21;
         }
+        // Vanna Pivot Bounce admit (2026-08-15). MUST come before the V14 base filter: the
+        // runtime _passes_live_filter ("if setup_name == 'Vanna Pivot Bounce'") RETURNS
+        // EARLY on longs/Grade B/not-hour-11, so it never reaches the generic `align >= 2`
+        // gate in _tlV10BaseV14(). Without this early return the trade log applied that
+        // gate and hid real TSRT trades — 3 VPB longs on 2026-08-13 (lids 5967/5973/6004,
+        // align 1/-3/-1) were placed, filled and closed while the V16 (live) view showed
+        // only 2 of that day's 5 trades. LOCKSTEP: _passes_live_filter,
+        // live_filter.passes_v16, passesStrategy(l,'v16').
+        if (sn === 'Vanna Pivot Bounce') {
+          if (!_VPB_REAL) return false;
+          if (!isLong) return false;
+          if (l.grade !== 'B') return false;
+          const _mVpb = _tlEtMins();
+          if (_mVpb != null && Math.floor(_mVpb / 60) === 11) return false;
+          return true;
+        }
         // V16 admits DD Exhaustion long (V14 internal quality gates still apply)
         // V16.1 (2026-05-18): added align >= 0 to MATCH live filter (live blocks negative
         // alignment via the V13 non-SC long gate at main.py:4253).
@@ -19261,14 +19715,23 @@ DASH_HTML_TEMPLATE = """
         if (!_tlGapFilter()) return false;
         if (sn === 'Skew Charm' && l.grade && (l.grade === 'C' || l.grade === 'LOG')) return false;
         if (sn === 'IV Momentum' || sn === 'Vanna Butterfly') return false;
-        // VIX Divergence path removed (2026-05-19): blocked by _tlV16Allowed gate above
-        // since VIX_DIV_REAL_TRADE_ENABLED=false on real_trader. When that env flips back
-        // to true, re-add the VIX Div longs-only admit AND update _tlV16Allowed.
+        // VIX Divergence (S189, re-enabled 2026-05-27): runtime _passes_live_filter admits
+        // LONGS only + grade != C + paradigm LIKE 'GEX-%'. Restored here 2026-08-11 — the
+        // admit had been deleted in 2026-05-19 while the env was false and was never put
+        // back when it flipped true, so the (live) view silently hid real TSRT trades.
+        // LOCKSTEP with main.py:_passes_live_filter, live_filter.passes_v16, passesStrategy.
+        if (sn === 'VIX Divergence') {
+          if (!isLong) return false;
+          if (l.grade === 'C') return false;
+          if (!l.paradigm || !l.paradigm.startsWith('GEX-')) return false;
+          return true;
+        }
         if (!_tlV11TimeGates()) return false;
         if (_tlV13BullishBlock()) return false;
         if (_tlV13VannaBlock()) return false;
         if (_tlV13DDQualityBlock()) return false;
         if (sn === 'ES Absorption') {
+          if (!isLong) return false;  // CUT ES Abs shorts 2026-07-27 (lockstep w/ _passes_live_filter)
           if (l.grade !== 'A' && l.grade !== 'A+') return false;
           if (l.paradigm === 'AG-TARGET' || l.paradigm === 'AG-LIS') return false;
           const mins = _tlEtMins();
@@ -19671,6 +20134,16 @@ DASH_HTML_TEMPLATE = """
           if (!_tlV3Overlay) return false;
           const ov = _tlV3Overlay[String(l.id)];
           if (!ov || !ov.pass_v6) return false;
+        } else if (fSetup === 'GEX Long v7') {
+          // v7 "Gamma Support" (S244/S245, 2026-08-11, MONITORING ONLY — not in the
+          // trade path). NOT a detector: it is a GATE on the v6 GEX Long signal,
+          // keeping only bars where the Exelza dealer-positioning state is SUPPORT
+          // (net_gex>0, net_dex>=0, spot<put_wall, spot<=call_wall, |spot-ZG|>=8).
+          // Read straight off setup_log.gex_state, stamped nightly at 16:30 by
+          // gex_state.stamp_setups(). Rows before 2026-08-07 are unstamped (null)
+          // and therefore never match — that is correct, not a bug.
+          if (l.setup_name !== 'GEX Long') return false;
+          if (l.gex_state !== 'SUPPORT') return false;
         } else if (fSetup === 'ES Abs-Pure') {
           if (!_tlPassesStrategy(l, 'esabspure')) return false;
         } else if (fSetup && l.setup_name !== fSetup) {
@@ -21489,6 +21962,10 @@ def spxw_dashboard(session: str = Cookie(default=None)):
             .replace("__LAST_MSG__", str(last_msg))
             .replace("__PULL_MS__", str(PULL_EVERY * 1000))
             .replace("__USER_EMAIL__", user["email"])
+            .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "sizeonly").lower())
+            .replace("__GEX_LONG_REAL__", os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower())
+            .replace("__VIX_DIV_REAL__", os.getenv("VIX_DIV_REAL_TRADE_ENABLED", "false").lower())
+            .replace("__VPB_REAL__", os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower())
             .replace("__IS_ADMIN__", "true" if user.get("is_admin") else "false"))
     return HTMLResponse(html)
 
@@ -21500,7 +21977,12 @@ def eod_review_page(session: str = Cookie(default=None), date: str = Query(None)
     if not user:
         return RedirectResponse(url="/", status_code=302)
     review_date = date or datetime.now(NY).strftime("%Y-%m-%d")
-    html = EOD_REVIEW_TEMPLATE.replace("__DATE__", review_date)
+    html = (EOD_REVIEW_TEMPLATE
+            .replace("__DATE__", review_date)
+            .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "sizeonly").lower())
+            .replace("__GEX_LONG_REAL__", os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower())
+            .replace("__VIX_DIV_REAL__", os.getenv("VIX_DIV_REAL_TRADE_ENABLED", "false").lower())
+            .replace("__VPB_REAL__", os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower()))
     return HTMLResponse(html)
 
 

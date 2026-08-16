@@ -106,7 +106,14 @@ def _refresh_mes_symbol():
 REAL_BASE = "https://api.tradestation.com/v3"
 
 # Account whitelist -- ONLY these accounts can receive orders
-ACCOUNT_WHITELIST = frozenset({"210VYX65", "210VYX91"})
+ACCOUNT_WHITELIST = frozenset(
+    {"210VYX65", "210VYX91"}
+    # S253: an optional third account dedicated to GEX Long v7 ("Gamma Support").
+    # Empty by default, so with the env var unset the whitelist is byte-identical
+    # to what it was and nothing about the existing two accounts changes.
+    | ({os.getenv("REAL_TRADE_V7_ACCOUNT", "").strip()}
+       if os.getenv("REAL_TRADE_V7_ACCOUNT", "").strip() else set())
+)
 
 # Direction binding -- each account is locked to one direction
 _LONGS_ACCOUNT = os.getenv("REAL_TRADE_LONGS_ACCOUNT", "210VYX65")
@@ -115,6 +122,12 @@ ACCOUNT_DIRECTION_BINDING = {
     _LONGS_ACCOUNT: "long",
     _SHORTS_ACCOUNT: "short",
 }
+# S253: the GEX Long v7 account is registered here like any other account rather
+# than special-cased. v7 is long-only by construction, so binding it to "long"
+# means _validate_account_direction() protects it exactly as it protects the other
+# two — no bypass, no exemption. Only the ACCOUNT it routes to differs.
+if os.getenv("REAL_TRADE_V7_ACCOUNT", "").strip():
+    ACCOUNT_DIRECTION_BINDING[os.getenv("REAL_TRADE_V7_ACCOUNT").strip()] = "long"
 
 # Master switches -- both default OFF for safety
 LONGS_ENABLED = os.getenv("REAL_TRADE_LONGS_ENABLED", "false").lower() == "true"
@@ -172,14 +185,46 @@ def _spx_exit_enabled() -> bool:
 def _atomic_bracket_enabled() -> bool:
     return os.getenv("ATOMIC_BRACKET_ENABLED", "false").lower() == "true"
 
-# SC Trail parameters
+# SC Trail parameters (defaults for all setups unless overridden below)
 BE_TRIGGER_PTS = 10.0    # move stop to breakeven after 10pts profit
 TRAIL_ACTIVATION_PTS = 10.0  # trail activates at 10pts
 TRAIL_GAP_PTS = 5.0      # trail gap = max_fav - 5
 BE_BUFFER_PTS = 0.25     # breakeven + 1 tick buffer
 
+# Per-setup trail overrides (else use the SC-style globals above).
+# DD Exhaustion: continuous trail (NO breakeven), activation=10, gap=10.
+#   2026-06-22: was act/gap 10/5 + BE@10 (global). Walk-forward on clean 1-min SPX
+#   (train Feb-Apr, test May-Jun, SL=12) showed continuous 10/10 OOS WR 79.5% / DD -24
+#   vs the prior config 63.6% / -36 — better WR, DD, and PnL. Matches portal/eval DD config.
+_SETUP_TRAIL_OVERRIDE = {
+    "DD Exhaustion": {"be_trigger": None, "activation": 10.0, "gap": 10.0},
+}
+
 # Charm S/R limit entry timeout
 _LIMIT_ENTRY_TIMEOUT_S = 1800  # 30 min
+
+
+def _stamp(order: dict, key: str) -> None:
+    """S246 (2026-08-12): record WHEN each stage of an exit happened.
+
+    We stored `ts_placed` for entries but nothing at all for exits, so the only
+    way to ask "was the close slow?" was to reconstruct it from raw tick data
+    after the fact (lid 5933 took an hour of archaeology to explain).
+
+    Three stamps, ET ISO strings, written into the existing JSONB state — no
+    schema change, no behaviour change:
+      exit_decision_et    close_trade() was called (the decision)
+      exit_order_sent_et  the market close order left for TradeStation
+      exit_fill_et        we learned the fill price (either path)
+
+    Never overwrites an existing stamp (the first one is the honest one) and
+    never raises — a clock problem must not break a close.
+    """
+    try:
+        if order.get(key) is None:
+            order[key] = datetime.now(NY).isoformat(timespec="milliseconds")
+    except Exception:
+        pass
 
 # DB table name
 DB_TABLE = "real_trade_orders"
@@ -385,7 +430,7 @@ def init(engine, get_token_fn, send_telegram_fn):
             _market_close = _now_et.replace(hour=16, minute=10, second=0, microsecond=0)
             if _now_et < _market_open or _now_et > _market_close:
                 # Outside market hours -- flatten everything
-                for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+                for acct_id in _all_accounts():
                     if acct_id not in ACCOUNT_WHITELIST:
                         continue
                     broker_pos = _get_broker_position(acct_id)
@@ -411,7 +456,7 @@ def init(engine, get_token_fn, send_telegram_fn):
                     print(f"[real-trader] PRE-MARKET: closed order {name} id={lid}", flush=True)
             else:
                 # During market hours -- orphan check
-                for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+                for acct_id in _all_accounts():
                     if acct_id in ACCOUNT_WHITELIST:
                         _close_broker_orphans(acct_id, source="STARTUP")
         except Exception as e:
@@ -419,6 +464,110 @@ def init(engine, get_token_fn, send_telegram_fn):
 
 
 # ====== HELPERS ======
+
+# ====================== S253: GEX Long v7 ("Gamma Support") ======================
+# v7 is NOT a detector — it is a live GATE on the existing GEX Long signal, plus its
+# own account and its own concurrency pool. Everything below is inert unless
+# GEX_LONG_V7_ENABLED=true, so with the flag off this file behaves exactly as before.
+#
+# Why it needs its own pool: v7 signals CLUSTER (19 on 2026-06-30, 10 on 08-03) and
+# the clustered days carry 100% of the measured profit — every low-signal day is net
+# negative. Sharing the 2 long slots captures only 23% of the edge; cap 8 captures 92%.
+# Backfill evidence (131 sessions, 85 signals): 77.6% WR, +543 pt, MaxDD −28 pt,
+# versus ungated GEX Long at 46.8% / −91 pt.
+_V7_STATE_MAX_AGE_S = 600      # a state older than 10 min is treated as unknown
+_V7_ACCOUNT = os.getenv("REAL_TRADE_V7_ACCOUNT", "").strip()
+MAX_CONCURRENT_V7 = int(os.getenv("REAL_TRADE_MAX_CONCURRENT_V7", "8"))
+# Its own breaker (user's call 2026-08-14): the v7 account is separately funded,
+# so a bad v7 day must not stop the main book and vice versa. $150 = roughly the
+# measured full-history MaxDD (-$158) — one bad day ends v7 for the session.
+V7_DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_V7_DAILY_LOSS_LIMIT", "150"))
+
+
+def _no_friday_enabled() -> bool:
+    """S263 Friday gate — is trading blocked on Fridays for the MAIN book?
+
+    Read at CALL time, not at import, so flipping the Railway variable takes effect
+    on the very next signal. (v7's flags are read at import and need a restart —
+    that trap is written into Tasks S252 step 3. Do not repeat it here.)
+    """
+    return os.getenv("REAL_TRADE_NO_FRIDAY", "false").lower() == "true"
+
+
+def _v7_enabled() -> bool:
+    """v7 is armed only if the flag is on AND it has its own distinct account.
+
+    The distinctness check is the important half. A typo that pointed
+    REAL_TRADE_V7_ACCOUNT at the shorts account would send LONG orders there, and
+    v7 deliberately skips the direction binding that would otherwise catch it.
+    Refusing to arm is the only safe response.
+    """
+    if os.getenv("GEX_LONG_V7_ENABLED", "false").lower() != "true":
+        return False
+    if not _V7_ACCOUNT:
+        return False
+    if _V7_ACCOUNT in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+        print(f"[real-trader] v7 DISABLED: account {_V7_ACCOUNT} collides with the "
+              f"longs/shorts account — refusing to arm.", flush=True)
+        return False
+    return True
+
+
+def _all_accounts() -> tuple:
+    """Every account the safety sweeps must cover — EOD flatten, orphan checks,
+    overnight cleanup, final flat verification.
+
+    The v7 account is included the moment it is configured, INDEPENDENT of
+    GEX_LONG_V7_ENABLED: if the flag is turned off while a v7 position is open,
+    that position still has to be flattened. Returns the original two-account
+    tuple when no v7 account is set, so every existing sweep is unchanged.
+    """
+    return (_LONGS_ACCOUNT, _SHORTS_ACCOUNT) + ((_V7_ACCOUNT,) if _V7_ACCOUNT else ())
+
+
+def _v7_state_ok() -> tuple[bool, str]:
+    """Is the dealer-positioning state SUPPORT *right now*?
+
+    FAIL-CLOSED: any error, missing row or stale row means we do NOT trade. v7 is a
+    pure opt-in addition, so refusing is always the safe answer — unlike the basket
+    gate, which fails OPEN because it only ever removes trades from an existing book.
+    """
+    if _engine is None:
+        return False, "no engine"
+    try:
+        from sqlalchemy import text as _t
+        with _engine.connect() as c:
+            r = c.execute(_t("SELECT et, state FROM gex_state ORDER BY et DESC LIMIT 1")).fetchone()
+        if not r:
+            return False, "no gex_state row"
+        et, state = r[0], (r[1] or "")
+        if et.tzinfo is None:
+            et = et.replace(tzinfo=NY)
+        age = (datetime.now(NY) - et).total_seconds()
+        if age > _V7_STATE_MAX_AGE_S:
+            return False, f"state stale ({age/60:.1f} min)"
+        if state != "SUPPORT":
+            return False, f"state={state}"
+        return True, "SUPPORT"
+    except Exception as e:
+        return False, f"error: {str(e)[:60]}"
+
+
+def _count_active_for_setup(setup_name: str) -> int:
+    """Open positions for ONE setup, so v7 has a pool independent of the long cap.
+
+    Takes _lock like every other reader of _active_orders — without it a concurrent
+    fill/close mutating the dict raises RuntimeError mid-iteration and the whole
+    place_trade call dies.
+    """
+    n = 0
+    with _lock:
+        for o in _active_orders.values():
+            if o.get("status") in ("pending_entry", "pending_limit", "pending_stop_entry", "filled") \
+                    and o.get("setup_name") == setup_name:
+                n += 1
+    return n
+
 
 def _get_account_for_direction(is_long: bool) -> str | None:
     """Return the account ID for a given direction, or None if disabled."""
@@ -454,11 +603,20 @@ def _validate_account_direction(account_id: str, is_long: bool) -> bool:
 
 
 def _count_active_for_direction(is_long: bool) -> int:
-    """Count currently active orders (pending or filled) for a direction."""
+    """Count currently active orders (pending or filled) for a direction.
+
+    S253: positions living in the dedicated v7 account are EXCLUDED. They have their
+    own capital, their own margin and their own cap, so counting them here would let
+    a v7 cluster silently starve the main long book of its 2 slots — the exact
+    crowd-out this separation exists to prevent. With no v7 account configured the
+    filter is a no-op and the count is unchanged.
+    """
     count = 0
     with _lock:
         for o in _active_orders.values():
             if o["status"] in ("pending_entry", "pending_limit", "pending_stop_entry", "filled"):
+                if _V7_ACCOUNT and o.get("account_id") == _V7_ACCOUNT:
+                    continue
                 o_is_long = o["direction"].lower() in ("long", "bullish")
                 if o_is_long == is_long:
                     count += 1
@@ -605,12 +763,42 @@ def _is_double_up_bucket(setup_name: str, direction: str,
     return True
 
 
+def _basket_confirms(direction: str, basket_pct: float | None) -> bool:
+    """True only when BASKET_SIZING_MODE is a sizing mode ('sizeonly' or '012') AND the stamped
+    tech-basket %-from-open CONFIRMS this trade's direction (sign matches, outside the deadband).
+    Fail-safe: any missing/None basket_pct, neutral, contradict, or a non-sizing mode → False
+    (never size up on uncertainty). Uses basket_gate.classify (the pure classifier the filter uses).
+
+    NOTE (S231, 2026-08-07): 'sizeonly' MUST be listed here. In that mode the filter stops
+    blocking contradicts and the basket's ONLY remaining job is this 2x decision — if this
+    function rejected the mode, the block would be removed and the sizing edge silently lost
+    with it, which is the whole value of the change. Keep in lockstep with
+    live_filter._basket_sizing_mode / main.py _passes_live_filter."""
+    if basket_pct is None:
+        return False
+    if os.getenv("BASKET_SIZING_MODE", "sizeonly").lower() not in ("sizeonly", "012"):
+        return False
+    try:
+        from app import basket_gate
+        return basket_gate.classify(float(basket_pct), direction) == "confirm"
+    except Exception:
+        return False  # fail-safe: on any error, do NOT increase size
+
+
 def _effective_qty(setup_name: str, direction: str,
-                   paradigm: str | None, align: int | None) -> int:
-    """Returns intended quantity for this trade (1 default, 2 for S149 bucket)."""
-    if _is_double_up_bucket(setup_name, direction, paradigm, align):
-        return 2
-    return QTY
+                   paradigm: str | None, align: int | None,
+                   basket_pct: float | None = None) -> int:
+    """Returns intended quantity for this trade.
+
+    Base = 1 (QTY), or 2 for the S149 double-up bucket (SC long BOFA-PURE align=+1).
+    Basket "0/1/2" sizing (BASKET_SIZING_MODE=='012'): a basket-CONFIRMED trade is sized to
+    AT LEAST 2 contracts. This is a max(qty, 2), NOT a multiplier — it does NOT stack onto
+    S149 to make 4 (the S149 bucket already returns 2; a confirmed S149 trade stays 2).
+    Fail-safe: missing/neutral/contradict basket, or mode!='012' → no size-up."""
+    qty = 2 if _is_double_up_bucket(setup_name, direction, paradigm, align) else QTY
+    if _basket_confirms(direction, basket_pct):
+        qty = max(qty, 2)
+    return qty
 
 
 # ====== MAIN ENTRY POINT ======
@@ -619,7 +807,8 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                 es_price: float, target_pts: float | None, stop_pts: float,
                 charm_limit_price: float | None = None,
                 paradigm: str | None = None,
-                greek_alignment: int | None = None):
+                greek_alignment: int | None = None,
+                basket_pct: float | None = None):
     """Place 1 MES REAL trade when a setup fires.
 
     Args:
@@ -632,6 +821,11 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         charm_limit_price: MES limit entry price (charm S/R shorts). None = market order.
         paradigm: Volland paradigm (passed from main.py dispatch for S149 bucket detection)
         greek_alignment: -3..+3 alignment (passed from main.py dispatch for S149)
+        basket_pct: tech-basket %-from-open STAMPED on the signal at detection
+            (setup_log.basket_pct). Used for basket "0/1/2" sizing (BASKET_SIZING_MODE=='012'):
+            a basket-CONFIRMED trade is sized to >=2. None / mode!='012' → base qty (fail-safe).
+            Prefer the stamped value so the size decision matches the filter's take/skip decision
+            (both read the SAME frozen basket_pct — no live re-read divergence).
     """
     # ── S175 Master kill (2026-05-21 emergency) ──
     # Volland deployed bot detection overnight → headless worker captures 0 widgets,
@@ -667,9 +861,11 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
 
     is_long = direction.lower() in ("long", "bullish")
 
-    # S149: determine effective quantity (1 default, 2 for SC long BOFA-PURE align=+1).
+    # S149 + basket "0/1/2": determine effective quantity.
+    #   base 1 (QTY); 2 for the SC long BOFA-PURE align=+1 S149 bucket; >=2 when the tech
+    #   basket CONFIRMS this trade's direction under BASKET_SIZING_MODE=='012' (max, not ×).
     # Computed BEFORE all gates so cap/dedup/alerts can reference it consistently.
-    qty = _effective_qty(setup_name, direction, paradigm, greek_alignment)
+    qty = _effective_qty(setup_name, direction, paradigm, greek_alignment, basket_pct)
 
     # Setup filter: only trade Skew Charm + AG Short + VPB-Bull (defense-in-depth, main.py also filters)
     # AG Short added 2026-04-08 — SHORT account only (AG hardcoded direction="short")
@@ -701,8 +897,22 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         _alert(f"⏭ SKIPPED {setup_name} {direction}: setup not in real-trader whitelist")
         return
 
+    # ---- S253: GEX Long v7 routing + live SUPPORT gate ----
+    # A GEX Long only reaches here when its own env switch is on. When v7 mode is
+    # armed we additionally require the live dealer-positioning state to be SUPPORT,
+    # and we send the trade to the dedicated v7 account with its own concurrency pool.
+    _is_v7 = False
+    if setup_name == "GEX Long" and is_long and _v7_enabled():
+        ok, why = _v7_state_ok()
+        if not ok:
+            print(f"[real-trader] skip GEX Long: v7 gate — {why}", flush=True)
+            _log_skip_reason(setup_log_id, "v7_state_not_support")
+            _alert(f"⏭ SKIPPED GEX Long (v7): dealer state not SUPPORT — {why}")
+            return
+        _is_v7 = True
+
     # Check master switch for this direction
-    account_id = _get_account_for_direction(is_long)
+    account_id = _V7_ACCOUNT if _is_v7 else _get_account_for_direction(is_long)
     if not account_id:
         dir_str = "longs" if is_long else "shorts"
         print(f"[real-trader] skip {setup_name}: {dir_str} master switch OFF", flush=True)
@@ -710,7 +920,10 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         _alert(f"⏭ SKIPPED {setup_name} {direction}: {dir_str} master switch OFF")
         return
 
-    # Validate account-direction binding (CRITICAL SAFETY) — already alerts internally
+    # Validate account-direction binding (CRITICAL SAFETY) — already alerts internally.
+    # S253: v7 goes through this unchanged. It is registered in
+    # ACCOUNT_DIRECTION_BINDING as "long" like any other account, so it gets the
+    # same whitelist + direction check rather than an exemption.
     if not _validate_account_direction(account_id, is_long):
         _log_skip_reason(setup_log_id, "account_direction_mismatch")
         return
@@ -719,6 +932,40 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         # NOTE: can't log skip_reason without an id, but the alert below still fires.
         print(f"[real-trader] skip {setup_name}: no setup_log_id", flush=True)
         _alert(f"⏭ SKIPPED {setup_name} {direction}: missing setup_log_id (race or detector bug)")
+        return
+
+    # ── FRIDAY GATE (S263, armed 2026-08-15) ─────────────────────────────────────────
+    # Friday is the only losing weekday on the main book, and not by a little:
+    #     Mon +$72/day 67% green · Tue +$115 72% · Wed +$77 64% · Thu +$153 73%
+    #     FRI -$62/day, 26% green
+    # Only 3 of 20 Fridays since 2026-03-13 were green. BOTH directions lose (long
+    # -1.37 pt/trade, short -2.91, against +2.13/+2.79 on other days) and all three
+    # live setups lose. It is NOT opex — ordinary Fridays are -$1,218 over 18
+    # sessions vs -$213 over 5 opex ones. Measured worth over 123 sessions at the
+    # live cap: +$1,432 and -$421 of drawdown, 17 fewer red days.
+    #
+    # Not data mining: the same rule on Mon/Tue/Wed/Thu is leave-one-month-out 0/7
+    # on ALL FOUR and loses $1,033-$1,763 each, while Friday is 7/7; the blind
+    # walk-forward is positive in both halves; and it beats 400/400 random blocks
+    # of the same size (p=0.000).
+    #
+    # 🚫 v7 IS DELIBERATELY EXCLUDED. On Fridays v7 runs +6.47 pt/trade at 77% WR
+    # (n=22 over 5 sessions), statistically the same as its Mon-Thu +6.05 / 75%.
+    # Blocking its Fridays would have COST $712. The mechanism is coherent: Friday
+    # is weekly expiry so the gamma pin is strongest — the fade book needs MOVEMENT
+    # and dies in the pin, while v7 needs price to STOP FALLING and the pin is
+    # exactly that. The same pin that kills one book feeds the other.
+    #
+    # Instant revert: REAL_TRADE_NO_FRIDAY=false (read at call time, no restart).
+    # Evidence: memory research_friday_afternoon_gate.
+    # SILENT on purpose (user, 2026-08-15): this is a FILTERED trade, not an
+    # incident. Filtered trades never alert — every other filter rule drops them
+    # without a word, and a weekly Telegram line for each blocked signal would be
+    # pure noise. The skip_reason stamp is still written, so the block is fully
+    # auditable in setup_log and in the weekly filter-validation report (S263 rule).
+    if _no_friday_enabled() and not _is_v7 and datetime.now(NY).weekday() == 4:
+        print(f"[real-trader] skip {setup_name} {direction}: Friday gate", flush=True)
+        _log_skip_reason(setup_log_id, "friday_block")
         return
 
     # ── Semi-Basket gate: RETIRED here 2026-06-16 — folded into the live filter as V16-SB ──
@@ -765,22 +1012,30 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                    f"(prior id={_dedup_meta[0]}, {_dedup_meta[1]:.0f}s ago)")
             return
 
-    # Cap check: max concurrent per direction (asymmetric — longs=1, shorts=2)
-    active_count = _count_active_for_direction(is_long)
-    cap = MAX_CONCURRENT_LONG if is_long else MAX_CONCURRENT_SHORT
+    # Cap check: max concurrent per direction (asymmetric — longs=1, shorts=2).
+    # S253: v7 counts against its OWN pool, so it never consumes a slot the main
+    # long book needs — and the main book never consumes a v7 slot either.
+    if _is_v7:
+        active_count = _count_active_for_setup("GEX Long")
+        cap = MAX_CONCURRENT_V7
+    else:
+        active_count = _count_active_for_direction(is_long)
+        cap = MAX_CONCURRENT_LONG if is_long else MAX_CONCURRENT_SHORT
     if active_count >= cap:
-        dir_str = "long" if is_long else "short"
+        dir_str = "v7" if _is_v7 else ("long" if is_long else "short")
         # Log which orders are blocking (for debugging stale-order issues)
         blocking = [(lid, o.get("setup_name"), o.get("ts_placed", "")[:10], o.get("status"))
                     for lid, o in _active_orders.items()
                     if o.get("status") in ("pending_entry", "pending_limit", "pending_stop_entry", "filled")
                     and (o.get("direction", "").lower() in ("long", "bullish")) == is_long]
+        # The blocking lids stay in the LOG (they are how stale-order bugs get
+        # diagnosed) but are no longer sent to Telegram — user 2026-08-15: the
+        # message only needs to say what was skipped and why.
         print(f"[real-trader] skip {setup_name}: {dir_str} cap reached "
               f"({active_count}/{cap}) blocking={blocking}", flush=True)
-        _block_str = ", ".join(f"#{b[0]} {b[1]} ({b[3]})" for b in blocking) or "n/a"
         _log_skip_reason(setup_log_id, f"cap_{dir_str}_full")
-        _alert(f"⏭ SKIPPED {setup_name} {direction}: {dir_str} cap reached ({active_count}/{cap})\n"
-               f"Blocking: {_block_str}")
+        _alert(f"⏭ SKIPPED {setup_name} {direction} #{setup_log_id}\n"
+               f"{dir_str} cap reached ({active_count}/{cap})")
         return
 
     # Margin pre-check REMOVED (2026-05-19, user-directed): user clarified via S101
@@ -796,14 +1051,18 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     # blocking decisions.
     _get_buying_power(account_id)  # logs margin diagnostic to stdout, return ignored
 
-    # Daily loss circuit breaker
-    daily_loss = _get_daily_realized_loss()
-    if daily_loss >= DAILY_LOSS_LIMIT:
-        print(f"[real-trader] CIRCUIT BREAKER: daily loss ${daily_loss:,.0f} >= limit ${DAILY_LOSS_LIMIT:,.0f}", flush=True)
-        _log_skip_reason(setup_log_id, "daily_loss_limit")
-        _alert(f"🚨 CIRCUIT BREAKER HIT\n"
-               f"Daily loss: ${daily_loss:,.0f} >= ${DAILY_LOSS_LIMIT:,.0f}\n"
-               f"No more trades today.")
+    # Daily loss circuit breaker. S253: v7 is measured against its OWN account and
+    # its OWN limit, so the two books cannot stop each other.
+    _brk_limit = V7_DAILY_LOSS_LIMIT if _is_v7 else DAILY_LOSS_LIMIT
+    daily_loss = _get_daily_realized_loss(only_acct=_V7_ACCOUNT if _is_v7 else None)
+    if daily_loss >= _brk_limit:
+        _who = "v7" if _is_v7 else "main book"
+        print(f"[real-trader] CIRCUIT BREAKER ({_who}): daily loss ${daily_loss:,.0f} "
+              f">= limit ${_brk_limit:,.0f}", flush=True)
+        _log_skip_reason(setup_log_id, "daily_loss_limit_v7" if _is_v7 else "daily_loss_limit")
+        _alert(f"🚨 CIRCUIT BREAKER HIT ({_who})\n"
+               f"Daily loss: ${daily_loss:,.0f} >= ${_brk_limit:,.0f}\n"
+               f"No more {_who} trades today.")
         return
 
     # S203: underwater-stack guard — block 3rd same-setup same-direction entry
@@ -1536,6 +1795,7 @@ def close_trade(setup_log_id: int, result_type: str):
         if not order:
             return
         already_closed = order["status"] == "closed"
+        _stamp(order, "exit_decision_et")  # S246 — start of the exit clock
         # 2026-05-14 Bug 2 fix: exclude this lid from reconcile's expected_qty
         # and ghost-stamp candidates during _flatten_position's 2-5sec window.
         # Without this, reconcile races and overwrites close_reason with
@@ -1782,6 +2042,7 @@ def _flatten_position(order):
             if stop_fp is not None:
                 order["stop_fill_price"] = stop_fp
                 order["close_fill_price"] = stop_fp  # for portal/reconcile
+                _stamp(order, "exit_fill_et")  # S246
                 order["close_reason"] = order.get("close_reason") or "stop_filled_race_caught"
                 print(f"[real-trader] flatten SKIPPED: stop_order_id={stop_oid} already FLL "
                       f"at {stop_fp} — broker beat us to it (race caught). "
@@ -1886,6 +2147,7 @@ def _flatten_position(order):
             "TimeInForce": {"Duration": "DAY"},
             "Route": "Intelligent",
         }
+        _stamp(order, "exit_order_sent_et")  # S246 — order leaves for the broker
         resp = _ts_api("POST", "/orderexecution/orders", close_payload, account_id)
         if resp:
             # Check for rejection
@@ -1938,6 +2200,7 @@ def _flatten_position(order):
                                    f"Skipping store — backfill will retry.")
                     if sane:
                         order["close_fill_price"] = close_fp
+                        _stamp(order, "exit_fill_et")  # S246
             print(f"[real-trader] flattened: {order['setup_name']} qty={close_qty} "
                   f"fill={order.get('close_fill_price')} acct={account_id}", flush=True)
         else:
@@ -2042,7 +2305,7 @@ def _reconcile_positions():
     because reconcile fired before fill_poll updated status. Race surface scales
     linearly with cap (cap=2 = 2 concurrent windows; cap=3 = 3x exposure).
     """
-    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+    for acct_id in _all_accounts():
         if acct_id not in ACCOUNT_WHITELIST:
             continue
         # Count expected qty from tracked orders (includes pending_entry to avoid
@@ -2052,12 +2315,18 @@ def _reconcile_positions():
             # _flatten_position window (closing_in_progress=True) — they will
             # naturally transition to closed within seconds; counting them as
             # expected leads to false GHOST stamps during the close race.
-            expected_qty = sum(
-                QTY for o in _active_orders.values()
+            _counted = [
+                (lid, o) for lid, o in _active_orders.items()
                 if o.get("account_id") == acct_id
                 and o["status"] in ("pending_entry", "filled")
                 and not o.get("closing_in_progress")
-            )
+            ]
+            expected_qty = sum(o.get("quantity", QTY) for _, o in _counted)  # per-order qty (2 for basket-confirmed); was global QTY=1 → false POSITION MISMATCH on 2x trades (2026-06-30)
+            # S259 (2026-08-14): remember WHICH lids produced expected_qty. The
+            # shortfall branch below rebuilds its candidate list AFTER the broker
+            # network call, so without this the two views disagree — see the long
+            # comment at the `_qty_to_close` computation.
+            _counted_lids = {lid for lid, _ in _counted}
         # Query broker
         broker_pos = _get_broker_position(acct_id)
         broker_qty = broker_pos["qty"] if broker_pos else 0
@@ -2098,17 +2367,52 @@ def _reconcile_positions():
                 # broker history. Generalizes the old full-flat ghost branch — when
                 # broker_qty == 0 the shortfall equals the full tracked set, so this closes
                 # everything exactly as before (backward compatible).
-                _qty_to_close = expected_qty - broker_qty
                 with _lock:
                     # FIFO oldest-first candidates, same status/closing guards the ghost
                     # path used. S99: include pending_entry. 2026-05-14: skip
                     # closing_in_progress (an active close_trade will persist properly).
+                    #
+                    # S259 (2026-08-14) — `lid in _counted_lids` + the recomputed
+                    # shortfall below. `expected_qty` is snapshotted at the top of this
+                    # function, BEFORE the _get_broker_position() network call, but this
+                    # candidate list is rebuilt AFTER it. poll_order_status runs on a
+                    # SEPARATE 30s scheduler job ("broker_poll", main.py) on its own
+                    # thread, so a lid can be marked closed inside that window. The stale
+                    # expected_qty then counts that exit a SECOND time and this branch
+                    # heals a still-live lid — and cancels its protective stop below,
+                    # leaving a real contract naked until the orphan sweep catches it.
+                    #   2026-08-14 lid 6034: 6029's stop filled 11:51:22, poll closed
+                    #   6029 at 11:51:26, this ran 11:51:32 with expected=2 vs broker=1,
+                    #   closed 6034 and cancelled its stop. 1 MES sat unprotected 24s.
+                    #   Same fingerprint (healed, no exit price anywhere) on lid 3520
+                    #   2026-06-03 and lid 3704 2026-06-08 — 3 hits in 37 live days.
+                    # Two guards, both derived from ONE locked snapshot:
+                    #   1. only lids that were actually counted into expected_qty may be
+                    #      healed — a lid that filled after the broker read cannot
+                    #      explain that read's shortfall (would close a brand-new trade);
+                    #   2. recompute the shortfall from those same candidates, and if it
+                    #      has resolved itself, do nothing at all.
+                    # NOT done via ts_placed string compare: that field is written in two
+                    # different formats in this file (offset-aware at ~1129, naive at
+                    # ~1256/1374/1446), so text ordering is not reliable.
                     _cands = sorted(
                         [(lid, o) for lid, o in _active_orders.items()
                          if o.get("account_id") == acct_id
                          and o["status"] in ("pending_entry", "filled")
-                         and not o.get("closing_in_progress")],
+                         and not o.get("closing_in_progress")
+                         and lid in _counted_lids],
                         key=lambda x: x[1].get("ts_placed") or "")
+                    _fresh_expected = sum(int(o.get("quantity") or QTY) for _, o in _cands)
+                _qty_to_close = _fresh_expected - broker_qty
+                if _qty_to_close <= 0:
+                    # Another thread recorded the exit while we were querying the broker.
+                    # Nothing is missing; healing here would close a live lid. Silent by
+                    # design (log only) — the next cycle sees expected == broker and this
+                    # branch is not entered at all, so there is nothing to alert about.
+                    print(f"[real-trader] fifo_reconcile {acct_id}: shortfall resolved "
+                          f"concurrently (stale expected={expected_qty}, fresh="
+                          f"{_fresh_expected}, broker={broker_qty}) — no heal", flush=True)
+                    continue
                 # Take oldest lids until their cumulative qty covers the shortfall.
                 _to_process = []
                 _acc = 0
@@ -2119,7 +2423,8 @@ def _reconcile_positions():
                     _acc += int(o.get("quantity") or QTY)
                 _closed_ids = []
                 _backfilled = []
-                _lost_price = []
+                _lost_price = []      # no exit price anywhere — genuinely unaccountable
+                _closed_lines = []    # per-lid "closed @ X, P&L $Y" lines for the alert
                 _orphan_stops = []  # (lid, stop_oid) to cancel — their contract is gone
                 # Release lock while querying broker history (network call)
                 for lid, o in _to_process:
@@ -2129,8 +2434,27 @@ def _reconcile_positions():
                             field, price = backfill
                             o[field] = price
                             _backfilled.append((lid, field, price))
+                        elif _existing_exit_price(o) is not None:
+                            # 2026-08-11: the broker scan found nothing NEW, but this
+                            # order already carries a usable exit price from an earlier
+                            # path, so its P&L is computable and nothing is lost.
+                            # Pre-fix this raised "🚨 Could not recover fill" for lids
+                            # 5861/5865 on 2026-08-10 even though both held
+                            # stop_fill_price=7774.75 and reconciled to the cent against
+                            # the broker. Only a lid with NO price anywhere is a real loss.
+                            pass
                         else:
                             _lost_price.append(lid)
+                        # Every lid this path closes bypasses close_trade()'s own
+                        # alert, so report it here the way a normal close reports:
+                        # direction, size, exit, P&L. A bare "recovered the fill"
+                        # line tells the user nothing they can act on.
+                        _pnl, _xp, _q = _order_pnl(o)
+                        if _pnl is not None:
+                            _closed_lines.append(
+                                f"🏁 {o.get('setup_name')} "
+                                f"{'Long' if str(o.get('direction','')).lower() in ('long','bullish') else 'Short'} "
+                                f"{_q} MES @ {_xp} · P&L: ${_pnl:+.2f}  (lid {o['setup_log_id']})")
                         o["status"] = "closed"
                         o["close_reason"] = ("ghost_reconcile" if broker_qty == 0
                                              else "fifo_reconcile_partial")
@@ -2162,13 +2486,24 @@ def _reconcile_positions():
                 _broker_lbl = "FLAT" if broker_qty == 0 else f"{broker_qty} MES"
                 _hdr = "GHOST POSITION" if broker_qty == 0 else "QTY MISMATCH auto-healed"
                 _msg = (f"⚠️ {_hdr} on {acct_id}\n"
-                        f"Expected: {expected_qty} MES · Broker: {_broker_lbl}\n"
+                        # S259: report the RECOMPUTED count, not the pre-network-call
+                        # snapshot — the old line could print "Expected: 2" for a heal
+                        # that was actually decided on 1.
+                        f"Expected: {_fresh_expected} MES · Broker: {_broker_lbl}\n"
                         f"Marked {len(_closed_ids)} closed (FIFO oldest-first)")
-                if _backfilled:
-                    _msg += f"\n✅ Recovered {len(_backfilled)} fill price(s): "
-                    _msg += ", ".join(f"lid={l} {f}={p}" for l, f, p in _backfilled)
+                if _closed_lines:
+                    _msg += "\n" + "\n".join(_closed_lines)
+                    try:
+                        _tot = sum(_order_pnl(o)[0] or 0.0 for _, o in _to_process)
+                        if len(_closed_lines) > 1:
+                            _msg += f"\nTotal: ${_tot:+.2f}"
+                    except Exception:
+                        pass
                 if _lost_price:
-                    _msg += f"\n🚨 Could not recover fill for {len(_lost_price)} trade(s): {_lost_price}"
+                    _msg += (f"\n🚨 NO exit price anywhere for {len(_lost_price)} trade(s): "
+                             f"{_lost_price} — their P&L is missing from per-trade totals "
+                             f"(broker day-$ unaffected). Check the app log NOW.")
+                _msg += _day_line(acct_id)
                 _alert(_msg)
                 print(f"[real-trader] fifo_reconcile {acct_id}: closed={_closed_ids} "
                       f"backfilled={_backfilled} lost={_lost_price}", flush=True)
@@ -2455,6 +2790,9 @@ def _check_order_fills(lid, order, broker_orders):
                     order["target_fill_price"] = tgt_fp
                     order["status"] = "closed"
                     order["close_reason"] = "target_filled"
+                    # S246: the broker's own target order filled — like the stop
+                    # path, there is no decision/send stage of ours to time.
+                    _stamp(order, "exit_fill_et")
                 changed = True
                 # Cancel stop since target filled (verify + retry)
                 if order.get("stop_order_id"):
@@ -2503,6 +2841,9 @@ def _check_order_fills(lid, order, broker_orders):
                     order["stop_fill_price"] = stop_fp
                     order["status"] = "closed"
                     order["close_reason"] = "stop_filled"
+                    # S246: the broker's own stop fired — no decision/send stage
+                    # of ours, so only the fill stamp is meaningful here.
+                    _stamp(order, "exit_fill_et")
                 changed = True
                 # Cancel target since stop filled (verify + retry)
                 if order.get("target_order_id"):
@@ -2623,8 +2964,51 @@ def _get_order_fill_price(order_id: str, account_id: str) -> float | None:
     return None
 
 
+def _existing_exit_price(order: dict) -> float | None:
+    """The exit price this order ALREADY holds, or None if it has none.
+
+    Same key precedence as close_trade's own alert (close, then stop, then target) so
+    a reconcile-path P&L is identical to the number a normal close would have shown.
+    A lid with a value here can be P&L'd and must never be reported as a lost fill;
+    a lid with None drops out of every per-trade total silently, which is the only
+    case worth alerting on.
+    """
+    for key in ("close_fill_price", "stop_fill_price", "target_fill_price"):
+        v = order.get(key)
+        if v is None:
+            continue
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if fv > 0:
+            return fv
+    return None
+
+
+def _order_pnl(order: dict) -> tuple[float | None, float | None, int]:
+    """(pnl_dollars, exit_price, qty) for a closed order — the same arithmetic
+    close_trade() uses, so reconcile-path alerts read like normal close alerts.
+    pnl is None only when there is no exit price to work from."""
+    qty = int(order.get("quantity") or QTY)
+    exit_px = _existing_exit_price(order)
+    entry_px = order.get("fill_price")
+    if exit_px is None or entry_px is None:
+        return None, exit_px, qty
+    try:
+        entry_px = float(entry_px)
+    except (TypeError, ValueError):
+        return None, exit_px, qty
+    is_long = str(order.get("direction", "")).lower() in ("long", "bullish")
+    diff = (exit_px - entry_px) if is_long else (entry_px - exit_px)
+    return diff * MES_POINT_VALUE * qty, exit_px, qty
+
+
 def _backfill_ghost_fill(order: dict) -> tuple[str, float] | None:
     """Try to recover the real fill price of a position that the bot missed.
+    See _existing_exit_price() for the cheap "does this order already have a price?"
+    check — call that BEFORE declaring a fill lost.
+
     Checks stop_order_id → target_order_id → close_order_id, then falls back to
     scanning broker historicalorders for an opposite-direction market fill that
     matches our qty + entered after our ts_placed.
@@ -2729,6 +3113,7 @@ def _backfill_ghost_fill(order: dict) -> tuple[str, float] | None:
 def update_trail(setup_log_id: int, current_es_price: float):
     """Update trailing stop based on current ES price.
     SC Trail: BE trigger=10, activation=10, gap=5.
+    Per-setup overrides via _SETUP_TRAIL_OVERRIDE (DD Exhaustion = continuous 10/10, no BE).
 
     Called externally (from main.py's outcome tracking loop) with the current ES price.
     This function tracks max favorable excursion and advances the stop accordingly.
@@ -2744,6 +3129,12 @@ def update_trail(setup_log_id: int, current_es_price: float):
             return
 
     is_long = order["direction"].lower() in ("long", "bullish")
+
+    # Per-setup trail params (DD Exhaustion = continuous 10/10 no-BE; else SC globals).
+    _ov = _SETUP_TRAIL_OVERRIDE.get(order.get("setup_name") or "", {})
+    _be_trigger = _ov["be_trigger"] if "be_trigger" in _ov else BE_TRIGGER_PTS
+    _trail_act = _ov.get("activation", TRAIL_ACTIVATION_PTS)
+    _trail_gap = _ov.get("gap", TRAIL_GAP_PTS)
 
     # Calculate current profit
     if is_long:
@@ -2763,8 +3154,8 @@ def update_trail(setup_log_id: int, current_es_price: float):
 
         new_stop = current_stop  # default: no change
 
-        # Phase 1: Breakeven trigger
-        if not order.get("be_triggered") and max_fav >= BE_TRIGGER_PTS:
+        # Phase 1: Breakeven trigger (skipped when _be_trigger is None — e.g. DD continuous)
+        if _be_trigger is not None and not order.get("be_triggered") and max_fav >= _be_trigger:
             order["be_triggered"] = True
             if is_long:
                 be_stop = _round_mes(fill_price + BE_BUFFER_PTS)
@@ -2776,10 +3167,10 @@ def update_trail(setup_log_id: int, current_es_price: float):
                     new_stop = be_stop
 
         # Phase 2: Trail activation
-        if max_fav >= TRAIL_ACTIVATION_PTS:
+        if max_fav >= _trail_act:
             order["trail_active"] = True
-            trail_stop = _round_mes(fill_price + (max_fav - TRAIL_GAP_PTS)) if is_long else \
-                         _round_mes(fill_price - (max_fav - TRAIL_GAP_PTS))
+            trail_stop = _round_mes(fill_price + (max_fav - _trail_gap)) if is_long else \
+                         _round_mes(fill_price - (max_fav - _trail_gap))
             # Trail only moves forward (tighter)
             if is_long and trail_stop > new_stop:
                 new_stop = trail_stop
@@ -2858,7 +3249,7 @@ def flatten_all_eod():
         time.sleep(3)
 
         # Phase 1c: Close actual broker positions with retry
-        for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+        for acct_id in _all_accounts():
             if acct_id not in ACCOUNT_WHITELIST:
                 continue
             broker_pos = _get_broker_position(acct_id)
@@ -2938,6 +3329,7 @@ def flatten_all_eod():
                 order["close_reason"] = "eod_flatten"
                 if close_fp is not None:
                     order["stop_fill_price"] = close_fp
+                    _stamp(order, "exit_fill_et")  # S246
             _persist_order(lid)
 
             # Compute P&L and send Telegram per trade
@@ -2967,7 +3359,7 @@ def flatten_all_eod():
                   f"acct={acct_id} close_fp={close_fp} pnl={pnl_str}", flush=True)
 
     # Phase 2: Cancel ALL remaining open orders on both accounts
-    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+    for acct_id in _all_accounts():
         if acct_id not in ACCOUNT_WHITELIST:
             continue
         try:
@@ -2986,13 +3378,13 @@ def flatten_all_eod():
 
     # Phase 3: Close any orphaned positions
     time.sleep(1)
-    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+    for acct_id in _all_accounts():
         if acct_id in ACCOUNT_WHITELIST:
             _close_broker_orphans(acct_id, source="EOD")
 
     # Phase 4: Final verification -- confirm we are flat on both accounts
     time.sleep(1)
-    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+    for acct_id in _all_accounts():
         if acct_id not in ACCOUNT_WHITELIST:
             continue
         final_pos = _get_broker_position(acct_id)
@@ -3193,7 +3585,7 @@ def periodic_orphan_check():
         _persist_order(lid)
 
     # Check each account
-    for acct_id in (_LONGS_ACCOUNT, _SHORTS_ACCOUNT):
+    for acct_id in _all_accounts():
         if acct_id not in ACCOUNT_WHITELIST:
             continue
         broker_pos = _get_broker_position(acct_id)
@@ -3371,7 +3763,7 @@ def _get_broker_position(account_id: str, expect_position: bool = False) -> dict
     return None
 
 
-def _get_daily_realized_loss() -> float:
+def _get_daily_realized_loss(only_acct: str | None = None) -> float:
     """Return today's NET realized loss across both whitelisted accounts, in $.
     Positive return = net down by that much. Zero = flat or net green.
 
@@ -3384,11 +3776,21 @@ def _get_daily_realized_loss() -> float:
     New behavior reads TS BalanceDetail.RealizedProfitLoss directly (same field
     used by `_day_line()` for Telegram alerts), sums across both ACCOUNT_WHITELIST
     accounts, and returns the absolute net loss only (or 0 if net flat/green).
-    Breaker now trips only when REAL BROKER MONEY is down >= DAILY_LOSS_LIMIT."""
+    Breaker now trips only when REAL BROKER MONEY is down >= DAILY_LOSS_LIMIT.
+
+    S253 (2026-08-14, user's call): the v7 account has its OWN breaker and is
+    excluded here. It is separately funded with its own risk budget, so a bad v7
+    cluster must not stop the main book trading, and a bad main-book day must not
+    stop v7. Pass only_acct to scope the query to one account."""
     try:
         net = 0.0
         got_any = False
         for acct in ACCOUNT_WHITELIST:
+            if only_acct is not None:
+                if acct != only_acct:
+                    continue
+            elif _V7_ACCOUNT and acct == _V7_ACCOUNT:
+                continue          # v7 has its own breaker, below
             v = _get_daily_realized_pnl(acct)
             if v is not None:
                 net += v

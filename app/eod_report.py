@@ -23,7 +23,13 @@ from sqlalchemy import text
 # ── query ────────────────────────────────────────────────────────────────
 
 def _query_trades(engine, trade_date):
-    """Query all resolved trades for a given date."""
+    """Resolved trades TSRT actually placed, for a given date.
+
+    2026-08-15: was every resolved setup_log row, so the PDF counted portal-only
+    detectors (Dip-Buy, GEX Long logs, filtered-out signals) the bot never traded
+    and the totals did not match the broker. Now EXISTS-joined to
+    real_trade_orders, the same rule the chart has used since 2026-06-07.
+    """
     today_start = datetime.combine(trade_date, datetime.min.time())
     tomorrow_start = today_start + timedelta(days=1)
     with engine.connect() as conn:
@@ -40,6 +46,8 @@ def _query_trades(engine, trade_date):
             FROM setup_log
             WHERE ts >= :today_start AND ts < :tomorrow_start
               AND outcome_result IS NOT NULL
+              AND EXISTS (SELECT 1 FROM real_trade_orders rto
+                          WHERE rto.setup_log_id = setup_log.id)
             ORDER BY ts ASC
         """), {"today_start": today_start, "tomorrow_start": tomorrow_start}).fetchall()
 

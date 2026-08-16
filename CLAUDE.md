@@ -35,6 +35,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Before presenting ANY trading study, backtest, performance report, or parameter recommendation:
 
+### Gate 0: Metric Selection (CHECK FIRST — picking the wrong metric has flipped results by $3,500)
+
+**For any window dated 2026-06-13 (S217) or later, the P&L metric is `setup_log.outcome_pnl`
+(the chain / SPX-path simulation). Full stop.**
+
+- Entries, trailing and exits are decided on the **SPX/portal path** (`SPX_EXIT_ENABLED` →
+  `real_trader.check_spx_trail_exit()`). MES is the instrument we *trade*, not what triggers
+  execution. So the SPX-path sim is the model that matches the code.
+- Measured against real broker fills, post-S217 (43 trades): **chain MAE 2.69 pt, median 1.70 pt,
+  bias +0.18 pt/trade**. MES-walk MAE 5.06 pt and totals −88.0 pt vs a real +33.8 pt.
+- **NEVER describe `mes_sim_*` as the "honest", "execution-realistic" or "conservative" number,
+  and never lead a report with it.** Post-S217 it is not conservative, it is simply wrong.
+- Apply a **−0.6 pt/trade** haircut to chain results (was −0.18 until 2026-08-12 — that
+  figure came from a 43-trade window and understated the real cost by ~3×). `mes_sim_*` is
+  for pre-S217 windows only. If a study spans the boundary, split at 2026-06-13.
+- **The haircut is STRUCTURAL, not a bug — do not try to engineer it away.** Two independent
+  methods agree: 56 real broker round-trips measure **−0.61 pt/trade**, and a 1,051-signal
+  1-min simulation measures **−0.59 pt/trade**. It is the distance price travels past a trail
+  level between the crossing and the market-order fill. Changing how max-favourable is
+  measured moves it by 0.07 pt (S246: wick-filtered MFE tested and REJECTED — +5.9% P&L but
+  13% worse drawdown, −1.4pp WR, and it loses in 2 of 6 months).
+- **Quote the haircut as a mean, never as a per-day expectation.** Per-trade spread is
+  **σ = 4.26 pt** (range −17.5 → +17.25), so a 4-trade day is dominated by noise: 2026-08-12
+  ran −2.41 pt/trade (z = −0.85, ordinary) while 2026-07-01 ran **+4.72**. Capture measured
+  against broker truth is **96%** over the whole post-S217 era — there is no leak to recover.
+- **Measure capture at DAY level from `tsrt_daily_stmt`, never by summing per-lid state**
+  (the S210 rule). Concurrent same-direction positions net at the broker, so per-lid exits are
+  fallback-attributed and read as fake slippage.
+- **Also check concentration before quoting any monthly rate**: report top-1 / top-3 day share
+  and the ex-top-3 total. This book earns on a few trend days; a window that contains one is
+  not a run rate.
+
+Details + the measurement script: memory `feedback_chainsim_valid_post_s217.md`,
+`research_s231_tsrt_counterfactual_jul_aug.md`.
+
 ### Gate 1: Data Quality (MUST PASS before running analysis)
 1. **Source check**: ALL numbers from DB queries or code output. Never manual math, never from memory files.
 2. **Date range**: State explicitly. Check for known outages (Mar 26 TS outage, any logged in SESSION_LOG).
@@ -261,6 +296,8 @@ Append new analysis sections to this file after each review session.
 
 ### ES Absorption Detector (Restored 2026-03-11)
 
+**SHORTS CUT from the live filter 2026-07-27 (S229, commit `d596bad`):** ES Absorption is now LONG-only in `_passes_live_filter` / `live_filter.passes_v16` / both portal `v16` mirrors (lockstep `if not isLong: return False` in the ES Abs branch). Reason: consistent recent loser (high-vol winner / low-vol loser — Mar +$458/75% → May/Jun/Jul negative; Apr-Jul net −$257). Longs unchanged. Reversible = delete the isLong guards.
+
 Volume-gated price vs CVD divergence on ES 5-pt range bars, with Volland confluence scoring. Originally replaced by "CVD Divergence" (simple swing-to-swing, no quality gates) on Mar 7, but CVD Divergence was net negative (39% WR, -140 pts across 11 dates). Original restored because with alignment filter: 76% WR, +88.1 pts at alignment +3; 67% WR, +117.6 pts at alignment >= 0.
 
 **Architecture:**
@@ -320,11 +357,11 @@ Detects DD-Charm divergence as a contrarian exhaustion signal. Based on Analysis
 - `dd_target_pts`: 10, `dd_stop_pts`: 20
 - `dd_market_start`: "10:00", `dd_market_end`: "15:30"
 
-**Outcome tracking — continuous trail** (updated 2026-02-19):
-- DD uses a continuous trailing stop: activation=20 pts, gap=5 pts
-- Once max profit reaches 20 pts, trail engages at max_profit - 5
+**Outcome tracking — continuous trail** (updated 2026-06-22):
+- DD uses a continuous trailing stop: **activation=10 pts, gap=10 pts** (was 20/5 until 2026-06-22), initial SL=12
+- Once max profit reaches 10 pts, trail engages at max_profit - 10 (lets the fade runners breathe)
+- **2026-06-22 change (act/gap 20/5 → 10/10):** walk-forward on clean 1-min SPX (train Feb–Apr, test May–Jun, SL=12) — OOS WR 79.5% / DD -24 / +424 vs prior 63.6% / -36 / +332. Confirmed on the 889-trade all-DD sample. Shipped in portal (main.py ×2), eval_trader, AND real_trader (via new `_SETUP_TRAIL_OVERRIDE` — real_trader otherwise uses SC-style globals for all setups; DD override = continuous no-BE 10/10). SL unchanged at 12.
 - Replaces rung-based trail (activation=7, step=5, lock=rung-2) which triggered prematurely on contrarian setups
-- Simulation: +41.9 pts (continuous) vs +4.0 pts (old rung-based) across 8 DD trades
 
 **Log-only mode:** Grade always "LOG", score always 0. Telegram messages tagged `[LOG-ONLY]`. Target: 50+ live signals before enabling as real setup.
 
@@ -411,7 +448,7 @@ Standalone local script that polls Railway for setup signals and places MES orde
 - **ES price for stops**: SPX and MES differ by ~15-20 pts (variable spread). Railway sends `es_price` from quote stream. Stop/target calculated from ES price, NOT SPX spot.
 - **OIF naming**: NT8 ATI requires prefix `oif`, extension `.txt`. Example: `oif1740422400000.txt`.
 - **Signal staleness**: `MAX_SIGNAL_AGE_S = 120` — signals older than 2 min are skipped (prevents stale entries after restart).
-- **Trailing stop**: DD Exhaustion=continuous trail (activation=20, gap=5). GEX Long=rung-based (start=12, step=5, lock=rung-2). Others=breakeven at `+be_trigger_pts`.
+- **Trailing stop**: DD Exhaustion=continuous trail (activation=10, gap=10; 2026-06-22, was 20/5). GEX Long=rung-based (start=12, step=5, lock=rung-2). Others=breakeven at `+be_trigger_pts`.
 - **Reversal**: Opposite-direction signal closes current position, opens new one. Checks compliance for new position first.
 - **Stale overnight**: On startup, if position date < today → auto-flatten.
 - **Orphan working-order guard (2026-06-08, commit `4d90ee7`)**: E2T FAILS the eval if ANY position OR working order rests on the book past **3:50pm CT** (a SHORT eval was failed this way — a synth-stop's CANCEL was dropped by NT8 ATI and the slot was untracked, leaving an orphan stop that E2T killed at 15:53 CT). Two layers: (1) `_register_orphan_cancel()`/`_verify_pending_cancels()` verify every synth-stop orphan CANCEL vs broker and re-send up to 4× (8s grace), escalating to `cancel_all()` once broker-flat — runs every loop even when the tracker is flat; (2) main loop fires an unconditional `nt8.cancel_all()` (CANCELALLORDERS) every 60s from `flatten_time`→16:55 ET regardless of `is_open`. Both StackingTracker + PositionTracker. Constants `_CANCEL_VERIFY_GRACE_S=8` / `_CANCEL_MAX_RETRIES=4`.
@@ -558,6 +595,277 @@ shows +42.0pt and MES-sim shows +24.5pt, the portal was over-stating the trade
 by ~17.5pt — that's the trail-tag-early divergence on big runners (S55's main
 finding).
 
+### Friday gate — LIVE ON REAL MONEY (S263, armed 2026-08-15)
+
+**The only day-level gate in the trade path.** `real_trader.place_trade()` refuses every signal on a
+Friday for the two MAIN accounts. One check at the choke point both dispatch sites use, so it covers
+SC / AG Short / VPB / VIX Div / DD / ES Abs.
+
+- **`REAL_TRADE_NO_FRIDAY`** (default `false`) — read at **call time**, so flipping the Railway
+  variable takes effect on the next signal with **no restart**. v7's flags are read at import and DO
+  need one (Tasks S252 step 3); this deliberately does not repeat that.
+- **🚫 v7 IS EXCLUDED** via `not _is_v7`. On Fridays v7 runs **+6.47 pt/trade at 77% WR** — the same
+  as its Mon–Thu. Blocking it would have cost **$712**. Friday is weekly expiry so the gamma pin is
+  strongest: the fade book needs MOVEMENT and dies in the pin, v7 needs price to STOP FALLING and the
+  pin is exactly that. **The same pin that kills one book feeds the other.**
+- **SILENT.** No Telegram per blocked signal — a filtered trade is not an incident. The
+  `setup_log.real_trade_skip_reason='friday_block'` stamp is the audit trail.
+- **Evidence:** Friday is the only losing weekday, −$62/day at 26% green against +$72..+$153 and
+  64–73% Mon–Thu; only 3 of 20 Fridays green since 2026-03-13. Worth **+$1,432 and −$421 drawdown**
+  over 123 sessions. The same rule on Mon/Tue/Wed/Thu is LOMO **0/7 on all four**; Friday is 7/7.
+  Beats 400/400 random blocks (p=0.000). Memory `research_friday_afternoon_gate`.
+- **Portal view = "V16 w/Friday Off" (`v16fri`), labelled (live).** NOT V19 — V19 also applies V18,
+  which is monitoring only. **When a gate is armed, the `(live)` label moves in the same commit.**
+
+### Friday call credit spread (`app/friday_spread.py`) — LOG-ONLY (S267, 2026-08-15)
+
+**The only options strategy with a measured edge, and it is not armed.** Friday only · 12:00 ET ·
+sell the ~0.35Δ SPXW call · buy `FRIDAY_SPREAD_WIDTH` (default 5) points higher · **no stop** ·
+hold to the 16:00 cash settlement · one spread. 189 days of real `chain_snapshots` bid/ask, 37
+Fridays: **+$9,704 · 86.5% WR · worst −$1,457 · 9/10 green months**; the loss rate would have to
+double (13.5% → 27%) to break even. Cause is the weekly gamma pin — **no Friday afternoon rallied
+more than +0.61%** after 12:00 vs +0.77–1.63% every other weekday. Same pin behind the Friday gate
+and v7, so the three are complementary, not contradictory.
+
+- **Isolation:** own table `friday_spread_log`, own settle cron (Fri 16:06), own API
+  (`/api/friday-spread/status`). **Writes NOTHING to `setup_log`** — deliberately, so it cannot
+  reach V16 recall, `filter_validation`, the EOD report or any MES path. Never raises into the cycle.
+- **Trading fails CLOSED** (opposite of `basket_gate`, which fails open because it only *removes*
+  trades). Needs BOTH `FRIDAY_SPREAD_TRADE_ENABLED=true` AND `FRIDAY_SPREAD_ACCOUNT`, plus
+  `FRIDAY_SPREAD_LIVE=true` to leave the SIM endpoint. A rejected order downgrades that Friday to a
+  paper row and never retries. Settlement confirms the **limit actually filled** before booking a
+  win — an unfilled order records `NO_FILL`.
+- **🛑 DO NOT ADD A STOP LOSS.** Tested: it fires on 8 of 37 Fridays and is **wrong on 4 of them**.
+  Re-priced against 1-minute highs — a stop a broker would really execute — it earns **less than
+  doing nothing** ($6,678 vs $6,874). The 2-minute backtest sampling *was* the wick protection,
+  exactly the S131/S217 trap. **Cap risk with WIDTH**; the win rate is identical at every width
+  because only the protection leg moves. Profit targets (25%/50%) also both lose money.
+- **Grow by adding SPREADS, not width** — risk:reward degrades with width (2.1:1 at 5pt → 3.1:1 at
+  20pt), so 3 × 5pt beats 1 × 15pt on less margin.
+- **SPX, not SPY.** Performance is within $14/Friday and the relative bid/ask is the same, but SPY is
+  American-exercise to 5:30pm so hold-to-settlement is unsafe. The real argument: **a SPY test does
+  not test what you will trade.**
+- Captures GEX state + the v7 SUPPORT condition per trade. **Logged, never gated** — SUPPORT and
+  BREAKOUT_TEST are the worst states on all days but filtering them on Fridays deletes winners.
+- Status: collecting. ~20 forward Fridays incl. one red before it earns capital. Tasks S267.
+
+### V18 / V19 monitoring filters (S260/S263, 2026-08-15) — NOT in the trade path
+
+- **V18** = V16 minus SHORTS with a +net-GEX wall within 15pt overhead while VIX < 22. The wall is an
+  upward magnet and orders BOTH books oppositely (V16 longs +3.14 pt/t at the wall decaying to +0.80
+  far away; shorts the mirror). Needs **NET** gex and the **LARGEST** strike — `gex_call_wall` uses
+  call-gex over the whole window and does NOT reproduce it. New input
+  **`setup_log.gex_net_ceiling`**, computed in `gex_state.compute()` (`NET_CEILING_WIN=60`) and
+  stamped by the 16:30 job; history via `gex_net_ceiling_backfill.py`.
+- **V19** = V18 + no Friday. Research view; the live one is `v16fri`.
+- **`gex_state` table backfilled** (`gex_state_backfill.py`, 23,742 rows Feb 19 → Aug 14) so the live
+  gate and every study read ONE source. Verified 5,068/5,068 against the setup_log stamps.
+- **`filter_mirror_sweep.py` takes a version argument** (`v16|v16fri|v17|v18|v19`) and sets the
+  Railway env flags itself. **Run it after ANY filter change.**
+
+### Weekly filter validation — counterfactual attribution (fixed 2026-08-15)
+
+`app/filter_validation.py`, Monday 17:00 ET → Telegram. Each rule carries **`live_line`**, the exact
+source line in `live_filter.py`. The monitor neutralises just that line and re-runs `passes_v16`; a
+signal counts as blocked BY THIS RULE only if it **fails V16 and passes V16-minus-this-rule**.
+
+**Why:** shape matching produced two false 🚨 DEGRADING alarms saying rules blocked WINNERS when they
+blocked LOSERS — a stale rule shape (SIDIAL narrowed to 14:00–15:00 on 2026-05-30, monitor still
+tested all day) plus crediting one signal to every matching rule. If a source line is ever edited the
+rule reports **STALE-RULE** instead of wrong numbers. A **post-filter gate** (`post_gate: True`, e.g.
+the Friday block) is the mirror image — it matches signals that PASS V16.
+**Add every new block rule here, with its `live_line`.** Memory
+`research_filter_validation_attribution_bug`.
+
+### V17 monitoring filter (`app/live_filter.py:passes_v17`) — added 2026-08-08 (S233, MONITORING ONLY)
+
+**Nothing in the trade path reads this.** `_passes_live_filter` is untouched; V17 exists so the
+V16 and V17 books can be compared daily on live data before anything ships.
+
+V17 = V16, except that for **Skew Charm / AG Short / ES Absorption / DD Exhaustion / VIX
+Divergence**, when the signal's own VIX < 22 the per-setup **quality** rules are skipped. Three
+things stay: **full V16 at VIX ≥ 22**; **DD SHORTS still pass the existing V13 stack**
+(V13BULL/V13VANNA/V13DDQ/SCDD_SHORT_GEXLIS — raw DD shorts lost −$1,198 in April alone);
+**Vanna Pivot Bounce is never relaxed** (the only bucket negative in all 6 months). GEX Long
+excluded. Measured ×0.81: V16 $1,590/mo (SAR 5,963) → V17 $2,436/mo (SAR 9,135), MaxDD
+−$1,253 → −$1,198. Every risk control (cap, dedup, $300 breaker, underwater guard) is
+unchanged, so peak exposure is identical — only the number of sequential trades rises
+(8.9 → ~15/day). Full evidence: `S233_FILTER_STUDY.md`.
+
+**⚠️ First live verdict (2026-08-11, S244 — 2 sessions, directional only):** V17's portal lead
+over V16 is **mostly a CAP ARTIFACT**. Portal view (no cap) V16 $691 vs V17 $1,572; under the
+real 2/2 cap + 90s dedup + $300 breaker it is **$474 vs $554 = +$80**, because V17 fires earlier
+and crowds out 4 V16 winners worth $354. **Never compare filters on the portal view — it does
+not model the cap.** The entire edge was **Skew Charm SHORT (+$612) + DD Exhaustion SHORT
+(+$236)**; **ES Absorption went 0-for-5 (−$176)** and every relaxed long bucket lost. A
+**V17-NARROW** (relax only those two buckets) beat V17-full at every cap — $807 at the live 2/2
+with the SAME margin footprint (peak 1 long / 4 short MES) and lower drawdown. Margin ceiling is
+real: shorts account $2,920.77 = 11 MES max, so cap 2/6 ($3,180) and no-cap ($3,710) are
+unfundable. S234 is 🟠 ON HOLD pending ~15-20 sessions incl. a red week — both test days were
+green and down-trending, so no downside was sampled. Memory
+`research_v17_first_two_live_days`.
+
+**No shadow-stamp plumbing is needed to evaluate a filter variant.** Every input a filter reads
+(`grade`, `paradigm`, `vix`, `greek_alignment`, v13/vanna cols, `basket_pct`) plus `outcome_pnl`
+/ `outcome_elapsed_min` is stamped on `setup_log` at signal time regardless of which filter is
+live, so any variant is reconstructable retroactively. Only a **DETECTOR** change needs live
+capture — an unfired signal leaves no record. (This retires S234 stage 0b, the `v17_pass` stamp.)
+
+**Three lockstep copies** — `live_filter.passes_v17`, portal JS `_tlPassesStrategy(l,'v17')`,
+portal JS `passesStrategy(l,'v17')`. Selectable in both portal dropdowns as
+"V17 (S233 relaxed — MONITORING)".
+
+**The (live) views are env-gated on GEX Long** (2026-08-08): both V16 allowed-sets add
+`'GEX Long'` only when `__GEX_LONG_REAL__` (from `GEX_LONG_V3_REAL_TRADE_ENABLED`) is true,
+mirroring the `__BASKET_SIZING_MODE__` pattern. Before this the V16 view showed 46 trades TSRT
+would never place. Rule: **a (live) view must equal exactly what TSRT places.**
+
+### EOD flatten time — ONE constant (`EOD_FLATTEN_ET`) — added 2026-08-11 (S242)
+
+`main.py:EOD_FLATTEN_ET = (15, 55)` drives **both** the real-money flatten cron
+(`_real_trade_eod_flatten`) **and** the portal outcome tracker's EXPIRED cut (`market_closed`).
+They must never drift apart: before this, the bot flattened at 15:50 while the sim held to
+15:57, so the portal scored 7 minutes the bot never held — **half of 2026-08-10's entire
+−$134 portal-vs-broker gap** (SPX fell 6 pt in that window, and both affected trades were
+basket-sized 2×).
+
+Moved 15:50 → 15:55 on measured evidence (211 open trades / 75 sessions, SPX 1-min path):
+**+157.8 pt**, robust to leave-one-month-out and to removing the 3 best days; **worst day
+IMPROVES −41.5 → −28.2 pt**; no session takes the open book past −60 pt (the $300 breaker).
+**16:00 is a cliff (worst 1-day delta −69.6) — never go there.** 15:58 scored higher (+326)
+but the result zigzags minute-to-minute so the peak is noise; 15:55 keeps 5 min of retry room
+and matches the auto-trader/options flatten. Study walked the INITIAL stop → **upper bound**,
+forward validation owed (Tasks S242).
+
+**🛑 DO NOT "optimise" the 30-second exit cycle.** `real_trader.check_spx_trail_exit()` is
+misleadingly named — only the trail *level* is SPX-derived; the crossing test compares the
+**live MES quote**. Running it faster gives MES tick wicks more chances to fire, which is the
+exact failure S131/S217 exist to prevent (lid 3905: broker +6.8 vs portal +25.3). **The 30s
+cadence IS the wick protection** — a 3-second spike falls between samples and is correctly
+ignored. A 3s sweep was added and reverted the same evening (`38dedb1`); a comment guards the
+spot. Memory: `feedback_spx_drives_exits_30s_is_protection`.
+
+### Market briefing (`app/market_briefing.py`) — added 2026-08-11, ADVISORY ONLY
+
+The 10:00 / 14:00 ET Telegram summary is *interpreted* instead of a raw number dump: a bias,
+the levels, what would prove it wrong — and it grades itself. **Nothing reads its output; it
+places and blocks nothing.**
+
+- Hooks the existing summary path via `_send_briefing()` in main.py, which **falls back to the
+  raw dump on any failure** — the user can never lose their 10:00/14:00 message.
+- **Rule votes are earned.** Only rules that beat baseline standing alone move the bias;
+  everything else keeps its explanation and shows as *context* with vote 0. On the first two
+  live days that left the tech basket as the sole voting rule.
+- `market_briefing` table + `score_day()` cron **16:20 ET** grades each call against the 1-min
+  path (direction_correct, MFE/MAE, target_hit, invalidation_hit, per-rule votes).
+- Backfilled 2026-05-15 → 08-11: **BEARISH 61.7% correct, RANGE 55.6%, BULLISH 47.3%.** The
+  bearish calls carry the entire edge.
+- **The invalidation level must sit on the side that can falsify the call** (below spot for
+  bullish, above for bearish). It used the LIS unconditionally until 2026-08-12 (`fa7090f`),
+  so 53% of directional briefings shipped a level price had already passed and 34 bearish rows
+  were auto-marked invalidated. Fix is a side check only — **the LIS is still first choice when
+  correctly sided; do not "improve" it into a nearest-level rule.**
+
+### GEX Long v7 "Gamma Support" — own account, own cap (S253, arms 2026-08-17)
+
+v7 is **not a detector** — it is a live GATE on the existing GEX Long signal plus its own
+account and concurrency pool. Ships dormant; with `REAL_TRADE_V7_ACCOUNT` unset every code
+path is byte-identical to before.
+
+- **Live gate.** `real_trader._v7_state_ok()` reads the latest `gex_state` row at signal
+  time and requires `state='SUPPORT'` within 10 minutes. **FAILS CLOSED** on any error,
+  missing row, stale row or other state — the opposite of `basket_gate`, which fails OPEN
+  because it only removes trades from an existing book. v7 is pure opt-in, so refusing is
+  always safe. (Before this, `gex_state` was stamped onto `setup_log` at 16:30 — after the
+  close — and nothing in the trade path read it.)
+- **Own account.** Registered in `ACCOUNT_DIRECTION_BINDING` as `"long"` like any other
+  account, so `_validate_account_direction()` protects it identically — no exemption.
+- **Own cap-8 pool.** `MAX_CONCURRENT_V7`, and v7 is EXCLUDED from
+  `_count_active_for_direction`, so a v7 cluster can never starve the main long book's 2
+  slots and vice versa.
+- **Own $150 breaker** (`REAL_TRADE_V7_DAILY_LOSS_LIMIT`), excluded from the main $300.
+- **All 8 safety sweeps** (EOD flatten, orphan checks, overnight cleanup, final flat
+  verification) use `_all_accounts()`, which includes v7 whenever it is **configured** —
+  not merely enabled — so a position cannot be stranded by flipping the flag off.
+- `fifo_reconcile`, `trade_reconcile` and `tsrt_weekly_report` all pick the account up
+  from the same env var. **A trading account no reconciler watches is the hole S210/S243
+  exist to close** — if a fourth account is ever added, check all four modules.
+
+**Config that must not drift: FLAT 1 MES, cap 8, no basket sizing.** MaxDD is −$158 at
+every cap ≥2 but doubles to ~−$320 the moment size doubles — slots are free, size is not.
+Scale by taking the next SLOT. Evidence + funding ladder: memory
+`project_gex_v7_own_account`, Tasks S252.
+
+### Exit clock (`real_trader._stamp`) — added 2026-08-12 (S246)
+
+Every close writes `exit_decision_et` / `exit_order_sent_et` / `exit_fill_et` into the existing
+JSONB state, across all four exit paths (flatten, stop-race, broker stop, EOD flatten). No
+migration, no behaviour change, never raises. Exits previously had **no timestamps at all** —
+`ts_placed` covered entries only — so diagnosing one trade meant reconstructing it from raw MES
+ticks. **Use these before theorising about latency.**
+
+### Reconcile heal — the shortfall must come from ONE snapshot (S259, 2026-08-14)
+
+`real_trader._reconcile_positions()` snapshots `expected_qty` **before** the
+`_get_broker_position()` network call, then rebuilt the heal's candidate list **after** it.
+`poll_order_status` runs on a **separate 30s scheduler job and thread** (`broker_poll`,
+`main.py:8240`) from the reconciler (`real_trade_reconcile`, `main.py:8218`), so a lid can be
+marked closed inside that window. The stale count then read that same exit as a **second**
+missing contract, healed a still-live lid, and **cancelled its protective stop** — leaving a real
+contract naked until the orphan sweep market-closed it.
+
+Now both guards derive from **one locked snapshot**: only lids counted into `expected_qty`
+(`_counted_lids`) may be healed, and the shortfall is recomputed from those same candidates with
+a silent no-op if it resolved itself concurrently. Ghost (broker flat), partial-ghost, and the
+`broker > expected` orphan branch are unchanged.
+
+- **Do not "simplify" this back to `expected_qty - broker_qty`.** That single line is the bug.
+- The `_counted_lids` filter also blocks a **brand-new** trade that filled inside the window from
+  being healed — a second defect found during the audit.
+- **`ts_placed` is written in TWO formats** — offset-aware at `real_trader.py:~1129`, naive
+  `utcnow()` at ~1256/1374/1446. **Never compare or sort it as text.** (The existing FIFO
+  `sorted(key=ts_placed)` still does; latent, not yet fixed.)
+- **A stop going `UROut` is NOT evidence of a bug** — it is the normal signature of the S131
+  trail exit (cancel stop → market sell ~9 s later). The real fingerprint is
+  `close_reason='fifo_reconcile_partial'` together with a missing exit price.
+- Measured: 3 occurrences in 37 live trading days, all on the long account. **Broker day-$ was
+  never affected** (`tsrt_daily_stmt` is FIFO-matched from real fills); only per-trade reports
+  understated. Memory `research_s259_healer_double_count`.
+
+### TSRT health watchdog + alert log — added 2026-08-11 (S243)
+
+Unattended monitoring, so a live session is not required for cover.
+
+- **`_tsrt_health_watchdog`** — interval job every 5 min, **09:30–16:30 ET** (runs to 16:30 so
+  it covers the 16:15 FIFO reconcile). Checks the only two things nothing else covers:
+  **ES 5pt bar median lag > 60 s** over the last 30 min (the S236 blind spot — every other
+  health check asks "did data arrive?", never "did it arrive *on time*") and **any trade
+  closed with no exit price under any key** (lid 5853 on 2026-08-10 dropped +$52.50 out of
+  every per-trade total). Telegram, deduped per day (per lid for the second). Fail-soft.
+  Position mismatches / orphans / pipeline freshness are NOT duplicated here.
+- **`telegram_alerts` table** — every outgoing alert recorded at send time by
+  `_log_telegram()`, called from `send_telegram` and `send_telegram_setups`
+  (`fifo_reconcile._alert_telegram` delegates to the former). A bot cannot read back its own
+  channel posts, so this table **is** the alert history.
+- **`tsrt_health` table** — a 5-min snapshot (`et` PK, JSONB payload) so a session can be
+  analysed afterwards rather than only watched live.
+- **`tsrt_live_monitor.py`** (repo root) — manual one-shot sweep,
+  `railway run -s 0dtealpha python tsrt_live_monitor.py`; exit **0 OK / 1 WARN / 2 HALT**.
+  Encodes the S239 stop rules and reads `telegram_alerts`. Session-only — the in-app watchdog
+  is what covers unattended days.
+
+### Sierra monthly reminder (`_sierra_monthly_reminder`) — added 2026-08-08 (S238)
+
+Cron `day=1-7, hour=9, timezone=NY` with a weekday guard and a once-per-month latch
+(`_sierra_reminder_last_month`); sends the Sierra account checklist to the alerts channel.
+Fail-soft. Exists because the Denali CME exchange lapsed on an empty balance on 2026-06-30 and
+the ES feed ran 10 minutes delayed for five weeks with no alert (S236). Fires pre-open on a
+trading day because trading-account re-verification needs Sierra connected to the broker.
+
+**Monitoring gap it closes:** every other health check asks "did data arrive?", never "did it
+arrive on time". A constant offset in market-data timestamps means a **delayed feed**, not a
+slow pipe — check the exchange entitlement before the code.
+
 ### Database Tables
 - `chain_snapshots` - SPX/SPXW options chain data with Greeks
 - `spy_chain_snapshots` - SPY options chain data (same schema, isolated table)
@@ -569,9 +877,11 @@ finding).
 - `setup_cooldowns` - persisted cooldown state (trade_date, JSONB state including swing tracker)
 - `auto_trade_orders` - MES SIM auto-trade order state (setup_log_id PK, JSONB state with split-target tracking, crash recovery)
 - `stock_gex_scans` - Stock GEX data every 30 min (symbol, scan_date, spot, expiration, exp_label weekly/opex, key_levels JSONB, gex_data JSONB)
-- `setup_log.mes_sim_outcome_pnl / mes_sim_outcome_result / mes_sim_max_fav` (S55, 2026-05-13) - MES-driven trail simulation outcomes (portal realism, not new alpha; populated for V14 whitelist setups only)
+- `setup_log.mes_sim_outcome_pnl / mes_sim_outcome_result / mes_sim_max_fav` (S55, 2026-05-13) - MES-driven trail simulation outcomes (portal realism, not new alpha; populated for V14 whitelist setups). **2026-06-23: "DD Exhaustion" ADDED to whitelist (`mes_sim_backfill.py` V14_WHITELIST + _DEFAULT_PARAMS DD=continuous no-BE SL12/act10/gap10; `main.py` live-path tuple). Historical backfill Mar 23→now = 599/627 (Jun 15-16 Sierra-contaminated NULLed). Was excluded → DD-heavy filter comparisons flew blind. Finding: June DD shorts captured only +20 mes vs +223 chain (~9%).**
 - `tsrt_daily_stmt` (S204, 2026-06-04) - TSRT per-day broker-truth statement rows (day PK, gross/comm/net, n_trades, n_wins, trades JSONB) — persisted so weekly report history survives TS's 90-day lookback. **THE source of truth for day-$** — never sum `real_trade_orders.state` per-lid on multi-concurrent days (S210)
 - `vol_event_alerts` (S209, 2026-06-07) - dedup keys for vol-event Telegram alerts (key PK: `intraday-<date>` / `confirmed-<trigger date>`)
+- `telegram_alerts` (S243, 2026-08-11) - every outgoing Telegram alert, recorded at send time. **This IS the alert history** — a bot cannot read back its own channel posts
+- `tsrt_health` (S243, 2026-08-11) - 5-min TSRT health snapshots (`et` PK, JSONB) for after-the-fact session analysis
 
 ### TSRT Weekly Statement (`app/tsrt_weekly_report.py`) — added 2026-06-04 (S204)
 
@@ -580,6 +890,7 @@ Fully-automatic weekly capital statement → Telegram **"0DTE Alpha Trades" chan
 - **Broker truth:** pulls `/historicalorders` **+ `/orders` merged with OrderID dedup** — CRITICAL: `/historicalorders` excludes same-day fills, and the cron runs same-day, so both endpoints are required
 - FIFO round-trip matching per account per ET day (accounts flat overnight → per-day matching is safe); upserts to `tsrt_daily_stmt`
 - Era anchored: start 2026-05-19 (post-V16.1), starting capital $4,896.99 (verified vs live equity 2026-06-04)
+- **Trading cost = $1.92 per MES contract round-turn, and only HALF of it comes from the API** (S266, 2026-08-15). `CommissionFee` is TS's own commission and is exactly **$0.50/side** (41 filled orders / 68 contract-sides, no exception); `UnbundledRouteFee` is always 0. **CME exchange + NFA fees are in NO API field** — they show up only as account equity. Measured from the equity gap over 2026-08-10..14: **$0.96/side all-in in BOTH accounts to the cent** ($21.12/22 sides and $44.16/46 sides) → `FEE_PER_SIDE = $0.46` (env `MES_FEE_PER_SIDE`). Before this the statement reported only the $1.00/RT commission and **overstated net by $0.92 per contract round-turn**; the whole era was restamped (era net $1,295.75 → **$1,035.39**). `CommissionFee` is per ORDER and is now split across legs by exec qty. **Any new P&L reporting must add the fee — the broker will not tell you about it.**
 - Report: dark-themed HTML (Inter font), $ + SAR (×3.75 peg), equity-curve + daily-PnL charts (matplotlib base64), per-day comments (curated early-era dict + auto-generated), statistics, projection, drift check vs live equity **net of unrealized P&L**
 - Fail-soft: never raises; on error sends a failure ping to the same channel
 - Local test harness: `_tmp_s204_local_test.py` (intercepts the Telegram send, writes HTML to disk)
@@ -709,8 +1020,8 @@ See `Backup_tags.md` for the full list of backup tags.
 - Pipeline health: checks data freshness every 30s during market hours, sends Telegram on error/recovery
   - TS API: ok < 2min, stale < 5min, error >= 5min
   - Volland: ok < 3min, stale < 10min, error >= 10min
-  - **Sierra ES feed DELAY (S224, 2026-08-08): `sierra_es_delay` = median(received_at − ts_end) over the last 20 bars. ok < 60s, stale < 180s, error >= 180s (healthy is ~4s). Hourly re-nag while broken. This is a LATENCY measure and is deliberately NOT suppressed by the VX cross-check that guards `sierra_es` — that suppression is exactly what hid a 5-week delayed-feed outage (2026-07-02 → 08-07, lapsed CME entitlement, median 614s, absorption dead on 20/29 sessions). Rule: freshness checks that ask only "did data arrive?" cannot see a delayed feed; every market-data path needs a separate market-time-vs-arrival-time check.**
-  - **Absorption canary (S224): 11:00 ET cron pages if ≥15 ES bars arrived today but 0 absorption signals fired — catches a dead detector with a healthy feed, which no freshness check can see.**
+  - **Sierra ES feed DELAY is owned by S243's `_tsrt_health_watchdog` (`main.py:7714`, every 5 min 09:30–16:30 ET) — median(received_at − ts_end) over 30 min, pages at `es_bars_30m >= 3 AND es_lag_s > 60`, once per day per key. ONE alert path: do NOT add a second delay check beside it (S270 held a duplicate `sierra_es_delay` freshness source for exactly this reason — extend the S243 block instead).** The rule it encodes: a freshness check that asks only "did data arrive?" cannot see a delayed feed. `sierra_es` age is force-downgraded error→"stale" by the VX cross-check and "stale" never pages, which is what hid a 5-week outage (2026-07-02 → 08-07, lapsed CME entitlement, median 614s, absorption dead on 20/29 sessions — S236). Every market-data path needs a separate market-time-vs-arrival-time check.
+  - **Absorption canary — NOT BUILT YET (S270).** An 11:00 ET cron that pages when ≥15 ES bars arrived but 0 absorption signals fired. Nothing currently covers a dead detector behind a healthy feed, which no freshness check can see.
   - **Never use `vps_es_dom_snapshots` freshness as proof the feed is alive.** The Sierra DOM study emits ~1 snapshot/sec regardless of market data (3,597 rows in one Saturday hour, market shut). Use `vps_vix_ticks` — ticks only exist when trades print.
 - 401 alert: `_alert_401()` with 5-min cooldown, wired into `api_get()`, ES delta stream, ES quote stream
 - **DB transaction discipline (2026-06-03 outage):** long read loops against prod Postgres MUST use autocommit or commit per chunk. A single long/idle transaction holds AccessShareLock that blocks `db_init()`'s startup ALTERs → crash-loops every deploy. `gex_long_v3._build_cache()` commits per iteration; `on_startup` retries db_init 3× with `lock_timeout=5s` then continues with a Telegram alert. **S205 follow-up (2026-06-04):** when db_init fails 3×, `on_startup` now still runs the 5 post-init loaders (`load_alert_settings`, `load_setup_settings`, `_load_cooldowns`, `_backfill_outcomes`, `_restore_open_trades`) — before this fix a lock-contention start silently ran on in-code defaults (caused the Jun-4 general-channel alert spam) with no cooldowns/open-trade restore. In-code `_alert_settings` defaults also now mirror the quiet DB config. Live remediation without a deploy: POST correct values to `/api/alerts/settings` (session login required); `_tmp_pg_lock_check.py` shows current lock holders.
@@ -735,6 +1046,37 @@ See `Backup_tags.md` for the full list of backup tags.
 
 # Communication Style
 
-- Summarize code changes in plain English, no diffs
-- For errors: one sentence explanation + whether you fixed it or need my input
-- Keep responses short and conversational
+**The user has asked THREE times (2026-08-07 ×2, 2026-08-14) for simpler writing. This is a hard
+requirement, not a preference. English is not their first language.**
+
+## Write like this (they approved this exact style on 2026-08-14: "clear and nice")
+
+1. **Short sentences. One idea each.**
+2. **Easy words.** "Wrong web address", not "incorrect endpoint". "It never worked", not "it was
+   non-functional since deployment".
+3. **Number what I did: 1, 2, 3.**
+4. **Explain any term inline with `=`.** Example: "Commit = save on your computer. Safe."
+5. **Bold the one thing that matters** in each block.
+6. **On a live-trading day, say plainly what is NOT affected.**
+7. **One question at the end**, if I need one. Not three.
+8. **No fluff.** No preamble, no recap, no long apology, no listing options I will not take.
+
+Full template + the reasoning: memory `feedback_be_concise_plain_english.md`.
+
+**The rule applies to the PROSE, not the data.** Clarified by the user 2026-08-07:
+*"for numbers it's ok, make tables make reports. But for speaking, make it more concise and plain
+English."*
+
+- **Numbers, tables and reports: keep them.** Full tables, per-month breakdowns, comparisons — these
+  are wanted and useful. Do not strip data out to be brief.
+- **The writing around the numbers is what must be short.** Cut it hard.
+- **Plain English, no jargon.** Explain it like you would to a smart friend who does not work on
+  this codebase.
+- **Lead with the answer in one sentence**, then the table, then at most a line or two of what it
+  means.
+- Do not narrate the method, the working, or every caveat in prose. Give the conclusion and the one
+  caveat that would change their decision.
+- No long preambles, no recap of what was just done, no "three answers" scaffolding.
+- Summarize code changes in plain English, no diffs.
+- For errors: one sentence on what broke + whether it is fixed or needs their input.
+- Long methodology belongs in a file (`PROJECTION.md`, memory, `Tasks.md`) with a one-line pointer.

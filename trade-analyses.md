@@ -2560,3 +2560,46 @@ Source: user's trade_log_2026-06-13.xlsx (V16 portal, matches Feb152.6/Mar1499.3
 **Mech A (MES wick-stops, 6t -$294):** NOT a tighter TSRT SL — stop_pts match portal (14/8); entry SLIPPAGE_BUFFER removed on first realign. It's MES > SPX intraday vol: same 14pt stop wicked on MES, not SPX (#3900 portal +6.8, broker stopped -14). Fix: vol-scale stop wider in high-vol OR size down.
 
 **Unifying lever:** even good exits leak ~$8/trade SPX->MES basis, and basis WIDENS with vol -> size-down in high-vol shrinks every flavor of capture leak. Consec-stop size-down catches wrong-side streaks. PROPOSED, not implemented: (A) fix trail_market_exit bug, (B) vol-scale stop / size-down, (C) consec-stop size-down.
+
+---
+
+## Analysis #22 — Geeks of Finance channel review: 3 ideas tested (2026-08-14, S260)
+
+Source: `geek-0dte-setups` Discord export, 91 messages Apr 17 – Aug 11. Full report:
+https://claude.ai/code/artifact/6669a3b4-6083-4cc7-9914-bd59f8996423
+Memory: `research_geeks_channel_ideas_tested.md`, `research_overhead_gex_wall_both_sides.md`.
+
+**The channel is NET −$1,414 on 11 trades** (73% WR; losses 3–5× the wins; they average down,
+no hard stop, and on Aug 4 converted a losing day trade into a swing). Not a profitable source.
+Their method: 0DTE net-GEX profile + "DEALER CLUSTER" band + Keltner(25, 3.95, SMA) on 5m/15m,
+fading whichever of SPX/QQQ/IWM is cleanest.
+
+**Idea 2 — GEX void as a SHORT: REFUTED.** 19,130 snapshots, entry at the next minute's open vs
+a same-clock-minute no-signal control: −0.98 pt @30min, p=0.487. Our own shorts in that state:
+39 post-S217 trades, −0.18 pt/t. Their literal rule occurs 3× in 19,130 snapshots on SPX.
+
+**→ What it uncovered: the overhead +GEX wall sorts BOTH books.** Distance to the LARGEST NET-GEX
+strike above spot. V16 SHORTS pt/t by band: ≤5pt +2.07 · 5–15 **−0.01** · 15–30 +3.12 · >30
+**+4.21**. V16 LONGS: ≤5 **+3.14** · 5–15 **+3.08** · 15–30 +1.67 · >30 +0.80. Unfiltered, the
+5–15pt short bucket is our worst: 673 signals, 44% WR, −878 pts. Candidate rule (block SHORT when
+wall ≤15pt above AND VIX<22): capped 2/2 replay $7,590 → $8,477 (**+$887**), maxDD −$1,996 →
+−$1,597; LOMO 7/7; placebo p=0.010; mirror-on-longs −$805. **NOT SHIPPED** — value is entirely
+Jun+Jul (+$868 vs +$19 elsewhere), and `setup_log.gex_call_wall` does NOT reproduce it (it uses
+CALL gex over the whole window; the effect needs NET gex and the LARGEST strike — window size is
+irrelevant, 40/60/80/unlimited identical).
+
+**Idea 3 — Keltner-band fade: REFUTED AND REVERSED.** Their band zone is our worst entry (n=396,
+47% WR, −0.69 pt/t, p=0.53). By stretch-against-the-trade z (15m, all 5,741 signals): z<0 **+0.97**
+(n=2568, 54%, p=0.033) · 0–1 −0.09 · 1–2.5 −0.86 · 2.5–3.95 −0.70 · >3.95 −0.69. **Our
+mean-reversion book is secretly a momentum book** — in V16 the z<0 bucket is 637 trades, 66% WR,
++2,325 pts, i.e. most of the book. As a filter it looked great (maxDD −$726) but loses $696 in the
+first walk-forward half, costs $862 in March, and overlaps 78% with the Idea-2 rule. Not shipped.
+
+**Idea 1 — multi-index (QQQ/IWM when SPX is quiet): COVERAGE REAL, EDGE ABSENT.** SPX is inside
+its GEX structure 58% of the time and QQQ/IWM is outside in 51% of those moments (20% of sessions
+SPX never leaves but they do). But "fade the most stretched of the three" returned −0.025% @60min
+vs −0.013% for always-SPX (p=0.146); all continuous predictors null (p>0.18). Closed.
+
+Method: chain-sim P&L with −0.6 pt haircut; contemporaneous GEX (last snapshot at/before signal,
+mean lag 60s); day-block bootstrap throughout; book figures replay the live 2/2 cap + 90s dedup.
+Cross-check: reconstructed V16 +3,693 pts / 1,472 signals vs DB +3,723.6 / 1,491 (within 1%).

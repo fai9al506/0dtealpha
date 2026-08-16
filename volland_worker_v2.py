@@ -651,6 +651,11 @@ def run():
         last_known_modified = ""
         consecutive_zero_pts = 0
         zero_pts_alerted = False
+        # 2026-08-15, user: "0-Point Exposures" then "Browser Restart" then it works
+        # is the NORMAL recovery cycle and does not need a Telegram. Only a restart
+        # that FAILED to fix it is an incident. Counts restarts since the last time
+        # data actually flowed; alerts are suppressed while this is 0.
+        restarts_since_good = 0
         consecutive_stale_modified = 0  # Track unchanged lastModified cycles
         stale_modified_alerted = False
         _was_in_market = False  # Track if we've been active this session
@@ -984,17 +989,19 @@ def run():
                     if _zero_exps:
                         detail += f" zero=[{', '.join(_zero_exps)}]"
                     print(f"[volland-v2] WARNING: 0 total pts ({consecutive_zero_pts}/{_alert_threshold}): {detail}", flush=True)
-                    if consecutive_zero_pts >= _alert_threshold and not zero_pts_alerted:
+                    # Silent on the first pass — the restart below almost always
+                    # fixes it. Only speak up once a restart has already failed.
+                    if (consecutive_zero_pts >= _alert_threshold and not zero_pts_alerted
+                            and restarts_since_good >= 1):
                         zero_pts_alerted = True
                         diag = _get_page_diagnostic()
                         send_telegram(
-                            "⚠️ <b>Volland 0-Point Exposures</b>\n\n"
-                            f"{consecutive_zero_pts} consecutive cycles with 0 points.\n"
+                            "⚠️ <b>Volland still dead after restart</b>\n\n"
+                            f"{consecutive_zero_pts} consecutive cycles with 0 points, "
+                            f"and {restarts_since_good} browser restart(s) did not fix it.\n"
                             f"Exposures captured: {len(exposures)}\n"
                             f"{'⏰ Early market — fast recovery active' if is_early_market() else ''}\n\n"
-                            f"<b>Diagnostic:</b>\n<code>{diag}</code>\n\n"
-                            "Auto-restart will trigger after "
-                            f"{_restart_threshold} cycles."
+                            f"<b>Diagnostic:</b>\n<code>{diag}</code>"
                         )
                     # Browser recreate: close and relaunch for fresh context
                     if consecutive_zero_pts >= _restart_threshold:
@@ -1004,12 +1011,17 @@ def run():
                             f"consecutive zero-point cycles.",
                             flush=True,
                         )
-                        send_telegram(
-                            "🔄 <b>Volland Browser Restart</b>\n\n"
-                            f"{consecutive_zero_pts} consecutive cycles with 0 points.\n"
-                            "Recreating browser for fresh session.\n\n"
-                            f"<b>Diagnostic:</b>\n<code>{diag}</code>"
-                        )
+                        restarts_since_good += 1
+                        # A routine restart is not an incident. Announce it only if
+                        # earlier restarts already failed to bring the data back.
+                        if restarts_since_good >= 2:
+                            send_telegram(
+                                "🔄 <b>Volland restart #%d (previous ones failed)</b>\n\n"
+                                % restarts_since_good +
+                                f"{consecutive_zero_pts} consecutive cycles with 0 points.\n"
+                                "Recreating browser for fresh session.\n\n"
+                                f"<b>Diagnostic:</b>\n<code>{diag}</code>"
+                            )
                         try:
                             browser.close()
                         except Exception:
@@ -1024,17 +1036,22 @@ def run():
                         time.sleep(5)
                         continue
                 elif _total_pts > 0:
-                    if consecutive_zero_pts > 0:
-                        print(f"[volland-v2] recovered after {consecutive_zero_pts} zero-point cycles", flush=True)
+                    if consecutive_zero_pts > 0 or restarts_since_good > 0:
+                        print(f"[volland-v2] recovered after {consecutive_zero_pts} "
+                              f"zero-point cycles / {restarts_since_good} restart(s)", flush=True)
+                        # Only close the loop if we actually raised an alarm. If the
+                        # routine cycle stayed silent, the recovery stays silent too.
                         if zero_pts_alerted:
                             send_telegram(
                                 "✅ <b>Volland Recovered</b>\n\n"
-                                f"Data flowing again after {consecutive_zero_pts} zero-point cycles.\n"
+                                f"Data flowing again after {consecutive_zero_pts} zero-point cycles "
+                                f"and {restarts_since_good} restart(s).\n"
                                 f"Points: {_total_pts} | Exposures: {len(exposures)}\n"
                                 f"Paradigm: {_stats.get('paradigm', 'N/A')}"
                             )
                     consecutive_zero_pts = 0
                     zero_pts_alerted = False
+                    restarts_since_good = 0
 
             except Exception as e:
                 err_payload = {

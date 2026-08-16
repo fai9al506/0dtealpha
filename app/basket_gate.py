@@ -74,13 +74,25 @@ def _latest_basket(engine=None):
         conn.close()
 
 
+def _sizing_mode() -> str:
+    """'012' (default 0/1/2) re-admits neutral; '001' = legacy 0/0/1 skip-neutral.
+    Lockstep with main.py _passes_live_filter + live_filter.basket_blocks (see
+    feedback_filter_three_copies_lockstep)."""
+    return os.getenv("BASKET_SIZING_MODE", "012").lower()
+
+
 def evaluate(direction: str, engine=None) -> dict:
     """Decide whether the basket gate should BLOCK this real trade.
 
     Returns {state, basket_pct, n_names, block, enabled, reason}.
       state  ∈ confirm | neutral | contradict | no_data
-      block  = True ONLY when enabled AND state in (neutral, contradict)
+      block  = True ONLY when enabled AND state would skip under the active sizing mode:
+        - mode "001" (legacy 0/0/1): block neutral AND contradict
+        - mode "012" (default 0/1/2): block ONLY contradict (neutral re-admitted, sized 1x)
     Fail-open on EVERY uncertainty (no env / no data / stale / few names / error).
+    NOTE: as of 2026-06-16 this gate is RETIRED from the real_trader trade path (the basket
+    decision lives in _passes_live_filter via the stamped setup_log.basket_pct). Kept for the
+    /api ad-hoc view + classify() reuse by real_trader._effective_qty.
     Pass the app's shared SQLAlchemy engine to avoid a raw psycopg2 connect (which
     fail-opened silently in-container — S218, 2026-06-15). Logs every fail-open.
     """
@@ -112,7 +124,9 @@ def evaluate(direction: str, engine=None) -> dict:
         state = classify(basket_pct, direction)
         out["state"] = state
         out["reason"] = "ok"
-        if enabled and state in ("neutral", "contradict"):
+        # Block set depends on sizing mode: '001' skips neutral+contradict, '012' skips only contradict.
+        _block_states = ("contradict",) if _sizing_mode() == "012" else ("neutral", "contradict")
+        if enabled and state in _block_states:
             out["block"] = True
         print(f"[basket_gate] {direction} basket={basket_pct:+.2f}% -> {state} "
               f"block={out['block']} (enabled={enabled})", flush=True)

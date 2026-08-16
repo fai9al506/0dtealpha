@@ -32,35 +32,97 @@ moved the curve.
 
 ---
 
-## Current projection (as of 2026-08-08)
+## Current projection (re-run 2026-08-16, S275)
 
-**Config:** V16 base filter · GEX Long **OFF** · basket = **sizing only** (2× on confirm, no block)
-· concurrency cap **2/2** · 1 MES base · `SPX_EXIT_ENABLED=true`
+**Two books, two accounts, no cross-margin. They are projected separately and must be
+reported separately.**
 
-Re-measured on **100 sessions** (2026-03-16 → 08-06) instead of the 47-session window, per
-rule 3 above. The longer basis reads *higher*, not lower — the 47-session window started
-inside the June drawdown.
-
-| | value | basis |
+| | Main book | GEX Long v7 |
 |---|---|---|
-| Theoretical (chain) | **$2,060 / mo · SAR 7,725** | 100 sessions, $9,816 total, cap 2/2, basket 2× |
-| × broker capture 0.81 | **~$1,590 / mo · SAR 5,963** | 43 executed post-S217 trades: chain +41.5 pt → broker +33.8 pt |
-| Expected MaxDD | **−$1,253 (24% of equity)** | same window, after haircut |
-| Sanity floor (ex-top-3 days) | **~$1,190 / mo · SAR 4,463** | same window |
-| Worst observed month | **−$933** | broker, June 2026 |
+| Account | 210VYX65 long / 210VYX91 short | 210XFR64 |
+| Capital | $6,000 | $3,000 |
+| Filter | V16 + **Friday gate** (`REAL_TRADE_NO_FRIDAY=true`) | GEX Long gated to `gex_state='SUPPORT'` |
+| Sizing | 1 MES base, **basket 2× on confirm** | **flat 1 MES**, no basket |
+| Cap | **2 long / 3 short** (S249, live since 08-14) | **8**, own pool |
+| Breaker | $300 realised | $150 realised |
+| Status | live since 2026-08-10 | **arms 2026-08-17** |
 
-⚠️ **Never validated forward.** Broker truth for the whole live era is **+$512 net over 32
-sessions** (May +$896, Jun −$933, Jul +$550), but that era ran a different config with the
-pre-S217 trail bug and the auto-roll incident, so it is not a clean test of this one. One
-month of live data on the shipped config is the single most valuable thing outstanding.
+### The number
+
+Everything below is **one** simulation: one window, one haircut, one cost model.
+Script: `_tmp_s275_projection_rerun.py`.
+
+| | Main | v7 | **Combined** |
+|---|---|---|---|
+| Simulated (chain, full window) | $2,076 /mo | $298 /mo | **$2,374 /mo · SAR 8,903** |
+| × 0.67 live capture | $1,391 /mo | $200 /mo | **$1,591 /mo · SAR 5,966** |
+| **Honest floor** (ex-top-3 days, × 0.67) | $1,088 /mo | $13 /mo | **~$1,100 /mo · SAR 4,125** |
+| MaxDD (sim $) | **−$1,733** = 29% of $6,000 | **−$170** = 6% of $3,000 | — |
+| Worst single day | −$450 | −$150 | — |
+
+**Headline: ~$1,600 /mo (SAR 6,000), floor ~$1,100 (SAR 4,125), ceiling ~$2,400 (SAR 9,000).**
+Quote the range, not the point.
+
+**Basis:** 2026-03-01 → 2026-08-15, **119 calendar trading sessions**, chain `outcome_pnl`,
+**−0.6 pt/trade/contract** execution haircut (S246) **+ $1.92/contract round-turn** all-in fees
+(S266). Main book 903 trades / 64% WR / 65 green vs 30 red. v7 74 trades / 73% WR.
+
+### Post-S217 cross-check (45 sessions, current trail era only)
+
+| | Main | v7 | Combined |
+|---|---|---|---|
+| Simulated | $1,794 /mo | $814 /mo | $2,608 /mo |
+| × 0.67 | $1,202 /mo | $545 /mo | **$1,747 /mo · SAR 6,551** |
+
+Reads slightly **higher** than the full window, so March's high-vol month is not carrying the
+result. Main-book MaxDD in this era is only −$896.
+
+### ⚠️ The 0.67 rests on five days
+
+This is the weakest link and it must not be quoted as if it were solid. The **only** live
+window on approximately this config is 2026-08-10 → 14:
+
+| day | sim $ | broker net $ | diff |
+|---|---|---|---|
+| 08-10 | 164 | 53 | +110 |
+| 08-11 | 300 | 257 | +44 |
+| 08-12 | 20 | −53 | +72 |
+| 08-13 | 292 | 286 | +5 |
+| 08-14 | −140 | −116 | −24 |
+| **total** | **636** | **427** | **+208** |
+
+**Ratio 0.67** — the sim runs ~50% hot *even after* the haircut and fees are charged. It is
+high on 4 of 5 days, so it looks systematic rather than noise, but **n=5 sessions and 34
+contract round-trips**. The prior figures (×0.81, then ×0.87) came from different windows and
+neither charged the newly-found fee. **Re-measure this every month — it is the single number
+the whole projection multiplies by.**
+
+Trade selection is *not* the gap: that week produced 27 V16-passing signals, 20 placed, 7
+correctly cap-skipped, and the broker booked 34 contract round-trips. The sim and reality agree
+on *which* trades. The gap is per-trade capture.
+
+### 🚨 v7 is three days
+
+**v7's top-3 days are 93.4% of its entire profit; ex-top-3 it earns $20/mo.** That is the
+clustering the design already assumes (cap 8 exists to catch those days in full), but it means
+v7's $298/mo has an enormous variance and **a month with no cluster earns nothing**. Do not
+treat it as a steady income line. The main book by contrast is well spread — top-3 days are
+21.8% and the ex-top-3 rate is $1,623/mo simulated.
+
+⚠️ **Still never validated forward:** the Friday gate first acts 2026-08-21 and v7 has never
+placed an order. Roughly **$700/mo of the $1,600 headline** comes from those two.
 
 ⚠️ **S236 contamination:** ES Absorption signals on/after 2026-07-02 were computed from ES
-bars ~10 min stale. Removing them moves V16 $1,590 → $1,564/mo — immaterial here, but it
-matters for any ES-Absorption-specific study.
+bars ~10 min stale. Immaterial at this level, but it matters for any ES-Absorption-only study.
 
 ---
 
 ## The ceiling — how much money exists at all (measured 2026-08-08)
+
+> ⚠️ **This whole section predates the 2026-08-16 re-run.** Its dollar figures use the old
+> ×0.81 capture, no fee charge, cap 2/2 and no Friday gate, and the V17 rows are **on hold**
+> (S234 — V17's lead is mostly a cap artifact). The *shape* of the argument still holds —
+> selection is not the bottleneck, capital is — but do not quote these numbers as current.
 
 **All monthly figures in $ and SAR (peg ×3.75) — see memory `feedback_projections_in_usd_and_sar`.**
 
@@ -104,6 +166,10 @@ contracts must track *realised* equity, never the projection. 1 ES ≈ $50k equi
 
 | date | change | Δ / month (theoretical) | measured on | status |
 |---|---|---|---|---|
+| 2026-08-17 | **GEX Long v7 armed** — GEX Long gated to live `gex_state='SUPPORT'`, own account 210XFR64 ($3,000), flat 1 MES, cap 8, own $150 breaker | **+$298/mo** (post-S217: +$814) — but **93% of it is 3 days** | 119 sessions, 74 trades, 73% WR, MaxDD −$170 | 🟡 **arms 2026-08-17, never placed an order** (Tasks S252) |
+| 2026-08-15 | **Friday gate armed** — `REAL_TRADE_NO_FRIDAY=true`, both main accounts, **v7 excluded** | **+$411/mo** and MaxDD −$2,375 → **−$1,733**; red days 47 → 30 | 119 sessions, same basis | 🟡 shipped + armed, **first acts 2026-08-21** |
+| 2026-08-15 | **Fee correction** — `FEE_PER_SIDE`; CME+NFA fees appear in **no API field**, only in equity. All-in $1.92/contract round-turn, not the $1.00 previously booked | **−$160/mo** at ~175 RT/mo — a *reporting* fix, not a P&L change; the money was always leaving | 41 filled orders / 68 sides; equity gap 08-10..14 to the cent | ✅ shipped `14c9e59`, era restamped $1,295.75 → $1,035.39 |
+| 2026-08-14 | **S249 — short cap 2 → 3** (longs stay 2) | **+$203/mo** and drawdown IMPROVES (−$2,511 → −$2,375) | 119 sessions, same basis. Prior study said +$239 on 114 sessions — agrees | ✅ live, `REAL_TRADE_MAX_CONCURRENT_SHORT=3` |
 | 2026-08-08 | **V17 structural relaxation** — relax the filter per SETUP (SC/AG/ES Abs/DD/VIX Div) when the signal's VIX < 22; keep full V16 at VIX ≥ 22; DD shorts still via the V13 stack; VPB never relaxed | **+$846/mo** ($1,590 → $2,436) and MaxDD −$1,253 → −$1,198 | 100 sessions, ex-S236-contaminated | 🟡 **built + verified, MONITORING ONLY** — portal dropdown + `live_filter.passes_v17`, trade path untouched. Ship via Tasks S234 after ~2 weeks of live V16-vs-V17 comparison |
 | 2026-08-08 | *rejected* — drop individual V16 rules | +$228 per 100 sessions out-of-sample | leave-one-month-out, 6 folds | ❌ noise-fitting |
 | 2026-08-08 | *rejected* — **V18-refit** (a 2026-08-08 experiment; NOT the shipped V18 filter of 2026-08-15), refit the entry filter per setup from scratch (16 numeric + 5 categorical features, thresholds from train data only) | OOS +1,741 pts vs V16 +3,566 and no-filter +4,268. In-sample it read +6,281 | leave-one-month-out | ❌ worse than V16 **and** worse than no filter; rule recurrence across folds ≈ 0 |
@@ -127,19 +193,34 @@ contracts must track *realised* equity, never the projection. 1 ES ≈ $50k equi
 
 ## Actual vs Theoretical
 
-| month | theoretical | **actual (broker)** | ratio | notes |
+| month | theoretical | **actual (broker, net)** | ratio | notes |
 |---|---|---|---|---|
-| 2026-05 | — | **+$895.50** | — | 11 sessions, post-V16.1 |
+| 2026-05 | — | **+$895.50** | — | 11 sessions, post-V16.1 — **pre-fee-correction figure** |
 | 2026-06 | — | **−$933.00** | — | drawdown month: execution bugs, auto-roll incident, macro regime |
 | 2026-07 | — | **+$549.50** | — | 1 session only — TSRT disabled 07-01 ~11:57 ET |
-| 2026-08 | $1,150 | *pending* | | first month on the new config |
+| 2026-08 (10–14) | $636 | **+$427.22** | **0.67** | **the only clean live week**; 5 sessions, cap 2/2, no Friday gate |
+| 2026-08 (full) | ~$1,600 | *pending* | | first month on the current config |
 
-Era total 2026-05-14 → 2026-07-01: **+$512 net / 32 sessions / 283 trades.**
+Era total 2026-05-14 → 2026-07-01, **restamped with the true $1.92/RT cost**: **+$1,035.39 net
+/ 34 days / 283 round-turns** (was +$1,295.75 before the fee was found).
+
+**All-time across the two main accounts the deposited money is ~break-even (+$16).** The era
+figure measures *strategy* performance from a mid-journey equity anchor ($4,896.99), not return
+on capital. Keep the two apart — see memory `project_real_capital_deposited_6000`.
 
 ---
 
 ## Method notes (why these numbers and not bigger ones)
 
+- 🚨 **A MONTH IS 21 CALENDAR SESSIONS — NEVER "sessions that had a trade".** Both the Friday
+  gate and v7 trade on a *subset* of days (v7 fired on 19 of 119). Dividing by the subset and
+  multiplying by 21 asks "what if every day were a trading day for this book?", which is not a
+  month. Caught during the 2026-08-16 re-run: it read the Friday gate at **+$892/mo instead of
+  +$411** and v7 at **+$1,866/mo instead of +$298** — a 6× error on v7. Days with no signal must
+  be counted as $0 sessions.
+- **Charge BOTH costs, they are additive.** The −0.6 pt/trade haircut is slippage between the
+  trail crossing and the market fill; the $1.92/RT is commission + exchange fees. Verified
+  independently: the live week's broker gross $492.50 minus 34 × $1.92 = net $427.22 to the cent.
 - **Metric = chain (`outcome_pnl`)** for any window after 2026-06-13. See `CLAUDE.md` Gate 0.
   `mes_sim_*` is the wrong model post-S217 and understates by ~2.8 pt/trade.
 - **Concentration is a window-length artifact.** Top-3-day share is 56% over 26 sessions but

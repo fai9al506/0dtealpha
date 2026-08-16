@@ -5429,6 +5429,15 @@ def _run_setup_check():
     except Exception as _dbe:
         print(f"[dipbuy] cycle hook error: {_dbe}", flush=True)
 
+    # Friday SPX 0DTE call credit spread (S267) — LOG-ONLY unless three env vars agree.
+    # Own table, own settlement, writes nothing to setup_log, so it cannot touch V16
+    # recall, the filter monitor or any MES path. Fails closed. Never raises.
+    try:
+        from app import friday_spread
+        friday_spread.on_cycle(now_et(), spot, _vix_last)
+    except Exception as _fse:
+        print(f"[friday-spread] cycle hook error: {_fse}", flush=True)
+
     # ── Volland data from cache (refreshes every 90s, not every 30s cycle) ──
     vc = _refresh_volland_cache()
     _ts_volland = time.time()
@@ -8240,6 +8249,15 @@ def start_scheduler():
                 id="broker_poll", coalesce=True, max_instances=1)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,
                 id="setup_eod", coalesce=True, max_instances=1)
+    # S267 — cash-settle the Friday call credit spread against the closing print.
+    # 16:06 so it lands after the 16:00 chain snapshot that carries the settlement spot.
+    try:
+        from app.friday_spread import settle as _friday_spread_settle
+        sch.add_job(_friday_spread_settle, "cron", day_of_week="fri", hour=16, minute=6,
+                    timezone=NY, id="friday_spread_settle", coalesce=True,
+                    max_instances=1, misfire_grace_time=600)
+    except Exception as e:
+        print(f"[friday-spread] schedule error (non-fatal): {e}", flush=True)
     # S238 — monthly Sierra account health reminder, 1st trading day of the month, 09:00 ET.
     # The 2026-06-30 lapse (balance ran dry with auto-renewal ticked) delayed the ES feed by
     # 10 minutes for five weeks before anyone noticed — see S236. Re-verification needs a live
@@ -8519,6 +8537,12 @@ def on_startup():
         options_trader_init(engine, ts_access_token, send_telegram_setups)
     except Exception as e:
         print(f"[options] init error (non-fatal): {e}", flush=True)
+    # Friday SPX 0DTE call credit spread (S267) — log-only collector, trade-ready by env.
+    try:
+        from app.friday_spread import init as friday_spread_init
+        friday_spread_init(engine, ts_access_token, send_telegram_setups)
+    except Exception as e:
+        print(f"[friday-spread] init error (non-fatal): {e}", flush=True)
     # Initialize real trader (MES REAL accounts — disabled by default)
     try:
         from app.real_trader import init as real_trader_init
@@ -8905,6 +8929,12 @@ def api_darkmate_results_history(days: int = 20):
 def api_darkmate_levels(at: str = None, greek: str = "gamma", rng: int = 150):
     from app import darkmate
     return darkmate.levels(at, greek, rng)
+
+# ── Friday call credit spread (S267) — config, per-week ledger, running total ──
+@app.get("/api/friday-spread/status")
+def api_friday_spread_status():
+    from app import friday_spread
+    return friday_spread.status()
 
 # ── Stock GEX Scanner API (independent from 0DTE) ──────────────────
 @app.get("/api/stock-gex/levels")

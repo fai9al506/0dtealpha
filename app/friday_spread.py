@@ -203,11 +203,16 @@ def _db_init():
         """))
 
 
-def _hydrate():
-    """Restore today's latch so a restart cannot double-fire."""
+def _hydrate(d: _date | None = None):
+    """Restore the latch for date `d` so a restart cannot double-fire.
+
+    Takes the date explicitly rather than re-reading the clock: the caller is
+    already working on a specific session, and re-deriving it here once left the
+    latch pointing at a different day, which would have allowed a second order.
+    """
     if not _engine:
         return
-    d = datetime.now(ET).date()
+    d = d or datetime.now(ET).date()
     with _engine.begin() as c:
         r = c.execute(text(
             "SELECT id FROM friday_spread_log WHERE trade_date = :d"
@@ -332,7 +337,7 @@ def _on_cycle(now_et: datetime, spot, vix):
     d = now_et.date()
     if _state["date"] != d:
         _state.update(date=d, fired=False, row_id=None)
-        _hydrate()
+        _hydrate(d)
     if _state["fired"] or d.weekday() != 4:      # Friday only
         return
 
@@ -357,6 +362,11 @@ def _on_cycle(now_et: datetime, spot, vix):
     age = (now_et.replace(tzinfo=None) - snap_et).total_seconds() / 60.0
     if age > CHAIN_STALE_MIN:
         print(f"[friday-spread] chain is {age:.1f} min stale — skip", flush=True)
+        return
+    if age < -2:
+        # Snapshot newer than the cycle clock. Impossible live, but a replay or a
+        # clock skew would otherwise price the entry off end-of-day quotes.
+        print(f"[friday-spread] chain is {-age:.1f} min ahead of the clock — skip", flush=True)
         return
 
     spot = snap_spot
@@ -410,14 +420,30 @@ def _on_cycle(now_et: datetime, spot, vix):
                      k_short + credit, order_id, fill_credit, ctx)
     _state.update(fired=True, row_id=row_id)
 
-    msg = (f"[friday-spread] FIRED {mode} SPXW {d:%y%m%d} "
-           f"SELL C{k_short:.0f} / BUY C{k_long:.0f} x{qty}  "
-           f"credit ${credit_usd:,.0f}  max win ${max_profit:,.0f}  "
-           f"max loss ${max_loss:,.0f}  B/E {k_short + credit:.2f}  "
-           f"spot {spot:.2f}  delta {s_delta:.3f}  gex={ctx.get('gex_state')}")
-    print(msg, flush=True)
-    if mode == "live":
-        _tg(msg.replace("[friday-spread] ", "🗓️ Friday spread — "))
+    print(f"[friday-spread] FIRED {mode} SPXW {d:%y%m%d} "
+          f"SELL C{k_short:.0f} / BUY C{k_long:.0f} x{qty}  "
+          f"credit ${credit_usd:,.0f}  max win ${max_profit:,.0f}  "
+          f"max loss ${max_loss:,.0f}  B/E {k_short + credit:.2f}  "
+          f"spot {spot:.2f}  delta {s_delta:.3f}  gex={ctx.get('gex_state')}", flush=True)
+
+    tag = "REAL MONEY" if mode == "live" else "PAPER — not a real trade"
+    _tg("\n".join([
+        f"🗓️ FRIDAY SPREAD — opened  ({tag})",
+        f"SPXW {d:%d %b} · SPX {spot:,.2f}",
+        "",
+        f"SELL  C{k_short:.0f}   (delta {abs(s_delta):.2f})",
+        f"BUY   C{k_long:.0f}",
+        f"Size  {qty} spread{'s' if qty > 1 else ''}, {width:.0f} points wide",
+        "",
+        f"Credit       ${credit_usd:,.0f}",
+        f"Max win      ${max_profit:,.0f}",
+        f"Max loss    -${abs(max_loss):,.0f}",
+        f"Break-even   {k_short + credit:,.2f}",
+        "",
+        f"SPX must close BELOW {k_short + credit:,.2f} to win.",
+        f"No stop. Held to the 4pm cash settlement.",
+        f"GEX state: {ctx.get('gex_state') or 'n/a'}",
+    ]))
 
 
 # ------------------------------------------------------------- settlement --
@@ -441,6 +467,16 @@ def _settle(for_date: _date | None = None):
             WHERE trade_date = :d AND result IS NULL
         """), {"d": d}).fetchone()
         if not r:
+            # Silence is ambiguous — say plainly that nothing was taken, and why.
+            if d.weekday() == 4:
+                with _engine.begin() as c2:
+                    done = c2.execute(text(
+                        "SELECT result FROM friday_spread_log WHERE trade_date = :d"
+                    ), {"d": d}).fetchone()
+                if not done:
+                    _tg(f"➖ FRIDAY SPREAD — no trade taken {d:%d %b}.\n"
+                        f"No spread met the rules (credit too small, chain stale, "
+                        f"or no strike near {_target_delta():.2f} delta).")
             return
 
     # A live order is a LIMIT order and may not have filled. Confirm before settling,
@@ -495,11 +531,66 @@ def _settle(for_date: _date | None = None):
         """), {"sf": sf, "cost": cost, "pp": pnl_pts, "pu": pnl_usd,
                "res": result, "i": rid})
 
-    msg = (f"[friday-spread] SETTLED {d} {result}  close {sf:.2f}  "
-           f"short C{k_s:.0f}  cost {cost:.2f} pt  P&L ${pnl_usd:,.2f}")
-    print(msg, flush=True)
-    if mode == "live":
-        _tg(msg.replace("[friday-spread] ", "🗓️ Friday spread — "))
+    print(f"[friday-spread] SETTLED {d} {result}  close {sf:.2f}  "
+          f"short C{k_s:.0f}  cost {cost:.2f} pt  P&L ${pnl_usd:,.2f}", flush=True)
+    _tg(_result_message(d, mode, k_s, k_l, width, qty, credit, sf, cost,
+                        pnl_usd, result))
+
+
+def _result_message(d, mode, k_s, k_l, width, qty, credit, sf, cost, pnl_usd, result):
+    """The Friday message. Money is always shown in $ AND SAR."""
+    icon = {"WIN": "✅", "LOSS": "🔻", "MAX_LOSS": "🔻", "FLAT": "➖"}.get(result, "•")
+    tag = "REAL MONEY" if mode == "live" else "PAPER"
+    gap = sf - k_s
+    if cost <= 0:
+        where = f"Closed {abs(gap):,.2f} BELOW the short strike — expired worthless."
+    elif cost >= width:
+        where = f"Closed {gap:,.2f} ABOVE the short strike — through both strikes, full loss."
+    else:
+        where = f"Closed {gap:,.2f} above the short strike — partly through the spread."
+
+    lines = [
+        f"{icon} FRIDAY SPREAD — {result.replace('_', ' ')}  ({tag})",
+        f"{d:%d %b} · SPX closed {sf:,.2f}",
+        "",
+        f"Sold C{k_s:.0f} / bought C{k_l:.0f}  x{qty}",
+        f"Credit taken  ${credit * MULT * qty:,.0f}",
+        where,
+        "",
+        f"RESULT   {'+' if pnl_usd >= 0 else '-'}${abs(pnl_usd):,.2f}"
+        f"   (SAR {'+' if pnl_usd >= 0 else '-'}{abs(pnl_usd) * 3.75:,.0f})",
+    ]
+    tot = _running_totals()
+    if tot and tot["n"] > 0:
+        lines += [
+            "",
+            f"Since we started: {tot['n']} Friday{'s' if tot['n'] != 1 else ''}"
+            f" · {tot['wins']}W/{tot['losses']}L ({tot['wr']:.0f}%)",
+            f"Total  {'+' if tot['total'] >= 0 else '-'}${abs(tot['total']):,.0f}"
+            f"  (SAR {'+' if tot['total'] >= 0 else '-'}{abs(tot['total']) * 3.75:,.0f})",
+        ]
+        if tot["n"] < 20:
+            lines.append(f"Need ~{20 - tot['n']} more before this proves anything.")
+    return "\n".join(lines)
+
+
+def _running_totals():
+    """{n, wins, losses, wr, total} across settled rows that actually held a position."""
+    try:
+        with _engine.begin() as c:
+            r = c.execute(text("""
+                SELECT count(*), coalesce(sum(pnl_usd), 0),
+                       count(*) FILTER (WHERE pnl_usd > 0),
+                       count(*) FILTER (WHERE pnl_usd < 0)
+                FROM friday_spread_log
+                WHERE result IS NOT NULL AND result <> 'NO_FILL'
+            """)).fetchone()
+        n = int(r[0] or 0)
+        return {"n": n, "total": float(r[1] or 0), "wins": int(r[2] or 0),
+                "losses": int(r[3] or 0),
+                "wr": (100.0 * int(r[2] or 0) / n) if n else 0.0}
+    except Exception:
+        return None
 
 
 # ----------------------------------------------------------- order sending --
@@ -616,11 +707,16 @@ def _record(d, et, mode, spot, vix, k_s, k_l, width, delta, qty, credit,
 
 
 def _tg(msg):
-    if _send_telegram:
-        try:
-            _send_telegram(msg)
-        except Exception:
-            pass
+    """Telegram, once or twice a Friday. Never raises, never blocks the caller."""
+    if not _b("FRIDAY_SPREAD_TELEGRAM", "true"):
+        return
+    if not _send_telegram:
+        print(f"[friday-spread] (no telegram fn) {msg}", flush=True)
+        return
+    try:
+        _send_telegram(msg)
+    except Exception as e:
+        print(f"[friday-spread] telegram failed: {e}", flush=True)
 
 
 def status() -> dict:

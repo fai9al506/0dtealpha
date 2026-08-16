@@ -8269,10 +8269,14 @@ def start_scheduler():
                 id="tsrt_health", coalesce=True, max_instances=1)
     sch.add_job(_sierra_monthly_reminder, "cron", day="1-7", hour=9, minute=0, timezone=NY,
                 id="sierra_monthly", coalesce=True, max_instances=1, misfire_grace_time=3600)
-    # S81 — daily TSRT portal-vs-real reconcile at 16:15 ET
+    # S81 — daily TSRT portal-vs-real reconcile.
+    # Moved 16:15 -> 16:07 on 2026-08-15 so the post-market Telegrams arrive as one
+    # batch instead of trickling in over 20 minutes. NOT 16:05 as asked: this reads
+    # close_fill_price / stop_fill_price, which fifo_reconcile REWRITES at 16:03
+    # (S210), so it must not race it. 16:07 keeps four minutes of headroom.
     try:
         from app.trade_reconcile import run_today as reconcile_run_today
-        sch.add_job(reconcile_run_today, "cron", hour=16, minute=15, timezone=NY,
+        sch.add_job(reconcile_run_today, "cron", hour=16, minute=7, timezone=NY,
                     id="trade_reconcile", coalesce=True, max_instances=1,
                     misfire_grace_time=300)
     except Exception as e:

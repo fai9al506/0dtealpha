@@ -1028,12 +1028,14 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                     for lid, o in _active_orders.items()
                     if o.get("status") in ("pending_entry", "pending_limit", "pending_stop_entry", "filled")
                     and (o.get("direction", "").lower() in ("long", "bullish")) == is_long]
+        # The blocking lids stay in the LOG (they are how stale-order bugs get
+        # diagnosed) but are no longer sent to Telegram — user 2026-08-15: the
+        # message only needs to say what was skipped and why.
         print(f"[real-trader] skip {setup_name}: {dir_str} cap reached "
               f"({active_count}/{cap}) blocking={blocking}", flush=True)
-        _block_str = ", ".join(f"#{b[0]} {b[1]} ({b[3]})" for b in blocking) or "n/a"
         _log_skip_reason(setup_log_id, f"cap_{dir_str}_full")
-        _alert(f"⏭ SKIPPED {setup_name} {direction}: {dir_str} cap reached ({active_count}/{cap})\n"
-               f"Blocking: {_block_str}")
+        _alert(f"⏭ SKIPPED {setup_name} {direction} #{setup_log_id}\n"
+               f"{dir_str} cap reached ({active_count}/{cap})")
         return
 
     # Margin pre-check REMOVED (2026-05-19, user-directed): user clarified via S101

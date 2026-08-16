@@ -617,6 +617,38 @@ SC / AG Short / VPB / VIX Div / DD / ES Abs.
 - **Portal view = "V16 w/Friday Off" (`v16fri`), labelled (live).** NOT V19 — V19 also applies V18,
   which is monitoring only. **When a gate is armed, the `(live)` label moves in the same commit.**
 
+### Friday call credit spread (`app/friday_spread.py`) — LOG-ONLY (S267, 2026-08-15)
+
+**The only options strategy with a measured edge, and it is not armed.** Friday only · 12:00 ET ·
+sell the ~0.35Δ SPXW call · buy `FRIDAY_SPREAD_WIDTH` (default 5) points higher · **no stop** ·
+hold to the 16:00 cash settlement · one spread. 189 days of real `chain_snapshots` bid/ask, 37
+Fridays: **+$9,704 · 86.5% WR · worst −$1,457 · 9/10 green months**; the loss rate would have to
+double (13.5% → 27%) to break even. Cause is the weekly gamma pin — **no Friday afternoon rallied
+more than +0.61%** after 12:00 vs +0.77–1.63% every other weekday. Same pin behind the Friday gate
+and v7, so the three are complementary, not contradictory.
+
+- **Isolation:** own table `friday_spread_log`, own settle cron (Fri 16:06), own API
+  (`/api/friday-spread/status`). **Writes NOTHING to `setup_log`** — deliberately, so it cannot
+  reach V16 recall, `filter_validation`, the EOD report or any MES path. Never raises into the cycle.
+- **Trading fails CLOSED** (opposite of `basket_gate`, which fails open because it only *removes*
+  trades). Needs BOTH `FRIDAY_SPREAD_TRADE_ENABLED=true` AND `FRIDAY_SPREAD_ACCOUNT`, plus
+  `FRIDAY_SPREAD_LIVE=true` to leave the SIM endpoint. A rejected order downgrades that Friday to a
+  paper row and never retries. Settlement confirms the **limit actually filled** before booking a
+  win — an unfilled order records `NO_FILL`.
+- **🛑 DO NOT ADD A STOP LOSS.** Tested: it fires on 8 of 37 Fridays and is **wrong on 4 of them**.
+  Re-priced against 1-minute highs — a stop a broker would really execute — it earns **less than
+  doing nothing** ($6,678 vs $6,874). The 2-minute backtest sampling *was* the wick protection,
+  exactly the S131/S217 trap. **Cap risk with WIDTH**; the win rate is identical at every width
+  because only the protection leg moves. Profit targets (25%/50%) also both lose money.
+- **Grow by adding SPREADS, not width** — risk:reward degrades with width (2.1:1 at 5pt → 3.1:1 at
+  20pt), so 3 × 5pt beats 1 × 15pt on less margin.
+- **SPX, not SPY.** Performance is within $14/Friday and the relative bid/ask is the same, but SPY is
+  American-exercise to 5:30pm so hold-to-settlement is unsafe. The real argument: **a SPY test does
+  not test what you will trade.**
+- Captures GEX state + the v7 SUPPORT condition per trade. **Logged, never gated** — SUPPORT and
+  BREAKOUT_TEST are the worst states on all days but filtering them on Fridays deletes winners.
+- Status: collecting. ~20 forward Fridays incl. one red before it earns capital. Tasks S267.
+
 ### V18 / V19 monitoring filters (S260/S263, 2026-08-15) — NOT in the trade path
 
 - **V18** = V16 minus SHORTS with a +net-GEX wall within 15pt overhead while VIX < 22. The wall is an

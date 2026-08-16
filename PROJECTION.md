@@ -139,6 +139,61 @@ bars ~10 min stale. Immaterial at this level, but it matters for any ES-Absorpti
 
 ---
 
+## The scaling ladder (measured 2026-08-16, S275c) — NOTHING ABOVE RUNG 0 IS ARMED
+
+S250's principle: **scale the PROVEN setup, not the account.** Skew Charm short is the one that
+earns it — 131 real broker trades, 60% WR, +$1,418 real money, 5 of 5 months positive, and the
+only profitable thing in June–July. Re-priced on the current basis
+(`_tmp_s275_scaling_ladder.py`, 119 sessions, V16 + Friday gate, cap 2/3):
+
+| rung | $/mo | of which SC-short | MaxDD | peak short MES | short margin | short acct needs |
+|---|---|---|---|---|---|---|
+| **0 — today, 1×** | **$2,076** | $829 | −$1,733 | 6 | $1,589 | $2,270 |
+| 1 — SC-short **2×** | $2,736 | $1,539 | −$2,276 | 12 | $3,178 | **$4,539** |
+| 2 — SC-short **3×** | $3,814 | $2,654 | −$1,934 | 18 | $4,766 | **$6,809** |
+| 3 — SC-short **4×** | $4,791 | $3,626 | −$2,677 | 24 | $6,355 | **$9,079** |
+| *(compare)* whole book 2× | $3,894 | $1,400 | **−$3,178** | 12 | $3,178 | $4,539 |
+
+"Short acct needs" = peak margin ÷ 0.70 (never commit more than 70% of equity). Long side is
+cheap and unchanged throughout: peak 4 MES, $1,059 margin, needs ~$1,513.
+
+**S250's principle is confirmed with numbers.** Scaling SC-short to 3× earns **$3,814** against
+whole-book-2×'s $3,894 — the same money for **39% less drawdown** (−$1,934 vs −$3,178) and the
+same short-side margin. Concentrating size on the proven setup is strictly better than
+levering everything.
+
+**Size does not consume slots** — the cap counts *positions*, not contracts — so P&L scales
+almost linearly and **margin, not the cap, is the binding constraint.**
+
+### What actually gates each rung
+
+| | rung 0 | rung 1 | rung 2 | rung 3 |
+|---|---|---|---|---|
+| MaxDD as % of the $6,000 main capital | 29% | **38%** | 32% | **45%** |
+| 40-pt overnight-gap loss (breaker does NOT flatten) | $1,200 = 20% | $2,400 = **40%** | $3,600 = **60%** | $4,800 = **80%** |
+| Short account has $2,920.77 + profits; needs | ✅ $2,270 | ❌ $4,539 | ❌ $6,809 | ❌ $9,079 |
+
+**Rung 1 is not fundable today** — the short account holds ~$3,000 and needs ~$4,539. That is
+the real schedule-setter, not the calendar. S250's "~2026-09-01" was written before this
+margin arithmetic; the account has to earn its way there first.
+
+⚠️ **The MaxDD column is not monotonic** (−1,733 → −2,276 → −1,934 → −2,677). Drawdown depends
+on which specific day the peak-to-trough lands on, so these are **noisy to ±$400** and rung 2
+is NOT genuinely safer than rung 1. Read the *gap-risk* row instead — that one is arithmetic
+and cannot lie.
+
+⚠️ **Two things this ladder does NOT model.** (1) **Fill quality at size** — capture was
+measured at 1–2 MES; 18 MES on one side is unvalidated, though MES liquidity makes it likely
+fine. (2) The DD is **book-level**, but the accounts are margined separately, so the short
+account's own drawdown is what constrains it. The $300 breaker *is* modelled and does not
+scale, which correctly penalises the higher rungs.
+
+**Ceiling stays 3–5×, unchanged.** At rung 3 a 40-pt gap costs 80% of the main capital and a
+60-pt gap exceeds it. Above that, more equity must come first — it is a survival question, not
+a return question.
+
+---
+
 ## The ceiling — how much money exists at all (measured 2026-08-08)
 
 > ⚠️ **This whole section predates the 2026-08-16 re-run.** Its dollar figures use the old

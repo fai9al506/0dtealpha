@@ -67,8 +67,23 @@ Before presenting ANY trading study, backtest, performance report, or parameter 
   and the ex-top-3 total. This book earns on a few trend days; a window that contains one is
   not a run rate.
 
+- **Charge the costs INSIDE the sim, then STOP — do NOT also multiply by a capture ratio.**
+  −0.6 pt/trade/contract **plus $1.92/contract round-turn** is the whole correction. Measured
+  on 15 post-S217 live days (82 contract round-trips) the residual is **−0.24 pt ± 0.47 = zero,
+  and negative**, so an extra ×0.81/×0.87 double-counts (S275b: it understated the projection
+  by a third). **Never calibrate capture on one week** — the August-2026 week alone read +1.23
+  pt, 1.7 SE from zero. Re-measure with `_tmp_s275_capture_by_day.py`, which scores the lids
+  TSRT *actually placed* against day-level `tsrt_daily_stmt`, so config drift stops mattering
+  and all 37 live days are usable. **`real_trade_orders.state` has a real `quantity` key — use
+  it**; deriving qty from the basket rule was wrong on 22 of 37 days.
+- **A month is 21 CALENDAR trading sessions, never "sessions that had a trade".** Books that
+  fire on a subset of days (the Friday gate, v7) are inflated otherwise — this read v7 **6×
+  too high**. Days with no signal are $0 sessions, not missing data.
+- **`PROJECTION.md` is the single projection ledger.** Any change that can move P&L gets a row
+  with its measured before/after. Re-run monthly (Tasks S232 / S275).
+
 Details + the measurement script: memory `feedback_chainsim_valid_post_s217.md`,
-`research_s231_tsrt_counterfactual_jul_aug.md`.
+`research_s231_tsrt_counterfactual_jul_aug.md`, `research_capture_is_96pct_gap_is_structural.md`.
 
 ### Gate 1: Data Quality (MUST PASS before running analysis)
 1. **Source check**: ALL numbers from DB queries or code output. Never manual math, never from memory files.

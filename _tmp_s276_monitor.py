@@ -67,6 +67,27 @@ while True:
                          "breaker", "critical", "reject", "naked", "warn", "skip")):
                     print(f"ALERT {r[1]:%H:%M} {msg}", flush=True)
 
+            # --- STUCK FILL GUARD (lid 6090, 2026-08-17): a lid sitting in
+            #     pending_entry for minutes means the fill poll missed it. The
+            #     stop then never realigns to the fill and the trade never trails.
+            for r in c.execute(text("""
+                SELECT o.setup_log_id, o.state, l.setup_name,
+                       EXTRACT(epoch FROM (now() - l.ts)) age_s
+                FROM real_trade_orders o JOIN setup_log l ON l.id=o.setup_log_id
+                WHERE (l.ts AT TIME ZONE 'America/New_York')::date = current_date""")).all():
+                st = r[1] if isinstance(r[1], dict) else json.loads(r[1])
+                if st.get("status") != "pending_entry":
+                    continue
+                if float(r[3] or 0) < 180:
+                    continue
+                key = f"stuck{r[0]}"
+                if key in warned:
+                    continue
+                warned.add(key)
+                print(f"!!! STUCK FILL lid={r[0]} {r[2]} still pending_entry after "
+                      f"{float(r[3])/60:.0f} min — CHECK BROKER, stop may be un-realigned "
+                      f"(current_stop={st.get('current_stop')} acct={st.get('account_id')})", flush=True)
+
             # --- health gates, once each ---
             if now.hour >= 9 and (now.hour, now.minute) >= (9, 40) and "volland" not in warned:
                 n = c.execute(text("SELECT count(*) FROM volland_snapshots "

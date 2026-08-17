@@ -874,7 +874,15 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     #   - GEX_LONG_V3_ENABLED        → detector fires v3 signals to setup_log (portal display)
     #   - GEX_LONG_V3_REAL_TRADE_ENABLED → real trader places live trades (default false = PORTAL-ONLY)
     # This lets us monitor v3 signals in portal without committing real money.
-    _allowed = {"Skew Charm", "AG Short", "Vanna Pivot Bounce", "ES Absorption"}
+    _allowed = {"Skew Charm", "AG Short", "Vanna Pivot Bounce"}
+    # S277 (2026-08-17, user directive): ES Absorption PARKED off real money.
+    # Edge is volatility-dependent and volatility left — VIX 20-26 is +$15..$22/trade
+    # (t=+2.4/+2.7), below VIX 20 it is -$3..-$6/trade. Mar-Apr (avg VIX 24.8) +$1,239;
+    # May-Aug (avg VIX 18.1) -$412. Not the Sierra feed switch, and not market-wide:
+    # Skew Charm still earns +$18/trade below VIX 18 on the same sessions.
+    # Lockstep with _passes_live_filter, live_filter.passes_v16 and both portal mirrors.
+    if os.getenv("ES_ABS_REAL_TRADE_ENABLED", "false").lower() == "true":
+        _allowed.add("ES Absorption")
     # VIX Divergence: disabled 2026-05-18 after 0/4 OOS WR live since May 3 ship
     # (3 BOFA-PURE + 1 AG-LIS — all non-GEX paradigms). Re-enabled 2026-05-27
     # with GEX-paradigm filter in _passes_live_filter() (LONGS only, paradigm

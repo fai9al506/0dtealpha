@@ -30,13 +30,15 @@ if STRAT not in ("v16", "v16fri", "v17", "v18", "v19"):
     sys.exit(2)
 
 # env flags exactly as Railway has them
-FLAGS = {"_GEX_LONG_REAL": False, "_VIX_DIV_REAL": True, "_VPB_REAL": True}
+FLAGS = {"_GEX_LONG_REAL": False, "_VIX_DIV_REAL": True, "_VPB_REAL": True,
+         "_ES_ABS_REAL": False}   # S277 2026-08-17: ES Absorption parked
 
 # The JS harness gets these as consts, but live_filter.py reads them from the OS at
 # call time. Set BOTH from one place or the sweep reports phantom mismatches that are
 # really just the operator's shell (this produced 32 fake VPB diffs on 2026-08-15).
 _ENV_FOR_FLAG = {"_GEX_LONG_REAL": "GEX_LONG_V3_REAL_TRADE_ENABLED",
-                 "_VPB_REAL": "VPB_REAL_TRADE_ENABLED"}
+                 "_VPB_REAL": "VPB_REAL_TRADE_ENABLED",
+                 "_ES_ABS_REAL": "ES_ABS_REAL_TRADE_ENABLED"}
 for _f, _envname in _ENV_FOR_FLAG.items():
     os.environ[_envname] = "true" if FLAGS[_f] else "false"
 SINCE = "2026-05-19"          # post-V16.1 era
@@ -101,6 +103,7 @@ const _tlDailyGaps = {json.dumps(gaps)};
 const _GEX_LONG_REAL = {str(FLAGS['_GEX_LONG_REAL']).lower()};
 const _VIX_DIV_REAL  = {str(FLAGS['_VIX_DIV_REAL']).lower()};
 const _VPB_REAL      = {str(FLAGS['_VPB_REAL']).lower()};
+const _ES_ABS_REAL   = {str(FLAGS['_ES_ABS_REAL']).lower()};
 const __BASKET_SIZING_MODE__ = 'sizeonly';
 {js_fn}
 const rows = JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));

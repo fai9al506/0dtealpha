@@ -4406,6 +4406,19 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     # 73% green trading days. Worst single day -$80 MES at 1 MES.
     # Promoted from shadow on backtest strength (166-trade sample, 7-18x VPB/VIX Div sample).
     if setup_name == "ES Absorption":
+        # ── S277 (2026-08-17, user directive): ES Absorption PARKED off real money. ──
+        # The edge is VOLATILITY-DEPENDENT and volatility left. V16 book, costs charged,
+        # longs only: VIX<18 -$2.6/trade (n=34) · 18-20 -$6.4 (n=46) · 20-22 +$21.6
+        # (n=20, t=+2.4) · 22-26 +$15.2 (n=54, t=+2.7) · 26+ -$1.0 (n=43). The edge lives
+        # in VIX 20-26 ONLY. Mar-Apr averaged VIX 24.8 and made +$1,239; May-Aug averaged
+        # VIX 18.1 and lost -$412. ES-Abs-SPECIFIC, not a market-wide vol effect — Skew
+        # Charm still makes +$18/trade below VIX 18 on the same days.
+        # NOT the Sierra feed switch (2026-04-30): high-vol trades on the NEW feed still
+        # win (+$59, 67% WR, n=6) and low-vol trades on the OLD feed were fine (n=9).
+        # Re-arm ONLY with a pre-registered VIX floor judged FORWARD — a floor fitted on
+        # this same data is exactly the refit that failed out-of-sample in V18/V19.
+        if os.getenv("ES_ABS_REAL_TRADE_ENABLED", "false").lower() != "true":
+            return False
         # CUT ES Absorption SHORTS (2026-07-27, user directive): consistent recent loser.
         # By month (v16-sb, chain$): Mar +$458/75% (high-vol) -> May -$122 / Jun -$216 / Jul -$41;
         # Apr-Jul net -$257, worst-WR short. Longs KEPT. Reversible (delete this line).
@@ -14175,6 +14188,8 @@ const _BASKET_SIZING_MODE = "__BASKET_SIZING_MODE__";
     // through to _v10BaseV14()'s `align >= 2` gate and was hidden. TSRT placed 3 VPB longs
     // on 2026-08-13 (lids 5967/5973/6004, align 1/-3/-1) that the V16 view never showed.
     const _VPB_REAL = "__VPB_REAL__" === "true";
+    // S277 (2026-08-17): ES Absorption parked off real money — env, read at render.
+    const _ES_ABS_REAL = "__ES_ABS_REAL__" === "true";
 const PILL_COLORS = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','SB Absorption':'#f59e0b','SB10 Absorption':'#f59e0b','SB2 Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899','GEX Velocity':'#22c55e','Vanna Pivot Bounce':'#818cf8'};
 const GRADE_COLORS = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308','B':'#f59e0b','C':'#888','LOG':'#555'};
 let _allTrades = [];
@@ -14434,7 +14449,9 @@ function passesStrategy(l, strat) {
     //   BofA Scalp, Paradigm Reversal, SB2 Absorption, etc: not in whitelist → BLOCK
     // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
     const _v16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
-                                  'ES Absorption', 'DD Exhaustion']);
+                                  'DD Exhaustion']);
+    // S277 (2026-08-17): ES Absorption parked — same env pattern as GEX Long / VIX Div.
+    if (_ES_ABS_REAL) _v16Allowed.add('ES Absorption');
     if (_GEX_LONG_REAL) _v16Allowed.add('GEX Long');
     if (_VIX_DIV_REAL) _v16Allowed.add('VIX Divergence');
     if (!_v16Allowed.has(sn)) return false;
@@ -19293,6 +19310,8 @@ DASH_HTML_TEMPLATE = """
     // (live) view never showed. Fixing VIX Div on 08-11 without sweeping the other setups
     // is what let this survive four more days.
     const _VPB_REAL = "__VPB_REAL__" === "true";
+    // S277 (2026-08-17): ES Absorption parked off real money — env, read at render.
+    const _ES_ABS_REAL = "__ES_ABS_REAL__" === "true";
     let _tlDailyGaps = {};  // {date_str: gap_pts} for V12 filter
     fetch('/api/setup/daily_gaps', {cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_tlDailyGaps=d;}).catch(()=>{});
     // GEX Long v3 server-side overlay: per-trade {pass, result, pnl, max_fav, verdict}
@@ -19636,7 +19655,9 @@ DASH_HTML_TEMPLATE = """
         // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
         // GEX Long v4 added 2026-06-08 (env GEX_LONG_V3_REAL_TRADE_ENABLED=true).
         const _tlV16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
-                                        'ES Absorption', 'DD Exhaustion']);
+                                        'DD Exhaustion']);
+        // S277 (2026-08-17): ES Absorption parked — same env pattern as GEX Long.
+        if (_ES_ABS_REAL) _tlV16Allowed.add('ES Absorption');
         if (_GEX_LONG_REAL) _tlV16Allowed.add('GEX Long');
         if (_VIX_DIV_REAL) _tlV16Allowed.add('VIX Divergence');
         if (!_tlV16Allowed.has(sn)) return false;
@@ -21966,6 +21987,7 @@ def spxw_dashboard(session: str = Cookie(default=None)):
             .replace("__GEX_LONG_REAL__", os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower())
             .replace("__VIX_DIV_REAL__", os.getenv("VIX_DIV_REAL_TRADE_ENABLED", "false").lower())
             .replace("__VPB_REAL__", os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower())
+            .replace("__ES_ABS_REAL__", os.getenv("ES_ABS_REAL_TRADE_ENABLED", "false").lower())
             .replace("__IS_ADMIN__", "true" if user.get("is_admin") else "false"))
     return HTMLResponse(html)
 
@@ -21982,7 +22004,8 @@ def eod_review_page(session: str = Cookie(default=None), date: str = Query(None)
             .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "sizeonly").lower())
             .replace("__GEX_LONG_REAL__", os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower())
             .replace("__VIX_DIV_REAL__", os.getenv("VIX_DIV_REAL_TRADE_ENABLED", "false").lower())
-            .replace("__VPB_REAL__", os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower()))
+            .replace("__VPB_REAL__", os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower())
+            .replace("__ES_ABS_REAL__", os.getenv("ES_ABS_REAL_TRADE_ENABLED", "false").lower()))
     return HTMLResponse(html)
 
 

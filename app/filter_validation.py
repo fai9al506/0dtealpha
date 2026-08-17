@@ -466,20 +466,73 @@ def format_telegram_summary(results: list[dict]) -> str:
 
 SETUP_HEALTH_RECENT_DAYS = 60
 SETUP_HEALTH_MIN_TRADES = 15      # below this: THIN, never cry wolf
-SETUP_HEALTH_FADE_FLOOR = 3.0     # $/trade — a relative drop alone is not FADING
+SETUP_HEALTH_FADE_FLOOR = 6.0     # $/trade — a relative drop alone is not FADING
 HAIRCUT_PT, FEE_PER_RT, DOLLAR_PER_PT = 0.6, 1.92, 5.0
+DEADBAND, MAX_LONG, MAX_SHORT, DEDUP_S = 0.15, 2, 3, 90
 
 
-def evaluate_setup_health(recent_days: int = SETUP_HEALTH_RECENT_DAYS) -> list[dict]:
-    """Per-setup trailing performance for every setup the LIVE filter admits.
+def _replay_live(rows, gaps, lf):
+    """The V20 book as it would ACTUALLY be traded: basket sizing, cap 2 long /
+    3 short, 90s dedup. Without this the per-trade money is diluted by signals the
+    cap would never have taken — which on 2026-08-17 made Skew Charm read $4.5/trade
+    when the trades we really take earn $10-17, and produced two false FADING flags
+    on the first dry run. Never score a live setup on unreplayed signals."""
+    openp, last, out = [], {}, []
+    for r in rows:
+        if not lf.passes_v20(r, gaps):
+            continue
+        is_long = str(r.get("direction", "")).lower() in ("long", "bullish")
+        t = r["ts"].astimezone(NY)
+        openp = [x for x in openp if x[0] > t]
+        if sum(1 for x in openp if x[1] == is_long) >= (MAX_LONG if is_long else MAX_SHORT):
+            continue
+        k = (r["setup_name"], is_long)
+        if k in last and (t - last[k]).total_seconds() < DEDUP_S:
+            continue
+        last[k] = t
+        openp.append((t + timedelta(minutes=float(r.get("outcome_elapsed_min") or 30)), is_long))
+        bp = r.get("basket_pct")
+        q = 1 if bp is None or abs(float(bp)) < DEADBAND else (2 if ((float(bp) > 0) == is_long) else 1)
+        pts = float(r["outcome_pnl"])
+        out.append({"setup": r["setup_name"], "et": t, "pts": pts, "is_long": is_long,
+                    "net": (pts - HAIRCUT_PT) * q * DOLLAR_PER_PT - FEE_PER_RT * q})
+    return out
 
-    Money basis is PROJECTION.md's: chain outcome_pnl, -0.6 pt/trade, $1.92/RT, 1 MES.
-    Deliberately NO cap replay -- this asks "is this setup's own edge alive?", not
-    "what would the book have made?". Removing a setup is NOT subtracting its P&L
-    (see memory research_es_abs_vol_dependent_v20); that needs the full replay.
+
+def _score(pool, cutoff, min_trades=SETUP_HEALTH_MIN_TRADES):
+    recent = [x for x in pool if x["et"].date() >= cutoff]
+    prior = [x for x in pool if x["et"].date() < cutoff]
+    rec_n, pri_n = len(recent), len(prior)
+    rec_tot = sum(x["net"] for x in recent)
+    rec_avg = rec_tot / rec_n if rec_n else 0.0
+    pri_avg = (sum(x["net"] for x in prior) / pri_n) if pri_n else 0.0
+    rec_wr = (sum(1 for x in recent if x["pts"] > 0) / rec_n * 100) if rec_n else 0.0
+    if rec_n < min_trades:
+        verdict = "THIN"
+    elif rec_tot < 0:
+        verdict = "LOSING"
+    elif rec_avg < 1.0:
+        verdict = "FLAT"
+    elif (pri_n >= min_trades and rec_avg < pri_avg * 0.4 and rec_avg < SETUP_HEALTH_FADE_FLOOR):
+        verdict = "FADING"
+    else:
+        verdict = "OK"
+    return {"recent_n": rec_n, "recent_total": round(rec_tot, 0), "recent_avg": round(rec_avg, 1),
+            "recent_wr": round(rec_wr, 0), "prior_n": pri_n, "prior_avg": round(pri_avg, 1),
+            "verdict": verdict}
+
+
+def evaluate_setup_health(recent_days: int = SETUP_HEALTH_RECENT_DAYS) -> dict:
+    """Two lists, as the user asked for on 2026-08-17.
+
+    LIVE  — every setup the V20 filter admits, replayed with the real cap/dedup/sizing.
+            These are the ones costing or making real money. Split long vs short,
+            because a setup can be healthy on one side and dead on the other.
+    PORTAL— every detector that logs but never trades. These are our INVESTMENT: we
+            watch them to see whether an edge is appearing and what filter would catch
+            it. Scored raw (no cap — they take no slots).
     """
-    import sys as _sys
-    import os as _os
+    import sys as _sys, os as _os
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
     from app import live_filter as lf
 
@@ -487,75 +540,87 @@ def evaluate_setup_health(recent_days: int = SETUP_HEALTH_RECENT_DAYS) -> list[d
     with _engine.connect().execution_options(isolation_level="AUTOCOMMIT") as c:
         gaps = lf.load_gaps(c)
         rows = c.execute(text(
-            f"SELECT {lf.COLS}, outcome_pnl FROM setup_log "
+            f"SELECT {lf.COLS}, outcome_pnl, outcome_elapsed_min FROM setup_log "
             "WHERE ts >= now() - interval '400 days' AND outcome_pnl IS NOT NULL "
             "ORDER BY ts")).mappings().all()
+    rows = [dict(r) for r in rows]
 
-    live = [dict(r) for r in rows if lf.passes_v20(r, gaps)]
-    by_setup = {}
-    for r in live:
-        by_setup.setdefault(r["setup_name"], []).append(r)
+    taken = _replay_live(rows, gaps, lf)
+    # LIVE = every setup the filter ADMITS, not merely those that survived the cap.
+    # Deriving this from `taken` mislabelled Vanna Pivot Bounce as portal-only on the
+    # 2026-08-17 dry run: it passes V20 but every one of its signals was crowded out of
+    # the 2 long slots by Skew Charm. That is a capacity finding worth seeing, not a
+    # reason to file it under detectors we never trade.
+    live_names = sorted({r["setup_name"] for r in rows if lf.passes_v20(r, gaps)})
 
-    def money(pool):
-        return sum((float(r["outcome_pnl"]) - HAIRCUT_PT) * DOLLAR_PER_PT - FEE_PER_RT
-                   for r in pool)
+    live = []
+    for name in live_names:
+        pool = [x for x in taken if x["setup"] == name]
+        row = {"setup": name}
+        row.update(_score(pool, cutoff))
+        for side, want in (("long", True), ("short", False)):
+            sub = [x for x in pool if x["is_long"] == want]
+            sc = _score(sub, cutoff, min_trades=10)
+            row[side] = {"n": sc["recent_n"], "avg": sc["recent_avg"],
+                         "tot": sc["recent_total"], "wr": sc["recent_wr"],
+                         "verdict": sc["verdict"], "prior_avg": sc["prior_avg"]}
+        live.append(row)
 
-    out = []
-    for name, rs in sorted(by_setup.items()):
-        recent = [r for r in rs if r["ts"].astimezone(NY).date() >= cutoff]
-        prior = [r for r in rs if r["ts"].astimezone(NY).date() < cutoff]
-        rec_n, pri_n = len(recent), len(prior)
-        rec_tot, pri_tot = money(recent), money(prior)
-        rec_avg = rec_tot / rec_n if rec_n else 0.0
-        pri_avg = pri_tot / pri_n if pri_n else 0.0
-        rec_wr = (sum(1 for r in recent if float(r["outcome_pnl"]) > 0) / rec_n * 100) if rec_n else 0.0
+    portal = []
+    for name in sorted({r["setup_name"] for r in rows}):
+        if name in live_names:
+            continue
+        pool = [{"setup": name, "et": r["ts"].astimezone(NY), "pts": float(r["outcome_pnl"]),
+                 "is_long": str(r.get("direction", "")).lower() in ("long", "bullish"),
+                 "net": (float(r["outcome_pnl"]) - HAIRCUT_PT) * DOLLAR_PER_PT - FEE_PER_RT}
+                for r in rows if r["setup_name"] == name]
+        row = {"setup": name}
+        row.update(_score(pool, cutoff))
+        portal.append(row)
 
-        if rec_n < SETUP_HEALTH_MIN_TRADES:
-            verdict = "THIN"
-        elif rec_tot < 0:
-            verdict = "LOSING"
-        elif rec_avg < 1.0:
-            verdict = "FLAT"
-        elif (pri_n >= SETUP_HEALTH_MIN_TRADES and rec_avg < pri_avg * 0.4
-              and rec_avg < SETUP_HEALTH_FADE_FLOOR):
-            # BOTH conditions required. A relative drop alone is a false alarm: the
-            # dry run on 2026-08-17 flagged Skew Charm FADING (+$4.5/t vs +$15.9) while
-            # it was earning +$1,121 in 60 days and carrying the whole book. That is the
-            # low-vol regime, not a broken setup. Only call it FADING when the money per
-            # trade is ALSO thin in absolute terms. Memory:
-            # research_filter_validation_attribution_bug — two false DEGRADING alarms
-            # on 2026-08-15 were monitor bugs, and cost real trust.
-            verdict = "FADING"
-        else:
-            verdict = "OK"
-
-        out.append({"setup": name, "recent_n": rec_n, "recent_total": round(rec_tot, 0),
-                    "recent_avg": round(rec_avg, 1), "recent_wr": round(rec_wr, 0),
-                    "prior_n": pri_n, "prior_avg": round(pri_avg, 1), "verdict": verdict})
-    return out
+    return {"live": live, "portal": portal}
 
 
-def format_setup_health(rows: list[dict], recent_days: int) -> str:
+def format_setup_health(res: dict, recent_days: int) -> str:
     icon = {"LOSING": "\U0001f534", "FLAT": "\U0001f7e0", "FADING": "\U0001f7e0",
             "THIN": "\u26aa", "OK": "\U0001f7e2"}
-    bad = [r for r in rows if r["verdict"] in ("LOSING", "FLAT", "FADING")]
-    head = ("\n\n<b>SETUP HEALTH \u2014 last %d days</b>\n"
-            "<i>Is each setup we ALLOW still earning? 1 MES, costs charged.</i>\n" % recent_days)
+    live, portal = res.get("live", []), res.get("portal", [])
+    bad = [r for r in live if r["verdict"] in ("LOSING", "FLAT", "FADING")]
+
+    out = ["\n\n<b>SETUP HEALTH \u2014 last %d days</b>" % recent_days]
+    out.append("<i>Part 1: what we TRADE (V20, real cap + sizing applied)</i>")
     if bad:
-        head += ("\n\u26a0\ufe0f <b>%d setup(s) need a decision:</b> %s\n"
-                 % (len(bad), ", ".join(r["setup"] for r in bad)))
-    lines = ["<pre>", "%-16s%4s%9s%7s%5s  was" % ("setup", "n", "total$", "$/t", "WR")]
-    for r in sorted(rows, key=lambda x: x["recent_total"]):
-        lines.append("%s %-14s%4d%+9.0f%+7.1f%4.0f%%  %+.1f" % (
-            icon.get(r["verdict"], ""), r["setup"][:14], r["recent_n"], r["recent_total"],
+        out.append("\u26a0\ufe0f <b>%d need a decision:</b> %s"
+                   % (len(bad), ", ".join(r["setup"] for r in bad)))
+    out.append("<pre>")
+    out.append("%-15s%4s%8s%7s%5s  was" % ("setup", "n", "total$", "$/t", "WR"))
+    for r in sorted(live, key=lambda x: -x["recent_total"]):
+        out.append("%s %-13s%4d%+8.0f%+7.1f%4.0f%%  %+.1f" % (
+            icon.get(r["verdict"], ""), r["setup"][:13], r["recent_n"], r["recent_total"],
             r["recent_avg"], r["recent_wr"], r["prior_avg"]))
-    lines.append("</pre>")
+        for side in ("long", "short"):
+            d = r[side]
+            if d["n"]:
+                out.append("    %-9s%4d%+8.0f%+7.1f%4.0f%%" % (
+                    side, d["n"], d["tot"], d["avg"], d["wr"]))
+    out.append("</pre>")
+
+    out.append("<i>Part 2: portal-only detectors \u2014 is an edge appearing?</i>")
+    out.append("<pre>")
+    out.append("%-15s%4s%8s%7s%5s  was" % ("setup", "n", "total$", "$/t", "WR"))
+    for r in sorted(portal, key=lambda x: -x["recent_avg"]):
+        out.append("%s %-13s%4d%+8.0f%+7.1f%4.0f%%  %+.1f" % (
+            icon.get(r["verdict"], ""), r["setup"][:13], r["recent_n"], r["recent_total"],
+            r["recent_avg"], r["recent_wr"], r["prior_avg"]))
+    out.append("</pre>")
+    out.append("<i>Portal rows are 1 MES, no cap, no filter \u2014 a promotion candidate must "
+               "survive the live filter and the cap before it means anything.</i>")
     if bad:
-        lines.append("A LOSING or FLAT setup is a park-or-gate decision. Check whether its edge "
-                     "is regime-dependent before removing it \u2014 and remember removing a setup "
-                     "frees cap slots for weaker trades, so it is NOT the same as subtracting "
-                     "its P&amp;L.")
-    return head + "\n".join(lines)
+        out.append("A LOSING or FLAT setup is a park-or-gate decision. Check whether the edge is "
+                   "regime-dependent first \u2014 and removing a setup frees cap slots for weaker "
+                   "trades, so it is NOT the same as subtracting its P&amp;L.")
+    return "\n".join(out)
+
 
 _LAST_MONTH_RUN = {"m": None}
 

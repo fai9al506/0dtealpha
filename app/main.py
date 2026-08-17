@@ -8328,7 +8328,11 @@ def start_scheduler():
     # always block, then re-assess periodically rather than wait for more sample.
     try:
         from app.filter_validation import run_today as _filter_val_run
-        sch.add_job(_filter_val_run, "cron", day_of_week="mon", hour=17, minute=0,
+        # S281 (2026-08-17): MONTHLY, not weekly — user asked for one report they can
+        # actually read and act on, with the new SETUP HEALTH section merged in.
+        # Fires days 1-5; run_today() has the weekday guard + once-per-month latch, so
+        # it lands on the first trading day whatever the calendar does.
+        sch.add_job(_filter_val_run, "cron", day="1-5", hour=17, minute=0,
                     timezone=NY, id="filter_validation", coalesce=True, max_instances=1,
                     misfire_grace_time=600)
     except Exception as e:

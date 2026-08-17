@@ -13,7 +13,12 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 
 ET = ZoneInfo("America/New_York")
-LIVE_VER = "v16-sb"   # V16 + Semi-Basket (Scheme B 0/0/1). Bump when the live filter changes.
+LIVE_VER = "v20-sb"   # V20 + Semi-Basket. Bump when the live filter changes.
+
+# ── V20 (2026-08-17, S277/S278) — THE LIVE FILTER from 2026-08-18. ────────────────
+# V20 = V16 rules + ES Absorption only when VIX >= ES_ABS_VIX_FLOOR + no Friday.
+# The full change ledger (what each version number means and why) is FILTER_VERSIONS.md.
+ES_ABS_VIX_FLOOR = 20.0
 
 # Semi-Basket (Scheme B) — 2026-06-16. Tech basket (NVDA/AMD/AVGO/META/MSFT/GOOGL)
 # %-from-session-open, stamped on each signal as setup_log.basket_pct at detection.
@@ -57,9 +62,35 @@ def basket_blocks(l):
     return (bp > 0) != is_long  # contradict (sign mismatch) -> skip ; confirm -> take
 
 
-def passes_v16_sb(l, gaps):
-    """THE live filter = V16 base AND Semi-Basket confirm. Single source of truth."""
+def passes_v20(l, gaps):
+    """V20 = V16 rules + ES Absorption gated to VIX >= 20 + no Friday.
+
+    THE live filter from 2026-08-18. ES Absorption's edge is volatility-dependent:
+    per trade it is -$2.6 below VIX 18 and -$6.4 at 18-20, but +$21.6 at 20-22
+    (t=+2.4) and +$15.2 at 22-26 (t=+2.7). Removing the setup outright measured
+    WORSE (-$1,036) because its slots refill with weaker trades under the 2/3 cap.
+    Fails CLOSED on a missing VIX. Lockstep with main.py _passes_live_filter and
+    both portal mirrors (strat 'v20').
+    """
     if not passes_v16(l, gaps):
+        return False
+    if (l.get('setup_name') if hasattr(l, 'get') else l['setup_name']) == 'ES Absorption':
+        v = l['vix'] if 'vix' in l else None
+        if v is None or float(v) < ES_ABS_VIX_FLOOR:
+            return False
+    ts = l['ts'] if 'ts' in l else None
+    if ts is not None and ts.astimezone(ET).weekday() == 4:
+        return False   # REAL_TRADE_NO_FRIDAY, armed 2026-08-15 (S263)
+    return True
+
+
+def passes_v16_sb(l, gaps):
+    """THE live filter = V20 base AND Semi-Basket confirm. Single source of truth.
+
+    Name kept for compatibility with every caller and study; the BASE it applies is
+    V20 as of 2026-08-17 (was V16). See FILTER_VERSIONS.md.
+    """
+    if not passes_v20(l, gaps):
         return False
     if basket_blocks(l):
         return False
@@ -266,10 +297,6 @@ def passes_v16(l, gaps):
     if sn in ('IV Momentum', 'Vanna Butterfly'): return False
     if not v11() or v13Bull() or v13Vanna() or v13DDQ(): return False
     if sn == 'ES Absorption':
-        # S277 (2026-08-17): PARKED off real money — edge is vol-dependent (lives in
-        # VIX 20-26) and vol left. Lockstep w/ main.py _passes_live_filter + both portal
-        # mirrors. Env-gated so it can be re-armed without a code change.
-        if os.getenv('ES_ABS_REAL_TRADE_ENABLED', 'false').lower() != 'true': return False
         if not isLong: return False  # CUT ES Abs shorts 2026-07-27 (lockstep w/ _passes_live_filter)
         if grade not in ('A', 'A+') or para in ('AG-TARGET', 'AG-LIS'): return False
         if mins is not None and mins >= 945: return False

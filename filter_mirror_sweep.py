@@ -25,20 +25,18 @@ sys.path.insert(0, REPO)
 
 # which filter version to sweep: v16 (the live one), v17 or v18 (both monitoring)
 STRAT = (sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else "v16").lower()
-if STRAT not in ("v16", "v16fri", "v17", "v18", "v19"):
-    print(f"usage: python filter_mirror_sweep.py [v16|v16fri|v17|v18|v19]   (got {STRAT!r})")
+if STRAT not in ("v16", "v16fri", "v17", "v18", "v19", "v20"):
+    print(f"usage: python filter_mirror_sweep.py [v16|v16fri|v17|v18|v19|v20]   (got {STRAT!r})")
     sys.exit(2)
 
 # env flags exactly as Railway has them
-FLAGS = {"_GEX_LONG_REAL": False, "_VIX_DIV_REAL": True, "_VPB_REAL": True,
-         "_ES_ABS_REAL": False}   # S277 2026-08-17: ES Absorption parked
+FLAGS = {"_GEX_LONG_REAL": False, "_VIX_DIV_REAL": True, "_VPB_REAL": True}
 
 # The JS harness gets these as consts, but live_filter.py reads them from the OS at
 # call time. Set BOTH from one place or the sweep reports phantom mismatches that are
 # really just the operator's shell (this produced 32 fake VPB diffs on 2026-08-15).
 _ENV_FOR_FLAG = {"_GEX_LONG_REAL": "GEX_LONG_V3_REAL_TRADE_ENABLED",
-                 "_VPB_REAL": "VPB_REAL_TRADE_ENABLED",
-                 "_ES_ABS_REAL": "ES_ABS_REAL_TRADE_ENABLED"}
+                 "_VPB_REAL": "VPB_REAL_TRADE_ENABLED"}
 for _f, _envname in _ENV_FOR_FLAG.items():
     os.environ[_envname] = "true" if FLAGS[_f] else "false"
 SINCE = "2026-05-19"          # post-V16.1 era
@@ -103,7 +101,6 @@ const _tlDailyGaps = {json.dumps(gaps)};
 const _GEX_LONG_REAL = {str(FLAGS['_GEX_LONG_REAL']).lower()};
 const _VIX_DIV_REAL  = {str(FLAGS['_VIX_DIV_REAL']).lower()};
 const _VPB_REAL      = {str(FLAGS['_VPB_REAL']).lower()};
-const _ES_ABS_REAL   = {str(FLAGS['_ES_ABS_REAL']).lower()};
 const __BASKET_SIZING_MODE__ = 'sizeonly';
 {js_fn}
 const rows = JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));
@@ -127,9 +124,9 @@ if errs:
 
 # ---------- 4. Python filter ----------
 from app.live_filter import (passes_v16, passes_v16_fri, passes_v17,
-                             passes_v18, passes_v19)
+                             passes_v18, passes_v19, passes_v20)
 _PY = {"v16": passes_v16, "v16fri": passes_v16_fri, "v17": passes_v17,
-       "v18": passes_v18, "v19": passes_v19}[STRAT]
+       "v18": passes_v18, "v19": passes_v19, "v20": passes_v20}[STRAT]
 py_res = {}
 for r in rows:
     row = dict(r)

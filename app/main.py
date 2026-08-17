@@ -4406,18 +4406,25 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     # 73% green trading days. Worst single day -$80 MES at 1 MES.
     # Promoted from shadow on backtest strength (166-trade sample, 7-18x VPB/VIX Div sample).
     if setup_name == "ES Absorption":
-        # ── S277 (2026-08-17, user directive): ES Absorption PARKED off real money. ──
-        # The edge is VOLATILITY-DEPENDENT and volatility left. V16 book, costs charged,
-        # longs only: VIX<18 -$2.6/trade (n=34) · 18-20 -$6.4 (n=46) · 20-22 +$21.6
-        # (n=20, t=+2.4) · 22-26 +$15.2 (n=54, t=+2.7) · 26+ -$1.0 (n=43). The edge lives
-        # in VIX 20-26 ONLY. Mar-Apr averaged VIX 24.8 and made +$1,239; May-Aug averaged
-        # VIX 18.1 and lost -$412. ES-Abs-SPECIFIC, not a market-wide vol effect — Skew
-        # Charm still makes +$18/trade below VIX 18 on the same days.
-        # NOT the Sierra feed switch (2026-04-30): high-vol trades on the NEW feed still
-        # win (+$59, 67% WR, n=6) and low-vol trades on the OLD feed were fine (n=9).
-        # Re-arm ONLY with a pre-registered VIX floor judged FORWARD — a floor fitted on
-        # this same data is exactly the refit that failed out-of-sample in V18/V19.
-        if os.getenv("ES_ABS_REAL_TRADE_ENABLED", "false").lower() != "true":
+        # ── V20 (2026-08-17, S277/S278): ES Absorption needs VOLATILITY. ──────────────
+        # V16 book, costs charged, longs only, per trade:
+        #   VIX <18 -$2.6 (n=34) · 18-20 -$6.4 (n=46) · 20-22 +$21.6 (n=20, t=+2.4)
+        #   · 22-26 +$15.2 (n=54, t=+2.7) · 26+ -$1.0 (n=43)
+        # Mar-Apr averaged VIX 24.8 -> +$1,239. May-Aug averaged VIX 18.1 -> -$412.
+        # NOT the Sierra feed switch (2026-04-30, same boundary): high-vol trades on the
+        # NEW feed still win (+$59, 67% WR) and low-vol trades on the OLD feed were fine.
+        # NOT market-wide: Skew Charm earns +$18/trade below VIX 18 on the same sessions.
+        # Floor not band: 20-26 scores $120 better over 5.5 months but the upper bound is
+        # the fitted part (26+ is merely flat, not harmful). One rule, one number.
+        # Switching the setup OFF instead measured -$1,036 — its slots get refilled by
+        # weaker trades under the 2/3 cap. Fails CLOSED on a missing VIX (0 of 1,022
+        # historical ES Abs rows lack one). Lockstep: live_filter.passes_v20 + both
+        # portal mirrors (strat 'v20'). Env ES_ABS_REAL_TRADE_ENABLED is an emergency
+        # kill only, default true.
+        if os.getenv("ES_ABS_REAL_TRADE_ENABLED", "true").lower() != "true":
+            return False
+        _vix_abs = vix if vix is not None else None
+        if _vix_abs is None or float(_vix_abs) < 20.0:
             return False
         # CUT ES Absorption SHORTS (2026-07-27, user directive): consistent recent loser.
         # By month (v16-sb, chain$): Mar +$458/75% (high-vol) -> May -$122 / Jun -$216 / Jul -$41;
@@ -14160,7 +14167,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v16fri">V16 w/Friday Off (live) ✦</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v20">V20 (live) ✦</option><option value="v16fri">V16 w/Friday Off</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -14188,8 +14195,6 @@ const _BASKET_SIZING_MODE = "__BASKET_SIZING_MODE__";
     // through to _v10BaseV14()'s `align >= 2` gate and was hidden. TSRT placed 3 VPB longs
     // on 2026-08-13 (lids 5967/5973/6004, align 1/-3/-1) that the V16 view never showed.
     const _VPB_REAL = "__VPB_REAL__" === "true";
-    // S277 (2026-08-17): ES Absorption parked off real money — env, read at render.
-    const _ES_ABS_REAL = "__ES_ABS_REAL__" === "true";
 const PILL_COLORS = {'GEX Long':'#22c55e','AG Short':'#ef4444','BofA Scalp':'#a78bfa','ES Absorption':'#f59e0b','SB Absorption':'#f59e0b','SB10 Absorption':'#f59e0b','SB2 Absorption':'#f59e0b','DD Exhaustion':'#6b7280','Paradigm Reversal':'#06b6d4','Skew Charm':'#ec4899','GEX Velocity':'#22c55e','Vanna Pivot Bounce':'#818cf8'};
 const GRADE_COLORS = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308','B':'#f59e0b','C':'#888','LOG':'#555'};
 let _allTrades = [];
@@ -14223,6 +14228,20 @@ function passesStrategy(l, strat) {
   // V16FRI (S263) — "V16 w/Friday Off". THE LIVE VIEW once REAL_TRADE_NO_FRIDAY=true:
   // V16 minus Fridays, WITHOUT V18 (which is not in the trade path). Lockstep with
   // _tlPassesStrategy(l,'v16fri') + live_filter.passes_v16_fri.
+  // V20 (2026-08-17, S277/S278) — THE LIVE FILTER from 2026-08-18.
+  // V20 = V16 rules + ES Absorption only when VIX >= 20 + no Friday (the armed
+  // REAL_TRADE_NO_FRIDAY gate). Full change ledger: FILTER_VERSIONS.md.
+  // Lockstep with _tlPassesStrategy(l,'v20') + live_filter.passes_v20 +
+  // main.py _passes_live_filter. Fails CLOSED on a missing VIX.
+  if (strat === 'v20') {
+    if (!passesStrategy(l, 'v16')) return false;
+    if (sn === 'ES Absorption') {
+      if (l.vix == null || l.vix < 20) return false;
+    }
+    if (!l.ts) return true;
+    return new Date(l.ts).toLocaleDateString('en-US', {timeZone: 'America/New_York',
+                                                       weekday: 'short'}) !== 'Fri';
+  }
   if (strat === 'v16fri') {
     if (!passesStrategy(l, 'v16')) return false;
     if (!l.ts) return true;
@@ -14449,9 +14468,7 @@ function passesStrategy(l, strat) {
     //   BofA Scalp, Paradigm Reversal, SB2 Absorption, etc: not in whitelist → BLOCK
     // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
     const _v16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
-                                  'DD Exhaustion']);
-    // S277 (2026-08-17): ES Absorption parked — same env pattern as GEX Long / VIX Div.
-    if (_ES_ABS_REAL) _v16Allowed.add('ES Absorption');
+                                  'ES Absorption', 'DD Exhaustion']);
     if (_GEX_LONG_REAL) _v16Allowed.add('GEX Long');
     if (_VIX_DIV_REAL) _v16Allowed.add('VIX Divergence');
     if (!_v16Allowed.has(sn)) return false;
@@ -16282,7 +16299,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v16fri">V16 w/Friday Off (live) ✦</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v20">V20 (live) ✦</option><option value="v16fri">V16 w/Friday Off</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -19310,8 +19327,6 @@ DASH_HTML_TEMPLATE = """
     // (live) view never showed. Fixing VIX Div on 08-11 without sweeping the other setups
     // is what let this survive four more days.
     const _VPB_REAL = "__VPB_REAL__" === "true";
-    // S277 (2026-08-17): ES Absorption parked off real money — env, read at render.
-    const _ES_ABS_REAL = "__ES_ABS_REAL__" === "true";
     let _tlDailyGaps = {};  // {date_str: gap_pts} for V12 filter
     fetch('/api/setup/daily_gaps', {cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_tlDailyGaps=d;}).catch(()=>{});
     // GEX Long v3 server-side overlay: per-trade {pass, result, pnl, max_fav, verdict}
@@ -19451,6 +19466,21 @@ DASH_HTML_TEMPLATE = """
       // applies V18, which is NOT in the trade path, so V19 stays a research view.
       // Friday-only is worth +$1,432 over 123 sessions; V18 adds a further +$115.
       // LOCKSTEP with live_filter.passes_v16_fri + passesStrategy(l,'v16fri').
+      // V20 (2026-08-17, S277/S278) — THE LIVE FILTER from 2026-08-18.
+      // V16 rules + ES Absorption only when VIX >= 20 + no Friday. Ledger:
+      // FILTER_VERSIONS.md. LOCKSTEP with live_filter.passes_v20 +
+      // passesStrategy(l,'v20') + main.py _passes_live_filter.
+      if (strat === 'v20') {
+        if (!_tlPassesStrategy(l, 'v16')) return false;
+        // NB: `sn` is declared further down in this function, so read the field
+        // directly here — using sn would hit the temporal dead zone.
+        if ((l.setup_name || '') === 'ES Absorption') {
+          if (l.vix == null || l.vix < 20) return false;
+        }
+        if (!l.ts) return true;
+        return new Date(l.ts).toLocaleDateString('en-US', {timeZone: 'America/New_York',
+                                                           weekday: 'short'}) !== 'Fri';
+      }
       if (strat === 'v16fri') {
         if (!_tlPassesStrategy(l, 'v16')) return false;
         if (!l.ts) return true;
@@ -19655,9 +19685,7 @@ DASH_HTML_TEMPLATE = """
         // KEEP THIS LIST IN SYNC with real_trader.py when env defaults change.
         // GEX Long v4 added 2026-06-08 (env GEX_LONG_V3_REAL_TRADE_ENABLED=true).
         const _tlV16Allowed = new Set(['Skew Charm', 'AG Short', 'Vanna Pivot Bounce',
-                                        'DD Exhaustion']);
-        // S277 (2026-08-17): ES Absorption parked — same env pattern as GEX Long.
-        if (_ES_ABS_REAL) _tlV16Allowed.add('ES Absorption');
+                                        'ES Absorption', 'DD Exhaustion']);
         if (_GEX_LONG_REAL) _tlV16Allowed.add('GEX Long');
         if (_VIX_DIV_REAL) _tlV16Allowed.add('VIX Divergence');
         if (!_tlV16Allowed.has(sn)) return false;
@@ -21987,7 +22015,6 @@ def spxw_dashboard(session: str = Cookie(default=None)):
             .replace("__GEX_LONG_REAL__", os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower())
             .replace("__VIX_DIV_REAL__", os.getenv("VIX_DIV_REAL_TRADE_ENABLED", "false").lower())
             .replace("__VPB_REAL__", os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower())
-            .replace("__ES_ABS_REAL__", os.getenv("ES_ABS_REAL_TRADE_ENABLED", "false").lower())
             .replace("__IS_ADMIN__", "true" if user.get("is_admin") else "false"))
     return HTMLResponse(html)
 
@@ -22004,8 +22031,7 @@ def eod_review_page(session: str = Cookie(default=None), date: str = Query(None)
             .replace("__BASKET_SIZING_MODE__", os.getenv("BASKET_SIZING_MODE", "sizeonly").lower())
             .replace("__GEX_LONG_REAL__", os.getenv("GEX_LONG_V3_REAL_TRADE_ENABLED", "false").lower())
             .replace("__VIX_DIV_REAL__", os.getenv("VIX_DIV_REAL_TRADE_ENABLED", "false").lower())
-            .replace("__VPB_REAL__", os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower())
-            .replace("__ES_ABS_REAL__", os.getenv("ES_ABS_REAL_TRADE_ENABLED", "false").lower()))
+            .replace("__VPB_REAL__", os.getenv("VPB_REAL_TRADE_ENABLED", "false").lower()))
     return HTMLResponse(html)
 
 

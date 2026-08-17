@@ -2212,6 +2212,102 @@ def _flatten_position(order):
                    f"MANUAL CLOSE REQUIRED")
 
 
+# ====== S279 STUCK-FILL HEAL (2026-08-17) ======
+
+_STUCK_ENTRY_S = 180          # a market entry unconfirmed this long is not normal
+_stuck_alerted: set[int] = set()
+
+
+def heal_stuck_entries() -> int:
+    """Find entries stuck in pending_entry and reconcile them against a FRESH broker read.
+
+    Why this exists: on 2026-08-17 lid 6090 filled at the broker and the bot never noticed
+    for 58 minutes. Nothing alerted, because _reconcile_positions counts pending_entry
+    inside expected_qty (S99) — so bot and broker BOTH read 1 contract and agreed. The
+    damage is silent: the post-fill stop realign never runs (the stop stays at the wider
+    pre-fill buffered level) and update_trail refuses to trail anything not marked filled.
+
+    DESIGN NOTE — deliberately does NOT contain its own fill logic. It re-fetches /orders
+    and calls the SAME audited _check_order_fills, so there is exactly one code path that
+    can mark a trade filled, realign its stop and place protective orders. A second
+    implementation of that is precisely how S259's double-count bug happened.
+
+    Safe by construction: reads only, then delegates. Never closes, never cancels, never
+    sizes. Returns the number of lids healed.
+    """
+    if not (LONGS_ENABLED or SHORTS_ENABLED):
+        return 0
+    now = datetime.utcnow()
+    with _lock:
+        stuck = []
+        for lid, o in _active_orders.items():
+            if o.get("status") != "pending_entry" or not o.get("entry_order_id"):
+                continue
+            placed = o.get("ts_placed")
+            if not placed:
+                continue
+            try:
+                # ts_placed is written in TWO formats (offset-aware ~1129, naive utcnow
+                # elsewhere) — see research_s259_healer_double_count. Normalise, never
+                # compare as text.
+                from datetime import timezone as _tzu   # not imported at module level
+                dt = datetime.fromisoformat(str(placed))
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone(_tzu.utc).replace(tzinfo=None)
+            except (ValueError, TypeError):
+                continue
+            if (now - dt).total_seconds() >= _STUCK_ENTRY_S:
+                stuck.append((lid, o, (now - dt).total_seconds()))
+    if not stuck:
+        return 0
+
+    healed = 0
+    by_acct: dict[str, list] = {}
+    for lid, o, age in stuck:
+        acct = o.get("account_id", "")
+        if acct:
+            by_acct.setdefault(acct, []).append((lid, o, age))
+    for account_id, items in by_acct.items():
+        if account_id not in ACCOUNT_WHITELIST:
+            continue
+        try:
+            data = _ts_api("GET", f"/brokerage/accounts/{account_id}/orders", None, account_id)
+        except Exception as e:
+            print(f"[real-trader] S279 heal: poll failed acct={account_id}: {e}", flush=True)
+            continue
+        if not data:
+            continue
+        broker_orders = {o.get("OrderID"): o for o in (data.get("Orders") or []) if o.get("OrderID")}
+        for lid, order, age in items:
+            bs = (broker_orders.get(order.get("entry_order_id")) or {}).get("Status", "")
+            print(f"[real-trader] S279 heal: lid={lid} pending_entry for {age/60:.0f} min, "
+                  f"broker says {bs or 'ABSENT'} acct={account_id}", flush=True)
+            try:
+                _check_order_fills(lid, order, broker_orders)
+            except Exception as e:
+                print(f"[real-trader] S279 heal error lid={lid}: {type(e).__name__}: {e}", flush=True)
+                continue
+            with _lock:
+                now_status = _active_orders.get(lid, {}).get("status")
+            if now_status and now_status != "pending_entry":
+                healed += 1
+                _persist_order(lid)
+                if lid not in _stuck_alerted:
+                    _stuck_alerted.add(lid)
+                    _alert(f"\U0001f527 S279 stuck fill healed\n"
+                           f"{order.get('setup_name')} lid={lid} sat unconfirmed "
+                           f"{age/60:.0f} min\nBroker: {bs} -> now {now_status}")
+            elif bs == "FLL" and lid not in _stuck_alerted:
+                # broker filled it, and the audited path still did not advance it — page,
+                # do NOT invent a second fill path.
+                _stuck_alerted.add(lid)
+                _alert(f"\u26a0\ufe0f S279 STUCK FILL NOT HEALED\n"
+                       f"{order.get('setup_name')} lid={lid} — broker FILLED, bot still "
+                       f"pending after {age/60:.0f} min.\nStop may be un-realigned and the "
+                       f"trade cannot trail. CHECK MANUALLY.")
+    return healed
+
+
 # ====== POLL ORDER STATUS ======
 
 def poll_order_status():
@@ -2252,7 +2348,23 @@ def poll_order_status():
                 broker_orders[oid] = o
 
         for lid, order in order_list:
-            _check_order_fills(lid, order, broker_orders)
+            # S279 (2026-08-17): isolate each lid. _check_order_fills was called bare, so
+            # ONE order raising (e.g. inside _extract_fill_price) ended the loop and every
+            # later lid on that account silently stopped being polled. lid 6090 sat in
+            # pending_entry for 58 min while the broker had it FILLED; the stop was never
+            # realigned to the fill (13 pt loss instead of 8) and the trail never started.
+            try:
+                # (2) observability: if a tracked entry id is absent from the payload we
+                # cannot diagnose it later — the Railway log buffer had already rolled past
+                # the incident window by the time it was investigated.
+                _eid = order.get("entry_order_id")
+                if _eid and _eid not in broker_orders and order["status"].startswith("pending"):
+                    print(f"[real-trader] S279 entry {_eid} (lid={lid}) NOT in /orders payload "
+                          f"({len(broker_orders)} orders returned) acct={account_id}", flush=True)
+                _check_order_fills(lid, order, broker_orders)
+            except Exception as _e:
+                print(f"[real-trader] S279 fill-check error lid={lid} acct={account_id}: "
+                      f"{type(_e).__name__}: {_e}", flush=True)
 
     # Note: position reconciliation was previously throttled inside this
     # function but early-exited above when bot state was empty (leaving a

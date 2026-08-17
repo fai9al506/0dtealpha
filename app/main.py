@@ -8267,6 +8267,23 @@ def start_scheduler():
             pass
     sch.add_job(_broker_poll, "interval", seconds=30,
                 id="broker_poll", coalesce=True, max_instances=1)
+
+    # S279 (2026-08-17) — stuck-fill healer. Its OWN job on its OWN thread, deliberately
+    # NOT inside _broker_poll: the failure it exists to catch is the fill poll silently
+    # stopping, so it must not share that job's fate. It re-fetches /orders itself and
+    # delegates to the same audited _check_order_fills — it contains no fill logic of its
+    # own, never closes, never cancels. Incident: lid 6090 sat pending_entry 58 min while
+    # the broker had it filled; stop never realigned (13 pt loss instead of 8), no trail,
+    # and nothing alerted because _reconcile_positions counts pending_entry as expected.
+    def _real_trade_stuck_heal():
+        try:
+            from app import real_trader
+            real_trader.heal_stuck_entries()
+        except Exception as e:
+            print(f"[real-trader] S279 heal job error (non-fatal): {e}", flush=True)
+    sch.add_job(_real_trade_stuck_heal, "interval", seconds=120,
+                id="real_trade_stuck_heal", coalesce=True, max_instances=1,
+                misfire_grace_time=60)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,
                 id="setup_eod", coalesce=True, max_instances=1)
     # S267 — cash-settle the Friday call credit spread against the closing print.

@@ -14,6 +14,42 @@ moved the curve.
 
 ---
 
+## 🔴 CURRENT HEADLINE — V20, re-run 2026-08-17 (S282/S284)
+
+| | $ | SAR |
+|---|---|---|
+| **AVERAGE month** | **+$2,171** | **8,141** |
+| **WORST month** (Jun 2026) | **−$484** | −1,815 |
+| **BEST month** (Aug 2026, per-21) | **+$5,025** | 18,844 |
+
+**Per month** — 117 calendar sessions, 914 trades, 1 MES, −0.6 pt + $1.92/RT charged inside:
+
+| month | sessions | trades | per 21 sessions | share |
+|---|---|---|---|---|
+| 2026-03 | 22 | 204 | +$4,691 | 41% |
+| 2026-04 | 21 | 181 | +$1,826 | 15% |
+| 2026-05 | 20 | 124 | +$2,150 | 17% |
+| 2026-06 | 21 | 188 | **−$484** | −4% |
+| 2026-07 | 22 | 172 | +$1,105 | 10% |
+| 2026-08 | 11 | 45 | +$5,025 | 22% |
+
+**Distribution — MANDATORY, never quote the average alone.** Best day 8% of total · best 3 days
+23% · **without the best 3 days $1,682/mo** · **without the best month $1,587/mo ← the honest
+floor** · 5 of 6 months positive · 67 green days vs 28 red · MaxDD −$1,703.
+
+**Trade count is risk — MANDATORY.** V20 takes **914 trades / 7.8 per day / +$13.2 each** against
+V16's 1,111 / 9.5 / +$8.8: **197 fewer exposures for $419/month more.** V17 would take **2,111
+trades (18/day)** to earn *less* than V20 — 1,197 extra exposures for no gain.
+
+**What V20 is:** V16 rules + ES Absorption only at VIX ≥ 20 + no Friday. Ledger:
+`FILTER_VERSIONS.md`. Reporting rules: memory `feedback_projection_must_show_min_max_avg_trades`.
+
+**Not included, deliberately:** GEX Long v7 (did not arm — the account id `210XFR64` does not exist
+and no funds arrived), the Friday call spread (log-only until ~20 Fridays), and any sizing above
+1 MES.
+
+---
+
 ## Rules for updating this file (MANDATORY)
 
 1. **On every change that can move P&L** (new setup, filter edit, cap change, sizing change,

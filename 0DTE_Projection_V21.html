@@ -175,6 +175,50 @@
   <p class="note"><strong>250 fewer exposures than V16 for $654 a month more.</strong> V17 would
     take 1,250 <em>more</em> trades than V21 to earn less — which is why it was rejected.</p>
 
+
+  <h2>What it looks like at bigger size</h2>
+  <p class="note">The same trades, multiplied. The $300 daily breaker is scaled with the size in
+    every row — it is a <strong>fixed dollar amount</strong> and does not scale itself, so leaving
+    it at $300 while size grows would trip it on the first bad trade of the day.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Size</th><th class="num">Breaker</th><th class="num">Per month</th><th class="num">SAR</th><th class="num">Worst month</th><th class="num">Max drawdown</th><th class="num">Worst week</th></tr></thead>
+      <tbody>
+        <tr class="hi"><td>1 MES (today)</td><td class="num">−$300</td><td class="num up">+$2,372</td><td class="num">8,896</td><td class="num up">+$530</td><td class="num">−$906</td><td class="num">−$752</td></tr>
+        <tr><td>2 MES</td><td class="num">−$600</td><td class="num up">+$4,745</td><td class="num">17,792</td><td class="num up">+$1,059</td><td class="num down">−$1,812</td><td class="num down">−$1,505</td></tr>
+        <tr><td>5 MES</td><td class="num">−$1,500</td><td class="num up">+$11,861</td><td class="num">44,480</td><td class="num up">+$2,648</td><td class="num down">−$4,531</td><td class="num down">−$3,762</td></tr>
+        <tr><td>10 MES = 1 ES</td><td class="num">−$3,000</td><td class="num up">+$23,723</td><td class="num">88,960</td><td class="num up">+$5,296</td><td class="num down">−$9,061</td><td class="num down">−$7,523</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note"><strong>The money scales linearly — and so does everything that can hurt you.</strong>
+    At 10 contracts the drawdown is −$9,061 and a bad week is −$7,523.</p>
+
+  <h2>What each size actually requires</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Size</th><th class="num">Long acct needs</th><th class="num">Short acct needs</th><th class="num">Total capital</th><th class="num">A 40-pt gap costs</th><th class="num">% of today's $6,076</th></tr></thead>
+      <tbody>
+        <tr class="hi"><td>1 MES (today)</td><td class="num">$1,514</td><td class="num">$2,271</td><td class="num">$3,786</td><td class="num">−$2,000</td><td class="num">33%</td></tr>
+        <tr><td>2 MES</td><td class="num">$3,029</td><td class="num">$4,543</td><td class="num">$7,571</td><td class="num down">−$4,000</td><td class="num down">66%</td></tr>
+        <tr><td>5 MES</td><td class="num">$7,571</td><td class="num">$11,357</td><td class="num down">$18,929</td><td class="num down">−$10,000</td><td class="num down">165%</td></tr>
+        <tr><td>10 MES = 1 ES</td><td class="num">$15,143</td><td class="num">$22,714</td><td class="num down">$37,857</td><td class="num down">−$20,000</td><td class="num down">329%</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">The two accounts are margined <strong>separately</strong> — there is no
+    cross-margin, so each column has to be funded on its own.</p>
+
+  <div class="warn">
+    <p><b>Read the last column before the money column.</b> The $300 breaker stops new entries; it
+      does <b>not</b> flatten. A gap through the stops is not bounded by it. At <b>5 contracts a
+      40-point gap costs $10,000 — 165% of the entire account</b>, and at 10 contracts it is
+      $20,000. Those two rows are arithmetic, not a plan: they are unfundable today and they would
+      not survive a single bad open.</p>
+    <p>The realistic path is the September step — <b>2 and 3 contracts on stacked Skew Charm shorts
+      only</b>, which needs $3,029 and is already funded. See <code>SCALING_PLAN.md</code>.</p>
+  </div>
+
   <h2>What V21 changed</h2>
   <p class="note"><strong>V21 = V20 + no SHORTS when the previous session fell more than 0.8% and
     VIX is under 24.</strong> After a day like that the market bounced: the next session averaged

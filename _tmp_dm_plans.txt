@@ -1,0 +1,254 @@
+
+
+############################################################
+PLAN: 6_22 DMT - The Weekly Read - ES_SPX Trade Plans
+############################################################
+I will provide the full trade plan as usual though it will be much later this evening as I am at my kids tournament. With that said if you are trading the open here is my high level summary of this week.
+ES/SPX — Week of June 22–26 · WEEKLY Flash
+Volland pull:
+Friday 6/19 close (latest published read).
+Basis of record:
+ES = SPX + 66.
+Anchor.
+SPX 7,497.71 / ES 7,563.71 to start, sitting right on the 7,500 line. Friday closed mid-range after a week that
+held the 7,400 SPX / 7,466 ES floor
+and stalled under the
+7,575–7,600 SPX (7,641–7,666 ES) ceiling
+. Price spent the week boxed inside the 6/15 weekly value area (≈ SPX 7,478–7,553 / ES 7,544–7,619) — that containment is the backdrop into this week.
+Multi-Week Watch Status.
+Three active theses frame the week. The
+7,400 SPX / 7,466 ES delta-anchor floor
+(long) is on its 4th confirming touch and reads scale-in — dealers carry heavy long-delta into that shelf and it held again. Above, the
+7,575 SPX / 7,641 ES vanna zone
+and the
+7,600 SPX / 7,666 ES overhead cap
+(both short-side) are the lid — where last week's 7,575 short came from. Net: a defined box, long the floor / short the cap.
+Dealer Positioning — range-and-pin.
+Net dealer gamma is positive (+$155M), so dealers lean mean-reversion — sell rallies, buy dips — magnetizing price to the
+7,500 / 7,566 pin
+where positive gamma stacks across timeframes. Floor and cap are both dealer-built; inside the box, extremes fade to the middle. Aggregate vanna is deeply negative — the catalyst-armed caveat that a shock can override the pin.
+Vol Regime — compressed.
+VIX 16.63, spot-vol relationship near-flat (0.03). One flag: dealer liquidity (DADS) is hot at 16.97 vs a normal ~11 → half-size into first tests.
+Key Levels:
+SPX 7,600 / ES 7,666
+— overhead cap (net delta −$2.4B)
+SPX 7,575 / ES 7,641
+— vanna repellent / short zone
+SPX 7,500 / ES 7,566 — SPOT pin
+(positive-gamma magnet)
+SPX 7,400 / ES 7,466
+— delta-anchor floor (long-delta +$5.8B 2wk)
+SPX 7,150 / ES 7,216
+— deep cascade zone if the floor breaks
+Macro Risk Watch.
+Iran headline risk is live and weekend-gap-capable — the one thing that breaks the box. Thursday's
+Core PCE (0.3% f/c)
++
+Final GDP
+are the scheduled vol events.
+MU (Wed AC)
+and
+FedEx (Tue AC)
+earnings add single-name noise. Cap size into Thursday.
+Bias:
+Range-bound containment between SPX 7,400 / ES 7,466 and SPX 7,575–7,600 / ES 7,641–7,666 — fade the edges toward the 7,500 / 7,566 pin, buy the floor, short the cap; stand aside if Iran or a hot PCE breaks the box. Dominant force:
+gamma
+.
+Top Two Setups:
+1.
+LONG the 7,400 floor
+— entry SPX 7,400–7,415 / ES 7,466–7,481, stop SPX 7,365 / ES 7,431, T1 7,500 / 7,566, T2 7,550 / 7,616.
+Grade A. Options: 30–45 DTE.
+2.
+SHORT the 7,575–7,600 cap
+— entry SPX 7,575–7,600 / ES 7,641–7,666, stop SPX 7,625 / ES 7,691, T1 7,500 / 7,566, T2 7,450 / 7,516.
+Grade B+. Options: 14–21 DTE.
+---
+Full Plan
+---
+(edited)
+Heading into the 6/22–6/26 week, SPX sits at 7,498 (ES 7,564) — right on the 7,500 gamma pin and dead-center of a well-defined dealer box. The structure is a containment regime: a delta-anchored floor at SPX 7,400 / ES 7,466 that has held the same dealer-buying direction for five straight weeks, a strong positive-gamma pin at SPX 7,500 / ES 7,566 keeping price magnetized to mid-box, and a negative-delta ceiling at SPX 7,580–7,600 / ES 7,646–7,666 where dealers turn into sellers on any rally.
+
+With VIX calm at 16.6 and net dealer gamma positive, the dominant path is rotation inside SPX 7,400–7,600 / ES 7,466–7,666 rather than a trend. The plan trades the box edges: long the 7,400 floor where dealers buy dips, short rallies into the 7,575–7,600 ceiling where dealers sell, and respect the 7,500 pin in the middle.
+
+The guardrail is the deeply short daily vanna (-$4.03B): the contained range holds only while volatility stays quiet. If VIX breaks above ~19, the same dealer book that is dampening now flips to amplifying and the box read voids. Two live catalysts split the box rather than tilt it — Thursday 6/25 Core PCE + Final GDP, and a live Iran / Strait of Hormuz supply-shock thread that is weekend-gap-capable. Keep size at scout/half per the elevated delta-adjusted spread (16.97) and a transitional spot-volatility reading.
+Multi-Week Thesis Watch
+Four active multi-week theses are live plus one newly forming (the 7,500 gamma pin) — and they all encode the same containment box. The one doing the heavy lifting is the SPX 7,400 / ES 7,466 delta floor — dealers have leaned long there for five consecutive weeks, the highest-conviction structure on the board, and it backs this week's primary dip-buy. Above spot, the 7,575 attractor is a magnet we add into on strength, while the 7,600 overhead cap (short) and the deep 7,150 downside cascade amplifier are both building, not yet actionable. A fifth structure, the 7,500 gamma pin, is newly forming this week and not yet confirmed.
+SPX 7,400 / ES 7,466 Delta-Anchor Floor (Long)
+The dominant below-spot structure — dealers have leaned long at the SPX 7,400 / ES 7,466 floor for five straight weeks (dealer-long delta +$5.85B two-week, the heaviest load on the board). Keep adding to the position on confirmation on deep tests.
+The two-week delta load is back-weighted and carries through month-end, so a multi-week expression belongs in the two-to-three-week window rather than the near-dated layer.
+SPX 7,575 / ES 7,641 attractor (Long-lean magnet)
+—
+Status:
+Building thesis — 3 confirmations; an above-spot pull once the 7,500 pin clears. Its one-week pull flipped negative after OpEx so it is on watch, but the monthly concentration still draws price toward the cap on strength.
+SPX 7,600 / ES 7,666 overhead cap (Short)
+—
+Status:
+Building thesis — 3 confirmations; a negative-delta ceiling (multiple rejections), the box top and the level Setup B fades on rejection. Watch-only until a confirmed stall.
+SPX 7,150 / ES 7,216 deep downside cascade amplifier (Short tail)
+—
+Status:
+Building thesis — 1 confirmation; a negative-vanna acceleration zone well below spot, only actionable on a confirmed break back below the 7,400 floor.
+SPX 7,500 / ES 7,566 gamma pin (Pin)
+—
+Status:
+Building thesis — newly forming, not yet confirmed; the mid-box magnet holding price this week while positive gamma is intact.
+Dealers are leaning net-long gamma (+$155M) right at spot, which pins price near the SPX 7,500 / ES 7,566 strike — dips get bought, rips get sold back toward the middle. That is a stabilizing, range-keeping posture, and it is the engine for the whole week: mean-reversion to the pin, not a trend.
+
+The box has hard edges. Below, the SPX 7,400 / ES 7,466 shelf is a delta-anchored floor — a very large positive dealer-delta load (+$5.85B two-week) that has held the same direction for five straight weeks, so dealers mechanically buy declines into it. Above, the SPX 7,580–7,600 / ES 7,646–7,666 zone is a negative-delta ceiling, not a cushion: large negative dealer delta (-$1.32B at 7,580, -$2.41B at 7,600) means dealers
+
+
+############################################################
+PLAN: 6_29 DMT - The Weekly Read - ES_SPX Trade Plan
+############################################################
+Fade the rip into 7,400, scalp 7,300 — short-biased into the jobs-week.
+Anchor
+ES/SPX heads into the holiday-shortened week with live futures pushing the SPX-equivalent up to SPX 7,382 / ES 7,447, climbing into overhead structure before the dealer book has repriced (the Volland board anchors off Friday's SPX 7,338 close).
+
+The bias is SHORT, medium confidence. Dealers sit short gamma and deeply short on the volatility-hedging book, so this is a fade-the-overhead, range-lower week — rallies into the SPX 7,400 / ES 7,465 wall are mechanically sold while volatility stays stable or rises.
+
+The single most important thing to get right this week: the SPX 7,400 / ES 7,465 wall is a ceiling that pushes price away, NOT a floor to buy. Last week the 7,400 floor broke and flipped to supply, and below-spot longs went 0-for a third straight week — so the SPX 7,300 / ES 7,365 floor below is a cover-and-scalp bounce zone, not a buy-and-hold.
+
+The corridor is SPX 7,300 to 7,400 / ES 7,365 to 7,465. A held break above SPX 7,422 / ES 7,487 kills the short and opens break-and-go toward 7,500; a clean loss of SPX 7,288 / ES 7,353 opens the cascade toward 7,150.
+
+The plan fades rallies into 7,400 as the primary short, scalps the 7,300 floor only on a held reclaim, and keeps everything to half a clip given the stressed dealer-liquidity reading — with nothing held into Thursday's jobs print.
+Multi-Week Thesis Watch
+One multi-week idea is live for ES/SPX, and it sits directly on this week's downside path. The SPX 7,150 / ES 7,215 deep cushion-turned-downside-amplifier has been on watch four weeks and gained momentum last week: the cascade gate activated on Friday's close — the 7,400 floor broke, the acceleration pocket beneath it carried price lower, and the 7,150 node is now the live downside destination if the corridor gives way.
+SPX 7,150 / ES 7,215 Cascade Amplifier (Short)
+This is the downside accelerant below the corridor. It sits roughly 230 points under live spot and re-engages as the live downside target on a clean loss of the SPX 7,300 / ES 7,365 floor (specifically a close below SPX 7,288 / ES 7,353). Below it, the SPX 7,050 / ES 7,115 dealer-supported floor is the deeper catch and the giant SPX 7,000 / ES 7,065 inflection is the tail-risk anchor if a cascade extends.
+Recommended action:
+Watch — the live downside destination on an accepted loss of the SPX 7,300 / ES 7,365 floor; the 7,150 waypoint amplifies the move once the corridor breaks. Do not pre-position for it; let the floor break confirm first.
+Options window:
+monthly-and-out if it engages — the cascade structure is back-loaded and durable, carrying past month-end.
+Status:
+Building thesis — 2 confirmations now, momentum rising; armed as the live downside path while price holds below the SPX 7,400 / ES 7,465 wall. A weekly close back above SPX 7,400 / ES 7,465 with broad mega-cap participation is what would stand it down.
+Dealer Positioning
+Dealers head into the week running a destabilizing book — short on the move-amplifying side and deeply short on the volatility-hedging side — with a negative-pressure wall directly overhead at SPX 7,400 / ES 7,465 and a dealer-supported floor below at SPX 7,300 / ES 7,365. This is a fade-the-overhead, sell-the-rally posture, not a containment range.
+Dealers sit short gamma through the SPX 7,300-7,400 / ES 7,365-7,465 corridor into the week, which means their hedging amplifies moves rather than calming them — as price rises they buy, as it falls they sell. Break-and-go setups upgrade: once a level gives way the move tends to run rather than mean-revert, so pure fades only earn full conviction at the strongest structural edges.
+
+The far larger force is the volatility-hedging book, which is deeply one-sided to the downside. If volatility expands, that program mechanically sells rallies — a volatility-expansion catalyst flips dealers into rally-faders. That is exactly why the SPX 7,400 / ES 7,465 overhead is a genuine sell-zone the moment the VIX ticks up, and why counter-trend long probes into it must stay small and quick.
+
+Below price, dealers hold a strong long-delta floor stacked at SPX 7,300 / ES 7,365 and again at SPX 7,050 / ES 7,115 — their hedging buys dips into those strikes, which is structural demand on weakness. The 7,300 floor is the primary reclaim/defense line and the 7,050 floor is the deeper backstop; both anchor the long side of the book.
+A word on sizing: the dealer-spread reading is severely elevated at nearly triple its normal level, a gauge of how stretched dealer positioning is relative to liquidity. Crowded dealer books can unwind violently and slippage widens, so size the primary fade at half and counter-trend probes at a quarter.
+
+Net: fade rallies into the SPX 7,400 / ES 7,465 wall as the primary, respect a confirmed hold above SPX 7,422 / ES 7,487 as break-and-go that stands the short down, scalp the SPX 7,300 / ES 7,365 floor only on a held reclaim, and carry everything at half a clip.
+Structure Overview
+ES/SPX heads into the holiday-shortened week trading SPX 7,382 / ES 7,447, with live futures climbing into the overhead wall before the dealer book has repriced off Friday's SPX 7,338 close.
+The bias is SHORT, medium confidence: dealers are short gamma and deeply short on the volatility-hedging book, with a negative-vanna wall reinforced by the board's largest dealer-long-delta concentration directly overhead at SPX 7,400 / ES 7,465 and a dealer-long-delta floor below at SPX 7,300 / ES 7,365 — a fade-the-overhead, sell-the-rally structure, not a containment range.
+The structure stacks the SPX 7,400 / ES 7,465 wall and the SPX 7,420 / ES 7,485 sub-repellent above, a short-gamma corridor SPX 7,300-7,400 / ES 7,365-7,465 around spot, and an air pocket below toward the SPX 7,150 / ES 7,215 cascade amplifier, the SPX 7,050 / ES 7,115 deep floor and the giant SPX 7,000 / ES 7,065 inflection.
+The primary expression is a rally-fade short into SPX 7,400-7,415 / ES 7,465-7,480 on the first tag, targeting SPX 7,350 / ES 7,415 then the SPX 7,300 / ES 7,365 floor.
+The secondary is a half-a-clip floor scalp at SPX 7,300-7,312 / ES 7,365-7,377 on a held reclaim — a cover/scalp, not a swing hold, per the broken-cap-is-supply week.
+The whole structure is held to half a clip: the dealer-spread reading is severely elevated (nearly triple normal) and the directional read has been poor lately, so the break is confirmation-gated, a confirmed hold above SPX 7,422 / ES 7,487 stands the short down, and nothing is held into Thursday's NFP.
+Macro Context
+This holiday-shortened week (US markets closed Fri 7/3 for the July 4 observance) is a jobs gauntlet that funnels into one dominant binary — Non-Farm Payrolls, pulled forward to Thursday 7/2 (114K expected vs 172K prior), printed alongside the Unemployment Rate (4.3% expected to hold) and Average Hourly Earnings. The labor read is the single variable the Fed and new Chair Kevin Warsh are monitoring to set the rate path: a soft print and 
+
+
+############################################################
+PLAN: 7_13 DMT - The Weekly Read - ES_SPX Trade Plan
+############################################################
+ES/SPX opens Week 29 inside the 7/6 weekly value area, with live Sunday futures gapped down to SPX 7,552 / ES 7,598 into a shallow negative-gamma pocket just under the value-area high. Volatility is compressed (VIX 14.59), the higher-timeframe trend is up, and the dealer structure is a long-tilted containment map: a single dominant gamma+vanna lid at SPX 7,600 / ES 7,646 overhead and a deep dealer-long delta shelf (7,350-7,525) beneath, a 2.2-to-1 long-biased stack. The base case is range-primary, buy-the-dip.
+
+The plan names the direction LONG at reduced size. The higher-conviction play is buying dips into the SPX 7,500-7,488 / ES 7,546-7,534 delta shelf where dealers hold +$8.45B of long delta, with the deeper SPX 7,400 / ES 7,446 vanna magnet as the strategic anchor / flush-contingency and the strategic multi-week anchor. The SPX 7,600 / ES 7,646 lid is a capped, intraday-only tag-fade — not a trend short — and Monday's same-day book adds a 0DTE pin at SPX 7,580 / ES 7,626 to fade the extremes into the close.
+
+The week is a HIGH-catalyst gauntlet: CPI Tuesday, PPI Wednesday, and Warsh testifying both days, all landing into a -$5.65B volatility-expansion-armed vanna that can flip the compressed-vol magnet mechanic to expanding on a surprise. Cap DTE through the Tue/Wed window or roll the anchor past Friday.
+
+Risk management: buy the shelf on dips, defined-risk, and let it come to you — do not chase the mid-pocket. Fade 7,600 only on rejection. The hard invalidation is a confirmed daily close below SPX 7,400 / ES 7,446, which flips gamma negative and opens 7,300/7,290 — the do-not-resurrect line.
+Multi-Week Thesis Watch
+Two multi-week ideas are live, both on the long side. The SPX 7,400 / ES 7,446 vanna magnet is the strategic-grade anchor — it has been confirmed seven weeks running and just took its first clean cross-week confirmation, so as long as the market keeps rotating rather than breaking, that floor holds and dips toward it are buyable. A newer SPX 7,500 / ES 7,546 delta-floor idea is building (watch-only, three weeks) on the board-largest dealer-long delta shelf. Nothing forces action unless price unwinds to the levels; a confirmed daily close below SPX 7,400 / ES 7,446 is what kills the anchor.
+Dealer Positioning
+One-line read:
+dealers are set up to buy dips into the deep SPX 7,350-7,525 / ES 7,396-7,571 delta shelf and to fade tags of the single SPX 7,600 / ES 7,646 gamma+vanna lid while positive gamma holds — a long-tilted, range-primary containment map that ruptures only on a volatility-expansion surprise.
+(1) Gamma — long, the mean-reverting backbone.
+Net dealer gamma is positive on the day at +$238M, which for the index is a modest, price-dampening amount: dealers lean against moves, so the SPX 7,600 / ES 7,646 lid and the SPX 7,500 / ES 7,546 shelf both tend to hold and extremes mean-revert. The catch is a local negative-gamma pocket at SPX 7,530-7,570 / ES 7,576-7,616 where live spot sits — inside it, short-term moves accelerate with no dealer cushion until the 7,500 shelf engages.
+(2) Vanna — short, the catalyst-armed lever.
+Net dealer vanna is deeply negative at -$5.65B — a large, real lever for the index: any jump in volatility mechanically pushes dealers to sell rallies. That arms a fade at the SPX 7,600 / ES 7,646 pin and pressures the SPX 7,450-7,525 / ES 7,496-7,571 negative-vanna seam, and it is why a CPI/PPI/Warsh surprise this week is the one thing that can flip the compressed regime.
+(3) Delta — persistently long, the floor.
+The delta book is dealer-long across the entire SPX 7,350-7,525 / ES 7,396-7,571 demand shelf — several billion dollars per strike, topping out at +$8.45B at the SPX 7,500 / ES 7,546 floor — a genuinely bullish hedge lean that gets dips bought hard. Aggregate net premium is very large and positive (about +$832B), a deeply-positioned, containment-style book.
+
+The floor is the heavier and more durable force: the delta shelf carries across the 2-week and all-expiration windows and is a 2.2-to-1 long-biased stack, while the overhead lid is a single node. That asymmetry is why the dip-buy is the higher-conviction reward-to-risk and the 7,600 fade is only a tactical tag.
+What that means by zone:
+into SPX 7,500-7,525 / ES 7,546-7,571 expect chop-and-buy — weakness bought, price drawn back up; SPX 7,530-7,570 / ES 7,576-7,616 is the negative-gamma pocket where a loss of 7,530 slides fast to the 7,500 shelf; SPX 7,595-7,600 / ES 7,641-7,646 is a grind-and-stall lid that rejects tags from below unless price accepts through it; a confirmed reclaim above SPX 7,600 flips to a break-and-go toward 7,637/7,690. On Monday, the same-day book magnetizes the close toward the SPX 7,580 / ES 7,626 pin.
+
+Size posture: the spot-to-volatility relationship reads essentially flat (range-bracket) and recent directional accuracy is poor, so keep directional size sub-full — quarter on the fades, half on the dip-buys.
+Macro Context
+The S&P closed Friday 7/10 at 7,575 (+1.2% on the week, ~0.45% below the all-time closing high, +10.7% year-to-date); the Mag-7 led the rebound (+4.9% on the week) and cleared the descending ceiling that had capped every rally since June. VIX broke down hard Friday to 15.03 — a low-vol, complacent tape into a heavy-catalyst week. Fed Chair Warsh has removed forward guidance for pure data-dependence and has called inflation 'too high'; fed funds hold at 3.50-3.75%. This week's authoritative CPI/PPI forecasts are disinflationary (June CPI y/y 4.2%->3.8%, core 2.9%->2.8%; PPI headline 0.0%), which — if realized — supports the long 7,400 anchor. The offsetting risk is structural: daily dealer vanna is heavily negative (-$5.65B, volatility-expansion-armed), so any surprise can flip the compressed regime and arm rally-fades. Tail risks: continued Strait of Hormuz shipping attacks under a tenuous ceasefire (oil tame), and tariff legal uncertainty on appeal.
+Macro Regime Drivers
+The one crosscurrent that matters for the SPX 7,400 / ES 7,446 magnet long is inflation-versus-vol, and it resolves Tuesday-Wednesday. The disinflationary forecasts hold the index up; a hot CPI or a hawkish Warsh flips that supportive backdrop by reviving rate-hike odds and expanding volatility into the armed vanna.
+Disinflation print risk (CPI/PPI into the July FOMC)
+— current state: forecasts disinflationary (CPI y/y 4.2%->3.8%, core 2.9%->2.8%; PPI 0.0%); near-term change: resolves Tue 7/14 / Wed 7/15; thesis impact: an in-line print confirms the long anchor, a re-inflation surprise threatens it.
+Volatility-expansion-armed dealer vanna
+— current state: daily vanna -$5.65B, compressed regime armed to flip on any surprise; near-term change: CPI/PPI/Warsh Tue-Wed; thesis impact: the dominant structural risk to the long anchor this week, more than print direction.
+Fed-hold / hawkish data-dependence (Warsh)
+— current state: funds 3.50-3.75%, Chair testifies both Tue and Wed; near-term change: live headline risk stacked on the prints; thesis impact: a hawki
+
+
+############################################################
+PLAN: 7_20 DMT - The Weekly Read - ES_SPX Trade Plan
+############################################################
+Sell rallies into 7,490–7,500. A close below 7,400 opens the door to 7,300.
+Anchor
+The market closed Friday at SPX 7,454 / ES 7,494, beneath last week's entire value area and under every short-term moving average, with the daily and weekly candles pointing the same direction down. The fifty-day exponential average at SPX 7,456 / ES 7,496 is the only thing holding price up. But the dealer book tells a different story than the chart does: nearly all of the live structure sits ABOVE the market, between SPX 7,475 / ES 7,515 and 7,600, which means the first move from here is more likely a pull UP into that overhead structure than a continuation lower.
+
+So the plan leans short into strength rather than bracketing the week. The base case is rotation between SPX 7,440 / ES 7,480 and 7,550 (SPX 7,440 / ES 7,480 to 7,590), and the highest-quality trade is fading rallies into the standing upper wall at SPX 7,490 / ES 7,530 — a level that has now printed as the primary upper wall on two consecutive readings — back toward the same-day pin at SPX 7,455 / ES 7,495. Underneath, the friction shelf at SPX 7,440 / ES 7,480 gets defended for a bounce, with a smaller size because it is the against-the-grain side of the level stack. The one genuinely directional expression is a swing that only arms on a daily close below SPX 7,400 / ES 7,440, which is the gate to the big downside anchor at SPX 7,300 / ES 7,340.
+
+Two things were deliberately excluded. First, no break-and-go trade appears anywhere in this plan, because the spot-volatility reading is negative and that pauses cascade trading outright — everything here is a mean-reversion trade back toward structure, at reduced size. Second, the working view that SPX 7,300 / ES 7,340 gets tested this week is only half confirmed by the data: SPX 7,300 / ES 7,340 is unquestionably real, carrying the largest monthly volatility-sensitivity wall on the entire board at +$229.3M and repeating unchanged from Friday's reading, but it sits 156 points away, more than three times a normal day's range, behind two intact shelves at SPX 7,440 / ES 7,480 and 7,400. It is the right destination on the wrong timeline unless both of those give way on daily closes.
+
+Risk management for the week: half size on everything while the spot-volatility reading is negative. For Monday trim any short into the SPX 7,455 / ES 7,495 pin rather than holding for the full extension, because the same-day book is set to buy into the close - review updated 0DTE data for any changes. Two large-cap technology reports land midweek and the working view is that semiconductors are already under pressure. If the market closes above SPX 7,550 / ES 7,590 on any day, the whole downside framing is wrong and the plan flips to a range with an upward tilt.
+Multi-Week Thesis Watch
+Two longer-running ideas are live, and both are about the same question: where this range ends. The first is the ceiling overhead, which has now capped three straight weekly plans and is backed by the heaviest cluster of dealer positioning anywhere on the board. The second is the deep shelf far below the market, which carries the largest single pocket of positioning beneath spot. Neither is a trade today. The ceiling only matters if price climbs back to it, and the lower shelf stays unnamed as a target until the market proves it by closing a full session beneath SPX 7,400 / ES 7,440 — it has been named three times before and reached none of them.
+Dealer Positioning
+Dealers are positioned with almost all of their live structure ABOVE the market
+Walking the gamma and vanna books strike by strike across the one-week, two-week, monthly and all-expiration windows, the weight of dealer positioning between SPX 7,470 / ES 7,510 and 7,650 outnumbers everything under spot by better than two to one. That is the single most actionable fact in this plan. Price sits underneath its own structure, so the path of least resistance is a pull UP into the overhead nodes before anything downside can develop. Fades into the overhead shelves are the highest-quality trades on this board; chasing a breakdown from here is trading into the thinnest part of the map.
+Vanna is doing the work, not gamma
+Vanna is the Greek that governs how dealers behave as volatility moves, and its daily hedging figure is −$3.94B against just a small positive figure for gamma — roughly twenty-eight times larger. On ten of the fifteen levels in this table, vanna is the heaviest Greek at the strike. Read every level through the volatility lens first. Positive vanna nodes (SPX 7,525 / ES 7,565, SPX 7,575 / ES 7,615, SPX 7,600 / ES 7,640 above; SPX 7,400 / ES 7,440 and 7,300 below) are where dealer hedging pulls price toward. Negative vanna nodes (SPX 7,550 / ES 7,590, SPX 7,475 / ES 7,515, SPX 7,290 / ES 7,330, SPX 7,150 / ES 7,190) are where price gets pushed away. Volatility sits at roughly the 67th percentile of its own past year, which is below the threshold where that polarity inverts — so the classical reading applies and the magnets behave as magnets.
+The spot-volatility relationship has gone negative
+The spot-volatility beta reads −0.12. Below zero means dealer hedging behavior has decoupled from its historical relationship with price, which is the condition that caps size rather than sets direction: half size, mean-reversion entries only, no cascade chasing — but the lean stays short into the overhead shelf. This is a hard brake on directional conviction, and it overrides how bearish the chart looks. No cascade chasing, no front-running of levels, mean-reversion only, and half-size until the reading recovers above zero. Every setup in this plan is a fade back toward structure, not a break-and-go.
+Gamma is long structurally but short right where price is standing
+Across all expirations dealers hold a small positive figure of gamma, which dampens. But in the one-week window the figure at the money is −$33M, and the strikes immediately around spot (7,450, 7,460, 7,465) are all negative. Expect an unstable open and fast, over-extended intraday swings inside the week's working range. The dampening shelves are at SPX 7,525 / ES 7,565 above and SPX 7,440 / ES 7,480 below — between those two the tape has no brakes. That is the argument for tight stops on same-day trades and for letting the swing trades work from the edges of the range rather than the middle.
+The book is built for the far future, not this week
+Positioning is back-loaded: 53.4% of it sits in expirations more than six months out and another 10.7% in the quarterly bucket, against just 3.2% expiring daily and 10.2% weekly. The big anchors — SPX 7,600 / ES 7,640 above and SPX 7,300 / ES 7,340 below — will still be there next week and the week after. They are worth holding a swing position against. The near-spot levels at SPX 7,475 / ES 7,515 and 7,440 are the opposite: they wipe at Friday's close and should be traded with short-dated options, not carried.
+Structure Overview
+The map is one-sided. Between SPX 7,4
+
+
+############################################################
+PLAN: 7_6 DMT - The Weekly Read - ES_SPX Trade Plan
+############################################################
+ES/SPX range week: buy 7,400 floor (half), fade 7,550–7,600 rip; 7,600 caps, FOMC Wed
+Anchor
+opening the week sitting almost exactly on last week's volume point-of-control (SPX 7,501 / ES 7,553) — the definition of equilibrium. Volatility is compressed (VIX 15.6) and dealers just flipped to buying dips and fading rallies, so the base case is a range that rotates around the pin until Wednesday's Fed minutes supply a direction. The stacked dealer-supported floor below spot leans the read constructive, so buying a tested SPX 7,400 / ES 7,452 dip is the highest-conviction play — but sized down.
+Multi-Week Thesis Watch
+The SPX 7,400 / ES 7,452 floor that anchors this whole week just earned its first cross-week confirmation and graded up to a strategic-grade, multi-week structure — which is why it is drawn as a reclaim-candidate floor and the primary long rather than a fade level. A new swing-long idea around SPX 7,400 is being tracked, not yet an open position; act on it on a tested hold of the floor.
+SPX 7,400 / ES 7,452 Vanna Magnet (Long)
+The read is to buy tested holds of SPX 7,400 / ES 7,452 with a swing horizon (roughly the next four to six weeks of options, anchored on the 7/17 monthly expiry), scaling in only on strength and defending the migrated level rather than the entry. The one thing that would retire it is a confirmed weekly close back below SPX 7,400 / ES 7,452, or a jump in volatility that flips the supportive structure hostile — Wednesday's Fed minutes are the event that could do either.
+Dealer Positioning
+Summary:
+dealers buy tested dips into the SPX 7,400–7,500 / ES 7,452–7,552 floor stack and fade rallies into the SPX 7,550–7,600 / ES 7,602–7,652 ceiling — a mean-revert tape whose only real bearish trigger is a jump in volatility.
+(1) Gamma just flipped to a calming force (+$158.6M, up from short last week):
+dealer hedging now leans toward selling rallies and buying dips, so the mean-reversion tape is back — well-defined edges regain conviction and break-and-go momentum is no longer the free trade it was a week ago.
+(2) Vanna is the single heaviest exposure and it is deeply one-sided (-$5.28B, deeper than last week's -$4.73B):
+it is a lid, not a floor — any pickup in volatility mechanically forces dealers to sell strength, so the overhead is the heavier side of the book and approaches into the SPX 7,550–7,600 / ES 7,602–7,652 shelf get sold when volatility ticks up.
+(3) Delta is the dominant force below spot and it is enormous:
+dealers are long delta at the SPX 7,500 / ES 7,552 pivot, the SPX 7,400 / ES 7,452 floor and the SPX 7,350 / ES 7,402 deep floor (roughly +$7–9B per strike — a very large one-directional book for the index), so hedging buys those dips and the downside is well scaffolded; the floor stack is heavier than the ceiling by about 1.6 to 1.
+What that means by zone:
+into the SPX 7,550–7,600 / ES 7,602–7,652 ceiling expect grind-and-stall and sold rallies on any volatility uptick; around the SPX 7,500 / ES 7,552 pivot expect chop and pins with no edge at the pin itself; into the SPX 7,400 / ES 7,452 floor expect dip-buying and reversion back up. Keep size sub-full while the dealer-liquidity spread reading is elevated (16.05) and the spot-volatility relationship sits near zero — a normal magnetic regime, no directional veto, but no license to press either edge with full size.
+(edited)
+Structure Overview
+The week sets up as a range trade inside the 6/29 weekly value area, with a constructive floor-lean. The below-spot dealer-supported floor stack is heavier than the overhead by about 1.62 to 1, so the lean is modestly long — but the whole map is provisional until Wednesday's Fed minutes print and tell us whether the index breaks the SPX 7,400 / ES 7,452 floor or stays pinned around the SPX 7,500 / ES 7,552 point-of-control.
+Macro Context
+The macro week is front-loaded into Monday's services read and then routes everything through Wednesday's Fed minutes. Over the holiday weekend the index held up while the leadership underneath fractured — semiconductors fell about 14% and the crowded high-beta momentum crowd drew down roughly 24%, but rotation into financials, healthcare and biotech kept the index near 7,500. Volatility slipped to about 15.6 even as breadth deteriorated, and a widely-watched sentiment gauge sits at an extreme-bullish reading, so positioning is stretched into the week. The single binary is Wednesday's minutes from the June meeting — the new Chair's first — which the market will parse for how broad the hawkish tilt toward a possible 2026 hike really was, set against a soft June jobs print and still-hot inflation.
+## Economic Calendar
+Earnings Assessment
+Off-cycle and clear. Second-quarter mega-cap tech and financial earnings season has not started — the big-bank kickoff begins the following week — so no index-moving single-name report lands in the 7/6–7/10 window. With jobs soft and inflation still running hot, the market's attention this week is on forward earnings revisions rather than reported prints.
+Cross-Ticker Signals
+The broader tape is telling a rotation story, not a de-risking one — which underwrites the below-spot floor.
+Term Structure
+Classification:
+back-loaded
+What this section does:
+it splits the dealer structure by option-expiry timeframe so you can match a level to a holding period and the expiry to trade it with. Read the row for your horizon — 1-week levels are this week's intraday-to-swing range; monthly and all-expiration are the swing structure that persists past this week. The book is back-loaded (most of the weight sits in the monthly and longer buckets), so the floor stack and the SPX 7,600 / ES 7,652 wall are durable structures, not intraday-decaying ones. There is no same-day (0DTE) options structure live this session, so the front row starts at 1-week. Each row's Support and Resistance are the floor and ceiling dealers defend on that timeframe.
+Carry implication:
+The monthly + all-expiration floor (SPX 7,350–7,400 / ES 7,402–7,452) and the SPX 7,600 / ES 7,652 ceiling persist past this week — swing them with the next monthly expiry. The 1wk–2wk pivot band (SPX 7,455–7,550 / ES 7,507–7,602) is this week's rotation — scalp with 1–10 DTE and do not carry a range-rotation scalp overnight. The same-day (0DTE) box (SPX 7,455–7,600 / ES 7,507–7,652) is Monday-only — it frames execution inside the weekly range and wipes at the 4:00 PM expiry, so trade it with same-day options and never carry it.
+(edited)
+Vol Regime Context
+Volatility is compressed and normal-magnetic. VIX sits at 15.6, below the 25th percentile of the trailing year, and the spot-volatility relationship reads a near-zero 0.02 — a normal magnetic regime, not an inverted one, so there is no directional veto and mean-reversion inside the value area governs. The read is compression-holds until a catalyst forces it: as long as VIX stays under about 17–18 the SPX 7,500 / ES 7,552 pin and the below-spot cushions behave normally; a push above abou

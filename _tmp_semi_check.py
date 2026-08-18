@@ -1,0 +1,11 @@
+import os, psycopg2
+c=psycopg2.connect(os.environ["DATABASE_URL"]); c.autocommit=True; cur=c.cursor()
+cur.execute("SELECT column_name,data_type FROM information_schema.columns WHERE table_name='semi_basket' ORDER BY ordinal_position")
+print("semi_basket cols:", cur.fetchall())
+cur.execute("""SELECT date(et AT TIME ZONE 'America/New_York') d, count(*), min(et), max(et)
+  FROM semi_basket WHERE et >= '2026-07-02' GROUP BY 1 ORDER BY 1""")
+print("coverage per day (et as-stored):")
+for r in cur.fetchall(): print("  ",r)
+cur.execute("SELECT et, basket_pct FROM semi_basket WHERE et>='2026-07-06' ORDER BY et LIMIT 3")
+print("sample rows:", cur.fetchall())
+c.close()

@@ -56,52 +56,52 @@ better than the +$118 average — skipping costs $105/mo).
 
 ---
 
-## The rungs
+## The rungs — corrected basis (max sizing + S203 guard modelled)
 
-| rung | what changes | $/month | worst month | best month | MaxDD | peak short MES | short equity needed |
-|---|---|---|---|---|---|---|---|
-| **R0** | today, everything 1× | $2,171 | −$484 | +$5,025 | −$1,703 | 6 | $2,271 ✅ |
-| **R1b** | **SC-short 2× on STACKED trades only** | **$2,712** | **−$184** | +$6,339 | **−$1,428** | 10 | **$3,786** |
-| **R1a** | SC-short 2× on ALL | $3,171 | **+$642** | +$7,511 | −$1,648 | 12 | $4,543 |
-| R1c | 2× at slot 1, 3× at slot 2 | $2,932 | −$37 | +$6,733 | −$1,213 | 12 | $4,543 |
-| R2a | SC-short 3× on all | $4,172 | +$1,659 | +$9,997 | −$2,545 | 18 | $6,814 |
+| config | $/month | worst month | worst day | MaxDD | peak short | equity needed |
+|---|---|---|---|---|---|---|
+| **R0 — today** | $2,139 | −$484 | −$697 | −$1,783 | 6 MES | $2,271 ✅ |
+| R1d alone | $2,604 | −$476 | −$672 | −$1,880 | 8 MES | $3,029 ✅ |
+| **R1d + S293 day breaker** | **$2,642** | **−$52** | **−$374** | **−$1,700** | 8 MES | **$3,029 ✅** |
 
-**R1b is the only step on the board that improves money AND risk together** — +$541/month while the
-drawdown falls from −$1,703 to −$1,428 — because the extra contracts go only where the edge is
-strongest. Everything else buys money with drawdown.
+**R1d = 2 contracts on the 2nd concurrent Skew Charm short, 3 on the 3rd.** The first short of
+a cluster is unchanged. Size follows the edge: the 2nd stacked short earns +$24.9 and the 3rd
++$45.3, against +$11.5 for the first, and that premium survives a within-day control (+$19.1 vs
++$10.1 on the SAME days), so it is not a good-day illusion.
 
-**Gap risk — a 40-point gap through the stops**, against $6,016 of main capital. The $300 daily
-breaker blocks new entries; **it does not flatten**, so a gap is unbounded by it:
+**Fundable today — no transfer needed.** Peak 8 contracts = $2,120 margin against the short
+account's $3,271.61.
 
-| rung | peak | 40-pt gap | % of main capital |
+⚠️ **The other rungs (R1a/R1b/R1c/R2a) were measured on the multiplicative basis and are NOT
+valid. Re-measure them with `max` sizing and the S203 guard before quoting them again.**
+
+**Gap risk** — 40-pt gap through the stops, against $6,016 main capital. The $300 breaker blocks
+new entries but does **not** flatten, so a gap is unbounded by it:
+
+| config | peak | 40-pt gap | % of main capital |
 |---|---|---|---|
-| R0 | 6 MES | $1,200 | 20% |
-| **R1b** | 10 MES | $2,000 | **33%** |
-| **R1a** | 12 MES | $2,400 | **40%** ← ceiling for this capital |
-| R2a | 18 MES | $3,600 | 60% ⛔ |
+| R0 today | 6 MES | $1,200 | 20% |
+| **R1d** | 8 MES | $1,600 | **27%** |
 
 ---
 
 ## The calendar
 
-| due | step | funding needed | gap after | expected |
-|---|---|---|---|---|
-| now → ~2026-09-15 | **stay R0** | — | 20% | collect 20 clean V20 sessions |
-| **~2026-09-15** | **R1b** — SC-short 2× on stacked only | short acct **$3,786** (held $3,271.61 on 08-17 → **$515 short**) | 33% | +$541/mo, drawdown improves |
-| **~2026-10-15** | **R1a** — SC-short 2× on everything | short acct **$4,543** | 40% | +$1,000/mo vs R0, every month positive |
-| **~2026-11-15** | **review only — do NOT arm R2a** | short acct $6,814 | 60% ⛔ | revisit only on much larger capital |
+| due | step | funding | expected |
+|---|---|---|---|
+| now → ~2026-09-01 | **stay R0**, S293 breaker live and watched | — | ~10 sessions of V20 + breaker |
+| **~2026-09-01** | **R1d + breaker** | **already funded** ($3,029 needed, $3,271 held) | +$503/mo and every risk measure better than today |
+| ~2026-10-15 | review a further rung | re-measure first | only on the corrected basis |
 
 ---
 
 ## Gate checklist — ALL FOUR must pass on the due date, or the rung waits
 
-1. **Funding.** Short account (210VYX91) equity ≥ the figure above. No cross-margin: the long
-   account cannot fund a short rung. Check with the live TS balances API, never from memory.
-2. **Evidence.** ≥ 20 live trading sessions completed at the current rung.
-3. **Gap.** 40-pt gap ≤ **40% of main capital**. This, not MaxDD, is the risk gate — MaxDD is
-   non-monotonic across rungs and noisy to ±$400.
-4. **Clean.** No open defect: no position/broker mismatch, no orphan order, no stuck fill
-   (S279), no feed alert.
+1. **Funding.** Short account (210VYX91) equity ≥ the figure above. No cross-margin. Read it
+   live from the broker, never from memory.
+2. **Evidence.** ≥ 10 live sessions on V20 with the S293 breaker running.
+3. **Gap.** 40-pt gap ≤ 40% of main capital.
+4. **Clean.** No open defect: no mismatch, no orphan, no stuck fill, no feed alert.
 
 **If any gate fails, the rung waits and the date moves. Dates are targets, funding is the rule.**
 

@@ -15568,8 +15568,8 @@ DASH_HTML_TEMPLATE = """
     .tl-filters select, .tl-filters input { background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:4px 8px; font-size:11px; }
     .tl-stats { display:flex; gap:16px; padding:8px 12px; border-bottom:1px solid var(--border); font-size:12px; color:var(--muted); }
     .tl-stats .stat-val { font-weight:700; color:var(--text); }
-    .tl-header { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 36px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:2px solid var(--border); color:var(--muted); font-size:10px; font-weight:600; position:sticky; top:0; background:var(--card); z-index:1; }
-    .tl-row { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 36px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:1px solid var(--border); cursor:pointer; }
+    .tl-header { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 36px 30px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:2px solid var(--border); color:var(--muted); font-size:10px; font-weight:600; position:sticky; top:0; background:var(--card); z-index:1; }
+    .tl-row { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 36px 30px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:1px solid var(--border); cursor:pointer; }
     .tl-row:hover { background:#1a1d21; }
     .tl-notes { padding:8px 12px 8px 44px; border-bottom:1px solid var(--border); display:none; }
     .tl-notes textarea { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:6px; font-size:12px; resize:vertical; min-height:60px; box-sizing:border-box; }
@@ -16327,7 +16327,7 @@ DASH_HTML_TEMPLATE = """
         <div class="tl-stats" id="tlStats"></div>
         <div style="overflow-y:auto;flex:1">
           <div id="tlHeaderRow" class="tl-header">
-            <span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>Align</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>
+            <span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>Align</span><span title="Semi-basket size multiplier: 2 = tech basket CONFIRMS this direction (double size), 1 = neutral or contradicts (single size), 0 = would be skipped under the old block policy">SB</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>
           </div>
           <div id="tlBody"></div>
           <div id="tlPagination" style="display:flex;gap:6px;justify-content:center;padding:10px 0;font-size:12px"></div>
@@ -20298,7 +20298,7 @@ DASH_HTML_TEMPLATE = """
       // Restore portal header/grid
       const hdr = document.getElementById('tlHeaderRow');
       hdr.className = 'tl-header';
-      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>Align</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>';
+      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>Align</span><span title="Semi-basket size multiplier: 2 = tech basket CONFIRMS this direction (double size), 1 = neutral or contradicts (single size), 0 = would be skipped under the old block policy">SB</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>';
       const filtered = _tlGetFiltered();
 
       // v3 overlay helpers — override result/pnl with re-simulated exit when v3 dropdown active.
@@ -20307,6 +20307,16 @@ DASH_HTML_TEMPLATE = """
       function _v3OutOf(l) { return _tlGexOv(l); }
       function _resOf(l) { const o = _v3OutOf(l); return o ? (o.result || '') : (l.outcome_result || ''); }
       function _pnlOf(l) { const o = _v3OutOf(l); return o ? o.pnl : l.outcome_pnl; }
+      // Semi-basket size multiplier for one signal. LOCKSTEP with
+      // real_trader._effective_qty / basket_gate.classify: deadband 0.15, sign match = confirm.
+      function _tlSbMult(l) {
+        const b = l.basket_pct;
+        if (b == null) return null;                       // no basket data -> base size
+        const v = +b;
+        if (Math.abs(v) < 0.15) return 1;                 // neutral
+        const isLong = (l.direction === 'long' || l.direction === 'bullish');
+        return ((v > 0) === isLong) ? 2 : 1;              // confirm -> 2x, contradict -> 1x
+      }
 
       // Stats — use global stats from /api/setup/stats (all trades, not just current page)
       const gs = _tlGlobalStats || {};
@@ -20334,6 +20344,18 @@ DASH_HTML_TEMPLATE = """
         }
         if (_p != null) { pagePnl += _p; pagePnlCount++; }
       });
+      // SB P&L — the same shown trades priced at the size the basket rule actually gives
+      // them. Raw points are 1 MES each; this is what the sizing rule turns them into.
+      let pageSbPnl = 0, pageSbCount = 0;
+      filtered.forEach(l => {
+        const _p = _pnlOf(l);
+        if (_p == null) return;
+        const m = _tlSbMult(l);
+        pageSbPnl += _p * (m == null ? 1 : m);
+        pageSbCount++;
+      });
+      const fSbStr = pageSbCount > 0 ? ((pageSbPnl >= 0 ? '+' : '') + pageSbPnl.toFixed(1)) : '--';
+      const fSbColor = pageSbPnl >= 0 ? '#22c55e' : '#ef4444';
       const fWr = (pageWins+pageLosses)>0 ? ((pageWins/(pageWins+pageLosses))*100).toFixed(0) : '--';
       const fPnlColor = pagePnl >= 0 ? '#22c55e' : '#ef4444';
       const fPnlStr = pagePnlCount > 0 ? ((pagePnl >= 0 ? '+' : '') + pagePnl.toFixed(1)) : '--';
@@ -20354,6 +20376,8 @@ DASH_HTML_TEMPLATE = """
         '<span style="color:#ef4444">'+pageLosses+'L</span>' +
         '<span>'+fWr+'%</span>' +
         '<span style="color:'+fPnlColor+';font-weight:700">'+fPnlStr+'</span>' +
+        '<span style="color:var(--muted);font-size:10px">SB P&L:</span>' +
+        '<span style="color:'+fSbColor+';font-weight:700" title="the same trades, sized by the semi-basket rule (2x when the tech basket confirms the direction)">'+fSbStr+'</span>' +
         '</div>' : '');
 
       // Table body
@@ -20373,6 +20397,13 @@ DASH_HTML_TEMPLATE = """
         const gradeColor = _tlGradeColors[l.grade] || '#888';
         const entry = isAbs ? (l.abs_es_price || l.spot)?.toFixed(2) : l.spot?.toFixed(0);
         const gapRr = isAbs ? ((l.abs_vol_ratio||0).toFixed(1)+'x') : ((l.gap_to_lis?.toFixed(1)||'--')+' / '+(l.rr_ratio?.toFixed(1)||'--')+'x');
+
+        // SB — the semi-basket size multiplier actually applied to this trade.
+        // Mirrors real_trader._effective_qty: CONFIRM -> 2, otherwise 1. Under the old
+        // 0/0/1 BLOCK policy a contradict was skipped entirely, which shows as 0.
+        const _sb = _tlSbMult(l);
+        const _sbTxt = _sb == null ? '–' : String(_sb);
+        const _sbCol = _sb === 2 ? '#22c55e' : (_sb === 0 ? '#ef4444' : 'var(--muted)');
 
         // 10p/Tgt/Stp
         const o = l.outcome || {};
@@ -20439,6 +20470,7 @@ DASH_HTML_TEMPLATE = """
           '<span style="color:var(--text)">'+(entry||'--')+'</span>' +
           '<span style="color:var(--muted);font-size:10px">'+gapRr+'</span>' +
           '<span style="color:var(--muted);font-size:10px;text-align:center">'+(l.greek_alignment != null ? (l.greek_alignment > 0 ? '+' : '') + l.greek_alignment : '–')+'</span>' +
+          '<span style="color:'+_sbCol+';font-size:10px;text-align:center;font-weight:600" title="basket '+(l.basket_pct==null?'n/a':(+l.basket_pct).toFixed(2)+'%')+'">'+_sbTxt+'</span>' +
           '<span style="font-size:10px"><span style="color:'+c10+'">'+has10pt+'</span> <span style="color:'+cTgt+'">'+hasTgt+'</span> <span style="color:'+cStop+'">'+hasStop+'</span></span>' +
           '<span style="font-size:10px">'+result+'</span>' +
           '<span style="color:'+pnlC+';font-size:10px">'+pnl+mesBadge+'</span>' +

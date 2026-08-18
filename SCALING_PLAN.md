@@ -16,6 +16,46 @@ Basis for every number below: 117 calendar sessions 2026-03-02 → 08-17, filter
 
 ---
 
+## ⚠️ CORRECTED 2026-08-17 evening (S287–S293) — read this before the table above
+
+Three corrections, all mine, all found by checking rather than assuming:
+
+1. **Sizing is `max(qty,2)`, NOT a multiplier.** `real_trader._effective_qty` says so
+   explicitly. The first rung table multiplied, inventing 4-contract trades the live system
+   would never place. **R1b as the code actually works adds +$341/mo and makes drawdown
+   slightly WORSE**, not better.
+2. **The replay was missing the S203 underwater-stack guard** the live system runs. With it
+   modelled, today's honest baseline is **$2,139/mo**, and July's scaling damage falls from
+   −$260 to −$116.
+3. **R1d is the chosen rung** (2 contracts on the 2nd concurrent SC short, 3 on the 3rd) —
+   user decision, safer and fundable today.
+
+### The chosen configuration
+
+| | $/month | worst month | worst day | MaxDD |
+|---|---|---|---|---|
+| today | $2,139 | −$484 | −$697 | −$1,783 |
+| R1d alone | $2,604 | −$476 | −$672 | −$1,880 |
+| **R1d + day breaker (S293)** | **$2,642** | **−$52** | **−$374** | **−$1,700** |
+
+**The S293 day breaker is a PREREQUISITE for R1d, not an option.** R1d alone makes the tail
+worse; with the breaker every risk measure beats today's. Shipped and audited 2026-08-17.
+
+### Why July was the one bad month — answered
+
+29 July was **FOMC** (SPX −1.32%); 30 July was the **relief rally** (SPX +1.7%, Nasdaq +2.8%,
+MSFT +16%) plus Core PCE, Advance GDP, BOE and BOJ. Both were trend days, and Skew Charm fired
+short into them repeatedly — six full stops in a row on 07-30. The Discord export for that
+window says it plainly: *"violent V-bottom off the 7/29 FOMC flush… **Every fade lost.**"*
+
+Data was clean (chain 195/day, Volland 314–329). **Tested and REJECTED:** skipping strongly
+contradicting-basket trades (fixes July, breaks June, +$69/mo, and the most-extreme bucket is
+positive) and skipping FOMC days (we make **+$147/day on FOMC and +$271 the day after**, both
+better than the +$118 average — skipping costs $105/mo).
+
+
+---
+
 ## The rungs
 
 | rung | what changes | $/month | worst month | best month | MaxDD | peak short MES | short equity needed |

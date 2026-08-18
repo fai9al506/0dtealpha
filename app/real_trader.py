@@ -220,11 +220,32 @@ def _stamp(order: dict, key: str) -> None:
     Never overwrites an existing stamp (the first one is the honest one) and
     never raises — a clock problem must not break a close.
     """
+    _newly_stamped = False
     try:
         if order.get(key) is None:
             order[key] = datetime.now(NY).isoformat(timespec="milliseconds")
+            _newly_stamped = True
     except Exception:
         pass
+    # S293 (2026-08-17): exit_fill_et is written on EVERY exit path and only when we
+    # actually know the exit price, so it is the one hook that sees every close exactly
+    # once. Feed the per-setup day breaker from here rather than adding a call to each
+    # of the four close paths — a rule that must be remembered in four places is a rule
+    # that will be forgotten in one (the lesson of the three-copies filter).
+    # Gate on _newly_stamped, NOT just the key: _stamp is called more than once on some
+    # paths and the first version of this counted the same stop-out twice, which would
+    # have tripped the breaker after ONE stop. Caught by _tmp_s293_audit.py case 11.
+    if key == "exit_fill_et" and _newly_stamped:
+        try:
+            fp = order.get("fill_price")
+            xp = (order.get("close_fill_price") or order.get("stop_fill_price")
+                  or order.get("target_fill_price"))
+            if fp is not None and xp is not None:
+                is_long = str(order.get("direction", "")).lower() in ("long", "bullish")
+                pts = (float(xp) - float(fp)) if is_long else (float(fp) - float(xp))
+                note_trade_closed(order.get("setup_name"), is_long, pts, order.get("stop_pts"))
+        except Exception:
+            pass
 
 # DB table name
 DB_TABLE = "real_trade_orders"
@@ -621,6 +642,89 @@ def _count_active_for_direction(is_long: bool) -> int:
                 if o_is_long == is_long:
                     count += 1
     return count
+
+
+# ====== S293 PER-SETUP DAY BREAKER (2026-08-17) ======
+#
+# 2026-07-30: SPX ground up +1.7% (Fed relief rally, MSFT +16%). Skew Charm fired SHORT
+# nine times into it — 12:07, 12:37, 13:08, 13:42, 14:13, 14:43 — and SIX took the full
+# 14-pt stop, each entry higher than the last. 07-09 is the same shape. That is a fade
+# book meeting a trend day, and it is the single worst pattern in the book.
+#
+# The existing $300 daily breaker does not catch it: it is account-wide and only fires
+# after the money is already gone. The S203 underwater guard does not catch it either —
+# these were largely SEQUENTIAL, each closing before the next fired, so there was rarely
+# a losing stack to block.
+#
+# Measured over 117 sessions (V20, costs charged, S203 modelled):
+#   worst month  -$476 -> -$52   ·   worst day -$672 -> -$374   ·   MaxDD -$1,880 -> -$1,700
+#   and the money goes UP slightly. It blocks 85 trades over 6 months.
+#
+# Deliberately per SETUP + DIRECTION, not account-wide: on 07-30 the rest of the book
+# still made +$324 while Skew Charm short was bleeding. Blocking the day would have
+# thrown that away.
+#
+# FAIL-OPEN by construction: unknown state, a restart, or any error -> trade is TAKEN.
+# A guard must never be the reason trading stops.
+
+_STOP_STREAK_LIMIT = 2
+_stop_streaks: dict[tuple, int] = {}
+_stop_streak_day = {"d": None}
+_breaker_alerted: set = set()
+
+
+def _streak_key(setup_name: str, is_long: bool):
+    return (setup_name or "", bool(is_long))
+
+
+def _roll_streak_day(today):
+    """Reset every streak when the ET date changes."""
+    if _stop_streak_day["d"] != today:
+        _stop_streak_day["d"] = today
+        _stop_streaks.clear()
+        _breaker_alerted.clear()
+
+
+def note_trade_closed(setup_name: str, is_long: bool, realized_pts: float | None,
+                      stop_pts: float | None, today=None):
+    """Called on every close. A FULL stop-out extends the streak; anything else clears it.
+
+    'Full stop' means the loss reached the stop distance (quarter-point tolerance for
+    fill slippage). A small loss is NOT a stop — the point of the rule is a trend running
+    us over, not ordinary chop.
+    """
+    try:
+        if realized_pts is None or stop_pts is None:
+            return
+        _roll_streak_day(today or _et_today())
+        k = _streak_key(setup_name, is_long)
+        if float(realized_pts) <= -(abs(float(stop_pts)) - 0.25):
+            _stop_streaks[k] = _stop_streaks.get(k, 0) + 1
+            print(f"[real-trader] S293 stop streak {setup_name} "
+                  f"{'long' if is_long else 'short'} = {_stop_streaks[k]}", flush=True)
+        else:
+            _stop_streaks[k] = 0
+    except Exception as e:
+        print(f"[real-trader] S293 note_trade_closed error (ignored): {e}", flush=True)
+
+
+def _day_breaker_check(setup_name: str, is_long: bool) -> int:
+    """Return the streak count when this setup+direction is BLOCKED for the day, else 0."""
+    try:
+        if os.getenv("DAY_BREAKER_ENABLED", "true").lower() != "true":
+            return 0
+        _roll_streak_day(_et_today())
+        n = _stop_streaks.get(_streak_key(setup_name, is_long), 0)
+        return n if n >= _STOP_STREAK_LIMIT else 0
+    except Exception as e:
+        print(f"[real-trader] S293 breaker check error (fail-open): {e}", flush=True)
+        return 0
+
+
+def _et_today():
+    from datetime import timezone as _tzu
+    from zoneinfo import ZoneInfo as _ZI
+    return datetime.now(_tzu.utc).astimezone(_ZI("America/New_York")).date()
 
 
 def _underwater_stack_check(setup_name: str, is_long: bool, es_price: float):
@@ -1066,6 +1170,22 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         _alert(f"🚨 CIRCUIT BREAKER HIT ({_who})\n"
                f"Daily loss: ${daily_loss:,.0f} >= ${_brk_limit:,.0f}\n"
                f"No more {_who} trades today.")
+        return
+
+    # S293: per-setup day breaker — two full stop-outs in a row today means the tape is
+    # running this setup over. Checked BEFORE the underwater guard because it is cheaper
+    # and needs no broker price.
+    _brk = _day_breaker_check(setup_name, is_long)
+    if _brk:
+        print(f"[real-trader] S293 day breaker: {setup_name} "
+              f"{'long' if is_long else 'short'} blocked after {_brk} stops today", flush=True)
+        _log_skip_reason(setup_log_id, "day_breaker_block")
+        _bk = (setup_name, is_long)
+        if _bk not in _breaker_alerted:
+            _breaker_alerted.add(_bk)
+            _alert(f"\U0001f6d1 {setup_name} {'LONG' if is_long else 'SHORT'} paused for today\n"
+                   f"{_brk} full stop-outs in a row — the tape is trending against this setup.\n"
+                   f"Other setups and the other direction are unaffected.")
         return
 
     # S203: underwater-stack guard — block 3rd same-setup same-direction entry

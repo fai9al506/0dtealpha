@@ -152,4 +152,34 @@ print(f"  short account today: ${SHORT_EQUITY:,.2f}   long account: ${LONG_EQUIT
 for name, (df, pl, ps) in res.items():
     need = ps * MARGIN_PER_MES / SAFE_USE
     gapg = SHORT_EQUITY - need
-    print(f"  {name:34s} needs ${need:>8,.0f}   {'OK today' if gapg >= 0 else 'short by $%,.0f' % -gapg}")
+    msg = "OK today" if gapg >= 0 else f"short by ${-gapg:,.0f}"
+    print(f"  {name:34s} needs ${need:>8,.0f}   {msg}")
+
+print()
+print("=" * 118)
+print("R1b DETAIL — how sizing INTERACTS with the semi-basket, and does it hold every month?")
+print("=" * 118)
+df_r0, _, _ = run(PLANS['R0  now — everything 1x'])
+df_r1b, _, ps1b = run(PLANS['R1b SC-short 2x, STACKED only'])
+for nm, d in (('R0', df_r0), ('R1b', df_r1b)):
+    sc = d[(d['setup'] == 'Skew Charm') & (~d['long'])]
+    print(f"  {nm}: SC-short contract sizes actually used -> "
+          + "  ".join(f"{int(q)}x:{n}" for q, n in sc['q'].value_counts().sort_index().items()))
+print("\n  (basket sizing is MULTIPLICATIVE with the stack multiplier: a stacked SC short whose")
+print("   basket CONFIRMS the direction is 2 x 2 = 4 MES. That is already inside the peak below.)")
+print(f"  R1b peak concurrent SHORT contracts = {ps1b:.0f} MES = ${ps1b*MARGIN_PER_MES:,.0f} margin")
+
+cal = {'2026-03': 22, '2026-04': 21, '2026-05': 20, '2026-06': 21, '2026-07': 22, '2026-08': 11}
+print("\n  LEAVE-ONE-MONTH-OUT — R1b must help, or at least not hurt, in EVERY month:")
+for nm, d in (('R0', df_r0), ('R1b', df_r1b)):
+    d['mo'] = pd.to_datetime(d['d']).dt.strftime('%Y-%m')
+a = df_r0.groupby('mo')['net'].sum(); b = df_r1b.groupby('mo')['net'].sum()
+for m in sorted(cal):
+    av, bv = a.get(m, 0), b.get(m, 0)
+    print(f"    {m}   R0 ${av:+8,.0f}   R1b ${bv:+8,.0f}   {bv-av:+8,.0f}   "
+          f"{'HELPS' if bv > av else ('SAME' if bv == av else 'HURTS')}")
+print("\n  worst single DAY under each:")
+for nm, d in (('R0', df_r0), ('R1b', df_r1b)):
+    dd = d.groupby('d')['net'].sum()
+    print(f"    {nm}: worst day ${dd.min():+,.0f}   worst 3 days ${dd.nsmallest(3).sum():+,.0f}   "
+          f"days worse than -$300 (the breaker): {int((dd < -300).sum())}")

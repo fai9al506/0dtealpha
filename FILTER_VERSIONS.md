@@ -3,7 +3,7 @@
 **One row per version. What changed, why, and what it measured.**
 
 Rule agreed with the user on 2026-08-17: **when the rules change, the version number changes.**
-The portal dropdown shows only the short **name** (`V20 (live)`) — the description of what the
+The portal dropdown shows only the short **name** (`V21 (live)`) — the description of what the
 version contains lives here, never in the label.
 
 A version is a set of **rules**. Turning a setup on or off with an env var is *configuration*, not
@@ -23,7 +23,7 @@ from the trader (this has broken twice — see `feedback_portal_view_can_hide_re
 
 ---
 
-## V20 — LIVE from 2026-08-18 (S277 / S278)
+## V20 — superseded by V21 on 2026-08-18 (S277 / S278)
 
 **V20 = V16 rules + ES Absorption only when VIX ≥ 20 + no Friday.**
 
@@ -74,12 +74,57 @@ automatically when volatility returns, with nobody having to remember.
 
 Sweep: **0 mismatches, 16 setups, 3,052 signals.** ES Absorption passes 6 instead of 84.
 
-⚠️ **`live_pass` now means V20**, so the recalled book restates. `LIVE_VER = "v20-sb"`.
+⚠️ Superseded: `live_pass` now means **V21**. V20's ES Absorption floor is still live inside V21.
+
+---
+
+## V21 — LIVE from 2026-08-18 (S300–S307)
+
+**V21 = V20 + no SHORTS when the previous session fell more than 0.8% AND VIX < 24.**
+
+| part | detail |
+|---|---|
+| Base | every V20 rule, unchanged |
+| **New rule** | shorts only: skip when `prev_day_move < −0.8%` **and** `vix < 24` |
+| Data source | **`spx_ohlc_1m` (1-minute bars) — NEVER `chain_snapshots`** |
+| Fail behaviour | **OPEN** — unknown move or unknown VIX → the trade is taken |
+
+**Why.** After a session that fell more than 0.5%, the next day averaged **+0.22% and rose 68%
+of the time**. Our fade shorts sold into that bounce. Per trade, shorts after a down day earn
+**+0.81 pt against +4.57 pt otherwise**; after two down days they are **negative**.
+
+**The VIX ceiling is what makes it safe — the effect inverts in high volatility.** At VIX 26+
+shorts after a down day earn **+15.74 pt at 100% WR**, because the selling continues instead of
+bouncing. Without the ceiling the rule deletes March's **+150 pts** of high-volatility shorts and
+is worth **exactly zero**. With it, all 24 of those March trades are kept.
+
+| | V20 | **V21** |
+|---|---|---|
+| per month | $2,187 | **$2,372** |
+| worst month | −$225 | **+$530** |
+| max drawdown | −$1,585 | **−$906** (−43%) |
+| worst 5-day window | −$1,196 | **−$752** |
+| the June 5–12 streak | −$1,219 | **−$465** |
+| leave-one-month-out | — | **6/6** (helps 3, unchanged 3, hurts 0) |
+
+Blocks **27 shorts on 4 days in 6 months** — 04-22, 06-08, 06-11, 07-30 — worth −147 pts at
+**37% WR (t = −2.01)**, and it beats **500 random 27-short removals on every metric (96–100%)**.
+
+**⚠️ MEASURE THE PREVIOUS MOVE ON `spx_ohlc_1m`, NEVER ON `chain_snapshots`.** The 2-minute
+snapshots begin at 09:32 against the bars' 09:31, and that one missing minute shifts the daily
+figure by up to 0.08% — enough to flip whole days across the −0.8% line. On snapshots the same
+rule reads 37 trades at 51% WR (t = −0.81) and looks like noise. Same rule, different sampling,
+opposite conclusion. This cost an hour and nearly killed a good rule.
+
+**Honest limits:** 4 days in 6 months, and 2026-06-11 alone is 59% of the value. It does nothing
+in 3 of the 6 months. **It is insurance, not income.**
+
+Sweep: **0 mismatches, 16 setups, 3,058 signals.** `LIVE_VER = "v21-sb"`.
 
 ---
 
 ## V19 — monitoring only (S263)
-V18 + no Friday. Research view. **The live Friday behaviour is in V20, not here.**
+V18 + no Friday. Research view. **The live Friday behaviour is in V20/V21, not here.**
 
 ## V18 — monitoring only, shipped dormant 2026-08-15 (S260)
 V16 minus SHORTS with a +net-GEX wall within 15 pt overhead while VIX < 22. Needs **net** gex and

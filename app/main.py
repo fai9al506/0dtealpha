@@ -4259,6 +4259,39 @@ def _compute_basket_pct() -> float | None:
         return None
 
 
+# ── V21 (2026-08-17) — previous-session move, cached once per ET day. ────────────────
+# Read from `spx_ohlc_1m` (1-minute bars), NEVER from chain_snapshots: the 2-minute
+# snapshots start at 09:32 against the bars' 09:31 and that one missing minute shifts the
+# daily figure by up to ~0.08%, which flips days across the -0.8% line and reverses the
+# rule's verdict. Cached because this is a once-a-day constant, not a per-signal lookup.
+_PREV_MOVE = {"d": None, "pct": None}
+
+
+def _prev_day_move_pct():
+    """Previous session's open-to-close %, or None. FAILS OPEN (None -> no block)."""
+    try:
+        today = now_et().date()
+        if _PREV_MOVE["d"] == today:
+            return _PREV_MOVE["pct"]
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as c:
+            row = c.execute(text("""
+                WITH day AS (
+                  SELECT (ts AT TIME ZONE 'America/New_York')::date d,
+                         (array_agg(bar_open  ORDER BY ts ASC ))[1] o,
+                         (array_agg(bar_close ORDER BY ts DESC))[1] c
+                  FROM spx_ohlc_1m
+                  WHERE (ts AT TIME ZONE 'America/New_York')::date < :t
+                  GROUP BY 1 ORDER BY 1 DESC LIMIT 1)
+                SELECT (c-o)/NULLIF(o,0)*100 FROM day"""), {"t": today}).fetchone()
+        pct = float(row[0]) if row and row[0] is not None else None
+        _PREV_MOVE["d"], _PREV_MOVE["pct"] = today, pct
+        print(f"[v21] previous session move = {pct if pct is None else round(pct,3)}%", flush=True)
+        return pct
+    except Exception as e:
+        print(f"[v21] prev-move lookup failed (fail-open): {e}", flush=True)
+        return None
+
+
 def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None, grade: str | None = None,
@@ -4394,6 +4427,22 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
         if not paradigm or not paradigm.startswith("GEX-"):
             return False  # GEX-paradigm only (PURE/LIS/MESSY/TARGET); blocks BOFA-PURE/AG-LIS losers
         return True
+
+    # ── V21 (2026-08-17): no SHORTS after a big down day, unless volatility is high ──
+    # After a session that fell more than 0.8%, the market bounced: the next day averaged
+    # +0.22% and rose 68% of the time, and our fade shorts sold straight into it. Shorts
+    # after a down day earn +0.81 pt against +4.57 pt otherwise.
+    # The VIX ceiling is what makes it safe - the effect INVERTS in high volatility (at
+    # VIX 26+ those shorts earn +15.74 pt at 100% WR because the selling continues). Without
+    # it the rule deletes March's +150 pts of high-vol shorts and is worth exactly zero.
+    # Measured 117 sessions: $2,187 -> $2,372/mo, worst month -$225 -> +$530, MaxDD -$1,585
+    # -> -$906, the June 5-12 streak -$1,219 -> -$465. LOMO 6/6 (helps 3, unchanged 3).
+    # Blocks 27 shorts on 4 days in 6 months at 37% WR (t=-2.01) and beats 500 random
+    # 27-short removals on every metric. FAILS OPEN on a missing move or VIX.
+    if direction not in ("long", "bullish") and vix is not None:
+        _pm = _prev_day_move_pct()
+        if _pm is not None and _pm < -0.8 and float(vix) < 24.0:
+            return False
 
     # ── ES Absorption PURE (shipped 2026-05-03 to real-trader from shadow) ──
     # 4 mechanism-based rules:
@@ -13055,6 +13104,25 @@ def api_setup_gex_long_v3_overlay(rebuild: int = Query(0)):
         return {"error": str(e)}
 
 
+@app.get("/api/setup/daily_moves")
+def api_setup_daily_moves():
+    """date -> PREVIOUS session's open-to-close %, from the 1-min bars. V21 input.
+    Mirrors live_filter.load_prev_moves so the portal and the trader agree."""
+    try:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as c:
+            rows = c.execute(text("""
+                WITH day AS (
+                  SELECT (ts AT TIME ZONE 'America/New_York')::date d,
+                         (array_agg(bar_open  ORDER BY ts ASC ))[1] o,
+                         (array_agg(bar_close ORDER BY ts DESC))[1] c
+                  FROM spx_ohlc_1m GROUP BY 1)
+                SELECT t.d, (p.c-p.o)/NULLIF(p.o,0)*100 mv
+                FROM day t JOIN day p ON p.d=(SELECT MAX(d2.d) FROM day d2 WHERE d2.d<t.d)""")).fetchall()
+        return {str(r[0]): round(float(r[1]), 3) for r in rows if r[1] is not None}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/setup/daily_gaps")
 def api_setup_daily_gaps():
     """Return gap (open - prev close) for each trading day. Used by V12 portal filter."""
@@ -14188,7 +14256,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v20">V20 (live) ✦</option><option value="v16fri">V16 w/Friday Off</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v21">V21 (live) ✦</option><option value="v20">V20</option><option value="v16fri">V16 w/Friday Off</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -14221,7 +14289,9 @@ const GRADE_COLORS = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308','B':'#f59
 let _allTrades = [];
 let _allExpanded = true;
 let _dailyGaps = {};
+let _dailyMoves = {};   // V21: prev-session open-to-close %
 fetch('/api/setup/daily_gaps',{cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_dailyGaps=d;}).catch(()=>{});
+fetch('/api/setup/daily_moves',{cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_dailyMoves=d;}).catch(()=>{});
 
 function passesStrategy(l, strat) {
   if (!strat) return true;
@@ -14254,6 +14324,19 @@ function passesStrategy(l, strat) {
   // REAL_TRADE_NO_FRIDAY gate). Full change ledger: FILTER_VERSIONS.md.
   // Lockstep with _tlPassesStrategy(l,'v20') + live_filter.passes_v20 +
   // main.py _passes_live_filter. Fails CLOSED on a missing VIX.
+  // V21 (2026-08-17, S300-S307) — THE LIVE FILTER from 2026-08-18.
+  // V20 plus: no SHORTS when the PREVIOUS session fell more than 0.8% AND VIX < 24.
+  // Ledger: FILTER_VERSIONS.md. Lockstep with _tlPassesStrategy(l,'v21'),
+  // live_filter.passes_v21 and main.py _passes_live_filter. FAILS OPEN on missing data.
+  if (strat === 'v21') {
+    if (!passesStrategy(l, 'v20')) return false;
+    const _isL21 = (l.direction === 'long' || l.direction === 'bullish');
+    if (_isL21 || l.vix == null || !l.ts) return true;
+    const _k21 = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
+    const _mv21 = _dailyMoves[_k21];
+    if (_mv21 == null) return true;
+    return !(_mv21 < -0.8 && l.vix < 24);
+  }
   if (strat === 'v20') {
     if (!passesStrategy(l, 'v16')) return false;
     if (sn === 'ES Absorption') {
@@ -16320,7 +16403,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v20">V20 (live) ✦</option><option value="v16fri">V16 w/Friday Off</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v21">V21 (live) ✦</option><option value="v20">V20</option><option value="v16fri">V16 w/Friday Off</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -19348,8 +19431,10 @@ DASH_HTML_TEMPLATE = """
     // (live) view never showed. Fixing VIX Div on 08-11 without sweeping the other setups
     // is what let this survive four more days.
     const _VPB_REAL = "__VPB_REAL__" === "true";
-    let _tlDailyGaps = {};  // {date_str: gap_pts} for V12 filter
+    let _tlDailyGaps = {};
+    let _tlDailyMoves = {};   // V21: prev-session open-to-close %  // {date_str: gap_pts} for V12 filter
     fetch('/api/setup/daily_gaps', {cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_tlDailyGaps=d;}).catch(()=>{});
+    fetch('/api/setup/daily_moves', {cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_tlDailyMoves=d;}).catch(()=>{});
     // GEX Long v3 server-side overlay: per-trade {pass, result, pnl, max_fav, verdict}
     // Replaces approximate JS filter + old DB outcomes when v3 dropdown selected.
     let _tlV3Overlay = null;        // {lid_str: {pass, result, pnl, ...}}
@@ -19491,6 +19576,18 @@ DASH_HTML_TEMPLATE = """
       // V16 rules + ES Absorption only when VIX >= 20 + no Friday. Ledger:
       // FILTER_VERSIONS.md. LOCKSTEP with live_filter.passes_v20 +
       // passesStrategy(l,'v20') + main.py _passes_live_filter.
+      // V21 (2026-08-17, S300-S307) — THE LIVE FILTER from 2026-08-18.
+      // V20 plus: no SHORTS when the previous session fell more than 0.8% AND VIX < 24.
+      // LOCKSTEP with live_filter.passes_v21 + passesStrategy(l,'v21') + _passes_live_filter.
+      if (strat === 'v21') {
+        if (!_tlPassesStrategy(l, 'v20')) return false;
+        const _isL21 = (l.direction === 'long' || l.direction === 'bullish');
+        if (_isL21 || l.vix == null || !l.ts) return true;
+        const _k21 = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
+        const _mv21 = _tlDailyMoves[_k21];
+        if (_mv21 == null) return true;
+        return !(_mv21 < -0.8 && l.vix < 24);
+      }
       if (strat === 'v20') {
         if (!_tlPassesStrategy(l, 'v16')) return false;
         // NB: `sn` is declared further down in this function, so read the field

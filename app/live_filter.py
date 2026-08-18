@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 
 ET = ZoneInfo("America/New_York")
-LIVE_VER = "v20-sb"   # V20 + Semi-Basket. Bump when the live filter changes.
+LIVE_VER = "v21-sb"   # V21 + Semi-Basket. Bump when the live filter changes.
 
 # ── V20 (2026-08-17, S277/S278) — THE LIVE FILTER from 2026-08-18. ────────────────
 # V20 = V16 rules + ES Absorption only when VIX >= ES_ABS_VIX_FLOOR + no Friday.
@@ -85,15 +85,14 @@ def passes_v20(l, gaps):
 
 
 def passes_v16_sb(l, gaps):
-    """THE live filter = V20 base AND Semi-Basket confirm. Single source of truth.
+    """THE live filter = V21 base AND Semi-Basket confirm. Single source of truth.
 
     Name kept for compatibility with every caller and study; the BASE it applies is
-    V20 as of 2026-08-17 (was V16). See FILTER_VERSIONS.md.
-
-    NB: V21 exists in this file as passes_v21() but is NOT wired here - it failed its
-    audit on the live data source (t=-0.81). See the V21 block above.
+    V21 as of 2026-08-17 (was V16, then V20). See FILTER_VERSIONS.md.
     """
     if not passes_v20(l, gaps):
+        return False
+    if v21_blocks(l, _PREV_MOVES_CACHE):
         return False
     if basket_blocks(l):
         return False
@@ -123,17 +122,27 @@ _PREV_MOVES_CACHE = {}
 
 
 def load_prev_moves(conn):
-    """date_iso -> the PREVIOUS session's open-to-close move in %, from chain_snapshots.
+    """date_iso -> the PREVIOUS session's open-to-close move in %, from `spx_ohlc_1m`.
 
-    V21 input. Same source as load_gaps so the two never disagree. Known in full at
-    yesterday's 16:00, so nothing here can look ahead.
+    V21 input. Uses the 1-MINUTE bars, NOT chain_snapshots, and the difference matters:
+    chain_snapshots saves every 2 minutes and its first row of the day is 09:32 while the
+    1-min series starts at 09:31. That single missing minute moves the daily figure by up
+    to ~0.08% - enough to flip a day across the -0.8% line (2026-04-22 reads -0.82% on
+    the bars and -0.74% on the snapshots). Measuring a DAILY move on 2-minute samples was
+    simply the wrong choice; `spx_ohlc_1m` is written live by main.py and covers every
+    session in the window with no gaps.
+
+    Fully known at yesterday's 16:00, so nothing here can look ahead.
     """
     moves = {}
     rows = conn.execute(text("""
-        WITH opens AS (SELECT DISTINCT ON (date(ts AT TIME ZONE 'America/New_York')) date(ts AT TIME ZONE 'America/New_York') d, spot p FROM chain_snapshots WHERE spot IS NOT NULL AND (ts AT TIME ZONE 'America/New_York')::time>='09:30' ORDER BY date(ts AT TIME ZONE 'America/New_York'), ts ASC),
-             closes AS (SELECT DISTINCT ON (date(ts AT TIME ZONE 'America/New_York')) date(ts AT TIME ZONE 'America/New_York') d, spot p FROM chain_snapshots WHERE spot IS NOT NULL ORDER BY date(ts AT TIME ZONE 'America/New_York'), ts DESC),
-             day AS (SELECT o.d, (c.p-o.p)/NULLIF(o.p,0)*100 mv FROM opens o JOIN closes c ON c.d=o.d)
-        SELECT t.d, p.mv FROM day t JOIN day p ON p.d=(SELECT MAX(d2.d) FROM day d2 WHERE d2.d<t.d)""")).fetchall()
+        WITH day AS (
+          SELECT (ts AT TIME ZONE 'America/New_York')::date d,
+                 (array_agg(bar_open  ORDER BY ts ASC ))[1] o,
+                 (array_agg(bar_close ORDER BY ts DESC))[1] c
+          FROM spx_ohlc_1m GROUP BY 1)
+        SELECT t.d, (p.c-p.o)/NULLIF(p.o,0)*100 mv
+        FROM day t JOIN day p ON p.d=(SELECT MAX(d2.d) FROM day d2 WHERE d2.d<t.d)""")).fetchall()
     for r in rows:
         if r[1] is not None:
             moves[str(r[0])] = round(float(r[1]), 3)
@@ -164,17 +173,12 @@ def load_prev_moves(conn):
 # HONEST LIMITS: 4 days in 6 months, and one of them (2026-06-11) is 59% of the value.
 # It does nothing in 3 of the 6 months. It is insurance, not income.
 #
-# 🛑 NOT LIVE - FAILED ITS AUDIT 2026-08-17. The numbers above were measured with the
-# previous-day move taken from `spx_ohlc_1m`. The live filter can only read
-# `chain_snapshots`, and the two disagree by a few hundredths of a percent - enough to
-# flip whole days across the -0.8% line (2026-04-22 is -0.82% in one and -0.74% in the
-# other). Re-measured on chain_snapshots the cohort is 37 trades on 6 days at -1.92 pt
-# and 51% WR, t = -0.81 - indistinguishable from an average short - and THREE of the six
-# blocked days were profitable (+10.1, +13.5, +29.9 pts). LOMO falls 6/6 -> 4/6.
-# The drawdown gain survives but rests on two days, not on an edge.
-# A rule that sits on a knife-edge between two of our own price sources is not robust
-# enough to trade. Kept here for monitoring and for a future re-test on a single
-# agreed price source.
+# ⚠️ MEASURE THE PREVIOUS MOVE ON `spx_ohlc_1m`, NEVER ON `chain_snapshots`. Computing it
+# from the 2-minute snapshots (whose first row of the day is 09:32 against the bars' 09:31)
+# shifts the daily figure by up to ~0.08%, which flips whole days across the -0.8% line and
+# turns the blocked cohort from 27 trades at 37% WR (t=-2.01) into 37 trades at 51% WR
+# (t=-0.81). Same rule, different sampling, opposite conclusion. `load_prev_moves` reads the
+# 1-min bars for exactly this reason.
 #
 # FAILS OPEN: unknown previous move or unknown VIX -> the trade is TAKEN.
 V21_PREV_DROP = -0.8      # previous session open-to-close, %

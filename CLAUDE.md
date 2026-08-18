@@ -632,6 +632,72 @@ SC / AG Short / VPB / VIX Div / DD / ES Abs.
 - **Portal view = "V16 w/Friday Off" (`v16fri`), labelled (live).** NOT V19 — V19 also applies V18,
   which is monitoring only. **When a gate is armed, the `(live)` label moves in the same commit.**
 
+
+### V20 — THE LIVE FILTER (S277/S278, live from 2026-08-18)
+
+**V20 = V16 rules + ES Absorption only when VIX ≥ 20 + no Friday.** `LIVE_VER = "v20-sb"`, so
+`setup_log.live_pass` now means V20. `$1,718 → $2,139/mo on 197 FEWER trades.`
+
+**🔢 RULES CHANGE → VERSION NUMBER CHANGES** (user directive 2026-08-17). `FILTER_VERSIONS.md`
+is the ledger of what each number means; the portal dropdown carries **only the short name**
+(`V20 (live)`), never the description. **V16 is frozen — never edit it again.**
+
+ES Absorption's edge is volatility-dependent: −$2.6/trade below VIX 18 and −$6.4 at 18–20, but
+**+$21.6 at 20–22 (t=+2.4) and +$15.2 at 22–26 (t=+2.7)**. Mar–Apr (avg VIX 24.8) +$1,239;
+May–Aug (avg VIX 18.1) −$412. **Gated, not deleted: switching it OFF measured −$1,036**, because
+under the cap its slots refill with weaker trades.
+
+**🚨 REMOVING A SETUP IS NOT SUBTRACTING ITS P&L.** Always re-run the whole replay both ways.
+
+### S293 per-setup day breaker (live 2026-08-17)
+
+**Two consecutive FULL stop-outs of the same setup+direction on the same day → that
+setup+direction is paused for the rest of the day.** Per setup and direction, **never
+account-wide** — on 2026-07-30 Skew Charm short took six stops while the rest of the book made
++$324. Worst month −$476 → −$52, worst day −$672 → −$374, and the money goes up slightly.
+
+Fed from `_stamp("exit_fill_et")` — the one hook every exit path already calls — rather than
+four separate call sites. **Gated on `_newly_stamped`**: the first version fired on every
+`_stamp` call and double-counted, which would have tripped the breaker after ONE stop.
+Kill switch `DAY_BREAKER_ENABLED`. Fails OPEN. Audit `_tmp_s293_audit.py` (16 cases).
+
+**It is a PREREQUISITE for the R1d sizing rung — R1d alone makes drawdown WORSE.**
+
+### S279 stuck-fill healer (live 2026-08-17)
+
+A market entry can fill at the broker while the bot holds `pending_entry` — lid 6090 did for
+**58 minutes**. The post-fill stop realign never runs (13 pt loss instead of 8) and the trade
+cannot trail. **Nothing alerts**, because `_reconcile_positions` counts `pending_entry` inside
+`expected_qty` (S99), so bot and broker both read the same count and agree.
+
+`heal_stuck_entries()` runs every 120 s on **its own scheduler job and thread** — deliberately
+NOT inside `_broker_poll`, because the failure it catches is that poll going quiet. It contains
+**no fill logic**: it re-fetches `/orders` and delegates to the same audited `_check_order_fills`,
+so exactly one code path can mark a trade filled. If the broker says FLL and that path still
+refuses, it **pages rather than forcing**. Audit `_tmp_s279_audit.py` (14 cases).
+
+### Monthly filter + setup monitor (S281, was weekly)
+
+`app/filter_validation.py` now runs **monthly, first trading day 17:00 ET** (cron `day="1-5"` +
+weekday guard + once-per-month latch) and sends ONE report with two parts:
+
+1. **What we TRADE** — every setup V20 admits, **replayed with the real cap/dedup/sizing**, split
+   long vs short. **Scoring raw SIGNALS instead of replayed TRADES read Skew Charm at $4.5/trade
+   when the real figure is $13.8 and raised two false FADING alarms.**
+2. **PORTAL-ONLY detectors** — scored raw; these are the investment, watched for an edge appearing.
+
+**Why it exists: the old check only ever watched the rules that BLOCK trades. Nothing asked
+whether the setups we ADMIT still earn** — which is how ES Absorption died in May and was found
+by the user in August.
+
+### Pre-study checklist — `STUDY_CHECKLIST.md`
+
+**Run it before ANY backtest, projection or filter comparison.** Headed by "model every RISK
+CONTROL, not just the filter" — the S203 underwater guard was missing from every replay until
+2026-08-17. Also: basket sizing is **`max(qty,2)`, NOT a multiplier**; report min/max/average
+month plus the distribution; report the **trade count** (it is the risk); a month is 21 calendar
+sessions; leave-one-month-out every time.
+
 ### Friday call credit spread (`app/friday_spread.py`) — LOG-ONLY (S267, 2026-08-15)
 
 **The only options strategy with a measured edge, and it is not armed.** Friday only · 12:00 ET ·

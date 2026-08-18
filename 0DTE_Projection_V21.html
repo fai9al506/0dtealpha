@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>V21 Projection</title>
+<style>
+  :root {
+    --paper:#F0F3F3; --card:#FFFFFF; --ink:#16201F; --ink-2:#4A5A58; --ink-3:#7E8E8B;
+    --rule:rgba(22,32,31,.13); --rule-soft:rgba(22,32,31,.07);
+    --accent:#2E7D74; --accent-soft:rgba(46,125,116,.10);
+    --gain:#3F7F5F; --loss:#B0503F;
+    --shadow:0 1px 2px rgba(22,32,31,.05), 0 8px 24px -12px rgba(22,32,31,.14);
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#101817; --card:#16211F; --ink:#E4EAE8; --ink-2:#A2B2AF; --ink-3:#71827F;
+      --rule:rgba(228,234,232,.15); --rule-soft:rgba(228,234,232,.08);
+      --accent:#62B5A8; --accent-soft:rgba(98,181,168,.13);
+      --gain:#6BB68C; --loss:#D97C68;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#101817; --card:#16211F; --ink:#E4EAE8; --ink-2:#A2B2AF; --ink-3:#71827F;
+    --rule:rgba(228,234,232,.15); --rule-soft:rgba(228,234,232,.08);
+    --accent:#62B5A8; --accent-soft:rgba(98,181,168,.13);
+    --gain:#6BB68C; --loss:#D97C68;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+       font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:780px;margin:0 auto;padding:0 20px 80px}
+  header{padding:56px 0 28px;border-bottom:1px solid var(--rule)}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+           color:var(--accent);margin:0 0 16px}
+  h1{font-family:var(--serif);font-weight:400;font-size:clamp(34px,6vw,52px);line-height:1.06;
+     letter-spacing:-.015em;margin:0 0 14px;text-wrap:balance}
+  .sub{font-family:var(--serif);font-size:clamp(17px,2.2vw,19px);color:var(--ink-2);
+       max-width:58ch;margin:0}
+  h2{font-family:var(--serif);font-weight:400;font-size:clamp(22px,3.2vw,27px);
+     margin:44px 0 4px;letter-spacing:-.01em;text-wrap:balance}
+  .note{color:var(--ink-2);max-width:62ch;margin:8px 0 0}
+  .note strong{color:var(--ink)}
+
+  .headline{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:28px 0 4px}
+  .hcard{background:var(--card);border:1px solid var(--rule-soft);border-radius:3px;
+         padding:18px;box-shadow:var(--shadow)}
+  .hcard b{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.09em;
+           text-transform:uppercase;color:var(--ink-3);font-weight:500;margin-bottom:7px}
+  .hcard .v{font-family:var(--mono);font-size:clamp(20px,3.6vw,27px);
+            font-variant-numeric:tabular-nums;line-height:1.1}
+  .hcard .sar{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin-top:5px}
+  .up{color:var(--gain)} .down{color:var(--loss)}
+
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;margin:18px 0 4px;font-family:var(--mono);
+        font-size:13px;font-variant-numeric:tabular-nums}
+  th{text-align:left;font-weight:500;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+     color:var(--ink-3);padding:0 10px 8px 0;border-bottom:1px solid var(--rule);white-space:nowrap}
+  td{padding:9px 10px 9px 0;border-bottom:1px solid var(--rule-soft);color:var(--ink-2);white-space:nowrap}
+  td:first-child{color:var(--ink)}
+  .num{text-align:right}
+  tr:last-child td{border-bottom:none}
+  .hi td{font-weight:700;color:var(--ink)}
+
+  .callout{margin:26px 0 0;padding:20px 22px;background:var(--accent-soft);
+           border:1px solid var(--rule-soft);border-radius:3px}
+  .callout p{margin:0 0 10px;max-width:60ch}
+  .callout p:last-child{margin-bottom:0}
+  .callout .lead{font-family:var(--serif);font-size:18px;line-height:1.45;color:var(--ink)}
+  .warn{border-left:2px solid var(--loss);padding:2px 0 2px 16px;margin:22px 0;
+        color:var(--ink-2);max-width:60ch}
+  .warn b{color:var(--loss)}
+  .foot{margin-top:44px;padding-top:18px;border-top:1px solid var(--rule);
+        font-family:var(--mono);font-size:11px;color:var(--ink-3);line-height:1.7}
+  @media (max-width:560px){ .headline{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">0DTE Alpha · Projection · 18 August 2026</p>
+    <h1>V21 Projection</h1>
+    <p class="sub">117 calendar sessions, 861 trades, 1 MES per trade, with −0.6 points of slippage
+      and $1.92 per contract of fees charged inside the result. Every figure is what the broker
+      would have paid, not what the portal displays.</p>
+  </header>
+
+  <div class="headline">
+    <div class="hcard">
+      <b>Average month</b>
+      <div class="v up">+$2,372</div>
+      <div class="sar">SAR 8,895</div>
+    </div>
+    <div class="hcard">
+      <b>Worst month</b>
+      <div class="v up">+$530</div>
+      <div class="sar">SAR 1,988 · June 2026</div>
+    </div>
+    <div class="hcard">
+      <b>Best month</b>
+      <div class="v up">+$4,906</div>
+      <div class="sar">SAR 18,398 · March 2026</div>
+    </div>
+  </div>
+  <p class="note"><strong>Every month is positive.</strong> That is new — under the previous filter
+    June was −$225.</p>
+
+  <h2>Month by month</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Month</th><th class="num">V20</th><th class="num">V21</th><th class="num">Change</th></tr></thead>
+      <tbody>
+        <tr><td>2026-03</td><td class="num">+$4,906</td><td class="num">+$4,906</td><td class="num">—</td></tr>
+        <tr><td>2026-04</td><td class="num">+$1,730</td><td class="num up">+$1,857</td><td class="num up">+$127</td></tr>
+        <tr><td>2026-05</td><td class="num">+$2,122</td><td class="num">+$2,122</td><td class="num">—</td></tr>
+        <tr><td>2026-06</td><td class="num down">−$225</td><td class="num up">+$530</td><td class="num up">+$754</td></tr>
+        <tr><td>2026-07</td><td class="num">+$1,237</td><td class="num up">+$1,385</td><td class="num up">+$148</td></tr>
+        <tr><td>2026-08</td><td class="num">+$2,417</td><td class="num">+$2,417</td><td class="num">—</td></tr>
+        <tr class="hi"><td>Per month</td><td class="num">$2,187</td><td class="num">$2,372</td><td class="num up">+$185</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">Helps in three months, unchanged in three, <strong>hurts in none</strong>.</p>
+
+  <h2>Risk — the reason V21 exists</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Measure</th><th class="num">V20</th><th class="num">V21</th><th class="num">Better by</th></tr></thead>
+      <tbody>
+        <tr><td>Maximum drawdown</td><td class="num down">−$1,585</td><td class="num">−$906</td><td class="num up">43%</td></tr>
+        <tr><td>Worst 5-day window</td><td class="num down">−$1,196</td><td class="num">−$752</td><td class="num up">37%</td></tr>
+        <tr><td>The June 5–12 streak</td><td class="num down">−$1,219</td><td class="num">−$465</td><td class="num up">62%</td></tr>
+        <tr><td>Worst single day</td><td class="num">−$450</td><td class="num">−$450</td><td class="num">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">The worst day is unchanged because it is set by the <strong>$300 daily circuit
+    breaker</strong>, which has always been there. In real trading the worst day in 37 sessions was
+    <strong>−$332.82</strong> — the breaker holds the day to about −$300 and fees add the rest.</p>
+
+  <h2>Distribution — is one month carrying it?</h2>
+  <div class="scroll">
+    <table>
+      <tbody>
+        <tr><td>Best single day</td><td class="num">8% of the total</td></tr>
+        <tr><td>Best 3 days</td><td class="num">23% of the total</td></tr>
+        <tr><td>Without the best 3 days</td><td class="num">≈ $1,850 / month</td></tr>
+        <tr class="hi"><td>Without the best month</td><td class="num">≈ $1,760 / month</td></tr>
+        <tr><td>Months positive</td><td class="num">6 of 6</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">Take away our single best month and it still earns <strong>$1,760</strong>. That
+    is the honest floor.</p>
+
+  <h2>Trade count is risk</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Filter</th><th class="num">Trades</th><th class="num">Per day</th><th class="num">Per trade</th><th class="num">Per month</th></tr></thead>
+      <tbody>
+        <tr><td>V16 (the old one)</td><td class="num">1,111</td><td class="num">9.5</td><td class="num">+$8.8</td><td class="num">$1,718</td></tr>
+        <tr class="hi"><td>V21 (live)</td><td class="num">861</td><td class="num">7.4</td><td class="num">+$15.4</td><td class="num">$2,372</td></tr>
+        <tr><td>V17 (rejected)</td><td class="num">2,111</td><td class="num">18.0</td><td class="num">+$5.5</td><td class="num">$2,088</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note"><strong>250 fewer exposures than V16 for $654 a month more.</strong> V17 would
+    take 1,250 <em>more</em> trades than V21 to earn less — which is why it was rejected.</p>
+
+  <h2>What V21 changed</h2>
+  <p class="note"><strong>V21 = V20 + no SHORTS when the previous session fell more than 0.8% and
+    VIX is under 24.</strong> After a day like that the market bounced: the next session averaged
+    +0.22% and rose 68% of the time, and our fade shorts were selling into it. Above VIX 24 the
+    effect reverses — the selling continues — so those shorts are kept.</p>
+  <p class="note">It blocks <strong>27 trades on 4 days in six months</strong>. It is insurance,
+    not income.</p>
+
+  <div class="warn">
+    <p><b>The assumption that matters most:</b> this projection assumes <b>21 trading sessions a
+      month</b>. We have been trading <b>6 to 11</b>. At that rate expect roughly a third of these
+      numbers, no matter how good the filter is. Uptime is now the binding constraint — not the
+      signals, and not the execution.</p>
+  </div>
+
+  <div class="callout">
+    <p class="lead">Not included in any figure above</p>
+    <p>GEX Long v7 — the account exists but holds $0. The Friday call spread — still log-only.
+      Any position size above 1 MES — the September plan raises it to 2 and 3 contracts on stacked
+      Skew Charm shorts only.</p>
+  </div>
+
+  <p class="foot">
+    Basis: chain simulation, 2026-03-01 → 2026-08-17, cap 2 long / 3 short, 90-second dedup,
+    basket sizing, the S203 underwater guard and the $300 daily breaker all modelled.<br>
+    Costs charged inside: −0.6 points per contract of slippage, $1.92 per contract round-turn.<br>
+    SAR at the 3.75 peg. Live equity $6,076.27 against a $6,000 deposit.
+  </p>
+
+</div>
+</body>
+</html>

@@ -85,6 +85,41 @@ new entries but does **not** flatten, so a gap is unbounded by it:
 
 ---
 
+## 🚨 THE DAILY BREAKER MUST SCALE WITH SIZE (added 2026-08-17)
+
+`REAL_TRADE_DAILY_LOSS_LIMIT` is a **fixed dollar amount** (default $300). It does **not**
+scale with contract size. Left alone while size grows it trips on the first bad trade of the
+day and silently guts the book:
+
+| size | breaker left at $300 | trades taken over 117 sessions |
+|---|---|---|
+| 1 MES | −$300 | 868 |
+| 2 MES | −$300 | **754** |
+| 1 ES (10×) | −$300 | **567** |
+
+**Rule: at every rung, set `REAL_TRADE_DAILY_LOSS_LIMIT` = $300 × the size multiple.** This is
+now gate 5 on every scaling step.
+
+**And budget for overshoot.** The breaker refuses new entries; it does **not** flatten, and it
+counts **realized** loss only, so open positions are invisible to it. Measured on 37 live days
+the worst real day was **−$332.82 against a $300 limit — about 10% past.** Expect the same
+proportion at any size: a $3,000 limit realistically ends near −$3,300.
+
+**Why this matters at scale** — the June 5–12 streak, with the breaker scaled correctly:
+
+| size | breaker | that week |
+|---|---|---|
+| 1 MES | −$300 | −$1,219 |
+| 2 MES | −$600 | −$2,438 |
+| 5 MES | −$1,500 | −$6,096 |
+| **1 ES (10×)** | −$3,000 | **−$12,192** |
+| 2 ES (20×) | −$6,000 | −$24,383 |
+
+A bad week scales linearly. Size the book to survive **−$12,000 in five sessions** before
+going to 1 ES.
+
+---
+
 ## The calendar
 
 | due | step | funding | expected |
@@ -102,6 +137,8 @@ new entries but does **not** flatten, so a gap is unbounded by it:
 2. **Evidence.** ≥ 10 live sessions on V20 with the S293 breaker running.
 3. **Gap.** 40-pt gap ≤ 40% of main capital.
 4. **Clean.** No open defect: no mismatch, no orphan, no stuck fill, no feed alert.
+5. **Breaker scaled.** `REAL_TRADE_DAILY_LOSS_LIMIT` raised to $300 × the size multiple,
+   verified on Railway, before the size change goes live — not after.
 
 **If any gate fails, the rung waits and the date moves. Dates are targets, funding is the rule.**
 

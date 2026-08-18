@@ -89,6 +89,9 @@ def passes_v16_sb(l, gaps):
 
     Name kept for compatibility with every caller and study; the BASE it applies is
     V20 as of 2026-08-17 (was V16). See FILTER_VERSIONS.md.
+
+    NB: V21 exists in this file as passes_v21() but is NOT wired here - it failed its
+    audit on the live data source (t=-0.81). See the V21 block above.
     """
     if not passes_v20(l, gaps):
         return False
@@ -116,6 +119,98 @@ def load_gaps(conn):
     return gaps
 
 
+_PREV_MOVES_CACHE = {}
+
+
+def load_prev_moves(conn):
+    """date_iso -> the PREVIOUS session's open-to-close move in %, from chain_snapshots.
+
+    V21 input. Same source as load_gaps so the two never disagree. Known in full at
+    yesterday's 16:00, so nothing here can look ahead.
+    """
+    moves = {}
+    rows = conn.execute(text("""
+        WITH opens AS (SELECT DISTINCT ON (date(ts AT TIME ZONE 'America/New_York')) date(ts AT TIME ZONE 'America/New_York') d, spot p FROM chain_snapshots WHERE spot IS NOT NULL AND (ts AT TIME ZONE 'America/New_York')::time>='09:30' ORDER BY date(ts AT TIME ZONE 'America/New_York'), ts ASC),
+             closes AS (SELECT DISTINCT ON (date(ts AT TIME ZONE 'America/New_York')) date(ts AT TIME ZONE 'America/New_York') d, spot p FROM chain_snapshots WHERE spot IS NOT NULL ORDER BY date(ts AT TIME ZONE 'America/New_York'), ts DESC),
+             day AS (SELECT o.d, (c.p-o.p)/NULLIF(o.p,0)*100 mv FROM opens o JOIN closes c ON c.d=o.d)
+        SELECT t.d, p.mv FROM day t JOIN day p ON p.d=(SELECT MAX(d2.d) FROM day d2 WHERE d2.d<t.d)""")).fetchall()
+    for r in rows:
+        if r[1] is not None:
+            moves[str(r[0])] = round(float(r[1]), 3)
+    return moves
+
+
+# ── V21 (2026-08-17, S300-S306) — THE LIVE FILTER from 2026-08-18. ──────────────────
+# V21 = V20, plus: no SHORTS when the PREVIOUS session fell more than 0.8% AND this
+# signal's VIX is under 24.
+#
+# Mechanism (predicted by the user before it was tested): after a down day the market
+# takes a relief bounce, and our fade shorts sell straight into it. Measured: after a
+# session worse than -0.5%, the next day averaged +0.22% and rose 68% of the time.
+# Per trade, shorts after a down day earn +0.81 pt against +4.57 pt otherwise.
+#
+# The VIX ceiling is what makes it safe. The effect INVERTS in high volatility - at
+# VIX 26+ shorts after a down day earn +15.74 pt at 100% WR, because the selling
+# continues instead of bouncing. Without the ceiling the rule throws away March's
+# +150 pts of high-vol shorts and is worth exactly zero. With it, all 24 of those
+# March trades are kept (they were all at VIX >= 22).
+#
+# Measured over 117 sessions, V20 + cap + S203 + $300 breaker:
+#   $/mo 2,187 -> 2,372 · worst month -$225 -> +$530 · MaxDD -$1,585 -> -$906 (-43%)
+#   worst week -$1,196 -> -$752 · the June 5-12 streak -$1,219 -> -$465
+# It skips 27 shorts on 4 days in 6 months, worth -147 pts at 37% WR (t=-2.01), and
+# beats 500 random 27-short removals on every metric (96-100%).
+#
+# HONEST LIMITS: 4 days in 6 months, and one of them (2026-06-11) is 59% of the value.
+# It does nothing in 3 of the 6 months. It is insurance, not income.
+#
+# 🛑 NOT LIVE - FAILED ITS AUDIT 2026-08-17. The numbers above were measured with the
+# previous-day move taken from `spx_ohlc_1m`. The live filter can only read
+# `chain_snapshots`, and the two disagree by a few hundredths of a percent - enough to
+# flip whole days across the -0.8% line (2026-04-22 is -0.82% in one and -0.74% in the
+# other). Re-measured on chain_snapshots the cohort is 37 trades on 6 days at -1.92 pt
+# and 51% WR, t = -0.81 - indistinguishable from an average short - and THREE of the six
+# blocked days were profitable (+10.1, +13.5, +29.9 pts). LOMO falls 6/6 -> 4/6.
+# The drawdown gain survives but rests on two days, not on an edge.
+# A rule that sits on a knife-edge between two of our own price sources is not robust
+# enough to trade. Kept here for monitoring and for a future re-test on a single
+# agreed price source.
+#
+# FAILS OPEN: unknown previous move or unknown VIX -> the trade is TAKEN.
+V21_PREV_DROP = -0.8      # previous session open-to-close, %
+V21_VIX_MAX = 24.0        # above this the effect inverts - keep the shorts
+
+
+def v21_blocks(l, moves):
+    """True when V21 refuses this signal. Shorts only. Fails OPEN on missing data."""
+    try:
+        sn = l['setup_name'] if 'setup_name' in l else None
+        if sn is None:
+            return False
+        d = str(l['direction'] if 'direction' in l else '').lower()
+        if d in ('long', 'bullish'):
+            return False
+        v = l['vix'] if 'vix' in l else None
+        if v is None:
+            return False
+        ts = l['ts'] if 'ts' in l else None
+        if ts is None:
+            return False
+        mv = (moves or {}).get(str(ts.astimezone(ET).date()))
+        if mv is None:
+            return False
+        return float(mv) < V21_PREV_DROP and float(v) < V21_VIX_MAX
+    except Exception:
+        return False
+
+
+def passes_v21(l, gaps, moves):
+    """V21 = V20 AND not v21_blocks(). THE live filter from 2026-08-18."""
+    if not passes_v20(l, gaps):
+        return False
+    return not v21_blocks(l, moves)
+
+
 def backfill_live_pass(engine):
     """Stamp setup_log.live_pass / live_filter_ver for the whole table. Idempotent.
     Run daily (EOD) so recent signals are recallable via WHERE live_pass=true. Returns count."""
@@ -123,6 +218,8 @@ def backfill_live_pass(engine):
         c.execute(text("ALTER TABLE setup_log ADD COLUMN IF NOT EXISTS live_pass boolean"))
         c.execute(text("ALTER TABLE setup_log ADD COLUMN IF NOT EXISTS live_filter_ver text"))
         gaps = load_gaps(c)
+        global _PREV_MOVES_CACHE
+        _PREV_MOVES_CACHE = load_prev_moves(c)   # V21 input, used by passes_v16_sb
         c.execute(text("ALTER TABLE setup_log ADD COLUMN IF NOT EXISTS basket_pct DOUBLE PRECISION"))
         rows = c.execute(text(f"SELECT {COLS} FROM setup_log ORDER BY ts")).mappings().all()
         lids = [r['id'] for r in rows if passes_v16_sb(r, gaps)]

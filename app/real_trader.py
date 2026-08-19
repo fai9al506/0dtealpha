@@ -917,7 +917,10 @@ _V22_MOVE = {"d": None, "pct": None}
 
 
 def _v22_enabled() -> bool:
-    return os.getenv("V22_LONG_SIZEUP_ENABLED", "false").lower() == "true"
+    """ONE switch for both halves of V22 — same variable live_filter.v22_on() reads.
+    OFF means the whole file behaves exactly as it did under V21. Read at CALL time,
+    so flipping it takes effect on the next signal."""
+    return os.getenv("V22_ENABLED", "false").lower() == "true"
 
 
 def _v22_prev_move_pct():

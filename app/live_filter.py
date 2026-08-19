@@ -13,7 +13,19 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 
 ET = ZoneInfo("America/New_York")
-LIVE_VER = "v22-sb"   # V22 + Semi-Basket. Bump when the live filter changes.
+# ONE master switch for V22. OFF -> this file behaves EXACTLY like V21, byte for byte.
+# There is deliberately no way to arm half of V22: the short block and the long size-up
+# are one rule, and the half-state (wider block, no size-up) is the WORST of the three
+# configurations - it measured $2,289/mo with LOMO 4/6, against V21's $2,253 at 6/6 and
+# V22's $2,549 at 5/6. Widening the block without the long gains just takes more trades
+# off the table for nothing.
+def v22_on():
+    return os.getenv("V22_ENABLED", "false").lower() == "true"
+
+
+# Bump when the live filter changes. Follows the switch so `live_filter_ver` always
+# records what was ACTUALLY live when the row was stamped.
+LIVE_VER = "v22-sb" if v22_on() else "v21-sb"
 
 # ── V20 (2026-08-17, S277/S278) — THE LIVE FILTER from 2026-08-18. ────────────────
 # V20 = V16 rules + ES Absorption only when VIX >= ES_ABS_VIX_FLOOR + no Friday.
@@ -276,7 +288,8 @@ def _v22_fires(l, moves):
         mv = (moves or {}).get(str(ts.astimezone(ET).date()))
         if mv is None:
             return False
-        return float(mv) < V22_PREV_DROP and float(v) < V22_VIX_MAX
+        thr = V22_PREV_DROP if v22_on() else V21_PREV_DROP
+        return float(mv) < thr and float(v) < V22_VIX_MAX
     except Exception:
         return False
 
@@ -296,6 +309,8 @@ def v22_long_qty(l, moves, qty):
     """The long half: on a trigger day a LONG is doubled, capped at V22_LONG_CAP.
     Fails SAFE - on any doubt the quantity is returned unchanged."""
     try:
+        if not v22_on():
+            return qty
         d = str(l['direction'] if 'direction' in l else '').lower()
         if d not in ('long', 'bullish'):
             return qty

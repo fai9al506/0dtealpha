@@ -633,21 +633,37 @@ SC / AG Short / VPB / VIX Div / DD / ES Abs.
   which is monitoring only. **When a gate is armed, the `(live)` label moves in the same commit.**
 
 
-### V20 — THE LIVE FILTER (S277/S278, live from 2026-08-18)
+### V21 — THE LIVE FILTER (S300–S307, live from 2026-08-18)
 
-**V20 = V16 rules + ES Absorption only when VIX ≥ 20 + no Friday.** `LIVE_VER = "v20-sb"`, so
-`setup_log.live_pass` now means V20. `$1,718 → $2,139/mo on 197 FEWER trades.`
+**V21 = V20 + no SHORTS when the previous session fell more than 0.8% AND VIX < 24.**
+`LIVE_VER = "v21-sb"`, so `setup_log.live_pass` means V21. Full ledger: `FILTER_VERSIONS.md`.
+
+**Why.** After a session worse than −0.5% the next day averaged **+0.22% and rose 68% of the
+time** — our fade shorts sold into the bounce. Shorts after a down day earn **+0.81 pt vs
++4.57 pt otherwise**. **The VIX ceiling is what makes it safe: the effect INVERTS in high
+vol** — at VIX 26+ those shorts earn +15.74 pt at 100% WR. Without the ceiling the rule deletes
+March's +150 pts of high-vol shorts and is worth exactly zero. **FAILS OPEN** (unknown move or
+VIX → trade is taken). $2,187 → **$2,372/mo**, worst month −$225 → **+$530**, MaxDD −$1,585 →
+**−$906**. Blocks 27 shorts on 4 days in 6 months; **insurance, not income**.
+
+**⚠️ MEASURE THE PREVIOUS MOVE ON `spx_ohlc_1m`, NEVER `chain_snapshots`.** The 2-min snapshots
+start 09:32 against the bars' 09:31, and that one minute shifts the daily figure by up to 0.08%
+— enough to flip whole days across the −0.8% line and turn a real rule (t=−2.01) into noise
+(t=−0.81). Same rule, different sampling, opposite conclusion.
+
+**V20 (inside V21) = V16 rules + ES Absorption only when VIX ≥ 20 + no Friday.** ES Absorption's
+edge is volatility-dependent: −$2.6/trade below VIX 18 and −$6.4 at 18–20, but **+$21.6 at 20–22
+(t=+2.4) and +$15.2 at 22–26 (t=+2.7)**. Mar–Apr (avg VIX 24.8) +$1,239; May–Aug (avg VIX 18.1)
+−$412. **Gated, not deleted: switching it OFF measured −$1,036**, because under the cap its slots
+refill with weaker trades.
 
 **🔢 RULES CHANGE → VERSION NUMBER CHANGES** (user directive 2026-08-17). `FILTER_VERSIONS.md`
 is the ledger of what each number means; the portal dropdown carries **only the short name**
-(`V20 (live)`), never the description. **V16 is frozen — never edit it again.**
-
-ES Absorption's edge is volatility-dependent: −$2.6/trade below VIX 18 and −$6.4 at 18–20, but
-**+$21.6 at 20–22 (t=+2.4) and +$15.2 at 22–26 (t=+2.7)**. Mar–Apr (avg VIX 24.8) +$1,239;
-May–Aug (avg VIX 18.1) −$412. **Gated, not deleted: switching it OFF measured −$1,036**, because
-under the cap its slots refill with weaker trades.
+(`V21 (live)`), never the description. **V16 and V20 are frozen — never edit them again.**
 
 **🚨 REMOVING A SETUP IS NOT SUBTRACTING ITS P&L.** Always re-run the whole replay both ways.
+
+**📌 The live filter version lives in `app/live_filter.py:LIVE_VER` — verify there, not here.**
 
 ### S293 per-setup day breaker (live 2026-08-17)
 
@@ -681,7 +697,7 @@ refuses, it **pages rather than forcing**. Audit `_tmp_s279_audit.py` (14 cases)
 `app/filter_validation.py` now runs **monthly, first trading day 17:00 ET** (cron `day="1-5"` +
 weekday guard + once-per-month latch) and sends ONE report with two parts:
 
-1. **What we TRADE** — every setup V20 admits, **replayed with the real cap/dedup/sizing**, split
+1. **What we TRADE** — every setup V21 admits, **replayed with the real cap/dedup/sizing**, split
    long vs short. **Scoring raw SIGNALS instead of replayed TRADES read Skew Charm at $4.5/trade
    when the real figure is $13.8 and raised two false FADING alarms.**
 2. **PORTAL-ONLY detectors** — scored raw; these are the investment, watched for an edge appearing.

@@ -4439,9 +4439,23 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     # -> -$906, the June 5-12 streak -$1,219 -> -$465. LOMO 6/6 (helps 3, unchanged 3).
     # Blocks 27 shorts on 4 days in 6 months at 37% WR (t=-2.01) and beats 500 random
     # 27-short removals on every metric. FAILS OPEN on a missing move or VIX.
+    #
+    # ── V22 (2026-08-19, S313): threshold widened -0.8% -> -0.5%. ────────────────────
+    # V21 blocked shorts only. S313 found the LONGS on those same days are the better
+    # half (+5.32 pt/trade, green on 5 of 6 days, against the shorts' 0 of 4), and that
+    # blocking alone leaves most of the money behind. The long size-up lives in
+    # real_trader._effective_qty - a filter cannot express quantity. The two halves are
+    # ONE rule: sizing longs without blocking shorts measured WORSE than doing nothing
+    # ($2,178/mo, MaxDD -$1,601). Widening to -0.5% takes the trigger from 9 days to 17.
+    # Measured 119 sessions: $2,253 -> $2,549/mo, worst month +$530 -> +$1,266, MaxDD
+    # unchanged at -$906. Out of sample (fit Mar-May, scored Jun-Aug) +$1,118/mo against
+    # +$86 in sample. Random control p=0.003. Full evidence: S313_PREVDAY_LONG_EDGE.md.
+    # Threshold is env-tunable for instant revert: V22_PREV_DROP=-0.8 restores V21.
+    # FAILS OPEN, exactly as V21 did.
     if direction not in ("long", "bullish") and vix is not None:
         _pm = _prev_day_move_pct()
-        if _pm is not None and _pm < -0.8 and float(vix) < 24.0:
+        _thr = float(os.getenv("V22_PREV_DROP", "-0.5"))
+        if _pm is not None and _pm < _thr and float(vix) < 24.0:
             return False
 
     # ── ES Absorption PURE (shipped 2026-05-03 to real-trader from shadow) ──
@@ -5893,6 +5907,9 @@ def _run_setup_check():
                                     # Basket "0/1/2" sizing: pass the SAME frozen basket_pct the
                                     # live filter used (stamped at signal time) so size matches take/skip.
                                     basket_pct=r.get("basket_pct"),
+                                    # V22 (S313): needed for the LONG size-up after a down
+                                    # session. None -> real_trader leaves the size unchanged.
+                                    vix=_vix_last,
                                 )
                             elif not es_px:
                                 # S114: ES quote stream stale AND REST fallback returned None.
@@ -6627,6 +6644,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
                             greek_alignment=result.get("greek_alignment"),
                             # Basket "0/1/2" sizing: pass the frozen stamped basket_pct (matches filter).
                             basket_pct=result.get("basket_pct"),
+                            vix=_vix_last,   # V22 (S313) long size-up input
                         )
                     except Exception as e:
                         print(f"[real-trader] ES Absorption place error: {e}", flush=True)
@@ -14256,7 +14274,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v21">V21 (live) ✦</option><option value="v20">V20</option><option value="v16fri">V16 w/Friday Off</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v22">V22 (live) ✦</option><option value="v21">V21</option><option value="v20">V20</option><option value="v16fri">V16 w/Friday Off</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -14328,6 +14346,19 @@ function passesStrategy(l, strat) {
   // V20 plus: no SHORTS when the PREVIOUS session fell more than 0.8% AND VIX < 24.
   // Ledger: FILTER_VERSIONS.md. Lockstep with _tlPassesStrategy(l,'v21'),
   // live_filter.passes_v21 and main.py _passes_live_filter. FAILS OPEN on missing data.
+  // V22 (2026-08-19, S313) — THE LIVE FILTER from 2026-08-20. Same shape as V21 with
+  // the threshold at -0.5%. The LONG size-up half cannot be shown in a pass/fail view;
+  // it lives in real_trader._effective_qty. Lockstep with _tlPassesStrategy(l,'v22'),
+  // live_filter.v22_blocks and main.py _passes_live_filter. FAILS OPEN.
+  if (strat === 'v22') {
+    if (!passesStrategy(l, 'v20')) return false;
+    const _isL22 = (l.direction === 'long' || l.direction === 'bullish');
+    if (_isL22 || l.vix == null || !l.ts) return true;
+    const _k22 = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
+    const _mv22 = _dailyMoves[_k22];
+    if (_mv22 == null) return true;
+    return !(_mv22 < -0.5 && l.vix < 24);
+  }
   if (strat === 'v21') {
     if (!passesStrategy(l, 'v20')) return false;
     const _isL21 = (l.direction === 'long' || l.direction === 'bullish');
@@ -16403,7 +16434,7 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v21">V21 (live) ✦</option><option value="v20">V20</option><option value="v16fri">V16 w/Friday Off</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v22">V22 (live) ✦</option><option value="v21">V21</option><option value="v20">V20</option><option value="v16fri">V16 w/Friday Off</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
@@ -19579,6 +19610,17 @@ DASH_HTML_TEMPLATE = """
       // V21 (2026-08-17, S300-S307) — THE LIVE FILTER from 2026-08-18.
       // V20 plus: no SHORTS when the previous session fell more than 0.8% AND VIX < 24.
       // LOCKSTEP with live_filter.passes_v21 + passesStrategy(l,'v21') + _passes_live_filter.
+      // V22 (2026-08-19, S313) — THE LIVE FILTER from 2026-08-20. Lockstep with
+      // passesStrategy(l,'v22'), live_filter.v22_blocks, main.py _passes_live_filter.
+      if (strat === 'v22') {
+        if (!_tlPassesStrategy(l, 'v20')) return false;
+        const _isL22 = (l.direction === 'long' || l.direction === 'bullish');
+        if (_isL22 || l.vix == null || !l.ts) return true;
+        const _k22 = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
+        const _mv22 = _tlDailyMoves[_k22];
+        if (_mv22 == null) return true;
+        return !(_mv22 < -0.5 && l.vix < 24);
+      }
       if (strat === 'v21') {
         if (!_tlPassesStrategy(l, 'v20')) return false;
         const _isL21 = (l.direction === 'long' || l.direction === 'bullish');

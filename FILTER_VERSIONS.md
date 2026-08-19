@@ -78,7 +78,64 @@ Sweep: **0 mismatches, 16 setups, 3,052 signals.** ES Absorption passes 6 instea
 
 ---
 
-## V21 — LIVE from 2026-08-18 (S300–S307)
+## V22 — LIVE from 2026-08-20 (S313)
+
+**V22 = V21 with the threshold widened −0.8% → −0.5%, PLUS the LONG half of the same effect.**
+
+| part | detail |
+|---|---|
+| SHORTS | skipped when the **previous session's open→close < −0.5%** and this signal's VIX < 24 |
+| **LONGS** | **`qty = min(qty × 2, 3)`** on those same days — this is new, and it is the bigger half |
+| where the long half lives | `real_trader._effective_qty` → `_v22_long_qty`. **A filter cannot express quantity**, so it is not in `passes_v22` |
+| env | `V22_PREV_DROP` (−0.5) · `V22_LONG_CAP` (3) · `V22_LONG_SIZEUP_ENABLED` (default **false**) |
+| revert | `V22_PREV_DROP=-0.8` + `V22_LONG_SIZEUP_ENABLED=false` restores V21 exactly |
+
+**Why the long half exists.** V21 only ever blocked shorts. On the very same days the longs are
+the better trade and nothing was done about it. At **day** level (a day's trades share one tape,
+so days are the sample size — counting 31 correlated trades as 31 observations was the error that
+started this study):
+
+| previous session | SHORTS | LONGS |
+|---|---|---|
+| open→close < −0.8% | −5.44 pt, **0/4 days green** | **+5.32 pt, 5/6 days** |
+| open→close −0.8..−0.5% | +1.15 pt, 4/7 | **+5.74 pt, 5/6** |
+| 2-session cumulative −1.5..−0.8% | −0.20 pt, 3/8 | **+8.77 pt, 7/8** |
+| no gap, ground down all day | −3.71 pt, 1/4 | **+8.06 pt, 5/5** |
+
+Six independent slicings agree. **Sizing longs WITHOUT blocking shorts measured $2,178/mo and
+MaxDD −$1,601 — worse than doing nothing. The block and the size-up are ONE rule.**
+
+**Measured** — 119 sessions, V20 + cap 2/3 + dedup + S203 + $300 breaker + basket sizing, costs
+inside:
+
+| | $/mo | worst month | MaxDD | peak LONG |
+|---|---|---|---|---|
+| V20 baseline | 2,071 | −225 | −1,585 | 4 MES |
+| V21 (block only) | 2,253 | +530 | −906 | 4 MES |
+| **V22** | **2,549** | **+1,266** | **−906** | **6 MES** |
+
+Out of sample (fit Mar–May, scored on the unseen Jun–Aug) the edge is **larger** than in sample:
+**+$1,118/mo vs +$86**. Random control, same action on the same number of randomly chosen days,
+300 trials: **p = 0.003**. Trade-by-trade audit: 17 trigger days, deltas sum exactly to the replay
+difference (+$2,706), 0 lookahead violations, 13 days positive-or-zero against 4 small negatives.
+
+### 🔒 THE CAP IS A CAPITAL CONSTRAINT, NOT A RESULT
+Uncapped doubling earns **more** — $2,643/mo, worst month +$1,525 — but peaks at **8 MES long =
+$2,120 margin = 81%** of the long account's $2,609.80. **At 81% the biggest trades get rejected
+after a losing week, which is exactly when this rule pays.** Cap 3 peaks at 6 MES = $1,590 = 61%
+and survives a $1,000 drawdown, keeping 76% of the gain.
+
+> **RAISE `V22_LONG_CAP` TO 4 WHEN ACCOUNT `210VYX65` HOLDS $3,029.**
+> (8 MES × $265 ÷ 0.70 comfort rule.) It held **$2,609.80** on 2026-08-19 — **short by $419.**
+> Tracked as **Tasks S314**. Change the env var only; no code change, no new version.
+
+**Honest limits:** 17 trigger days in 119 sessions; **85% of the gain is June + July**; nothing in
+March, May or August. It is a bad-regime rule that sits idle in a good one, and it is the only
+tested variant that loses in any month (August, −$74). Full evidence: `S313_PREVDAY_LONG_EDGE.md`.
+
+---
+
+## V21 — superseded by V22 on 2026-08-20 (S300–S307)
 
 **V21 = V20 + no SHORTS when the previous session fell more than 0.8% AND VIX < 24.**
 

@@ -25,8 +25,8 @@ sys.path.insert(0, REPO)
 
 # which filter version to sweep: v16 (the live one), v17 or v18 (both monitoring)
 STRAT = (sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else "v16").lower()
-if STRAT not in ("v16", "v16fri", "v17", "v18", "v19", "v20", "v21"):
-    print(f"usage: python filter_mirror_sweep.py [v16|v16fri|v17|v18|v19|v20|v21]   (got {STRAT!r})")
+if STRAT not in ("v16", "v16fri", "v17", "v18", "v19", "v20", "v21", "v22"):
+    print(f"usage: python filter_mirror_sweep.py [v16|v16fri|v17|v18|v19|v20|v21|v22]   (got {STRAT!r})")
     sys.exit(2)
 
 # env flags exactly as Railway has them
@@ -133,10 +133,12 @@ if errs:
 
 # ---------- 4. Python filter ----------
 from app.live_filter import (passes_v16, passes_v16_fri, passes_v17,
-                             passes_v18, passes_v19, passes_v20, passes_v21)
+                             passes_v18, passes_v19, passes_v20, passes_v21,
+                             passes_v22)
 _PY = {"v16": passes_v16, "v16fri": passes_v16_fri, "v17": passes_v17,
        "v18": passes_v18, "v19": passes_v19, "v20": passes_v20,
-       "v21": (lambda r, g: passes_v21(r, g, _MOVES))}[STRAT]
+       "v21": (lambda r, g: passes_v21(r, g, _MOVES)),
+       "v22": (lambda r, g: passes_v22(r, g, _MOVES))}[STRAT]
 py_res = {}
 for r in rows:
     row = dict(r)

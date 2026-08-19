@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 
 ET = ZoneInfo("America/New_York")
-LIVE_VER = "v21-sb"   # V21 + Semi-Basket. Bump when the live filter changes.
+LIVE_VER = "v22-sb"   # V22 + Semi-Basket. Bump when the live filter changes.
 
 # ── V20 (2026-08-17, S277/S278) — THE LIVE FILTER from 2026-08-18. ────────────────
 # V20 = V16 rules + ES Absorption only when VIX >= ES_ABS_VIX_FLOOR + no Friday.
@@ -92,7 +92,7 @@ def passes_v16_sb(l, gaps):
     """
     if not passes_v20(l, gaps):
         return False
-    if v21_blocks(l, _PREV_MOVES_CACHE):
+    if v22_blocks(l, _PREV_MOVES_CACHE):
         return False
     if basket_blocks(l):
         return False
@@ -213,6 +213,104 @@ def passes_v21(l, gaps, moves):
     if not passes_v20(l, gaps):
         return False
     return not v21_blocks(l, moves)
+
+
+# ── V22 (2026-08-19, S313) — THE LIVE FILTER from 2026-08-20. ───────────────────────
+# V22 = V21 with the threshold widened from -0.8% to -0.5%, PLUS the other half of the
+# same effect: on those days our LONGS are sized up.
+#
+# WHY THE LONG HALF EXISTS. V21 only ever blocked shorts. On the very same days the
+# longs are the better trade, and nothing was done about it. Measured at DAY level
+# (a day's trades share one tape, so DAYS is the sample size, not trades):
+#
+#   previous session            SHORTS                 LONGS
+#   open-close < -0.8%          -5.44 pt, 0/4 days     +5.32 pt, 5/6 days
+#   open-close -0.8..-0.5%      +1.15 pt, 4/7 days     +5.74 pt, 5/6 days
+#   2-session cum -1.5..-0.8%   -0.20 pt, 3/8 days     +8.77 pt, 7/8 days
+#   no gap, ground down all day -3.71 pt, 1/4 days     +8.06 pt, 5/5 days
+#
+# Six independent slicings of the previous session agree. Sizing the longs WITHOUT
+# blocking the shorts does NOT work ($2,178/mo, MaxDD -$1,601, worse than baseline):
+# the block and the size-up are one rule, not two.
+#
+# Measured, 119 sessions, V20 + cap 2/3 + dedup + S203 + $300 breaker + basket sizing:
+#   V20 baseline          $2,071/mo  worst month  -$225  MaxDD -$1,585
+#   V21 (block only)      $2,253/mo  worst month  +$530  MaxDD   -$906
+#   V22 (this)            $2,549/mo  worst month +$1,266 MaxDD   -$906
+# Out of sample (fit Mar-May, scored on the unseen Jun-Aug) the edge is LARGER than in
+# sample: +$598 to +$1,118 per month against +$86 in sample. Random control, same action
+# on the same number of randomly chosen days, 300 trials: p = 0.003.
+#
+# THE CAP IS A CAPITAL CONSTRAINT, NOT A RESULT. Uncapped doubling earns MORE
+# ($2,643/mo, worst month +$1,525) but peaks at 8 MES long = $2,120 margin = 81% of the
+# long account's $2,609.80. At 81% the biggest trades get REJECTED after a losing week -
+# exactly when this rule is worth most. Cap 3 peaks at 6 MES = $1,590 = 61%, which
+# survives a $1,000 drawdown, and still keeps 76% of the gain.
+#   >>> LIFT THE CAP TO 4 WHEN THE LONG ACCOUNT (210VYX65) HOLDS $3,029. <<<
+#   (8 MES x $265 margin / 0.70 comfort rule.) It held $2,609.80 on 2026-08-19,
+#   short by $419. Tracked as Tasks S314. Change V22_LONG_CAP, nothing else.
+#
+# HONEST LIMITS: 17 trigger days in 119 sessions. 85% of the gain is June + July, and it
+# does nothing in March, May or August - it is a bad-regime rule that sits idle in a good
+# one. It is the only tested variant that LOSES in a month (August, -$74 real dollars).
+#
+# ⚠️ Same sampling warning as V21: measure the previous move on `spx_ohlc_1m`, never on
+# `chain_snapshots`.
+#
+# FAILS OPEN on the short block (unknown move or VIX -> trade is TAKEN) and FAILS SAFE on
+# the long size-up (unknown -> normal size). Neither half can invent a trade.
+V22_PREV_DROP = float(os.getenv("V22_PREV_DROP", "-0.5"))   # previous session open-to-close, %
+V22_VIX_MAX = 24.0        # above this the effect inverts - keep the shorts
+V22_LONG_CAP = int(os.getenv("V22_LONG_CAP", "3"))          # max MES per long on a trigger day
+
+
+def _v22_fires(l, moves):
+    """Is this signal on a day AFTER a qualifying down session? Direction-agnostic."""
+    try:
+        v = l['vix'] if 'vix' in l else None
+        if v is None:
+            return False
+        ts = l['ts'] if 'ts' in l else None
+        if ts is None:
+            return False
+        mv = (moves or {}).get(str(ts.astimezone(ET).date()))
+        if mv is None:
+            return False
+        return float(mv) < V22_PREV_DROP and float(v) < V22_VIX_MAX
+    except Exception:
+        return False
+
+
+def v22_blocks(l, moves):
+    """True when V22 refuses this signal. SHORTS only. Fails OPEN on missing data."""
+    try:
+        d = str(l['direction'] if 'direction' in l else '').lower()
+        if d in ('long', 'bullish'):
+            return False
+        return _v22_fires(l, moves)
+    except Exception:
+        return False
+
+
+def v22_long_qty(l, moves, qty):
+    """The long half: on a trigger day a LONG is doubled, capped at V22_LONG_CAP.
+    Fails SAFE - on any doubt the quantity is returned unchanged."""
+    try:
+        d = str(l['direction'] if 'direction' in l else '').lower()
+        if d not in ('long', 'bullish'):
+            return qty
+        if not _v22_fires(l, moves):
+            return qty
+        return max(1, min(int(qty) * 2, V22_LONG_CAP))
+    except Exception:
+        return qty
+
+
+def passes_v22(l, gaps, moves):
+    """V22 = V20 AND not v22_blocks(). THE live filter from 2026-08-20."""
+    if not passes_v20(l, gaps):
+        return False
+    return not v22_blocks(l, moves)
 
 
 def backfill_live_pass(engine):

@@ -504,6 +504,11 @@ MAX_CONCURRENT_V7 = int(os.getenv("REAL_TRADE_MAX_CONCURRENT_V7", "8"))
 # measured full-history MaxDD (-$158) — one bad day ends v7 for the session.
 V7_DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_V7_DAILY_LOSS_LIMIT", "150"))
 
+# V22 (S313) — see _v22_long_qty below for the full rationale and the capital gate.
+V22_PREV_DROP = float(os.getenv("V22_PREV_DROP", "-0.5"))   # previous session open-to-close, %
+V22_VIX_MAX = 24.0                                          # above this the effect inverts
+V22_LONG_CAP = int(os.getenv("V22_LONG_CAP", "3"))          # max MES per long on a trigger day
+
 
 def _no_friday_enabled() -> bool:
     """S263 Friday gate — is trading blocked on Fridays for the MAIN book?
@@ -889,6 +894,86 @@ def _basket_confirms(direction: str, basket_pct: float | None) -> bool:
         return False  # fail-safe: on any error, do NOT increase size
 
 
+# ── V22 long size-up (2026-08-19, S313) ────────────────────────────────────────────
+# The filter half of V22 (block shorts after a down session) lives in
+# main.py:_passes_live_filter. THIS is the other half, and it is the bigger one: on
+# those same days our LONGS run +5.32 pt/trade and are green on 5 of 6 days while the
+# blocked shorts are green on 0 of 4. A filter can only say yes/no, so the size-up has
+# to live here, at the one place quantity is decided.
+#
+#   $2,253/mo (block only) -> $2,549/mo   worst month +$530 -> +$1,266   MaxDD -$906 both
+#
+# THE CAP IS CAPITAL, NOT EVIDENCE. Uncapped doubling earns more ($2,643/mo, worst month
+# +$1,525) but peaks at 8 MES long = $2,120 = 81% of the long account's $2,609.80. At 81%
+# the biggest trades are REJECTED after a losing week, which is exactly when this rule
+# pays. Cap 3 peaks at 6 MES = $1,590 = 61% and survives a $1,000 drawdown.
+#   >>> RAISE V22_LONG_CAP TO 4 WHEN 210VYX65 HOLDS $3,029 (8 x $265 / 0.70). <<<
+#   Held $2,609.80 on 2026-08-19 - short by $419. Tasks S314. Change the env var only.
+#
+# FAILS SAFE everywhere: no engine, no row, stale row, unknown VIX, any exception -> the
+# quantity is returned UNCHANGED. This code can never make a position larger by accident,
+# and it never creates a trade that would not otherwise be placed.
+_V22_MOVE = {"d": None, "pct": None}
+
+
+def _v22_enabled() -> bool:
+    return os.getenv("V22_LONG_SIZEUP_ENABLED", "false").lower() == "true"
+
+
+def _v22_prev_move_pct():
+    """Previous session open-to-close %, cached once per ET day. None = unknown.
+
+    Reads `spx_ohlc_1m`, NEVER `chain_snapshots` - the 2-minute snapshots start at 09:32
+    against the bars' 09:31 and that one minute moves the daily figure by up to 0.08%,
+    enough to flip a day across the threshold. Same query main.py:_prev_day_move_pct uses,
+    deliberately duplicated because real_trader imports nothing from main.
+    """
+    try:
+        today = datetime.now(NY).date()
+        if _V22_MOVE["d"] == today:
+            return _V22_MOVE["pct"]
+        if _engine is None:
+            return None
+        from sqlalchemy import text as _t
+        with _engine.connect().execution_options(isolation_level="AUTOCOMMIT") as c:
+            row = c.execute(_t("""
+                WITH day AS (
+                  SELECT (ts AT TIME ZONE 'America/New_York')::date d,
+                         (array_agg(bar_open  ORDER BY ts ASC ))[1] o,
+                         (array_agg(bar_close ORDER BY ts DESC))[1] c
+                  FROM spx_ohlc_1m
+                  WHERE (ts AT TIME ZONE 'America/New_York')::date < :t
+                  GROUP BY 1 ORDER BY 1 DESC LIMIT 1)
+                SELECT (c-o)/NULLIF(o,0)*100 FROM day"""), {"t": today}).fetchone()
+        pct = float(row[0]) if row and row[0] is not None else None
+        _V22_MOVE["d"], _V22_MOVE["pct"] = today, pct
+        print(f"[v22] previous session move = {pct if pct is None else round(pct, 3)}%", flush=True)
+        return pct
+    except Exception as e:
+        print(f"[v22] prev-move lookup failed (fail-safe, no size-up): {e}", flush=True)
+        return None
+
+
+def _v22_long_qty(is_long: bool, vix, qty: int) -> int:
+    """Double a LONG on a post-down-session day, capped. Fails SAFE to `qty`."""
+    try:
+        if not _v22_enabled() or not is_long:
+            return qty
+        if vix is None or float(vix) >= V22_VIX_MAX:
+            return qty
+        pct = _v22_prev_move_pct()
+        if pct is None or pct >= V22_PREV_DROP:
+            return qty
+        new = max(1, min(int(qty) * 2, V22_LONG_CAP))
+        if new != qty:
+            print(f"[real-trader] V22 long size-up {qty} -> {new} "
+                  f"(prev session {pct:+.2f}%, VIX {float(vix):.1f})", flush=True)
+        return new
+    except Exception as e:
+        print(f"[real-trader] V22 size-up error (fail-safe, unchanged): {e}", flush=True)
+        return qty
+
+
 def _effective_qty(setup_name: str, direction: str,
                    paradigm: str | None, align: int | None,
                    basket_pct: float | None = None) -> int:
@@ -912,7 +997,8 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                 charm_limit_price: float | None = None,
                 paradigm: str | None = None,
                 greek_alignment: int | None = None,
-                basket_pct: float | None = None):
+                basket_pct: float | None = None,
+                vix: float | None = None):
     """Place 1 MES REAL trade when a setup fires.
 
     Args:
@@ -970,6 +1056,11 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     #   basket CONFIRMS this trade's direction under BASKET_SIZING_MODE=='012' (max, not ×).
     # Computed BEFORE all gates so cap/dedup/alerts can reference it consistently.
     qty = _effective_qty(setup_name, direction, paradigm, greek_alignment, basket_pct)
+    # V22 (S313): the LONG half of the down-session rule. Applied here, right after the
+    # base quantity, so every downstream gate (cap, dedup, alerts, order placement) sees
+    # one consistent number. Fails safe to `qty`; v7 is excluded below because it is a
+    # separately funded book with its own flat-1-MES config.
+    qty = _v22_long_qty(direction.lower() in ("long", "bullish"), vix, qty)
 
     # Setup filter: only trade Skew Charm + AG Short + VPB-Bull (defense-in-depth, main.py also filters)
     # AG Short added 2026-04-08 — SHORT account only (AG hardcoded direction="short")

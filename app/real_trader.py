@@ -1017,6 +1017,17 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
             _alert(f"⏭ SKIPPED GEX Long (v7): dealer state not SUPPORT — {why}")
             return
         _is_v7 = True
+        # S309: v7 is FLAT 1 MES — force it here, after the routing decision.
+        # _effective_qty() ran further up and may already have sized this trade to 2
+        # because the tech basket confirms the long. That is the MAIN book's validated
+        # rule (Dark Mate semi-sizing), NOT v7's: the v7 study measured 131 sessions at
+        # flat 1 MES (85 signals, 77.6% WR, MaxDD -$158). Doubling size doubles the
+        # drawdown to ~-$320 AND pushes peak margin at cap 8 from ~8 MES ($2,120) to
+        # ~12 MES ($3,180), above the v7 account's own $3,000 — so the broker would
+        # start rejecting on exactly the clustered days that carry 100% of the edge.
+        # Measured 2026-08-19: 51% of GEX Long signals (158 of 307 since 2026-06-13)
+        # would have been sized 2. Scale v7 by taking the next SLOT, never by size.
+        qty = QTY
 
     # Check master switch for this direction
     account_id = _V7_ACCOUNT if _is_v7 else _get_account_for_direction(is_long)

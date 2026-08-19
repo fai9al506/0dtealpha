@@ -665,7 +665,15 @@ is the ledger of what each number means; the portal dropdown carries **only the 
 
 **📌 The live filter version lives in `app/live_filter.py:LIVE_VER` — verify there, not here.**
 
-### S293 per-setup day breaker (live 2026-08-17)
+### S293 per-setup day breaker — 🔴 DELIBERATELY OFF (`DAY_BREAKER_ENABLED=false`)
+
+**⚠️ USER DECISION 2026-08-19: the per-setup breaker HARMS this book and stays OFF. The only
+day-level risk control that is armed is the $300 max daily loss** (`REAL_TRADE_DAILY_LOSS_LIMIT`,
+code default 300, reads real broker `RealizedProfitLoss`). **Do NOT propose re-arming S293, and do
+not read the description below as a live control** — it documents code that exists but is switched
+off. Verify state with `railway variables`, never from this file.
+
+The description below is what the code DOES when enabled:
 
 **Two consecutive FULL stop-outs of the same setup+direction on the same day → that
 setup+direction is paused for the rest of the day.** Per setup and direction, **never

@@ -905,11 +905,19 @@ places and blocks nothing.**
   were auto-marked invalidated. Fix is a side check only — **the LIS is still first choice when
   correctly sided; do not "improve" it into a nearest-level rule.**
 
-### GEX Long v7 "Gamma Support" — own account, own cap (S253, arms 2026-08-17)
+### GEX Long v7 "Gamma Support" — 🟢 LIVE ON REAL MONEY since 2026-08-20 (S253/S309)
 
 v7 is **not a detector** — it is a live GATE on the existing GEX Long signal plus its own
-account and concurrency pool. Ships dormant; with `REAL_TRADE_V7_ACCOUNT` unset every code
-path is byte-identical to before.
+account and concurrency pool. **Armed 2026-08-20 07:42 ET on `210XFR64` ($3,000).**
+
+**FIVE variables, always set in ONE command:** `REAL_TRADE_V7_ACCOUNT=210XFR64` ·
+`GEX_LONG_V7_ENABLED=true` · **`GEX_LONG_V3_REAL_TRADE_ENABLED=true`** ·
+`REAL_TRADE_V7_DAILY_LOSS_LIMIT=150` · `REAL_TRADE_MAX_CONCURRENT_V7=8`.
+The third one is what makes GEX Long dispatch at all (`main.py:~4404`) — without it v7 arms,
+reports healthy and **never fires**. But if the flags ever SPLIT, un-gated GEX Long
+(46.8% WR, −91 pt) lands on the MAIN long account. **Flags are read at IMPORT, so a restart
+is the arming step** (unlike `REAL_TRADE_NO_FRIDAY`, read at call time). Disarm = unset
+`REAL_TRADE_V7_ACCOUNT`, which makes every code path byte-identical to before.
 
 - **Live gate.** `real_trader._v7_state_ok()` reads the latest `gex_state` row at signal
   time and requires `state='SUPPORT'` within 10 minutes. **FAILS CLOSED** on any error,
@@ -930,7 +938,7 @@ path is byte-identical to before.
   from the same env var. **A trading account no reconciler watches is the hole S210/S243
   exist to close** — if a fourth account is ever added, check all four modules.
 
-**Config that must not drift: FLAT 1 MES, cap 8, no basket sizing.** MaxDD is −$158 at
+**Config that must not drift: FLAT 1 MES, cap 8, no basket sizing — the 1 MES is now ENFORCED IN CODE** (`qty = QTY` immediately after `_is_v7 = True`, `b1e899d`). Before that fix `_effective_qty()` ran first and basket sizing would have made **51% of v7 trades 2 MES**, pushing peak margin at cap 8 to ~$3,180 — above the account's own $3,000. **A config note is not a control.** MaxDD is −$158 at
 every cap ≥2 but doubles to ~−$320 the moment size doubles — slots are free, size is not.
 Scale by taking the next SLOT. Evidence + funding ladder: memory
 `project_gex_v7_own_account`, Tasks S252.

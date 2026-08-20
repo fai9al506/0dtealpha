@@ -505,7 +505,7 @@ MAX_CONCURRENT_V7 = int(os.getenv("REAL_TRADE_MAX_CONCURRENT_V7", "8"))
 V7_DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_V7_DAILY_LOSS_LIMIT", "150"))
 
 # V22 (S313) — see _v22_long_qty below for the full rationale and the capital gate.
-V22_PREV_DROP = float(os.getenv("V22_PREV_DROP", "-0.5"))   # previous session open-to-close, %
+V22_LONG_DROP = float(os.getenv("V22_LONG_DROP", "-0.5"))   # LONG size-up trigger, %
 V22_VIX_MAX = 24.0                                          # above this the effect inverts
 V22_LONG_CAP = int(os.getenv("V22_LONG_CAP", "3"))          # max MES per long on a trigger day
 
@@ -920,7 +920,7 @@ def _v22_enabled() -> bool:
     """ONE switch for both halves of V22 — same variable live_filter.v22_on() reads.
     OFF means the whole file behaves exactly as it did under V21. Read at CALL time,
     so flipping it takes effect on the next signal."""
-    return os.getenv("V22_ENABLED", "false").lower() == "true"
+    return os.getenv("V22_LONG_SIZEUP_ENABLED", "false").lower() == "true"
 
 
 def _v22_prev_move_pct():
@@ -965,7 +965,7 @@ def _v22_long_qty(is_long: bool, vix, qty: int) -> int:
         if vix is None or float(vix) >= V22_VIX_MAX:
             return qty
         pct = _v22_prev_move_pct()
-        if pct is None or pct >= V22_PREV_DROP:
+        if pct is None or pct >= V22_LONG_DROP:
             return qty
         new = max(1, min(int(qty) * 2, V22_LONG_CAP))
         if new != qty:

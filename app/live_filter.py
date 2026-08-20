@@ -13,18 +13,25 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 
 ET = ZoneInfo("America/New_York")
-# ONE master switch for V22. OFF -> this file behaves EXACTLY like V21, byte for byte.
-# There is deliberately no way to arm half of V22: the short block and the long size-up
-# are one rule, and the half-state (wider block, no size-up) is the WORST of the three
-# configurations - it measured $2,289/mo with LOMO 4/6, against V21's $2,253 at 6/6 and
-# V22's $2,549 at 5/6. Widening the block without the long gains just takes more trades
-# off the table for nothing.
+# V22's switch. It governs the LONG SIZE-UP ONLY.
+#
+# ⚠️ The pass/fail filter of V22 is IDENTICAL to V21 — same short block, same -0.8%
+# threshold. The user's decomposition (2026-08-19) showed the two halves are genuinely
+# INDEPENDENT rules that each work alone, and that they degrade in opposite directions
+# as the trigger widens:
+#     block shorts at -0.8  +$182/mo  LOMO 6/6     at -0.5  +$218/mo  LOMO 4/6
+#     size up longs at -0.5 +$189/mo  LOMO 6/6     at -0.8  +$80/mo   LOMO 6/6
+# So widening the block was a mistake I made by tying them together. V22 keeps V21's
+# block exactly as it is and ADDS the long size-up at its own best threshold.
+#     V21                        $2,253/mo  worst month  +530  MaxDD -906  LOMO 6/6
+#     V22 = V21 + long size-up   $2,491/mo  worst month +1181  MaxDD -906  LOMO 6/6
+# The interaction is POSITIVE (+$50/mo): a blocked short frees a slot a bigger long can
+# take. They help each other, they do not overlap.
 def v22_on():
-    return os.getenv("V22_ENABLED", "false").lower() == "true"
+    return os.getenv("V22_LONG_SIZEUP_ENABLED", "false").lower() == "true"
 
 
-# Bump when the live filter changes. Follows the switch so `live_filter_ver` always
-# records what was ACTUALLY live when the row was stamped.
+# Follows the switch so `live_filter_ver` always records what was ACTUALLY live.
 LIVE_VER = "v22-sb" if v22_on() else "v21-sb"
 
 # ── V20 (2026-08-17, S277/S278) — THE LIVE FILTER from 2026-08-18. ────────────────
@@ -271,13 +278,20 @@ def passes_v21(l, gaps, moves):
 #
 # FAILS OPEN on the short block (unknown move or VIX -> trade is TAKEN) and FAILS SAFE on
 # the long size-up (unknown -> normal size). Neither half can invent a trade.
-V22_PREV_DROP = float(os.getenv("V22_PREV_DROP", "-0.5"))   # previous session open-to-close, %
+V22_LONG_DROP = float(os.getenv("V22_LONG_DROP", "-0.5"))   # LONG size-up trigger, %
 V22_VIX_MAX = 24.0        # above this the effect inverts - keep the shorts
 V22_LONG_CAP = int(os.getenv("V22_LONG_CAP", "3"))          # max MES per long on a trigger day
 
 
-def _v22_fires(l, moves):
-    """Is this signal on a day AFTER a qualifying down session? Direction-agnostic."""
+def _v22_fires(l, moves, for_long=False):
+    """Is this signal on a day AFTER a qualifying down session?
+
+    TWO thresholds on purpose. The halves are INDEPENDENT rules and they degrade
+    differently as the trigger widens, so forcing one number on both throws away the
+    better setting for one of them:
+        block shorts   -0.8%  +$182/mo  LOMO 6/6   (at -0.5 it is +$218 but LOMO 4/6)
+        size up longs  -0.5%  +$189/mo  LOMO 6/6   (at -0.8 it is only +$80)
+    """
     try:
         v = l['vix'] if 'vix' in l else None
         if v is None:
@@ -288,21 +302,16 @@ def _v22_fires(l, moves):
         mv = (moves or {}).get(str(ts.astimezone(ET).date()))
         if mv is None:
             return False
-        thr = V22_PREV_DROP if v22_on() else V21_PREV_DROP
+        thr = V22_LONG_DROP if for_long else V21_PREV_DROP
         return float(mv) < thr and float(v) < V22_VIX_MAX
     except Exception:
         return False
 
 
 def v22_blocks(l, moves):
-    """True when V22 refuses this signal. SHORTS only. Fails OPEN on missing data."""
-    try:
-        d = str(l['direction'] if 'direction' in l else '').lower()
-        if d in ('long', 'bullish'):
-            return False
-        return _v22_fires(l, moves)
-    except Exception:
-        return False
+    """V22's short block IS V21's, unchanged. Kept as its own name so callers and the
+    portal can say 'v22' without implying the filter differs. Fails OPEN."""
+    return v21_blocks(l, moves)
 
 
 def v22_long_qty(l, moves, qty):
@@ -314,7 +323,7 @@ def v22_long_qty(l, moves, qty):
         d = str(l['direction'] if 'direction' in l else '').lower()
         if d not in ('long', 'bullish'):
             return qty
-        if not _v22_fires(l, moves):
+        if not _v22_fires(l, moves, for_long=True):
             return qty
         return max(1, min(int(qty) * 2, V22_LONG_CAP))
     except Exception:

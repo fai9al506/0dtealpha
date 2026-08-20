@@ -633,43 +633,37 @@ SC / AG Short / VPB / VIX Div / DD / ES Abs.
   which is monitoring only. **When a gate is armed, the `(live)` label moves in the same commit.**
 
 
-### V22 — THE LIVE FILTER (S313, live from 2026-08-20)
+### V22 — built 2026-08-19, DORMANT (S313) — V21's filter + a LONG SIZE-UP
 
-**V22 = V21 with the threshold widened −0.8% → −0.5%, PLUS the LONG half of the same effect.**
-`LIVE_VER = "v22-sb"`. Full ledger: `FILTER_VERSIONS.md`.
+**V22 does NOT change the filter. `passes_v22` is byte-identical to `passes_v21`.** It adds one
+thing: when the previous session's open→close was **< −0.5%** and VIX < 24,
+**`qty = min(qty × 2, 3)` on LONGS**. Quantity is not something a filter can express, so all of
+V22 lives in `real_trader._v22_long_qty`. Fails SAFE. **v7 unaffected** (its `qty = QTY` runs
+after). Switch: **`V22_LONG_SIZEUP_ENABLED`, default false.**
 
-- **SHORTS**: skipped when the previous session's **open→close < −0.5%** and VIX < 24. Fails OPEN.
-- **LONGS**: **`qty = min(qty × 2, 3)`** on those same days. **This half lives in
-  `real_trader._v22_long_qty`, NOT in the filter — a filter can only say yes/no, not how many.**
-  Fails SAFE (unknown move, unknown VIX, any error → size unchanged). **v7 is unaffected**: its
-  `qty = QTY` override runs after this.
-- **The two halves are ONE rule.** Sizing longs *without* blocking shorts measured **$2,178/mo,
-  MaxDD −$1,601 — worse than doing nothing.** Never ship half of it.
+**⚠️ THE TWO HALVES ARE INDEPENDENT RULES — do not re-tie them.** I first forced both onto one
+−0.5% threshold and claimed they "must go together". The user rejected that on logic (skipping bad
+trades and doubling good trades should each work alone) and the data agreed. They degrade in
+OPPOSITE directions:
 
-**Why.** V21 only blocked shorts. On those same days the LONGS are the better trade: at day level
-**+5.32 pt/trade, green 5 of 6 days**, against the blocked shorts' **0 of 4**. Six independent
-slicings of the previous session agree. $2,253 → **$2,549/mo**, worst month +$530 → **+$1,266**,
-MaxDD unchanged **−$906**. Out of sample (fit Mar–May, scored Jun–Aug) **+$1,118/mo vs +$86 in
-sample** — larger out of sample. Random control p=0.003. Trade-by-trade audit: deltas sum exactly
-to the replay difference, 0 lookahead violations.
+| | at −0.8% | at −0.5% |
+|---|---|---|
+| block shorts alone | **+$182/mo, LOMO 6/6** | +$218/mo, LOMO **4/6** |
+| size up longs alone | +$80/mo, LOMO 6/6 | **+$189/mo, LOMO 6/6** |
 
-**🔒 THE CAP IS CAPITAL, NOT EVIDENCE.** Uncapped earns more ($2,643/mo, worst month +$1,525) but
-peaks at 8 MES long = $2,120 = **81% of `210VYX65`'s $2,609.80** — at which point the broker
-**rejects the biggest trades after a losing week, exactly when the rule pays**. Cap 3 peaks at
-6 MES = 61%. **Raise `V22_LONG_CAP` to 4 when that account holds $3,029** (Tasks S314) — env var
-only, no code change.
+Each is kept at its own best threshold. **Interaction is POSITIVE (+$50/mo)** — a blocked short
+frees a slot a bigger long takes. **Long size-up = profit; short block = drawdown control**
+(longs alone MaxDD −$1,605 → −$906 with the block).
 
-**Env:** `V22_PREV_DROP` (−0.5) · `V22_LONG_CAP` (3) · `V22_LONG_SIZEUP_ENABLED` (default
-**false** — the size-up ships dormant). Revert to V21 exactly: `V22_PREV_DROP=-0.8` +
-`V22_LONG_SIZEUP_ENABLED=false`.
+V21 $2,253/mo, worst month +$530 → **V22 $2,491/mo, worst month +$1,181**, MaxDD −$906 unchanged,
+**LOMO 6/6**. (Both-at-−0.5 scored $2,549 but **5/6** — rejected.) OOS +$1,118/mo vs +$86 in
+sample; random control p=0.003.
 
-**⚠️ Honest limits:** 17 trigger days in 119 sessions, **85% of the gain is June + July**, nothing
-in March / May / August. A bad-regime rule that sits idle in a good one.
+**🔒 CAP 3 IS CAPITAL, NOT EVIDENCE.** Uncapped peaks at 8 MES long = 81% of `210VYX65` — the
+broker would reject the biggest trades after a losing week. **Raise `V22_LONG_CAP` to 4 at $3,029**
+(Tasks S314), env var only. Fires 17 days in 119 sessions; **85% of the gain is Jun+Jul.**
 
-**📌 Measure the previous move on `spx_ohlc_1m`, NEVER `chain_snapshots`** — the same 09:31 vs
-09:32 trap that V21 documents.
-
-### V21 — superseded by V22 (S300–S307, live 2026-08-18 → 2026-08-20)
+### V21 — THE LIVE FILTER (S300–S307, live from 2026-08-18)
 
 **V21 = V20 + no SHORTS when the previous session fell more than 0.8% AND VIX < 24.**
 `LIVE_VER = "v21-sb"`, so `setup_log.live_pass` means V21. Full ledger: `FILTER_VERSIONS.md`.

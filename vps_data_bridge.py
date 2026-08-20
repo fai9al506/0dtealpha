@@ -29,6 +29,7 @@ import logging
 import argparse
 import sys
 import os
+import shutil
 from datetime import datetime, timedelta, time as dtime, date
 from pathlib import Path
 
@@ -84,6 +85,9 @@ DEFAULT_CONFIG = {
     "heartbeat_seconds": 60,
     "post_timeout": 10,
     "stale_timeout_minutes": 5,     # Reconnect if no ticks for this long during market hours
+    "stale_repeat_cycles": 30,      # Re-send the stale alert every N cycles (~min) while stale
+    "disk_min_free_mb": 3072,       # Telegram below this much free space on C:
+    "disk_alert_cooldown_s": 3600,  # ...at most once an hour
     "vol_signal_file": "C:/SierraChart/Data/vol_signal.txt",
     "vol_signal_poll_seconds": 2,
     "vx_dom_file": "C:/SierraChart/Data/vx_dom.jsonl",
@@ -158,6 +162,14 @@ def _send_telegram(cfg, message):
                       timeout=5)
     except Exception as e:
         log.warning(f"Telegram alert failed: {e}")
+
+
+def _disk_free_mb(path="C:/"):
+    """Free space in MB on the volume holding `path`. -1 if it cannot be read."""
+    try:
+        return round(shutil.disk_usage(path).free / 1024 / 1024, 1)
+    except Exception:
+        return -1.0
 
 
 def _market_open():
@@ -738,6 +750,19 @@ class VPSDataBridge:
         self._stale_cycles = 0
         self._STALE_ALERT_CYCLES = 3
         self._STALE_WARN_CYCLES = 5
+        # Re-alert every N stale cycles (~1 cycle/min) so a stale feed keeps
+        # pinging instead of going quiet. 2026-08-19: the feed died at 18:48,
+        # fired its two one-shot alerts at 18:55 + 18:57, then logged "SCID file
+        # not growing" 861 more times in silence until 09:32 the next morning.
+        self._STALE_REPEAT_CYCLES = cfg.get("stale_repeat_cycles", 30)
+
+        # Disk space monitoring. 2026-08-20: C: hit 9.4 MB free during market
+        # hours; Sierra could not append to the .scid and 14.7 h of overnight ES
+        # ticks were lost. The heartbeat carried 20+ fields and free disk was not
+        # one of them, so nothing warned us.
+        self._disk_min_free_mb = cfg.get("disk_min_free_mb", 3072)
+        self._disk_alert_cooldown_s = cfg.get("disk_alert_cooldown_s", 3600)
+        self._last_disk_alert = 0.0
 
     # ── Gap Detection & Backfill ──────────────────────────────────────────────
 
@@ -914,23 +939,45 @@ class VPSDataBridge:
         if es_age <= self._stale_timeout:
             if self._stale_cycles > 0:
                 log.info(f"ES data recovered (was stale for {self._stale_cycles} cycles)")
+                # Tell us it came back, but only if we actually raised the alarm —
+                # otherwise every routine 5-minute lull would send a message.
+                if self._stale_cycles >= self._STALE_ALERT_CYCLES:
+                    _send_telegram(self.cfg,
+                        f"✅ ES data recovered after {self._stale_cycles} stale min. "
+                        f"Free disk {_disk_free_mb():,.0f} MB.")
                 self._stale_cycles = 0
             return
 
         self._stale_cycles += 1
         mins = es_age / 60
+        free_mb = _disk_free_mb()
         log.warning(f"STALE cycle {self._stale_cycles}: No ES ticks for {mins:.1f} min "
-                     f"(SCID file not growing)")
+                     f"(SCID file not growing, free disk {free_mb:,.0f} MB)")
+
+        # A full disk is the reason the .scid stops growing often enough that it
+        # belongs in the alert text — 2026-08-19 lost 14.7 h of ES ticks this way.
+        disk_note = ""
+        if 0 <= free_mb < self._disk_min_free_mb:
+            disk_note = f"\n💾 DISK LOW: {free_mb:,.0f} MB free — likely the cause."
 
         if self._stale_cycles == self._STALE_ALERT_CYCLES:
             _send_telegram(self.cfg,
                 f"⚠️ SCID stale — no ES ticks for {mins:.0f} min. "
-                f"Sierra Chart data feed may be down.")
+                f"Sierra Chart data feed may be down.{disk_note}")
 
-        if self._stale_cycles == self._STALE_WARN_CYCLES:
+        elif self._stale_cycles == self._STALE_WARN_CYCLES:
             _send_telegram(self.cfg,
                 f"🔴 SCID stale for {mins:.0f} min — check Sierra Chart! "
-                f"(file: {self.es_scid})")
+                f"(file: {self.es_scid}){disk_note}")
+
+        # Keep pinging. Without this the alert is one-shot: it fired twice on
+        # 2026-08-19 at 18:55/18:57 and then said nothing for 861 more cycles.
+        elif (self._stale_cycles > self._STALE_WARN_CYCLES
+              and self._stale_cycles % self._STALE_REPEAT_CYCLES == 0):
+            _send_telegram(self.cfg,
+                f"🔴 STILL STALE — no ES ticks for {mins:.0f} min "
+                f"({self._stale_cycles} cycles). Sierra Chart needs attention."
+                f"{disk_note}")
 
     # ── Main Loop ─────────────────────────────────────────────────────────────
 
@@ -1183,9 +1230,26 @@ class VPSDataBridge:
         except Exception as e:
             log.warning(f"ES DOM tailer error: {e}")
 
+    def _check_disk(self, free_mb):
+        """Telegram when free disk drops below the floor, rate-limited."""
+        if free_mb < 0 or free_mb >= self._disk_min_free_mb:
+            return
+        now = time.time()
+        if now - self._last_disk_alert < self._disk_alert_cooldown_s:
+            return
+        self._last_disk_alert = now
+        _send_telegram(self.cfg,
+            f"💾 DISK LOW: {free_mb:,.0f} MB free on C: "
+            f"(floor {self._disk_min_free_mb:,} MB).\n"
+            f"Sierra cannot append to the .scid when the disk fills — that cost "
+            f"14.7 h of overnight ES ticks on 2026-08-19.\n"
+            f"Check: python dom_log_rotate.py --status")
+
     def _send_heartbeat(self):
         forming = self.bar_builder.forming_bar
         es_size = self._es_tailer.file_size if self._es_tailer else 0
+        free_mb = _disk_free_mb()
+        self._check_disk(free_mb)
         status = {
             "component": "vps_data_bridge",
             "mode": "scid_tail",
@@ -1204,6 +1268,8 @@ class VPSDataBridge:
             "backfill_count": self._backfill_count,
             "stale_cycles": self._stale_cycles,
             "es_scid_size_mb": round(es_size / 1024 / 1024, 1),
+            "disk_free_mb": free_mb,
+            "disk_min_free_mb": self._disk_min_free_mb,
             "vol_signals_posted": self._vol_signals_posted,
             "vx_dom_snaps_posted": self._vx_dom_snaps_posted,
             "es_dom_snaps_posted": self._es_dom_snaps_posted,
@@ -1218,11 +1284,16 @@ class VPSDataBridge:
         }
         self.poster.post_heartbeat(status)
         stale_tag = f" STALE({self._stale_cycles})" if self._stale_cycles > 0 else ""
+        # ASCII only — this line goes to the console StreamHandler, which is
+        # cp1252 on this box and raises UnicodeEncodeError on emoji.
+        disk_tag = f" disk={free_mb:,.0f}MB"
+        if 0 <= free_mb < self._disk_min_free_mb:
+            disk_tag += " LOW!"
         log.info(
             f"Heartbeat: ES ticks={self._es_tick_count} "
             f"bars={self.bar_builder.bar_idx} bars10={self.bar_builder_10.bar_idx} "
             f"VX ticks={self._vx_tick_count} "
-            f"market={'OPEN' if _market_open() else 'CLOSED'}{stale_tag}"
+            f"market={'OPEN' if _market_open() else 'CLOSED'}{stale_tag}{disk_tag}"
         )
 
 

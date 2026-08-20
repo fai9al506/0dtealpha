@@ -907,6 +907,13 @@ def _basket_confirms(direction: str, basket_pct: float | None) -> bool:
 # +$1,525) but peaks at 8 MES long = $2,120 = 81% of the long account's $2,609.80. At 81%
 # the biggest trades are REJECTED after a losing week, which is exactly when this rule
 # pays. Cap 3 peaks at 6 MES = $1,590 = 61% and survives a $1,000 drawdown.
+# DO NOT loosen the $300 daily breaker to 'give the bigger longs room' - tested at $375,
+# $450, $525 and $600, on trigger days only and on every day, and EVERY loosening lost
+# money AND raised drawdown (best $2,491/-906 at $300; $600 gives $2,410/-1,245). The
+# breaker fires on days already going wrong and the signals it kills average -1.25 pt.
+# Sizing up and stopping sooner is the correct pair - it is what keeps MaxDD and the
+# worst day identical to V21 while the money rises.
+#
 #   >>> RAISE V22_LONG_CAP TO 4 WHEN 210VYX65 HOLDS $3,029 (8 x $265 / 0.70). <<<
 #   Held $2,609.80 on 2026-08-19 - short by $419. Tasks S314. Change the env var only.
 #

@@ -141,6 +141,28 @@ Out of sample (fit Mar–May, scored on the unseen Jun–Aug): **+$598 to +$1,11
 sample**. Random control p = 0.003. Trade-by-trade audit: deltas reconcile to the dollar,
 0 lookahead violations.
 
+### 🛑 DO NOT LOOSEN THE $300 BREAKER FOR V22 — tested and REJECTED
+V22 hits the daily breaker more often than V21 (**33 signals vs 18** over 119 sessions), because
+a bigger long book spends the daily loss budget faster. That looks like the breaker being too
+tight on exactly the days we chose to be bigger. **It is not. Giving more room loses money AND
+raises drawdown, every single time:**
+
+| daily limit on TRIGGER days | $/mo | worst month | MaxDD | worst day |
+|---|---|---|---|---|
+| **$300 (as built)** | **+2,491** | **+1,181** | **−906** | **−450** |
+| $375 | +2,443 | +906 | −1,057 | −490 |
+| $450 | +2,430 | +836 | −1,127 | −490 |
+| $525 / $600 | +2,410 | +718 | −1,245 | −601 |
+
+Raising it on *every* day is worse still ($375 → +2,395; $600 → +2,368 with MaxDD −1,379 and a
+−699 worst day). **Monotonic in both directions: looser is always worse.**
+
+**Why:** the breaker does not fire at random — it fires on a day that has already gone wrong, and
+the remaining signals on that day keep losing. The signals it kills average **−1.25 pt** (V21's
+average **−1.32 pt**). Stopping them is a gain. **Sizing up and stopping sooner is the correct
+pair;** it is what holds MaxDD at −$906 and the worst day at −$450, both identical to V21, while
+the money rises.
+
 ### 🔒 THE CAP IS CAPITAL, NOT EVIDENCE
 Uncapped doubling earns more but peaks at **8 MES long = $2,120 = 81%** of account `210VYX65`'s
 $2,609.80 — and at 81% the broker **rejects the biggest trades after a losing week, exactly when

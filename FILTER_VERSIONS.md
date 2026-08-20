@@ -107,8 +107,22 @@ directions as the trigger widens:
 So each half is kept at **its own best threshold**. Tying them to one number threw away the better
 setting for one of them and cost a month of leave-one-month-out.
 
-**The interaction is POSITIVE, not overlapping (+$50/mo):** a blocked short frees a slot that a
-now-bigger long can take. They help each other.
+**The interaction is POSITIVE, not overlapping (+$50/mo) — and the mechanism is the $300 DAILY
+LOSS BREAKER, not the position cap.** Long and short have separate accounts and separate caps
+(2 long / 3 short), so a freed short slot can never be taken by a long. Traced by counting the
+signals each run loses to the breaker:
+
+| run | signals killed by the $300 breaker |
+|---|---|
+| baseline | 37 |
+| block shorts only | **18** |
+| size longs only | **47** |
+| both | 33 |
+
+Blocking the bad shorts spends less of the daily loss budget, so the breaker trips less often and
+later trades survive the session. Sizing the longs up spends **more** of it. **The block buys back
+exactly the risk budget the bigger longs consume.** All 6 trades that exist in BOTH but not in
+size-only were killed by `DAILY_BREAKER` — every one on 2026-06-11.
 
 **Division of labour:** the **long size-up is the profit engine**; the **short block is the
 drawdown control** — longs alone run MaxDD −$1,605, and the block pulls it back to −$906.

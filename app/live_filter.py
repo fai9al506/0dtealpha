@@ -25,8 +25,14 @@ ET = ZoneInfo("America/New_York")
 # block exactly as it is and ADDS the long size-up at its own best threshold.
 #     V21                        $2,253/mo  worst month  +530  MaxDD -906  LOMO 6/6
 #     V22 = V21 + long size-up   $2,491/mo  worst month +1181  MaxDD -906  LOMO 6/6
-# The interaction is POSITIVE (+$50/mo): a blocked short frees a slot a bigger long can
-# take. They help each other, they do not overlap.
+# The interaction is POSITIVE (+$50/mo), and the mechanism is the $300 DAILY LOSS
+# BREAKER - NOT the position cap. Long and short have separate accounts and separate
+# caps (2/3), so a freed short slot can never be taken by a long. Traced: signals killed
+# by the breaker are 37 baseline / 18 block-only / 47 size-only / 33 both. Blocking the
+# bad shorts spends less of the daily loss budget so the breaker trips less and later
+# trades survive; sizing the longs up spends MORE of it. The block buys back exactly the
+# risk budget the bigger longs consume. All 6 trades that exist in BOTH but not in
+# size-only were killed by DAILY_BREAKER, every one on 2026-06-11.
 def v22_on():
     return os.getenv("V22_LONG_SIZEUP_ENABLED", "false").lower() == "true"
 

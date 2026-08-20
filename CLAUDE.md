@@ -651,9 +651,13 @@ OPPOSITE directions:
 | block shorts alone | **+$182/mo, LOMO 6/6** | +$218/mo, LOMO **4/6** |
 | size up longs alone | +$80/mo, LOMO 6/6 | **+$189/mo, LOMO 6/6** |
 
-Each is kept at its own best threshold. **Interaction is POSITIVE (+$50/mo)** — a blocked short
-frees a slot a bigger long takes. **Long size-up = profit; short block = drawdown control**
-(longs alone MaxDD −$1,605 → −$906 with the block).
+Each is kept at its own best threshold. **Interaction is POSITIVE (+$50/mo), via the $300 DAILY
+BREAKER — not the position cap.** Long and short have separate accounts and separate caps, so a
+freed short slot can never be taken by a long. Traced: breaker-killed signals run **37 baseline /
+18 block-only / 47 size-only / 33 both** — blocking bad shorts spends less of the daily loss
+budget, sizing longs spends more, and **the block buys back exactly the risk budget the bigger
+longs consume**. **Long size-up = profit; short block = drawdown control** (longs alone MaxDD
+−$1,605 → −$906 with the block).
 
 V21 $2,253/mo, worst month +$530 → **V22 $2,491/mo, worst month +$1,181**, MaxDD −$906 unchanged,
 **LOMO 6/6**. (Both-at-−0.5 scored $2,549 but **5/6** — rejected.) OOS +$1,118/mo vs +$86 in

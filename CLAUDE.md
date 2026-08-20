@@ -29,6 +29,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Update the relevant sections of CLAUDE.md (architecture, features, technical details)
 - Update MEMORY.md if intervals, tables, or key parameters changed
 
+## Standing operating rule: TSRT RUNS EVERY TRADING DAY (user, 2026-08-20)
+
+**`REAL_TRADE_DISABLED=false` is the RESTING STATE. Armed is normal; OFF is the exception.**
+
+- **Do NOT flip it off** at session end, when the user steps away, or before a weekend.
+- **Do NOT ask "shall we arm it today?"** — it is already armed. Asking re-introduces the retired
+  supervised-only rule through the back door.
+- **A day the user is absent is a normal trading day.** Monitoring together is a bonus, not a
+  precondition.
+- **The ONLY reason to switch it off is an S239 DEFECT** — position/qty mismatch, orphan working
+  order, feed alert, a day worse than −$500, or drawdown past −$1,500. **A losing day is not a
+  defect**; a 7-red streak and a −$1,000 drawdown are both measured as normal for this book.
+- Filter blocks are **part of running**, not a stand-down: the Friday gate and V21's down-day short
+  block are the system working.
+
+**Why this is written here and not only in memory.** The old rule ("real trading only under live
+supervision", 2026-06-14) was correct while real bugs were still being found — S259, S279 and S293
+all came out of supervised days. But nothing in the code ever enforced or expired it, so it kept
+switching the book off long after its job was done: **37 of 65 sessions traded, July 1 of 22,
+$3,133 of profit left on the table** (S295). A day not traded costs ~$136, and every $2,139/mo
+projection assumes **21 sessions a month**.
+
+**Known monitoring hole:** the absorption canary is not built (Tasks S270) — nothing pages when the
+feed is healthy but a detector has gone silent. That matters more now that days run unattended.
+
+---
+
 ## Analysis Validation Protocol (MANDATORY)
 
 **This protocol is NON-NEGOTIABLE. Violations cost real money (session 46: 4 errors caught by user, not by Claude).**

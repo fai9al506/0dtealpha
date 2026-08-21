@@ -29,6 +29,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Update the relevant sections of CLAUDE.md (architecture, features, technical details)
 - Update MEMORY.md if intervals, tables, or key parameters changed
 
+## Standing operating rule: TSRT RUNS EVERY TRADING DAY (user, 2026-08-20)
+
+**`REAL_TRADE_DISABLED=false` is the RESTING STATE. Armed is normal; OFF is the exception.**
+
+- **Do NOT flip it off** at session end, when the user steps away, or before a weekend.
+- **Do NOT ask "shall we arm it today?"** — it is already armed. Asking re-introduces the retired
+  supervised-only rule through the back door.
+- **A day the user is absent is a normal trading day.** Monitoring together is a bonus, not a
+  precondition.
+- **The ONLY reason to switch it off is an S239 DEFECT** — position/qty mismatch, orphan working
+  order, feed alert, a day worse than −$500, or drawdown past −$1,500. **A losing day is not a
+  defect**; a 7-red streak and a −$1,000 drawdown are both measured as normal for this book.
+- Filter blocks are **part of running**, not a stand-down: the Friday gate and V21's down-day short
+  block are the system working.
+
+**Why this is written here and not only in memory.** The old rule ("real trading only under live
+supervision", 2026-06-14) was correct while real bugs were still being found — S259, S279 and S293
+all came out of supervised days. But nothing in the code ever enforced or expired it, so it kept
+switching the book off long after its job was done: **37 of 65 sessions traded, July 1 of 22,
+$3,133 of profit left on the table** (S295). A day not traded costs ~$136, and every $2,139/mo
+projection assumes **21 sessions a month**.
+
+**Known monitoring hole:** the absorption canary is not built (Tasks S270) — nothing pages when the
+feed is healthy but a detector has gone silent. That matters more now that days run unattended.
+
+---
+
 ## Analysis Validation Protocol (MANDATORY)
 
 **This protocol is NON-NEGOTIABLE. Violations cost real money (session 46: 4 errors caught by user, not by Claude).**
@@ -67,8 +94,23 @@ Before presenting ANY trading study, backtest, performance report, or parameter 
   and the ex-top-3 total. This book earns on a few trend days; a window that contains one is
   not a run rate.
 
+- **Charge the costs INSIDE the sim, then STOP — do NOT also multiply by a capture ratio.**
+  −0.6 pt/trade/contract **plus $1.92/contract round-turn** is the whole correction. Measured
+  on 15 post-S217 live days (82 contract round-trips) the residual is **−0.24 pt ± 0.47 = zero,
+  and negative**, so an extra ×0.81/×0.87 double-counts (S275b: it understated the projection
+  by a third). **Never calibrate capture on one week** — the August-2026 week alone read +1.23
+  pt, 1.7 SE from zero. Re-measure with `_tmp_s275_capture_by_day.py`, which scores the lids
+  TSRT *actually placed* against day-level `tsrt_daily_stmt`, so config drift stops mattering
+  and all 37 live days are usable. **`real_trade_orders.state` has a real `quantity` key — use
+  it**; deriving qty from the basket rule was wrong on 22 of 37 days.
+- **A month is 21 CALENDAR trading sessions, never "sessions that had a trade".** Books that
+  fire on a subset of days (the Friday gate, v7) are inflated otherwise — this read v7 **6×
+  too high**. Days with no signal are $0 sessions, not missing data.
+- **`PROJECTION.md` is the single projection ledger.** Any change that can move P&L gets a row
+  with its measured before/after. Re-run monthly (Tasks S232 / S275).
+
 Details + the measurement script: memory `feedback_chainsim_valid_post_s217.md`,
-`research_s231_tsrt_counterfactual_jul_aug.md`.
+`research_s231_tsrt_counterfactual_jul_aug.md`, `research_capture_is_96pct_gap_is_structural.md`.
 
 ### Gate 1: Data Quality (MUST PASS before running analysis)
 1. **Source check**: ALL numbers from DB queries or code output. Never manual math, never from memory files.
@@ -617,6 +659,130 @@ SC / AG Short / VPB / VIX Div / DD / ES Abs.
 - **Portal view = "V16 w/Friday Off" (`v16fri`), labelled (live).** NOT V19 — V19 also applies V18,
   which is monitoring only. **When a gate is armed, the `(live)` label moves in the same commit.**
 
+
+### V22 — built 2026-08-19, DORMANT (S313) — V21's filter + a LONG SIZE-UP
+
+**V22 does NOT change the filter. `passes_v22` is byte-identical to `passes_v21`.** It adds one
+thing: when the previous session's open→close was **< −0.5%** and VIX < 24,
+**`qty = min(qty × 2, 3)` on LONGS**. Quantity is not something a filter can express, so all of
+V22 lives in `real_trader._v22_long_qty`. Fails SAFE. **v7 unaffected** (its `qty = QTY` runs
+after). Switch: **`V22_LONG_SIZEUP_ENABLED`, default false.**
+
+**⚠️ THE TWO HALVES ARE INDEPENDENT RULES — do not re-tie them.** I first forced both onto one
+−0.5% threshold and claimed they "must go together". The user rejected that on logic (skipping bad
+trades and doubling good trades should each work alone) and the data agreed. They degrade in
+OPPOSITE directions:
+
+| | at −0.8% | at −0.5% |
+|---|---|---|
+| block shorts alone | **+$182/mo, LOMO 6/6** | +$218/mo, LOMO **4/6** |
+| size up longs alone | +$80/mo, LOMO 6/6 | **+$189/mo, LOMO 6/6** |
+
+Each is kept at its own best threshold. **Interaction is POSITIVE (+$50/mo), via the $300 DAILY
+BREAKER — not the position cap.** Long and short have separate accounts and separate caps, so a
+freed short slot can never be taken by a long. Traced: breaker-killed signals run **37 baseline /
+18 block-only / 47 size-only / 33 both** — blocking bad shorts spends less of the daily loss
+budget, sizing longs spends more, and **the block buys back exactly the risk budget the bigger
+longs consume**. **Long size-up = profit; short block = drawdown control** (longs alone MaxDD
+−$1,605 → −$906 with the block).
+
+V21 $2,253/mo, worst month +$530 → **V22 $2,491/mo, worst month +$1,181**, MaxDD −$906 unchanged,
+**LOMO 6/6**. (Both-at-−0.5 scored $2,549 but **5/6** — rejected.) OOS +$1,118/mo vs +$86 in
+sample; random control p=0.003.
+
+**🔒 CAP 3 IS CAPITAL, NOT EVIDENCE.** Uncapped peaks at 8 MES long = 81% of `210VYX65` — the
+broker would reject the biggest trades after a losing week. **Raise `V22_LONG_CAP` to 4 at $3,029**
+(Tasks S314), env var only. Fires 17 days in 119 sessions; **85% of the gain is Jun+Jul.**
+
+### V21 — THE LIVE FILTER (S300–S307, live from 2026-08-18)
+
+**V21 = V20 + no SHORTS when the previous session fell more than 0.8% AND VIX < 24.**
+`LIVE_VER = "v21-sb"`, so `setup_log.live_pass` means V21. Full ledger: `FILTER_VERSIONS.md`.
+
+**Why.** After a session worse than −0.5% the next day averaged **+0.22% and rose 68% of the
+time** — our fade shorts sold into the bounce. Shorts after a down day earn **+0.81 pt vs
++4.57 pt otherwise**. **The VIX ceiling is what makes it safe: the effect INVERTS in high
+vol** — at VIX 26+ those shorts earn +15.74 pt at 100% WR. Without the ceiling the rule deletes
+March's +150 pts of high-vol shorts and is worth exactly zero. **FAILS OPEN** (unknown move or
+VIX → trade is taken). $2,187 → **$2,372/mo**, worst month −$225 → **+$530**, MaxDD −$1,585 →
+**−$906**. Blocks 27 shorts on 4 days in 6 months; **insurance, not income**.
+
+**⚠️ MEASURE THE PREVIOUS MOVE ON `spx_ohlc_1m`, NEVER `chain_snapshots`.** The 2-min snapshots
+start 09:32 against the bars' 09:31, and that one minute shifts the daily figure by up to 0.08%
+— enough to flip whole days across the −0.8% line and turn a real rule (t=−2.01) into noise
+(t=−0.81). Same rule, different sampling, opposite conclusion.
+
+**V20 (inside V21) = V16 rules + ES Absorption only when VIX ≥ 20 + no Friday.** ES Absorption's
+edge is volatility-dependent: −$2.6/trade below VIX 18 and −$6.4 at 18–20, but **+$21.6 at 20–22
+(t=+2.4) and +$15.2 at 22–26 (t=+2.7)**. Mar–Apr (avg VIX 24.8) +$1,239; May–Aug (avg VIX 18.1)
+−$412. **Gated, not deleted: switching it OFF measured −$1,036**, because under the cap its slots
+refill with weaker trades.
+
+**🔢 RULES CHANGE → VERSION NUMBER CHANGES** (user directive 2026-08-17). `FILTER_VERSIONS.md`
+is the ledger of what each number means; the portal dropdown carries **only the short name**
+(`V21 (live)`), never the description. **V16 and V20 are frozen — never edit them again.**
+
+**🚨 REMOVING A SETUP IS NOT SUBTRACTING ITS P&L.** Always re-run the whole replay both ways.
+
+**📌 The live filter version lives in `app/live_filter.py:LIVE_VER` — verify there, not here.**
+
+### S293 per-setup day breaker — 🔴 DELIBERATELY OFF (`DAY_BREAKER_ENABLED=false`)
+
+**⚠️ USER DECISION 2026-08-19: the per-setup breaker HARMS this book and stays OFF. The only
+day-level risk control that is armed is the $300 max daily loss** (`REAL_TRADE_DAILY_LOSS_LIMIT`,
+code default 300, reads real broker `RealizedProfitLoss`). **Do NOT propose re-arming S293, and do
+not read the description below as a live control** — it documents code that exists but is switched
+off. Verify state with `railway variables`, never from this file.
+
+The description below is what the code DOES when enabled:
+
+**Two consecutive FULL stop-outs of the same setup+direction on the same day → that
+setup+direction is paused for the rest of the day.** Per setup and direction, **never
+account-wide** — on 2026-07-30 Skew Charm short took six stops while the rest of the book made
++$324. Worst month −$476 → −$52, worst day −$672 → −$374, and the money goes up slightly.
+
+Fed from `_stamp("exit_fill_et")` — the one hook every exit path already calls — rather than
+four separate call sites. **Gated on `_newly_stamped`**: the first version fired on every
+`_stamp` call and double-counted, which would have tripped the breaker after ONE stop.
+Kill switch `DAY_BREAKER_ENABLED`. Fails OPEN. Audit `_tmp_s293_audit.py` (16 cases).
+
+**It is a PREREQUISITE for the R1d sizing rung — R1d alone makes drawdown WORSE.**
+
+### S279 stuck-fill healer (live 2026-08-17)
+
+A market entry can fill at the broker while the bot holds `pending_entry` — lid 6090 did for
+**58 minutes**. The post-fill stop realign never runs (13 pt loss instead of 8) and the trade
+cannot trail. **Nothing alerts**, because `_reconcile_positions` counts `pending_entry` inside
+`expected_qty` (S99), so bot and broker both read the same count and agree.
+
+`heal_stuck_entries()` runs every 120 s on **its own scheduler job and thread** — deliberately
+NOT inside `_broker_poll`, because the failure it catches is that poll going quiet. It contains
+**no fill logic**: it re-fetches `/orders` and delegates to the same audited `_check_order_fills`,
+so exactly one code path can mark a trade filled. If the broker says FLL and that path still
+refuses, it **pages rather than forcing**. Audit `_tmp_s279_audit.py` (14 cases).
+
+### Monthly filter + setup monitor (S281, was weekly)
+
+`app/filter_validation.py` now runs **monthly, first trading day 17:00 ET** (cron `day="1-5"` +
+weekday guard + once-per-month latch) and sends ONE report with two parts:
+
+1. **What we TRADE** — every setup V21 admits, **replayed with the real cap/dedup/sizing**, split
+   long vs short. **Scoring raw SIGNALS instead of replayed TRADES read Skew Charm at $4.5/trade
+   when the real figure is $13.8 and raised two false FADING alarms.**
+2. **PORTAL-ONLY detectors** — scored raw; these are the investment, watched for an edge appearing.
+
+**Why it exists: the old check only ever watched the rules that BLOCK trades. Nothing asked
+whether the setups we ADMIT still earn** — which is how ES Absorption died in May and was found
+by the user in August.
+
+### Pre-study checklist — `STUDY_CHECKLIST.md`
+
+**Run it before ANY backtest, projection or filter comparison.** Headed by "model every RISK
+CONTROL, not just the filter" — the S203 underwater guard was missing from every replay until
+2026-08-17. Also: basket sizing is **`max(qty,2)`, NOT a multiplier**; report min/max/average
+month plus the distribution; report the **trade count** (it is the risk); a month is 21 calendar
+sessions; leave-one-month-out every time.
+
 ### Friday call credit spread (`app/friday_spread.py`) — LOG-ONLY (S267, 2026-08-15)
 
 **The only options strategy with a measured edge, and it is not armed.** Friday only · 12:00 ET ·
@@ -766,11 +932,19 @@ places and blocks nothing.**
   were auto-marked invalidated. Fix is a side check only — **the LIS is still first choice when
   correctly sided; do not "improve" it into a nearest-level rule.**
 
-### GEX Long v7 "Gamma Support" — own account, own cap (S253, arms 2026-08-17)
+### GEX Long v7 "Gamma Support" — 🟢 LIVE ON REAL MONEY since 2026-08-20 (S253/S309)
 
 v7 is **not a detector** — it is a live GATE on the existing GEX Long signal plus its own
-account and concurrency pool. Ships dormant; with `REAL_TRADE_V7_ACCOUNT` unset every code
-path is byte-identical to before.
+account and concurrency pool. **Armed 2026-08-20 07:42 ET on `210XFR64` ($3,000).**
+
+**FIVE variables, always set in ONE command:** `REAL_TRADE_V7_ACCOUNT=210XFR64` ·
+`GEX_LONG_V7_ENABLED=true` · **`GEX_LONG_V3_REAL_TRADE_ENABLED=true`** ·
+`REAL_TRADE_V7_DAILY_LOSS_LIMIT=150` · `REAL_TRADE_MAX_CONCURRENT_V7=8`.
+The third one is what makes GEX Long dispatch at all (`main.py:~4404`) — without it v7 arms,
+reports healthy and **never fires**. But if the flags ever SPLIT, un-gated GEX Long
+(46.8% WR, −91 pt) lands on the MAIN long account. **Flags are read at IMPORT, so a restart
+is the arming step** (unlike `REAL_TRADE_NO_FRIDAY`, read at call time). Disarm = unset
+`REAL_TRADE_V7_ACCOUNT`, which makes every code path byte-identical to before.
 
 - **Live gate.** `real_trader._v7_state_ok()` reads the latest `gex_state` row at signal
   time and requires `state='SUPPORT'` within 10 minutes. **FAILS CLOSED** on any error,
@@ -791,7 +965,7 @@ path is byte-identical to before.
   from the same env var. **A trading account no reconciler watches is the hole S210/S243
   exist to close** — if a fourth account is ever added, check all four modules.
 
-**Config that must not drift: FLAT 1 MES, cap 8, no basket sizing.** MaxDD is −$158 at
+**Config that must not drift: FLAT 1 MES, cap 8, no basket sizing — the 1 MES is now ENFORCED IN CODE** (`qty = QTY` immediately after `_is_v7 = True`, `b1e899d`). Before that fix `_effective_qty()` ran first and basket sizing would have made **51% of v7 trades 2 MES**, pushing peak margin at cap 8 to ~$3,180 — above the account's own $3,000. **A config note is not a control.** MaxDD is −$158 at
 every cap ≥2 but doubles to ~−$320 the moment size doubles — slots are free, size is not.
 Scale by taking the next SLOT. Evidence + funding ladder: memory
 `project_gex_v7_own_account`, Tasks S252.

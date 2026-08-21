@@ -25,8 +25,8 @@ sys.path.insert(0, REPO)
 
 # which filter version to sweep: v16 (the live one), v17 or v18 (both monitoring)
 STRAT = (sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else "v16").lower()
-if STRAT not in ("v16", "v16fri", "v17", "v18", "v19"):
-    print(f"usage: python filter_mirror_sweep.py [v16|v16fri|v17|v18|v19]   (got {STRAT!r})")
+if STRAT not in ("v16", "v16fri", "v17", "v18", "v19", "v20", "v21", "v22"):
+    print(f"usage: python filter_mirror_sweep.py [v16|v16fri|v17|v18|v19|v20|v21|v22]   (got {STRAT!r})")
     sys.exit(2)
 
 # env flags exactly as Railway has them
@@ -96,11 +96,20 @@ for r in rows:
             r[k] = float(r[k])
     r["outcome_pnl"] = float(r["outcome_pnl"]) if r["outcome_pnl"] is not None else None
 
+# V21 input, loaded before the harness so the JS gets the same map the Python does.
+from sqlalchemy import create_engine as _ce
+_eng = _ce(os.environ["DATABASE_URL"])
+with _eng.connect().execution_options(isolation_level="AUTOCOMMIT") as _c:
+    from app.live_filter import load_prev_moves as _lpm
+    _MOVES = _lpm(_c)
+_MOVES_JSON = json.dumps(_MOVES)
+
 harness = f"""
 const _tlDailyGaps = {json.dumps(gaps)};
 const _GEX_LONG_REAL = {str(FLAGS['_GEX_LONG_REAL']).lower()};
 const _VIX_DIV_REAL  = {str(FLAGS['_VIX_DIV_REAL']).lower()};
 const _VPB_REAL      = {str(FLAGS['_VPB_REAL']).lower()};
+const _tlDailyMoves  = {_MOVES_JSON};
 const __BASKET_SIZING_MODE__ = 'sizeonly';
 {js_fn}
 const rows = JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));
@@ -124,9 +133,12 @@ if errs:
 
 # ---------- 4. Python filter ----------
 from app.live_filter import (passes_v16, passes_v16_fri, passes_v17,
-                             passes_v18, passes_v19)
+                             passes_v18, passes_v19, passes_v20, passes_v21,
+                             passes_v22)
 _PY = {"v16": passes_v16, "v16fri": passes_v16_fri, "v17": passes_v17,
-       "v18": passes_v18, "v19": passes_v19}[STRAT]
+       "v18": passes_v18, "v19": passes_v19, "v20": passes_v20,
+       "v21": (lambda r, g: passes_v21(r, g, _MOVES)),
+       "v22": (lambda r, g: passes_v22(r, g, _MOVES))}[STRAT]
 py_res = {}
 for r in rows:
     row = dict(r)

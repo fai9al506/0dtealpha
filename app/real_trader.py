@@ -220,11 +220,32 @@ def _stamp(order: dict, key: str) -> None:
     Never overwrites an existing stamp (the first one is the honest one) and
     never raises — a clock problem must not break a close.
     """
+    _newly_stamped = False
     try:
         if order.get(key) is None:
             order[key] = datetime.now(NY).isoformat(timespec="milliseconds")
+            _newly_stamped = True
     except Exception:
         pass
+    # S293 (2026-08-17): exit_fill_et is written on EVERY exit path and only when we
+    # actually know the exit price, so it is the one hook that sees every close exactly
+    # once. Feed the per-setup day breaker from here rather than adding a call to each
+    # of the four close paths — a rule that must be remembered in four places is a rule
+    # that will be forgotten in one (the lesson of the three-copies filter).
+    # Gate on _newly_stamped, NOT just the key: _stamp is called more than once on some
+    # paths and the first version of this counted the same stop-out twice, which would
+    # have tripped the breaker after ONE stop. Caught by _tmp_s293_audit.py case 11.
+    if key == "exit_fill_et" and _newly_stamped:
+        try:
+            fp = order.get("fill_price")
+            xp = (order.get("close_fill_price") or order.get("stop_fill_price")
+                  or order.get("target_fill_price"))
+            if fp is not None and xp is not None:
+                is_long = str(order.get("direction", "")).lower() in ("long", "bullish")
+                pts = (float(xp) - float(fp)) if is_long else (float(fp) - float(xp))
+                note_trade_closed(order.get("setup_name"), is_long, pts, order.get("stop_pts"))
+        except Exception:
+            pass
 
 # DB table name
 DB_TABLE = "real_trade_orders"
@@ -483,6 +504,11 @@ MAX_CONCURRENT_V7 = int(os.getenv("REAL_TRADE_MAX_CONCURRENT_V7", "8"))
 # measured full-history MaxDD (-$158) — one bad day ends v7 for the session.
 V7_DAILY_LOSS_LIMIT = float(os.getenv("REAL_TRADE_V7_DAILY_LOSS_LIMIT", "150"))
 
+# V22 (S313) — see _v22_long_qty below for the full rationale and the capital gate.
+V22_LONG_DROP = float(os.getenv("V22_LONG_DROP", "-0.5"))   # LONG size-up trigger, %
+V22_VIX_MAX = 24.0                                          # above this the effect inverts
+V22_LONG_CAP = int(os.getenv("V22_LONG_CAP", "3"))          # max MES per long on a trigger day
+
 
 def _no_friday_enabled() -> bool:
     """S263 Friday gate — is trading blocked on Fridays for the MAIN book?
@@ -621,6 +647,89 @@ def _count_active_for_direction(is_long: bool) -> int:
                 if o_is_long == is_long:
                     count += 1
     return count
+
+
+# ====== S293 PER-SETUP DAY BREAKER (2026-08-17) ======
+#
+# 2026-07-30: SPX ground up +1.7% (Fed relief rally, MSFT +16%). Skew Charm fired SHORT
+# nine times into it — 12:07, 12:37, 13:08, 13:42, 14:13, 14:43 — and SIX took the full
+# 14-pt stop, each entry higher than the last. 07-09 is the same shape. That is a fade
+# book meeting a trend day, and it is the single worst pattern in the book.
+#
+# The existing $300 daily breaker does not catch it: it is account-wide and only fires
+# after the money is already gone. The S203 underwater guard does not catch it either —
+# these were largely SEQUENTIAL, each closing before the next fired, so there was rarely
+# a losing stack to block.
+#
+# Measured over 117 sessions (V20, costs charged, S203 modelled):
+#   worst month  -$476 -> -$52   ·   worst day -$672 -> -$374   ·   MaxDD -$1,880 -> -$1,700
+#   and the money goes UP slightly. It blocks 85 trades over 6 months.
+#
+# Deliberately per SETUP + DIRECTION, not account-wide: on 07-30 the rest of the book
+# still made +$324 while Skew Charm short was bleeding. Blocking the day would have
+# thrown that away.
+#
+# FAIL-OPEN by construction: unknown state, a restart, or any error -> trade is TAKEN.
+# A guard must never be the reason trading stops.
+
+_STOP_STREAK_LIMIT = 2
+_stop_streaks: dict[tuple, int] = {}
+_stop_streak_day = {"d": None}
+_breaker_alerted: set = set()
+
+
+def _streak_key(setup_name: str, is_long: bool):
+    return (setup_name or "", bool(is_long))
+
+
+def _roll_streak_day(today):
+    """Reset every streak when the ET date changes."""
+    if _stop_streak_day["d"] != today:
+        _stop_streak_day["d"] = today
+        _stop_streaks.clear()
+        _breaker_alerted.clear()
+
+
+def note_trade_closed(setup_name: str, is_long: bool, realized_pts: float | None,
+                      stop_pts: float | None, today=None):
+    """Called on every close. A FULL stop-out extends the streak; anything else clears it.
+
+    'Full stop' means the loss reached the stop distance (quarter-point tolerance for
+    fill slippage). A small loss is NOT a stop — the point of the rule is a trend running
+    us over, not ordinary chop.
+    """
+    try:
+        if realized_pts is None or stop_pts is None:
+            return
+        _roll_streak_day(today or _et_today())
+        k = _streak_key(setup_name, is_long)
+        if float(realized_pts) <= -(abs(float(stop_pts)) - 0.25):
+            _stop_streaks[k] = _stop_streaks.get(k, 0) + 1
+            print(f"[real-trader] S293 stop streak {setup_name} "
+                  f"{'long' if is_long else 'short'} = {_stop_streaks[k]}", flush=True)
+        else:
+            _stop_streaks[k] = 0
+    except Exception as e:
+        print(f"[real-trader] S293 note_trade_closed error (ignored): {e}", flush=True)
+
+
+def _day_breaker_check(setup_name: str, is_long: bool) -> int:
+    """Return the streak count when this setup+direction is BLOCKED for the day, else 0."""
+    try:
+        if os.getenv("DAY_BREAKER_ENABLED", "true").lower() != "true":
+            return 0
+        _roll_streak_day(_et_today())
+        n = _stop_streaks.get(_streak_key(setup_name, is_long), 0)
+        return n if n >= _STOP_STREAK_LIMIT else 0
+    except Exception as e:
+        print(f"[real-trader] S293 breaker check error (fail-open): {e}", flush=True)
+        return 0
+
+
+def _et_today():
+    from datetime import timezone as _tzu
+    from zoneinfo import ZoneInfo as _ZI
+    return datetime.now(_tzu.utc).astimezone(_ZI("America/New_York")).date()
 
 
 def _underwater_stack_check(setup_name: str, is_long: bool, es_price: float):
@@ -785,6 +894,96 @@ def _basket_confirms(direction: str, basket_pct: float | None) -> bool:
         return False  # fail-safe: on any error, do NOT increase size
 
 
+# ── V22 long size-up (2026-08-19, S313) ────────────────────────────────────────────
+# The filter half of V22 (block shorts after a down session) lives in
+# main.py:_passes_live_filter. THIS is the other half, and it is the bigger one: on
+# those same days our LONGS run +5.32 pt/trade and are green on 5 of 6 days while the
+# blocked shorts are green on 0 of 4. A filter can only say yes/no, so the size-up has
+# to live here, at the one place quantity is decided.
+#
+#   $2,253/mo (block only) -> $2,549/mo   worst month +$530 -> +$1,266   MaxDD -$906 both
+#
+# THE CAP IS CAPITAL, NOT EVIDENCE. Uncapped doubling earns more ($2,643/mo, worst month
+# +$1,525) but peaks at 8 MES long = $2,120 = 81% of the long account's $2,609.80. At 81%
+# the biggest trades are REJECTED after a losing week, which is exactly when this rule
+# pays. Cap 3 peaks at 6 MES = $1,590 = 61% and survives a $1,000 drawdown.
+# DO NOT loosen the $300 daily breaker to 'give the bigger longs room' - tested at $375,
+# $450, $525 and $600, on trigger days only and on every day, and EVERY loosening lost
+# money AND raised drawdown (best $2,491/-906 at $300; $600 gives $2,410/-1,245). The
+# breaker fires on days already going wrong and the signals it kills average -1.25 pt.
+# Sizing up and stopping sooner is the correct pair - it is what keeps MaxDD and the
+# worst day identical to V21 while the money rises.
+#
+#   >>> RAISE V22_LONG_CAP TO 4 WHEN 210VYX65 HOLDS $3,029 (8 x $265 / 0.70). <<<
+#   Held $2,609.80 on 2026-08-19 - short by $419. Tasks S314. Change the env var only.
+#
+# FAILS SAFE everywhere: no engine, no row, stale row, unknown VIX, any exception -> the
+# quantity is returned UNCHANGED. This code can never make a position larger by accident,
+# and it never creates a trade that would not otherwise be placed.
+_V22_MOVE = {"d": None, "pct": None}
+
+
+def _v22_enabled() -> bool:
+    """ONE switch for both halves of V22 — same variable live_filter.v22_on() reads.
+    OFF means the whole file behaves exactly as it did under V21. Read at CALL time,
+    so flipping it takes effect on the next signal."""
+    return os.getenv("V22_LONG_SIZEUP_ENABLED", "false").lower() == "true"
+
+
+def _v22_prev_move_pct():
+    """Previous session open-to-close %, cached once per ET day. None = unknown.
+
+    Reads `spx_ohlc_1m`, NEVER `chain_snapshots` - the 2-minute snapshots start at 09:32
+    against the bars' 09:31 and that one minute moves the daily figure by up to 0.08%,
+    enough to flip a day across the threshold. Same query main.py:_prev_day_move_pct uses,
+    deliberately duplicated because real_trader imports nothing from main.
+    """
+    try:
+        today = datetime.now(NY).date()
+        if _V22_MOVE["d"] == today:
+            return _V22_MOVE["pct"]
+        if _engine is None:
+            return None
+        from sqlalchemy import text as _t
+        with _engine.connect().execution_options(isolation_level="AUTOCOMMIT") as c:
+            row = c.execute(_t("""
+                WITH day AS (
+                  SELECT (ts AT TIME ZONE 'America/New_York')::date d,
+                         (array_agg(bar_open  ORDER BY ts ASC ))[1] o,
+                         (array_agg(bar_close ORDER BY ts DESC))[1] c
+                  FROM spx_ohlc_1m
+                  WHERE (ts AT TIME ZONE 'America/New_York')::date < :t
+                  GROUP BY 1 ORDER BY 1 DESC LIMIT 1)
+                SELECT (c-o)/NULLIF(o,0)*100 FROM day"""), {"t": today}).fetchone()
+        pct = float(row[0]) if row and row[0] is not None else None
+        _V22_MOVE["d"], _V22_MOVE["pct"] = today, pct
+        print(f"[v22] previous session move = {pct if pct is None else round(pct, 3)}%", flush=True)
+        return pct
+    except Exception as e:
+        print(f"[v22] prev-move lookup failed (fail-safe, no size-up): {e}", flush=True)
+        return None
+
+
+def _v22_long_qty(is_long: bool, vix, qty: int) -> int:
+    """Double a LONG on a post-down-session day, capped. Fails SAFE to `qty`."""
+    try:
+        if not _v22_enabled() or not is_long:
+            return qty
+        if vix is None or float(vix) >= V22_VIX_MAX:
+            return qty
+        pct = _v22_prev_move_pct()
+        if pct is None or pct >= V22_LONG_DROP:
+            return qty
+        new = max(1, min(int(qty) * 2, V22_LONG_CAP))
+        if new != qty:
+            print(f"[real-trader] V22 long size-up {qty} -> {new} "
+                  f"(prev session {pct:+.2f}%, VIX {float(vix):.1f})", flush=True)
+        return new
+    except Exception as e:
+        print(f"[real-trader] V22 size-up error (fail-safe, unchanged): {e}", flush=True)
+        return qty
+
+
 def _effective_qty(setup_name: str, direction: str,
                    paradigm: str | None, align: int | None,
                    basket_pct: float | None = None) -> int:
@@ -808,7 +1007,8 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
                 charm_limit_price: float | None = None,
                 paradigm: str | None = None,
                 greek_alignment: int | None = None,
-                basket_pct: float | None = None):
+                basket_pct: float | None = None,
+                vix: float | None = None):
     """Place 1 MES REAL trade when a setup fires.
 
     Args:
@@ -866,6 +1066,11 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     #   basket CONFIRMS this trade's direction under BASKET_SIZING_MODE=='012' (max, not ×).
     # Computed BEFORE all gates so cap/dedup/alerts can reference it consistently.
     qty = _effective_qty(setup_name, direction, paradigm, greek_alignment, basket_pct)
+    # V22 (S313): the LONG half of the down-session rule. Applied here, right after the
+    # base quantity, so every downstream gate (cap, dedup, alerts, order placement) sees
+    # one consistent number. Fails safe to `qty`; v7 is excluded below because it is a
+    # separately funded book with its own flat-1-MES config.
+    qty = _v22_long_qty(direction.lower() in ("long", "bullish"), vix, qty)
 
     # Setup filter: only trade Skew Charm + AG Short + VPB-Bull (defense-in-depth, main.py also filters)
     # AG Short added 2026-04-08 — SHORT account only (AG hardcoded direction="short")
@@ -874,6 +1079,9 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
     #   - GEX_LONG_V3_ENABLED        → detector fires v3 signals to setup_log (portal display)
     #   - GEX_LONG_V3_REAL_TRADE_ENABLED → real trader places live trades (default false = PORTAL-ONLY)
     # This lets us monitor v3 signals in portal without committing real money.
+    # ES Absorption stays in the whitelist. From V20 (2026-08-17) it is gated by a
+    # VIX >= 20 floor inside _passes_live_filter, not removed from the book — removing
+    # it outright measured WORSE (-$1,036), because its slots get taken by weaker trades.
     _allowed = {"Skew Charm", "AG Short", "Vanna Pivot Bounce", "ES Absorption"}
     # VIX Divergence: disabled 2026-05-18 after 0/4 OOS WR live since May 3 ship
     # (3 BOFA-PURE + 1 AG-LIS — all non-GEX paradigms). Re-enabled 2026-05-27
@@ -910,6 +1118,17 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
             _alert(f"⏭ SKIPPED GEX Long (v7): dealer state not SUPPORT — {why}")
             return
         _is_v7 = True
+        # S309: v7 is FLAT 1 MES — force it here, after the routing decision.
+        # _effective_qty() ran further up and may already have sized this trade to 2
+        # because the tech basket confirms the long. That is the MAIN book's validated
+        # rule (Dark Mate semi-sizing), NOT v7's: the v7 study measured 131 sessions at
+        # flat 1 MES (85 signals, 77.6% WR, MaxDD -$158). Doubling size doubles the
+        # drawdown to ~-$320 AND pushes peak margin at cap 8 from ~8 MES ($2,120) to
+        # ~12 MES ($3,180), above the v7 account's own $3,000 — so the broker would
+        # start rejecting on exactly the clustered days that carry 100% of the edge.
+        # Measured 2026-08-19: 51% of GEX Long signals (158 of 307 since 2026-06-13)
+        # would have been sized 2. Scale v7 by taking the next SLOT, never by size.
+        qty = QTY
 
     # Check master switch for this direction
     account_id = _V7_ACCOUNT if _is_v7 else _get_account_for_direction(is_long)
@@ -1063,6 +1282,22 @@ def place_trade(setup_log_id: int, setup_name: str, direction: str,
         _alert(f"🚨 CIRCUIT BREAKER HIT ({_who})\n"
                f"Daily loss: ${daily_loss:,.0f} >= ${_brk_limit:,.0f}\n"
                f"No more {_who} trades today.")
+        return
+
+    # S293: per-setup day breaker — two full stop-outs in a row today means the tape is
+    # running this setup over. Checked BEFORE the underwater guard because it is cheaper
+    # and needs no broker price.
+    _brk = _day_breaker_check(setup_name, is_long)
+    if _brk:
+        print(f"[real-trader] S293 day breaker: {setup_name} "
+              f"{'long' if is_long else 'short'} blocked after {_brk} stops today", flush=True)
+        _log_skip_reason(setup_log_id, "day_breaker_block")
+        _bk = (setup_name, is_long)
+        if _bk not in _breaker_alerted:
+            _breaker_alerted.add(_bk)
+            _alert(f"\U0001f6d1 {setup_name} {'LONG' if is_long else 'SHORT'} paused for today\n"
+                   f"{_brk} full stop-outs in a row — the tape is trending against this setup.\n"
+                   f"Other setups and the other direction are unaffected.")
         return
 
     # S203: underwater-stack guard — block 3rd same-setup same-direction entry
@@ -2209,6 +2444,102 @@ def _flatten_position(order):
                    f"MANUAL CLOSE REQUIRED")
 
 
+# ====== S279 STUCK-FILL HEAL (2026-08-17) ======
+
+_STUCK_ENTRY_S = 180          # a market entry unconfirmed this long is not normal
+_stuck_alerted: set[int] = set()
+
+
+def heal_stuck_entries() -> int:
+    """Find entries stuck in pending_entry and reconcile them against a FRESH broker read.
+
+    Why this exists: on 2026-08-17 lid 6090 filled at the broker and the bot never noticed
+    for 58 minutes. Nothing alerted, because _reconcile_positions counts pending_entry
+    inside expected_qty (S99) — so bot and broker BOTH read 1 contract and agreed. The
+    damage is silent: the post-fill stop realign never runs (the stop stays at the wider
+    pre-fill buffered level) and update_trail refuses to trail anything not marked filled.
+
+    DESIGN NOTE — deliberately does NOT contain its own fill logic. It re-fetches /orders
+    and calls the SAME audited _check_order_fills, so there is exactly one code path that
+    can mark a trade filled, realign its stop and place protective orders. A second
+    implementation of that is precisely how S259's double-count bug happened.
+
+    Safe by construction: reads only, then delegates. Never closes, never cancels, never
+    sizes. Returns the number of lids healed.
+    """
+    if not (LONGS_ENABLED or SHORTS_ENABLED):
+        return 0
+    now = datetime.utcnow()
+    with _lock:
+        stuck = []
+        for lid, o in _active_orders.items():
+            if o.get("status") != "pending_entry" or not o.get("entry_order_id"):
+                continue
+            placed = o.get("ts_placed")
+            if not placed:
+                continue
+            try:
+                # ts_placed is written in TWO formats (offset-aware ~1129, naive utcnow
+                # elsewhere) — see research_s259_healer_double_count. Normalise, never
+                # compare as text.
+                from datetime import timezone as _tzu   # not imported at module level
+                dt = datetime.fromisoformat(str(placed))
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone(_tzu.utc).replace(tzinfo=None)
+            except (ValueError, TypeError):
+                continue
+            if (now - dt).total_seconds() >= _STUCK_ENTRY_S:
+                stuck.append((lid, o, (now - dt).total_seconds()))
+    if not stuck:
+        return 0
+
+    healed = 0
+    by_acct: dict[str, list] = {}
+    for lid, o, age in stuck:
+        acct = o.get("account_id", "")
+        if acct:
+            by_acct.setdefault(acct, []).append((lid, o, age))
+    for account_id, items in by_acct.items():
+        if account_id not in ACCOUNT_WHITELIST:
+            continue
+        try:
+            data = _ts_api("GET", f"/brokerage/accounts/{account_id}/orders", None, account_id)
+        except Exception as e:
+            print(f"[real-trader] S279 heal: poll failed acct={account_id}: {e}", flush=True)
+            continue
+        if not data:
+            continue
+        broker_orders = {o.get("OrderID"): o for o in (data.get("Orders") or []) if o.get("OrderID")}
+        for lid, order, age in items:
+            bs = (broker_orders.get(order.get("entry_order_id")) or {}).get("Status", "")
+            print(f"[real-trader] S279 heal: lid={lid} pending_entry for {age/60:.0f} min, "
+                  f"broker says {bs or 'ABSENT'} acct={account_id}", flush=True)
+            try:
+                _check_order_fills(lid, order, broker_orders)
+            except Exception as e:
+                print(f"[real-trader] S279 heal error lid={lid}: {type(e).__name__}: {e}", flush=True)
+                continue
+            with _lock:
+                now_status = _active_orders.get(lid, {}).get("status")
+            if now_status and now_status != "pending_entry":
+                healed += 1
+                _persist_order(lid)
+                if lid not in _stuck_alerted:
+                    _stuck_alerted.add(lid)
+                    _alert(f"\U0001f527 S279 stuck fill healed\n"
+                           f"{order.get('setup_name')} lid={lid} sat unconfirmed "
+                           f"{age/60:.0f} min\nBroker: {bs} -> now {now_status}")
+            elif bs == "FLL" and lid not in _stuck_alerted:
+                # broker filled it, and the audited path still did not advance it — page,
+                # do NOT invent a second fill path.
+                _stuck_alerted.add(lid)
+                _alert(f"\u26a0\ufe0f S279 STUCK FILL NOT HEALED\n"
+                       f"{order.get('setup_name')} lid={lid} — broker FILLED, bot still "
+                       f"pending after {age/60:.0f} min.\nStop may be un-realigned and the "
+                       f"trade cannot trail. CHECK MANUALLY.")
+    return healed
+
+
 # ====== POLL ORDER STATUS ======
 
 def poll_order_status():
@@ -2249,7 +2580,23 @@ def poll_order_status():
                 broker_orders[oid] = o
 
         for lid, order in order_list:
-            _check_order_fills(lid, order, broker_orders)
+            # S279 (2026-08-17): isolate each lid. _check_order_fills was called bare, so
+            # ONE order raising (e.g. inside _extract_fill_price) ended the loop and every
+            # later lid on that account silently stopped being polled. lid 6090 sat in
+            # pending_entry for 58 min while the broker had it FILLED; the stop was never
+            # realigned to the fill (13 pt loss instead of 8) and the trail never started.
+            try:
+                # (2) observability: if a tracked entry id is absent from the payload we
+                # cannot diagnose it later — the Railway log buffer had already rolled past
+                # the incident window by the time it was investigated.
+                _eid = order.get("entry_order_id")
+                if _eid and _eid not in broker_orders and order["status"].startswith("pending"):
+                    print(f"[real-trader] S279 entry {_eid} (lid={lid}) NOT in /orders payload "
+                          f"({len(broker_orders)} orders returned) acct={account_id}", flush=True)
+                _check_order_fills(lid, order, broker_orders)
+            except Exception as _e:
+                print(f"[real-trader] S279 fill-check error lid={lid} acct={account_id}: "
+                      f"{type(_e).__name__}: {_e}", flush=True)
 
     # Note: position reconciliation was previously throttled inside this
     # function but early-exited above when bot state was empty (leaving a

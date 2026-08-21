@@ -1,41 +1,26 @@
-import os, psycopg, json
-from datetime import datetime
-from zoneinfo import ZoneInfo
-ET = ZoneInfo("America/New_York")
-today = datetime.now(ET).date()
-conn = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True)
-cur = conn.cursor()
-cur.execute("""
-  SELECT s.id, s.ts, s.setup_name, s.direction, s.grade, s.paradigm, r.state
-  FROM setup_log s JOIN real_trade_orders r ON r.setup_log_id = s.id
-  WHERE s.ts::date = %s ORDER BY s.ts
-""", (today,))
-rows = cur.fetchall()
-print(f"=== REAL TSRT trades today: {len(rows)} (bot's-own-fills P&L, MES $5/pt, -$1/RT comm) ===")
-gross=0.0; net=0.0; wins=0; losses=0
-for r in rows:
-    lid, ts, name, dirn, grade, para, state = r
-    t = ts.astimezone(ET).strftime("%H:%M")
-    st = state if isinstance(state, dict) else json.loads(state)
-    entry = st.get("fill_price")
-    cr = st.get("close_reason","")
-    exit_ = st.get("close_fill_price") if st.get("close_fill_price") is not None else st.get("stop_fill_price")
-    q = st.get("quantity",1) or 1
-    short = str(dirn).lower() in ("short","bearish")
-    if entry is None or exit_ is None:
-        print(f"  lid {lid} {t} {name:<16} {str(dirn):<7} entry={entry} exit={exit_} -- INCOMPLETE  reason={cr}")
-        continue
-    pts = (entry - exit_) if short else (exit_ - entry)
-    usd = pts * 5 * q
-    gross += usd; net += usd - 1*q
-    if usd>0: wins+=1
-    else: losses+=1
-    print(f"  lid {lid} {t} {name:<16} {str(dirn):<7} {str(grade):<3} entry={entry} exit={exit_} {pts:+.2f}pt ${usd:+.2f}  {cr}")
-print(f"\n  GROSS ${gross:+.2f} | NET (after $1/RT) ${net:+.2f} | {wins}W {losses}L of {len(rows)}")
-
-# breaker block timing
-print("\n=== daily_loss_limit blocks today (when breaker was active) ===")
-cur.execute("""SELECT ts, setup_name, direction FROM setup_log
-  WHERE ts::date=%s AND real_trade_skip_reason='daily_loss_limit' ORDER BY ts""",(today,))
-for r in cur.fetchall():
-    print(f"  {r[0].astimezone(ET).strftime('%H:%M')} {r[1]} {r[2]}")
+import os, json, psycopg2, requests
+c=psycopg2.connect(os.environ["DATABASE_URL"]); c.autocommit=True; cur=c.cursor()
+cur.execute("""SELECT rto.setup_log_id, rto.state, sl.setup_name, sl.direction
+   FROM real_trade_orders rto JOIN setup_log sl ON sl.id=rto.setup_log_id
+   WHERE date(sl.ts AT TIME ZONE 'America/New_York')='2026-06-29' ORDER BY sl.ts""")
+print("=== per-lid (pre-FIFO own-exit) ===")
+tot=0
+for sid,st,nm,dr in cur.fetchall():
+    s=st if isinstance(st,dict) else json.loads(st); il=dr in ('long','bullish')
+    en=s.get('fill_price'); ex=s.get('close_fill_price_pre_fifo_reconcile') or s.get('close_fill_price'); q=s.get('quantity') or 1
+    pnl=((ex-en) if il else (en-ex))*q*5 if (en and ex) else None
+    acct=s.get('account_id','')[-4:]
+    print(f"  lid {sid} {nm:<14} {dr:<8} {acct} entry={en} exit={ex} qty={q} -> ${pnl:+.1f}" if pnl is not None else f"  lid {sid} {nm} OPEN/incomplete")
+    if pnl: tot+=pnl
+print(f"  per-lid total: ${tot:+.1f}")
+c.close()
+# live balances vs this morning (longs $1664.20 / shorts $3061.72)
+cid=os.environ["TS_CLIENT_ID"]; sec=os.environ["TS_CLIENT_SECRET"]; rt=os.environ["TS_REFRESH_TOKEN"]
+tok=requests.post("https://signin.tradestation.com/oauth/token",data={"grant_type":"refresh_token","client_id":cid,"client_secret":sec,"refresh_token":rt},timeout=20).json().get("access_token")
+b=requests.get("https://api.tradestation.com/v3/brokerage/accounts/210VYX65,210VYX91/balances",headers={"Authorization":f"Bearer {tok}"},timeout=20).json()
+print("\n=== live broker equity vs this AM ===")
+am={"210VYX65":1664.20,"210VYX91":3061.72}
+for acc in b.get("Balances",[]):
+    aid=acc.get("AccountID"); eq=float(acc.get("Equity",0)); d=acc.get("BalanceDetail",{})
+    nm="LONGS" if aid=="210VYX65" else "SHORTS"
+    print(f"  {nm} {aid}: equity ${eq:,.2f}  (AM ${am[aid]:,.2f}, day {eq-am[aid]:+.2f})  openPnL=${float(d.get('UnrealizedProfitLoss',0) or 0):,.2f}  DayMargin=${float(d.get('DayTradeMargin',0)):,.0f}")

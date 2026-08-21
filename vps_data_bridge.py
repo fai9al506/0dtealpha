@@ -118,18 +118,43 @@ def current_es_symbol() -> str:
     year = today.year + 1
     return f"ESH{year % 100}-CME"
 
-def current_vx_symbol() -> str:
-    """Sierra DTC symbol format: VXM26_FUT_CFE (2-digit year, underscore, FUT suffix)."""
+# VIX futures are MONTHLY, not quarterly — every calendar month has a contract.
+# Using the quarterly _ES_MONTHS list here was wrong: it could never name the
+# August (Q) or November (X) contract that the bridge actually tails.
+_VX_MONTHS = {1: "F", 2: "G", 3: "H", 4: "J", 5: "K", 6: "M",
+              7: "N", 8: "Q", 9: "U", 10: "V", 11: "X", 12: "Z"}
+
+
+def _vx_expiry(year: int, month: int):
+    """Final settlement of the VIX future for `month`: the Wednesday 30 days
+    before the third Friday of the FOLLOWING month.
+
+    Worked example (the 2026-08-19 roll): Aug-2026 -> third Friday of Sep-2026
+    is Sep 18 -> minus 30 days = Wed Aug 19. VXQ26 stopped printing at 08:58 ET
+    that morning, which is exactly this date."""
     from datetime import timedelta
+    ny, nm = (year + 1, 1) if month == 12 else (year, month + 1)
+    return _third_friday(ny, nm) - timedelta(days=30)
+
+
+def current_vx_symbol() -> str:
+    """Sierra DTC symbol format: VXU26_FUT_CFE (2-digit year, underscore, FUT suffix).
+
+    Returns the first MONTHLY contract whose settlement is still ahead of today, so
+    on settlement day itself we are already on the next month — the expiring contract
+    stops printing mid-morning and liquidity has left it anyway.
+
+    NOTE: nothing calls this today. The live VPS bridge reads `vx_symbol` /
+    `vx_scid_file` straight out of `vps_bridge_config.json`, which is edited by hand
+    at each roll. Fix that file, not this helper, when the feed dies — and check the
+    RUNNING process for the real path, because the VPS repo is NOT at C:/0dtealpha."""
     today = date.today()
-    for month_num, code in _ES_MONTHS:
-        year = today.year
-        expiry = _third_friday(year, month_num)
-        rollover = expiry - timedelta(days=14)
-        if today <= rollover:
-            return f"VX{code}{year % 100}_FUT_CFE"
-    year = today.year + 1
-    return f"VXH{year % 100}_FUT_CFE"
+    year, month = today.year, today.month
+    for _ in range(4):
+        if _vx_expiry(year, month) > today:
+            return f"VX{_VX_MONTHS[month]}{year % 100}_FUT_CFE"
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+    return f"VX{_VX_MONTHS[month]}{year % 100}_FUT_CFE"
 
 
 # ─── Session Helpers ─────────────────────────────────────────────────────────

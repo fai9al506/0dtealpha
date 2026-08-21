@@ -4259,6 +4259,39 @@ def _compute_basket_pct() -> float | None:
         return None
 
 
+# ── V21 (2026-08-17) — previous-session move, cached once per ET day. ────────────────
+# Read from `spx_ohlc_1m` (1-minute bars), NEVER from chain_snapshots: the 2-minute
+# snapshots start at 09:32 against the bars' 09:31 and that one missing minute shifts the
+# daily figure by up to ~0.08%, which flips days across the -0.8% line and reverses the
+# rule's verdict. Cached because this is a once-a-day constant, not a per-signal lookup.
+_PREV_MOVE = {"d": None, "pct": None}
+
+
+def _prev_day_move_pct():
+    """Previous session's open-to-close %, or None. FAILS OPEN (None -> no block)."""
+    try:
+        today = now_et().date()
+        if _PREV_MOVE["d"] == today:
+            return _PREV_MOVE["pct"]
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as c:
+            row = c.execute(text("""
+                WITH day AS (
+                  SELECT (ts AT TIME ZONE 'America/New_York')::date d,
+                         (array_agg(bar_open  ORDER BY ts ASC ))[1] o,
+                         (array_agg(bar_close ORDER BY ts DESC))[1] c
+                  FROM spx_ohlc_1m
+                  WHERE (ts AT TIME ZONE 'America/New_York')::date < :t
+                  GROUP BY 1 ORDER BY 1 DESC LIMIT 1)
+                SELECT (c-o)/NULLIF(o,0)*100 FROM day"""), {"t": today}).fetchone()
+        pct = float(row[0]) if row and row[0] is not None else None
+        _PREV_MOVE["d"], _PREV_MOVE["pct"] = today, pct
+        print(f"[v21] previous session move = {pct if pct is None else round(pct,3)}%", flush=True)
+        return pct
+    except Exception as e:
+        print(f"[v21] prev-move lookup failed (fail-open): {e}", flush=True)
+        return None
+
+
 def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
                         vix: float | None = None, overvix: float | None = None,
                         paradigm: str | None = None, grade: str | None = None,
@@ -4395,6 +4428,39 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
             return False  # GEX-paradigm only (PURE/LIS/MESSY/TARGET); blocks BOFA-PURE/AG-LIS losers
         return True
 
+    # ── V21 (2026-08-17): no SHORTS after a big down day, unless volatility is high ──
+    # After a session that fell more than 0.8%, the market bounced: the next day averaged
+    # +0.22% and rose 68% of the time, and our fade shorts sold straight into it. Shorts
+    # after a down day earn +0.81 pt against +4.57 pt otherwise.
+    # The VIX ceiling is what makes it safe - the effect INVERTS in high volatility (at
+    # VIX 26+ those shorts earn +15.74 pt at 100% WR because the selling continues). Without
+    # it the rule deletes March's +150 pts of high-vol shorts and is worth exactly zero.
+    # Measured 117 sessions: $2,187 -> $2,372/mo, worst month -$225 -> +$530, MaxDD -$1,585
+    # -> -$906, the June 5-12 streak -$1,219 -> -$465. LOMO 6/6 (helps 3, unchanged 3).
+    # Blocks 27 shorts on 4 days in 6 months at 37% WR (t=-2.01) and beats 500 random
+    # 27-short removals on every metric. FAILS OPEN on a missing move or VIX.
+    #
+    # ── V22 (2026-08-19, S313): threshold widened -0.8% -> -0.5%. ────────────────────
+    # V21 blocked shorts only. S313 found the LONGS on those same days are the better
+    # half (+5.32 pt/trade, green on 5 of 6 days, against the shorts' 0 of 4), and that
+    # blocking alone leaves most of the money behind. The long size-up lives in
+    # real_trader._effective_qty - a filter cannot express quantity. The two halves are
+    # ONE rule: sizing longs without blocking shorts measured WORSE than doing nothing
+    # ($2,178/mo, MaxDD -$1,601). Widening to -0.5% takes the trigger from 9 days to 17.
+    # Measured 119 sessions: $2,253 -> $2,549/mo, worst month +$530 -> +$1,266, MaxDD
+    # unchanged at -$906. Out of sample (fit Mar-May, scored Jun-Aug) +$1,118/mo against
+    # +$86 in sample. Random control p=0.003. Full evidence: S313_PREVDAY_LONG_EDGE.md.
+    # Threshold is env-tunable for instant revert: V22_PREV_DROP=-0.8 restores V21.
+    # FAILS OPEN, exactly as V21 did.
+    if direction not in ("long", "bullish") and vix is not None:
+        _pm = _prev_day_move_pct()
+        # THRESHOLD STAYS -0.8. Widening it to -0.5 was tested and REJECTED: it earns
+        # $36/mo more but drops leave-one-month-out from 6/6 to 4/6. The long size-up
+        # (real_trader._v22_long_qty) runs at its own -0.5 threshold because the two are
+        # independent rules that degrade in opposite directions.
+        if _pm is not None and _pm < -0.8 and float(vix) < 24.0:
+            return False
+
     # ── ES Absorption PURE (shipped 2026-05-03 to real-trader from shadow) ──
     # 4 mechanism-based rules:
     #   1. Time < 15:45 ET (operational — late entries expire)
@@ -4406,6 +4472,26 @@ def _passes_live_filter(setup_name: str, direction: str, greek_alignment: int,
     # 73% green trading days. Worst single day -$80 MES at 1 MES.
     # Promoted from shadow on backtest strength (166-trade sample, 7-18x VPB/VIX Div sample).
     if setup_name == "ES Absorption":
+        # ── V20 (2026-08-17, S277/S278): ES Absorption needs VOLATILITY. ──────────────
+        # V16 book, costs charged, longs only, per trade:
+        #   VIX <18 -$2.6 (n=34) · 18-20 -$6.4 (n=46) · 20-22 +$21.6 (n=20, t=+2.4)
+        #   · 22-26 +$15.2 (n=54, t=+2.7) · 26+ -$1.0 (n=43)
+        # Mar-Apr averaged VIX 24.8 -> +$1,239. May-Aug averaged VIX 18.1 -> -$412.
+        # NOT the Sierra feed switch (2026-04-30, same boundary): high-vol trades on the
+        # NEW feed still win (+$59, 67% WR) and low-vol trades on the OLD feed were fine.
+        # NOT market-wide: Skew Charm earns +$18/trade below VIX 18 on the same sessions.
+        # Floor not band: 20-26 scores $120 better over 5.5 months but the upper bound is
+        # the fitted part (26+ is merely flat, not harmful). One rule, one number.
+        # Switching the setup OFF instead measured -$1,036 — its slots get refilled by
+        # weaker trades under the 2/3 cap. Fails CLOSED on a missing VIX (0 of 1,022
+        # historical ES Abs rows lack one). Lockstep: live_filter.passes_v20 + both
+        # portal mirrors (strat 'v20'). Env ES_ABS_REAL_TRADE_ENABLED is an emergency
+        # kill only, default true.
+        if os.getenv("ES_ABS_REAL_TRADE_ENABLED", "true").lower() != "true":
+            return False
+        _vix_abs = vix if vix is not None else None
+        if _vix_abs is None or float(_vix_abs) < 20.0:
+            return False
         # CUT ES Absorption SHORTS (2026-07-27, user directive): consistent recent loser.
         # By month (v16-sb, chain$): Mar +$458/75% (high-vol) -> May -$122 / Jun -$216 / Jul -$41;
         # Apr-Jul net -$257, worst-WR short. Longs KEPT. Reversible (delete this line).
@@ -5824,6 +5910,9 @@ def _run_setup_check():
                                     # Basket "0/1/2" sizing: pass the SAME frozen basket_pct the
                                     # live filter used (stamped at signal time) so size matches take/skip.
                                     basket_pct=r.get("basket_pct"),
+                                    # V22 (S313): needed for the LONG size-up after a down
+                                    # session. None -> real_trader leaves the size unchanged.
+                                    vix=_vix_last,
                                 )
                             elif not es_px:
                                 # S114: ES quote stream stale AND REST fallback returned None.
@@ -6558,6 +6647,7 @@ def _run_absorption_detection(bars: list) -> dict | None:
                             greek_alignment=result.get("greek_alignment"),
                             # Basket "0/1/2" sizing: pass the frozen stamped basket_pct (matches filter).
                             basket_pct=result.get("basket_pct"),
+                            vix=_vix_last,   # V22 (S313) long size-up input
                         )
                     except Exception as e:
                         print(f"[real-trader] ES Absorption place error: {e}", flush=True)
@@ -8247,6 +8337,23 @@ def start_scheduler():
             pass
     sch.add_job(_broker_poll, "interval", seconds=30,
                 id="broker_poll", coalesce=True, max_instances=1)
+
+    # S279 (2026-08-17) — stuck-fill healer. Its OWN job on its OWN thread, deliberately
+    # NOT inside _broker_poll: the failure it exists to catch is the fill poll silently
+    # stopping, so it must not share that job's fate. It re-fetches /orders itself and
+    # delegates to the same audited _check_order_fills — it contains no fill logic of its
+    # own, never closes, never cancels. Incident: lid 6090 sat pending_entry 58 min while
+    # the broker had it filled; stop never realigned (13 pt loss instead of 8), no trail,
+    # and nothing alerted because _reconcile_positions counts pending_entry as expected.
+    def _real_trade_stuck_heal():
+        try:
+            from app import real_trader
+            real_trader.heal_stuck_entries()
+        except Exception as e:
+            print(f"[real-trader] S279 heal job error (non-fatal): {e}", flush=True)
+    sch.add_job(_real_trade_stuck_heal, "interval", seconds=120,
+                id="real_trade_stuck_heal", coalesce=True, max_instances=1,
+                misfire_grace_time=60)
     sch.add_job(_send_setup_eod_summary, "cron", hour=16, minute=5,
                 id="setup_eod", coalesce=True, max_instances=1)
     # S267 — cash-settle the Friday call credit spread against the closing print.
@@ -8308,7 +8415,11 @@ def start_scheduler():
     # always block, then re-assess periodically rather than wait for more sample.
     try:
         from app.filter_validation import run_today as _filter_val_run
-        sch.add_job(_filter_val_run, "cron", day_of_week="mon", hour=17, minute=0,
+        # S281 (2026-08-17): MONTHLY, not weekly — user asked for one report they can
+        # actually read and act on, with the new SETUP HEALTH section merged in.
+        # Fires days 1-5; run_today() has the weekday guard + once-per-month latch, so
+        # it lands on the first trading day whatever the calendar does.
+        sch.add_job(_filter_val_run, "cron", day="1-5", hour=17, minute=0,
                     timezone=NY, id="filter_validation", coalesce=True, max_instances=1,
                     misfire_grace_time=600)
     except Exception as e:
@@ -13014,6 +13125,25 @@ def api_setup_gex_long_v3_overlay(rebuild: int = Query(0)):
         return {"error": str(e)}
 
 
+@app.get("/api/setup/daily_moves")
+def api_setup_daily_moves():
+    """date -> PREVIOUS session's open-to-close %, from the 1-min bars. V21 input.
+    Mirrors live_filter.load_prev_moves so the portal and the trader agree."""
+    try:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as c:
+            rows = c.execute(text("""
+                WITH day AS (
+                  SELECT (ts AT TIME ZONE 'America/New_York')::date d,
+                         (array_agg(bar_open  ORDER BY ts ASC ))[1] o,
+                         (array_agg(bar_close ORDER BY ts DESC))[1] c
+                  FROM spx_ohlc_1m GROUP BY 1)
+                SELECT t.d, (p.c-p.o)/NULLIF(p.o,0)*100 mv
+                FROM day t JOIN day p ON p.d=(SELECT MAX(d2.d) FROM day d2 WHERE d2.d<t.d)""")).fetchall()
+        return {str(r[0]): round(float(r[1]), 3) for r in rows if r[1] is not None}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/setup/daily_gaps")
 def api_setup_daily_gaps():
     """Return gap (open - prev close) for each trading day. Used by V12 portal filter."""
@@ -14147,7 +14277,7 @@ EOD_REVIEW_TEMPLATE = """
 
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
   <div class="filter-bar" id="filterBar" style="display:none">
-    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v16fri">V16 w/Friday Off (live) ✦</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
+    <label>Filter</label><select id="fStrat"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v21">V21 (live) ✦</option><option value="v22">V22 = V21 filter + long size-up (dormant)</option><option value="v20">V20</option><option value="v16fri">V16 w/Friday Off</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B</option><option value="r1">R1</option></select>
     <label>Setup</label><select id="fSetup"><option value="">All</option></select>
     <label>Result</label><select id="fResult"><option value="">All</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option><option value="EXPIRED">EXPIRED</option></select>
     <label>Grade</label><select id="fGrade"><option value="">All</option><option>A+</option><option>A</option><option>A-Entry</option><option>B</option><option>C</option><option>LOG</option></select>
@@ -14180,7 +14310,9 @@ const GRADE_COLORS = {'A+':'#22c55e','A':'#3b82f6','A-Entry':'#eab308','B':'#f59
 let _allTrades = [];
 let _allExpanded = true;
 let _dailyGaps = {};
+let _dailyMoves = {};   // V21: prev-session open-to-close %
 fetch('/api/setup/daily_gaps',{cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_dailyGaps=d;}).catch(()=>{});
+fetch('/api/setup/daily_moves',{cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_dailyMoves=d;}).catch(()=>{});
 
 function passesStrategy(l, strat) {
   if (!strat) return true;
@@ -14208,6 +14340,46 @@ function passesStrategy(l, strat) {
   // V16FRI (S263) — "V16 w/Friday Off". THE LIVE VIEW once REAL_TRADE_NO_FRIDAY=true:
   // V16 minus Fridays, WITHOUT V18 (which is not in the trade path). Lockstep with
   // _tlPassesStrategy(l,'v16fri') + live_filter.passes_v16_fri.
+  // V20 (2026-08-17, S277/S278) — THE LIVE FILTER from 2026-08-18.
+  // V20 = V16 rules + ES Absorption only when VIX >= 20 + no Friday (the armed
+  // REAL_TRADE_NO_FRIDAY gate). Full change ledger: FILTER_VERSIONS.md.
+  // Lockstep with _tlPassesStrategy(l,'v20') + live_filter.passes_v20 +
+  // main.py _passes_live_filter. Fails CLOSED on a missing VIX.
+  // V21 (2026-08-17, S300-S307) — THE LIVE FILTER from 2026-08-18.
+  // V20 plus: no SHORTS when the PREVIOUS session fell more than 0.8% AND VIX < 24.
+  // Ledger: FILTER_VERSIONS.md. Lockstep with _tlPassesStrategy(l,'v21'),
+  // live_filter.passes_v21 and main.py _passes_live_filter. FAILS OPEN on missing data.
+  // V22 (2026-08-19, S313) — THE LIVE FILTER from 2026-08-20. Same shape as V21 with
+  // the threshold at -0.5%. The LONG size-up half cannot be shown in a pass/fail view;
+  // it lives in real_trader._effective_qty. Lockstep with _tlPassesStrategy(l,'v22'),
+  // live_filter.v22_blocks and main.py _passes_live_filter. FAILS OPEN.
+  if (strat === 'v22') {
+    if (!passesStrategy(l, 'v20')) return false;
+    const _isL22 = (l.direction === 'long' || l.direction === 'bullish');
+    if (_isL22 || l.vix == null || !l.ts) return true;
+    const _k22 = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
+    const _mv22 = _dailyMoves[_k22];
+    if (_mv22 == null) return true;
+    return !(_mv22 < -0.8 && l.vix < 24);
+  }
+  if (strat === 'v21') {
+    if (!passesStrategy(l, 'v20')) return false;
+    const _isL21 = (l.direction === 'long' || l.direction === 'bullish');
+    if (_isL21 || l.vix == null || !l.ts) return true;
+    const _k21 = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
+    const _mv21 = _dailyMoves[_k21];
+    if (_mv21 == null) return true;
+    return !(_mv21 < -0.8 && l.vix < 24);
+  }
+  if (strat === 'v20') {
+    if (!passesStrategy(l, 'v16')) return false;
+    if (sn === 'ES Absorption') {
+      if (l.vix == null || l.vix < 20) return false;
+    }
+    if (!l.ts) return true;
+    return new Date(l.ts).toLocaleDateString('en-US', {timeZone: 'America/New_York',
+                                                       weekday: 'short'}) !== 'Fri';
+  }
   if (strat === 'v16fri') {
     if (!passesStrategy(l, 'v16')) return false;
     if (!l.ts) return true;
@@ -15513,8 +15685,8 @@ DASH_HTML_TEMPLATE = """
     .tl-filters select, .tl-filters input { background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:4px 8px; font-size:11px; }
     .tl-stats { display:flex; gap:16px; padding:8px 12px; border-bottom:1px solid var(--border); font-size:12px; color:var(--muted); }
     .tl-stats .stat-val { font-weight:700; color:var(--text); }
-    .tl-header { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 36px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:2px solid var(--border); color:var(--muted); font-size:10px; font-weight:600; position:sticky; top:0; background:var(--card); z-index:1; }
-    .tl-row { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 36px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:1px solid var(--border); cursor:pointer; }
+    .tl-header { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 36px 30px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:2px solid var(--border); color:var(--muted); font-size:10px; font-weight:600; position:sticky; top:0; background:var(--card); z-index:1; }
+    .tl-row { display:grid; grid-template-columns:32px 100px 32px 48px 40px 64px 72px 36px 30px 72px 56px 56px 44px 100px 36px; align-items:center; gap:4px; padding:6px 8px; border-bottom:1px solid var(--border); cursor:pointer; }
     .tl-row:hover { background:#1a1d21; }
     .tl-notes { padding:8px 12px 8px 44px; border-bottom:1px solid var(--border); display:none; }
     .tl-notes textarea { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:6px; font-size:12px; resize:vertical; min-height:60px; box-sizing:border-box; }
@@ -16265,14 +16437,14 @@ DASH_HTML_TEMPLATE = """
           <input type="date" id="tlDateFrom" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="From date">
           <input type="date" id="tlDateTo" style="display:none;width:120px;background:#111;color:#e5e7eb;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px" title="To date">
           <select id="tlFilterAlign"><option value="">All Align</option><option value="3">+3</option><option value="2">+2</option><option value="1">+1</option><option value="0">0</option><option value="-1">-1</option><option value="-2">-2</option><option value="-3">-3</option></select>
-          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v16fri">V16 w/Friday Off (live) ✦</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
+          <select id="tlFilterStrategy"><option value="">All Strategies</option><option value="v16">V16 (base)</option><option value="v21">V21 (live) ✦</option><option value="v22">V22 = V21 filter + long size-up (dormant)</option><option value="v20">V20</option><option value="v16fri">V16 w/Friday Off</option><option value="v17">V17</option><option value="v18">V18</option><option value="v19">V19</option><option value="v16sb">V16-SB (legacy basket-BLOCK view)</option><option value="v14">V14</option><option value="v14le">V14-LE</option><option value="v13">V13</option><option value="v13le">V13-LE</option><option value="v13nt">V13-NT</option><option value="v12le">V12-LE</option><option value="v12nt">V12-NT</option><option value="v12">V12-fix</option><option value="v11">V11</option><option value="v10">V10</option><option value="v9">V9-SC</option><option value="v8">V8 (VIX>26)</option><option value="v7ag">V7+AG</option><option value="scag">SC+AG</option><option value="sc">SC Only</option><option value="v7">V7</option><option value="optB">Option B (old)</option><option value="r1">R1 (basic)</option></select>
           <input type="text" id="tlSearch" placeholder="Search..." style="width:140px">
           <button id="tlExportExcel" title="Export filtered data to Excel" class="strike-btn" style="padding:4px 12px;margin-left:auto">Export Excel</button>
         </div>
         <div class="tl-stats" id="tlStats"></div>
         <div style="overflow-y:auto;flex:1">
           <div id="tlHeaderRow" class="tl-header">
-            <span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>Align</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>
+            <span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>Align</span><span title="Semi-basket size multiplier: 2 = tech basket CONFIRMS this direction (double size), 1 = neutral or contradicts (single size), 0 = would be skipped under the old block policy">SB</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>
           </div>
           <div id="tlBody"></div>
           <div id="tlPagination" style="display:flex;gap:6px;justify-content:center;padding:10px 0;font-size:12px"></div>
@@ -19293,8 +19465,10 @@ DASH_HTML_TEMPLATE = """
     // (live) view never showed. Fixing VIX Div on 08-11 without sweeping the other setups
     // is what let this survive four more days.
     const _VPB_REAL = "__VPB_REAL__" === "true";
-    let _tlDailyGaps = {};  // {date_str: gap_pts} for V12 filter
+    let _tlDailyGaps = {};
+    let _tlDailyMoves = {};   // V21: prev-session open-to-close %  // {date_str: gap_pts} for V12 filter
     fetch('/api/setup/daily_gaps', {cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_tlDailyGaps=d;}).catch(()=>{});
+    fetch('/api/setup/daily_moves', {cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.error)_tlDailyMoves=d;}).catch(()=>{});
     // GEX Long v3 server-side overlay: per-trade {pass, result, pnl, max_fav, verdict}
     // Replaces approximate JS filter + old DB outcomes when v3 dropdown selected.
     let _tlV3Overlay = null;        // {lid_str: {pass, result, pnl, ...}}
@@ -19432,6 +19606,44 @@ DASH_HTML_TEMPLATE = """
       // applies V18, which is NOT in the trade path, so V19 stays a research view.
       // Friday-only is worth +$1,432 over 123 sessions; V18 adds a further +$115.
       // LOCKSTEP with live_filter.passes_v16_fri + passesStrategy(l,'v16fri').
+      // V20 (2026-08-17, S277/S278) — THE LIVE FILTER from 2026-08-18.
+      // V16 rules + ES Absorption only when VIX >= 20 + no Friday. Ledger:
+      // FILTER_VERSIONS.md. LOCKSTEP with live_filter.passes_v20 +
+      // passesStrategy(l,'v20') + main.py _passes_live_filter.
+      // V21 (2026-08-17, S300-S307) — THE LIVE FILTER from 2026-08-18.
+      // V20 plus: no SHORTS when the previous session fell more than 0.8% AND VIX < 24.
+      // LOCKSTEP with live_filter.passes_v21 + passesStrategy(l,'v21') + _passes_live_filter.
+      // V22 (2026-08-19, S313) — THE LIVE FILTER from 2026-08-20. Lockstep with
+      // passesStrategy(l,'v22'), live_filter.v22_blocks, main.py _passes_live_filter.
+      if (strat === 'v22') {
+        if (!_tlPassesStrategy(l, 'v20')) return false;
+        const _isL22 = (l.direction === 'long' || l.direction === 'bullish');
+        if (_isL22 || l.vix == null || !l.ts) return true;
+        const _k22 = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
+        const _mv22 = _tlDailyMoves[_k22];
+        if (_mv22 == null) return true;
+        return !(_mv22 < -0.8 && l.vix < 24);
+      }
+      if (strat === 'v21') {
+        if (!_tlPassesStrategy(l, 'v20')) return false;
+        const _isL21 = (l.direction === 'long' || l.direction === 'bullish');
+        if (_isL21 || l.vix == null || !l.ts) return true;
+        const _k21 = new Date(l.ts).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
+        const _mv21 = _tlDailyMoves[_k21];
+        if (_mv21 == null) return true;
+        return !(_mv21 < -0.8 && l.vix < 24);
+      }
+      if (strat === 'v20') {
+        if (!_tlPassesStrategy(l, 'v16')) return false;
+        // NB: `sn` is declared further down in this function, so read the field
+        // directly here — using sn would hit the temporal dead zone.
+        if ((l.setup_name || '') === 'ES Absorption') {
+          if (l.vix == null || l.vix < 20) return false;
+        }
+        if (!l.ts) return true;
+        return new Date(l.ts).toLocaleDateString('en-US', {timeZone: 'America/New_York',
+                                                           weekday: 'short'}) !== 'Fri';
+      }
       if (strat === 'v16fri') {
         if (!_tlPassesStrategy(l, 'v16')) return false;
         if (!l.ts) return true;
@@ -20228,7 +20440,7 @@ DASH_HTML_TEMPLATE = """
       // Restore portal header/grid
       const hdr = document.getElementById('tlHeaderRow');
       hdr.className = 'tl-header';
-      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>Align</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>';
+      hdr.innerHTML = '<span>#</span><span>Setup</span><span>Dir</span><span>Grade</span><span>Scr</span><span>Entry</span><span>Gap/RR</span><span>Align</span><span title="Semi-basket size multiplier: 2 = tech basket CONFIRMS this direction (double size), 1 = neutral or contradicts (single size), 0 = would be skipped under the old block policy">SB</span><span>10p/Tgt/Stp</span><span>Result</span><span>P&L</span><span>Dur</span><span>Time</span><span></span>';
       const filtered = _tlGetFiltered();
 
       // v3 overlay helpers — override result/pnl with re-simulated exit when v3 dropdown active.
@@ -20237,6 +20449,16 @@ DASH_HTML_TEMPLATE = """
       function _v3OutOf(l) { return _tlGexOv(l); }
       function _resOf(l) { const o = _v3OutOf(l); return o ? (o.result || '') : (l.outcome_result || ''); }
       function _pnlOf(l) { const o = _v3OutOf(l); return o ? o.pnl : l.outcome_pnl; }
+      // Semi-basket size multiplier for one signal. LOCKSTEP with
+      // real_trader._effective_qty / basket_gate.classify: deadband 0.15, sign match = confirm.
+      function _tlSbMult(l) {
+        const b = l.basket_pct;
+        if (b == null) return null;                       // no basket data -> base size
+        const v = +b;
+        if (Math.abs(v) < 0.15) return 1;                 // neutral
+        const isLong = (l.direction === 'long' || l.direction === 'bullish');
+        return ((v > 0) === isLong) ? 2 : 1;              // confirm -> 2x, contradict -> 1x
+      }
 
       // Stats — use global stats from /api/setup/stats (all trades, not just current page)
       const gs = _tlGlobalStats || {};
@@ -20264,6 +20486,18 @@ DASH_HTML_TEMPLATE = """
         }
         if (_p != null) { pagePnl += _p; pagePnlCount++; }
       });
+      // SB P&L — the same shown trades priced at the size the basket rule actually gives
+      // them. Raw points are 1 MES each; this is what the sizing rule turns them into.
+      let pageSbPnl = 0, pageSbCount = 0;
+      filtered.forEach(l => {
+        const _p = _pnlOf(l);
+        if (_p == null) return;
+        const m = _tlSbMult(l);
+        pageSbPnl += _p * (m == null ? 1 : m);
+        pageSbCount++;
+      });
+      const fSbStr = pageSbCount > 0 ? ((pageSbPnl >= 0 ? '+' : '') + pageSbPnl.toFixed(1)) : '--';
+      const fSbColor = pageSbPnl >= 0 ? '#22c55e' : '#ef4444';
       const fWr = (pageWins+pageLosses)>0 ? ((pageWins/(pageWins+pageLosses))*100).toFixed(0) : '--';
       const fPnlColor = pagePnl >= 0 ? '#22c55e' : '#ef4444';
       const fPnlStr = pagePnlCount > 0 ? ((pagePnl >= 0 ? '+' : '') + pagePnl.toFixed(1)) : '--';
@@ -20284,6 +20518,8 @@ DASH_HTML_TEMPLATE = """
         '<span style="color:#ef4444">'+pageLosses+'L</span>' +
         '<span>'+fWr+'%</span>' +
         '<span style="color:'+fPnlColor+';font-weight:700">'+fPnlStr+'</span>' +
+        '<span style="color:var(--muted);font-size:10px">SB P&L:</span>' +
+        '<span style="color:'+fSbColor+';font-weight:700" title="the same trades, sized by the semi-basket rule (2x when the tech basket confirms the direction)">'+fSbStr+'</span>' +
         '</div>' : '');
 
       // Table body
@@ -20303,6 +20539,13 @@ DASH_HTML_TEMPLATE = """
         const gradeColor = _tlGradeColors[l.grade] || '#888';
         const entry = isAbs ? (l.abs_es_price || l.spot)?.toFixed(2) : l.spot?.toFixed(0);
         const gapRr = isAbs ? ((l.abs_vol_ratio||0).toFixed(1)+'x') : ((l.gap_to_lis?.toFixed(1)||'--')+' / '+(l.rr_ratio?.toFixed(1)||'--')+'x');
+
+        // SB — the semi-basket size multiplier actually applied to this trade.
+        // Mirrors real_trader._effective_qty: CONFIRM -> 2, otherwise 1. Under the old
+        // 0/0/1 BLOCK policy a contradict was skipped entirely, which shows as 0.
+        const _sb = _tlSbMult(l);
+        const _sbTxt = _sb == null ? '–' : String(_sb);
+        const _sbCol = _sb === 2 ? '#22c55e' : (_sb === 0 ? '#ef4444' : 'var(--muted)');
 
         // 10p/Tgt/Stp
         const o = l.outcome || {};
@@ -20369,6 +20612,7 @@ DASH_HTML_TEMPLATE = """
           '<span style="color:var(--text)">'+(entry||'--')+'</span>' +
           '<span style="color:var(--muted);font-size:10px">'+gapRr+'</span>' +
           '<span style="color:var(--muted);font-size:10px;text-align:center">'+(l.greek_alignment != null ? (l.greek_alignment > 0 ? '+' : '') + l.greek_alignment : '–')+'</span>' +
+          '<span style="color:'+_sbCol+';font-size:10px;text-align:center;font-weight:600" title="basket '+(l.basket_pct==null?'n/a':(+l.basket_pct).toFixed(2)+'%')+'">'+_sbTxt+'</span>' +
           '<span style="font-size:10px"><span style="color:'+c10+'">'+has10pt+'</span> <span style="color:'+cTgt+'">'+hasTgt+'</span> <span style="color:'+cStop+'">'+hasStop+'</span></span>' +
           '<span style="font-size:10px">'+result+'</span>' +
           '<span style="color:'+pnlC+';font-size:10px">'+pnl+mesBadge+'</span>' +

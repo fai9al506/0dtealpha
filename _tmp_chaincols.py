@@ -1,0 +1,15 @@
+import os, psycopg2, json
+c=psycopg2.connect(os.environ["DATABASE_URL"]); c.autocommit=True; cur=c.cursor()
+cur.execute("SELECT columns, rows FROM chain_snapshots WHERE spot IS NOT NULL ORDER BY ts DESC LIMIT 1")
+cols,rows=cur.fetchone()
+cols=cols if isinstance(cols,list) else json.loads(cols)
+rows=rows if isinstance(rows,list) else json.loads(rows)
+print("columns:",cols)
+print("n rows:",len(rows))
+print("sample row:",rows[len(rows)//2])
+# volland greeks available
+cur.execute("SELECT DISTINCT greek FROM volland_exposure_points WHERE ts_utc >= '2026-07-06'")
+print("volland greeks:",[r[0] for r in cur.fetchall()])
+cur.execute("SELECT strike,value FROM volland_exposure_points WHERE greek='charm' AND ts_utc>='2026-07-09' ORDER BY ts_utc DESC LIMIT 5")
+print("charm sample:",cur.fetchall())
+c.close()

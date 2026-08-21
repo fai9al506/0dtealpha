@@ -1,6 +1,40 @@
 # VPS Setup Instructions for Claude Code
 
+> ## 🛑 THIS IS A PLAN, NOT A RECORD OF THE VPS AS BUILT
+>
+> It was written *before* the VPS was set up, and reality diverged. On 2026-08-19 three
+> statements from this file were handed to a VPS session as fact and **all three were wrong**:
+>
+> | This file says | What is actually true on the VPS |
+> |---|---|
+> | Repo lives at `C:\0dtealpha\` | **`C:\Users\Administrator\0dtealpha\`** — `C:\0dtealpha` does not exist |
+> | `vps_monitor.py` auto-restarts crashed processes | **It does not exist and never ran.** If the bridge dies it stays dead until the scheduled task is started by hand |
+> | `Stop-ScheduledTask` stops the bridge | **It does not.** The task launches a VBS wrapper that exits immediately, so the task reads "Ready" while `python.exe` keeps running. **Kill the python process directly, then `Start-ScheduledTask`** |
+>
+> **Read the truth off the RUNNING SYSTEM before acting on anything below** — the process
+> command line, `run_bridge.vbs`, and the `vps_heartbeats` table (its payload carries the live
+> `es_scid` / `vx_scid` paths and tick counters). Sections marked "Phase 2" describe intent only.
+
 Run these steps in order on the VPS (0dte-vps, 103.54.56.210).
+
+## Contract rolls — the bridge does NOT auto-roll
+
+`vps_data_bridge.py` reads `vx_symbol` / `vx_scid_file` / `es_symbol` / `es_scid_file` straight out
+of `vps_bridge_config.json` **on the VPS**. The symbol helpers inside the script are unused. **Every
+roll is a hand edit plus a restart.**
+
+- **VX (VIX futures) is MONTHLY.** Settlement = the Wednesday 30 days before the third Friday of the
+  following month. The expiring contract stops printing **mid-morning on settlement day**, so roll
+  the day before. 2026-08-19: VXQ26 froze at 08:58 ET and the pipeline alert fired at 09:32.
+  Rolled to **VXU26**. Next roll: **2026-09-16 → VXV26**.
+- **ES is QUARTERLY** (H/M/U/Z). Currently `ESU26-CME`.
+- Sierra must have the new symbol open so the `.scid` file exists and is growing BEFORE the restart.
+- After restarting, confirm the startup log prints the new SCID path, then confirm rows land in
+  `vps_vix_ticks` / `vps_es_range_bars`. The bridge backfills the gap from the `.scid` by itself
+  (the 2026-08-19 roll recovered 2,361 ticks — no data hole).
+- **Do NOT `git commit` the VPS copy of `vps_bridge_config.json`.** The file is tracked, and the VPS
+  copy holds the live `vps_api_key`; committing it writes a secret into git history permanently.
+  Update the symbol lines in the desktop copy instead.
 
 ## Prerequisites (manual — do in Chrome/GUI)
 - [x] Sierra Chart installed + Denali connected

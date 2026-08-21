@@ -1,21 +1,14 @@
-import os, requests
-token=os.environ.get("TELEGRAM_BOT_TOKEN")
-chat=os.environ.get("TELEGRAM_CHAT_ID_SETUPS","-1003886332593")
-if not token:
-    print("NO TOKEN"); raise SystemExit(1)
-path="daily_trade_logs/dark_matter_framework_study.html"
-caption=("Dark Matter Framework - Study, Worked Examples & Action Plan\n"
-         "8 weekly plans (Apr 13 - Jun 8) studied + backtested vs our full history.\n"
-         "Open in a browser. Key finding: regime decides which side pays - in high-vol "
-         "regimes the short side ~4x. Plan + projection inside.")
+import os, requests, sys
+tok=os.environ.get("TELEGRAM_BOT_TOKEN")
+if not tok:
+    print("NO_TOKEN"); sys.exit(2)
+path=r"C:/Users/Faisa/Downloads/basket_momentum_report.html"
+url=f"https://api.telegram.org/bot{tok}/sendDocument"
 try:
     with open(path,"rb") as f:
-        r=requests.post(f"https://api.telegram.org/bot{token}/sendDocument",
-            data={"chat_id":chat,"caption":caption},
-            files={"document":("dark_matter_framework_study.html", f, "text/html")},
-            timeout=60)
-    print("HTTP", r.status_code)
-    j=r.json()
-    print("ok=", j.get("ok"), "| desc=", j.get("description"))
+        r=requests.post(url,data={"chat_id":"-1003792574755",
+            "caption":"📊 Basket SB study — Momentum vs Open (all scalings, walk-forward). Conclusion: switch to 30-min momentum + 0/1/2; retire live 0/0/1; real edge ~1.1x capital-adj (not 1.4x)."},
+            files={"document":("basket_momentum_report.html",f,"text/html")},timeout=30)
+    print("HTTP",r.status_code, r.json().get("ok"), str(r.json())[:160])
 except Exception as e:
-    print("SEND FAILED:", type(e).__name__, str(e)[:200])
+    print("NETERR", repr(e)[:160])

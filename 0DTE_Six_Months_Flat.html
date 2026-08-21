@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Six Months, Flat</title>
+<style>
+  :root {
+    --paper: #F0F3F3;
+    --card: #FFFFFF;
+    --ink: #16201F;
+    --ink-2: #4A5A58;
+    --ink-3: #7E8E8B;
+    --rule: rgba(22, 32, 31, 0.13);
+    --rule-soft: rgba(22, 32, 31, 0.07);
+    --accent: #2E7D74;
+    --accent-soft: rgba(46, 125, 116, 0.10);
+    --gain: #3F7F5F;
+    --loss: #B0503F;
+    --amber: #A8792C;
+    --shadow: 0 1px 2px rgba(22,32,31,.05), 0 8px 24px -12px rgba(22,32,31,.14);
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #101817;
+      --card: #16211F;
+      --ink: #E4EAE8;
+      --ink-2: #A2B2AF;
+      --ink-3: #71827F;
+      --rule: rgba(228, 234, 232, 0.15);
+      --rule-soft: rgba(228, 234, 232, 0.08);
+      --accent: #62B5A8;
+      --accent-soft: rgba(98, 181, 168, 0.13);
+      --gain: #6BB68C;
+      --loss: #D97C68;
+      --amber: #D2A354;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #101817;
+    --card: #16211F;
+    --ink: #E4EAE8;
+    --ink-2: #A2B2AF;
+    --ink-3: #71827F;
+    --rule: rgba(228, 234, 232, 0.15);
+    --rule-soft: rgba(228, 234, 232, 0.08);
+    --accent: #62B5A8;
+    --accent-soft: rgba(98, 181, 168, 0.13);
+    --gain: #6BB68C;
+    --loss: #D97C68;
+    --amber: #D2A354;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* ---------- masthead ---------- */
+  .mast { padding: 72px 0 40px; border-bottom: 1px solid var(--rule); }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 20px;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 400; font-size: clamp(40px, 7vw, 68px);
+    line-height: 1.04; letter-spacing: -.015em; margin: 0 0 20px; text-wrap: balance;
+  }
+  .standfirst {
+    font-family: var(--serif); font-size: clamp(18px, 2.3vw, 21px); line-height: 1.55;
+    color: var(--ink-2); max-width: 60ch; margin: 0;
+  }
+
+  /* ---------- the curve ---------- */
+  .curve { margin: 40px 0 8px; }
+  .curve figcaption {
+    font-family: var(--mono); font-size: 11.5px; color: var(--ink-3);
+    letter-spacing: .04em; margin-top: 10px;
+  }
+  svg { display: block; width: 100%; height: auto; }
+
+  /* ---------- chapters ---------- */
+  .chapter {
+    display: grid; grid-template-columns: 128px 1fr; gap: 32px;
+    padding: 44px 0; border-bottom: 1px solid var(--rule-soft);
+  }
+  .rail { position: relative; }
+  .rail-month {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink); font-weight: 600;
+  }
+  .rail-tag {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink-3); margin-top: 6px;
+  }
+  .rail-eq {
+    margin-top: 16px; font-family: var(--mono); font-size: 13px;
+    font-variant-numeric: tabular-nums; color: var(--ink-2);
+  }
+  .rail-eq b { display: block; font-size: 10px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink-3); font-weight: 500; margin-bottom: 2px; }
+
+  h2 {
+    font-family: var(--serif); font-weight: 400; font-size: clamp(24px, 3.4vw, 31px);
+    line-height: 1.2; letter-spacing: -.01em; margin: 0 0 14px; text-wrap: balance;
+  }
+  .chapter p { margin: 0 0 14px; max-width: 62ch; color: var(--ink-2); }
+  .chapter p strong { color: var(--ink); font-weight: 600; }
+  .chapter p:last-child { margin-bottom: 0; }
+
+  .strip {
+    display: flex; flex-wrap: wrap; gap: 28px; margin: 20px 0 4px;
+    padding: 14px 18px; background: var(--card); border: 1px solid var(--rule-soft);
+    border-radius: 3px; box-shadow: var(--shadow);
+  }
+  .stat b {
+    display: block; font-family: var(--mono); font-size: 10px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink-3); font-weight: 500; margin-bottom: 3px;
+  }
+  .stat span {
+    font-family: var(--mono); font-size: 17px; font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .up { color: var(--gain) !important; }
+  .down { color: var(--loss) !important; }
+  .flat { color: var(--ink-3) !important; }
+
+  .pull {
+    border-left: 2px solid var(--accent); padding: 4px 0 4px 18px; margin: 22px 0;
+    font-family: var(--serif); font-size: 19px; line-height: 1.5; color: var(--ink);
+    max-width: 56ch;
+  }
+
+  /* ---------- close ---------- */
+  .close { padding: 56px 0 0; }
+  .close h2 { font-size: clamp(26px, 4vw, 34px); margin-bottom: 20px; }
+  .ledger {
+    width: 100%; border-collapse: collapse; margin: 24px 0 8px;
+    font-family: var(--mono); font-size: 13.5px; font-variant-numeric: tabular-nums;
+  }
+  .ledger th {
+    text-align: left; font-weight: 500; font-size: 10px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink-3); padding: 0 12px 8px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .ledger td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule-soft); color: var(--ink-2); }
+  .ledger td:first-child { color: var(--ink); }
+  .ledger .num { text-align: right; }
+  .ledger tr:last-child td { border-bottom: none; font-weight: 600; color: var(--ink); }
+  .scroll { overflow-x: auto; }
+
+  .verdict {
+    margin: 36px 0 0; padding: 26px 28px; background: var(--accent-soft);
+    border: 1px solid var(--rule-soft); border-radius: 3px;
+  }
+  .verdict p { margin: 0 0 12px; max-width: 60ch; }
+  .verdict p:last-child { margin-bottom: 0; }
+  .verdict .lead {
+    font-family: var(--serif); font-size: 20px; line-height: 1.45; color: var(--ink);
+  }
+  .foot {
+    margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--rule);
+    font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--ink-3);
+  }
+  @media (max-width: 640px) {
+    .chapter { grid-template-columns: 1fr; gap: 14px; padding: 34px 0; }
+    .rail { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+    .rail-tag, .rail-eq { margin-top: 0; }
+    .rail-eq b { display: inline; margin-right: 6px; }
+  }
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">0DTE Alpha · February – August 2026</p>
+    <h1>Six Months, Flat</h1>
+    <p class="standfirst">The account started at $6,000 and sits at $6,076. That single fact hides
+      everything that actually happened — 5,850 signals, 420 real trades, one bad week that took
+      $1,414 in six sessions, and a system that is measurably better now than the money suggests.
+      This is the honest version, month by month.</p>
+  </header>
+
+  <figure class="curve">
+    <svg viewBox="0 0 880 240" role="img" aria-label="Account position against the six thousand dollar deposit, plotted from the daily broker statement. It falls to minus six hundred and thirty-four dollars by mid-May, recovers to plus four hundred and eighty-two in early June, falls to minus one thousand three hundred and seven on the twenty-fourth of June, and recovers to plus seventy-six dollars today.">
+      <defs>
+        <linearGradient id="fillEra" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--accent)" stop-opacity=".16"/>
+          <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+
+      <line x1="0" y1="80.5" x2="880" y2="80.5" stroke="var(--rule)" stroke-width="1" stroke-dasharray="3 4"/>
+      <text x="4" y="74" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-3)">$6,000 deposit — break-even</text>
+
+      <path d="M264,137.9 L280.6,122.6 L297.3,147.8 L313.9,167.3 L330.6,147.7 L347.2,113.8 L363.9,118.5 L380.5,124.9 L397.2,89.8 L413.8,83.7 L430.5,62.1 L447.1,62.9 L463.8,60.0 L480.4,50.6 L497.1,77.6 L513.7,36.9 L530.4,67.0 L547.0,74.8 L563.7,104.2 L580.3,132.1 L597.0,161.0 L613.6,164.8 L630.3,165.1 L646.9,146.7 L663.6,141.5 L680.2,160.1 L696.9,189.0 L713.5,198.8 L730.2,189.3 L746.8,190.4 L763.5,187.6 L780.1,161.3 L796.8,112.3 L813.4,107.4 L830.1,84.2 L846.7,89.0 L863.4,63.1 L880.0,73.6 L880,240 L264,240 Z" fill="url(#fillEra)"/>
+      <path d="M0,80.5 L264,137.9" fill="none" stroke="var(--loss)" stroke-width="2" stroke-dasharray="5 4"
+            stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M264,137.9 L280.6,122.6 L297.3,147.8 L313.9,167.3 L330.6,147.7 L347.2,113.8 L363.9,118.5 L380.5,124.9 L397.2,89.8 L413.8,83.7 L430.5,62.1 L447.1,62.9 L463.8,60.0 L480.4,50.6 L497.1,77.6 L513.7,36.9 L530.4,67.0 L547.0,74.8 L563.7,104.2 L580.3,132.1 L597.0,161.0 L613.6,164.8 L630.3,165.1 L646.9,146.7 L663.6,141.5 L680.2,160.1 L696.9,189.0 L713.5,198.8 L730.2,189.3 L746.8,190.4 L763.5,187.6 L780.1,161.3 L796.8,112.3 L813.4,107.4 L830.1,84.2 L846.7,89.0 L863.4,63.1 L880.0,73.6" fill="none" stroke="var(--accent)" stroke-width="1.8"
+            stroke-linejoin="round" stroke-linecap="round"/>
+
+      <circle cx="264" cy="137.9" r="3.5" fill="var(--loss)"/>
+      <text x="272" y="142" font-family="ui-monospace, monospace" font-size="10" fill="var(--loss)">−$634 · 14 May</text>
+
+      <circle cx="713.5" cy="198.8" r="3.5" fill="var(--loss)"/>
+      <text x="713.5" y="215" font-family="ui-monospace, monospace" font-size="10" fill="var(--loss)" text-anchor="middle">−$1,307 · 24 Jun</text>
+
+      <circle cx="876" cy="73.6" r="4" fill="var(--gain)"/>
+      <text x="872" y="65" font-family="ui-monospace, monospace" font-size="10" fill="var(--gain)" text-anchor="end">+$76 today</text>
+
+      <text x="90" y="26" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-3)" text-anchor="middle">reconstructed</text>
+      <text x="444" y="26" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-3)">daily broker statement, 37 sessions</text>
+    </svg>
+    <figcaption>The account against its $6,000 deposit, plotted day by day from the broker
+      statement. The dashed leg is reconstructed — no daily record exists before 14 May, only the
+      −$634 it ended up costing. Peak <b>+$482</b> on 4 June, trough <b>−$1,307</b> on 24 June,
+      <b>+$76</b> today.</figcaption>
+  </figure>
+
+  <section class="chapter">
+    <div class="rail">
+      <div class="rail-month">February</div>
+      <div class="rail-tag">Watching only</div>
+      <div class="rail-eq"><b>Real money</b>—</div>
+    </div>
+    <div>
+      <h2>Six detectors, and nobody trusted them yet</h2>
+      <p>The system logged its first <strong>212 signals</strong> across six setups and traded none
+        of them. Everything went into a database so that later we could ask a question no live
+        trader can answer honestly: <em>what would this have done?</em></p>
+      <p>That choice paid for itself repeatedly. Every study in this document runs on data collected
+        in months when we were risking nothing.</p>
+      <div class="strip">
+        <div class="stat"><b>Signals logged</b><span>212</span></div>
+        <div class="stat"><b>Setups running</b><span>6</span></div>
+        <div class="stat"><b>Real trades</b><span class="flat">0</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="chapter">
+    <div class="rail">
+      <div class="rail-month">March</div>
+      <div class="rail-tag">First real order</div>
+      <div class="rail-eq"><b>Real money</b>—</div>
+    </div>
+    <div>
+      <h2>Fifteen trades, and the market was wild</h2>
+      <p>Detector count went from 6 to <strong>15</strong>, and signal volume jumped five-fold to
+        <strong>1,068</strong>. On 24 March the first real order went to the broker.</p>
+      <p>March was also the most violent month of the year — the US–Iran conflict pushed VIX to
+        <strong>31</strong> and oil up 60%. That turned out to matter enormously: months later we
+        would discover that several of our setups only work when volatility is high, and March is
+        the only month that proves it.</p>
+      <div class="strip">
+        <div class="stat"><b>Signals logged</b><span>1,068</span></div>
+        <div class="stat"><b>Real trades</b><span>15</span></div>
+        <div class="stat"><b>Peak VIX</b><span>31.05</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="chapter">
+    <div class="rail">
+      <div class="rail-month">April</div>
+      <div class="rail-tag">Turning it up</div>
+      <div class="rail-eq"><b>Real money</b>—</div>
+    </div>
+    <div>
+      <h2>Seventy-five trades, and the filter starts earning its keep</h2>
+      <p>Real trades went <strong>15 → 75</strong>. This is where the filter versions started
+        stacking up — V10, V11, V12 — each one removing a cohort of trades that had proved
+        unprofitable rather than adding a new way to make money.</p>
+      <p>That instinct, subtracting rather than adding, is the single most valuable habit the
+        project developed. The current filter takes <strong>250 fewer trades</strong> than the one
+        we started the summer with, and makes more money.</p>
+      <div class="strip">
+        <div class="stat"><b>Signals logged</b><span>942</span></div>
+        <div class="stat"><b>Real trades</b><span>75</span></div>
+        <div class="stat"><b>Detectors</b><span>14</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="chapter">
+    <div class="rail">
+      <div class="rail-month">May</div>
+      <div class="rail-tag">Money on the table</div>
+      <div class="rail-eq"><b>Real money</b><span class="up">+$828</span></div>
+    </div>
+    <div>
+      <h2>The first month that counted, and it was green</h2>
+      <p>From 14 May the broker statement begins. <strong>Eleven sessions, 107 trades,
+        +$828.</strong> The system was live, supervised, and working.</p>
+      <p>It was also the month the trade count peaked at <strong>145 real orders</strong>. In
+        hindsight that was the warning sign nobody read: we were trading a lot, in a market that
+        was getting quieter by the week.</p>
+      <div class="strip">
+        <div class="stat"><b>Live sessions</b><span>11</span></div>
+        <div class="stat"><b>Real trades</b><span>145</span></div>
+        <div class="stat"><b>Broker P&amp;L</b><span class="up">+$828</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="chapter">
+    <div class="rail">
+      <div class="rail-month">June</div>
+      <div class="rail-tag">The drawdown</div>
+      <div class="rail-eq"><b>Real money</b><span class="down">−$1,088</span></div>
+    </div>
+    <div>
+      <h2>Six red days in a row</h2>
+      <p>Between <strong>5 and 12 June</strong> the account lost <strong>$1,414 across six
+        sessions, every one of them red.</strong> Four of those days hit the $300 circuit breaker.
+        It remains the worst stretch in the system's history.</p>
+      <p>What actually happened is now well understood. The market kept trending while our book is
+        built to fade — it sells rallies and buys dips. On a day that simply keeps going, every
+        signal fires into the move and every stop gets hit. <strong>Skew Charm, our best setup,
+        was 74% of the loss</strong> at a 40% win rate.</p>
+      <p class="pull">The setups were not broken. They were doing exactly what they were built to
+        do, in the one market condition where that is the wrong thing to do.</p>
+      <div class="strip">
+        <div class="stat"><b>Live sessions</b><span>20</span></div>
+        <div class="stat"><b>Real trades</b><span>155</span></div>
+        <div class="stat"><b>Broker P&amp;L</b><span class="down">−$1,088</span></div>
+        <div class="stat"><b>Worst 6 days</b><span class="down">−$1,414</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="chapter">
+    <div class="rail">
+      <div class="rail-month">July</div>
+      <div class="rail-tag">Switched off</div>
+      <div class="rail-eq"><b>Real money</b><span class="up">+$542</span></div>
+    </div>
+    <div>
+      <h2>One trading day out of twenty-two</h2>
+      <p>July is the strangest row in the ledger: <strong>1,028 signals logged, four real trades,
+        one live session — and it made $542.</strong></p>
+      <p>The system was deliberately dark while we tore into the June drawdown. That month produced
+        the execution fix, the capture measurement, and the discovery that our simulated results
+        matched real broker fills to within <strong>89%</strong> — closing the question of whether
+        the losses were a signal problem or a plumbing problem. They were neither. They were a
+        market problem.</p>
+      <p>It also produced a quieter and more expensive discovery, one we only understood in August:
+        <strong>a month spent switched off costs real money.</strong></p>
+      <div class="strip">
+        <div class="stat"><b>Live sessions</b><span class="down">1 of 22</span></div>
+        <div class="stat"><b>Signals logged</b><span>1,028</span></div>
+        <div class="stat"><b>Broker P&amp;L</b><span class="up">+$542</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="chapter">
+    <div class="rail">
+      <div class="rail-month">August</div>
+      <div class="rail-tag">Restart</div>
+      <div class="rail-eq"><b>Real money</b><span class="up">+$427</span></div>
+    </div>
+    <div>
+      <h2>Five clean sessions, and three real defects found</h2>
+      <p>Trading resumed on 10 August. <strong>Five sessions, +$427 — about $85 a day.</strong></p>
+      <p>More importantly, August is when the system started catching its own faults. A trade that
+        filled at the broker while the software did not notice for 58 minutes. A safety routine
+        that counted one exit twice and cancelled a live stop. A monitor that had been watching the
+        trades we <em>reject</em> and never once asked whether the setups we <em>allow</em> were
+        still earning — which is how one setup quietly stopped working in May and was not noticed
+        until August.</p>
+      <p>Each of those is now fixed, audited, and covered by a check that runs without anyone
+        watching.</p>
+      <div class="strip">
+        <div class="stat"><b>Live sessions</b><span>5</span></div>
+        <div class="stat"><b>Broker P&amp;L</b><span class="up">+$427</span></div>
+        <div class="stat"><b>Per day</b><span class="up">+$85</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="close">
+    <h2>So where did the money go?</h2>
+    <p>The portal shows roughly <strong>$22,658</strong> of theoretical profit across every signal
+      ever logged. The account moved <strong>$76</strong>. Every dollar of that difference is
+      accounted for:</p>
+
+    <div class="scroll">
+      <table class="ledger">
+        <thead>
+          <tr><th>Step</th><th class="num">Running total</th><th class="num">Change</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Every signal, 1 contract, no filter, no costs</td><td class="num">$22,658</td><td class="num">—</td></tr>
+          <tr><td>Keep only what the filter admits</td><td class="num">$19,474</td><td class="num down">−$3,185</td></tr>
+          <tr><td>Apply the position cap and dedup</td><td class="num">$14,513</td><td class="num down">−$4,960</td></tr>
+          <tr><td>Apply basket sizing</td><td class="num">$17,331</td><td class="num up">+$2,818</td></tr>
+          <tr><td>Charge real slippage and fees</td><td class="num">$12,057</td><td class="num down">−$5,274</td></tr>
+          <tr><td>Only months the account existed</td><td class="num">$4,892</td><td class="num down">−$7,165</td></tr>
+          <tr><td>Only the 37 days we were switched on</td><td class="num">$1,759</td><td class="num down">−$3,133</td></tr>
+          <tr><td>What the broker actually paid</td><td class="num">$710</td><td class="num down">−$1,049</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Two lines matter more than the rest. <strong>$7,165 of that theoretical profit happened
+      before the account traded a single contract</strong> — it was never available. And
+      <strong>$3,133 was left on sessions when the system was switched off.</strong></p>
+    <p>Of the final $1,049, only <strong>$187 is execution</strong>. The other $862 came from seven
+      days traded under old filter versions the current one would reject.</p>
+    <p>And the $710 in that last row is the <em>statement era only</em>. The account also lost
+      <strong>$634 before 14 May</strong>, in the months when the first live version was still being
+      shaken out — which is why the all-time figure is $76 and not $710.</p>
+
+    <div class="verdict">
+      <p class="lead">The flat line is not a treadmill. It is what building looks like when you
+        stop to fix things and only trade on 37 of 120 possible days.</p>
+      <p>Every era has beaten the one before it: <strong>−$694 → −$298 → +$39 → +$85 a day.</strong>
+        Excluding June, the other 17 live sessions made <strong>+$1,798, about $106 a day.</strong></p>
+      <p>The filter that starts trading tomorrow makes <strong>$2,372 a month</strong> in
+        simulation against the old one's $1,718, on <strong>250 fewer trades</strong>, with the
+        worst month improving from −$1,028 to <strong>+$530</strong> and the worst drawdown cut by
+        <strong>43%</strong>. The June week that cost $1,414 would have cost $465.</p>
+      <p>The bottleneck has moved. It was the signals, then the execution — both are now measured
+        and fine. <strong>It is now uptime.</strong> The projection assumes 21 sessions a month and
+        we have been trading six to eleven. A perfect system returns a third of its number if you
+        run it a third of the time.</p>
+    </div>
+
+    <p class="foot">All figures from the broker statement and the signal database. Simulated results
+      charge −0.6 points per contract of slippage and $1.92 per contract round-turn. 37 live trading
+      days, 14 May – 17 August 2026. Live equity $6,076.27 — $2,611.96 long account,
+      $3,464.31 short account — against a $6,000 deposit.</p>
+  </section>
+
+</div>
+
+</body>
+</html>

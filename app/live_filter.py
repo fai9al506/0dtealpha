@@ -13,7 +13,37 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 
 ET = ZoneInfo("America/New_York")
-LIVE_VER = "v16-sb"   # V16 + Semi-Basket (Scheme B 0/0/1). Bump when the live filter changes.
+# V22's switch. It governs the LONG SIZE-UP ONLY.
+#
+# ⚠️ The pass/fail filter of V22 is IDENTICAL to V21 — same short block, same -0.8%
+# threshold. The user's decomposition (2026-08-19) showed the two halves are genuinely
+# INDEPENDENT rules that each work alone, and that they degrade in opposite directions
+# as the trigger widens:
+#     block shorts at -0.8  +$182/mo  LOMO 6/6     at -0.5  +$218/mo  LOMO 4/6
+#     size up longs at -0.5 +$189/mo  LOMO 6/6     at -0.8  +$80/mo   LOMO 6/6
+# So widening the block was a mistake I made by tying them together. V22 keeps V21's
+# block exactly as it is and ADDS the long size-up at its own best threshold.
+#     V21                        $2,253/mo  worst month  +530  MaxDD -906  LOMO 6/6
+#     V22 = V21 + long size-up   $2,491/mo  worst month +1181  MaxDD -906  LOMO 6/6
+# The interaction is POSITIVE (+$50/mo), and the mechanism is the $300 DAILY LOSS
+# BREAKER - NOT the position cap. Long and short have separate accounts and separate
+# caps (2/3), so a freed short slot can never be taken by a long. Traced: signals killed
+# by the breaker are 37 baseline / 18 block-only / 47 size-only / 33 both. Blocking the
+# bad shorts spends less of the daily loss budget so the breaker trips less and later
+# trades survive; sizing the longs up spends MORE of it. The block buys back exactly the
+# risk budget the bigger longs consume. All 6 trades that exist in BOTH but not in
+# size-only were killed by DAILY_BREAKER, every one on 2026-06-11.
+def v22_on():
+    return os.getenv("V22_LONG_SIZEUP_ENABLED", "false").lower() == "true"
+
+
+# Follows the switch so `live_filter_ver` always records what was ACTUALLY live.
+LIVE_VER = "v22-sb" if v22_on() else "v21-sb"
+
+# ── V20 (2026-08-17, S277/S278) — THE LIVE FILTER from 2026-08-18. ────────────────
+# V20 = V16 rules + ES Absorption only when VIX >= ES_ABS_VIX_FLOOR + no Friday.
+# The full change ledger (what each version number means and why) is FILTER_VERSIONS.md.
+ES_ABS_VIX_FLOOR = 20.0
 
 # Semi-Basket (Scheme B) — 2026-06-16. Tech basket (NVDA/AMD/AVGO/META/MSFT/GOOGL)
 # %-from-session-open, stamped on each signal as setup_log.basket_pct at detection.
@@ -57,9 +87,37 @@ def basket_blocks(l):
     return (bp > 0) != is_long  # contradict (sign mismatch) -> skip ; confirm -> take
 
 
-def passes_v16_sb(l, gaps):
-    """THE live filter = V16 base AND Semi-Basket confirm. Single source of truth."""
+def passes_v20(l, gaps):
+    """V20 = V16 rules + ES Absorption gated to VIX >= 20 + no Friday.
+
+    THE live filter from 2026-08-18. ES Absorption's edge is volatility-dependent:
+    per trade it is -$2.6 below VIX 18 and -$6.4 at 18-20, but +$21.6 at 20-22
+    (t=+2.4) and +$15.2 at 22-26 (t=+2.7). Removing the setup outright measured
+    WORSE (-$1,036) because its slots refill with weaker trades under the 2/3 cap.
+    Fails CLOSED on a missing VIX. Lockstep with main.py _passes_live_filter and
+    both portal mirrors (strat 'v20').
+    """
     if not passes_v16(l, gaps):
+        return False
+    if (l.get('setup_name') if hasattr(l, 'get') else l['setup_name']) == 'ES Absorption':
+        v = l['vix'] if 'vix' in l else None
+        if v is None or float(v) < ES_ABS_VIX_FLOOR:
+            return False
+    ts = l['ts'] if 'ts' in l else None
+    if ts is not None and ts.astimezone(ET).weekday() == 4:
+        return False   # REAL_TRADE_NO_FRIDAY, armed 2026-08-15 (S263)
+    return True
+
+
+def passes_v16_sb(l, gaps):
+    """THE live filter = V21 base AND Semi-Basket confirm. Single source of truth.
+
+    Name kept for compatibility with every caller and study; the BASE it applies is
+    V21 as of 2026-08-17 (was V16, then V20). See FILTER_VERSIONS.md.
+    """
+    if not passes_v20(l, gaps):
+        return False
+    if v22_blocks(l, _PREV_MOVES_CACHE):
         return False
     if basket_blocks(l):
         return False
@@ -85,6 +143,206 @@ def load_gaps(conn):
     return gaps
 
 
+_PREV_MOVES_CACHE = {}
+
+
+def load_prev_moves(conn):
+    """date_iso -> the PREVIOUS session's open-to-close move in %, from `spx_ohlc_1m`.
+
+    V21 input. Uses the 1-MINUTE bars, NOT chain_snapshots, and the difference matters:
+    chain_snapshots saves every 2 minutes and its first row of the day is 09:32 while the
+    1-min series starts at 09:31. That single missing minute moves the daily figure by up
+    to ~0.08% - enough to flip a day across the -0.8% line (2026-04-22 reads -0.82% on
+    the bars and -0.74% on the snapshots). Measuring a DAILY move on 2-minute samples was
+    simply the wrong choice; `spx_ohlc_1m` is written live by main.py and covers every
+    session in the window with no gaps.
+
+    Fully known at yesterday's 16:00, so nothing here can look ahead.
+    """
+    moves = {}
+    rows = conn.execute(text("""
+        WITH day AS (
+          SELECT (ts AT TIME ZONE 'America/New_York')::date d,
+                 (array_agg(bar_open  ORDER BY ts ASC ))[1] o,
+                 (array_agg(bar_close ORDER BY ts DESC))[1] c
+          FROM spx_ohlc_1m GROUP BY 1)
+        SELECT t.d, (p.c-p.o)/NULLIF(p.o,0)*100 mv
+        FROM day t JOIN day p ON p.d=(SELECT MAX(d2.d) FROM day d2 WHERE d2.d<t.d)""")).fetchall()
+    for r in rows:
+        if r[1] is not None:
+            moves[str(r[0])] = round(float(r[1]), 3)
+    return moves
+
+
+# ── V21 (2026-08-17, S300-S306) — THE LIVE FILTER from 2026-08-18. ──────────────────
+# V21 = V20, plus: no SHORTS when the PREVIOUS session fell more than 0.8% AND this
+# signal's VIX is under 24.
+#
+# Mechanism (predicted by the user before it was tested): after a down day the market
+# takes a relief bounce, and our fade shorts sell straight into it. Measured: after a
+# session worse than -0.5%, the next day averaged +0.22% and rose 68% of the time.
+# Per trade, shorts after a down day earn +0.81 pt against +4.57 pt otherwise.
+#
+# The VIX ceiling is what makes it safe. The effect INVERTS in high volatility - at
+# VIX 26+ shorts after a down day earn +15.74 pt at 100% WR, because the selling
+# continues instead of bouncing. Without the ceiling the rule throws away March's
+# +150 pts of high-vol shorts and is worth exactly zero. With it, all 24 of those
+# March trades are kept (they were all at VIX >= 22).
+#
+# Measured over 117 sessions, V20 + cap + S203 + $300 breaker:
+#   $/mo 2,187 -> 2,372 · worst month -$225 -> +$530 · MaxDD -$1,585 -> -$906 (-43%)
+#   worst week -$1,196 -> -$752 · the June 5-12 streak -$1,219 -> -$465
+# It skips 27 shorts on 4 days in 6 months, worth -147 pts at 37% WR (t=-2.01), and
+# beats 500 random 27-short removals on every metric (96-100%).
+#
+# HONEST LIMITS: 4 days in 6 months, and one of them (2026-06-11) is 59% of the value.
+# It does nothing in 3 of the 6 months. It is insurance, not income.
+#
+# ⚠️ MEASURE THE PREVIOUS MOVE ON `spx_ohlc_1m`, NEVER ON `chain_snapshots`. Computing it
+# from the 2-minute snapshots (whose first row of the day is 09:32 against the bars' 09:31)
+# shifts the daily figure by up to ~0.08%, which flips whole days across the -0.8% line and
+# turns the blocked cohort from 27 trades at 37% WR (t=-2.01) into 37 trades at 51% WR
+# (t=-0.81). Same rule, different sampling, opposite conclusion. `load_prev_moves` reads the
+# 1-min bars for exactly this reason.
+#
+# FAILS OPEN: unknown previous move or unknown VIX -> the trade is TAKEN.
+V21_PREV_DROP = -0.8      # previous session open-to-close, %
+V21_VIX_MAX = 24.0        # above this the effect inverts - keep the shorts
+
+
+def v21_blocks(l, moves):
+    """True when V21 refuses this signal. Shorts only. Fails OPEN on missing data."""
+    try:
+        sn = l['setup_name'] if 'setup_name' in l else None
+        if sn is None:
+            return False
+        d = str(l['direction'] if 'direction' in l else '').lower()
+        if d in ('long', 'bullish'):
+            return False
+        v = l['vix'] if 'vix' in l else None
+        if v is None:
+            return False
+        ts = l['ts'] if 'ts' in l else None
+        if ts is None:
+            return False
+        mv = (moves or {}).get(str(ts.astimezone(ET).date()))
+        if mv is None:
+            return False
+        return float(mv) < V21_PREV_DROP and float(v) < V21_VIX_MAX
+    except Exception:
+        return False
+
+
+def passes_v21(l, gaps, moves):
+    """V21 = V20 AND not v21_blocks(). THE live filter from 2026-08-18."""
+    if not passes_v20(l, gaps):
+        return False
+    return not v21_blocks(l, moves)
+
+
+# ── V22 (2026-08-19, S313) — THE LIVE FILTER from 2026-08-20. ───────────────────────
+# V22 = V21 with the threshold widened from -0.8% to -0.5%, PLUS the other half of the
+# same effect: on those days our LONGS are sized up.
+#
+# WHY THE LONG HALF EXISTS. V21 only ever blocked shorts. On the very same days the
+# longs are the better trade, and nothing was done about it. Measured at DAY level
+# (a day's trades share one tape, so DAYS is the sample size, not trades):
+#
+#   previous session            SHORTS                 LONGS
+#   open-close < -0.8%          -5.44 pt, 0/4 days     +5.32 pt, 5/6 days
+#   open-close -0.8..-0.5%      +1.15 pt, 4/7 days     +5.74 pt, 5/6 days
+#   2-session cum -1.5..-0.8%   -0.20 pt, 3/8 days     +8.77 pt, 7/8 days
+#   no gap, ground down all day -3.71 pt, 1/4 days     +8.06 pt, 5/5 days
+#
+# Six independent slicings of the previous session agree. Sizing the longs WITHOUT
+# blocking the shorts does NOT work ($2,178/mo, MaxDD -$1,601, worse than baseline):
+# the block and the size-up are one rule, not two.
+#
+# Measured, 119 sessions, V20 + cap 2/3 + dedup + S203 + $300 breaker + basket sizing:
+#   V20 baseline          $2,071/mo  worst month  -$225  MaxDD -$1,585
+#   V21 (block only)      $2,253/mo  worst month  +$530  MaxDD   -$906
+#   V22 (this)            $2,549/mo  worst month +$1,266 MaxDD   -$906
+# Out of sample (fit Mar-May, scored on the unseen Jun-Aug) the edge is LARGER than in
+# sample: +$598 to +$1,118 per month against +$86 in sample. Random control, same action
+# on the same number of randomly chosen days, 300 trials: p = 0.003.
+#
+# THE CAP IS A CAPITAL CONSTRAINT, NOT A RESULT. Uncapped doubling earns MORE
+# ($2,643/mo, worst month +$1,525) but peaks at 8 MES long = $2,120 margin = 81% of the
+# long account's $2,609.80. At 81% the biggest trades get REJECTED after a losing week -
+# exactly when this rule is worth most. Cap 3 peaks at 6 MES = $1,590 = 61%, which
+# survives a $1,000 drawdown, and still keeps 76% of the gain.
+#   >>> LIFT THE CAP TO 4 WHEN THE LONG ACCOUNT (210VYX65) HOLDS $3,029. <<<
+#   (8 MES x $265 margin / 0.70 comfort rule.) It held $2,609.80 on 2026-08-19,
+#   short by $419. Tracked as Tasks S314. Change V22_LONG_CAP, nothing else.
+#
+# HONEST LIMITS: 17 trigger days in 119 sessions. 85% of the gain is June + July, and it
+# does nothing in March, May or August - it is a bad-regime rule that sits idle in a good
+# one. It is the only tested variant that LOSES in a month (August, -$74 real dollars).
+#
+# ⚠️ Same sampling warning as V21: measure the previous move on `spx_ohlc_1m`, never on
+# `chain_snapshots`.
+#
+# FAILS OPEN on the short block (unknown move or VIX -> trade is TAKEN) and FAILS SAFE on
+# the long size-up (unknown -> normal size). Neither half can invent a trade.
+V22_LONG_DROP = float(os.getenv("V22_LONG_DROP", "-0.5"))   # LONG size-up trigger, %
+V22_VIX_MAX = 24.0        # above this the effect inverts - keep the shorts
+V22_LONG_CAP = int(os.getenv("V22_LONG_CAP", "3"))          # max MES per long on a trigger day
+
+
+def _v22_fires(l, moves, for_long=False):
+    """Is this signal on a day AFTER a qualifying down session?
+
+    TWO thresholds on purpose. The halves are INDEPENDENT rules and they degrade
+    differently as the trigger widens, so forcing one number on both throws away the
+    better setting for one of them:
+        block shorts   -0.8%  +$182/mo  LOMO 6/6   (at -0.5 it is +$218 but LOMO 4/6)
+        size up longs  -0.5%  +$189/mo  LOMO 6/6   (at -0.8 it is only +$80)
+    """
+    try:
+        v = l['vix'] if 'vix' in l else None
+        if v is None:
+            return False
+        ts = l['ts'] if 'ts' in l else None
+        if ts is None:
+            return False
+        mv = (moves or {}).get(str(ts.astimezone(ET).date()))
+        if mv is None:
+            return False
+        thr = V22_LONG_DROP if for_long else V21_PREV_DROP
+        return float(mv) < thr and float(v) < V22_VIX_MAX
+    except Exception:
+        return False
+
+
+def v22_blocks(l, moves):
+    """V22's short block IS V21's, unchanged. Kept as its own name so callers and the
+    portal can say 'v22' without implying the filter differs. Fails OPEN."""
+    return v21_blocks(l, moves)
+
+
+def v22_long_qty(l, moves, qty):
+    """The long half: on a trigger day a LONG is doubled, capped at V22_LONG_CAP.
+    Fails SAFE - on any doubt the quantity is returned unchanged."""
+    try:
+        if not v22_on():
+            return qty
+        d = str(l['direction'] if 'direction' in l else '').lower()
+        if d not in ('long', 'bullish'):
+            return qty
+        if not _v22_fires(l, moves, for_long=True):
+            return qty
+        return max(1, min(int(qty) * 2, V22_LONG_CAP))
+    except Exception:
+        return qty
+
+
+def passes_v22(l, gaps, moves):
+    """V22 = V20 AND not v22_blocks(). THE live filter from 2026-08-20."""
+    if not passes_v20(l, gaps):
+        return False
+    return not v22_blocks(l, moves)
+
+
 def backfill_live_pass(engine):
     """Stamp setup_log.live_pass / live_filter_ver for the whole table. Idempotent.
     Run daily (EOD) so recent signals are recallable via WHERE live_pass=true. Returns count."""
@@ -92,6 +350,8 @@ def backfill_live_pass(engine):
         c.execute(text("ALTER TABLE setup_log ADD COLUMN IF NOT EXISTS live_pass boolean"))
         c.execute(text("ALTER TABLE setup_log ADD COLUMN IF NOT EXISTS live_filter_ver text"))
         gaps = load_gaps(c)
+        global _PREV_MOVES_CACHE
+        _PREV_MOVES_CACHE = load_prev_moves(c)   # V21 input, used by passes_v16_sb
         c.execute(text("ALTER TABLE setup_log ADD COLUMN IF NOT EXISTS basket_pct DOUBLE PRECISION"))
         rows = c.execute(text(f"SELECT {COLS} FROM setup_log ORDER BY ts")).mappings().all()
         lids = [r['id'] for r in rows if passes_v16_sb(r, gaps)]
